@@ -1,17 +1,34 @@
 // SideNav encodes the system vs module mental model.
 // System items are always visible; enabled modules appear as shortcuts.
 import React, { useEffect, useMemo, useState } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import { useModuleStore } from "../state/moduleStore.jsx";
 import { getAppDisplayName } from "../state/appCatalog.js";
 import { getPinnedApps, getRecentApps, recordRecentApp, subscribeAppUsage } from "../state/appUsage.js";
+import { getManifest } from "../api";
+import { buildTargetRoute } from "../apps/appShellUtils.js";
 
 const navLinkClass = ({ isActive }) =>
   `btn btn-ghost justify-start w-full ${isActive ? "bg-base-200" : ""}`;
 
 function AppShortcut({ id, label }) {
+  const navigate = useNavigate();
+
+  async function openModule(event) {
+    event.preventDefault();
+    recordRecentApp(id);
+    try {
+      const res = await getManifest(id);
+      const homeTarget = res?.manifest?.app?.home || null;
+      const route = buildTargetRoute(id, homeTarget) || `/apps/${id}`;
+      navigate(route);
+    } catch {
+      navigate(`/apps/${id}`);
+    }
+  }
+
   return (
-    <NavLink to={`/apps/${id}`} className={navLinkClass} onClick={() => recordRecentApp(id)}>
+    <NavLink to={`/apps/${id}`} className={navLinkClass} onClick={openModule}>
       <span className="badge badge-outline mr-2">{label.slice(0, 1).toUpperCase()}</span>
       {label}
     </NavLink>

@@ -853,7 +853,10 @@ export default function AppShell({
   const errorBanner =
     error || (errorFlash && Date.now() < errorFlashUntil ? errorFlash : null);
 
-  if (loading) {
+  // Avoid flashing fallback errors before the first manifest/bootstrap response arrives.
+  const awaitingInitialLoad = Boolean(moduleId) && !manifest && !error;
+
+  if (loading || awaitingInitialLoad) {
     return (
       <div className="flex flex-col gap-3">
         {errorBanner && <div className="alert alert-error">{errorBanner}</div>}

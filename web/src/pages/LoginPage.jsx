@@ -16,7 +16,7 @@ export default function LoginPage() {
       setError(error.message);
       return;
     }
-    navigate("/apps");
+    navigate("/home");
   }
 
   return (
