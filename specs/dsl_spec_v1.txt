@@ -1,0 +1,100 @@
+CONDITION DSL v1 (Boolean Only) + EXPRESSION DSL v1 (Value-Returning)
+
+Why split them?
+- Condition DSL stays purely boolean (simple evaluator, easy validation).
+- Expression DSL handles computed fields/derived values without smuggling “if/then/else” into conditions.
+
+========================
+A) CONDITION DSL v1
+========================
+A condition is a JSON object with a bounded operator set.
+
+Shape
+{
+  "op": "and" | "or" | "not"
+      | "eq" | "neq" | "gt" | "gte" | "lt" | "lte"
+      | "contains" | "in" | "not_in"
+      | "exists" | "not_exists"
+      | "all" | "any",
+  "left":  <value>,     // for binary ops
+  "right": <value>,     // for binary ops
+  "children": [<cond>], // for and/or/not
+  "over": <value>,      // for all/any (array)
+  "where": <cond>       // for all/any (predicate)
+}
+
+Value nodes
+{ "var": "job.status" }
+{ "literal": "complete" }
+{ "array": [ <value>, ... ] }
+
+Rules
+- No loops, no recursion, no user-defined functions.
+- Depth limit: 10 (configurable).
+- Vars must resolve to known fields/paths in context, or engine rejects.
+
+Examples
+1) Scheduled guard (requires tech + start)
+{
+  "op": "and",
+  "children": [
+    { "op": "exists", "left": { "var": "job.assigned_tech" } },
+    { "op": "exists", "left": { "var": "job.scheduled_start" } }
+  ]
+}
+
+2) Compliance passed
+{ "op": "eq", "left": { "var": "job.compliance_status" }, "right": { "literal": "passed" } }
+
+3) “Any failed” over checklist items
+{
+  "op": "any",
+  "over": { "var": "job.compliance_items" },
+  "where": { "op": "eq", "left": { "var": "item.status" }, "right": { "literal": "failed" } }
+}
+
+========================
+B) EXPRESSION DSL v1
+========================
+Expressions return a value. Use for computed fields, derived text, mapping, etc.
+
+Shape
+A value expression is one of:
+- { "literal": ... }
+- { "var": "..." }
+- { "expr": "coalesce", "args": [<expr>, <expr>, ...] }
+- { "expr": "case", "cases": [ { "when": <cond>, "then": <expr> }, ... ], "else": <expr> }
+
+Examples
+1) Computed compliance_status (pending/failed/passed)
+{
+  "expr": "case",
+  "cases": [
+    {
+      "when": {
+        "op": "any",
+        "over": { "var": "job.compliance_items" },
+        "where": { "op": "eq", "left": { "var": "item.status" }, "right": { "literal": "failed" } }
+      },
+      "then": { "literal": "failed" }
+    },
+    {
+      "when": {
+        "op": "all",
+        "over": { "var": "job.compliance_items" },
+        "where": { "op": "eq", "left": { "var": "item.status" }, "right": { "literal": "passed" } }
+      },
+      "then": { "literal": "passed" }
+    }
+  ],
+  "else": { "literal": "pending" }
+}
+
+2) Coalesce example
+{ "expr": "coalesce", "args": [ { "var": "job.title" }, { "literal": "Untitled Job" } ] }
+
+Validation rules (both DSLs)
+- JSON-only, no strings to parse.
+- Vars must resolve.
+- Operator set is closed (unknown op rejected).
+- Depth limit enforced.

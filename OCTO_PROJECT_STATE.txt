@@ -1,0 +1,53 @@
+PROJECT: OCTO
+
+GOAL
+Build a governed, manifest-driven engine for ERP-style systems.
+The engine is the product; modules are test cases.
+AI proposes changes via patches; the engine validates, previews, and applies.
+
+STATUS (LOCKED)
+- Engine Constitution v1 defined and accepted
+- Condition DSL v1 (boolean only) defined
+- Expression DSL v1 (value-returning) defined
+- Patch Spec v1.1 finalized (hash-based, selector paths, snapshot rollback)
+- Action Contract v1 finalized (bounded action types, no scripting)
+- Canonical record_ref shape locked:
+  { "entity": "entity.job", "id": { "var": "job.id" } }
+
+ARCHITECTURAL RULES (NON-NEGOTIABLE)
+- Manifests are the single source of truth
+- All changes occur via patches (validate → preview → apply)
+- Stable IDs everywhere; patches target IDs via selectors (@[id=...])
+- No free-form UI layout
+- No embedded code in manifests
+- No implicit cross-module coupling
+- Multi-tenant isolation from day one
+- Manifests compile into executable plans
+- Snapshot-based rollback is authoritative
+
+CURRENT PHASE
+Kernel implementation with Codex as executor.
+
+CODEX ROLE
+- Reads specs from /specs
+- Implements kernel slices exactly as specified
+- Does not invent architecture or primitives
+- Does not choose stack unless explicitly asked
+
+CURRENT TASK
+Kernel Slice #1:
+- Canonical JSON serialization
+- Manifest hash (SHA-256 of canonical JSON)
+- Python 3.11, standard library only
+- unittest-based tests
+
+NEXT SLICES (PLANNED)
+1) Condition DSL evaluator
+2) Selector path resolver (@[id=...])
+3) Patch validator + dry-run simulator
+4) Action runner
+5) Internal event bus / outbox
+
+NOTE
+ChatGPT acts as system architect and spec enforcer.
+Codex acts as implementation engine only.

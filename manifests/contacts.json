@@ -1,0 +1,476 @@
+{
+  "manifest_version": "1.3",
+  "module": { "id": "contacts", "name": "Contacts", "version": "1.0.1" },
+
+  "app": {
+    "home": "page:contact.list_page",
+    "defaults": {
+      "entity_home_page": "page:contact.list_page",
+      "entity_form_page": "page:contact.form_page",
+      "entities": {
+        "entity.contact": {
+          "entity_home_page": "page:contact.list_page",
+          "entity_form_page": "page:contact.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Contacts",
+        "items": [{ "label": "Contacts", "to": "page:contact.list_page" }]
+      }
+    ]
+  },
+
+  "entities": [
+    {
+      "id": "entity.contact",
+      "display_field": "contact.display_name",
+      "fields": [
+        { "id": "contact.id", "type": "uuid", "label": "ID", "readonly": true },
+
+        {
+          "id": "contact.company_type",
+          "type": "enum",
+          "label": "Company Type",
+          "required": true,
+          "default": "person",
+          "help_text": "Person or company. Affects grouping and defaults.",
+          "options": [
+            { "value": "person", "label": "Individual" },
+            { "value": "company", "label": "Company" }
+          ]
+        },
+
+        {
+          "id": "contact.status",
+          "type": "enum",
+          "label": "Status",
+          "required": true,
+          "default": "active",
+          "options": [
+            { "value": "draft", "label": "Draft" },
+            { "value": "active", "label": "Active" },
+            { "value": "archived", "label": "Archived" }
+          ]
+        },
+
+        {
+          "id": "contact.display_name",
+          "type": "string",
+          "label": "Name",
+          "required": true,
+          "help_text": "Primary display name shown in lists and lookups."
+        },
+        { "id": "contact.first_name", "type": "string", "label": "First Name" },
+        { "id": "contact.last_name", "type": "string", "label": "Last Name" },
+
+        {
+          "id": "contact.parent_id",
+          "type": "lookup",
+          "label": "Parent Contact",
+          "entity": "entity.contact",
+          "display_field": "contact.display_name",
+          "help_text": "Link this contact under a company (for individuals)."
+        },
+
+        { "id": "contact.job_title", "type": "string", "label": "Job Position" },
+
+        {
+          "id": "contact.email",
+          "type": "string",
+          "label": "Email",
+          "help_text": "Used for notifications and search."
+        },
+        {
+          "id": "contact.phone",
+          "type": "string",
+          "label": "Phone",
+          "help_text": "Main contact number."
+        },
+        { "id": "contact.mobile", "type": "string", "label": "Mobile" },
+        { "id": "contact.website", "type": "string", "label": "Website" },
+
+        {
+          "id": "contact.address_type",
+          "type": "enum",
+          "label": "Address Type",
+          "required": true,
+          "default": "contact",
+          "help_text": "Which address this is used for.",
+          "options": [
+            { "value": "contact", "label": "Contact" },
+            { "value": "invoice", "label": "Invoice" },
+            { "value": "delivery", "label": "Delivery" },
+            { "value": "other", "label": "Other" }
+          ]
+        },
+
+        { "id": "contact.street", "type": "string", "label": "Street" },
+        { "id": "contact.street2", "type": "string", "label": "Street 2" },
+        { "id": "contact.city", "type": "string", "label": "City" },
+        { "id": "contact.state", "type": "string", "label": "State/Region" },
+        { "id": "contact.postcode", "type": "string", "label": "Postcode" },
+        { "id": "contact.country", "type": "string", "label": "Country" },
+
+        {
+          "id": "contact.tags",
+          "type": "tags",
+          "label": "Tags",
+          "help_text": "Keywords to categorize this contact."
+        },
+
+        { "id": "contact.language", "type": "string", "label": "Language" },
+        { "id": "contact.timezone", "type": "string", "label": "Timezone" },
+
+        {
+          "id": "contact.vat",
+          "type": "string",
+          "label": "Tax ID (VAT)",
+          "help_text": "Tax/VAT ID for billing."
+        },
+
+        {
+          "id": "contact.notes",
+          "type": "text",
+          "label": "Internal Notes",
+          "help_text": "Private internal notes."
+        },
+        { "id": "contact.test_field_1", "type": "string", "label": "Test Field 1" },
+        { "id": "contact.test_field_2", "type": "string", "label": "Test Field 2" },
+        { "id": "contact.test_field_3", "type": "string", "label": "Test Field 3" },
+        { "id": "contact.test_field_4", "type": "string", "label": "Test Field 4" },
+        { "id": "contact.test_field_5", "type": "string", "label": "Test Field 5" },
+        { "id": "contact.test_field_6", "type": "string", "label": "Test Field 6" },
+        { "id": "contact.test_field_7", "type": "string", "label": "Test Field 7" },
+        { "id": "contact.test_field_8", "type": "string", "label": "Test Field 8" },
+        { "id": "contact.test_field_9", "type": "string", "label": "Test Field 9" },
+        { "id": "contact.test_field_10", "type": "string", "label": "Test Field 10" },
+        { "id": "contact.test_field_11", "type": "string", "label": "Test Field 11" },
+        { "id": "contact.test_field_12", "type": "string", "label": "Test Field 12" },
+        { "id": "contact.test_field_13", "type": "string", "label": "Test Field 13" },
+        { "id": "contact.test_field_14", "type": "string", "label": "Test Field 14" },
+        { "id": "contact.test_field_15", "type": "string", "label": "Test Field 15" },
+        { "id": "contact.test_field_16", "type": "string", "label": "Test Field 16" },
+        { "id": "contact.test_field_17", "type": "string", "label": "Test Field 17" },
+        { "id": "contact.test_field_18", "type": "string", "label": "Test Field 18" },
+        { "id": "contact.test_field_19", "type": "string", "label": "Test Field 19" },
+        { "id": "contact.test_field_20", "type": "string", "label": "Test Field 20" },
+        { "id": "contact.test_field_21", "type": "string", "label": "Test Field 21" },
+        { "id": "contact.test_field_22", "type": "string", "label": "Test Field 22" },
+        { "id": "contact.test_field_23", "type": "string", "label": "Test Field 23" },
+        { "id": "contact.test_field_24", "type": "string", "label": "Test Field 24" },
+        { "id": "contact.test_field_25", "type": "string", "label": "Test Field 25" },
+        { "id": "contact.test_field_26", "type": "string", "label": "Test Field 26" },
+        { "id": "contact.test_field_27", "type": "string", "label": "Test Field 27" },
+        { "id": "contact.test_field_28", "type": "string", "label": "Test Field 28" },
+        { "id": "contact.test_field_29", "type": "string", "label": "Test Field 29" },
+        { "id": "contact.test_field_30", "type": "string", "label": "Test Field 30" },
+        { "id": "contact.test_field_31", "type": "string", "label": "Test Field 31" },
+        { "id": "contact.test_field_32", "type": "string", "label": "Test Field 32" },
+        { "id": "contact.test_field_33", "type": "string", "label": "Test Field 33" },
+        { "id": "contact.test_field_34", "type": "string", "label": "Test Field 34" },
+        { "id": "contact.test_field_35", "type": "string", "label": "Test Field 35" },
+        { "id": "contact.test_field_36", "type": "string", "label": "Test Field 36" },
+        { "id": "contact.test_field_37", "type": "string", "label": "Test Field 37" },
+        { "id": "contact.test_field_38", "type": "string", "label": "Test Field 38" }
+      ]
+    }
+  ],
+
+  "relations": [
+    { "from": "contact.parent_id", "to": "contact.id", "label_field": "contact.display_name" }
+  ],
+
+  "workflows": [
+    {
+      "id": "contact_status_workflow",
+      "entity": "entity.contact",
+      "status_field": "contact.status",
+      "states": [
+        { "id": "draft", "label": "Draft" },
+        { "id": "active", "label": "Active" },
+        { "id": "archived", "label": "Archived" }
+      ]
+    }
+  ],
+
+  "triggers": [
+    { "id": "contacts.record.created", "event": "record.created", "entity_id": "entity.contact" },
+    { "id": "contacts.record.updated", "event": "record.updated", "entity_id": "entity.contact" },
+    { "id": "contacts.workflow.status_changed", "event": "workflow.status_changed", "entity_id": "entity.contact", "status_field": "contact.status" },
+    { "id": "contacts.action.test_notify.clicked", "event": "action.clicked", "action_id": "action.test_notify" },
+    { "id": "contacts.action.test_generate_doc.clicked", "event": "action.clicked", "action_id": "action.test_generate_doc" },
+    { "id": "contacts.action.generate_contact_pdf.clicked", "event": "action.clicked", "action_id": "action.generate_contact_pdf" },
+    { "id": "contacts.action.test_send_email.clicked", "event": "action.clicked", "action_id": "action.test_send_email" },
+    { "id": "contacts.action.test_retry.clicked", "event": "action.clicked", "action_id": "action.test_retry" }
+  ],
+
+  "actions": [
+    { "id": "action.refresh", "kind": "refresh", "label": "Refresh" },
+    { "id": "action.test_notify", "kind": "refresh", "label": "Test: Notify" },
+    { "id": "action.test_generate_doc", "kind": "refresh", "label": "Test: Generate PDF" },
+    { "id": "action.generate_contact_pdf", "kind": "refresh", "label": "Generate PDF" },
+    { "id": "action.test_send_email", "kind": "refresh", "label": "Test: Send Email" },
+    { "id": "action.test_retry", "kind": "refresh", "label": "Test: Retry" }
+  ],
+
+  "views": [
+    {
+      "id": "contact.list",
+      "entity": "entity.contact",
+      "kind": "list",
+      "columns": [
+        { "field_id": "contact.display_name" },
+        { "field_id": "contact.company_type" },
+        { "field_id": "contact.status" },
+        { "field_id": "contact.email" },
+        { "field_id": "contact.phone" },
+        { "field_id": "contact.city" },
+        { "field_id": "contact.country" },
+        { "field_id": "contact.tags" }
+      ],
+      "open_record": { "to": "page:contact.form_page", "param": "record" },
+      "header": {
+        "search": {
+          "enabled": true,
+          "placeholder": "Search contacts...",
+          "fields": [
+            "contact.display_name",
+            "contact.email",
+            "contact.phone",
+            "contact.mobile",
+            "contact.city",
+            "contact.country",
+            "contact.vat"
+          ]
+        },
+        "filters": []
+      }
+    },
+
+    {
+      "id": "contact.kanban",
+      "kind": "kanban",
+      "entity": "entity.contact",
+      "card": {
+        "title_field": "contact.display_name",
+        "subtitle_fields": ["contact.email", "contact.phone"],
+        "badge_fields": ["contact.tags"]
+      }
+    },
+
+    {
+      "id": "contact.graph",
+      "kind": "graph",
+      "entity": "entity.contact",
+      "default": { "type": "bar", "group_by": "contact.country", "measure": "count" }
+    },
+
+    {
+      "id": "contact.form",
+      "entity": "entity.contact",
+      "kind": "form",
+      "sections": [
+        {
+          "id": "main",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "contact.company_type",
+            "contact.status",
+            "contact.display_name",
+            "contact.first_name",
+            "contact.last_name",
+            "contact.parent_id",
+            "contact.job_title",
+            "contact.tags",
+            "contact.email",
+            "contact.phone",
+            "contact.mobile",
+            "contact.website"
+          ]
+        },
+        {
+          "id": "address",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "contact.address_type",
+            "contact.street",
+            "contact.street2",
+            "contact.city",
+            "contact.state",
+            "contact.postcode",
+            "contact.country"
+          ]
+        },
+        {
+          "id": "sales_purchases",
+          "layout": "columns",
+          "columns": 2,
+          "fields": ["contact.vat", "contact.language", "contact.timezone"]
+        },
+        { "id": "notes", "fields": ["contact.notes"] },
+        {
+          "id": "extra",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "contact.test_field_1",
+            "contact.test_field_2",
+            "contact.test_field_3",
+            "contact.test_field_4",
+            "contact.test_field_5",
+            "contact.test_field_6",
+            "contact.test_field_7",
+            "contact.test_field_8",
+            "contact.test_field_9",
+            "contact.test_field_10",
+            "contact.test_field_11",
+            "contact.test_field_12",
+            "contact.test_field_13",
+            "contact.test_field_14",
+            "contact.test_field_15",
+            "contact.test_field_16",
+            "contact.test_field_17",
+            "contact.test_field_18",
+            "contact.test_field_19",
+            "contact.test_field_20",
+            "contact.test_field_21",
+            "contact.test_field_22",
+            "contact.test_field_23",
+            "contact.test_field_24",
+            "contact.test_field_25",
+            "contact.test_field_26",
+            "contact.test_field_27",
+            "contact.test_field_28",
+            "contact.test_field_29",
+            "contact.test_field_30",
+            "contact.test_field_31",
+            "contact.test_field_32",
+            "contact.test_field_33",
+            "contact.test_field_34",
+            "contact.test_field_35",
+            "contact.test_field_36",
+            "contact.test_field_37",
+            "contact.test_field_38"
+          ]
+        }
+      ],
+      "header": {
+        "title_field": "contact.display_name",
+        "primary_actions": [
+          { "action_id": "action.test_notify" },
+          { "action_id": "action.generate_contact_pdf" },
+          { "action_id": "action.test_send_email" },
+          { "action_id": "action.test_retry" }
+        ],
+        "secondary_actions": [{ "action_id": "action.refresh" }],
+        "save_mode": "top",
+        "auto_save": true,
+        "auto_save_debounce_ms": 750,
+        "statusbar": { "field_id": "contact.status" },
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "details",
+          "tabs": [
+            { "id": "details", "label": "Contacts", "sections": ["main"] },
+            { "id": "address", "label": "Addresses", "sections": ["address"] },
+            { "id": "sp", "label": "Sales & Purchases", "sections": ["sales_purchases"] },
+            { "id": "notes", "label": "Notes", "sections": ["notes"] },
+            { "id": "extra", "label": "Extra", "sections": ["extra"] }
+          ]
+        }
+      }
+    }
+  ],
+
+  "pages": [
+    {
+      "id": "contact.list_page",
+      "title": "Contacts",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.refresh" },
+          { "kind": "navigate", "label": "New", "target": "page:contact.form_page" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.contact",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:contact.list" },
+                {
+                  "mode": "kanban",
+                  "target": "view:contact.kanban",
+                  "default_group_by": "contact.company_type"
+                },
+                { "mode": "graph", "target": "view:contact.graph" },
+                { "mode": "pivot", "target": "view:contact.graph" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": "contact.form_page",
+      "title": "Contact",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.contact",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [{ "kind": "view", "target": "view:contact.form" }]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "title": "Chatter",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.contact",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

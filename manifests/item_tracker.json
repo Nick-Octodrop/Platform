@@ -1,0 +1,376 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "module_42529b",
+    "name": "Item Tracker",
+    "version": "1.0.0",
+    "description": "Simple demo module to test v1.3 UI composition: list + form + statusbar + chatter."
+  },
+  "app": {
+    "nav": [
+      {
+        "group": "Demo",
+        "items": [
+          { "to": "page:item.list_page", "label": "Items" },
+          { "to": "page:contact.list_page", "label": "Contacts" }
+        ]
+      }
+    ],
+    "home": "page:item.list_page",
+    "defaults": {
+      "entity_form_page": "page:item.form_page",
+      "entity_home_page": "page:item.list_page",
+      "entities": {
+        "entity.item": {
+          "entity_form_page": "page:item.form_page",
+          "entity_home_page": "page:item.list_page"
+        },
+        "entity.contact": {
+          "entity_form_page": "page:contact.form_page",
+          "entity_home_page": "page:contact.list_page"
+        }
+      }
+    }
+  },
+  "pages": [
+    {
+      "id": "item.list_page",
+      "title": "Items",
+      "header": { "variant": "none" },
+      "layout": "single",
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            { "kind": "view", "target": "view:item.list" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "item.form_page",
+      "title": "Item",
+      "header": { "variant": "none" },
+      "layout": "single",
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.item",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "view", "target": "view:item.form" }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "title": "Chatter",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.item",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "contact.list_page",
+      "title": "Contacts",
+      "header": { "variant": "none" },
+      "layout": "single",
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            { "kind": "view", "target": "view:contact.list" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "contact.form_page",
+      "title": "Contact",
+      "header": { "variant": "none" },
+      "layout": "single",
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.contact",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "view", "target": "view:contact.form" }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "title": "Chatter",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.contact",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "item.list",
+      "kind": "list",
+      "entity": "entity.item",
+      "header": {
+        "search": {
+          "fields": ["item.title", "item.status", "item.region"],
+          "enabled": true,
+          "placeholder": "Search items..."
+        },
+        "filters": [
+          { "id": "new", "label": "New", "domain": { "op": "eq", "field": "item.status", "value": "new" } },
+          { "id": "in_progress", "label": "In Progress", "domain": { "op": "eq", "field": "item.status", "value": "in_progress" } },
+          { "id": "done", "label": "Done", "domain": { "op": "eq", "field": "item.status", "value": "done" } }
+        ],
+        "primary_actions": [
+          { "action_id": "action.item_new" }
+        ]
+      },
+      "columns": [
+        { "label": "Title", "field_id": "item.title" },
+        { "label": "Region", "field_id": "item.region" },
+        { "label": "Status", "field_id": "item.status" }
+      ],
+      "open_record": { "to": "page:item.form_page", "param": "record" }
+    },
+    {
+      "id": "item.form",
+      "kind": "form",
+      "entity": "entity.item",
+      "header": {
+        "tabs": {
+          "tabs": [
+            { "id": "main", "label": "Main", "sections": ["main"] },
+            { "id": "details", "label": "Details", "sections": ["details"] }
+          ],
+          "style": "lifted",
+          "default_tab": "main"
+        },
+        "auto_save": true,
+        "save_mode": "top",
+        "statusbar": { "field_id": "item.status" },
+        "title_field": "item.title",
+        "primary_actions": [
+          { "action_id": "action.item_start" },
+          { "action_id": "action.item_complete" }
+        ],
+        "auto_save_debounce_ms": 750
+      },
+      "sections": [
+        {
+          "id": "main",
+          "title": "Main",
+          "fields": ["item.title", "item.region", "item.primary_contact_id"],
+          "layout": "columns",
+          "columns": 2
+        },
+        {
+          "id": "details",
+          "title": "Details",
+          "fields": ["item.completion_notes"]
+        }
+      ]
+    },
+    {
+      "id": "contact.list",
+      "kind": "list",
+      "entity": "entity.contact",
+      "header": {
+        "search": {
+          "fields": ["contact.name", "contact.email"],
+          "enabled": true,
+          "placeholder": "Search contacts..."
+        },
+        "primary_actions": [
+          { "action_id": "action.contact_new" }
+        ]
+      },
+      "columns": [
+        { "label": "Name", "field_id": "contact.name" },
+        { "label": "Email", "field_id": "contact.email" }
+      ],
+      "open_record": { "to": "page:contact.form_page", "param": "record" }
+    },
+    {
+      "id": "contact.form",
+      "kind": "form",
+      "entity": "entity.contact",
+      "header": {
+        "auto_save": true,
+        "save_mode": "top",
+        "title_field": "contact.name",
+        "auto_save_debounce_ms": 750
+      },
+      "sections": [
+        {
+          "id": "main",
+          "title": "Contact",
+          "fields": ["contact.name", "contact.email"],
+          "layout": "columns",
+          "columns": 2
+        }
+      ]
+    }
+  ],
+  "actions": [
+    { "id": "action.item_new", "kind": "navigate", "label": "New Item", "target": "page:item.form_page" },
+    {
+      "id": "action.item_start",
+      "kind": "update_record",
+      "label": "Start",
+      "patch": { "item.status": "in_progress" },
+      "entity_id": "entity.item",
+      "enabled_when": { "op": "eq", "field": "item.status", "value": "new" }
+    },
+    {
+      "id": "action.item_complete",
+      "kind": "update_record",
+      "label": "Complete",
+      "patch": { "item.status": "done" },
+      "confirm": { "body": "Mark this item as done?", "title": "Complete Item" },
+      "entity_id": "entity.item",
+      "enabled_when": { "op": "eq", "field": "item.status", "value": "in_progress" }
+    },
+    { "id": "action.contact_new", "kind": "navigate", "label": "New Contact", "target": "page:contact.form_page" }
+  ],
+  "entities": [
+    {
+      "id": "entity.contact",
+      "label": "Contact",
+      "display_field": "contact.name",
+      "fields": [
+        { "id": "contact.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "contact.name", "type": "string", "label": "Name", "required": true },
+        { "id": "contact.email", "type": "string", "label": "Email" }
+      ]
+    },
+    {
+      "id": "entity.item",
+      "label": "Item",
+      "display_field": "item.title",
+      "fields": [
+        { "id": "item.id", "type": "uuid", "label": "ID", "readonly": true },
+        {
+          "id": "item.status",
+          "ui": { "widget": "steps" },
+          "type": "enum",
+          "label": "Status",
+          "default": "new",
+          "options": [
+            { "label": "New", "value": "new" },
+            { "label": "In Progress", "value": "in_progress" },
+            { "label": "Done", "value": "done" }
+          ],
+          "required": true
+        },
+        { "id": "item.title", "type": "string", "label": "Title", "required": true },
+        {
+          "id": "item.region",
+          "type": "enum",
+          "label": "Region",
+          "default": "north",
+          "options": [
+            { "label": "North", "value": "north" },
+            { "label": "South", "value": "south" },
+            { "label": "East", "value": "east" },
+            { "label": "West", "value": "west" }
+          ]
+        },
+        {
+          "id": "item.primary_contact_id",
+          "type": "lookup",
+          "label": "Primary Contact",
+          "entity": "entity.contact",
+          "display_field": "contact.name"
+        },
+        {
+          "id": "item.completion_notes",
+          "type": "text",
+          "label": "Completion notes",
+          "required_when": { "op": "eq", "field": "item.status", "value": "done" }
+        }
+      ]
+    }
+  ],
+  "relations": [
+    { "to": "contact.id", "from": "item.primary_contact_id", "label_field": "contact.name" }
+  ],
+  "workflows": [
+    {
+      "id": "workflow.item",
+      "entity": "entity.item",
+      "states": [
+        { "id": "new", "label": "New" },
+        { "id": "in_progress", "label": "In Progress" },
+        { "id": "done", "label": "Done" }
+      ],
+      "transitions": [
+        { "to": "in_progress", "from": "new", "label": "Start" },
+        { "to": "done", "from": "in_progress", "label": "Complete" }
+      ],
+      "status_field": "item.status"
+    }
+  ],
+  "queries": {},
+  "interfaces": {}
+}

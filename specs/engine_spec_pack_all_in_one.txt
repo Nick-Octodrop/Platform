@@ -1,0 +1,401 @@
+ENGINE SPEC PACK (All-in-one)
+=============================
+
+1) Engine Constitution v1
+2) Condition DSL v1 + Expression DSL v1
+3) Patch Spec v1.1
+4) Action Contract v1
+
+--------------------------------
+1) ENGINE CONSTITUTION v1
+--------------------------------
+
+ENGINE CONSTITUTION v1 (Canonical)
+
+Purpose
+A governed, manifest-driven runtime for building business systems (ERP-ish) using configuration, not custom code. Modules are “test cases”; the engine is the product.
+
+Core Philosophy
+- Manifests are configuration (source of truth). Runtime state is data + logs (derived from execution), never “hidden config”.
+- AI proposes changes as patches; the engine validates + previews; humans approve; the engine applies atomically.
+- Strictly bounded primitives prevent “no-code sprawl” and keep AI generation reliable.
+
+Non-Negotiable Rules (Enforce in validator + code review)
+1) Manifests are the single source of truth
+   - All data models, views, workflows, actions, queries, interfaces live in versioned manifests.
+   - No parallel code paths that bypass manifests.
+
+2) Everything is versioned & immutable
+   - Each change creates a new immutable manifest snapshot.
+   - Rollback is restoring a previous snapshot (atomic).
+
+3) AI proposes, engine + user disposes
+   - AI outputs patches only (never commits directly).
+   - Validate → preview → explicit approval → apply.
+
+4) One unified rule system
+   - Conditions are JSON-only (no strings).
+   - Expressions are JSON-only (no strings).
+   - No embedded code in manifests.
+
+5) Strictly opinionated UI (no free-form layout)
+   - Views are structured (lists/forms/stacked sections).
+   - Drag/drop only for ordering/nesting, not pixel layout.
+
+6) Modules communicate only via declared contracts
+   - Only: relations (refs), exposed actions, published events, consumed dependencies.
+   - No direct cross-module DB access or implicit coupling.
+
+7) Escape hatches exist but are sandboxed
+   - Custom hooks only at predefined extension points.
+   - Isolated execution (WASM/serverless) with strict I/O limits.
+   - No raw DB writes; writes must go through actions.
+
+8) Everything important is addressable & referential
+   - Stable IDs for every entity/field/view/workflow/action/block/query/event.
+   - Patches target IDs, not indices.
+
+9) Multi-tenant from day one
+   - Tenant isolation is enforced by the data layer (tenant_id / RLS).
+   - No cross-tenant access possible by design.
+
+10) Compile, don’t interpret (performance + debuggability)
+   - Manifests compile into executable plans (UI trees, workflow graphs, query plans, action plans).
+   - Cache compiled artifacts per manifest version and invalidate on version bump.
+
+Manifest Conventions (Shape)
+- Root:
+  { module: { id, name, version, description, requires[], optional[] }, entities[], views[], workflows[], actions[], queries{}, interfaces{} }
+- IDs: dot-separated or kebab-case paths (e.g., entity.job, job.status, view.job_form, workflow.job_lifecycle, action.assign_tech)
+- Refs: use structured references wherever possible (see “Reference Patterns” below)
+
+Reference Patterns (Recommended)
+- record_ref (canonical):
+  "record_ref": { "entity": "entity.job", "id": { "var": "job.id" } }
+- action_ref (recommended string form): "documents.action.generate"
+- event name: "job.scheduled"
+- query_ref: "job_management.query.job_tasks_for_job"
+
+Engine Kernel Capabilities (Build First)
+- Manifest loader + version store + snapshot history
+- Validator: schema + semantic checks (refs resolve, no cycles, no duplicate IDs)
+- Patch applicator + preview sandbox (dry-run + impact classification)
+- Condition evaluator (boolean)
+- Expression evaluator (value-returning)
+- Workflow engine (guards → effects → events)
+- Action runner (typed actions)
+- Event bus (internal pub/sub; outbox recommended)
+- Query compiler (declarative query → SQL with tenant enforcement)
+- View compiler (manifest view → render config/component tree)
+
+Data Storage (Recommended v1)
+Relational core + JSONB custom fields
+- Hot-path entities use proper tables + indexes.
+- Custom fields stored in jsonb with GIN indexing.
+- Avoid EAV complexity early; evolve only when real perf walls appear.
+
+
+--------------------------------
+2) DSL SPEC
+--------------------------------
+
+CONDITION DSL v1 (Boolean Only) + EXPRESSION DSL v1 (Value-Returning)
+
+Why split them?
+- Condition DSL stays purely boolean (simple evaluator, easy validation).
+- Expression DSL handles computed fields/derived values without smuggling “if/then/else” into conditions.
+
+========================
+A) CONDITION DSL v1
+========================
+A condition is a JSON object with a bounded operator set.
+
+Shape
+{
+  "op": "and" | "or" | "not"
+      | "eq" | "neq" | "gt" | "gte" | "lt" | "lte"
+      | "contains" | "in" | "not_in"
+      | "exists" | "not_exists"
+      | "all" | "any",
+  "left":  <value>,     // for binary ops
+  "right": <value>,     // for binary ops
+  "children": [<cond>], // for and/or/not
+  "over": <value>,      // for all/any (array)
+  "where": <cond>       // for all/any (predicate)
+}
+
+Value nodes
+{ "var": "job.status" }
+{ "literal": "complete" }
+{ "array": [ <value>, ... ] }
+
+Rules
+- No loops, no recursion, no user-defined functions.
+- Depth limit: 10 (configurable).
+- Vars must resolve to known fields/paths in context, or engine rejects.
+
+Examples
+1) Scheduled guard (requires tech + start)
+{
+  "op": "and",
+  "children": [
+    { "op": "exists", "left": { "var": "job.assigned_tech" } },
+    { "op": "exists", "left": { "var": "job.scheduled_start" } }
+  ]
+}
+
+2) Compliance passed
+{ "op": "eq", "left": { "var": "job.compliance_status" }, "right": { "literal": "passed" } }
+
+3) “Any failed” over checklist items
+{
+  "op": "any",
+  "over": { "var": "job.compliance_items" },
+  "where": { "op": "eq", "left": { "var": "item.status" }, "right": { "literal": "failed" } }
+}
+
+========================
+B) EXPRESSION DSL v1
+========================
+Expressions return a value. Use for computed fields, derived text, mapping, etc.
+
+Shape
+A value expression is one of:
+- { "literal": ... }
+- { "var": "..." }
+- { "expr": "coalesce", "args": [<expr>, <expr>, ...] }
+- { "expr": "case", "cases": [ { "when": <cond>, "then": <expr> }, ... ], "else": <expr> }
+
+Examples
+1) Computed compliance_status (pending/failed/passed)
+{
+  "expr": "case",
+  "cases": [
+    {
+      "when": {
+        "op": "any",
+        "over": { "var": "job.compliance_items" },
+        "where": { "op": "eq", "left": { "var": "item.status" }, "right": { "literal": "failed" } }
+      },
+      "then": { "literal": "failed" }
+    },
+    {
+      "when": {
+        "op": "all",
+        "over": { "var": "job.compliance_items" },
+        "where": { "op": "eq", "left": { "var": "item.status" }, "right": { "literal": "passed" } }
+      },
+      "then": { "literal": "passed" }
+    }
+  ],
+  "else": { "literal": "pending" }
+}
+
+2) Coalesce example
+{ "expr": "coalesce", "args": [ { "var": "job.title" }, { "literal": "Untitled Job" } ] }
+
+Validation rules (both DSLs)
+- JSON-only, no strings to parse.
+- Vars must resolve.
+- Operator set is closed (unknown op rejected).
+- Depth limit enforced.
+
+
+--------------------------------
+3) PATCH SPEC v1.1
+--------------------------------
+
+PATCH SPEC v1.1 (Implementation-Proof)
+
+Purpose
+The single, auditable, reversible way to modify any manifest. AI, users, and migrations all go through this format. Engine enforces every rule.
+
+Patch object (input)
+{
+  "patch_id": "uuid",
+  "target_module_id": "job_management",
+  "target_manifest_hash": "sha256:abcdef...",
+  "target_version": "1.0.0",              // optional (UI/reference only)
+  "mode": "preview" | "apply",
+  "reason": "string",
+  "operations": [ ... ],
+  "metadata": {
+    "generated_by": { "type": "ai" | "user", "id": "...", "name": "..." }
+  }
+}
+
+Canonical hash
+- Engine computes sha256 of canonical JSON (deterministic serialization: sorted keys, stable ordering, no whitespace).
+- Apply fails if target_manifest_hash doesn’t match current manifest (optimistic concurrency).
+
+Allowed operations
+- RFC6902 subset: add, remove, replace, move, copy, test
+- Macros (accepted but normalized before storage): add_field (v1), others later (add_section, add_transition, add_block)
+
+Macro: add_field (AI-friendly)
+{
+  "op": "add_field",
+  "entity_id": "entity.job",
+  "after_field_id": "job.description",
+  "field": { "id": "job.priority", ... }
+}
+- Engine expands to canonical RFC6902 ops with resolved indices.
+
+Path conventions (selector syntax)
+- Base: JSON Pointer (RFC6901)
+- Extension: selector segments using @[id=...]
+  /entities/@[id=entity.job]/fields/@[id=job.status]/options
+  /views/@[id=view.job_form]/sections/@[id=section.tasks]
+Rules:
+- Incoming patches MUST use selectors for arrays (no index-based paths).
+- Index paths are allowed only in “compiled patches” produced by the engine (internal), never by AI/humans.
+
+Execution stages (must run in order)
+1) Syntax & schema: JSON valid, ops allowed, values conform
+2) Hash check: target_manifest_hash must match current
+3) Reference resolution: all @[id=...] resolve; refs exist
+4) Semantic checks:
+   - no duplicate IDs
+   - no cycles introduced (workflows/events/deps)
+   - Condition DSL parses; Expression DSL parses
+   - type compatibility checks (breaking changes flagged as high impact)
+5) Security checks:
+   - Protected paths denied or role-gated (e.g., /module/id, /module/requires)
+6) Impact classification (engine-computed):
+   - low: labels/reorder/non-critical edits
+   - medium: add field/action/query/view
+   - high: remove/rename fields, workflow transitions, dependency changes
+7) Simulation (preview mode):
+   - dry-run apply in memory
+   - compile plans
+   - return diff + impact + errors/warnings
+8) Apply (apply mode):
+   - atomically store new manifest snapshot
+   - bump version (engine-assigned)
+   - write audit record
+
+Rollback & history
+- Engine MUST store full pre-apply manifest snapshot (primary rollback).
+- Rollback = restore previous snapshot (atomic).
+- Optional: generate inverse patch for “undo” UX; snapshot remains source-of-truth.
+
+Audit storage (recommended)
+patches(
+  patch_id uuid PK,
+  module_id text,
+  target_hash text,
+  from_version text,
+  to_version text,
+  mode text,
+  applied_at timestamptz,
+  applied_by jsonb,
+  reason text,
+  operations jsonb,
+  normalized_ops jsonb,
+  impact text,
+  status text,              // previewed|applied|rejected|rolled_back
+  snapshot_before_ref text,
+  snapshot_after_ref text
+)
+
+AI generation rules
+- AI outputs patches in mode=preview by default.
+- Must include reason, use @[id=...] selectors, prefer macros.
+- Engine rejects patches missing hash, using array indices, or touching protected paths without privilege.
+
+
+--------------------------------
+4) ACTION CONTRACT v1
+--------------------------------
+
+ACTION CONTRACT v1 (Canonical)
+
+Purpose
+Actions are the ONLY way to mutate operational state (records) or trigger cross-module behavior. Actions are declared in manifests and executed by the engine with strict governance.
+
+Canonical record_ref (locked)
+"record_ref": { "entity": "entity.job", "id": { "var": "job.id" } }
+
+Allowed action types (bounded enum)
+1) update_record   - update existing record fields
+2) create_record   - create a new record
+3) call_action     - invoke another action (same or cross-module)
+4) publish_event   - emit an event
+5) run_query       - read-only query execution (optional; safe)
+
+Action declaration schema (manifest)
+{
+  "id": "action.assign_tech",
+  "label": "Assign Technician",
+  "description": "Assign a technician to a job",
+  "type": "update_record",
+  "params_schema": { ... },
+  "permissions": {
+    "roles": ["manager"],
+    "condition": null     // Condition DSL (optional)
+  },
+  "effect": { ... },
+  "emits_events": [ ... ] // optional sugar
+}
+
+Effect schemas
+
+A) update_record
+{
+  "record_ref": { "entity": "entity.job", "id": { "var": "job.id" } },
+  "changes": {
+    "job.assigned_tech": { "var": "tech_id" }
+  }
+}
+
+B) create_record
+{
+  "entity": "entity.job",
+  "values": {
+    "job.title": { "var": "title" },
+    "job.status": { "literal": "new" }
+  },
+  "returns": { "as": "created_job", "fields": ["job.id", "job.number"] }
+}
+
+C) call_action
+{
+  "action_ref": "documents.action.generate",
+  "params": {
+    "template_id": { "var": "template_id" },
+    "record_ref": { "entity": "entity.job", "id": { "var": "job.id" } },
+    "output_format": { "literal": "pdf" }
+  },
+  "returns": { "as": "doc_result" }
+}
+
+D) publish_event
+{
+  "name": "job.scheduled",
+  "payload": {
+    "job_id": { "var": "job.id" },
+    "start": { "var": "job.scheduled_start" }
+  }
+}
+
+E) run_query (optional)
+{
+  "query_ref": "job_management.query.job_tasks_for_job",
+  "params": { "job_id": { "var": "job.id" } },
+  "returns": { "as": "tasks" }
+}
+
+Execution semantics (engine “law”)
+- Validation: params_schema + var resolution before execution
+- Permissions: roles then condition then record-level access (future slot)
+- Atomicity:
+  - DB writes in transaction
+  - publish_event emitted after commit (outbox recommended)
+  - external side effects triggered after commit via worker
+- Audit: log (action_id, actor, params, manifest_version/hash, result, timestamps, affected record refs)
+
+Cross-module governance
+- A module must declare:
+  - interfaces.exposed_actions
+  - interfaces.consumed_actions
+- Engine rejects call_action if not declared (unless admin/dev mode)

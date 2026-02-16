@@ -1,0 +1,83 @@
+ENGINE CONSTITUTION v1 (Canonical)
+
+Purpose
+A governed, manifest-driven runtime for building business systems (ERP-ish) using configuration, not custom code. Modules are “test cases”; the engine is the product.
+
+Core Philosophy
+- Manifests are configuration (source of truth). Runtime state is data + logs (derived from execution), never “hidden config”.
+- AI proposes changes as patches; the engine validates + previews; humans approve; the engine applies atomically.
+- Strictly bounded primitives prevent “no-code sprawl” and keep AI generation reliable.
+
+Non-Negotiable Rules (Enforce in validator + code review)
+1) Manifests are the single source of truth
+   - All data models, views, workflows, actions, queries, interfaces live in versioned manifests.
+   - No parallel code paths that bypass manifests.
+
+2) Everything is versioned & immutable
+   - Each change creates a new immutable manifest snapshot.
+   - Rollback is restoring a previous snapshot (atomic).
+
+3) AI proposes, engine + user disposes
+   - AI outputs patches only (never commits directly).
+   - Validate → preview → explicit approval → apply.
+
+4) One unified rule system
+   - Conditions are JSON-only (no strings).
+   - Expressions are JSON-only (no strings).
+   - No embedded code in manifests.
+
+5) Strictly opinionated UI (no free-form layout)
+   - Views are structured (lists/forms/stacked sections).
+   - Drag/drop only for ordering/nesting, not pixel layout.
+
+6) Modules communicate only via declared contracts
+   - Only: relations (refs), exposed actions, published events, consumed dependencies.
+   - No direct cross-module DB access or implicit coupling.
+
+7) Escape hatches exist but are sandboxed
+   - Custom hooks only at predefined extension points.
+   - Isolated execution (WASM/serverless) with strict I/O limits.
+   - No raw DB writes; writes must go through actions.
+
+8) Everything important is addressable & referential
+   - Stable IDs for every entity/field/view/workflow/action/block/query/event.
+   - Patches target IDs, not indices.
+
+9) Multi-tenant from day one
+   - Tenant isolation is enforced by the data layer (tenant_id / RLS).
+   - No cross-tenant access possible by design.
+
+10) Compile, don’t interpret (performance + debuggability)
+   - Manifests compile into executable plans (UI trees, workflow graphs, query plans, action plans).
+   - Cache compiled artifacts per manifest version and invalidate on version bump.
+
+Manifest Conventions (Shape)
+- Root:
+  { module: { id, name, version, description, requires[], optional[] }, entities[], views[], workflows[], actions[], queries{}, interfaces{} }
+- IDs: dot-separated or kebab-case paths (e.g., entity.job, job.status, view.job_form, workflow.job_lifecycle, action.assign_tech)
+- Refs: use structured references wherever possible (see “Reference Patterns” below)
+
+Reference Patterns (Recommended)
+- record_ref (canonical):
+  "record_ref": { "entity": "entity.job", "id": { "var": "job.id" } }
+- action_ref (recommended string form): "documents.action.generate"
+- event name: "job.scheduled"
+- query_ref: "job_management.query.job_tasks_for_job"
+
+Engine Kernel Capabilities (Build First)
+- Manifest loader + version store + snapshot history
+- Validator: schema + semantic checks (refs resolve, no cycles, no duplicate IDs)
+- Patch applicator + preview sandbox (dry-run + impact classification)
+- Condition evaluator (boolean)
+- Expression evaluator (value-returning)
+- Workflow engine (guards → effects → events)
+- Action runner (typed actions)
+- Event bus (internal pub/sub; outbox recommended)
+- Query compiler (declarative query → SQL with tenant enforcement)
+- View compiler (manifest view → render config/component tree)
+
+Data Storage (Recommended v1)
+Relational core + JSONB custom fields
+- Hot-path entities use proper tables + indexes.
+- Custom fields stored in jsonb with GIN indexing.
+- Avoid EAV complexity early; evolve only when real perf walls appear.

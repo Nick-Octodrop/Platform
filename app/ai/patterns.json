@@ -1,0 +1,55 @@
+{
+  "patterns": {
+    "contacts": {
+      "entities": ["entity.contact"],
+      "fields": [
+        { "id": "contact.name", "type": "string" },
+        { "id": "contact.email", "type": "string" },
+        { "id": "contact.phone", "type": "string" },
+        { "id": "contact.company", "type": "string" },
+        { "id": "contact.tags", "type": "tags" },
+        { "id": "contact.status", "type": "enum" }
+      ],
+      "status_enum": ["new", "active", "inactive"],
+      "pages": ["list", "form"],
+      "nav": ["All Contacts"],
+      "views": ["list", "form"],
+      "ui": ["statusbar", "tabs", "chatter", "search", "filters"]
+    },
+    "jobs": {
+      "entities": ["Job"],
+      "fields": ["title", "status", "customer", "price", "assigned_to"],
+      "status_enum": ["new", "in_progress", "done"],
+      "pages": ["list", "form"],
+      "nav": ["All Jobs"],
+      "views": ["list", "form"],
+      "ui": ["statusbar", "tabs", "chatter"]
+    },
+    "todo": {
+      "entities": ["Task"],
+      "fields": ["title", "status", "due_date", "assignee"],
+      "status_enum": ["todo", "doing", "done"],
+      "pages": ["list", "form"],
+      "nav": ["All Tasks"],
+      "views": ["list", "form"],
+      "ui": ["statusbar", "filters"]
+    },
+    "inventory": {
+      "entities": ["Item"],
+      "fields": ["name", "sku", "quantity", "location", "status"],
+      "pages": ["list", "form"],
+      "nav": ["All Items"],
+      "views": ["list", "form"],
+      "ui": ["search", "filters"]
+    },
+    "crm": {
+      "entities": ["Lead", "Opportunity"],
+      "fields": ["name", "stage", "amount", "company", "owner"],
+      "status_enum": ["new", "qualified", "proposal", "won", "lost"],
+      "pages": ["list", "form"],
+      "nav": ["Leads", "Opportunities"],
+      "views": ["list", "form"],
+      "ui": ["statusbar", "tabs", "chatter"]
+    }
+  }
+}

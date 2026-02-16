@@ -1,0 +1,122 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+}
+
+html {
+  font-size: 14px;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+  overflow: hidden;
+  font-size: 1rem;
+}
+
+@layer components {
+  .form-control .label-text,
+  .fieldset .fieldset-legend {
+    @apply text-[10px] uppercase tracking-wide opacity-60;
+  }
+
+  .form-control .label-text-alt,
+  .fieldset .label-text-alt {
+    @apply text-[10px] opacity-50;
+  }
+
+  .form-control .input,
+  .form-control .select,
+  .form-control .textarea,
+  .fieldset .input,
+  .fieldset .select,
+  .fieldset .textarea {
+    @apply w-full;
+  }
+
+  .form-control .input,
+  .fieldset .input {
+    @apply input-sm;
+  }
+
+  .form-control .select,
+  .fieldset .select {
+    @apply select-sm;
+  }
+
+  .form-control .textarea:not(.code-textarea),
+  .fieldset .textarea:not(.code-textarea) {
+    @apply textarea-sm;
+  }
+
+  .btn:not(.btn-xs):not(.btn-sm):not(.btn-lg) {
+    @apply text-xs min-h-8 h-8 px-3;
+  }
+
+  .toggle {
+    @apply toggle-sm;
+  }
+
+  .file-input {
+    @apply file-input-sm;
+  }
+
+  .tabs {
+    @apply tabs-sm;
+  }
+
+  .table {
+    @apply table-sm;
+  }
+
+  .menu {
+    @apply menu-sm;
+  }
+
+  .dropdown-content {
+    @apply text-xs;
+  }
+
+  .dropdown-content .btn {
+    @apply btn-xs;
+  }
+
+  .checkbox {
+    @apply checkbox-sm;
+  }
+
+  .navbar {
+    @apply min-h-12;
+  }
+
+  /* Keep DaisyUI tooltips above dropdowns/cards and other layered UI */
+  .tooltip {
+    position: relative;
+    z-index: 2147483000;
+    isolation: isolate;
+    overflow: visible;
+  }
+
+  .tooltip::before,
+  .tooltip::after {
+    position: absolute;
+    z-index: 2147483647 !important;
+    max-width: min(24rem, calc(100vw - 1rem));
+    white-space: normal;
+    word-break: break-word;
+    pointer-events: none;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+}

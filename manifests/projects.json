@@ -1,0 +1,395 @@
+{
+  "manifest_version": "1.3",
+  "module": { "id": "projects", "name": "Projects", "version": "0.1.1" },
+
+  "app": {
+    "home": "page:project.list_page",
+    "defaults": {
+      "entity_home_page": "page:project.list_page",
+      "entity_form_page": "page:project.form_page",
+      "entities": {
+        "entity.project": {
+          "entity_home_page": "page:project.list_page",
+          "entity_form_page": "page:project.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Projects",
+        "items": [
+          { "label": "Projects", "to": "page:project.list_page" }
+        ]
+      }
+    ]
+  },
+
+  "entities": [
+    {
+      "id": "entity.project",
+      "display_field": "project.name",
+      "fields": [
+        { "id": "project.id", "type": "uuid", "label": "ID", "readonly": true },
+        {
+          "id": "project.name",
+          "type": "string",
+          "label": "Name",
+          "required": true,
+          "help_text": "Project name shown in lists and headers."
+        },
+        {
+          "id": "project.code",
+          "type": "string",
+          "label": "Code",
+          "help_text": "Optional short code for quick reference."
+        },
+        { "id": "project.description", "type": "text", "label": "Description" },
+        {
+          "id": "project.status",
+          "type": "enum",
+          "label": "Status",
+          "required": true,
+          "default": "not_started",
+          "options": [
+            { "label": "Not Started", "value": "not_started" },
+            { "label": "In Progress", "value": "in_progress" },
+            { "label": "Blocked", "value": "blocked" },
+            { "label": "Completed", "value": "completed" }
+          ]
+        },
+        { "id": "project.priority", "type": "enum", "label": "Priority", "default": "medium", "options": [
+          { "label": "Low", "value": "low" },
+          { "label": "Medium", "value": "medium" },
+          { "label": "High", "value": "high" },
+          { "label": "Urgent", "value": "urgent" }
+        ] },
+        { "id": "project.owner", "type": "string", "label": "Owner" },
+        {
+          "id": "project.client_contact_id",
+          "type": "lookup",
+          "label": "Client Contact",
+          "entity": "entity.contact",
+          "display_field": "contact.display_name"
+        },
+        { "id": "project.client", "type": "string", "label": "Client" },
+        { "id": "project.start_date", "type": "date", "label": "Start Date" },
+        {
+          "id": "project.end_date",
+          "type": "date",
+          "label": "End Date",
+          "required_when": { "op": "eq", "field": "project.status", "value": "completed" }
+        },
+        { "id": "project.budget", "type": "number", "label": "Budget" },
+        {
+          "id": "project.progress",
+          "type": "number",
+          "label": "Progress %",
+          "required_when": { "op": "in", "field": "project.status", "value": ["in_progress", "blocked", "completed"] }
+        },
+        { "id": "project.tags", "type": "tags", "label": "Tags" },
+        { "id": "project.notes", "type": "text", "label": "Internal Notes" },
+        {
+          "id": "project.priority_reason",
+          "type": "text",
+          "label": "Priority Reason",
+          "visible_when": { "op": "eq", "left": { "ref": "$record.project.priority" }, "right": "high" }
+        },
+        { "id": "project.kickoff_created", "type": "bool", "label": "Kickoff Created", "default": false }
+      ]
+    }
+  ],
+
+  "relations": [],
+
+  "workflows": [
+    {
+      "id": "project_status_workflow",
+      "entity": "entity.project",
+      "status_field": "project.status",
+      "states": [
+        { "id": "not_started", "label": "Not Started" },
+        { "id": "in_progress", "label": "In Progress" },
+        { "id": "blocked", "label": "Blocked" },
+        { "id": "completed", "label": "Completed" }
+      ]
+    }
+  ],
+
+  "triggers": [
+    { "id": "projects.record.created", "event": "record.created", "entity_id": "entity.project" },
+    { "id": "projects.record.updated", "event": "record.updated", "entity_id": "entity.project" },
+    { "id": "projects.workflow.status_changed", "event": "workflow.status_changed", "entity_id": "entity.project", "status_field": "project.status" },
+    { "id": "projects.action.test_notify.clicked", "event": "action.clicked", "action_id": "action.test_notify" },
+    { "id": "projects.action.test_generate_kickoff_doc.clicked", "event": "action.clicked", "action_id": "action.test_generate_kickoff_doc" },
+    { "id": "projects.action.test_create_kickoff_task.clicked", "event": "action.clicked", "action_id": "action.test_create_kickoff_task" }
+  ],
+
+  "actions": [
+    { "id": "action.refresh", "kind": "refresh", "label": "Refresh" },
+    { "id": "action.project_new", "kind": "open_form", "label": "New", "target": "project.form" },
+
+    { "id": "action.project_set_not_started", "kind": "update_record", "label": "Set: Not Started", "patch": { "project.status": "not_started" }, "entity_id": "entity.project" },
+    {
+      "id": "action.project_set_in_progress",
+      "kind": "update_record",
+      "label": "Set: In Progress",
+      "patch": { "project.status": "in_progress" },
+      "entity_id": "entity.project",
+      "visible_when": { "op": "exists", "field": "project.progress" }
+    },
+    {
+      "id": "action.project_set_blocked",
+      "kind": "update_record",
+      "label": "Set: Blocked",
+      "patch": { "project.status": "blocked" },
+      "entity_id": "entity.project",
+      "visible_when": { "op": "exists", "field": "project.progress" }
+    },
+    {
+      "id": "action.project_set_completed",
+      "kind": "update_record",
+      "label": "Set: Completed",
+      "patch": { "project.status": "completed" },
+      "entity_id": "entity.project",
+      "visible_when": {
+        "op": "and",
+        "conditions": [
+          { "op": "exists", "field": "project.progress" },
+          { "op": "exists", "field": "project.end_date" }
+        ]
+      }
+    },
+
+    { "id": "action.project_bulk_set_not_started", "kind": "bulk_update", "label": "Set: Not Started", "patch": { "project.status": "not_started" }, "entity_id": "entity.project" },
+    { "id": "action.project_bulk_set_in_progress", "kind": "bulk_update", "label": "Set: In Progress", "patch": { "project.status": "in_progress" }, "entity_id": "entity.project" },
+    { "id": "action.project_bulk_set_blocked", "kind": "bulk_update", "label": "Set: Blocked", "patch": { "project.status": "blocked" }, "entity_id": "entity.project" },
+    { "id": "action.project_bulk_set_completed", "kind": "bulk_update", "label": "Set: Completed", "patch": { "project.status": "completed" }, "entity_id": "entity.project" },
+
+    { "id": "action.test_notify", "kind": "refresh", "label": "Test: Notify" },
+    { "id": "action.test_generate_kickoff_doc", "kind": "refresh", "label": "Test: Generate Kickoff PDF" },
+    { "id": "action.test_create_kickoff_task", "kind": "refresh", "label": "Test: Create Kickoff Task" },
+    { "id": "action.project_mark_kickoff_created", "kind": "update_record", "label": "Mark Kickoff Created", "patch": { "project.kickoff_created": true }, "entity_id": "entity.project" }
+  ],
+
+  "views": [
+    {
+      "id": "project.list",
+      "kind": "list",
+      "entity": "entity.project",
+      "header": {
+        "search": {
+          "enabled": true,
+          "placeholder": "Search projects...",
+          "fields": [
+            "project.name",
+            "project.code",
+            "project.description",
+            "project.client",
+            "project.owner"
+          ]
+        },
+        "primary_actions": [
+          { "action_id": "action.project_new" }
+        ],
+        "bulk_actions": [
+          { "action_id": "action.project_bulk_set_not_started" },
+          { "action_id": "action.project_bulk_set_in_progress" },
+          { "action_id": "action.project_bulk_set_blocked" },
+          { "action_id": "action.project_bulk_set_completed" }
+        ]
+      },
+      "columns": [
+        { "label": "Project", "field_id": "project.name" },
+        { "label": "Code", "field_id": "project.code" },
+        { "label": "Status", "field_id": "project.status" },
+        { "label": "Priority", "field_id": "project.priority" },
+        { "label": "Owner", "field_id": "project.owner" },
+        { "label": "Client", "field_id": "project.client" },
+        { "label": "Start", "field_id": "project.start_date" },
+        { "label": "End", "field_id": "project.end_date" }
+      ],
+      "open_record": { "to": "page:project.form_page", "param": "record" }
+    },
+
+    {
+      "id": "project.kanban",
+      "kind": "kanban",
+      "entity": "entity.project",
+      "card": {
+        "title_field": "project.name",
+        "subtitle_fields": ["project.code", "project.client"],
+        "badge_fields": ["project.status", "project.priority", "project.tags"]
+      }
+    },
+
+    {
+      "id": "project.graph",
+      "kind": "graph",
+      "entity": "entity.project",
+      "default": { "type": "bar", "group_by": "project.status", "measure": "count" }
+    },
+
+    {
+      "id": "project.form",
+      "kind": "form",
+      "entity": "entity.project",
+      "header": {
+        "auto_save": true,
+        "save_mode": "top",
+        "title_field": "project.name",
+        "statusbar": { "field_id": "project.status" },
+        "primary_actions": [
+          { "action_id": "action.project_set_not_started" },
+          { "action_id": "action.project_set_in_progress" },
+          { "action_id": "action.project_set_blocked" },
+          { "action_id": "action.project_set_completed" }
+        ],
+        "secondary_actions": [
+          { "action_id": "action.test_notify" },
+          { "action_id": "action.test_generate_kickoff_doc" },
+          { "action_id": "action.test_create_kickoff_task" },
+          { "action_id": "action.refresh" }
+        ],
+        "auto_save_debounce_ms": 750,
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "details",
+          "tabs": [
+            { "id": "details", "label": "Details", "sections": ["details"] },
+            { "id": "timeline", "label": "Timeline", "sections": ["timeline"] },
+            { "id": "budget", "label": "Budget", "sections": ["budget"] },
+            { "id": "notes", "label": "Notes", "sections": ["notes"] }
+          ]
+        }
+      },
+      "sections": [
+        {
+          "id": "details",
+          "title": "Details",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "project.name",
+            "project.code",
+            "project.priority",
+            "project.priority_reason",
+            "project.owner",
+            "project.client_contact_id",
+            "project.client",
+            "project.tags",
+            "project.description",
+            "project.kickoff_created"
+          ]
+        },
+        {
+          "id": "timeline",
+          "title": "Timeline",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "project.start_date",
+            "project.end_date",
+            "project.progress"
+          ]
+        },
+        {
+          "id": "budget",
+          "title": "Budget",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "project.budget"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": ["project.notes"]
+        }
+      ]
+    }
+  ],
+
+  "pages": [
+    {
+      "id": "project.list_page",
+      "title": "Projects",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.refresh" },
+          { "kind": "navigate", "label": "New", "target": "page:project.form_page" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.project",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:project.list" },
+                { "mode": "kanban", "target": "view:project.kanban", "default_group_by": "project.status" },
+                { "mode": "graph", "target": "view:project.graph" },
+                { "mode": "pivot", "target": "view:project.graph" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "project.form_page",
+      "title": "Project",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.project",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [{ "kind": "view", "target": "view:project.form" }]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "title": "Chatter",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.project",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

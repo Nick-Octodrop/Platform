@@ -1,0 +1,97 @@
+PATCH SPEC v1.1 (Implementation-Proof)
+
+Purpose
+The single, auditable, reversible way to modify any manifest. AI, users, and migrations all go through this format. Engine enforces every rule.
+
+Patch object (input)
+{
+  "patch_id": "uuid",
+  "target_module_id": "job_management",
+  "target_manifest_hash": "sha256:abcdef...",
+  "target_version": "1.0.0",              // optional (UI/reference only)
+  "mode": "preview" | "apply",
+  "reason": "string",
+  "operations": [ ... ],
+  "metadata": {
+    "generated_by": { "type": "ai" | "user", "id": "...", "name": "..." }
+  }
+}
+
+Canonical hash
+- Engine computes sha256 of canonical JSON (deterministic serialization: sorted keys, stable ordering, no whitespace).
+- Apply fails if target_manifest_hash doesn’t match current manifest (optimistic concurrency).
+
+Allowed operations
+- RFC6902 subset: add, remove, replace, move, copy, test
+- Macros (accepted but normalized before storage): add_field (v1), others later (add_section, add_transition, add_block)
+
+Macro: add_field (AI-friendly)
+{
+  "op": "add_field",
+  "entity_id": "entity.job",
+  "after_field_id": "job.description",
+  "field": { "id": "job.priority", ... }
+}
+- Engine expands to canonical RFC6902 ops with resolved indices.
+
+Path conventions (selector syntax)
+- Base: JSON Pointer (RFC6901)
+- Extension: selector segments using @[id=...]
+  /entities/@[id=entity.job]/fields/@[id=job.status]/options
+  /views/@[id=view.job_form]/sections/@[id=section.tasks]
+Rules:
+- Incoming patches MUST use selectors for arrays (no index-based paths).
+- Index paths are allowed only in “compiled patches” produced by the engine (internal), never by AI/humans.
+
+Execution stages (must run in order)
+1) Syntax & schema: JSON valid, ops allowed, values conform
+2) Hash check: target_manifest_hash must match current
+3) Reference resolution: all @[id=...] resolve; refs exist
+4) Semantic checks:
+   - no duplicate IDs
+   - no cycles introduced (workflows/events/deps)
+   - Condition DSL parses; Expression DSL parses
+   - type compatibility checks (breaking changes flagged as high impact)
+5) Security checks:
+   - Protected paths denied or role-gated (e.g., /module/id, /module/requires)
+6) Impact classification (engine-computed):
+   - low: labels/reorder/non-critical edits
+   - medium: add field/action/query/view
+   - high: remove/rename fields, workflow transitions, dependency changes
+7) Simulation (preview mode):
+   - dry-run apply in memory
+   - compile plans
+   - return diff + impact + errors/warnings
+8) Apply (apply mode):
+   - atomically store new manifest snapshot
+   - bump version (engine-assigned)
+   - write audit record
+
+Rollback & history
+- Engine MUST store full pre-apply manifest snapshot (primary rollback).
+- Rollback = restore previous snapshot (atomic).
+- Optional: generate inverse patch for “undo” UX; snapshot remains source-of-truth.
+
+Audit storage (recommended)
+patches(
+  patch_id uuid PK,
+  module_id text,
+  target_hash text,
+  from_version text,
+  to_version text,
+  mode text,
+  applied_at timestamptz,
+  applied_by jsonb,
+  reason text,
+  operations jsonb,
+  normalized_ops jsonb,
+  impact text,
+  status text,              // previewed|applied|rejected|rolled_back
+  snapshot_before_ref text,
+  snapshot_after_ref text
+)
+
+AI generation rules
+- AI outputs patches in mode=preview by default.
+- Must include reason, use @[id=...] selectors, prefer macros.
+- Engine rejects patches missing hash, using array indices, or touching protected paths without privilege.

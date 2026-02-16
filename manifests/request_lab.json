@@ -1,0 +1,719 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "module_dc8085",
+    "name": "Request Lab",
+    "version": "1.0.0",
+    "description": "Odoo-style test app: list -> form -> toolbar + statusbar + tabs + chatter + autosave"
+  },
+  "app": {
+    "nav": [
+      {
+        "group": "Request Lab",
+        "items": [
+          {
+            "to": "page:req.list_page",
+            "label": "Requests"
+          },
+          {
+            "to": "page:person.list_page",
+            "label": "People"
+          }
+        ]
+      }
+    ],
+    "home": "page:req.list_page",
+    "defaults": {
+      "entity_form_page": "page:req.form_page",
+      "entity_home_page": "page:req.list_page",
+      "entities": {
+        "entity.req": {
+          "entity_form_page": "page:req.form_page",
+          "entity_home_page": "page:req.list_page"
+        },
+        "entity.person": {
+          "entity_form_page": "page:person.form_page",
+          "entity_home_page": "page:person.list_page"
+        }
+      }
+    }
+  },
+  "pages": [
+    {
+      "id": "req.list_page",
+      "title": "Requests",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view",
+              "target": "view:req.list"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "req.form_page",
+      "title": "Request",
+      "header": {
+        "variant": "none"
+      },
+      "layout": "single",
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.req",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:req.form"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "title": "Chatter",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.req",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "person.list_page",
+      "title": "People",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view",
+              "target": "view:person.list"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "person.form_page",
+      "title": "Person",
+      "header": {
+        "variant": "none"
+      },
+      "layout": "single",
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.person",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:person.form"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "title": "Chatter",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.person",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "req.list",
+      "kind": "list",
+      "entity": "entity.req",
+      "header": {
+        "search": {
+          "fields": [
+            "req.title",
+            "req.status",
+            "req.summary"
+          ],
+          "enabled": true,
+          "placeholder": "Search requests..."
+        },
+        "filters": [
+          {
+            "id": "open",
+            "label": "Open",
+            "domain": {
+              "op": "in",
+              "field": "req.status",
+              "value": [
+                "new",
+                "in_progress",
+                "submitted"
+              ]
+            }
+          },
+          {
+            "id": "approved",
+            "label": "Approved",
+            "domain": {
+              "op": "eq",
+              "field": "req.status",
+              "value": "approved"
+            }
+          },
+          {
+            "id": "cancelled",
+            "label": "Cancelled",
+            "domain": {
+              "op": "eq",
+              "field": "req.status",
+              "value": "cancelled"
+            }
+          }
+        ],
+        "primary_actions": [
+          {
+            "action_id": "action.req_new"
+          }
+        ]
+      },
+      "columns": [
+        {
+          "label": "Title",
+          "field_id": "req.title"
+        },
+        {
+          "label": "Status",
+          "field_id": "req.status"
+        },
+        {
+          "label": "Owner",
+          "field_id": "req.owner_id"
+        }
+      ],
+      "open_record": {
+        "to": "page:req.form_page",
+        "param": "record"
+      }
+    },
+    {
+      "id": "req.form",
+      "kind": "form",
+      "entity": "entity.req",
+      "header": {
+        "auto_save": true,
+        "save_mode": "top",
+        "auto_save_debounce_ms": 750,
+        "primary_actions": [
+          {
+            "action_id": "action.req_start"
+          },
+          {
+            "action_id": "action.req_submit"
+          },
+          {
+            "action_id": "action.req_approve"
+          },
+          {
+            "action_id": "action.req_cancel"
+          }
+        ],
+        "statusbar": {
+          "field_id": "req.status"
+        },
+        "tabs": {
+          "default_tab": "details",
+          "tabs": [
+            {
+              "id": "details",
+              "label": "Details",
+              "sections": ["main"]
+            },
+            {
+              "id": "approval",
+              "label": "Approval",
+              "sections": ["approval"]
+            }
+          ]
+        }
+      },
+      "sections": [
+        {
+          "id": "main",
+          "title": "Request",
+          "fields": [
+            "req.title",
+            "req.owner_id",
+            "req.summary",
+            "req.target_date"
+          ],
+          "layout": "columns",
+          "columns": 2
+        },
+        {
+          "id": "approval",
+          "title": "Approval",
+          "fields": [
+            "req.approver_note"
+          ],
+          "layout": "columns",
+          "columns": 2
+        }
+      ]
+    },
+    {
+      "id": "person.list",
+      "kind": "list",
+      "entity": "entity.person",
+      "header": {
+        "search": {
+          "fields": [
+            "person.full_name",
+            "person.email"
+          ],
+          "enabled": true,
+          "placeholder": "Search people..."
+        },
+        "primary_actions": [
+          {
+            "action_id": "action.person_new"
+          }
+        ]
+      },
+      "columns": [
+        {
+          "label": "Name",
+          "field_id": "person.full_name"
+        },
+        {
+          "label": "Email",
+          "field_id": "person.email"
+        }
+      ],
+      "open_record": {
+        "to": "page:person.form_page",
+        "param": "record"
+      }
+    },
+    {
+      "id": "person.form",
+      "kind": "form",
+      "entity": "entity.person",
+      "header": {
+        "auto_save": true,
+        "save_mode": "top",
+        "auto_save_debounce_ms": 750
+      },
+      "sections": [
+        {
+          "id": "main",
+          "title": "Person",
+          "fields": [
+            "person.full_name",
+            "person.email"
+          ]
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "action.req_new",
+      "kind": "open_form",
+      "label": "New",
+      "target": "req.form"
+    },
+    {
+      "id": "action.req_start",
+      "kind": "update_record",
+      "label": "Start",
+      "patch": {
+        "req.status": "in_progress"
+      },
+      "entity_id": "entity.req",
+      "enabled_when": {
+        "op": "eq",
+        "field": "req.status",
+        "value": "new"
+      }
+    },
+    {
+      "id": "action.req_submit",
+      "kind": "update_record",
+      "label": "Submit",
+      "patch": {
+        "req.status": "submitted"
+      },
+      "confirm": {
+        "body": "Submit this request for approval?",
+        "title": "Submit request"
+      },
+      "entity_id": "entity.req",
+      "enabled_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "eq",
+            "field": "req.status",
+            "value": "in_progress"
+          },
+          {
+            "op": "exists",
+            "field": "req.summary"
+          },
+          {
+            "op": "exists",
+            "field": "req.owner_id"
+          }
+        ]
+      }
+    },
+    {
+      "id": "action.req_approve",
+      "kind": "update_record",
+      "label": "Approve",
+      "patch": {
+        "req.status": "approved"
+      },
+      "confirm": {
+        "body": "Approve this request? (Approver note is required.)",
+        "title": "Approve request"
+      },
+      "entity_id": "entity.req",
+      "enabled_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "eq",
+            "field": "req.status",
+            "value": "submitted"
+          },
+          {
+            "op": "exists",
+            "field": "req.approver_note"
+          }
+        ]
+      }
+    },
+    {
+      "id": "action.req_cancel",
+      "kind": "update_record",
+      "label": "Cancel",
+      "patch": {
+        "req.status": "cancelled"
+      },
+      "confirm": {
+        "body": "Cancel this request?",
+        "title": "Cancel request"
+      },
+      "entity_id": "entity.req",
+      "enabled_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "neq",
+            "field": "req.status",
+            "value": "approved"
+          },
+          {
+            "op": "neq",
+            "field": "req.status",
+            "value": "cancelled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "action.person_new",
+      "kind": "open_form",
+      "label": "New Person",
+      "target": "person.form"
+    }
+  ],
+  "queries": {},
+  "entities": [
+    {
+      "id": "entity.person",
+      "label": "Person",
+      "fields": [
+        {
+          "id": "person.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "person.full_name",
+          "type": "string",
+          "label": "Full name",
+          "required": true
+        },
+        {
+          "id": "person.email",
+          "type": "string",
+          "label": "Email"
+        }
+      ],
+      "display_field": "person.full_name"
+    },
+    {
+      "id": "entity.req",
+      "label": "Request",
+      "fields": [
+        {
+          "id": "req.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "req.title",
+          "type": "string",
+          "label": "Title",
+          "required": true
+        },
+        {
+          "id": "req.status",
+          "ui": {
+            "widget": "steps"
+          },
+          "type": "enum",
+          "label": "Status",
+          "default": "new",
+          "options": [
+            {
+              "label": "New",
+              "value": "new"
+            },
+            {
+              "label": "In Progress",
+              "value": "in_progress"
+            },
+            {
+              "label": "Submitted",
+              "value": "submitted"
+            },
+            {
+              "label": "Approved",
+              "value": "approved"
+            },
+            {
+              "label": "Cancelled",
+              "value": "cancelled"
+            }
+          ],
+          "required": true
+        },
+        {
+          "id": "req.summary",
+          "type": "text",
+          "label": "Summary",
+          "disabled_when": {
+            "op": "in",
+            "field": "req.status",
+            "value": [
+              "approved",
+              "cancelled"
+            ]
+          },
+          "required_when": {
+            "op": "in",
+            "field": "req.status",
+            "value": [
+              "in_progress",
+              "submitted",
+              "approved"
+            ]
+          }
+        },
+        {
+          "id": "req.owner_id",
+          "type": "lookup",
+          "label": "Owner",
+          "entity": "entity.person",
+          "disabled_when": {
+            "op": "in",
+            "field": "req.status",
+            "value": [
+              "approved",
+              "cancelled"
+            ]
+          },
+          "display_field": "person.full_name",
+          "required_when": {
+            "op": "in",
+            "field": "req.status",
+            "value": [
+              "in_progress",
+              "submitted",
+              "approved"
+            ]
+          }
+        },
+        {
+          "id": "req.target_date",
+          "type": "date",
+          "label": "Target date",
+          "required_when": {
+            "op": "eq",
+            "field": "req.status",
+            "value": "submitted"
+          }
+        },
+        {
+          "id": "req.approver_note",
+          "type": "text",
+          "label": "Approver note",
+          "visible_when": {
+            "op": "in",
+            "field": "req.status",
+            "value": [
+              "submitted",
+              "approved"
+            ]
+          },
+          "required_when": {
+            "op": "eq",
+            "field": "req.status",
+            "value": "submitted"
+          }
+        }
+      ],
+      "display_field": "req.title"
+    }
+  ],
+  "relations": [
+    {
+      "to": "person.id",
+      "from": "req.owner_id",
+      "label_field": "person.full_name"
+    }
+  ],
+  "workflows": [
+    {
+      "id": "workflow.req",
+      "entity": "entity.req",
+      "states": [
+        {
+          "id": "new",
+          "label": "New"
+        },
+        {
+          "id": "in_progress",
+          "label": "In Progress"
+        },
+        {
+          "id": "submitted",
+          "label": "Submitted"
+        },
+        {
+          "id": "approved",
+          "label": "Approved"
+        },
+        {
+          "id": "cancelled",
+          "label": "Cancelled"
+        }
+      ],
+      "transitions": [
+        {
+          "to": "in_progress",
+          "from": "new",
+          "label": "Start"
+        },
+        {
+          "to": "submitted",
+          "from": "in_progress",
+          "label": "Submit"
+        },
+        {
+          "to": "approved",
+          "from": "submitted",
+          "label": "Approve"
+        },
+        {
+          "to": "cancelled",
+          "from": "new",
+          "label": "Cancel"
+        },
+        {
+          "to": "cancelled",
+          "from": "in_progress",
+          "label": "Cancel"
+        },
+        {
+          "to": "cancelled",
+          "from": "submitted",
+          "label": "Cancel"
+        }
+      ],
+      "status_field": "req.status"
+    }
+  ],
+  "interfaces": {}
+}

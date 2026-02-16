@@ -1,0 +1,43 @@
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.venv/
+venv/
+env/
+
+# Node/Vite
+node_modules/
+web/node_modules/
+web/dist/
+web/.vite/
+
+# Environment/secrets
+.env
+.env.*
+!.env.example
+app/.env
+web/.env
+
+# Local data/artifacts
+db-migration/
+*.dump
+*.sql.gz
+perf_results.log
+
+# Runtime/temp files
+*.log
+*.tmp
+*.swp

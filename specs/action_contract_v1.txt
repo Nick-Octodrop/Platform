@@ -1,0 +1,91 @@
+ACTION CONTRACT v1 (Canonical)
+
+Purpose
+Actions are the ONLY way to mutate operational state (records) or trigger cross-module behavior. Actions are declared in manifests and executed by the engine with strict governance.
+
+Canonical record_ref (locked)
+"record_ref": { "entity": "entity.job", "id": { "var": "job.id" } }
+
+Allowed action types (bounded enum)
+1) update_record   - update existing record fields
+2) create_record   - create a new record
+3) call_action     - invoke another action (same or cross-module)
+4) publish_event   - emit an event
+5) run_query       - read-only query execution (optional; safe)
+
+Action declaration schema (manifest)
+{
+  "id": "action.assign_tech",
+  "label": "Assign Technician",
+  "description": "Assign a technician to a job",
+  "type": "update_record",
+  "params_schema": { ... },
+  "permissions": {
+    "roles": ["manager"],
+    "condition": null     // Condition DSL (optional)
+  },
+  "effect": { ... },
+  "emits_events": [ ... ] // optional sugar
+}
+
+Effect schemas
+
+A) update_record
+{
+  "record_ref": { "entity": "entity.job", "id": { "var": "job.id" } },
+  "changes": {
+    "job.assigned_tech": { "var": "tech_id" }
+  }
+}
+
+B) create_record
+{
+  "entity": "entity.job",
+  "values": {
+    "job.title": { "var": "title" },
+    "job.status": { "literal": "new" }
+  },
+  "returns": { "as": "created_job", "fields": ["job.id", "job.number"] }
+}
+
+C) call_action
+{
+  "action_ref": "documents.action.generate",
+  "params": {
+    "template_id": { "var": "template_id" },
+    "record_ref": { "entity": "entity.job", "id": { "var": "job.id" } },
+    "output_format": { "literal": "pdf" }
+  },
+  "returns": { "as": "doc_result" }
+}
+
+D) publish_event
+{
+  "name": "job.scheduled",
+  "payload": {
+    "job_id": { "var": "job.id" },
+    "start": { "var": "job.scheduled_start" }
+  }
+}
+
+E) run_query (optional)
+{
+  "query_ref": "job_management.query.job_tasks_for_job",
+  "params": { "job_id": { "var": "job.id" } },
+  "returns": { "as": "tasks" }
+}
+
+Execution semantics (engine “law”)
+- Validation: params_schema + var resolution before execution
+- Permissions: roles then condition then record-level access (future slot)
+- Atomicity:
+  - DB writes in transaction
+  - publish_event emitted after commit (outbox recommended)
+  - external side effects triggered after commit via worker
+- Audit: log (action_id, actor, params, manifest_version/hash, result, timestamps, affected record refs)
+
+Cross-module governance
+- A module must declare:
+  - interfaces.exposed_actions
+  - interfaces.consumed_actions
+- Engine rejects call_action if not declared (unless admin/dev mode)
