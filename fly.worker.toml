@@ -1,0 +1,8 @@
+app = "octodrop-platform-worker"
+primary_region = "syd"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[processes]
+  app = "python -m app.worker"

@@ -154,6 +154,12 @@ _LOCAL_CORS_ORIGINS = {
     "http://127.0.0.1:3000",
 }
 _LOCAL_CORS_REGEX = re.compile(r"^http://(localhost|127\.0\.0\.1):\d+$")
+_EXTRA_CORS_ORIGINS = {
+    origin.strip().rstrip("/")
+    for origin in os.getenv("OCTO_CORS_ORIGINS", "").split(",")
+    if origin.strip()
+}
+_CORS_ORIGINS = _LOCAL_CORS_ORIGINS | _EXTRA_CORS_ORIGINS
 
 
 @app.middleware("http")
@@ -163,7 +169,8 @@ async def local_cors_fallback_middleware(request: Request, call_next):
         response = JSONResponse({}, status_code=200)
     else:
         response = await call_next(request)
-    if origin and (origin in _LOCAL_CORS_ORIGINS or _LOCAL_CORS_REGEX.match(origin)):
+    normalized_origin = origin.rstrip("/") if isinstance(origin, str) else origin
+    if normalized_origin and (normalized_origin in _CORS_ORIGINS or _LOCAL_CORS_REGEX.match(normalized_origin)):
         response.headers.setdefault("Access-Control-Allow-Origin", origin)
         response.headers.setdefault("Access-Control-Allow-Credentials", "true")
         response.headers.setdefault("Access-Control-Allow-Headers", "*")
@@ -617,14 +624,7 @@ class ActorContextMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=sorted(_CORS_ORIGINS),
     allow_origin_regex=r"http://localhost:\d+|http://127\.0\.0\.1:\d+",
     allow_credentials=True,
     allow_methods=["*"],

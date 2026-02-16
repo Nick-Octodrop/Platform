@@ -165,3 +165,55 @@ Deployments still run via Git + CLI; no mandatory VS Code plugin.
 
 
 
+# 1) force non-Depot builds for this session
+$env:FLY_NO_DEPOT="1"
+
+# 2) set secrets one-by-one (safer)
+flyctl secrets set USE_DB=1 -a octodrop-platform-worker
+flyctl secrets set SUPABASE_URL=https://tjgbrpnzwgloczszjnbt.supabase.co -a octodrop-platform-worker
+flyctl secrets set SUPABASE_JWT_AUD=authenticated -a octodrop-platform-worker
+flyctl secrets set SUPABASE_ANON_KEY="<SUPABASE_ANON_KEY>" -a octodrop-platform-worker
+flyctl secrets set SUPABASE_SERVICE_ROLE_KEY="<SUPABASE_SERVICE_ROLE_KEY>" -a octodrop-platform-worker
+flyctl secrets set SUPABASE_DB_URL="<SUPABASE_DB_URL>" -a octodrop-platform-worker
+flyctl secrets set SUPABASE_STORAGE_BUCKET_ATTACHMENTS=attachments -a octodrop-platform-worker
+flyctl secrets set SUPABASE_STORAGE_BUCKET_BRANDING=branding -a octodrop-platform-worker
+flyctl secrets set OPENAI_API_KEY="<OPENAI_API_KEY>" -a octodrop-platform-worker
+flyctl secrets set OPENAI_MODEL=gpt-4o-mini -a octodrop-platform-worker
+
+
+
+flyctl secrets set WORKER_POLL_MS=1000 -a octodrop-platform-worker
+flyctl secrets set WORKER_BATCH=5 -a octodrop-platform-worker
+flyctl secrets set WORKER_ORG_ID="<WORKER_ORG_ID>" -a octodrop-platform-worker
+
+
+flyctl secrets set SUPABASE_DB_URL="<SUPABASE_DB_URL_ENCODED_SSL>" -a octodrop-platform-api
+flyctl secrets set SUPABASE_DB_URL="<SUPABASE_DB_URL_ENCODED_SSL>" -a octodrop-platform-worker
+
+
+cd "C:\Users\nicwi\Documents\My Projects\OCTO"
+git add -A
+git commit -m "api: <change>"
+git push
+flyctl deploy -a octodrop-platform-api
+
+
+cd "C:\Users\nicwi\Documents\My Projects\OCTO"
+git add -A
+git commit -m "worker: <change>"
+git push
+flyctl deploy -c fly.worker.toml -a octodrop-platform-worker
+
+
+flyctl deploy -a octodrop-platform-api
+flyctl deploy -c fly.worker.toml -a octodrop-platform-worker
+
+
+flyctl secrets set KEY=value -a octodrop-platform-api
+flyctl secrets set KEY=value -a octodrop-platform-worker
+
+
+flyctl status -a octodrop-platform-api
+flyctl status -a octodrop-platform-worker
+flyctl logs -a octodrop-platform-api
+flyctl logs -a octodrop-platform-worker

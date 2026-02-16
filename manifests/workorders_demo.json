@@ -1,6 +1,10 @@
 {
   "manifest_version": "1.3",
-  "module": { "id": "workorders", "name": "Work Orders", "version": "1.0.0" },
+  "module": {
+    "id": "workorders",
+    "name": "Work Orders",
+    "version": "1.0.0"
+  },
   "app": {
     "home": "page:workorder.list_page",
     "defaults": {
@@ -16,7 +20,12 @@
     "nav": [
       {
         "group": "Work Orders",
-        "items": [{ "label": "Work Orders", "to": "page:workorder.list_page" }]
+        "items": [
+          {
+            "label": "Work Orders",
+            "to": "page:workorder.list_page"
+          }
+        ]
       }
     ]
   },
@@ -25,7 +34,12 @@
       "id": "entity.workorder",
       "display_field": "workorder.number",
       "fields": [
-        { "id": "workorder.id", "type": "uuid", "label": "ID", "readonly": true },
+        {
+          "id": "workorder.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
         {
           "id": "workorder.number",
           "type": "string",
@@ -33,7 +47,12 @@
           "required": true,
           "help_text": "Unique job reference shown to customers and technicians."
         },
-        { "id": "workorder.title", "type": "string", "label": "Title", "required": true },
+        {
+          "id": "workorder.title",
+          "type": "string",
+          "label": "Title",
+          "required": true
+        },
         {
           "id": "workorder.status",
           "type": "enum",
@@ -41,13 +60,30 @@
           "required": true,
           "default": "new",
           "options": [
-            { "value": "new", "label": "New" },
-            { "value": "scheduled", "label": "Scheduled" },
-            { "value": "in_progress", "label": "In Progress" },
-            { "value": "quality_check", "label": "Quality Check" },
-            { "value": "on_hold", "label": "On Hold" },
-            { "value": "done", "label": "Done" },
-            { "value": "cancelled", "label": "Cancelled" }
+            {
+              "value": "new",
+              "label": "New"
+            },
+            {
+              "value": "scheduled",
+              "label": "Scheduled"
+            },
+            {
+              "value": "in_progress",
+              "label": "In Progress"
+            },
+            {
+              "value": "on_hold",
+              "label": "On Hold"
+            },
+            {
+              "value": "done",
+              "label": "Done"
+            },
+            {
+              "value": "cancelled",
+              "label": "Cancelled"
+            }
           ]
         },
         {
@@ -57,10 +93,22 @@
           "required": true,
           "default": "normal",
           "options": [
-            { "value": "low", "label": "Low" },
-            { "value": "normal", "label": "Normal" },
-            { "value": "high", "label": "High" },
-            { "value": "urgent", "label": "Urgent" }
+            {
+              "value": "low",
+              "label": "Low"
+            },
+            {
+              "value": "normal",
+              "label": "Normal"
+            },
+            {
+              "value": "high",
+              "label": "High"
+            },
+            {
+              "value": "urgent",
+              "label": "Urgent"
+            }
           ]
         },
         {
@@ -70,10 +118,22 @@
           "required": true,
           "default": "installation",
           "options": [
-            { "value": "installation", "label": "Installation" },
-            { "value": "repair", "label": "Repair" },
-            { "value": "maintenance", "label": "Maintenance" },
-            { "value": "inspection", "label": "Inspection" }
+            {
+              "value": "installation",
+              "label": "Installation"
+            },
+            {
+              "value": "repair",
+              "label": "Repair"
+            },
+            {
+              "value": "maintenance",
+              "label": "Maintenance"
+            },
+            {
+              "value": "inspection",
+              "label": "Inspection"
+            }
           ]
         },
         {
@@ -93,21 +153,41 @@
           "display_field": "contact.display_name",
           "help_text": "Technician responsible for execution."
         },
-        { "id": "workorder.scheduled_start", "type": "datetime", "label": "Scheduled Start" },
-        { "id": "workorder.scheduled_end", "type": "datetime", "label": "Scheduled End" },
-        { "id": "workorder.completed_at", "type": "datetime", "label": "Completed At" },
         {
-          "id": "workorder.qc_notes",
-          "type": "text",
-          "label": "QC Notes",
-          "required_when": { "op": "eq", "field": "workorder.status", "value": "quality_check" },
-          "visible_when": { "op": "eq", "field": "workorder.status", "value": "quality_check" },
-          "help_text": "Required before moving this work order to Done."
+          "id": "workorder.scheduled_start",
+          "type": "datetime",
+          "label": "Scheduled Start"
         },
-        { "id": "workorder.site_name", "type": "string", "label": "Site Name" },
-        { "id": "workorder.site_address", "type": "text", "label": "Site Address" },
-        { "id": "workorder.city", "type": "string", "label": "City" },
-        { "id": "workorder.country", "type": "string", "label": "Country" },
+        {
+          "id": "workorder.scheduled_end",
+          "type": "datetime",
+          "label": "Scheduled End"
+        },
+        {
+          "id": "workorder.completed_at",
+          "type": "datetime",
+          "label": "Completed At"
+        },
+        {
+          "id": "workorder.site_name",
+          "type": "string",
+          "label": "Site Name"
+        },
+        {
+          "id": "workorder.site_address",
+          "type": "text",
+          "label": "Site Address"
+        },
+        {
+          "id": "workorder.city",
+          "type": "string",
+          "label": "City"
+        },
+        {
+          "id": "workorder.country",
+          "type": "string",
+          "label": "Country"
+        },
         {
           "id": "workorder.labor_hours",
           "type": "number",
@@ -126,8 +206,16 @@
           "label": "Total Cost",
           "help_text": "For demo: enter total manually."
         },
-        { "id": "workorder.description", "type": "text", "label": "Scope of Work" },
-        { "id": "workorder.internal_notes", "type": "text", "label": "Internal Notes" },
+        {
+          "id": "workorder.description",
+          "type": "text",
+          "label": "Scope of Work"
+        },
+        {
+          "id": "workorder.internal_notes",
+          "type": "text",
+          "label": "Internal Notes"
+        },
         {
           "id": "workorder.tags",
           "type": "tags",
@@ -138,8 +226,16 @@
     }
   ],
   "relations": [
-    { "from": "workorder.contact_id", "to": "contact.id", "label_field": "contact.display_name" },
-    { "from": "workorder.assignee_id", "to": "contact.id", "label_field": "contact.display_name" }
+    {
+      "from": "workorder.contact_id",
+      "to": "contact.id",
+      "label_field": "contact.display_name"
+    },
+    {
+      "from": "workorder.assignee_id",
+      "to": "contact.id",
+      "label_field": "contact.display_name"
+    }
   ],
   "workflows": [
     {
@@ -147,18 +243,39 @@
       "entity": "entity.workorder",
       "status_field": "workorder.status",
       "states": [
-        { "id": "new", "label": "New" },
-        { "id": "scheduled", "label": "Scheduled" },
-        { "id": "in_progress", "label": "In Progress" },
-        { "id": "quality_check", "label": "Quality Check" },
-        { "id": "on_hold", "label": "On Hold" },
-        { "id": "done", "label": "Done" },
-        { "id": "cancelled", "label": "Cancelled" }
+        {
+          "id": "new",
+          "label": "New"
+        },
+        {
+          "id": "scheduled",
+          "label": "Scheduled"
+        },
+        {
+          "id": "in_progress",
+          "label": "In Progress"
+        },
+        {
+          "id": "on_hold",
+          "label": "On Hold"
+        },
+        {
+          "id": "done",
+          "label": "Done"
+        },
+        {
+          "id": "cancelled",
+          "label": "Cancelled"
+        }
       ]
     }
   ],
   "actions": [
-    { "id": "action.refresh", "kind": "refresh", "label": "Refresh" },
+    {
+      "id": "action.refresh",
+      "kind": "refresh",
+      "label": "Refresh"
+    },
     {
       "id": "action.workorder_new",
       "kind": "open_form",
@@ -170,180 +287,263 @@
       "kind": "update_record",
       "entity_id": "entity.workorder",
       "label": "Set: New",
-      "patch": { "workorder.status": "new" }
+      "patch": {
+        "workorder.status": "new"
+      }
     },
     {
       "id": "action.workorder_bulk_set_new",
       "kind": "bulk_update",
       "entity_id": "entity.workorder",
       "label": "Set: New",
-      "patch": { "workorder.status": "new" }
+      "patch": {
+        "workorder.status": "new"
+      }
     },
     {
       "id": "action.workorder_set_scheduled",
       "kind": "update_record",
       "entity_id": "entity.workorder",
       "label": "Set: Scheduled",
-      "patch": { "workorder.status": "scheduled" }
+      "patch": {
+        "workorder.status": "scheduled"
+      }
     },
     {
       "id": "action.workorder_bulk_set_scheduled",
       "kind": "bulk_update",
       "entity_id": "entity.workorder",
       "label": "Set: Scheduled",
-      "patch": { "workorder.status": "scheduled" }
+      "patch": {
+        "workorder.status": "scheduled"
+      }
     },
     {
       "id": "action.workorder_set_in_progress",
       "kind": "update_record",
       "entity_id": "entity.workorder",
       "label": "Set: In Progress",
-      "patch": { "workorder.status": "in_progress" }
+      "patch": {
+        "workorder.status": "in_progress"
+      }
     },
     {
       "id": "action.workorder_bulk_set_in_progress",
       "kind": "bulk_update",
       "entity_id": "entity.workorder",
       "label": "Set: In Progress",
-      "patch": { "workorder.status": "in_progress" }
+      "patch": {
+        "workorder.status": "in_progress"
+      }
     },
     {
       "id": "action.workorder_set_on_hold",
       "kind": "update_record",
       "entity_id": "entity.workorder",
       "label": "Set: On Hold",
-      "patch": { "workorder.status": "on_hold" }
-    },
-    {
-      "id": "action.workorder_set_quality_check",
-      "kind": "update_record",
-      "entity_id": "entity.workorder",
-      "label": "Set: Quality Check",
-      "patch": { "workorder.status": "quality_check" }
-    },
-    {
-      "id": "action.workorder_bulk_set_quality_check",
-      "kind": "bulk_update",
-      "entity_id": "entity.workorder",
-      "label": "Set: Quality Check",
-      "patch": { "workorder.status": "quality_check" }
+      "patch": {
+        "workorder.status": "on_hold"
+      }
     },
     {
       "id": "action.workorder_bulk_set_on_hold",
       "kind": "bulk_update",
       "entity_id": "entity.workorder",
       "label": "Set: On Hold",
-      "patch": { "workorder.status": "on_hold" }
+      "patch": {
+        "workorder.status": "on_hold"
+      }
     },
     {
       "id": "action.workorder_set_done",
       "kind": "update_record",
       "entity_id": "entity.workorder",
       "label": "Set: Done",
-      "patch": { "workorder.status": "done" }
+      "patch": {
+        "workorder.status": "done"
+      }
     },
     {
       "id": "action.workorder_bulk_set_done",
       "kind": "bulk_update",
       "entity_id": "entity.workorder",
       "label": "Set: Done",
-      "patch": { "workorder.status": "done" }
+      "patch": {
+        "workorder.status": "done"
+      }
     },
     {
       "id": "action.workorder_set_cancelled",
       "kind": "update_record",
       "entity_id": "entity.workorder",
       "label": "Set: Cancelled",
-      "patch": { "workorder.status": "cancelled" }
+      "patch": {
+        "workorder.status": "cancelled"
+      }
     },
     {
       "id": "action.workorder_bulk_set_cancelled",
       "kind": "bulk_update",
       "entity_id": "entity.workorder",
       "label": "Set: Cancelled",
-      "patch": { "workorder.status": "cancelled" }
+      "patch": {
+        "workorder.status": "cancelled"
+      }
     },
     {
       "id": "action.mark_scheduled",
       "kind": "update_record",
       "label": "Schedule",
       "entity_id": "entity.workorder",
-      "patch": { "workorder.status": "scheduled" },
-      "visible_when": { "op": "eq", "field": "workorder.status", "value": "new" }
+      "patch": {
+        "workorder.status": "scheduled"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "workorder.status",
+        "value": "new"
+      }
     },
     {
       "id": "action.start_work",
       "kind": "update_record",
       "label": "Start Work",
       "entity_id": "entity.workorder",
-      "patch": { "workorder.status": "in_progress" },
-      "visible_when": { "op": "eq", "field": "workorder.status", "value": "scheduled" }
+      "patch": {
+        "workorder.status": "in_progress"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "workorder.status",
+        "value": "scheduled"
+      }
     },
     {
       "id": "action.put_on_hold",
       "kind": "update_record",
       "label": "Put On Hold",
       "entity_id": "entity.workorder",
-      "patch": { "workorder.status": "on_hold" },
-      "visible_when": { "op": "eq", "field": "workorder.status", "value": "in_progress" }
+      "patch": {
+        "workorder.status": "on_hold"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "workorder.status",
+        "value": "in_progress"
+      }
     },
     {
       "id": "action.resume_work",
       "kind": "update_record",
       "label": "Resume Work",
       "entity_id": "entity.workorder",
-      "patch": { "workorder.status": "in_progress" },
-      "visible_when": { "op": "eq", "field": "workorder.status", "value": "on_hold" }
+      "patch": {
+        "workorder.status": "in_progress"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "workorder.status",
+        "value": "on_hold"
+      }
     },
     {
       "id": "action.complete_work",
       "kind": "update_record",
       "label": "Complete",
       "entity_id": "entity.workorder",
-      "patch": { "workorder.status": "done" },
-      "visible_when": { "op": "eq", "field": "workorder.status", "value": "quality_check" }
-    },
-    {
-      "id": "action.request_qc",
-      "kind": "update_record",
-      "label": "Request QC",
-      "entity_id": "entity.workorder",
-      "patch": { "workorder.status": "quality_check" },
-      "visible_when": { "op": "eq", "field": "workorder.status", "value": "in_progress" }
+      "patch": {
+        "workorder.status": "done"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "workorder.status",
+        "value": "in_progress"
+      }
     },
     {
       "id": "action.reopen_work",
       "kind": "update_record",
       "label": "Reopen",
       "entity_id": "entity.workorder",
-      "patch": { "workorder.status": "in_progress" },
-      "visible_when": { "op": "eq", "field": "workorder.status", "value": "done" }
+      "patch": {
+        "workorder.status": "in_progress"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "workorder.status",
+        "value": "done"
+      }
     },
     {
       "id": "action.email_workorder",
       "kind": "refresh",
       "label": "Email Work Order",
-      "visible_when": { "op": "exists", "field": "workorder.number" }
+      "visible_when": {
+        "op": "exists",
+        "field": "workorder.number"
+      }
     },
     {
       "id": "action.generate_workorder_pdf",
       "kind": "refresh",
       "label": "Generate PDF",
-      "visible_when": { "op": "exists", "field": "workorder.number" }
+      "visible_when": {
+        "op": "exists",
+        "field": "workorder.number"
+      }
     }
   ],
   "triggers": [
-    { "id": "workorders.record.created", "event": "record.created", "entity_id": "entity.workorder" },
-    { "id": "workorders.record.updated", "event": "record.updated", "entity_id": "entity.workorder" },
-    { "id": "workorders.action.mark_scheduled", "event": "action.clicked", "action_id": "action.mark_scheduled" },
-    { "id": "workorders.action.start_work", "event": "action.clicked", "action_id": "action.start_work" },
-    { "id": "workorders.action.put_on_hold", "event": "action.clicked", "action_id": "action.put_on_hold" },
-    { "id": "workorders.action.resume_work", "event": "action.clicked", "action_id": "action.resume_work" },
-    { "id": "workorders.action.request_qc", "event": "action.clicked", "action_id": "action.request_qc" },
-    { "id": "workorders.action.complete_work", "event": "action.clicked", "action_id": "action.complete_work" },
-    { "id": "workorders.action.reopen_work", "event": "action.clicked", "action_id": "action.reopen_work" },
-    { "id": "workorders.action.email_workorder", "event": "action.clicked", "action_id": "action.email_workorder" },
-    { "id": "workorders.action.generate_workorder_pdf", "event": "action.clicked", "action_id": "action.generate_workorder_pdf" },
+    {
+      "id": "workorders.record.created",
+      "event": "record.created",
+      "entity_id": "entity.workorder"
+    },
+    {
+      "id": "workorders.record.updated",
+      "event": "record.updated",
+      "entity_id": "entity.workorder"
+    },
+    {
+      "id": "workorders.action.mark_scheduled",
+      "event": "action.clicked",
+      "action_id": "action.mark_scheduled"
+    },
+    {
+      "id": "workorders.action.start_work",
+      "event": "action.clicked",
+      "action_id": "action.start_work"
+    },
+    {
+      "id": "workorders.action.put_on_hold",
+      "event": "action.clicked",
+      "action_id": "action.put_on_hold"
+    },
+    {
+      "id": "workorders.action.resume_work",
+      "event": "action.clicked",
+      "action_id": "action.resume_work"
+    },
+    {
+      "id": "workorders.action.complete_work",
+      "event": "action.clicked",
+      "action_id": "action.complete_work"
+    },
+    {
+      "id": "workorders.action.reopen_work",
+      "event": "action.clicked",
+      "action_id": "action.reopen_work"
+    },
+    {
+      "id": "workorders.action.email_workorder",
+      "event": "action.clicked",
+      "action_id": "action.email_workorder"
+    },
+    {
+      "id": "workorders.action.generate_workorder_pdf",
+      "event": "action.clicked",
+      "action_id": "action.generate_workorder_pdf"
+    },
     {
       "id": "workorders.workflow.status_changed",
       "event": "workflow.status_changed",
@@ -357,19 +557,44 @@
       "entity": "entity.workorder",
       "kind": "list",
       "columns": [
-        { "field_id": "workorder.number" },
-        { "field_id": "workorder.title" },
-        { "field_id": "workorder.status" },
-        { "field_id": "workorder.priority" },
-        { "field_id": "workorder.type" },
-        { "field_id": "workorder.contact_id" },
-        { "field_id": "workorder.assignee_id" },
-        { "field_id": "workorder.scheduled_start" },
-        { "field_id": "workorder.total_cost" }
+        {
+          "field_id": "workorder.number"
+        },
+        {
+          "field_id": "workorder.title"
+        },
+        {
+          "field_id": "workorder.status"
+        },
+        {
+          "field_id": "workorder.priority"
+        },
+        {
+          "field_id": "workorder.type"
+        },
+        {
+          "field_id": "workorder.contact_id"
+        },
+        {
+          "field_id": "workorder.assignee_id"
+        },
+        {
+          "field_id": "workorder.scheduled_start"
+        },
+        {
+          "field_id": "workorder.total_cost"
+        }
       ],
-      "open_record": { "to": "page:workorder.form_page", "param": "record" },
+      "open_record": {
+        "to": "page:workorder.form_page",
+        "param": "record"
+      },
       "header": {
-        "primary_actions": [{ "action_id": "action.workorder_new" }],
+        "primary_actions": [
+          {
+            "action_id": "action.workorder_new"
+          }
+        ],
         "search": {
           "enabled": true,
           "placeholder": "Search work orders...",
@@ -385,19 +610,41 @@
           ]
         },
         "filters": [
-          { "id": "all", "label": "All", "domain": { "op": "exists", "field": "workorder.number" } },
-          { "id": "new", "label": "New", "domain": { "op": "eq", "field": "workorder.status", "value": "new" } },
+          {
+            "id": "all",
+            "label": "All",
+            "domain": {
+              "op": "exists",
+              "field": "workorder.number"
+            }
+          },
+          {
+            "id": "new",
+            "label": "New",
+            "domain": {
+              "op": "eq",
+              "field": "workorder.status",
+              "value": "new"
+            }
+          },
           {
             "id": "in_progress",
             "label": "In Progress",
-            "domain": { "op": "eq", "field": "workorder.status", "value": "in_progress" }
+            "domain": {
+              "op": "eq",
+              "field": "workorder.status",
+              "value": "in_progress"
+            }
           },
           {
-            "id": "quality_check",
-            "label": "Quality Check",
-            "domain": { "op": "eq", "field": "workorder.status", "value": "quality_check" }
-          },
-          { "id": "done", "label": "Done", "domain": { "op": "eq", "field": "workorder.status", "value": "done" } }
+            "id": "done",
+            "label": "Done",
+            "domain": {
+              "op": "eq",
+              "field": "workorder.status",
+              "value": "done"
+            }
+          }
         ]
       },
       "create_behavior": "open_form"
@@ -408,15 +655,26 @@
       "entity": "entity.workorder",
       "card": {
         "title_field": "workorder.number",
-        "subtitle_fields": ["workorder.title", "workorder.contact_id"],
-        "badge_fields": ["workorder.priority", "workorder.status", "workorder.tags"]
+        "subtitle_fields": [
+          "workorder.title",
+          "workorder.contact_id"
+        ],
+        "badge_fields": [
+          "workorder.priority",
+          "workorder.status",
+          "workorder.tags"
+        ]
       }
     },
     {
       "id": "workorder.graph",
       "kind": "graph",
       "entity": "entity.workorder",
-      "default": { "type": "bar", "group_by": "workorder.status", "measure": "count" }
+      "default": {
+        "type": "bar",
+        "group_by": "workorder.status",
+        "measure": "count"
+      }
     },
     {
       "id": "workorder.form",
@@ -452,7 +710,6 @@
             "workorder.scheduled_start",
             "workorder.scheduled_end",
             "workorder.completed_at",
-            "workorder.qc_notes",
             "workorder.tags"
           ]
         },
@@ -460,44 +717,114 @@
           "id": "site",
           "layout": "columns",
           "columns": 2,
-          "fields": ["workorder.site_name", "workorder.site_address", "workorder.city", "workorder.country"]
+          "fields": [
+            "workorder.site_name",
+            "workorder.site_address",
+            "workorder.city",
+            "workorder.country"
+          ]
         },
         {
           "id": "costs",
           "layout": "columns",
           "columns": 2,
-          "fields": ["workorder.labor_hours", "workorder.materials_cost", "workorder.total_cost"]
+          "fields": [
+            "workorder.labor_hours",
+            "workorder.materials_cost",
+            "workorder.total_cost"
+          ]
         },
-        { "id": "scope", "fields": ["workorder.description"] },
-        { "id": "notes", "fields": ["workorder.internal_notes"] }
+        {
+          "id": "scope",
+          "fields": [
+            "workorder.description"
+          ]
+        },
+        {
+          "id": "notes",
+          "fields": [
+            "workorder.internal_notes"
+          ]
+        }
       ],
       "header": {
         "title_field": "workorder.number",
         "primary_actions": [
-          { "action_id": "action.mark_scheduled" },
-          { "action_id": "action.start_work" },
-          { "action_id": "action.put_on_hold" },
-          { "action_id": "action.resume_work" },
-          { "action_id": "action.request_qc" },
-          { "action_id": "action.complete_work" },
-          { "action_id": "action.reopen_work" },
-          { "action_id": "action.email_workorder" },
-          { "action_id": "action.generate_workorder_pdf" }
+          {
+            "action_id": "action.mark_scheduled"
+          },
+          {
+            "action_id": "action.start_work"
+          },
+          {
+            "action_id": "action.put_on_hold"
+          },
+          {
+            "action_id": "action.resume_work"
+          },
+          {
+            "action_id": "action.complete_work"
+          },
+          {
+            "action_id": "action.reopen_work"
+          },
+          {
+            "action_id": "action.email_workorder"
+          },
+          {
+            "action_id": "action.generate_workorder_pdf"
+          }
         ],
-        "secondary_actions": [{ "action_id": "action.refresh" }],
+        "secondary_actions": [
+          {
+            "action_id": "action.refresh"
+          }
+        ],
         "save_mode": "top",
         "auto_save": true,
         "auto_save_debounce_ms": 750,
-        "statusbar": { "field_id": "workorder.status" },
+        "statusbar": {
+          "field_id": "workorder.status"
+        },
         "tabs": {
           "style": "lifted",
           "default_tab": "details",
           "tabs": [
-            { "id": "details", "label": "Details", "sections": ["main"] },
-            { "id": "site", "label": "Site", "sections": ["site"] },
-            { "id": "costs", "label": "Costs", "sections": ["costs"] },
-            { "id": "scope", "label": "Scope", "sections": ["scope"] },
-            { "id": "notes", "label": "Notes", "sections": ["notes"] }
+            {
+              "id": "details",
+              "label": "Details",
+              "sections": [
+                "main"
+              ]
+            },
+            {
+              "id": "site",
+              "label": "Site",
+              "sections": [
+                "site"
+              ]
+            },
+            {
+              "id": "costs",
+              "label": "Costs",
+              "sections": [
+                "costs"
+              ]
+            },
+            {
+              "id": "scope",
+              "label": "Scope",
+              "sections": [
+                "scope"
+              ]
+            },
+            {
+              "id": "notes",
+              "label": "Notes",
+              "sections": [
+                "notes"
+              ]
+            }
           ]
         }
       }
@@ -511,8 +838,14 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.refresh" },
-          { "kind": "navigate", "label": "New", "target": "page:workorder.form_page" }
+          {
+            "action_id": "action.refresh"
+          },
+          {
+            "kind": "navigate",
+            "label": "New",
+            "target": "page:workorder.form_page"
+          }
         ]
       },
       "content": [
@@ -525,10 +858,23 @@
               "entity_id": "entity.workorder",
               "default_mode": "list",
               "modes": [
-                { "mode": "list", "target": "view:workorder.list" },
-                { "mode": "kanban", "target": "view:workorder.kanban", "default_group_by": "workorder.status" },
-                { "mode": "graph", "target": "view:workorder.graph" },
-                { "mode": "pivot", "target": "view:workorder.graph" }
+                {
+                  "mode": "list",
+                  "target": "view:workorder.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:workorder.kanban",
+                  "default_group_by": "workorder.status"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:workorder.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:workorder.graph"
+                }
               ]
             }
           ]
@@ -539,7 +885,9 @@
       "id": "workorder.form_page",
       "title": "Work Order",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none"
+      },
       "content": [
         {
           "kind": "record",
@@ -557,7 +905,12 @@
                     {
                       "kind": "container",
                       "variant": "card",
-                      "content": [{ "kind": "view", "target": "view:workorder.form" }]
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:workorder.form"
+                        }
+                      ]
                     }
                   ]
                 },
