@@ -200,6 +200,14 @@ export default function AutomationEditorPage({ user }) {
     return meta.entities.slice().sort((a, b) => (a.label || a.id || "").localeCompare(b.label || b.id || ""));
   }, [meta.entities]);
 
+  const entityById = useMemo(() => {
+    const map = new Map();
+    for (const ent of entityOptions) {
+      if (ent?.id) map.set(ent.id, ent);
+    }
+    return map;
+  }, [entityOptions]);
+
   const memberOptions = useMemo(() => {
     if (!Array.isArray(meta.members)) return [];
     return meta.members.slice().sort((a, b) => (a.user_id || "").localeCompare(b.user_id || ""));
@@ -483,9 +491,135 @@ export default function AutomationEditorPage({ user }) {
                           </select>
                         </label>
                         <label className="form-control">
+                          <span className="label-text">Recipient source</span>
+                          <select
+                            className="select select-bordered"
+                            value={step.inputs?.to_mode || "manual"}
+                            onChange={(e) => updateStepInput(index, "to_mode", e.target.value)}
+                          >
+                            <option value="manual">Manual addresses</option>
+                            <option value="record_field">Record email field</option>
+                            <option value="lookup_field">Lookup email field</option>
+                            <option value="template">Template expression</option>
+                          </select>
+                        </label>
+                        <label className="form-control">
                           <span className="label-text">To (comma separated)</span>
                           <input className="input input-bordered" value={(step.inputs?.to || []).join(", ")} onChange={(e) => updateStepInput(index, "to", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
+                          <span className="label label-text-alt opacity-50">Always included as fallback recipients.</span>
                         </label>
+                        {(step.inputs?.to_mode || "manual") === "record_field" && (() => {
+                          const selectedEntity = step.inputs?.entity_id && step.inputs?.entity_id !== "{{trigger.entity_id}}"
+                            ? step.inputs.entity_id
+                            : null;
+                          const activeEntity = selectedEntity ? entityById.get(selectedEntity) : null;
+                          const fields = Array.isArray(activeEntity?.fields) ? activeEntity.fields : [];
+                          const emailish = fields.filter((f) => {
+                            const id = (f?.id || "").toLowerCase();
+                            const label = (f?.label || "").toLowerCase();
+                            return id.includes("email") || label.includes("email");
+                          });
+                          return (
+                            <label className="form-control md:col-span-2">
+                              <span className="label-text">Record email field</span>
+                              <select
+                                className="select select-bordered"
+                                value={step.inputs?.to_field_id || ""}
+                                onChange={(e) => updateStepInput(index, "to_field_id", e.target.value)}
+                              >
+                                <option value="">Select field…</option>
+                                {emailish.map((field) => (
+                                  <option key={field.id} value={field.id}>
+                                    {field.label || field.id}
+                                  </option>
+                                ))}
+                              </select>
+                              <span className="label label-text-alt opacity-50">Uses selected entity record value for this field.</span>
+                            </label>
+                          );
+                        })()}
+                        {(step.inputs?.to_mode || "manual") === "lookup_field" && (() => {
+                          const selectedEntity = step.inputs?.entity_id && step.inputs?.entity_id !== "{{trigger.entity_id}}"
+                            ? step.inputs.entity_id
+                            : null;
+                          const activeEntity = selectedEntity ? entityById.get(selectedEntity) : null;
+                          const fields = Array.isArray(activeEntity?.fields) ? activeEntity.fields : [];
+                          const lookupFields = fields.filter((f) => f?.type === "lookup");
+                          const chosenLookup = lookupFields.find((f) => f?.id === step.inputs?.to_lookup_field_id);
+                          const targetEntityId = step.inputs?.to_lookup_entity_id || chosenLookup?.entity;
+                          const targetEntity = targetEntityId ? entityById.get(targetEntityId) : null;
+                          const targetFields = Array.isArray(targetEntity?.fields) ? targetEntity.fields : [];
+                          const targetEmailish = targetFields.filter((f) => {
+                            const id = (f?.id || "").toLowerCase();
+                            const label = (f?.label || "").toLowerCase();
+                            return id.includes("email") || label.includes("email");
+                          });
+                          return (
+                            <>
+                              <label className="form-control">
+                                <span className="label-text">Lookup field</span>
+                                <select
+                                  className="select select-bordered"
+                                  value={step.inputs?.to_lookup_field_id || ""}
+                                  onChange={(e) => updateStepInput(index, "to_lookup_field_id", e.target.value)}
+                                >
+                                  <option value="">Select lookup field…</option>
+                                  {lookupFields.map((field) => (
+                                    <option key={field.id} value={field.id}>
+                                      {field.label || field.id}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="form-control md:col-span-2">
+                                <span className="label-text">Additional lookup fields (comma)</span>
+                                <input
+                                  className="input input-bordered"
+                                  value={(step.inputs?.to_lookup_field_ids || []).join(", ")}
+                                  onChange={(e) =>
+                                    updateStepInput(
+                                      index,
+                                      "to_lookup_field_ids",
+                                      e.target.value
+                                        .split(",")
+                                        .map((v) => v.trim())
+                                        .filter(Boolean)
+                                    )
+                                  }
+                                  placeholder="workorder.assignee_id, workorder.approver_id"
+                                />
+                                <span className="label label-text-alt opacity-50">Send to all selected lookup targets.</span>
+                              </label>
+                              <label className="form-control">
+                                <span className="label-text">Target email field</span>
+                                <select
+                                  className="select select-bordered"
+                                  value={step.inputs?.to_lookup_email_field || ""}
+                                  onChange={(e) => updateStepInput(index, "to_lookup_email_field", e.target.value)}
+                                >
+                                  <option value="">Auto-detect email</option>
+                                  {targetEmailish.map((field) => (
+                                    <option key={field.id} value={field.id}>
+                                      {field.label || field.id}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            </>
+                          );
+                        })()}
+                        {(step.inputs?.to_mode || "manual") === "template" && (
+                          <label className="form-control md:col-span-2">
+                            <span className="label-text">Recipient expression</span>
+                            <input
+                              className="input input-bordered"
+                              value={step.inputs?.to_expr || ""}
+                              onChange={(e) => updateStepInput(index, "to_expr", e.target.value)}
+                              placeholder="{{ record['workorder.contact_email'] }}, ops@octodrop.com"
+                            />
+                            <span className="label label-text-alt opacity-50">Rendered with Jinja context: record, trigger, branding.</span>
+                          </label>
+                        )}
                         <label className="form-control">
                           <span className="label-text">Subject (optional)</span>
                           <input className="input input-bordered" value={step.inputs?.subject || ""} onChange={(e) => updateStepInput(index, "subject", e.target.value)} />

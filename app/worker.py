@@ -239,6 +239,193 @@ def _resolve_inputs(inputs: dict | None, ctx: dict) -> dict:
     return {key: _resolve_value(val, ctx) for key, val in inputs.items()}
 
 
+def _coerce_list(value: object) -> list:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def _split_recipients(value: object) -> list[str]:
+    out: list[str] = []
+    for item in _coerce_list(value):
+        if item is None:
+            continue
+        if isinstance(item, str):
+            parts = [p.strip() for p in item.replace(";", ",").split(",")]
+            out.extend([p for p in parts if p])
+        else:
+            text = str(item).strip()
+            if text:
+                out.append(text)
+    return out
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for val in values:
+        key = val.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(val)
+    return out
+
+
+def _candidate_entity_ids(entity_id: str | None) -> list[str]:
+    if not isinstance(entity_id, str) or not entity_id:
+        return []
+    if entity_id.startswith("entity."):
+        return [entity_id, entity_id[7:]]
+    return [entity_id, f"entity.{entity_id}"]
+
+
+def _fetch_record_payload(entity_id: str | None, record_id: str | None) -> dict:
+    if not (isinstance(entity_id, str) and entity_id and isinstance(record_id, str) and record_id):
+        return {}
+    store = DbGenericRecordStore()
+    for candidate in _candidate_entity_ids(entity_id):
+        record = store.get(candidate, record_id)
+        if not isinstance(record, dict):
+            continue
+        data = record.get("record")
+        if isinstance(data, dict):
+            return data
+    return {}
+
+
+def _find_entity_def(entity_id: str | None) -> dict | None:
+    if not isinstance(entity_id, str) or not entity_id:
+        return None
+
+    class _RegistryProxy:
+        def list(self):
+            return app_main.registry.list()
+
+    for candidate in _candidate_entity_ids(entity_id):
+        found = _find_entity_def_in_registry(
+            _RegistryProxy(),
+            lambda module_id, manifest_hash: app_main.store.get_snapshot(module_id, manifest_hash),
+            candidate,
+        )
+        if isinstance(found, tuple) and len(found) >= 2 and isinstance(found[1], dict):
+            return found[1]
+    return None
+
+
+def _find_field_def(entity_def: dict | None, field_id: str | None) -> dict | None:
+    if not isinstance(entity_def, dict) or not isinstance(field_id, str) or not field_id:
+        return None
+    fields = entity_def.get("fields")
+    if not isinstance(fields, list):
+        return None
+    for field in fields:
+        if isinstance(field, dict) and field.get("id") == field_id:
+            return field
+    return None
+
+
+def _lookup_email_from_record(target_entity_id: str | None, target_record_id: str | None, email_field: str | None) -> list[str]:
+    target_data = _fetch_record_payload(target_entity_id, target_record_id)
+    if not target_data:
+        return []
+    candidates: list[str] = []
+    if isinstance(email_field, str) and email_field:
+        candidates.append(email_field)
+    if isinstance(target_entity_id, str) and "." in target_entity_id:
+        slug = target_entity_id.split(".")[-1]
+        candidates.extend(
+            [
+                f"{slug}.email",
+                f"{slug}.work_email",
+                f"{slug}.primary_email",
+            ]
+        )
+    candidates.extend(["email", "work_email", "primary_email"])
+    for field_id in candidates:
+        values = _split_recipients(target_data.get(field_id))
+        if values:
+            return values
+    return []
+
+
+def _resolve_recipients(inputs: dict, context: dict, record_data: dict, entity_id: str | None, entity_def: dict | None) -> list[str]:
+    recipients: list[str] = []
+    mode = inputs.get("to_mode")
+    if not isinstance(mode, str) or not mode:
+        mode = "manual"
+
+    if mode == "manual":
+        recipients.extend(_split_recipients(inputs.get("to")))
+
+    elif mode == "record_field":
+        field_ids = []
+        configured = inputs.get("to_field_ids")
+        if isinstance(configured, list):
+            field_ids = [f for f in configured if isinstance(f, str) and f]
+        single_field = inputs.get("to_field_id")
+        if isinstance(single_field, str) and single_field:
+            field_ids.append(single_field)
+        for field_id in field_ids:
+            recipients.extend(_split_recipients(record_data.get(field_id)))
+
+    elif mode == "lookup_field":
+        specs = inputs.get("to_lookup_specs")
+        lookup_specs: list[dict] = []
+        if isinstance(specs, list):
+            lookup_specs.extend([s for s in specs if isinstance(s, dict)])
+        else:
+            lookup_fields: list[str] = []
+            lookup_field = inputs.get("to_lookup_field_id")
+            if isinstance(lookup_field, str) and lookup_field:
+                lookup_fields.append(lookup_field)
+            multi_lookup_fields = inputs.get("to_lookup_field_ids")
+            if isinstance(multi_lookup_fields, list):
+                lookup_fields.extend([f for f in multi_lookup_fields if isinstance(f, str) and f])
+            elif isinstance(multi_lookup_fields, str):
+                lookup_fields.extend([f.strip() for f in multi_lookup_fields.split(",") if f.strip()])
+            lookup_fields = list(dict.fromkeys(lookup_fields))
+            for field_name in lookup_fields:
+                lookup_specs.append(
+                    {
+                        "lookup_field": field_name,
+                        "entity_id": inputs.get("to_lookup_entity_id"),
+                        "email_field": inputs.get("to_lookup_email_field"),
+                    }
+                )
+        for spec in lookup_specs:
+            lookup_field = spec.get("lookup_field")
+            if not isinstance(lookup_field, str) or not lookup_field:
+                continue
+            target_id = record_data.get(lookup_field)
+            if not isinstance(target_id, str) or not target_id:
+                continue
+            target_entity = spec.get("entity_id")
+            if not isinstance(target_entity, str) or not target_entity:
+                field_def = _find_field_def(entity_def, lookup_field)
+                maybe_target = field_def.get("entity") if isinstance(field_def, dict) else None
+                if isinstance(maybe_target, str) and maybe_target:
+                    target_entity = maybe_target
+            target_emails = _lookup_email_from_record(target_entity, target_id, spec.get("email_field"))
+            recipients.extend(target_emails)
+
+    elif mode == "template":
+        to_expr = inputs.get("to_expr")
+        if isinstance(to_expr, str) and to_expr.strip():
+            try:
+                rendered = render_template(to_expr, context, strict=True)
+                recipients.extend(_split_recipients(rendered))
+            except Exception:
+                pass
+
+    # Always include explicit manual addresses as additive fallback.
+    recipients.extend(_split_recipients(inputs.get("to")))
+    recipients = [item for item in recipients if "@" in item]
+    return _dedupe(recipients)
+
+
 def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: DbJobStore) -> dict:
     if action_id == "system.noop":
         return {"ok": True}
@@ -271,22 +458,38 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
             template = email_store.get_template(inputs.get("template_id"))
             if not template:
                 raise RuntimeError("Email template not found")
-        record_context = {}
-        if inputs.get("entity_id") and inputs.get("record_id"):
-            record_context = DbGenericRecordStore().get(inputs.get("entity_id"), inputs.get("record_id")) or {}
+        entity_id = inputs.get("entity_id") or _lookup_path(ctx, "trigger.entity_id")
+        record_id = inputs.get("record_id") or _lookup_path(ctx, "trigger.record_id")
+        if not isinstance(entity_id, str):
+            entity_id = None
+        if not isinstance(record_id, str):
+            record_id = None
+        record_data = _fetch_record_payload(entity_id, record_id)
+        entity_def = _find_entity_def(entity_id)
+        enriched_record = app_main._enrich_template_record(record_data, entity_def)
+        context = {
+            "record": enriched_record,
+            "entity_id": entity_id,
+            "trigger": ctx.get("trigger") or {},
+            **app_main._branding_context_for_org(get_org_id()),
+        }
         subject = inputs.get("subject") or (template.get("subject") if template else None)
         if not subject:
             raise RuntimeError("Email subject required")
-        context = {"record": record_context, "trigger": ctx.get("trigger") or {}}
+        if isinstance(subject, str) and "{{" in subject:
+            subject = render_template(subject, context, strict=True)
         body_html = inputs.get("body_html") or (template.get("body_html") if template else None)
         body_text = inputs.get("body_text") or (template.get("body_text") if template else None)
         if body_html:
             body_html = render_template(body_html, context, strict=True)
         if body_text:
             body_text = render_template(body_text, context, strict=True)
+        recipients = _resolve_recipients(inputs, context, enriched_record, entity_id, entity_def)
+        if not recipients:
+            raise RuntimeError("Email recipients not resolved")
         outbox = email_store.create_outbox(
             {
-                "to": inputs.get("to") or [],
+                "to": recipients,
                 "cc": inputs.get("cc") or [],
                 "bcc": inputs.get("bcc") or [],
                 "from_email": connection.get("config", {}).get("from_email"),
@@ -295,6 +498,7 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
                 "body_html": body_html,
                 "body_text": body_text,
                 "status": "queued",
+                "template_id": inputs.get("template_id"),
             }
         )
         job = job_store.enqueue(

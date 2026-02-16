@@ -8545,6 +8545,24 @@ async def automations_meta(request: Request) -> dict:
             ent_id = ent.get("id")
             if not isinstance(ent_id, str) or not ent_id:
                 continue
+            field_items: list[dict] = []
+            fields = ent.get("fields")
+            if isinstance(fields, list):
+                for field in fields:
+                    if not isinstance(field, dict):
+                        continue
+                    field_id = field.get("id")
+                    if not isinstance(field_id, str) or not field_id:
+                        continue
+                    field_items.append(
+                        {
+                            "id": field_id,
+                            "label": field.get("label") or field_id,
+                            "type": field.get("type"),
+                            "entity": field.get("entity"),
+                            "display_field": field.get("display_field"),
+                        }
+                    )
             entities.append(
                 {
                     "id": ent_id,
@@ -8552,6 +8570,7 @@ async def automations_meta(request: Request) -> dict:
                     "display_field": ent.get("display_field"),
                     "module_id": module_id,
                     "module_name": mod.get("name"),
+                    "fields": field_items,
                 }
             )
         actions = []
