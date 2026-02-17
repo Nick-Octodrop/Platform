@@ -267,3 +267,71 @@ def remove_workspace_member(workspace_id: str, user_id: str) -> bool:
         if row:
             invalidate_membership_cache(user_id)
         return bool(row)
+
+
+def create_workspace_invite(workspace_id: str, email: str, role: str, invited_by_user_id: str | None = None) -> dict:
+    normalized_email = email.strip().lower()
+    with get_conn() as conn:
+        row = fetch_one(
+            conn,
+            """
+            insert into workspace_invites (workspace_id, email, role, invited_by_user_id, status, created_at)
+            values (%s, %s, %s, %s, 'pending', now())
+            returning *
+            """,
+            [workspace_id, normalized_email, role, invited_by_user_id],
+            query_name="workspace_invites.insert",
+        )
+        return row or {
+            "workspace_id": workspace_id,
+            "email": normalized_email,
+            "role": role,
+            "status": "pending",
+        }
+
+
+def claim_workspace_invites_for_email(user_id: str, email: str) -> list[dict]:
+    normalized_email = email.strip().lower()
+    with get_conn() as conn:
+        invites = fetch_all(
+            conn,
+            """
+            select id, workspace_id, role
+            from workspace_invites
+            where lower(email)=lower(%s) and status='pending'
+            order by created_at asc
+            """,
+            [normalized_email],
+            query_name="workspace_invites.list_pending_by_email",
+        ) or []
+        claimed = []
+        for invite in invites:
+            workspace_id = invite.get("workspace_id")
+            role = invite.get("role") or "member"
+            member_row = fetch_one(
+                conn,
+                """
+                insert into workspace_members (workspace_id, user_id, role, created_at)
+                values (%s, %s, %s, now())
+                on conflict (workspace_id, user_id)
+                do update set role=excluded.role
+                returning workspace_id, user_id, role, created_at
+                """,
+                [workspace_id, user_id, role],
+                query_name="workspace_members.upsert_from_invite",
+            )
+            execute(
+                conn,
+                """
+                update workspace_invites
+                set status='accepted', accepted_at=now()
+                where id=%s
+                """,
+                [invite.get("id")],
+                query_name="workspace_invites.mark_accepted",
+            )
+            if member_row:
+                claimed.append(member_row)
+        if claimed:
+            invalidate_membership_cache(user_id)
+        return claimed

@@ -1,20 +1,35 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { apiFetch, getActiveWorkspaceId, setActiveWorkspaceId } from "../api";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { API_URL, apiFetch, getActiveWorkspaceId, getUiPrefs, setActiveWorkspaceId, setUiPrefs } from "../api";
+import { useToast } from "../components/Toast.jsx";
+import { applyBrandColors, setBrandColors } from "../theme/theme.js";
+import { supabase } from "../supabase.js";
 
 export default function SettingsWorkspacesPage() {
   const [context, setContext] = useState(null);
   const [workspaces, setWorkspaces] = useState([]);
+  const [workspacePrefs, setWorkspacePrefs] = useState({ logo_url: "", colors: { primary: "", secondary: "", accent: "" } });
+  const [logoUploading, setLogoUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeWorkspaceId, setActive] = useState(getActiveWorkspaceId());
+  const logoFileRef = useRef(null);
+  const { pushToast } = useToast();
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const res = await apiFetch("/access/context");
+      const [res, prefsRes] = await Promise.all([apiFetch("/access/context"), getUiPrefs()]);
       setContext(res || null);
       setWorkspaces(res?.workspaces || []);
+      setWorkspacePrefs({
+        logo_url: prefsRes?.workspace?.logo_url || "",
+        colors: {
+          primary: prefsRes?.workspace?.colors?.primary || "",
+          secondary: prefsRes?.workspace?.colors?.secondary || "",
+          accent: prefsRes?.workspace?.colors?.accent || "",
+        },
+      });
       if (!activeWorkspaceId && res?.actor?.workspace_id) {
         setActive(res.actor.workspace_id);
       }
@@ -43,6 +58,50 @@ export default function SettingsWorkspacesPage() {
     setActiveWorkspaceId(workspaceId);
     setActive(workspaceId);
     window.location.reload();
+  }
+
+  const canEditWorkspaceSettings = actor.platform_role === "superadmin" || actor.workspace_role === "admin";
+
+  async function saveWorkspacePrefs(next) {
+    setWorkspacePrefs(next);
+    try {
+      await setUiPrefs({ workspace: next });
+      if (next.colors) {
+        setBrandColors(next.colors);
+        applyBrandColors(next.colors);
+      }
+    } catch {
+      pushToast("error", "Failed to save workspace settings");
+    }
+  }
+
+  async function handleLogoFileChange(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setLogoUploading(true);
+    try {
+      const session = (await supabase.auth.getSession()).data.session;
+      const token = session?.access_token;
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`${API_URL}/prefs/ui/logo/upload`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.logo_url) {
+        throw new Error(data?.errors?.[0]?.message || "Logo upload failed");
+      }
+      const next = { ...workspacePrefs, logo_url: data.logo_url };
+      await saveWorkspacePrefs(next);
+      pushToast("success", "Logo uploaded");
+    } catch (err) {
+      pushToast("error", err?.message || "Logo upload failed");
+    } finally {
+      setLogoUploading(false);
+    }
   }
 
   return (
@@ -93,6 +152,93 @@ export default function SettingsWorkspacesPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="card bg-base-100 border border-base-300">
+        <div className="card-body">
+          <h2 className="card-title">Workspace Settings</h2>
+          <p className="text-sm opacity-70">Branding and color settings apply to the active workspace only.</p>
+          {!canEditWorkspaceSettings ? (
+            <div className="alert alert-warning mt-2">Only workspace admins can edit these settings.</div>
+          ) : (
+            <div className="space-y-4 mt-2">
+              <label className="form-control max-w-3xl">
+                <span className="label-text">Logo URL</span>
+                <input
+                  type="url"
+                  className="input input-bordered"
+                  placeholder="https://cdn.example.com/logo.png"
+                  value={workspacePrefs.logo_url || ""}
+                  onChange={(e) => saveWorkspacePrefs({ ...workspacePrefs, logo_url: e.target.value })}
+                />
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => logoFileRef.current?.click()}
+                  disabled={logoUploading}
+                >
+                  {logoUploading ? "Uploading..." : "Upload Logo"}
+                </button>
+                <input
+                  ref={logoFileRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleLogoFileChange}
+                />
+                {workspacePrefs.logo_url ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => saveWorkspacePrefs({ ...workspacePrefs, logo_url: "" })}
+                  >
+                    Clear Logo
+                  </button>
+                ) : null}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl">
+                <label className="form-control">
+                  <span className="label-text">Primary</span>
+                  <input
+                    type="color"
+                    className="input input-bordered h-10"
+                    value={workspacePrefs.colors?.primary || "#4f46e5"}
+                    onChange={(e) => {
+                      const colors = { ...workspacePrefs.colors, primary: e.target.value };
+                      saveWorkspacePrefs({ ...workspacePrefs, colors });
+                    }}
+                  />
+                </label>
+                <label className="form-control">
+                  <span className="label-text">Secondary</span>
+                  <input
+                    type="color"
+                    className="input input-bordered h-10"
+                    value={workspacePrefs.colors?.secondary || "#0ea5e9"}
+                    onChange={(e) => {
+                      const colors = { ...workspacePrefs.colors, secondary: e.target.value };
+                      saveWorkspacePrefs({ ...workspacePrefs, colors });
+                    }}
+                  />
+                </label>
+                <label className="form-control">
+                  <span className="label-text">Accent</span>
+                  <input
+                    type="color"
+                    className="input input-bordered h-10"
+                    value={workspacePrefs.colors?.accent || "#22c55e"}
+                    onChange={(e) => {
+                      const colors = { ...workspacePrefs.colors, accent: e.target.value };
+                      saveWorkspacePrefs({ ...workspacePrefs, colors });
+                    }}
+                  />
+                </label>
+              </div>
             </div>
           )}
         </div>

@@ -1,20 +1,15 @@
 // Settings preferences (appearance, developer mode, account, profile).
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { API_URL, clearCaches, getUiPrefs, setUiPrefs } from "../api";
+import { clearCaches, getUiPrefs, setUiPrefs } from "../api";
 import { useModuleStore } from "../state/moduleStore.jsx";
 import { useToast } from "../components/Toast.jsx";
-import { applyBrandColors, getBrandColors, getInitialTheme, setBrandColors, setTheme } from "../theme/theme.js";
+import { getInitialTheme, setTheme } from "../theme/theme.js";
 import { getDevMode, setDevMode } from "../dev/devMode.js";
-import { supabase } from "../supabase.js";
 
 export default function SettingsPreferencesPage({ user, onSignOut }) {
   const [theme, setThemeState] = useState(getInitialTheme());
   const [devMode, setDevModeState] = useState(getDevMode());
-  const [brandColors, setBrandColorsState] = useState(getBrandColors());
-  const [logoUrl, setLogoUrlState] = useState("");
-  const [logoUploading, setLogoUploading] = useState(false);
-  const logoFileRef = useRef(null);
   const { actions } = useModuleStore();
   const { pushToast } = useToast();
   const email = user?.email || "";
@@ -26,15 +21,8 @@ export default function SettingsPreferencesPage({ user, onSignOut }) {
       try {
         const res = await getUiPrefs();
         if (!mounted) return;
-        const workspace = res?.workspace || {};
         const userPrefs = res?.user || {};
-        if (workspace?.colors) {
-          setBrandColorsState(workspace.colors);
-          setBrandColors(workspace.colors);
-          applyBrandColors(workspace.colors);
-        }
-        setLogoUrlState(workspace?.logo_url || "");
-        const nextTheme = userPrefs?.theme || workspace?.theme || getInitialTheme();
+        const nextTheme = userPrefs?.theme || getInitialTheme();
         if (nextTheme) {
           setThemeState(nextTheme);
           setTheme(nextTheme);
@@ -57,21 +45,6 @@ export default function SettingsPreferencesPage({ user, onSignOut }) {
   }, [theme]);
 
   useEffect(() => {
-    applyBrandColors(brandColors);
-    const timeout = setTimeout(() => {
-      setUiPrefs({ workspace: { colors: brandColors } }).catch(() => {});
-    }, 300);
-    return () => clearTimeout(timeout);
-  }, [brandColors]);
-
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      setUiPrefs({ workspace: { logo_url: logoUrl.trim() || null } }).catch(() => {});
-    }, 300);
-    return () => clearTimeout(timeout);
-  }, [logoUrl]);
-
-  useEffect(() => {
     setDevMode(devMode);
   }, [devMode]);
 
@@ -83,35 +56,6 @@ export default function SettingsPreferencesPage({ user, onSignOut }) {
     clearCaches();
     await actions.refresh({ force: true });
     pushToast("success", "Caches cleared");
-  }
-
-  async function handleLogoFileChange(event) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    setLogoUploading(true);
-    try {
-      const session = (await supabase.auth.getSession()).data.session;
-      const token = session?.access_token;
-      const form = new FormData();
-      form.append("file", file);
-      const res = await fetch(`${API_URL}/prefs/ui/logo/upload`, {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: form,
-      });
-      const data = await res.json();
-      if (!res.ok || !data?.logo_url) {
-        throw new Error(data?.errors?.[0]?.message || "Logo upload failed");
-      }
-      const nextLogoUrl = data.logo_url;
-      setLogoUrlState(nextLogoUrl);
-      pushToast("success", "Logo uploaded");
-    } catch (err) {
-      pushToast("error", err?.message || "Logo upload failed");
-    } finally {
-      setLogoUploading(false);
-    }
   }
 
   const themes = [
@@ -189,99 +133,6 @@ export default function SettingsPreferencesPage({ user, onSignOut }) {
             </div>
           </div>
           <div className="text-sm opacity-70 mt-2">Includes DaisyUI themes (e.g., business).</div>
-          <div className="mt-6">
-            <div className="text-sm font-semibold">Organization branding</div>
-            <label className="form-control mt-3 max-w-3xl">
-              <span className="label-text">Logo URL (used in email/document templates)</span>
-              <input
-                type="url"
-                className="input input-bordered"
-                placeholder="https://cdn.example.com/logo.png"
-                value={logoUrl}
-                onChange={(e) => setLogoUrlState(e.target.value)}
-              />
-            </label>
-            <div className="mt-2 flex items-center gap-2">
-              <button
-                type="button"
-                className="btn btn-outline btn-sm"
-                onClick={() => logoFileRef.current?.click()}
-                disabled={logoUploading}
-              >
-                {logoUploading ? "Uploading..." : "Upload Logo"}
-              </button>
-              <input
-                ref={logoFileRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleLogoFileChange}
-              />
-              {logoUrl ? (
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setLogoUrlState("")}>
-                  Clear Logo
-                </button>
-              ) : null}
-            </div>
-            <div className="text-xs opacity-60 mt-2">
-              Use in Jinja as <code>{'{{ company.logo_url }}'}</code> or <code>{'{{ workspace.logo_url }}'}</code>.
-            </div>
-            <div className="text-sm font-semibold mt-4">Organization colors</div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3 max-w-3xl">
-              <label className="form-control">
-                <span className="label-text">Primary</span>
-                <input
-                  type="color"
-                  className="input input-bordered h-10"
-                  value={brandColors.primary || "#4f46e5"}
-                  onChange={(e) => {
-                    const next = { ...brandColors, primary: e.target.value };
-                    setBrandColorsState(next);
-                    setBrandColors(next);
-                  }}
-                />
-              </label>
-              <label className="form-control">
-                <span className="label-text">Secondary</span>
-                <input
-                  type="color"
-                  className="input input-bordered h-10"
-                  value={brandColors.secondary || "#0ea5e9"}
-                  onChange={(e) => {
-                    const next = { ...brandColors, secondary: e.target.value };
-                    setBrandColorsState(next);
-                    setBrandColors(next);
-                  }}
-                />
-              </label>
-              <label className="form-control">
-                <span className="label-text">Accent</span>
-                <input
-                  type="color"
-                  className="input input-bordered h-10"
-                  value={brandColors.accent || "#22c55e"}
-                  onChange={(e) => {
-                    const next = { ...brandColors, accent: e.target.value };
-                    setBrandColorsState(next);
-                    setBrandColors(next);
-                  }}
-                />
-              </label>
-            </div>
-            <div className="text-xs opacity-60 mt-2">
-              Overrides DaisyUI theme colors for primary/secondary/accent.
-            </div>
-            <button
-              className="btn btn-sm btn-ghost mt-3"
-              onClick={() => {
-                const next = { primary: "", secondary: "", accent: "" };
-                setBrandColorsState(next);
-                setBrandColors(next);
-              }}
-            >
-              Reset colors
-            </button>
-          </div>
         </div>
       </div>
 

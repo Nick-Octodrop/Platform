@@ -146,6 +146,8 @@ from app.workspaces import (
     update_workspace_member_role,
     remove_workspace_member,
     set_platform_role,
+    create_workspace_invite,
+    claim_workspace_invites_for_email,
 )
 from octo.manifest_hash import manifest_hash
 from manifest_store import ManifestStore
@@ -585,6 +587,12 @@ def _resolve_actor(request: Request) -> dict | JSONResponse:
         }
     user_id = user.get("id")
     platform_role = get_platform_role(user_id)
+    user_email = user.get("email")
+    if isinstance(user_email, str) and user_email:
+        try:
+            claim_workspace_invites_for_email(user_id, user_email)
+        except Exception:
+            pass
     memberships = list_memberships(user_id)
     user_workspaces = list_user_workspaces(user_id)
     workspace_header = request.headers.get("X-Workspace-Id")
@@ -718,6 +726,28 @@ def _supabase_invite_user(email: str, redirect_to: str | None = None) -> dict:
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="ignore")
         raise RuntimeError(f"invite_failed:{exc.code}:{body}") from exc
+
+
+def _find_auth_user_id_by_email(email: str) -> str | None:
+    if not isinstance(email, str) or "@" not in email:
+        return None
+    with get_conn() as conn:
+        try:
+            row = fetch_one(
+                conn,
+                """
+                select id::text as id
+                from auth.users
+                where lower(email)=lower(%s)
+                limit 1
+                """,
+                [email.strip().lower()],
+                query_name="auth_users.find_by_email",
+            )
+            user_id = (row or {}).get("id")
+            return user_id if isinstance(user_id, str) and user_id else None
+        except Exception:
+            return None
 
 
 class ActorContextMiddleware(BaseHTTPMiddleware):
@@ -9867,10 +9897,20 @@ async def invite_workspace_member(request: Request) -> dict:
     invited_user = invited.get("user") if isinstance(invited, dict) else None
     invited_user_id = invited_user.get("id") if isinstance(invited_user, dict) else None
     if not isinstance(invited_user_id, str) or not invited_user_id:
-        return _error_response("INVITE_FAILED", "Invite succeeded but user id missing", "email", status=400)
-    member = add_workspace_member(actor.get("workspace_id"), invited_user_id, role)
+        invited_user_id = _find_auth_user_id_by_email(email)
+    invite_pending = False
+    if isinstance(invited_user_id, str) and invited_user_id:
+        member = add_workspace_member(actor.get("workspace_id"), invited_user_id, role)
+    else:
+        member = create_workspace_invite(
+            actor.get("workspace_id"),
+            email=email,
+            role=role,
+            invited_by_user_id=actor.get("user_id"),
+        )
+        invite_pending = True
     members = list_workspace_members(actor.get("workspace_id"))
-    return _ok_response({"member": member, "members": members, "invited_email": email})
+    return _ok_response({"member": member, "members": members, "invited_email": email, "invite_pending": invite_pending})
 
 
 @app.patch("/access/members/{user_id}")
