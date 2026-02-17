@@ -13,6 +13,7 @@ import {
   listStudio2Modules,
   listStudio2History,
   listSnapshots,
+  publishMarketplaceApp,
   rollbackStudio2Module,
   saveStudio2Draft,
   studio2AgentChat,
@@ -28,6 +29,7 @@ import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import AgentChatInput from "../ui/AgentChatInput.jsx";
+import { useAccessContext } from "../access.js";
 
 function nowIso() {
   return new Date().toISOString();
@@ -619,6 +621,7 @@ export default function Studio2Page({ user }) {
   const { pushToast } = useToast();
   const navigate = useNavigate();
   const { moduleId: routeModuleId } = useParams();
+  const { isSuperadmin } = useAccessContext();
 
   const rootRef = useRef(null);
   const leftPaneRef = useRef(null);
@@ -680,6 +683,13 @@ export default function Studio2Page({ user }) {
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleteBlocked, setDeleteBlocked] = useState(null);
   const [forceConfirm, setForceConfirm] = useState("");
+  const [publishModalOpen, setPublishModalOpen] = useState(false);
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [publishModuleId, setPublishModuleId] = useState("");
+  const [publishTitle, setPublishTitle] = useState("");
+  const [publishDescription, setPublishDescription] = useState("");
+  const [publishSlug, setPublishSlug] = useState("");
+  const [publishCategory, setPublishCategory] = useState("");
   const [editorScrollTop, setEditorScrollTop] = useState(0);
   const [historySnapshots, setHistorySnapshots] = useState([]);
   const [historyDrafts, setHistoryDrafts] = useState([]);
@@ -1779,6 +1789,35 @@ function buildPreviewManifest() {
     setForceConfirm("");
   }
 
+  function openPublish(moduleRow) {
+    if (!moduleRow?.module_id) return;
+    setPublishModuleId(moduleRow.module_id);
+    setPublishTitle(moduleRow.name || moduleRow.module_id);
+    setPublishDescription("");
+    setPublishSlug("");
+    setPublishCategory("");
+    setPublishModalOpen(true);
+  }
+
+  async function confirmPublish() {
+    if (!publishModuleId || publishBusy) return;
+    setPublishBusy(true);
+    try {
+      const payload = { module_id: publishModuleId };
+      if (publishTitle.trim()) payload.title = publishTitle.trim();
+      if (publishDescription.trim()) payload.description = publishDescription.trim();
+      if (publishSlug.trim()) payload.slug = publishSlug.trim();
+      if (publishCategory.trim()) payload.category = publishCategory.trim();
+      await publishMarketplaceApp(payload);
+      pushToast("success", "Published to marketplace");
+      setPublishModalOpen(false);
+    } catch (err) {
+      pushToast("error", err?.message || "Publish failed");
+    } finally {
+      setPublishBusy(false);
+    }
+  }
+
   async function handleDeleteModule(moduleId, opts = {}) {
     setListActionLoading(true);
     try {
@@ -2558,6 +2597,79 @@ function buildPreviewManifest() {
     </div>
   ) : null;
 
+  const publishModal = publishModalOpen ? (
+    <div className="modal modal-open">
+      <div className="modal-box max-w-xl">
+        <h3 className="font-bold text-lg">Publish to marketplace</h3>
+        <div className="text-sm opacity-70 mt-1">
+          Publishes an immutable snapshot of <span className="font-mono">{publishModuleId}</span>.
+        </div>
+        <div className="mt-4 grid gap-3">
+          <label className="form-control">
+            <div className="label">
+              <span className="label-text">Title</span>
+            </div>
+            <input
+              className="input input-bordered w-full"
+              value={publishTitle}
+              onChange={(e) => setPublishTitle(e.target.value)}
+              placeholder="Marketplace title"
+            />
+          </label>
+          <label className="form-control">
+            <div className="label">
+              <span className="label-text">Description</span>
+            </div>
+            <textarea
+              className="textarea textarea-bordered w-full min-h-[92px]"
+              value={publishDescription}
+              onChange={(e) => setPublishDescription(e.target.value)}
+              placeholder="Optional description"
+            />
+          </label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label className="form-control">
+              <div className="label">
+                <span className="label-text">Slug (optional)</span>
+              </div>
+              <input
+                className="input input-bordered w-full"
+                value={publishSlug}
+                onChange={(e) => setPublishSlug(e.target.value)}
+                placeholder="work-orders"
+              />
+            </label>
+            <label className="form-control">
+              <div className="label">
+                <span className="label-text">Category (optional)</span>
+              </div>
+              <input
+                className="input input-bordered w-full"
+                value={publishCategory}
+                onChange={(e) => setPublishCategory(e.target.value)}
+                placeholder="Operations"
+              />
+            </label>
+          </div>
+        </div>
+        <div className="modal-action">
+          <button className="btn" onClick={() => setPublishModalOpen(false)} disabled={publishBusy}>
+            Cancel
+          </button>
+          <button className="btn btn-primary" onClick={confirmPublish} disabled={publishBusy}>
+            {publishBusy ? "Publishing..." : "Publish"}
+          </button>
+        </div>
+      </div>
+      <div
+        className="modal-backdrop"
+        onClick={() => {
+          if (!publishBusy) setPublishModalOpen(false);
+        }}
+      />
+    </div>
+  ) : null;
+
   if (!routeModuleId) {
     return (
       <div className={`h-full min-h-0 flex flex-col overflow-hidden ${debugClass}`} ref={rootRef}>
@@ -2593,6 +2705,15 @@ function buildPreviewManifest() {
                       <>
                         {listSelectedIds.length === 1 && singleSelected && (
                           <div className="flex items-center gap-2">
+                            {isSuperadmin && singleSelected.installed && (
+                              <button
+                                className={SOFT_BUTTON_SM}
+                                onClick={() => openPublish(singleSelected)}
+                                disabled={listActionLoading}
+                              >
+                                Publish
+                              </button>
+                            )}
                             {singleSelected.installed && (
                               <button
                                 className={SOFT_BUTTON_SM}
@@ -2767,6 +2888,7 @@ function buildPreviewManifest() {
             </div>
           </div>
         )}
+        {publishModal}
         {deleteModal}
         {deleteBlockedModal}
       </div>
@@ -2890,6 +3012,7 @@ function buildPreviewManifest() {
           </div>
         </div>
       )}
+      {publishModal}
       {deleteModal}
       {deleteBlockedModal}
     </div>

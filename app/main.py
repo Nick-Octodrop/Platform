@@ -859,6 +859,10 @@ class ActorContextMiddleware(BaseHTTPMiddleware):
         actor = _resolve_actor(request)
         if isinstance(actor, JSONResponse):
             return actor
+        if request.url.path.startswith("/studio2") or request.url.path.startswith("/studio/"):
+            denied = _require_capability(actor, "modules.manage", "Admin role required")
+            if denied:
+                return denied
         request.state.actor = actor
         token = set_org_id(actor.get("workspace_id") or "default")
         try:
@@ -2997,6 +3001,72 @@ def _apply_module_change(request: Request, module_id: str, manifest: dict, mode:
     return _apply_module_change_memory(module_id, manifest, actor=actor, mode=mode, reason=reason, patch_id=patch_id)
 
 
+def _marketplace_slugify(text: str) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", (text or "").strip().lower()).strip("-")
+    return base or "app"
+
+
+def _marketplace_unique_slug(conn, slug: str, row_id: str | None = None) -> str:
+    candidate = _marketplace_slugify(slug)
+    idx = 2
+    while True:
+        if row_id:
+            row = fetch_one(
+                conn,
+                "select id from marketplace_apps where slug=%s and id<>%s limit 1",
+                [candidate, row_id],
+                query_name="marketplace.slug.exists_update",
+            )
+        else:
+            row = fetch_one(
+                conn,
+                "select id from marketplace_apps where slug=%s limit 1",
+                [candidate],
+                query_name="marketplace.slug.exists",
+            )
+        if not row:
+            return candidate
+        candidate = f"{_marketplace_slugify(slug)}-{idx}"
+        idx += 1
+
+
+def _normalize_marketplace_row(row: dict | None) -> dict | None:
+    if not isinstance(row, dict):
+        return None
+    manifest = row.get("source_manifest")
+    if isinstance(manifest, str):
+        try:
+            manifest = json.loads(manifest)
+        except Exception:
+            manifest = {}
+    return {
+        "id": row.get("id"),
+        "slug": row.get("slug"),
+        "title": row.get("title"),
+        "description": row.get("description"),
+        "category": row.get("category"),
+        "icon_url": row.get("icon_url"),
+        "status": row.get("status"),
+        "source_org_id": row.get("source_org_id"),
+        "source_module_id": row.get("source_module_id"),
+        "source_manifest_hash": row.get("source_manifest_hash"),
+        "source_manifest": manifest if isinstance(manifest, dict) else {},
+        "published_by_user_id": row.get("published_by_user_id"),
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at"),
+    }
+
+
+def _generate_cloned_module_id(source_module_id: str) -> str:
+    slug = _marketplace_slugify(source_module_id or "module")
+    if slug.startswith("module-"):
+        slug = slug[7:]
+    slug = slug.replace("-", "_")
+    slug = re.sub(r"[^a-z0-9_]+", "", slug)
+    slug = (slug or "app")[:20]
+    return f"module_{slug}_{uuid.uuid4().hex[:6]}"
+
+
 def _delete_module_db(module_id: str, actor: dict | None, reason: str, force: bool = False, archive: bool = False) -> dict:
     record = registry.get(module_id)
     if record is None:
@@ -3132,6 +3202,216 @@ async def list_modules(request: Request) -> dict:
             mod["name"] = name
     _cache_set("modules", modules)
     return {"modules": modules}
+
+
+@app.get("/marketplace/apps")
+async def list_marketplace_apps(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    include_non_published = bool(actor.get("platform_role") == "superadmin")
+    with get_conn() as conn:
+        rows = fetch_all(
+            conn,
+            """
+            select id, slug, title, description, category, icon_url, status,
+                   source_org_id, source_module_id, source_manifest_hash, source_manifest,
+                   published_by_user_id, created_at, updated_at
+            from marketplace_apps
+            where (%s or status='published')
+            order by created_at desc
+            """,
+            [include_non_published],
+            query_name="marketplace.list",
+        )
+    items = []
+    for row in rows:
+        normalized = _normalize_marketplace_row(row)
+        if not normalized:
+            continue
+        normalized.pop("source_manifest", None)
+        items.append(normalized)
+    return _ok_response({"apps": items})
+
+
+@app.post("/marketplace/apps/publish")
+async def publish_marketplace_app(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    if actor.get("platform_role") != "superadmin":
+        return _error_response("FORBIDDEN", "Superadmin role required", status=403)
+    body = await _safe_json(request)
+    module_id = body.get("module_id") if isinstance(body, dict) else None
+    if not isinstance(module_id, str) or not module_id.strip():
+        return _error_response("MODULE_REQUIRED", "module_id is required", "module_id", status=400)
+    module, manifest = _get_installed_manifest(request, module_id)
+    if module is None or manifest is None:
+        return _error_response("MODULE_NOT_FOUND", "Module not installed", "module_id", status=404)
+    source_hash = module.get("current_hash")
+    if not isinstance(source_hash, str) or not source_hash:
+        return _error_response("MODULE_INVALID", "Module snapshot hash missing", "module_id", status=400)
+    module_meta = manifest.get("module") if isinstance(manifest, dict) else {}
+    default_title = module.get("name") or (module_meta.get("name") if isinstance(module_meta, dict) else None) or module_id
+    title = body.get("title") if isinstance(body, dict) else None
+    title = title.strip() if isinstance(title, str) and title.strip() else default_title
+    description = body.get("description") if isinstance(body, dict) and isinstance(body.get("description"), str) else None
+    category = body.get("category") if isinstance(body, dict) and isinstance(body.get("category"), str) else None
+    icon_url = body.get("icon_url") if isinstance(body, dict) and isinstance(body.get("icon_url"), str) else module.get("icon_key")
+    if category is not None:
+        category = category.strip() or None
+    if description is not None:
+        description = description.strip() or None
+    if icon_url is not None:
+        icon_url = icon_url.strip() or None
+    slug_input = body.get("slug") if isinstance(body, dict) and isinstance(body.get("slug"), str) and body.get("slug").strip() else title
+    org_id = get_org_id()
+    with get_conn() as conn:
+        existing = fetch_one(
+            conn,
+            """
+            select id
+            from marketplace_apps
+            where source_org_id=%s and source_module_id=%s and source_manifest_hash=%s
+            limit 1
+            """,
+            [org_id, module_id, source_hash],
+            query_name="marketplace.get_by_source",
+        )
+        if existing:
+            listing_id = existing.get("id")
+            slug = _marketplace_unique_slug(conn, slug_input, row_id=listing_id)
+            row = fetch_one(
+                conn,
+                """
+                update marketplace_apps
+                set slug=%s, title=%s, description=%s, category=%s, icon_url=%s,
+                    status='published', source_manifest=%s, updated_at=%s
+                where id=%s
+                returning id, slug, title, description, category, icon_url, status,
+                          source_org_id, source_module_id, source_manifest_hash, source_manifest,
+                          published_by_user_id, created_at, updated_at
+                """,
+                [slug, title, description, category, icon_url, json.dumps(manifest), _now(), listing_id],
+                query_name="marketplace.update",
+            )
+        else:
+            slug = _marketplace_unique_slug(conn, slug_input)
+            row = fetch_one(
+                conn,
+                """
+                insert into marketplace_apps (
+                  slug, title, description, category, icon_url, status,
+                  source_org_id, source_module_id, source_manifest_hash, source_manifest,
+                  published_by_user_id, created_at, updated_at
+                )
+                values (%s,%s,%s,%s,%s,'published',%s,%s,%s,%s,%s,%s,%s)
+                returning id, slug, title, description, category, icon_url, status,
+                          source_org_id, source_module_id, source_manifest_hash, source_manifest,
+                          published_by_user_id, created_at, updated_at
+                """,
+                [
+                    slug,
+                    title,
+                    description,
+                    category,
+                    icon_url,
+                    org_id,
+                    module_id,
+                    source_hash,
+                    json.dumps(manifest),
+                    actor.get("user_id"),
+                    _now(),
+                    _now(),
+                ],
+                query_name="marketplace.insert",
+            )
+    listing = _normalize_marketplace_row(row) or {}
+    listing.pop("source_manifest", None)
+    return _ok_response({"app": listing})
+
+
+@app.post("/marketplace/apps/{app_id}/clone")
+async def clone_marketplace_app(request: Request, app_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    with get_conn() as conn:
+        row = fetch_one(
+            conn,
+            """
+            select id, slug, title, description, category, icon_url, status,
+                   source_org_id, source_module_id, source_manifest_hash, source_manifest,
+                   published_by_user_id, created_at, updated_at
+            from marketplace_apps
+            where id=%s
+            limit 1
+            """,
+            [app_id],
+            query_name="marketplace.get",
+        )
+    listing = _normalize_marketplace_row(row)
+    if not listing:
+        return _error_response("MARKETPLACE_APP_NOT_FOUND", "Marketplace app not found", "app_id", status=404)
+    if listing.get("status") != "published":
+        return _error_response("MARKETPLACE_APP_UNAVAILABLE", "Marketplace app is not published", "app_id", status=400)
+    source_manifest = listing.get("source_manifest")
+    if not isinstance(source_manifest, dict):
+        return _error_response("MARKETPLACE_APP_INVALID", "Marketplace app manifest missing", "app_id", status=400)
+    requested_module_id = body.get("module_id") if isinstance(body, dict) else None
+    if isinstance(requested_module_id, str) and requested_module_id.strip():
+        new_module_id = requested_module_id.strip()
+        if not _is_valid_module_id(new_module_id):
+            return _error_response("MODULE_INVALID", "Invalid module_id format", "module_id", status=400)
+    else:
+        new_module_id = _generate_cloned_module_id(listing.get("source_module_id") or "module")
+    while registry.get(new_module_id):
+        new_module_id = _generate_cloned_module_id(listing.get("source_module_id") or "module")
+    cloned_manifest = copy.deepcopy(source_manifest)
+    if not isinstance(cloned_manifest.get("module"), dict):
+        cloned_manifest["module"] = {}
+    cloned_manifest["module"]["id"] = new_module_id
+    requested_name = body.get("name") if isinstance(body, dict) and isinstance(body.get("name"), str) else None
+    if isinstance(requested_name, str) and requested_name.strip():
+        cloned_manifest["module"]["name"] = requested_name.strip()
+    elif not cloned_manifest["module"].get("name"):
+        cloned_manifest["module"]["name"] = listing.get("title") or new_module_id
+    patch_id = f"marketplace_clone:{listing.get('id')}"
+    result = _apply_module_change(
+        request,
+        new_module_id,
+        cloned_manifest,
+        mode="install",
+        reason=f"marketplace clone from {listing.get('source_module_id')}",
+        patch_id=patch_id,
+    )
+    if not result.get("ok"):
+        first = (result.get("errors") or [{}])[0]
+        return _error_response(
+            first.get("code") or "MODULE_CLONE_FAILED",
+            first.get("message") or "Failed to clone app",
+            first.get("path"),
+            first.get("detail"),
+            status=400,
+        )
+    _cache_invalidate("modules")
+    _cache_invalidate("registry_list")
+    _cache_invalidate("manifest")
+    _cache_invalidate("studio_modules")
+    _compiled_cache_invalidate(new_module_id)
+    return _ok_response(
+        {
+            "module": result.get("module"),
+            "module_id": new_module_id,
+            "audit_id": result.get("audit_id"),
+            "marketplace_app_id": listing.get("id"),
+        },
+        warnings=result.get("warnings") or [],
+    )
 
 
 @app.post("/modules/{module_id}/icon")

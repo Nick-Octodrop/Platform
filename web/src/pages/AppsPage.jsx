@@ -6,7 +6,7 @@ import { useToast } from "../components/Toast.jsx";
 import { getAppDisplayName } from "../state/appCatalog.js";
 import { getPinnedApps, recordRecentApp, subscribeAppUsage, togglePinnedApp } from "../state/appUsage.js";
 import { getDefaultOpenRoute, loadEntityIndex } from "../data/entityIndex.js";
-import { invalidateModulesCache, setModuleIcon, clearModuleIcon, setModuleOrder } from "../api.js";
+import { apiFetch, invalidateModulesCache, setModuleIcon, clearModuleIcon, setModuleOrder } from "../api.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { Package } from "lucide-react";
 import { LUCIDE_ICON_LIST, normalizeLucideKey, resolveLucideIcon } from "../state/lucideIconCatalog.js";
@@ -99,6 +99,10 @@ export default function AppsPage({ user }) {
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [iconPickerApp, setIconPickerApp] = useState(null);
   const [iconQuery, setIconQuery] = useState("");
+  const [marketplaceApps, setMarketplaceApps] = useState([]);
+  const [marketplaceLoading, setMarketplaceLoading] = useState(false);
+  const [marketplaceError, setMarketplaceError] = useState("");
+  const [marketplaceCloneBusy, setMarketplaceCloneBusy] = useState("");
   const { hasCapability } = useAccessContext();
   const canManageModules = hasCapability("modules.manage");
 
@@ -126,6 +130,28 @@ export default function AppsPage({ user }) {
     }
     buildIndex();
   }, [modules, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    let alive = true;
+    (async () => {
+      setMarketplaceLoading(true);
+      setMarketplaceError("");
+      try {
+        const res = await apiFetch("/marketplace/apps");
+        if (!alive) return;
+        setMarketplaceApps(Array.isArray(res?.apps) ? res.apps : []);
+      } catch (err) {
+        if (!alive) return;
+        setMarketplaceError(err?.message || "Failed to load marketplace");
+      } finally {
+        if (alive) setMarketplaceLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [user]);
 
   async function toggleModule(moduleId, enabled) {
     try {
@@ -191,6 +217,20 @@ export default function AppsPage({ user }) {
       pushToast("error", err.message || "Delete failed");
     } finally {
       closeDelete();
+    }
+  }
+
+  async function cloneMarketplaceApp(app) {
+    if (!app?.id || marketplaceCloneBusy) return;
+    setMarketplaceCloneBusy(app.id);
+    try {
+      await apiFetch(`/marketplace/apps/${app.id}/clone`, { method: "POST", body: {} });
+      pushToast("success", `Cloned ${app.title || app.slug || "app"}`);
+      await actions.refresh({ force: true });
+    } catch (err) {
+      pushToast("error", err?.message || "Clone failed");
+    } finally {
+      setMarketplaceCloneBusy("");
     }
   }
 
@@ -291,6 +331,42 @@ export default function AppsPage({ user }) {
                 </div>
               </div>
             )}
+          </div>
+          <div className="mt-8">
+            <div className="text-xs uppercase opacity-60 mb-2">Marketplace</div>
+            <div className="card bg-base-100 shadow">
+              <div className="card-body">
+                {marketplaceLoading ? <LoadingSpinner className="min-h-[10vh]" /> : null}
+                {marketplaceError ? <div className="alert alert-error">{marketplaceError}</div> : null}
+                {!marketplaceLoading && !marketplaceError && marketplaceApps.length === 0 ? (
+                  <div className="text-sm opacity-70">No marketplace apps published yet.</div>
+                ) : null}
+                {!marketplaceLoading && !marketplaceError && marketplaceApps.length > 0 ? (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {marketplaceApps.map((app) => (
+                      <div key={app.id} className="rounded-box border border-base-300 p-4 flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-semibold truncate">{app.title || app.slug}</div>
+                          <div className="text-xs opacity-60 mt-1">
+                            Source: <span className="font-mono">{app.source_module_id}</span>
+                          </div>
+                          {app.description ? <div className="text-sm opacity-80 mt-2">{app.description}</div> : null}
+                        </div>
+                        {canManageModules ? (
+                          <button
+                            className="btn btn-sm btn-primary"
+                            onClick={() => cloneMarketplaceApp(app)}
+                            disabled={marketplaceCloneBusy === app.id}
+                          >
+                            {marketplaceCloneBusy === app.id ? "Cloning..." : "Clone"}
+                          </button>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
           </div>
         </>
       )}

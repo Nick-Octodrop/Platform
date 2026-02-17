@@ -370,6 +370,18 @@ export async function listStudio2Modules() {
   return apiFetch("/studio2/modules");
 }
 
+export async function listMarketplaceApps() {
+  return apiFetch("/marketplace/apps");
+}
+
+export async function publishMarketplaceApp(payload) {
+  return apiFetch("/marketplace/apps/publish", { method: "POST", body: payload || {} });
+}
+
+export async function cloneMarketplaceApp(appId, payload) {
+  return apiFetch(`/marketplace/apps/${appId}/clone`, { method: "POST", body: payload || {} });
+}
+
 export async function getDraft(moduleId) {
   const now = Date.now();
   const cached = draftCache.get(moduleId);
