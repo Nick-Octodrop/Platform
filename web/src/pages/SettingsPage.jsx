@@ -20,8 +20,6 @@ export default function SettingsPage() {
     "/settings/diagnostics",
   ]);
   const placeholderPages = new Set([
-    "/settings/users",
-    "/settings/workspaces",
     "/settings/email/connections",
     "/settings/email/diagnostics",
     "/settings/documents/defaults",
