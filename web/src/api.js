@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 
 export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const ACTIVE_WORKSPACE_STORAGE_KEY = "octo_active_workspace_id";
 const manifestCache = new Map();
 const manifestCacheTs = new Map();
 const manifestHashByModule = new Map();
@@ -105,6 +106,10 @@ export async function apiFetch(path, options = {}) {
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
+  const activeWorkspaceId = getActiveWorkspaceId();
+  if (activeWorkspaceId && !headers["X-Workspace-Id"]) {
+    headers["X-Workspace-Id"] = activeWorkspaceId;
+  }
   const method = (options.method || "GET").toUpperCase();
   const body = typeof options.body === "string" ? options.body : options.body ? JSON.stringify(options.body) : "";
   const policy = resolvePolicy(path, method);
@@ -187,6 +192,26 @@ export async function apiFetch(path, options = {}) {
       const status = res?.status;
       console.debug(`[perf] ${trace} ${status ?? "ERR"} ${ms}ms`);
     }
+  }
+}
+
+export function getActiveWorkspaceId() {
+  try {
+    return window.localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function setActiveWorkspaceId(workspaceId) {
+  try {
+    if (workspaceId) {
+      window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, workspaceId);
+    } else {
+      window.localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+    }
+  } catch {
+    // ignore
   }
 }
 

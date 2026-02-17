@@ -133,7 +133,20 @@ from app.attachments import store_bytes, resolve_path, read_bytes, public_url, b
 from app.doc_render import render_html, render_pdf, normalize_margins
 from app.automations import match_event
 from app.automations_runtime import handle_event as handle_automation_event
-from app.workspaces import list_memberships, get_membership, create_workspace_for_user, list_workspace_members
+from app.workspaces import (
+    list_memberships,
+    get_membership,
+    create_workspace_for_user,
+    list_workspace_members,
+    list_user_workspaces,
+    list_all_workspaces,
+    workspace_exists,
+    get_platform_role,
+    add_workspace_member,
+    update_workspace_member_role,
+    remove_workspace_member,
+    set_platform_role,
+)
 from octo.manifest_hash import manifest_hash
 from manifest_store import ManifestStore
 from module_registry import ModuleRegistry
@@ -563,48 +576,148 @@ def _resolve_actor(request: Request) -> dict | JSONResponse:
         return {
             "user_id": user.get("id"),
             "email": user.get("email"),
-            "role": "owner",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
             "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
             "claims": user.get("claims"),
         }
     user_id = user.get("id")
+    platform_role = get_platform_role(user_id)
     memberships = list_memberships(user_id)
+    user_workspaces = list_user_workspaces(user_id)
     workspace_header = request.headers.get("X-Workspace-Id")
     if not memberships:
         workspace_id = create_workspace_for_user(user)
-        role = "owner"
+        memberships = list_memberships(user_id)
+        user_workspaces = list_user_workspaces(user_id)
+        role = "admin"
         return {
             "user_id": user_id,
             "email": user.get("email"),
             "role": role,
+            "workspace_role": role,
+            "platform_role": platform_role,
             "workspace_id": workspace_id,
+            "workspaces": user_workspaces,
             "claims": user.get("claims"),
         }
     if workspace_header:
         membership = get_membership(user_id, workspace_header)
-        if not membership:
+        if not membership and platform_role != "superadmin":
             return _error_response("WORKSPACE_FORBIDDEN", "User is not a member of this workspace", "X-Workspace-Id", status=403)
-        role = membership.get("role") or "member"
+        if membership:
+            role = membership.get("role") or "member"
+        elif workspace_exists(workspace_header):
+            role = "admin"
+        else:
+            return _error_response("WORKSPACE_NOT_FOUND", "Workspace does not exist", "X-Workspace-Id", status=404)
         workspace_id = workspace_header
     elif len(memberships) == 1:
         workspace_id = memberships[0].get("workspace_id")
         role = memberships[0].get("role") or "member"
+    elif platform_role == "superadmin":
+        all_workspaces = list_all_workspaces()
+        if not all_workspaces:
+            return _error_response("WORKSPACE_NOT_FOUND", "No workspaces exist yet", status=404)
+        workspace_id = all_workspaces[0].get("workspace_id")
+        role = "admin"
     else:
         return _error_response("WORKSPACE_REQUIRED", "Multiple workspaces found; specify X-Workspace-Id", "X-Workspace-Id", status=400)
     return {
         "user_id": user_id,
         "email": user.get("email"),
         "role": role,
+        "workspace_role": role,
+        "platform_role": platform_role,
         "workspace_id": workspace_id,
+        "workspaces": user_workspaces,
         "claims": user.get("claims"),
     }
 
 
-def _require_admin(actor: dict | None) -> JSONResponse | None:
-    role = (actor or {}).get("role") or "member"
-    if role not in {"owner", "admin"}:
-        return _error_response("FORBIDDEN", "Admin role required", status=403)
+_CAPABILITIES_BY_ROLE = {
+    "admin": {
+        "workspace.manage_members",
+        "workspace.manage_settings",
+        "modules.manage",
+        "templates.manage",
+        "automations.manage",
+        "records.read",
+        "records.write",
+    },
+    "member": {"records.read", "records.write"},
+    "readonly": {"records.read"},
+    "portal": {"records.read", "records.write"},
+}
+
+
+def _has_capability(actor: dict | None, capability: str) -> bool:
+    if not isinstance(actor, dict):
+        return False
+    if actor.get("platform_role") == "superadmin":
+        return True
+    role = actor.get("workspace_role") or actor.get("role") or "member"
+    return capability in _CAPABILITIES_BY_ROLE.get(role, set())
+
+
+def _require_capability(actor: dict | None, capability: str, message: str = "Forbidden") -> JSONResponse | None:
+    if not _has_capability(actor, capability):
+        return _error_response("FORBIDDEN", message, status=403)
     return None
+
+
+def _require_admin(actor: dict | None) -> JSONResponse | None:
+    denied = _require_capability(actor, "workspace.manage_settings", "Admin role required")
+    if denied:
+        return denied
+    return None
+
+
+_WORKSPACE_ROLES = {"admin", "member", "readonly", "portal"}
+_PLATFORM_ROLES = {"standard", "superadmin"}
+
+
+def _normalize_workspace_role(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    role = value.strip().lower()
+    if role == "owner":
+        role = "admin"
+    if role in _WORKSPACE_ROLES:
+        return role
+    return None
+
+
+def _supabase_admin_headers() -> dict:
+    key = (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
+    return {"Authorization": f"Bearer {key}", "apikey": key, "Content-Type": "application/json"}
+
+
+def _supabase_admin_enabled() -> bool:
+    return bool((os.getenv("SUPABASE_URL") or "").strip() and (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or "").strip())
+
+
+def _supabase_invite_user(email: str, redirect_to: str | None = None) -> dict:
+    if not _supabase_admin_enabled():
+        raise RuntimeError("Supabase service role not configured")
+    base = (os.getenv("SUPABASE_URL") or "").strip().rstrip("/")
+    payload: dict[str, Any] = {"email": email}
+    if isinstance(redirect_to, str) and redirect_to.strip():
+        payload["redirect_to"] = redirect_to.strip()
+    req = urllib.request.Request(
+        f"{base}/auth/v1/invite",
+        data=json.dumps(payload).encode("utf-8"),
+        headers=_supabase_admin_headers(),
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as res:
+            return json.loads(res.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"invite_failed:{exc.code}:{body}") from exc
 
 
 class ActorContextMiddleware(BaseHTTPMiddleware):
@@ -9695,6 +9808,121 @@ async def add_chatter(request: Request, entity_id: str, record_id: str) -> dict:
     return _ok_response({"entry": entry})
     if len(registry_text) > 200_000 or len(target_text) > 200_000:
         return _error_response("AGENT_CONTEXT_TOO_LARGE", "prompt context too large", "context")
+
+
+# ---- Access / Users / Roles ----
+
+
+@app.get("/access/context")
+async def access_context(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    workspaces = actor.get("workspaces") or []
+    if actor.get("platform_role") == "superadmin":
+        workspaces = list_all_workspaces()
+    return _ok_response(
+        {
+            "actor": {
+                "user_id": actor.get("user_id"),
+                "email": actor.get("email"),
+                "workspace_id": actor.get("workspace_id"),
+                "workspace_role": actor.get("workspace_role") or actor.get("role"),
+                "platform_role": actor.get("platform_role") or "standard",
+            },
+            "workspaces": workspaces,
+        }
+    )
+
+
+@app.get("/access/members")
+async def access_members(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    members = list_workspace_members(actor.get("workspace_id"))
+    return _ok_response({"members": members})
+
+
+@app.post("/access/members/invite")
+async def invite_workspace_member(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_capability(actor, "workspace.manage_members", "Admin role required")
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    email = body.get("email")
+    role = _normalize_workspace_role(body.get("role") or "member")
+    if not isinstance(email, str) or "@" not in email:
+        return _error_response("EMAIL_REQUIRED", "Valid email required", "email", status=400)
+    if not role:
+        return _error_response("ROLE_INVALID", "Invalid role", "role", status=400)
+    redirect_to = body.get("redirect_to")
+    try:
+        invited = _supabase_invite_user(email.strip().lower(), redirect_to=redirect_to)
+    except Exception as exc:
+        return _error_response("INVITE_FAILED", str(exc), "email", status=400)
+    invited_user = invited.get("user") if isinstance(invited, dict) else None
+    invited_user_id = invited_user.get("id") if isinstance(invited_user, dict) else None
+    if not isinstance(invited_user_id, str) or not invited_user_id:
+        return _error_response("INVITE_FAILED", "Invite succeeded but user id missing", "email", status=400)
+    member = add_workspace_member(actor.get("workspace_id"), invited_user_id, role)
+    members = list_workspace_members(actor.get("workspace_id"))
+    return _ok_response({"member": member, "members": members, "invited_email": email})
+
+
+@app.patch("/access/members/{user_id}")
+async def update_member_role(request: Request, user_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_capability(actor, "workspace.manage_members", "Admin role required")
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    role = _normalize_workspace_role((body or {}).get("role"))
+    if not role:
+        return _error_response("ROLE_INVALID", "Invalid role", "role", status=400)
+    workspace_id = actor.get("workspace_id")
+    member = get_membership(user_id, workspace_id)
+    if not member and actor.get("platform_role") != "superadmin":
+        return _error_response("MEMBER_NOT_FOUND", "Member not found", "user_id", status=404)
+    updated = update_workspace_member_role(workspace_id, user_id, role)
+    if not updated:
+        updated = add_workspace_member(workspace_id, user_id, role)
+    members = list_workspace_members(workspace_id)
+    return _ok_response({"member": updated, "members": members})
+
+
+@app.delete("/access/members/{user_id}")
+async def delete_member(request: Request, user_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_capability(actor, "workspace.manage_members", "Admin role required")
+    if denied:
+        return denied
+    workspace_id = actor.get("workspace_id")
+    if user_id == actor.get("user_id") and actor.get("platform_role") != "superadmin":
+        return _error_response("FORBIDDEN", "You cannot remove yourself from this workspace", status=400)
+    ok = remove_workspace_member(workspace_id, user_id)
+    if not ok:
+        return _error_response("MEMBER_NOT_FOUND", "Member not found", "user_id", status=404)
+    members = list_workspace_members(workspace_id)
+    return _ok_response({"ok": True, "members": members})
+
+
+@app.patch("/access/platform-role/{user_id}")
+async def update_platform_role(request: Request, user_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    if actor.get("platform_role") != "superadmin":
+        return _error_response("FORBIDDEN", "Superadmin role required", status=403)
+    body = await _safe_json(request)
+    role = (body or {}).get("platform_role")
+    if not isinstance(role, str) or role not in _PLATFORM_ROLES:
+        return _error_response("ROLE_INVALID", "Invalid platform role", "platform_role", status=400)
+    row = set_platform_role(user_id, role)
+    return _ok_response({"user": row})
 
 
 # ---- Phase 1: Ops / Jobs ----
