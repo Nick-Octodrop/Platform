@@ -142,8 +142,22 @@ export default function App() {
             <Route path="settings" element={<SettingsPage />} />
             <Route path="settings/preferences" element={<SettingsPreferencesPage user={user} onSignOut={handleSignOut} />} />
             <Route path="settings/password" element={<SettingsPasswordPage user={user} />} />
-            <Route path="settings/users" element={<SettingsUsersPage />} />
-            <Route path="settings/workspaces" element={<SettingsWorkspacesPage />} />
+            <Route
+              path="settings/users"
+              element={(
+                <CapabilityRoute capability="workspace.manage_members">
+                  <SettingsUsersPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="settings/workspaces"
+              element={(
+                <CapabilityRoute capability="workspace.manage_settings">
+                  <SettingsWorkspacesPage />
+                </CapabilityRoute>
+              )}
+            />
             <Route
               path="settings/secrets"
               element={(
