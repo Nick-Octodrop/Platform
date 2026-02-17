@@ -353,75 +353,72 @@ def _lookup_email_from_record(target_entity_id: str | None, target_record_id: st
 
 def _resolve_recipients(inputs: dict, context: dict, record_data: dict, entity_id: str | None, entity_def: dict | None) -> list[str]:
     recipients: list[str] = []
-    mode = inputs.get("to_mode")
-    if not isinstance(mode, str) or not mode:
-        mode = "manual"
-
-    if mode == "manual":
-        recipients.extend(_split_recipients(inputs.get("to")))
-
-    elif mode == "record_field":
-        field_ids = []
-        configured = inputs.get("to_field_ids")
-        if isinstance(configured, list):
-            field_ids = [f for f in configured if isinstance(f, str) and f]
-        single_field = inputs.get("to_field_id")
-        if isinstance(single_field, str) and single_field:
-            field_ids.append(single_field)
-        for field_id in field_ids:
-            recipients.extend(_split_recipients(record_data.get(field_id)))
-
-    elif mode == "lookup_field":
-        specs = inputs.get("to_lookup_specs")
-        lookup_specs: list[dict] = []
-        if isinstance(specs, list):
-            lookup_specs.extend([s for s in specs if isinstance(s, dict)])
-        else:
-            lookup_fields: list[str] = []
-            lookup_field = inputs.get("to_lookup_field_id")
-            if isinstance(lookup_field, str) and lookup_field:
-                lookup_fields.append(lookup_field)
-            multi_lookup_fields = inputs.get("to_lookup_field_ids")
-            if isinstance(multi_lookup_fields, list):
-                lookup_fields.extend([f for f in multi_lookup_fields if isinstance(f, str) and f])
-            elif isinstance(multi_lookup_fields, str):
-                lookup_fields.extend([f.strip() for f in multi_lookup_fields.split(",") if f.strip()])
-            lookup_fields = list(dict.fromkeys(lookup_fields))
-            for field_name in lookup_fields:
-                lookup_specs.append(
-                    {
-                        "lookup_field": field_name,
-                        "entity_id": inputs.get("to_lookup_entity_id"),
-                        "email_field": inputs.get("to_lookup_email_field"),
-                    }
-                )
-        for spec in lookup_specs:
-            lookup_field = spec.get("lookup_field")
-            if not isinstance(lookup_field, str) or not lookup_field:
-                continue
-            target_id = record_data.get(lookup_field)
-            if not isinstance(target_id, str) or not target_id:
-                continue
-            target_entity = spec.get("entity_id")
-            if not isinstance(target_entity, str) or not target_entity:
-                field_def = _find_field_def(entity_def, lookup_field)
-                maybe_target = field_def.get("entity") if isinstance(field_def, dict) else None
-                if isinstance(maybe_target, str) and maybe_target:
-                    target_entity = maybe_target
-            target_emails = _lookup_email_from_record(target_entity, target_id, spec.get("email_field"))
-            recipients.extend(target_emails)
-
-    elif mode == "template":
-        to_expr = inputs.get("to_expr")
-        if isinstance(to_expr, str) and to_expr.strip():
-            try:
-                rendered = render_template(to_expr, context, strict=True)
-                recipients.extend(_split_recipients(rendered))
-            except Exception:
-                pass
-
-    # Always include explicit manual addresses as additive fallback.
+    # Explicit manual addresses are always additive.
     recipients.extend(_split_recipients(inputs.get("to")))
+    recipients.extend(_split_recipients(inputs.get("to_internal_emails")))
+
+    # Record fields can contribute recipients.
+    field_ids: list[str] = []
+    configured = inputs.get("to_field_ids")
+    if isinstance(configured, list):
+        field_ids.extend([f for f in configured if isinstance(f, str) and f])
+    elif isinstance(configured, str):
+        field_ids.extend([f.strip() for f in configured.split(",") if f.strip()])
+    single_field = inputs.get("to_field_id")
+    if isinstance(single_field, str) and single_field:
+        field_ids.append(single_field)
+    for field_id in list(dict.fromkeys(field_ids)):
+        recipients.extend(_split_recipients(record_data.get(field_id)))
+
+    # Lookup fields can contribute recipients.
+    specs = inputs.get("to_lookup_specs")
+    lookup_specs: list[dict] = []
+    if isinstance(specs, list):
+        lookup_specs.extend([s for s in specs if isinstance(s, dict)])
+    else:
+        lookup_fields: list[str] = []
+        lookup_field = inputs.get("to_lookup_field_id")
+        if isinstance(lookup_field, str) and lookup_field:
+            lookup_fields.append(lookup_field)
+        multi_lookup_fields = inputs.get("to_lookup_field_ids")
+        if isinstance(multi_lookup_fields, list):
+            lookup_fields.extend([f for f in multi_lookup_fields if isinstance(f, str) and f])
+        elif isinstance(multi_lookup_fields, str):
+            lookup_fields.extend([f.strip() for f in multi_lookup_fields.split(",") if f.strip()])
+        lookup_fields = list(dict.fromkeys(lookup_fields))
+        for field_name in lookup_fields:
+            lookup_specs.append(
+                {
+                    "lookup_field": field_name,
+                    "entity_id": inputs.get("to_lookup_entity_id"),
+                    "email_field": inputs.get("to_lookup_email_field"),
+                }
+            )
+    for spec in lookup_specs:
+        lookup_field = spec.get("lookup_field")
+        if not isinstance(lookup_field, str) or not lookup_field:
+            continue
+        target_id = record_data.get(lookup_field)
+        if not isinstance(target_id, str) or not target_id:
+            continue
+        target_entity = spec.get("entity_id")
+        if not isinstance(target_entity, str) or not target_entity:
+            field_def = _find_field_def(entity_def, lookup_field)
+            maybe_target = field_def.get("entity") if isinstance(field_def, dict) else None
+            if isinstance(maybe_target, str) and maybe_target:
+                target_entity = maybe_target
+        target_emails = _lookup_email_from_record(target_entity, target_id, spec.get("email_field"))
+        recipients.extend(target_emails)
+
+    # Template expression can contribute recipients.
+    to_expr = inputs.get("to_expr")
+    if isinstance(to_expr, str) and to_expr.strip():
+        try:
+            rendered = render_template(to_expr, context, strict=True)
+            recipients.extend(_split_recipients(rendered))
+        except Exception:
+            pass
+
     recipients = [item for item in recipients if "@" in item]
     return _dedupe(recipients)
 

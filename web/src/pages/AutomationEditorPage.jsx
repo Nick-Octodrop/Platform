@@ -191,6 +191,13 @@ export default function AutomationEditorPage({ user }) {
     setOpenStepKeys((prev) => (prev.includes(stepKey) ? prev.filter((k) => k !== stepKey) : [...prev, stepKey]));
   }
 
+  function delayUnitToSeconds(unit) {
+    if (unit === "minutes") return 60;
+    if (unit === "hours") return 3600;
+    if (unit === "days") return 86400;
+    return 1;
+  }
+
   const actionOptions = useMemo(() => {
     const groups = [];
     if (Array.isArray(meta.system_actions)) {
@@ -217,6 +224,13 @@ export default function AutomationEditorPage({ user }) {
     }
     return Array.from(grouped.entries()).map(([label, options]) => ({ label, options }));
   }, [meta]);
+
+  const selectedTriggerEventId = (trigger?.event_types || [])[0] || "";
+  const triggerEventMeta = useMemo(() => {
+    const catalog = Array.isArray(meta.event_catalog) ? meta.event_catalog : [];
+    return catalog.find((evt) => evt?.id === selectedTriggerEventId) || null;
+  }, [meta.event_catalog, selectedTriggerEventId]);
+  const defaultConditionEntityId = triggerEventMeta?.entity_id || "";
 
   const entityOptions = useMemo(() => {
     if (!Array.isArray(meta.entities)) return [];
@@ -393,7 +407,7 @@ export default function AutomationEditorPage({ user }) {
           return (
             <div
               key={stepKey}
-              className={`collapse collapse-arrow border border-base-300 bg-base-200 ${isOpen ? "collapse-open" : "collapse-close"}`}
+              className={`collapse border border-base-300 bg-base-200 ${isOpen ? "collapse-open" : "collapse-close"}`}
             >
               <div className="collapse-title pr-2" onClick={() => toggleStep(stepKey)}>
                 <div className="flex items-center justify-between">
@@ -402,6 +416,16 @@ export default function AutomationEditorPage({ user }) {
                     <div className="text-xs opacity-60">{stepSummary}</div>
                   </div>
                   <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleStep(stepKey);
+                      }}
+                    >
+                      {isOpen ? "Collapse" : "Expand"}
+                    </button>
                     <button
                       type="button"
                       className="btn btn-ghost btn-xs"
@@ -618,6 +642,43 @@ export default function AutomationEditorPage({ user }) {
 
                 {step.action_id === "system.send_email" && (
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                        {(() => {
+                          const selectedEntityId = step.inputs?.entity_id || triggerEventMeta?.entity_id || "";
+                          const activeEntity = selectedEntityId ? entityById.get(selectedEntityId) : null;
+                          const fields = Array.isArray(activeEntity?.fields) ? activeEntity.fields : [];
+                          const emailFields = fields.filter((f) => {
+                            const id = (f?.id || "").toLowerCase();
+                            const label = (f?.label || "").toLowerCase();
+                            return id.includes("email") || label.includes("email");
+                          });
+                          const lookupFields = fields.filter((f) => f?.type === "lookup");
+                          const selectedLookupIdsRaw = step.inputs?.to_lookup_field_ids;
+                          const selectedLookupIds = Array.isArray(selectedLookupIdsRaw)
+                            ? selectedLookupIdsRaw
+                            : typeof selectedLookupIdsRaw === "string"
+                              ? selectedLookupIdsRaw.split(",").map((v) => v.trim()).filter(Boolean)
+                              : (step.inputs?.to_lookup_field_id ? [step.inputs.to_lookup_field_id] : []);
+                          const selectedRecordEmailFieldIds = Array.isArray(step.inputs?.to_field_ids)
+                            ? step.inputs.to_field_ids
+                            : (step.inputs?.to_field_id ? [step.inputs.to_field_id] : []);
+                          const selectedInternalEmails = Array.isArray(step.inputs?.to_internal_emails)
+                            ? step.inputs.to_internal_emails
+                            : typeof step.inputs?.to_internal_emails === "string"
+                              ? step.inputs.to_internal_emails.split(",").map((v) => v.trim()).filter(Boolean)
+                              : [];
+                          const primaryLookupField = selectedLookupIds[0] || step.inputs?.to_lookup_field_id || "";
+                          const selectedLookupFieldDef = lookupFields.find((f) => f.id === primaryLookupField);
+                          const targetEntityId = step.inputs?.to_lookup_entity_id || selectedLookupFieldDef?.entity;
+                          const targetEntity = targetEntityId ? entityById.get(targetEntityId) : null;
+                          const targetFields = Array.isArray(targetEntity?.fields) ? targetEntity.fields : [];
+                          const targetEmailFields = targetFields.filter((f) => {
+                            const id = (f?.id || "").toLowerCase();
+                            const label = (f?.label || "").toLowerCase();
+                            return id.includes("email") || label.includes("email");
+                          });
+
+                          return (
+                            <>
                         <label className="form-control md:col-span-6">
                           <span className="label-text">Connection (optional)</span>
                           <select
@@ -649,19 +710,6 @@ export default function AutomationEditorPage({ user }) {
                           </select>
                         </label>
                         <label className="form-control md:col-span-6">
-                          <span className="label-text">Recipient source</span>
-                          <select
-                            className="select select-bordered"
-                            value={step.inputs?.to_mode || "manual"}
-                            onChange={(e) => updateStepInput(index, "to_mode", e.target.value)}
-                          >
-                            <option value="manual">Manual addresses</option>
-                            <option value="record_field">Record email field</option>
-                            <option value="lookup_field">Lookup email field</option>
-                            <option value="template">Template expression</option>
-                          </select>
-                        </label>
-                        <label className="form-control md:col-span-6">
                           <span className="label-text">Entity (optional)</span>
                           <select
                             className="select select-bordered"
@@ -676,112 +724,165 @@ export default function AutomationEditorPage({ user }) {
                             ))}
                           </select>
                         </label>
-                        <label className="form-control md:col-span-12">
-                          <span className="label-text">To (comma separated)</span>
-                          <input className="input input-bordered" value={(step.inputs?.to || []).join(", ")} onChange={(e) => updateStepInput(index, "to", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
-                          <span className="label label-text-alt opacity-50">Always included as fallback recipients.</span>
+                        <label className="form-control md:col-span-6">
+                          <span className="label-text">Record (optional)</span>
+                          <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} />
+                          <span className="label label-text-alt opacity-50">Optional record for merge fields (paste ID or use trigger).</span>
                         </label>
-                        {(step.inputs?.to_mode || "manual") === "record_field" && (() => {
-                          const selectedEntity = step.inputs?.entity_id && step.inputs?.entity_id !== "{{trigger.entity_id}}"
-                            ? step.inputs.entity_id
-                            : null;
-                          const activeEntity = selectedEntity ? entityById.get(selectedEntity) : null;
-                          const fields = Array.isArray(activeEntity?.fields) ? activeEntity.fields : [];
-                          const emailish = fields.filter((f) => {
-                            const id = (f?.id || "").toLowerCase();
-                            const label = (f?.label || "").toLowerCase();
-                            return id.includes("email") || label.includes("email");
-                          });
-                          return (
-                            <label className="form-control md:col-span-12">
-                              <span className="label-text">Record email field</span>
-                              <select
-                                className="select select-bordered"
-                                value={step.inputs?.to_field_id || ""}
-                                onChange={(e) => updateStepInput(index, "to_field_id", e.target.value)}
-                              >
-                                <option value="">Select field…</option>
-                                {emailish.map((field) => (
-                                  <option key={field.id} value={field.id}>
-                                    {field.label || field.id}
-                                  </option>
-                                ))}
-                              </select>
-                              <span className="label label-text-alt opacity-50">Uses selected entity record value for this field.</span>
-                            </label>
-                          );
-                        })()}
-                        {(step.inputs?.to_mode || "manual") === "lookup_field" && (() => {
-                          const selectedEntity = step.inputs?.entity_id && step.inputs?.entity_id !== "{{trigger.entity_id}}"
-                            ? step.inputs.entity_id
-                            : null;
-                          const activeEntity = selectedEntity ? entityById.get(selectedEntity) : null;
-                          const fields = Array.isArray(activeEntity?.fields) ? activeEntity.fields : [];
-                          const lookupFields = fields.filter((f) => f?.type === "lookup");
-                          const chosenLookup = lookupFields.find((f) => f?.id === step.inputs?.to_lookup_field_id);
-                          const targetEntityId = step.inputs?.to_lookup_entity_id || chosenLookup?.entity;
-                          const targetEntity = targetEntityId ? entityById.get(targetEntityId) : null;
-                          const targetFields = Array.isArray(targetEntity?.fields) ? targetEntity.fields : [];
-                          const targetEmailish = targetFields.filter((f) => {
-                            const id = (f?.id || "").toLowerCase();
-                            const label = (f?.label || "").toLowerCase();
-                            return id.includes("email") || label.includes("email");
-                          });
-                          return (
-                            <>
-                              <label className="form-control md:col-span-6">
-                                <span className="label-text">Lookup field</span>
-                                <select
-                                  className="select select-bordered"
-                                  value={step.inputs?.to_lookup_field_id || ""}
-                                  onChange={(e) => updateStepInput(index, "to_lookup_field_id", e.target.value)}
-                                >
-                                  <option value="">Select lookup field…</option>
-                                  {lookupFields.map((field) => (
-                                    <option key={field.id} value={field.id}>
-                                      {field.label || field.id}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-                              <label className="form-control md:col-span-6">
-                                <span className="label-text">Target email field</span>
-                                <select
-                                  className="select select-bordered"
-                                  value={step.inputs?.to_lookup_email_field || ""}
-                                  onChange={(e) => updateStepInput(index, "to_lookup_email_field", e.target.value)}
-                                >
-                                  <option value="">Auto-detect email</option>
-                                  {targetEmailish.map((field) => (
-                                    <option key={field.id} value={field.id}>
-                                      {field.label || field.id}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-                              <label className="form-control md:col-span-12">
-                                <span className="label-text">Additional lookup fields (comma)</span>
-                                <input
-                                  className="input input-bordered"
-                                  value={(step.inputs?.to_lookup_field_ids || []).join(", ")}
-                                  onChange={(e) =>
-                                    updateStepInput(
-                                      index,
-                                      "to_lookup_field_ids",
-                                      e.target.value
-                                        .split(",")
-                                        .map((v) => v.trim())
-                                        .filter(Boolean)
-                                    )
-                                  }
-                                  placeholder="workorder.assignee_id, workorder.approver_id"
-                                />
-                                <span className="label label-text-alt opacity-50">Send to all selected lookup targets.</span>
-                              </label>
-                            </>
-                          );
-                        })()}
-                        {(step.inputs?.to_mode || "manual") === "template" && (
+                        <label className="form-control md:col-span-12">
+                          <span className="label-text">Manual email recipients (comma separated)</span>
+                          <input className="input input-bordered" value={(step.inputs?.to || []).join(", ")} onChange={(e) => updateStepInput(index, "to", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
+                          <span className="label label-text-alt opacity-50">These are always included.</span>
+                        </label>
+                        <label className="form-control md:col-span-6">
+                          <span className="label-text">Add internal recipient</span>
+                          <select
+                            className="select select-bordered"
+                            value=""
+                            onChange={(e) => {
+                              const email = e.target.value;
+                              if (!email) return;
+                              const next = Array.from(new Set([...(selectedInternalEmails || []), email]));
+                              updateStepInput(index, "to_internal_emails", next);
+                            }}
+                          >
+                            <option value="">Select workspace member…</option>
+                            {memberOptions.map((member) => (
+                              <option key={member.user_id} value={member.email || ""} disabled={!member.email}>
+                                {member.name || member.email || member.user_id}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <div className="md:col-span-6">
+                          <span className="label-text">Internal recipients</span>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {selectedInternalEmails.map((email) => {
+                              const match = memberOptions.find((m) => m.email === email);
+                              const label = match?.name ? `${match.name} (${email})` : email;
+                              return (
+                                <span key={email} className="badge badge-outline gap-2 py-3">
+                                  {label}
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-xs"
+                                    onClick={() => updateStepInput(index, "to_internal_emails", selectedInternalEmails.filter((v) => v !== email))}
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              );
+                            })}
+                            {!selectedInternalEmails.length && <span className="text-xs opacity-60">No internal recipients</span>}
+                          </div>
+                        </div>
+                        <label className="form-control md:col-span-6">
+                          <span className="label-text">Add record email field</span>
+                          <select
+                            className="select select-bordered"
+                            value=""
+                            onChange={(e) => {
+                              const fieldId = e.target.value;
+                              if (!fieldId) return;
+                              const next = Array.from(new Set([...(selectedRecordEmailFieldIds || []), fieldId]));
+                              updateStepInput(index, "to_field_ids", next);
+                              updateStepInput(index, "to_field_id", next[0] || "");
+                            }}
+                          >
+                            <option value="">Select email field…</option>
+                            {emailFields.map((field) => (
+                              <option key={field.id} value={field.id}>
+                                {field.label || field.id}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <div className="md:col-span-6">
+                          <span className="label-text">Record email fields</span>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {selectedRecordEmailFieldIds.map((fieldId) => {
+                              const field = emailFields.find((f) => f.id === fieldId);
+                              return (
+                                <span key={fieldId} className="badge badge-outline gap-2 py-3">
+                                  {field?.label || fieldId}
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-xs"
+                                    onClick={() => {
+                                      const next = selectedRecordEmailFieldIds.filter((v) => v !== fieldId);
+                                      updateStepInput(index, "to_field_ids", next);
+                                      updateStepInput(index, "to_field_id", next[0] || "");
+                                    }}
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              );
+                            })}
+                            {!selectedRecordEmailFieldIds.length && <span className="text-xs opacity-60">No record email fields</span>}
+                          </div>
+                        </div>
+                        <label className="form-control md:col-span-6">
+                          <span className="label-text">Add lookup recipient field</span>
+                          <select
+                            className="select select-bordered"
+                            value=""
+                            onChange={(e) => {
+                              const fieldId = e.target.value;
+                              if (!fieldId) return;
+                              const next = Array.from(new Set([...(selectedLookupIds || []), fieldId]));
+                              updateStepInput(index, "to_lookup_field_ids", next);
+                              updateStepInput(index, "to_lookup_field_id", next[0] || "");
+                            }}
+                          >
+                            <option value="">Select lookup field…</option>
+                            {lookupFields.map((field) => (
+                              <option key={field.id} value={field.id}>
+                                {field.label || field.id}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="form-control md:col-span-6">
+                          <span className="label-text">Target email field</span>
+                          <select
+                            className="select select-bordered"
+                            value={step.inputs?.to_lookup_email_field || ""}
+                            onChange={(e) => updateStepInput(index, "to_lookup_email_field", e.target.value)}
+                          >
+                            <option value="">Auto-detect email</option>
+                            {targetEmailFields.map((field) => (
+                              <option key={field.id} value={field.id}>
+                                {field.label || field.id}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <div className="md:col-span-12">
+                          <span className="label-text">Lookup recipient fields</span>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {selectedLookupIds.map((fieldId) => {
+                              const field = lookupFields.find((f) => f.id === fieldId);
+                              return (
+                                <span key={fieldId} className="badge badge-outline gap-2 py-3">
+                                  {field?.label || fieldId}
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-xs"
+                                    onClick={() => {
+                                      const next = selectedLookupIds.filter((v) => v !== fieldId);
+                                      updateStepInput(index, "to_lookup_field_ids", next);
+                                      updateStepInput(index, "to_lookup_field_id", next[0] || "");
+                                    }}
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              );
+                            })}
+                            {!selectedLookupIds.length && <span className="text-xs opacity-60">No lookup recipient fields</span>}
+                          </div>
+                        </div>
                           <label className="form-control md:col-span-12">
                             <span className="label-text">Recipient expression</span>
                             <input
@@ -792,17 +893,14 @@ export default function AutomationEditorPage({ user }) {
                             />
                             <span className="label label-text-alt opacity-50">Rendered with Jinja context: record, trigger, branding.</span>
                           </label>
-                        )}
                         <label className="form-control md:col-span-12">
                           <span className="label-text">Subject (optional)</span>
                           <input className="input input-bordered" value={step.inputs?.subject || ""} onChange={(e) => updateStepInput(index, "subject", e.target.value)} />
                           <span className="label label-text-alt opacity-50">Leave blank to use the template subject.</span>
                         </label>
-                        <label className="form-control md:col-span-12">
-                          <span className="label-text">Record (optional)</span>
-                          <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} />
-                          <span className="label label-text-alt opacity-50">Optional record for merge fields (paste ID or use trigger).</span>
-                        </label>
+                            </>
+                          );
+                        })()}
                       </div>
                     )}
 
@@ -882,30 +980,166 @@ export default function AutomationEditorPage({ user }) {
                 )}
 
                 {step.kind === "delay" && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <label className="form-control md:col-span-2">
-                      <span className="label-text">Delay (seconds)</span>
-                      <input className="input input-bordered" type="number" value={step.seconds || 0} onChange={(e) => updateStep(index, { seconds: Number(e.target.value) })} />
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                    <label className="form-control md:col-span-4">
+                      <span className="label-text">Delay mode</span>
+                      <select
+                        className="select select-bordered"
+                        value={step.target_time ? "until_time" : "relative"}
+                        onChange={(e) => {
+                          if (e.target.value === "until_time") {
+                            updateStep(index, { seconds: undefined, target_time: step.target_time || "" });
+                          } else {
+                            updateStep(index, { target_time: undefined, seconds: step.seconds || 60 });
+                          }
+                        }}
+                      >
+                        <option value="relative">Wait relative time</option>
+                        <option value="until_time">Wait until datetime</option>
+                      </select>
                     </label>
+                    {!step.target_time ? (
+                      <>
+                        <label className="form-control md:col-span-4">
+                          <span className="label-text">Amount</span>
+                          <input
+                            className="input input-bordered"
+                            type="number"
+                            min={0}
+                            value={step.delay_value || step.seconds || 60}
+                            onChange={(e) => {
+                              const amount = Math.max(0, Number(e.target.value || 0));
+                              const unit = step.delay_unit || "seconds";
+                              updateStep(index, { delay_value: amount, delay_unit: unit, seconds: amount * delayUnitToSeconds(unit) });
+                            }}
+                          />
+                        </label>
+                        <label className="form-control md:col-span-4">
+                          <span className="label-text">Unit</span>
+                          <select
+                            className="select select-bordered"
+                            value={step.delay_unit || "seconds"}
+                            onChange={(e) => {
+                              const unit = e.target.value;
+                              const amount = Number(step.delay_value || step.seconds || 60);
+                              updateStep(index, { delay_unit: unit, delay_value: amount, seconds: amount * delayUnitToSeconds(unit) });
+                            }}
+                          >
+                            <option value="seconds">Seconds</option>
+                            <option value="minutes">Minutes</option>
+                            <option value="hours">Hours</option>
+                            <option value="days">Days</option>
+                          </select>
+                        </label>
+                      </>
+                    ) : (
+                      <label className="form-control md:col-span-8">
+                        <span className="label-text">Resume at</span>
+                        <input
+                          className="input input-bordered"
+                          type="datetime-local"
+                          value={step.target_time ? new Date(step.target_time).toISOString().slice(0, 16) : ""}
+                          onChange={(e) => {
+                            const value = e.target.value ? new Date(e.target.value).toISOString() : "";
+                            updateStep(index, { target_time: value, seconds: undefined });
+                          }}
+                        />
+                      </label>
+                    )}
                   </div>
                 )}
 
                 {step.kind === "condition" && (() => {
-                  const expr = step.expr || { op: "eq", left: { var: "trigger.status" }, right: { literal: "" } };
+                  const expr = step.expr || { op: "eq", left: { var: "trigger.record_id" }, right: { literal: "" } };
+                  const selectedEntityId = step.inputs?.entity_id || defaultConditionEntityId || "";
+                  const selectedEntity = selectedEntityId ? entityById.get(selectedEntityId) : null;
+                  const selectedEntityFields = Array.isArray(selectedEntity?.fields) ? selectedEntity.fields : [];
                   const leftVar = expr?.left?.var || "";
                   const op = expr?.op || "eq";
                   const rightVal = expr?.right?.literal ?? "";
+                  const fieldPathPrefix = "trigger.record.";
+                  const fieldPathOptions = selectedEntityFields.map((field) => ({
+                    value: `${fieldPathPrefix}${field.id}`,
+                    label: field.label || field.id,
+                    type: field.type,
+                    options: field.options || [],
+                  }));
+                  const commonOptions = [
+                    { value: "trigger.event", label: "Trigger event", type: "string", options: [] },
+                    { value: "trigger.entity_id", label: "Trigger entity", type: "string", options: [] },
+                    { value: "trigger.record_id", label: "Trigger record", type: "string", options: [] },
+                  ];
+                  const availableFieldPaths = [...commonOptions, ...fieldPathOptions];
+                  const selectedFieldDef = availableFieldPaths.find((item) => item.value === leftVar) || null;
+                  const isExistsOp = op === "exists" || op === "not_exists";
+                  const isInListOp = op === "in" || op === "not_in";
+                  const isNumericOp = ["gt", "gte", "lt", "lte"].includes(op);
+                  const enumOptions = Array.isArray(selectedFieldDef?.options) ? selectedFieldDef.options : [];
+                  const hasEnumOptions = enumOptions.length > 0;
+                  const fieldType = selectedFieldDef?.type || "string";
+
+                  function updateConditionValue(raw) {
+                    let nextValue = raw;
+                    if (isInListOp) {
+                      nextValue = String(raw || "")
+                        .split(",")
+                        .map((part) => part.trim())
+                        .filter(Boolean);
+                    } else if (fieldType === "number" || isNumericOp) {
+                      nextValue = raw === "" ? "" : Number(raw);
+                    } else if (fieldType === "boolean") {
+                      nextValue = raw === "true";
+                    }
+                    updateStep(index, { expr: { ...expr, right: { literal: nextValue } } });
+                  }
+
                   return (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <label className="form-control">
-                        <span className="label-text">Field (trigger path)</span>
-                        <input
-                          className="input input-bordered"
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                      <label className="form-control md:col-span-4">
+                        <span className="label-text">Entity context</span>
+                        <select
+                          className="select select-bordered"
+                          value={selectedEntityId}
+                          onChange={(e) => {
+                            updateStepInput(index, "entity_id", e.target.value);
+                            updateStep(index, { expr: { ...expr, left: { var: "trigger.record_id" } } });
+                          }}
+                        >
+                          <option value="">Use trigger entity</option>
+                          {entityOptions.map((ent) => (
+                            <option key={ent.id} value={ent.id}>
+                              {ent.label || ent.id}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="form-control md:col-span-4">
+                        <span className="label-text">Field</span>
+                        <select
+                          className="select select-bordered"
                           value={leftVar}
                           onChange={(e) => updateStep(index, { expr: { ...expr, left: { var: e.target.value } } })}
-                        />
+                        >
+                          <option value="">Select field…</option>
+                          <optgroup label="Trigger">
+                            {commonOptions.map((item) => (
+                              <option key={item.value} value={item.value}>
+                                {item.label}
+                              </option>
+                            ))}
+                          </optgroup>
+                          {fieldPathOptions.length > 0 && (
+                            <optgroup label="Record fields">
+                              {fieldPathOptions.map((item) => (
+                                <option key={item.value} value={item.value}>
+                                  {item.label}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                        </select>
                       </label>
-                      <label className="form-control">
+                      <label className="form-control md:col-span-4">
                         <span className="label-text">Operator</span>
                         <select
                           className="select select-bordered"
@@ -914,18 +1148,60 @@ export default function AutomationEditorPage({ user }) {
                         >
                           <option value="eq">equals</option>
                           <option value="neq">not equals</option>
+                          <option value="gt">greater than</option>
+                          <option value="gte">greater or equal</option>
+                          <option value="lt">less than</option>
+                          <option value="lte">less or equal</option>
+                          <option value="contains">contains</option>
+                          <option value="in">is in list</option>
+                          <option value="not_in">is not in list</option>
                           <option value="exists">exists</option>
                           <option value="not_exists">not exists</option>
                         </select>
                       </label>
-                      <label className="form-control md:col-span-2">
+                      <label className="form-control md:col-span-12">
                         <span className="label-text">Value</span>
-                        <input
-                          className="input input-bordered"
-                          value={rightVal}
-                          onChange={(e) => updateStep(index, { expr: { ...expr, right: { literal: e.target.value } } })}
-                          disabled={op === "exists" || op === "not_exists"}
-                        />
+                        {isExistsOp ? (
+                          <input className="input input-bordered" value="No value needed for this operator" disabled />
+                        ) : hasEnumOptions && !isInListOp ? (
+                          <select
+                            className="select select-bordered"
+                            value={String(rightVal ?? "")}
+                            onChange={(e) => updateConditionValue(e.target.value)}
+                          >
+                            <option value="">Select value…</option>
+                            {enumOptions.map((opt) => {
+                              const value = typeof opt === "string" ? opt : opt?.value;
+                              const label = typeof opt === "string" ? opt : opt?.label || opt?.value;
+                              if (!value) return null;
+                              return (
+                                <option key={value} value={value}>
+                                  {label}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        ) : fieldType === "boolean" ? (
+                          <select
+                            className="select select-bordered"
+                            value={String(Boolean(rightVal))}
+                            onChange={(e) => updateConditionValue(e.target.value)}
+                          >
+                            <option value="true">True</option>
+                            <option value="false">False</option>
+                          </select>
+                        ) : (
+                          <input
+                            className="input input-bordered"
+                            type={isNumericOp || fieldType === "number" ? "number" : "text"}
+                            value={Array.isArray(rightVal) ? rightVal.join(", ") : rightVal}
+                            onChange={(e) => updateConditionValue(e.target.value)}
+                            placeholder={isInListOp ? "value1, value2, value3" : ""}
+                          />
+                        )}
+                        <span className="label label-text-alt opacity-50">
+                          {isInListOp ? "Use comma-separated values." : "Condition runs against trigger data."}
+                        </span>
                       </label>
                     </div>
                   );
