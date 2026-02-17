@@ -4,6 +4,7 @@ import SettingsShell from "../ui/SettingsShell.jsx";
 export default function SettingsPage() {
   const wiredPages = new Set([
     "/settings/preferences",
+    "/settings/password",
     "/studio",
     "/settings/users",
     "/settings/workspaces",
@@ -44,6 +45,14 @@ export default function SettingsPage() {
       description: "Theme, developer mode, and account profile.",
       primary: { label: "Open Preferences", to_page: "/settings/preferences" },
       keywords: ["theme", "profile", "account", "developer"],
+    },
+    {
+      id: "password",
+      category_id: "general",
+      title: "Password",
+      description: "Change your account password.",
+      primary: { label: "Change Password", to_page: "/settings/password" },
+      keywords: ["security", "password", "auth"],
     },
     {
       id: "studio",

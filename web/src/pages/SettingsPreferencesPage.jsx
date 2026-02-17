@@ -160,6 +160,7 @@ export default function SettingsPreferencesPage({ user, onSignOut }) {
           <div className="mt-4 flex gap-2">
             <button className="btn btn-outline btn-sm" onClick={handleSignOut}>Sign out</button>
             <button className="btn btn-sm" onClick={handleClearCaches}>Clear local caches</button>
+            <Link className="btn btn-outline btn-sm" to="/settings/password">Change password</Link>
           </div>
         </div>
       </div>

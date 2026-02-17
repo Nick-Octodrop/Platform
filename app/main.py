@@ -8,6 +8,7 @@ import sys
 import hashlib
 import urllib.request
 import urllib.error
+import urllib.parse
 from types import SimpleNamespace
 from pathlib import Path
 from typing import Any, Dict
@@ -726,6 +727,23 @@ def _supabase_invite_user(email: str, redirect_to: str | None = None) -> dict:
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="ignore")
         raise RuntimeError(f"invite_failed:{exc.code}:{body}") from exc
+
+
+def _supabase_delete_user(user_id: str) -> None:
+    if not _supabase_admin_enabled():
+        raise RuntimeError("Supabase service role not configured")
+    base = (os.getenv("SUPABASE_URL") or "").strip().rstrip("/")
+    req = urllib.request.Request(
+        f"{base}/auth/v1/admin/users/{urllib.parse.quote(user_id)}",
+        headers=_supabase_admin_headers(),
+        method="DELETE",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20):
+            return
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"delete_user_failed:{exc.code}:{body}") from exc
 
 
 def _find_auth_user_id_by_email(email: str) -> str | None:
@@ -9943,11 +9961,29 @@ async def delete_member(request: Request, user_id: str) -> dict:
     workspace_id = actor.get("workspace_id")
     if user_id == actor.get("user_id") and actor.get("platform_role") != "superadmin":
         return _error_response("FORBIDDEN", "You cannot remove yourself from this workspace", status=400)
+    member_before = get_membership(user_id, workspace_id)
     ok = remove_workspace_member(workspace_id, user_id)
     if not ok:
         return _error_response("MEMBER_NOT_FOUND", "Member not found", "user_id", status=404)
+    raw_delete_auth = request.query_params.get("delete_auth_user", "")
+    delete_auth_user = str(raw_delete_auth).strip().lower() in {"1", "true", "yes", "on"}
+    if delete_auth_user:
+        user_workspaces = list_user_workspaces(user_id)
+        if actor.get("platform_role") != "superadmin" and user_workspaces:
+            return _error_response(
+                "FORBIDDEN",
+                "Only superadmin can delete auth users with workspace memberships",
+                "delete_auth_user",
+                status=403,
+            )
+        try:
+            _supabase_delete_user(user_id)
+        except Exception as exc:
+            role = (member_before or {}).get("role") or "member"
+            add_workspace_member(workspace_id, user_id, role)
+            return _error_response("DELETE_AUTH_FAILED", str(exc), "delete_auth_user", status=400)
     members = list_workspace_members(workspace_id)
-    return _ok_response({"ok": True, "members": members})
+    return _ok_response({"ok": True, "members": members, "auth_deleted": delete_auth_user})
 
 
 @app.patch("/access/platform-role/{user_id}")

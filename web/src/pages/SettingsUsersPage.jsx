@@ -17,6 +17,8 @@ export default function SettingsUsersPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [pendingRemove, setPendingRemove] = useState(null);
+  const [deleteAuthUser, setDeleteAuthUser] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -38,6 +40,7 @@ export default function SettingsUsersPage() {
 
   const actor = context?.actor || {};
   const canManage = actor?.workspace_role === "admin" || actor?.platform_role === "superadmin";
+  const canDeleteAuth = actor?.platform_role === "superadmin";
 
   const roleLabel = useMemo(() => {
     const map = new Map(ROLE_OPTIONS.map((r) => [r.value, r.label]));
@@ -52,7 +55,11 @@ export default function SettingsUsersPage() {
     try {
       const res = await apiFetch("/access/members/invite", {
         method: "POST",
-        body: { email: inviteEmail.trim().toLowerCase(), role: inviteRole },
+        body: {
+          email: inviteEmail.trim().toLowerCase(),
+          role: inviteRole,
+          redirect_to: `${window.location.origin}/auth/set-password`,
+        },
       });
       setMembers(res?.members || []);
       setNotice(`Invitation sent to ${inviteEmail.trim()}`);
@@ -81,15 +88,27 @@ export default function SettingsUsersPage() {
     }
   }
 
-  async function removeMember(userId) {
-    const ok = window.confirm("Remove this user from the workspace?");
-    if (!ok) return;
+  function openRemoveModal(member) {
+    setPendingRemove(member);
+    setDeleteAuthUser(!!canDeleteAuth);
+  }
+
+  function closeRemoveModal() {
+    setPendingRemove(null);
+    setDeleteAuthUser(false);
+  }
+
+  async function removeMember(member) {
+    if (!member?.user_id) return;
     setSaving(true);
     setError("");
     setNotice("");
     try {
-      const res = await apiFetch(`/access/members/${userId}`, { method: "DELETE" });
+      const query = deleteAuthUser ? "?delete_auth_user=1" : "";
+      const res = await apiFetch(`/access/members/${member.user_id}${query}`, { method: "DELETE" });
       setMembers(res?.members || []);
+      setNotice(deleteAuthUser ? "User removed and auth account deleted." : "User removed from workspace.");
+      closeRemoveModal();
     } catch (err) {
       setError(err?.message || "Failed to remove user");
     } finally {
@@ -176,7 +195,7 @@ export default function SettingsUsersPage() {
                         </select>
                       </td>
                       <td>
-                        <button className="btn btn-ghost btn-xs text-error" disabled={!canManage || saving} onClick={() => removeMember(member.user_id)}>
+                        <button className="btn btn-ghost btn-xs text-error" disabled={!canManage || saving} onClick={() => openRemoveModal(member)}>
                           Remove
                         </button>
                       </td>
@@ -188,6 +207,39 @@ export default function SettingsUsersPage() {
           )}
         </div>
       </div>
+
+      {pendingRemove ? (
+        <div className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg">Remove user</h3>
+            <p className="text-sm opacity-70 mt-2">
+              Remove <span className="font-medium">{pendingRemove.email || pendingRemove.name || pendingRemove.user_id}</span> from this workspace.
+            </p>
+            <label className="label cursor-pointer justify-start gap-3 mt-3">
+              <input
+                type="checkbox"
+                className="checkbox checkbox-sm"
+                checked={deleteAuthUser}
+                disabled={saving || !canDeleteAuth}
+                onChange={(e) => setDeleteAuthUser(e.target.checked)}
+              />
+              <span className="label-text">
+                Also delete this user from Supabase Auth (global account delete)
+              </span>
+            </label>
+            {!canDeleteAuth ? (
+              <p className="text-xs opacity-70 mt-1">Superadmin required for global auth deletion.</p>
+            ) : null}
+            <div className="modal-action">
+              <button className="btn" onClick={closeRemoveModal} disabled={saving}>Cancel</button>
+              <button className="btn btn-error" onClick={() => removeMember(pendingRemove)} disabled={saving}>
+                {saving ? "Removing..." : "Remove user"}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop" onClick={closeRemoveModal} />
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -16,6 +16,7 @@ import Studio2Page from "./pages/Studio2Page.jsx";
 import AuditPage from "./pages/AuditPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
 import SettingsPreferencesPage from "./pages/SettingsPreferencesPage.jsx";
+import SettingsPasswordPage from "./pages/SettingsPasswordPage.jsx";
 import SettingsUsersPage from "./pages/SettingsUsersPage.jsx";
 import SettingsWorkspacesPage from "./pages/SettingsWorkspacesPage.jsx";
 import SettingsSecretsPage from "./pages/SettingsSecretsPage.jsx";
@@ -40,6 +41,7 @@ import AutomationRunDetailPage from "./pages/AutomationRunDetailPage.jsx";
 import EntityCreatePage from "./pages/EntityCreatePage.jsx";
 import EntityRecordPage from "./pages/EntityRecordPage.jsx";
 import AppShell from "./apps/AppShell.jsx";
+import AuthSetPasswordPage from "./pages/AuthSetPasswordPage.jsx";
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -99,6 +101,7 @@ export default function App() {
       <ErrorBoundary>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/auth/set-password" element={<AuthSetPasswordPage user={user} />} />
           <Route
             path="/*"
             element={
@@ -123,6 +126,7 @@ export default function App() {
             <Route path="audit" element={<AuditPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="settings/preferences" element={<SettingsPreferencesPage user={user} onSignOut={handleSignOut} />} />
+            <Route path="settings/password" element={<SettingsPasswordPage user={user} />} />
             <Route path="settings/users" element={<SettingsUsersPage />} />
             <Route path="settings/workspaces" element={<SettingsWorkspacesPage />} />
             <Route path="settings/secrets" element={<SettingsSecretsPage />} />
