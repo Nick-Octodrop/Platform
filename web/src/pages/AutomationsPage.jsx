@@ -12,7 +12,7 @@ const DEFAULT_TRIGGER = {
 };
 
 const DEFAULT_STEPS = [
-  { id: "step_notify", kind: "action", action_id: "system.notify", inputs: { recipient_user_id: "", title: "Automation", body: "" } },
+  { id: "step_notify", kind: "action", action_id: "system.notify", inputs: { recipient_user_ids: [], title: "Automation", body: "" } },
 ];
 
 export default function AutomationsPage() {

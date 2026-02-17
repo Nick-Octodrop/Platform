@@ -433,15 +433,34 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
         raise RuntimeError("Forced failure")
     if action_id == "system.notify":
         store = DbNotificationStore()
-        record = {
-            "recipient_user_id": inputs.get("recipient_user_id"),
-            "title": inputs.get("title") or "Notification",
-            "body": inputs.get("body") or "",
-            "severity": inputs.get("severity") or "info",
-            "link_to": inputs.get("link_to"),
-            "source_event": ctx.get("trigger") or {},
-        }
-        return {"notification": store.create(record)}
+        recipients: list[str] = []
+        recipient_user_ids = inputs.get("recipient_user_ids")
+        if isinstance(recipient_user_ids, list):
+            recipients.extend([str(v).strip() for v in recipient_user_ids if str(v).strip()])
+        elif isinstance(recipient_user_ids, str):
+            recipients.extend([part.strip() for part in recipient_user_ids.split(",") if part.strip()])
+        # Backward compatibility with legacy single-recipient payloads.
+        if isinstance(inputs.get("recipient_user_id"), str) and inputs.get("recipient_user_id").strip():
+            recipients.append(inputs.get("recipient_user_id").strip())
+        recipients = _dedupe(recipients)
+        if not recipients:
+            raise RuntimeError("Notification recipients not resolved")
+
+        notifications = []
+        for recipient_user_id in recipients:
+            notifications.append(
+                store.create(
+                    {
+                        "recipient_user_id": recipient_user_id,
+                        "title": inputs.get("title") or "Notification",
+                        "body": inputs.get("body") or "",
+                        "severity": inputs.get("severity") or "info",
+                        "link_to": inputs.get("link_to"),
+                        "source_event": ctx.get("trigger") or {},
+                    }
+                )
+            )
+        return {"notifications": notifications, "notification": notifications[0]}
 
     if action_id == "system.send_email":
         email_store = DbEmailStore()

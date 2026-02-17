@@ -15,6 +15,7 @@ export default function AutomationEditorPage({ user }) {
   const [description, setDescription] = useState("");
   const [trigger, setTrigger] = useState({ kind: "event", event_types: [], filters: [] });
   const [steps, setSteps] = useState([]);
+  const [openStepKeys, setOpenStepKeys] = useState([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
@@ -158,14 +159,36 @@ export default function AutomationEditorPage({ user }) {
   }
 
   function addStep() {
+    const newStepId = `step_${steps.length + 1}`;
     setSteps((prev) => [
       ...prev,
-      { id: `step_${prev.length + 1}`, kind: "action", action_id: "system.notify", inputs: { title: "Automation", body: "" } },
+      { id: newStepId, kind: "action", action_id: "system.notify", inputs: { title: "Automation", body: "" } },
     ]);
+    setOpenStepKeys((prev) => Array.from(new Set([...prev, newStepId])));
   }
 
   function removeStep(index) {
-    setSteps((prev) => prev.filter((_, idx) => idx !== index));
+    setSteps((prev) => {
+      const target = prev[index];
+      const stepKey = target?.id || String(index);
+      setOpenStepKeys((openPrev) => openPrev.filter((k) => k !== stepKey));
+      return prev.filter((_, idx) => idx !== index);
+    });
+  }
+
+  function moveStep(index, direction) {
+    setSteps((prev) => {
+      const target = index + direction;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      const [itemToMove] = next.splice(index, 1);
+      next.splice(target, 0, itemToMove);
+      return next;
+    });
+  }
+
+  function toggleStep(stepKey) {
+    setOpenStepKeys((prev) => (prev.includes(stepKey) ? prev.filter((k) => k !== stepKey) : [...prev, stepKey]));
   }
 
   const actionOptions = useMemo(() => {
@@ -212,6 +235,14 @@ export default function AutomationEditorPage({ user }) {
     if (!Array.isArray(meta.members)) return [];
     return meta.members.slice().sort((a, b) => (a.user_id || "").localeCompare(b.user_id || ""));
   }, [meta.members]);
+
+  const memberById = useMemo(() => {
+    const map = new Map();
+    for (const member of memberOptions) {
+      if (member?.user_id) map.set(member.user_id, member);
+    }
+    return map;
+  }, [memberOptions]);
 
   const connectionOptions = useMemo(() => {
     if (!Array.isArray(meta.connections)) return [];
@@ -351,16 +382,64 @@ export default function AutomationEditorPage({ user }) {
           <button className="btn btn-sm" onClick={addStep}>Add step</button>
         </div>
         {steps.map((step, index) => {
+          const stepKey = step.id || String(index);
           const actionValue = step.module_id ? `${step.module_id}::${step.action_id}` : step.action_id || "";
+          const stepSummary = step.kind === "action"
+            ? (step.action_id || "Select action")
+            : step.kind === "condition"
+              ? "Condition"
+              : "Delay";
+          const isOpen = openStepKeys.includes(stepKey);
           return (
-            <div key={step.id || index} className="card bg-base-200">
-              <div className="card-body space-y-3">
+            <div
+              key={stepKey}
+              className={`collapse collapse-arrow border border-base-300 bg-base-200 ${isOpen ? "collapse-open" : "collapse-close"}`}
+            >
+              <div className="collapse-title pr-2" onClick={() => toggleStep(stepKey)}>
                 <div className="flex items-center justify-between">
-                  <div className="font-medium">Step {index + 1}</div>
-                  <button className="btn btn-ghost btn-xs" onClick={() => removeStep(index)}>Remove</button>
+                  <div>
+                    <div className="font-medium">Step {index + 1}</div>
+                    <div className="text-xs opacity-60">{stepSummary}</div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      disabled={index === 0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        moveStep(index, -1);
+                      }}
+                    >
+                      Up
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      disabled={index === steps.length - 1}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        moveStep(index, 1);
+                      }}
+                    >
+                      Down
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs text-error"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeStep(index);
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <label className="form-control">
+              </div>
+              <div className="collapse-content space-y-3 pt-0">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                  <label className="form-control md:col-span-4">
                     <span className="label-text">Kind</span>
                     <select
                       className="select select-bordered"
@@ -374,7 +453,7 @@ export default function AutomationEditorPage({ user }) {
                   </label>
 
                   {step.kind === "action" && (
-                    <label className="form-control">
+                    <label className="form-control md:col-span-8">
                       <span className="label-text">Action</span>
                       <select
                         className="select select-bordered"
@@ -415,21 +494,100 @@ export default function AutomationEditorPage({ user }) {
 
                 {step.action_id === "system.notify" && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {(() => {
+                          const selectedIds = Array.isArray(step.inputs?.recipient_user_ids)
+                            ? step.inputs.recipient_user_ids
+                            : step.inputs?.recipient_user_id
+                              ? [step.inputs.recipient_user_id]
+                              : [];
+                          return (
+                            <label className="form-control">
+                              <span className="label-text">Add recipient user</span>
+                              <select
+                                className="select select-bordered"
+                                value=""
+                                onChange={(e) => {
+                                  const nextId = e.target.value;
+                                  if (!nextId) return;
+                                  const next = Array.from(new Set([...selectedIds, nextId]));
+                                  updateStepInput(index, "recipient_user_ids", next);
+                                  updateStepInput(index, "recipient_user_id", next[0] || "");
+                                }}
+                              >
+                                <option value="">Select user…</option>
+                                {memberOptions.map((member) => (
+                                  <option key={member.user_id} value={member.user_id}>
+                                    {member.name || member.email || member.user_id}
+                                  </option>
+                                ))}
+                              </select>
+                              <span className="label label-text-alt opacity-50">You can add multiple recipients.</span>
+                            </label>
+                          );
+                        })()}
                         <label className="form-control">
-                          <span className="label-text">Recipient</span>
-                          <select
-                            className="select select-bordered"
-                            value={step.inputs?.recipient_user_id || ""}
-                            onChange={(e) => updateStepInput(index, "recipient_user_id", e.target.value)}
-                          >
-                            <option value="">Select user…</option>
-                            {memberOptions.map((member) => (
-                              <option key={member.user_id} value={member.user_id}>
-                                {member.name || member.email || member.user_id}
-                              </option>
-                            ))}
-                          </select>
+                          <span className="label-text">Recipient users (comma IDs)</span>
+                          <input
+                            className="input input-bordered"
+                            value={(() => {
+                              const selectedIds = Array.isArray(step.inputs?.recipient_user_ids)
+                                ? step.inputs.recipient_user_ids
+                                : step.inputs?.recipient_user_id
+                                  ? [step.inputs.recipient_user_id]
+                                  : [];
+                              return selectedIds.join(", ");
+                            })()}
+                            onChange={(e) => {
+                              const ids = e.target.value
+                                .split(",")
+                                .map((v) => v.trim())
+                                .filter(Boolean);
+                              updateStepInput(index, "recipient_user_ids", ids);
+                              updateStepInput(index, "recipient_user_id", ids[0] || "");
+                            }}
+                          />
                         </label>
+                        <div className="md:col-span-2">
+                          <span className="label-text">Selected recipients</span>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {(Array.isArray(step.inputs?.recipient_user_ids)
+                              ? step.inputs.recipient_user_ids
+                              : step.inputs?.recipient_user_id
+                                ? [step.inputs.recipient_user_id]
+                                : []
+                            ).map((userId) => {
+                              const member = memberById.get(userId);
+                              const label = member?.name || member?.email || userId;
+                              return (
+                                <span key={userId} className="badge badge-outline gap-2 py-3">
+                                  {label}
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-xs"
+                                    onClick={() => {
+                                      const current = Array.isArray(step.inputs?.recipient_user_ids)
+                                        ? step.inputs.recipient_user_ids
+                                        : step.inputs?.recipient_user_id
+                                          ? [step.inputs.recipient_user_id]
+                                          : [];
+                                      const next = current.filter((id) => id !== userId);
+                                      updateStepInput(index, "recipient_user_ids", next);
+                                      updateStepInput(index, "recipient_user_id", next[0] || "");
+                                    }}
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              );
+                            })}
+                            {!((Array.isArray(step.inputs?.recipient_user_ids)
+                              ? step.inputs.recipient_user_ids
+                              : step.inputs?.recipient_user_id
+                                ? [step.inputs.recipient_user_id]
+                                : []
+                            ).length) && <span className="text-xs opacity-60">No recipients selected</span>}
+                          </div>
+                        </div>
                         <label className="form-control">
                           <span className="label-text">Severity</span>
                           <select className="select select-bordered" value={step.inputs?.severity || "info"} onChange={(e) => updateStepInput(index, "severity", e.target.value)}>
@@ -459,8 +617,8 @@ export default function AutomationEditorPage({ user }) {
                 )}
 
                 {step.action_id === "system.send_email" && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <label className="form-control">
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                        <label className="form-control md:col-span-6">
                           <span className="label-text">Connection (optional)</span>
                           <select
                             className="select select-bordered"
@@ -475,7 +633,7 @@ export default function AutomationEditorPage({ user }) {
                             ))}
                           </select>
                         </label>
-                        <label className="form-control">
+                        <label className="form-control md:col-span-6">
                           <span className="label-text">Template (optional)</span>
                           <select
                             className="select select-bordered"
@@ -490,7 +648,7 @@ export default function AutomationEditorPage({ user }) {
                             ))}
                           </select>
                         </label>
-                        <label className="form-control">
+                        <label className="form-control md:col-span-6">
                           <span className="label-text">Recipient source</span>
                           <select
                             className="select select-bordered"
@@ -503,7 +661,22 @@ export default function AutomationEditorPage({ user }) {
                             <option value="template">Template expression</option>
                           </select>
                         </label>
-                        <label className="form-control">
+                        <label className="form-control md:col-span-6">
+                          <span className="label-text">Entity (optional)</span>
+                          <select
+                            className="select select-bordered"
+                            value={step.inputs?.entity_id || ""}
+                            onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
+                          >
+                            <option value="">Use trigger entity</option>
+                            {entityOptions.map((ent) => (
+                              <option key={ent.id} value={ent.id}>
+                                {ent.label || ent.id}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="form-control md:col-span-12">
                           <span className="label-text">To (comma separated)</span>
                           <input className="input input-bordered" value={(step.inputs?.to || []).join(", ")} onChange={(e) => updateStepInput(index, "to", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
                           <span className="label label-text-alt opacity-50">Always included as fallback recipients.</span>
@@ -520,7 +693,7 @@ export default function AutomationEditorPage({ user }) {
                             return id.includes("email") || label.includes("email");
                           });
                           return (
-                            <label className="form-control md:col-span-2">
+                            <label className="form-control md:col-span-12">
                               <span className="label-text">Record email field</span>
                               <select
                                 className="select select-bordered"
@@ -556,7 +729,7 @@ export default function AutomationEditorPage({ user }) {
                           });
                           return (
                             <>
-                              <label className="form-control">
+                              <label className="form-control md:col-span-6">
                                 <span className="label-text">Lookup field</span>
                                 <select
                                   className="select select-bordered"
@@ -571,7 +744,22 @@ export default function AutomationEditorPage({ user }) {
                                   ))}
                                 </select>
                               </label>
-                              <label className="form-control md:col-span-2">
+                              <label className="form-control md:col-span-6">
+                                <span className="label-text">Target email field</span>
+                                <select
+                                  className="select select-bordered"
+                                  value={step.inputs?.to_lookup_email_field || ""}
+                                  onChange={(e) => updateStepInput(index, "to_lookup_email_field", e.target.value)}
+                                >
+                                  <option value="">Auto-detect email</option>
+                                  {targetEmailish.map((field) => (
+                                    <option key={field.id} value={field.id}>
+                                      {field.label || field.id}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="form-control md:col-span-12">
                                 <span className="label-text">Additional lookup fields (comma)</span>
                                 <input
                                   className="input input-bordered"
@@ -590,26 +778,11 @@ export default function AutomationEditorPage({ user }) {
                                 />
                                 <span className="label label-text-alt opacity-50">Send to all selected lookup targets.</span>
                               </label>
-                              <label className="form-control">
-                                <span className="label-text">Target email field</span>
-                                <select
-                                  className="select select-bordered"
-                                  value={step.inputs?.to_lookup_email_field || ""}
-                                  onChange={(e) => updateStepInput(index, "to_lookup_email_field", e.target.value)}
-                                >
-                                  <option value="">Auto-detect email</option>
-                                  {targetEmailish.map((field) => (
-                                    <option key={field.id} value={field.id}>
-                                      {field.label || field.id}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
                             </>
                           );
                         })()}
                         {(step.inputs?.to_mode || "manual") === "template" && (
-                          <label className="form-control md:col-span-2">
+                          <label className="form-control md:col-span-12">
                             <span className="label-text">Recipient expression</span>
                             <input
                               className="input input-bordered"
@@ -620,27 +793,12 @@ export default function AutomationEditorPage({ user }) {
                             <span className="label label-text-alt opacity-50">Rendered with Jinja context: record, trigger, branding.</span>
                           </label>
                         )}
-                        <label className="form-control">
+                        <label className="form-control md:col-span-12">
                           <span className="label-text">Subject (optional)</span>
                           <input className="input input-bordered" value={step.inputs?.subject || ""} onChange={(e) => updateStepInput(index, "subject", e.target.value)} />
                           <span className="label label-text-alt opacity-50">Leave blank to use the template subject.</span>
                         </label>
-                        <label className="form-control">
-                          <span className="label-text">Entity (optional)</span>
-                          <select
-                            className="select select-bordered"
-                            value={step.inputs?.entity_id || ""}
-                            onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
-                          >
-                            <option value="">Use trigger entity</option>
-                            {entityOptions.map((ent) => (
-                              <option key={ent.id} value={ent.id}>
-                                {ent.label || ent.id}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="form-control">
+                        <label className="form-control md:col-span-12">
                           <span className="label-text">Record (optional)</span>
                           <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} />
                           <span className="label label-text-alt opacity-50">Optional record for merge fields (paste ID or use trigger).</span>

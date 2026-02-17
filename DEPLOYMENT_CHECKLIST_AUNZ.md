@@ -162,6 +162,7 @@ Deployments still run via Git + CLI; no mandatory VS Code plugin.
 
 
 
+flyctl secrets set POSTMARK_API_TOKEN=2e7c6368-6749-4616-82a0-03404938e748 -a octodrop-platform-worker
 
 
 
@@ -217,3 +218,8 @@ flyctl status -a octodrop-platform-api
 flyctl status -a octodrop-platform-worker
 flyctl logs -a octodrop-platform-api
 flyctl logs -a octodrop-platform-worker
+
+
+
+
+flyctl machines restart 59185590da2583 -a octodrop-platform-worker
