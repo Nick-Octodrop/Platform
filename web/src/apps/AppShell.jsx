@@ -120,6 +120,10 @@ function resolveActionLabel(action, manifest, views) {
   return "Action";
 }
 
+function isWriteActionKind(kind) {
+  return kind === "create_record" || kind === "update_record" || kind === "bulk_update";
+}
+
 function buildFieldIndex(manifest, compiled, entityFullId) {
   const fieldMap = compiled?.fieldByEntity?.get(entityFullId);
   if (fieldMap) return Object.fromEntries(fieldMap);
@@ -181,6 +185,7 @@ export default function AppShell({
   const errorFlashTimerRef = useRef(null);
 
   const recordId = (previewMode ? previewSearchParams : searchParams).get("record");
+  const canWriteRecords = bootstrap?.permissions?.records_write !== false;
 
   useEffect(() => {
     if (typeof performance !== "undefined" && performance.mark) {
@@ -606,6 +611,10 @@ export default function AppShell({
   }
 
   async function runAction(action) {
+    if (isWriteActionKind(action?.kind) && !canWriteRecords) {
+      pushToast("error", "Write access required");
+      return null;
+    }
     if (previewMode && !previewAllowNav) {
       pushToast("info", "Preview mode: actions are disabled");
       return null;
@@ -727,6 +736,7 @@ export default function AppShell({
   function renderAction(action) {
     const resolvedAction = resolveAction(action);
     if (!resolvedAction || !resolvedAction.kind) return null;
+    if (isWriteActionKind(resolvedAction.kind) && !canWriteRecords) return null;
     const label = resolveActionLabel(resolvedAction, manifest, views);
     const visible = resolvedAction.visible_when ? evalCondition(resolvedAction.visible_when, { record: recordDraft }) : true;
     if (!visible) return null;
@@ -830,10 +840,9 @@ export default function AppShell({
         onSelectionChange={setSelectedIds}
         onRecordDraftChange={setRecordDraft}
         onFallback={(path) => navigate(path)}
-        canCreateLookup={(entityId) => {
-          return true;
-        }}
+        canCreateLookup={() => canWriteRecords}
         onLookupCreate={openCreateModal}
+        canWriteRecords={canWriteRecords}
         previewMode={preview}
         previewAllowNav={previewAllowNav}
         previewStore={
@@ -1081,7 +1090,7 @@ export default function AppShell({
                     primaryActions={[]}
                     secondaryActions={[]}
                     onActionClick={null}
-                    readonly={false}
+                    readonly={!canWriteRecords}
                     showValidation={createShowValidation}
                     applyDefaults
                     requiredFields={[]}
@@ -1139,6 +1148,7 @@ function AppView({
   onRecordDraftChange,
   canCreateLookup,
   onLookupCreate,
+  canWriteRecords = true,
   previewMode = false,
   previewAllowNav = false,
   previewStore = null,
@@ -1308,6 +1318,7 @@ function AppView({
 
   async function handleHeaderAction(action) {
     if (!action) return;
+    if (isWriteActionKind(action.kind) && !canWriteRecords) return;
     if (!(await confirmAction(action))) return;
     if (action.kind === "refresh") {
       // Run through the action pipeline so action.clicked triggers are emitted.
@@ -1536,6 +1547,7 @@ function AppView({
   }, [draft, onRecordDraftChange]);
 
   async function handleSave(validationErrors, opts = {}) {
+    if (!canWriteRecords) return;
     setShowValidation(true);
     if (validationErrors && Object.keys(validationErrors).length > 0) return;
     if (saveInFlightRef.current && !opts.force) {
@@ -1643,6 +1655,7 @@ function AppView({
   useEffect(() => {
     if (kind !== "form") return;
     if (previewMode) return;
+    if (!canWriteRecords) return;
     if (!view?.header?.auto_save) return;
     if (!effectiveRecordId) return;
     if (!isDirty) return;
@@ -1662,7 +1675,7 @@ function AppView({
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [kind, view?.header?.auto_save, view?.header?.auto_save_debounce_ms, effectiveRecordId, draft, isDirty]);
+  }, [kind, previewMode, canWriteRecords, view?.header?.auto_save, view?.header?.auto_save_debounce_ms, effectiveRecordId, draft, isDirty]);
 
   if (state.error) return <div className="alert alert-error">{state.error}</div>;
 
@@ -1727,6 +1740,7 @@ function AppView({
       for (const action of actions || []) {
         const resolved = resolveHeaderAction(action);
         if (!resolved || !resolved.kind) continue;
+        if (isWriteActionKind(resolved.kind) && !canWriteRecords) continue;
         const label = resolveActionLabel(resolved, manifest, views);
         const visible = resolved.visible_when ? evalCondition(resolved.visible_when, { record: contextRecord || {} }) : true;
         if (!visible) continue;
@@ -1872,7 +1886,7 @@ function AppView({
             </div>
 
             <div className="flex items-center gap-2 min-w-[10rem] justify-end">
-              {selectedIds.length > 0 && (
+              {canWriteRecords && selectedIds.length > 0 && (
                 <button className={SOFT_BUTTON_SM} onClick={handleBulkDelete}>
                   Delete ({selectedIds.length})
                 </button>
@@ -1952,6 +1966,7 @@ function AppView({
       for (const action of actions || []) {
         const resolved = resolveHeaderAction(action);
         if (!resolved || !resolved.kind) continue;
+        if (isWriteActionKind(resolved.kind) && !canWriteRecords) continue;
         const label = resolveActionLabel(resolved, manifest, views);
         const visible = resolved.visible_when ? evalCondition(resolved.visible_when, { record: contextRecord || {} }) : true;
         if (!visible) continue;
@@ -1992,13 +2007,13 @@ function AppView({
               primaryActions={primaryActions}
               secondaryActions={secondaryActions}
               onActionClick={handleHeaderAction}
-              readonly={previewMode && !previewAllowNav}
+              readonly={!canWriteRecords || (previewMode && !previewAllowNav)}
               showValidation={showValidation}
               applyDefaults={!recordId}
               requiredFields={requiredByState}
               hiddenFields={recordContext?.hiddenFields}
               previewMode={previewMode && !previewAllowNav}
-              canCreateLookup={canCreateLookup}
+              canCreateLookup={(lookupEntityId) => canWriteRecords && Boolean(canCreateLookup?.(lookupEntityId))}
               onLookupCreate={onLookupCreate}
             />
           )}

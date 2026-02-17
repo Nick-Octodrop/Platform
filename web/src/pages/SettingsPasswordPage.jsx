@@ -44,53 +44,41 @@ export default function SettingsPasswordPage({ user }) {
   }
 
   return (
-    <div className="p-4 md:p-6 space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold">Change Password</h1>
-        <p className="text-sm opacity-70">Update your account password used for login.</p>
-      </div>
-
-      {error ? <div className="alert alert-error">{error}</div> : null}
-      {notice ? <div className="alert alert-success">{notice}</div> : null}
-
-      <div className="card bg-base-100 border border-base-300 max-w-2xl">
+    <div className="min-h-[70vh] flex items-center justify-center p-6">
+      <div className="card bg-base-100 shadow-lg max-w-md w-full">
         <div className="card-body">
+          <h2 className="card-title">Change Password</h2>
+          <p className="text-sm opacity-70">Update your account password used for login.</p>
+          {error ? <div className="alert alert-error">{error}</div> : null}
+          {notice ? <div className="alert alert-success">{notice}</div> : null}
           <form className="space-y-3" onSubmit={handleSubmit}>
-            <label className="form-control">
-              <span className="label-text">Current password</span>
-              <input
-                className="input input-bordered"
-                type="password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                disabled={saving}
-                placeholder="Enter current password"
-              />
-            </label>
-            <label className="form-control">
-              <span className="label-text">New password</span>
-              <input
-                className="input input-bordered"
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                disabled={saving}
-                required
-                placeholder="At least 8 characters"
-              />
-            </label>
-            <label className="form-control">
-              <span className="label-text">Confirm new password</span>
-              <input
-                className="input input-bordered"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                disabled={saving}
-                required
-              />
-            </label>
-            <button className="btn btn-primary" type="submit" disabled={saving}>
+            <input
+              className="input input-bordered w-full"
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              disabled={saving}
+              placeholder="Current password"
+            />
+            <input
+              className="input input-bordered w-full"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              disabled={saving}
+              required
+              placeholder="New password (min 8 chars)"
+            />
+            <input
+              className="input input-bordered w-full"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              disabled={saving}
+              required
+              placeholder="Confirm new password"
+            />
+            <button className="btn btn-primary w-full" type="submit" disabled={saving}>
               {saving ? "Updating..." : "Update password"}
             </button>
           </form>

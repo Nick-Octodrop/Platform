@@ -1,7 +1,9 @@
 import React from "react";
 import SettingsShell from "../ui/SettingsShell.jsx";
+import { useAccessContext } from "../access.js";
 
 export default function SettingsPage() {
+  const { loading, hasCapability } = useAccessContext();
   const wiredPages = new Set([
     "/settings/preferences",
     "/settings/password",
@@ -61,6 +63,7 @@ export default function SettingsPage() {
       description: "Create and manage custom modules.",
       primary: { label: "Open Studio", to_page: "/studio" },
       keywords: ["modules", "builder", "studio"],
+      required_capability: "modules.manage",
     },
     {
       id: "users",
@@ -69,6 +72,7 @@ export default function SettingsPage() {
       description: "Manage users, roles, and access policies.",
       primary: { label: "Manage Users", to_page: "/settings/users" },
       keywords: ["roles", "permissions", "access"],
+      required_capability: "workspace.manage_members",
     },
     {
       id: "workspaces",
@@ -77,6 +81,7 @@ export default function SettingsPage() {
       description: "Org workspaces and memberships.",
       primary: { label: "Open Workspaces", to_page: "/settings/workspaces" },
       keywords: ["org", "members"],
+      required_capability: "workspace.manage_settings",
     },
     {
       id: "email-connections",
@@ -85,6 +90,7 @@ export default function SettingsPage() {
       description: "Connect providers to send email.",
       primary: { label: "Manage Connections", to_page: "/settings/email/connections" },
       keywords: ["smtp", "provider"],
+      required_capability: "templates.manage",
     },
     {
       id: "email-templates",
@@ -93,6 +99,7 @@ export default function SettingsPage() {
       description: "Reusable email templates for automations.",
       primary: { label: "Open Templates", to_page: "/settings/email-templates" },
       keywords: ["template", "content"],
+      required_capability: "templates.manage",
     },
     {
       id: "email-outbox",
@@ -101,6 +108,7 @@ export default function SettingsPage() {
       description: "Queued, sent, and failed messages.",
       primary: { label: "View Outbox", to_page: "/settings/email-outbox" },
       keywords: ["outbox", "deliverability", "queue"],
+      required_capability: "templates.manage",
     },
     {
       id: "email-diagnostics",
@@ -109,6 +117,7 @@ export default function SettingsPage() {
       description: "Connection status and recent failures.",
       primary: { label: "Open Diagnostics", to_page: "/settings/email/diagnostics" },
       keywords: ["health", "status", "smtp"],
+      required_capability: "templates.manage",
     },
     {
       id: "documents-templates",
@@ -117,6 +126,7 @@ export default function SettingsPage() {
       description: "HTML → PDF templates with placeholders.",
       primary: { label: "Open Templates", to_page: "/settings/documents/templates" },
       keywords: ["pdf", "html", "template"],
+      required_capability: "templates.manage",
     },
     {
       id: "documents-defaults",
@@ -125,6 +135,7 @@ export default function SettingsPage() {
       description: "Naming rules and attachment behavior.",
       primary: { label: "Configure Defaults", to_page: "/settings/documents/defaults" },
       keywords: ["defaults", "naming"],
+      required_capability: "templates.manage",
     },
     {
       id: "jobs",
@@ -133,6 +144,7 @@ export default function SettingsPage() {
       description: "Background jobs and worker health.",
       primary: { label: "Open Ops", to_page: "/ops" },
       keywords: ["jobs", "queues", "workers"],
+      required_capability: "automations.manage",
     },
     {
       id: "automations",
@@ -141,6 +153,7 @@ export default function SettingsPage() {
       description: "Design and monitor automation workflows.",
       primary: { label: "Open Automations", to_page: "/automations" },
       keywords: ["workflow", "runs"],
+      required_capability: "automations.manage",
     },
     {
       id: "secrets",
@@ -149,6 +162,7 @@ export default function SettingsPage() {
       description: "Environment secrets and integrations.",
       primary: { label: "Manage Secrets", to_page: "/settings/secrets" },
       keywords: ["keys", "tokens"],
+      required_capability: "workspace.manage_settings",
     },
     {
       id: "data-explorer",
@@ -157,6 +171,7 @@ export default function SettingsPage() {
       description: "Browse entities and records.",
       primary: { label: "Open Data", to_page: "/data" },
       keywords: ["entities", "records"],
+      required_capability: "records.read",
     },
     {
       id: "diagnostics",
@@ -165,11 +180,12 @@ export default function SettingsPage() {
       description: "System health checks and perf diagnostics.",
       primary: { label: "Open Diagnostics", to_page: "/settings/diagnostics" },
       keywords: ["perf", "health"],
+      required_capability: "workspace.manage_settings",
     },
   ].map((block) => ({
     ...block,
     wired: wiredPages.has(block?.primary?.to_page) && !placeholderPages.has(block?.primary?.to_page),
-  }));
+  })).filter((block) => loading || !block.required_capability || hasCapability(block.required_capability));
 
   return (
     <div className="h-full min-h-0">

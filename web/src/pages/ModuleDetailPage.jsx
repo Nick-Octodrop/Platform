@@ -4,6 +4,7 @@ import { useModuleStore } from "../state/moduleStore.jsx";
 import { getManifest } from "../api";
 import { useToast } from "../components/Toast.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
+import { useAccessContext } from "../access.js";
 
 export default function ModuleDetailPage({ user }) {
   const { moduleId } = useParams();
@@ -13,6 +14,8 @@ export default function ModuleDetailPage({ user }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("overview");
+  const { hasCapability } = useAccessContext();
+  const canManageModules = hasCapability("modules.manage");
 
   const module = modules.find((m) => m.module_id === moduleId);
 
@@ -53,14 +56,16 @@ export default function ModuleDetailPage({ user }) {
           <h2 className="text-2xl font-semibold">{module.module_id}</h2>
           <div className="text-sm opacity-70">{module.current_hash}</div>
         </div>
-        <div className="flex gap-2">
-          <button
-            className={`btn ${module.enabled ? "btn-warning" : "btn-success"}`}
-            onClick={() => toggleModule(!module.enabled)}
-          >
-            {module.enabled ? "Disable" : "Enable"}
-          </button>
-        </div>
+        {canManageModules ? (
+          <div className="flex gap-2">
+            <button
+              className={`btn ${module.enabled ? "btn-warning" : "btn-success"}`}
+              onClick={() => toggleModule(!module.enabled)}
+            >
+              {module.enabled ? "Disable" : "Enable"}
+            </button>
+          </div>
+        ) : null}
       </div>
       <div role="tablist" className="tabs tabs-bordered mb-4">
         {["overview", "manifest", "entities", "views", "workflows", "audit"].map((t) => (

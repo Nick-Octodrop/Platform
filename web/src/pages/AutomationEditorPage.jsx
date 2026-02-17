@@ -555,7 +555,7 @@ export default function AutomationEditorPage({ user }) {
                                 : []
                             ).map((userId) => {
                               const member = memberById.get(userId);
-                              const label = member?.name || member?.email || userId;
+                              const label = member?.name || member?.email || member?.user_email || "Unknown user";
                               return (
                                 <span key={userId} className="badge badge-outline gap-2 py-3">
                                   {label}
@@ -1182,7 +1182,7 @@ export default function AutomationEditorPage({ user }) {
       <datalist id="automation-users">
         {memberOptions.map((member) => (
           <option key={member.user_id} value={member.user_id}>
-            {member.role ? `${member.user_id} (${member.role})` : member.user_id}
+            {member.name || member.email || member.user_email || member.user_id}
           </option>
         ))}
       </datalist>

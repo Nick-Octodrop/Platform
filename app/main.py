@@ -142,6 +142,7 @@ from app.workspaces import (
     list_user_workspaces,
     list_all_workspaces,
     workspace_exists,
+    update_workspace_name,
     get_platform_role,
     add_workspace_member,
     update_workspace_member_role,
@@ -677,6 +678,35 @@ def _require_capability(actor: dict | None, capability: str, message: str = "For
     return None
 
 
+def _actor_permissions(actor: dict | None) -> dict[str, bool]:
+    capabilities = (
+        "workspace.manage_members",
+        "workspace.manage_settings",
+        "modules.manage",
+        "templates.manage",
+        "automations.manage",
+        "records.read",
+        "records.write",
+    )
+    return {
+        "workspace_manage_members": _has_capability(actor, "workspace.manage_members"),
+        "workspace_manage_settings": _has_capability(actor, "workspace.manage_settings"),
+        "modules_manage": _has_capability(actor, "modules.manage"),
+        "templates_manage": _has_capability(actor, "templates.manage"),
+        "automations_manage": _has_capability(actor, "automations.manage"),
+        "records_read": _has_capability(actor, "records.read"),
+        "records_write": _has_capability(actor, "records.write"),
+        "can_manage_workspace": _has_capability(actor, "workspace.manage_settings"),
+        "can_manage_members": _has_capability(actor, "workspace.manage_members"),
+        "can_manage_modules": _has_capability(actor, "modules.manage"),
+        "can_manage_templates": _has_capability(actor, "templates.manage"),
+        "can_manage_automations": _has_capability(actor, "automations.manage"),
+        "can_read_records": _has_capability(actor, "records.read"),
+        "can_write_records": _has_capability(actor, "records.write"),
+        "is_superadmin": bool(isinstance(actor, dict) and actor.get("platform_role") == "superadmin"),
+    }
+
+
 def _require_admin(actor: dict | None) -> JSONResponse | None:
     denied = _require_capability(actor, "workspace.manage_settings", "Admin role required")
     if denied:
@@ -713,10 +743,11 @@ def _supabase_invite_user(email: str, redirect_to: str | None = None) -> dict:
         raise RuntimeError("Supabase service role not configured")
     base = (os.getenv("SUPABASE_URL") or "").strip().rstrip("/")
     payload: dict[str, Any] = {"email": email}
+    query = ""
     if isinstance(redirect_to, str) and redirect_to.strip():
-        payload["redirect_to"] = redirect_to.strip()
+        query = f"?redirect_to={urllib.parse.quote(redirect_to.strip(), safe=':/')}"
     req = urllib.request.Request(
-        f"{base}/auth/v1/invite",
+        f"{base}/auth/v1/invite{query}",
         data=json.dumps(payload).encode("utf-8"),
         headers=_supabase_admin_headers(),
         method="POST",
@@ -727,6 +758,59 @@ def _supabase_invite_user(email: str, redirect_to: str | None = None) -> dict:
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="ignore")
         raise RuntimeError(f"invite_failed:{exc.code}:{body}") from exc
+
+
+def _supabase_send_recovery(email: str, redirect_to: str | None = None) -> dict:
+    if not _supabase_admin_enabled():
+        raise RuntimeError("Supabase service role not configured")
+    base = (os.getenv("SUPABASE_URL") or "").strip().rstrip("/")
+    query = ""
+    if isinstance(redirect_to, str) and redirect_to.strip():
+        query = f"?redirect_to={urllib.parse.quote(redirect_to.strip(), safe=':/')}"
+    payload: dict[str, Any] = {"email": email}
+    req = urllib.request.Request(
+        f"{base}/auth/v1/recover{query}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers=_supabase_admin_headers(),
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as res:
+            raw = res.read().decode("utf-8", errors="ignore").strip()
+            return json.loads(raw) if raw else {"ok": True}
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"recover_failed:{exc.code}:{body}") from exc
+
+
+def _supabase_update_user_email(user_id: str, new_email: str) -> dict:
+    if not _supabase_admin_enabled():
+        raise RuntimeError("Supabase service role not configured")
+    base = (os.getenv("SUPABASE_URL") or "").strip().rstrip("/")
+    payload: dict[str, Any] = {"email": new_email}
+    req = urllib.request.Request(
+        f"{base}/auth/v1/admin/users/{urllib.parse.quote(user_id)}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers=_supabase_admin_headers(),
+        method="PUT",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as res:
+            raw = res.read().decode("utf-8", errors="ignore").strip()
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"update_email_failed:{exc.code}:{body}") from exc
+
+
+def _default_invite_redirect() -> str:
+    explicit = (os.getenv("INVITE_REDIRECT_URL") or "").strip()
+    if explicit:
+        return explicit
+    app_public = (os.getenv("APP_PUBLIC_URL") or "").strip()
+    if app_public:
+        return app_public.rstrip("/") + "/auth/set-password"
+    return "https://app.octodrop.com/auth/set-password"
 
 
 def _supabase_delete_user(user_id: str) -> None:
@@ -3122,6 +3206,9 @@ async def page_bootstrap(
     search_fields: str | None = None,
     domain: str | None = None,
 ) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
     if not module_id:
         return _error_response("MODULE_REQUIRED", "module_id is required", "module_id", status=400)
     module, manifest = _get_installed_manifest(request, module_id)
@@ -3131,7 +3218,14 @@ async def page_bootstrap(
     if not isinstance(manifest_hash, str):
         return _error_response("MODULE_INVALID", "Module manifest hash missing", "module_id", status=400)
     org_id = get_org_id()
-    cache_key = f"bootstrap:{org_id}:{module_id}:{manifest_hash}:{page_id or ''}:{view_id or ''}:{record_id or ''}:{cursor or ''}:{limit}:{q or ''}:{search_fields or ''}:{domain or ''}"
+    actor_user_id = actor.get("user_id") or ""
+    actor_workspace_role = actor.get("workspace_role") or actor.get("role") or ""
+    actor_platform_role = actor.get("platform_role") or ""
+    cache_key = (
+        f"bootstrap:{org_id}:{actor_user_id}:{actor_workspace_role}:{actor_platform_role}:"
+        f"{module_id}:{manifest_hash}:{page_id or ''}:{view_id or ''}:{record_id or ''}:"
+        f"{cursor or ''}:{limit}:{q or ''}:{search_fields or ''}:{domain or ''}"
+    )
     cached = _resp_cache_get(cache_key)
     if cached is not None:
         logger.info("cache_hit=page_bootstrap key=%s", cache_key)
@@ -3158,7 +3252,7 @@ async def page_bootstrap(
         "page": page_obj,
         "view_id": view_obj.get("id"),
         "page_id": page_obj.get("id") if isinstance(page_obj, dict) else None,
-        "permissions": {},
+        "permissions": _actor_permissions(actor),
     }
 
     if kind == "list" and view_entity:
@@ -8327,6 +8421,11 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
     kind = action.get("kind")
     if kind not in ALLOWED_ACTION_KINDS:
         return _error_response("ACTION_INVALID", "Action kind not allowed", "kind", status=400)
+    actor = getattr(request.state, "actor", None)
+    if kind in {"create_record", "update_record", "bulk_update"}:
+        denied = _require_capability(actor, "records.write", "Write access required")
+        if denied:
+            return denied
 
     record_context = {}
     if isinstance(context, dict):
@@ -8658,8 +8757,9 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
 
 
 def run_action_internal(module_id: str, action_id: str, context: dict | None, actor: dict | None = None) -> dict:
+    effective_actor = actor or {"user_id": "system", "workspace_role": "admin", "platform_role": "superadmin"}
     internal_req = SimpleNamespace(
-        state=SimpleNamespace(cache={}, actor=actor or {"user_id": "system", "role": "system"}),
+        state=SimpleNamespace(cache={}, actor=effective_actor),
         headers={},
     )
     return _run_action_core(internal_req, module_id, action_id, context or {})
@@ -8667,7 +8767,10 @@ def run_action_internal(module_id: str, action_id: str, context: dict | None, ac
 
 @app.get("/automations/meta")
 async def automations_meta(request: Request) -> dict:
-    actor = getattr(request.state, "actor", None) or {}
+    actor = _resolve_actor(request)
+    denied = _require_capability(actor, "automations.manage", "Admin role required")
+    if denied:
+        return denied
     org_id = actor.get("workspace_id") or "default"
     cache_key = f"automations_meta:{org_id}"
     cached = _resp_cache_get(cache_key)
@@ -8807,6 +8910,10 @@ async def automations_meta(request: Request) -> dict:
 
 @app.get("/automations/{automation_id}/export")
 async def export_automation(request: Request, automation_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_capability(actor, "automations.manage", "Admin role required")
+    if denied:
+        return denied
     automation = automation_store.get(automation_id)
     if not automation:
         return _error_response("AUTOMATION_NOT_FOUND", "Automation not found", "automation_id", status=404)
@@ -8821,6 +8928,10 @@ async def export_automation(request: Request, automation_id: str) -> dict:
 
 @app.post("/automations/import")
 async def import_automation(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_capability(actor, "automations.manage", "Admin role required")
+    if denied:
+        return denied
     body = await _safe_json(request)
     if not isinstance(body, dict):
         return _error_response("AUTOMATION_INVALID", "Invalid payload", "body", status=400)
@@ -9042,6 +9153,12 @@ async def list_generic_records(
     fields: str | None = None,
     domain: str | None = None,
 ) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "records.read", "Read access required")
+    if denied:
+        return denied
     entity_id = _normalize_entity_id(entity_id)
     found = _find_entity_def(request, entity_id)
     if not found:
@@ -9526,6 +9643,12 @@ async def set_ui_prefs(request: Request) -> dict:
 
 @app.post("/records/{entity_id}")
 async def create_generic_record(request: Request, entity_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "records.write", "Write access required")
+    if denied:
+        return denied
     entity_id = _normalize_entity_id(entity_id)
     found = _find_entity_def(request, entity_id)
     if not found:
@@ -9580,6 +9703,12 @@ async def create_generic_record(request: Request, entity_id: str) -> dict:
 
 @app.get("/records/{entity_id}/{record_id}")
 async def get_generic_record(request: Request, entity_id: str, record_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "records.read", "Read access required")
+    if denied:
+        return denied
     entity_id = _normalize_entity_id(entity_id)
     found = _find_entity_def(request, entity_id)
     if not found:
@@ -9600,6 +9729,12 @@ async def get_generic_record(request: Request, entity_id: str, record_id: str) -
 
 @app.put("/records/{entity_id}/{record_id}")
 async def update_generic_record(request: Request, entity_id: str, record_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "records.write", "Write access required")
+    if denied:
+        return denied
     entity_id = _normalize_entity_id(entity_id)
     found = _find_entity_def(request, entity_id)
     if not found:
@@ -9689,6 +9824,12 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
 
 @app.delete("/records/{entity_id}/{record_id}")
 async def delete_generic_record(request: Request, entity_id: str, record_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "records.write", "Write access required")
+    if denied:
+        return denied
     entity_id = _normalize_entity_id(entity_id)
     found = _find_entity_def(request, entity_id)
     if not found:
@@ -9704,6 +9845,12 @@ async def delete_generic_record(request: Request, entity_id: str, record_id: str
 
 @app.get("/chatter/{entity_id}/{record_id}")
 async def list_chatter(request: Request, entity_id: str, record_id: str, limit: int = 50) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "records.read", "Read access required")
+    if denied:
+        return denied
     entity_id = _normalize_entity_id(entity_id)
     found = _find_entity_def(request, entity_id)
     if not found:
@@ -9842,6 +9989,12 @@ async def add_activity_attachment(
 
 @app.post("/chatter/{entity_id}/{record_id}")
 async def add_chatter(request: Request, entity_id: str, record_id: str) -> dict:
+    actor_ctx = _resolve_actor(request)
+    if isinstance(actor_ctx, JSONResponse):
+        return actor_ctx
+    denied = _require_capability(actor_ctx, "records.write", "Write access required")
+    if denied:
+        return denied
     entity_id = _normalize_entity_id(entity_id)
     found = _find_entity_def(request, entity_id)
     if not found:
@@ -9879,8 +10032,36 @@ async def access_context(request: Request) -> dict:
                 "platform_role": actor.get("platform_role") or "standard",
             },
             "workspaces": workspaces,
+            "permissions": _actor_permissions(actor),
         }
     )
+
+
+@app.patch("/access/workspace")
+async def update_workspace_settings(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_capability(actor, "workspace.manage_settings", "Admin role required")
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    name = body.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return _error_response("NAME_REQUIRED", "Workspace name is required", "name", status=400)
+    if len(name.strip()) > 120:
+        return _error_response("NAME_TOO_LONG", "Workspace name is too long", "name", status=400)
+    updated = update_workspace_name(actor.get("workspace_id"), name)
+    if not updated:
+        return _error_response("WORKSPACE_NOT_FOUND", "Workspace not found", "workspace_id", status=404)
+    workspaces = actor.get("workspaces") or []
+    next_workspaces = []
+    for item in workspaces:
+        row = dict(item)
+        if row.get("workspace_id") == updated.get("workspace_id"):
+            row["workspace_name"] = updated.get("workspace_name")
+        next_workspaces.append(row)
+    return _ok_response({"workspace": updated, "workspaces": next_workspaces})
 
 
 @app.get("/access/members")
@@ -9907,15 +10088,28 @@ async def invite_workspace_member(request: Request) -> dict:
         return _error_response("EMAIL_REQUIRED", "Valid email required", "email", status=400)
     if not role:
         return _error_response("ROLE_INVALID", "Invalid role", "role", status=400)
-    redirect_to = body.get("redirect_to")
+    # Force a single known-safe invite redirect so stale frontend payloads
+    # cannot accidentally fall back to app root.
+    redirect_to = _default_invite_redirect()
+    normalized_email = email.strip().lower()
+    existing_user_id = _find_auth_user_id_by_email(normalized_email)
+    logger.info(
+        "invite_workspace_member email=%s existing_user=%s redirect_to=%s",
+        normalized_email,
+        bool(existing_user_id),
+        redirect_to,
+    )
     try:
-        invited = _supabase_invite_user(email.strip().lower(), redirect_to=redirect_to)
+        if existing_user_id:
+            invited = _supabase_send_recovery(normalized_email, redirect_to=redirect_to)
+        else:
+            invited = _supabase_invite_user(normalized_email, redirect_to=redirect_to)
     except Exception as exc:
         return _error_response("INVITE_FAILED", str(exc), "email", status=400)
     invited_user = invited.get("user") if isinstance(invited, dict) else None
     invited_user_id = invited_user.get("id") if isinstance(invited_user, dict) else None
     if not isinstance(invited_user_id, str) or not invited_user_id:
-        invited_user_id = _find_auth_user_id_by_email(email)
+        invited_user_id = existing_user_id or _find_auth_user_id_by_email(normalized_email)
     invite_pending = False
     if isinstance(invited_user_id, str) and invited_user_id:
         member = add_workspace_member(actor.get("workspace_id"), invited_user_id, role)
@@ -9928,7 +10122,69 @@ async def invite_workspace_member(request: Request) -> dict:
         )
         invite_pending = True
     members = list_workspace_members(actor.get("workspace_id"))
-    return _ok_response({"member": member, "members": members, "invited_email": email, "invite_pending": invite_pending})
+    return _ok_response(
+        {
+            "member": member,
+            "members": members,
+            "invited_email": email,
+            "invite_pending": invite_pending,
+            "existing_user": bool(existing_user_id),
+            "email_flow": "recovery" if existing_user_id else "invite",
+        }
+    )
+
+
+@app.post("/access/platform-invite")
+async def invite_platform_user(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    if actor.get("platform_role") != "superadmin":
+        return _error_response("FORBIDDEN", "Superadmin role required", status=403)
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    email = (body.get("email") or "").strip().lower()
+    if "@" not in email:
+        return _error_response("EMAIL_REQUIRED", "Valid email required", "email", status=400)
+    requested_platform_role = (body.get("platform_role") or "standard").strip().lower()
+    if requested_platform_role not in _PLATFORM_ROLES:
+        return _error_response("ROLE_INVALID", "Invalid platform role", "platform_role", status=400)
+    redirect_to = _default_invite_redirect()
+    existing_user_id = _find_auth_user_id_by_email(email)
+    logger.info(
+        "invite_platform_user email=%s existing_user=%s redirect_to=%s requested_platform_role=%s",
+        email,
+        bool(existing_user_id),
+        redirect_to,
+        requested_platform_role,
+    )
+    try:
+        if existing_user_id:
+            invited = _supabase_send_recovery(email, redirect_to=redirect_to)
+        else:
+            invited = _supabase_invite_user(email, redirect_to=redirect_to)
+    except Exception as exc:
+        return _error_response("INVITE_FAILED", str(exc), "email", status=400)
+    invited_user = invited.get("user") if isinstance(invited, dict) else None
+    invited_user_id = invited_user.get("id") if isinstance(invited_user, dict) else None
+    if not isinstance(invited_user_id, str) or not invited_user_id:
+        invited_user_id = existing_user_id or _find_auth_user_id_by_email(email)
+    platform_row = None
+    if isinstance(invited_user_id, str) and invited_user_id and requested_platform_role != "standard":
+        platform_row = set_platform_role(invited_user_id, requested_platform_role)
+    return _ok_response(
+        {
+            "ok": True,
+            "invited_email": email,
+            "existing_user": bool(existing_user_id),
+            "email_flow": "recovery" if existing_user_id else "invite",
+            "platform_role": requested_platform_role,
+            "user_id": invited_user_id,
+            "platform_user": platform_row,
+            "note": "No workspace membership assigned. Workspace is created on first login.",
+        }
+    )
 
 
 @app.patch("/access/members/{user_id}")
@@ -9984,6 +10240,28 @@ async def delete_member(request: Request, user_id: str) -> dict:
             return _error_response("DELETE_AUTH_FAILED", str(exc), "delete_auth_user", status=400)
     members = list_workspace_members(workspace_id)
     return _ok_response({"ok": True, "members": members, "auth_deleted": delete_auth_user})
+
+
+@app.patch("/access/members/{user_id}/email")
+async def update_member_email(request: Request, user_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_capability(actor, "workspace.manage_members", "Admin role required")
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    email = (body or {}).get("email")
+    if not isinstance(email, str) or "@" not in email:
+        return _error_response("EMAIL_REQUIRED", "Valid email required", "email", status=400)
+    workspace_id = actor.get("workspace_id")
+    member = get_membership(user_id, workspace_id)
+    if not member and actor.get("platform_role") != "superadmin":
+        return _error_response("MEMBER_NOT_FOUND", "Member not found", "user_id", status=404)
+    try:
+        result = _supabase_update_user_email(user_id, email.strip().lower())
+    except Exception as exc:
+        return _error_response("UPDATE_EMAIL_FAILED", str(exc), "email", status=400)
+    members = list_workspace_members(workspace_id)
+    return _ok_response({"ok": True, "user": result.get("user") or result, "members": members})
 
 
 @app.patch("/access/platform-role/{user_id}")
@@ -10811,6 +11089,9 @@ async def list_automations(request: Request, status: str | None = None) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_capability(actor, "automations.manage", "Admin role required")
+    if denied:
+        return denied
     items = automation_store.list(status=status)
     return _ok_response({"automations": items})
 
@@ -10820,6 +11101,9 @@ async def create_automation(request: Request) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_capability(actor, "automations.manage", "Admin role required")
+    if denied:
+        return denied
     body = await _safe_json(request)
     if not isinstance(body, dict):
         return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
@@ -10843,6 +11127,9 @@ async def get_automation(request: Request, automation_id: str) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_capability(actor, "automations.manage", "Admin role required")
+    if denied:
+        return denied
     item = automation_store.get(automation_id)
     if not item:
         return _error_response("AUTOMATION_NOT_FOUND", "Automation not found", "automation_id", status=404)
@@ -10854,6 +11141,9 @@ async def update_automation(request: Request, automation_id: str) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_capability(actor, "automations.manage", "Admin role required")
+    if denied:
+        return denied
     body = await _safe_json(request)
     if not isinstance(body, dict):
         return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
@@ -10871,6 +11161,9 @@ async def publish_automation(request: Request, automation_id: str) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_capability(actor, "automations.manage", "Admin role required")
+    if denied:
+        return denied
     item = automation_store.update(
         automation_id,
         {"status": "published", "published_at": _now(), "published_by": (actor or {}).get("user_id")},
@@ -10885,6 +11178,9 @@ async def disable_automation(request: Request, automation_id: str) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_capability(actor, "automations.manage", "Admin role required")
+    if denied:
+        return denied
     item = automation_store.update(automation_id, {"status": "disabled"})
     if not item:
         return _error_response("AUTOMATION_NOT_FOUND", "Automation not found", "automation_id", status=404)
@@ -10896,6 +11192,9 @@ async def delete_automation(request: Request, automation_id: str) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_capability(actor, "automations.manage", "Admin role required")
+    if denied:
+        return denied
     existing = automation_store.get(automation_id)
     if not existing:
         return _error_response("AUTOMATION_NOT_FOUND", "Automation not found", "automation_id", status=404)
@@ -10910,6 +11209,9 @@ async def list_automation_runs(request: Request, automation_id: str) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_capability(actor, "automations.manage", "Admin role required")
+    if denied:
+        return denied
     org_id = (actor or {}).get("workspace_id") or "default"
     cache_key = f"automation_runs:{org_id}:{automation_id}"
     cached = _resp_cache_get(cache_key)
@@ -10928,6 +11230,9 @@ async def get_automation_run(request: Request, run_id: str) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_capability(actor, "automations.manage", "Admin role required")
+    if denied:
+        return denied
     run = automation_store.get_run(run_id)
     if not run:
         return _error_response("AUTOMATION_RUN_NOT_FOUND", "Run not found", "run_id", status=404)
@@ -10940,6 +11245,9 @@ async def retry_automation_run(request: Request, run_id: str) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_capability(actor, "automations.manage", "Admin role required")
+    if denied:
+        return denied
     run = automation_store.get_run(run_id)
     if not run:
         return _error_response("AUTOMATION_RUN_NOT_FOUND", "Run not found", "run_id", status=404)
@@ -11056,6 +11364,9 @@ async def download_attachment(request: Request, attachment_id: str):
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_capability(actor, "records.read", "Read access required")
+    if denied:
+        return denied
     attachment = attachment_store.get_attachment(attachment_id)
     if not attachment:
         return _error_response("ATTACHMENT_NOT_FOUND", "Attachment not found", "attachment_id", status=404)
@@ -11080,6 +11391,9 @@ async def link_attachment(request: Request) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_capability(actor, "records.write", "Write access required")
+    if denied:
+        return denied
     body = await _safe_json(request)
     if not isinstance(body, dict):
         return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
@@ -11105,6 +11419,9 @@ async def list_record_attachments(request: Request, entity_id: str, record_id: s
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_capability(actor, "records.read", "Read access required")
+    if denied:
+        return denied
     links = attachment_store.list_links(entity_id, record_id)
     attachments = []
     for link in links:

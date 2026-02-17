@@ -10,6 +10,7 @@ import { invalidateModulesCache, setModuleIcon, clearModuleIcon, setModuleOrder 
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { Package } from "lucide-react";
 import { LUCIDE_ICON_LIST, normalizeLucideKey, resolveLucideIcon } from "../state/lucideIconCatalog.js";
+import { useAccessContext } from "../access.js";
 
 function statusChip(module) {
   if (!module) return <span className="badge">Not installed</span>;
@@ -17,7 +18,7 @@ function statusChip(module) {
   return <span className="badge badge-success">Enabled</span>;
 }
 
-function AppTile({ app, module, pinned, onOpen, onToggle, onPin, onDelete, onDetails, onChooseIcon, onRemoveIcon, onSetOrder }) {
+function AppTile({ app, module, pinned, onOpen, onToggle, onPin, onDelete, onDetails, onChooseIcon, onRemoveIcon, onSetOrder, canManageModules }) {
   const disabled = module && !module.enabled;
   const isSystem = app.system;
   const iconUrl = app.icon_url;
@@ -63,18 +64,22 @@ function AppTile({ app, module, pinned, onOpen, onToggle, onPin, onDelete, onDet
           >
             <li><button onClick={() => onOpen(app.id)} disabled={disabled}>Open</button></li>
             <li><button onClick={() => onDetails(app.id)}>View details</button></li>
-            {module?.enabled ? (
-              <li><button onClick={() => onToggle(app.id, false)}>Disable</button></li>
-            ) : (
-              <li><button onClick={() => onToggle(app.id, true)}>Enable</button></li>
-            )}
             <li><button onClick={() => onPin()}>{pinned ? "Unpin" : "Pin"}</button></li>
-            <li><button onClick={() => onChooseIcon()}>Choose icon…</button></li>
-            {iconUrl && (
-              <li><button onClick={() => onRemoveIcon()}>Remove icon</button></li>
-            )}
-            <li><button onClick={() => onSetOrder()}>Set order…</button></li>
-            <li><button onClick={() => onDelete(app.id)} className="text-error">Delete</button></li>
+            {canManageModules ? (
+              <>
+                {module?.enabled ? (
+                  <li><button onClick={() => onToggle(app.id, false)}>Disable</button></li>
+                ) : (
+                  <li><button onClick={() => onToggle(app.id, true)}>Enable</button></li>
+                )}
+                <li><button onClick={() => onChooseIcon()}>Choose icon…</button></li>
+                {iconUrl && (
+                  <li><button onClick={() => onRemoveIcon()}>Remove icon</button></li>
+                )}
+                <li><button onClick={() => onSetOrder()}>Set order…</button></li>
+                <li><button onClick={() => onDelete(app.id)} className="text-error">Delete</button></li>
+              </>
+            ) : null}
           </ul>
         </div>
       )}
@@ -94,6 +99,8 @@ export default function AppsPage({ user }) {
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [iconPickerApp, setIconPickerApp] = useState(null);
   const [iconQuery, setIconQuery] = useState("");
+  const { hasCapability } = useAccessContext();
+  const canManageModules = hasCapability("modules.manage");
 
 
   const moduleById = useMemo(() => {
@@ -236,9 +243,11 @@ export default function AppsPage({ user }) {
             {modules.length === 0 && (
               <div className="card bg-base-100 shadow p-6">
                 <div className="text-sm opacity-70 mb-3">No modules installed yet.</div>
-                <button className="btn btn-primary w-fit" onClick={() => navigate("/studio")}>
-                  Create a module in Studio
-                </button>
+                {canManageModules ? (
+                  <button className="btn btn-primary w-fit" onClick={() => navigate("/studio")}>
+                    Create a module in Studio
+                  </button>
+                ) : null}
               </div>
             )}
             {modules.length > 0 && (
@@ -272,6 +281,7 @@ export default function AppsPage({ user }) {
                         }
                       }}
                       onSetOrder={() => handleSetOrder(app)}
+                      canManageModules={canManageModules}
                     />
                   );
                 })}

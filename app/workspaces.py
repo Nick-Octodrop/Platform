@@ -131,6 +131,25 @@ def workspace_exists(workspace_id: str) -> bool:
         return bool(row)
 
 
+def update_workspace_name(workspace_id: str, name: str) -> dict | None:
+    clean = (name or "").strip()
+    if not clean:
+        return None
+    with get_conn() as conn:
+        row = fetch_one(
+            conn,
+            """
+            update workspaces
+            set name=%s
+            where id=%s
+            returning id as workspace_id, name as workspace_name, owner_user_id, created_at
+            """,
+            [clean, workspace_id],
+            query_name="workspaces.update_name",
+        )
+        return row
+
+
 def list_workspace_members(workspace_id: str) -> list[dict]:
     with get_conn() as conn:
         try:

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { supabase } from "./supabase";
 import ProtectedRoute from "./auth/ProtectedRoute.jsx";
+import CapabilityRoute from "./auth/CapabilityRoute.jsx";
 import ShellLayout from "./layout/ShellLayout.jsx";
 import { ModuleStoreProvider } from "./state/moduleStore.jsx";
 import { ToastProvider } from "./components/Toast.jsx";
@@ -119,8 +120,22 @@ export default function App() {
             <Route path="apps/:moduleId/page/:pageId" element={<AppShell />} />
             <Route path="apps/:moduleId/view/:viewId" element={<AppShell />} />
             <Route path="apps/:moduleId/details" element={<ModuleDetailPage user={user} />} />
-            <Route path="studio" element={<Studio2Page user={user} />} />
-            <Route path="studio/:moduleId" element={<Studio2Page user={user} />} />
+            <Route
+              path="studio"
+              element={(
+                <CapabilityRoute capability="modules.manage">
+                  <Studio2Page user={user} />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="studio/:moduleId"
+              element={(
+                <CapabilityRoute capability="modules.manage">
+                  <Studio2Page user={user} />
+                </CapabilityRoute>
+              )}
+            />
             <Route path="studio2" element={<Navigate to="/studio" replace />} />
             <Route path="studio2/:moduleId" element={<Navigate to="/studio" replace />} />
             <Route path="audit" element={<AuditPage />} />
@@ -129,28 +144,175 @@ export default function App() {
             <Route path="settings/password" element={<SettingsPasswordPage user={user} />} />
             <Route path="settings/users" element={<SettingsUsersPage />} />
             <Route path="settings/workspaces" element={<SettingsWorkspacesPage />} />
-            <Route path="settings/secrets" element={<SettingsSecretsPage />} />
-            <Route path="settings/diagnostics" element={<DiagnosticsPage />} />
-            <Route path="settings/email" element={<EmailHomePage />} />
-            <Route path="settings/email/connections" element={<EmailConnectionsPage />} />
-            <Route path="settings/email/diagnostics" element={<EmailDiagnosticsPage />} />
-            <Route path="settings/email-templates" element={<EmailTemplatesPage />} />
-            <Route path="settings/email-outbox" element={<EmailOutboxPage />} />
-            <Route path="settings/documents" element={<DocumentsHomePage />} />
-            <Route path="settings/documents/templates" element={<DocumentsPage />} />
-            <Route path="email/templates/:id" element={<EmailTemplateStudioPage user={user} />} />
-            <Route path="documents/templates/:id" element={<DocumentTemplateStudioPage user={user} />} />
-            <Route path="settings/documents/defaults" element={<DocumentsDefaultsPage />} />
+            <Route
+              path="settings/secrets"
+              element={(
+                <CapabilityRoute capability="workspace.manage_settings">
+                  <SettingsSecretsPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="settings/diagnostics"
+              element={(
+                <CapabilityRoute capability="workspace.manage_settings">
+                  <DiagnosticsPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="settings/email"
+              element={(
+                <CapabilityRoute capability="templates.manage">
+                  <EmailHomePage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="settings/email/connections"
+              element={(
+                <CapabilityRoute capability="templates.manage">
+                  <EmailConnectionsPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="settings/email/diagnostics"
+              element={(
+                <CapabilityRoute capability="templates.manage">
+                  <EmailDiagnosticsPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="settings/email-templates"
+              element={(
+                <CapabilityRoute capability="templates.manage">
+                  <EmailTemplatesPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="settings/email-outbox"
+              element={(
+                <CapabilityRoute capability="templates.manage">
+                  <EmailOutboxPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="settings/documents"
+              element={(
+                <CapabilityRoute capability="templates.manage">
+                  <DocumentsHomePage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="settings/documents/templates"
+              element={(
+                <CapabilityRoute capability="templates.manage">
+                  <DocumentsPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="email/templates/:id"
+              element={(
+                <CapabilityRoute capability="templates.manage">
+                  <EmailTemplateStudioPage user={user} />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="documents/templates/:id"
+              element={(
+                <CapabilityRoute capability="templates.manage">
+                  <DocumentTemplateStudioPage user={user} />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="settings/documents/defaults"
+              element={(
+                <CapabilityRoute capability="templates.manage">
+                  <DocumentsDefaultsPage />
+                </CapabilityRoute>
+              )}
+            />
             <Route path="notifications" element={<NotificationsPage />} />
-            <Route path="automations" element={<AutomationsPage />} />
-            <Route path="automations/:automationId" element={<AutomationEditorPage user={user} />} />
-            <Route path="automations/:automationId/runs" element={<AutomationRunsPage />} />
-            <Route path="automation-runs/:runId" element={<AutomationRunDetailPage />} />
-            <Route path="ops" element={<OpsPage />} />
-            <Route path="data" element={<DataExplorerPage />} />
-            <Route path="data/:entity" element={<DataExplorerPage />} />
-            <Route path="data/:entity/new" element={<EntityCreatePage />} />
-            <Route path="data/:entity/:id" element={<EntityRecordPage />} />
+            <Route
+              path="automations"
+              element={(
+                <CapabilityRoute capability="automations.manage">
+                  <AutomationsPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="automations/:automationId"
+              element={(
+                <CapabilityRoute capability="automations.manage">
+                  <AutomationEditorPage user={user} />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="automations/:automationId/runs"
+              element={(
+                <CapabilityRoute capability="automations.manage">
+                  <AutomationRunsPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="automation-runs/:runId"
+              element={(
+                <CapabilityRoute capability="automations.manage">
+                  <AutomationRunDetailPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="ops"
+              element={(
+                <CapabilityRoute capability="automations.manage">
+                  <OpsPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="data"
+              element={(
+                <CapabilityRoute capability="records.read">
+                  <DataExplorerPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="data/:entity"
+              element={(
+                <CapabilityRoute capability="records.read">
+                  <DataExplorerPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="data/:entity/new"
+              element={(
+                <CapabilityRoute capability="records.write">
+                  <EntityCreatePage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="data/:entity/:id"
+              element={(
+                <CapabilityRoute capability="records.read">
+                  <EntityRecordPage />
+                </CapabilityRoute>
+              )}
+            />
             <Route path="*" element={<Navigate to="/home" replace />} />
           </Route>
         </Routes>

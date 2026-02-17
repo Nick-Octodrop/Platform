@@ -7,6 +7,7 @@ import { loadEntityIndex } from "../data/entityIndex.js";
 import { useModuleStore } from "../state/moduleStore.jsx";
 import { getDevMode, subscribeDevMode } from "../dev/devMode.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
+import { useAccessContext } from "../access.js";
 
 export default function EntityRecordPage() {
   const { entity, id } = useParams();
@@ -24,6 +25,8 @@ export default function EntityRecordPage() {
   const [showValidation, setShowValidation] = useState(false);
   const [devMode, setDevMode] = useState(getDevMode());
   const [manifestHash, setManifestHash] = useState(null);
+  const { hasCapability } = useAccessContext();
+  const canWriteRecords = hasCapability("records.write");
 
   useEffect(() => {
     async function buildIndex() {
@@ -179,7 +182,7 @@ export default function EntityRecordPage() {
           record={draft}
           onChange={(next) => setDraft(next)}
           onSave={handleSave}
-          readonly={false}
+          readonly={!canWriteRecords}
           showValidation={showValidation}
         />
       )}

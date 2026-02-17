@@ -8,6 +8,8 @@ export default function SettingsWorkspacesPage() {
   const [context, setContext] = useState(null);
   const [workspaces, setWorkspaces] = useState([]);
   const [workspacePrefs, setWorkspacePrefs] = useState({ logo_url: "", colors: { primary: "", secondary: "", accent: "" } });
+  const [workspaceName, setWorkspaceName] = useState("");
+  const [workspaceNameSaving, setWorkspaceNameSaving] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -53,6 +55,14 @@ export default function SettingsWorkspacesPage() {
       member_count: w.member_count,
     }));
   }, [workspaces, actor.platform_role]);
+  const activeWorkspace = useMemo(
+    () => displayWorkspaces.find((w) => w.workspace_id === activeWorkspaceId) || null,
+    [displayWorkspaces, activeWorkspaceId],
+  );
+
+  useEffect(() => {
+    setWorkspaceName(activeWorkspace?.workspace_name || "");
+  }, [activeWorkspace?.workspace_id, activeWorkspace?.workspace_name]);
 
   function switchWorkspace(workspaceId) {
     setActiveWorkspaceId(workspaceId);
@@ -101,6 +111,28 @@ export default function SettingsWorkspacesPage() {
       pushToast("error", err?.message || "Logo upload failed");
     } finally {
       setLogoUploading(false);
+    }
+  }
+
+  async function saveWorkspaceName() {
+    if (!workspaceName.trim()) return;
+    setWorkspaceNameSaving(true);
+    try {
+      const res = await apiFetch("/access/workspace", {
+        method: "PATCH",
+        body: { name: workspaceName.trim() },
+      });
+      const nextWorkspaces = res?.workspaces || [];
+      if (nextWorkspaces.length) {
+        setWorkspaces(nextWorkspaces);
+      } else {
+        await load();
+      }
+      pushToast("success", "Workspace name updated");
+    } catch (err) {
+      pushToast("error", err?.message || "Failed to update workspace name");
+    } finally {
+      setWorkspaceNameSaving(false);
     }
   }
 
@@ -165,6 +197,26 @@ export default function SettingsWorkspacesPage() {
             <div className="alert alert-warning mt-2">Only workspace admins can edit these settings.</div>
           ) : (
             <div className="space-y-4 mt-2">
+              <label className="form-control max-w-3xl">
+                <span className="label-text">Workspace name</span>
+                <div className="join">
+                  <input
+                    type="text"
+                    className="input input-bordered join-item w-full"
+                    value={workspaceName}
+                    placeholder="Workspace name"
+                    onChange={(e) => setWorkspaceName(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary join-item"
+                    disabled={workspaceNameSaving || !workspaceName.trim()}
+                    onClick={saveWorkspaceName}
+                  >
+                    {workspaceNameSaving ? "Saving..." : "Save"}
+                  </button>
+                </div>
+              </label>
               <label className="form-control max-w-3xl">
                 <span className="label-text">Logo URL</span>
                 <input

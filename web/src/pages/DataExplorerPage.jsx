@@ -6,6 +6,7 @@ import { useModuleStore } from "../state/moduleStore.jsx";
 import { loadEntityIndex } from "../data/entityIndex.js";
 import { getDevMode, subscribeDevMode } from "../dev/devMode.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
+import { useAccessContext } from "../access.js";
 
 export default function DataExplorerPage() {
   const { entity } = useParams();
@@ -22,6 +23,8 @@ export default function DataExplorerPage() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [devMode, setDevMode] = useState(getDevMode());
   const [manifestHash, setManifestHash] = useState(null);
+  const { hasCapability } = useAccessContext();
+  const canWriteRecords = hasCapability("records.write");
 
   useEffect(() => {
     async function buildIndex() {
@@ -163,7 +166,7 @@ export default function DataExplorerPage() {
                 <div className="text-xs opacity-60">{selected.moduleId}</div>
               </div>
               <div className="flex gap-2">
-                <Link className="btn btn-primary" to={`/data/${selected.entityId}/new`}>New</Link>
+                {canWriteRecords ? <Link className="btn btn-primary" to={`/data/${selected.entityId}/new`}>New</Link> : null}
                 <button className="btn btn-outline" onClick={() => setRefreshTick((t) => t + 1)}>Refresh</button>
               </div>
             </div>
