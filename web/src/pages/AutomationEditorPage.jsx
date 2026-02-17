@@ -247,7 +247,13 @@ export default function AutomationEditorPage({ user }) {
 
   const memberOptions = useMemo(() => {
     if (!Array.isArray(meta.members)) return [];
-    return meta.members.slice().sort((a, b) => (a.user_id || "").localeCompare(b.user_id || ""));
+    return meta.members
+      .slice()
+      .sort((a, b) =>
+        (a.name || a.email || a.user_email || a.user_id || "").localeCompare(
+          b.name || b.email || b.user_email || b.user_id || ""
+        )
+      );
   }, [meta.members]);
 
   const memberById = useMemo(() => {
@@ -419,16 +425,6 @@ export default function AutomationEditorPage({ user }) {
                     <button
                       type="button"
                       className="btn btn-ghost btn-xs"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleStep(stepKey);
-                      }}
-                    >
-                      {isOpen ? "Collapse" : "Expand"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-xs"
                       disabled={index === 0}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -516,7 +512,7 @@ export default function AutomationEditorPage({ user }) {
                   )}
                 </div>
 
-                {step.action_id === "system.notify" && (
+                {step.kind === "action" && step.action_id === "system.notify" && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {(() => {
                           const selectedIds = Array.isArray(step.inputs?.recipient_user_ids)
@@ -541,7 +537,7 @@ export default function AutomationEditorPage({ user }) {
                                 <option value="">Select user…</option>
                                 {memberOptions.map((member) => (
                                   <option key={member.user_id} value={member.user_id}>
-                                    {member.name || member.email || member.user_id}
+                                    {member.name || member.email || member.user_email || member.user_id}
                                   </option>
                                 ))}
                               </select>
@@ -549,28 +545,6 @@ export default function AutomationEditorPage({ user }) {
                             </label>
                           );
                         })()}
-                        <label className="form-control">
-                          <span className="label-text">Recipient users (comma IDs)</span>
-                          <input
-                            className="input input-bordered"
-                            value={(() => {
-                              const selectedIds = Array.isArray(step.inputs?.recipient_user_ids)
-                                ? step.inputs.recipient_user_ids
-                                : step.inputs?.recipient_user_id
-                                  ? [step.inputs.recipient_user_id]
-                                  : [];
-                              return selectedIds.join(", ");
-                            })()}
-                            onChange={(e) => {
-                              const ids = e.target.value
-                                .split(",")
-                                .map((v) => v.trim())
-                                .filter(Boolean);
-                              updateStepInput(index, "recipient_user_ids", ids);
-                              updateStepInput(index, "recipient_user_id", ids[0] || "");
-                            }}
-                          />
-                        </label>
                         <div className="md:col-span-2">
                           <span className="label-text">Selected recipients</span>
                           <div className="mt-2 flex flex-wrap gap-2">
@@ -640,7 +614,7 @@ export default function AutomationEditorPage({ user }) {
                   </div>
                 )}
 
-                {step.action_id === "system.send_email" && (
+                {step.kind === "action" && step.action_id === "system.send_email" && (
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                         {(() => {
                           const selectedEntityId = step.inputs?.entity_id || triggerEventMeta?.entity_id || "";
@@ -747,35 +721,16 @@ export default function AutomationEditorPage({ user }) {
                             }}
                           >
                             <option value="">Select workspace member…</option>
-                            {memberOptions.map((member) => (
-                              <option key={member.user_id} value={member.email || ""} disabled={!member.email}>
-                                {member.name || member.email || member.user_id}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <div className="md:col-span-6">
-                          <span className="label-text">Internal recipients</span>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {selectedInternalEmails.map((email) => {
-                              const match = memberOptions.find((m) => m.email === email);
-                              const label = match?.name ? `${match.name} (${email})` : email;
+                            {memberOptions.map((member) => {
+                              const memberEmail = member.email || member.user_email || "";
                               return (
-                                <span key={email} className="badge badge-outline gap-2 py-3">
-                                  {label}
-                                  <button
-                                    type="button"
-                                    className="btn btn-ghost btn-xs"
-                                    onClick={() => updateStepInput(index, "to_internal_emails", selectedInternalEmails.filter((v) => v !== email))}
-                                  >
-                                    ×
-                                  </button>
-                                </span>
+                              <option key={member.user_id} value={memberEmail} disabled={!memberEmail}>
+                                {member.name || memberEmail || member.user_id}
+                              </option>
                               );
                             })}
-                            {!selectedInternalEmails.length && <span className="text-xs opacity-60">No internal recipients</span>}
-                          </div>
-                        </div>
+                          </select>
+                        </label>
                         <label className="form-control md:col-span-6">
                           <span className="label-text">Add record email field</span>
                           <select
@@ -797,31 +752,6 @@ export default function AutomationEditorPage({ user }) {
                             ))}
                           </select>
                         </label>
-                        <div className="md:col-span-6">
-                          <span className="label-text">Record email fields</span>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {selectedRecordEmailFieldIds.map((fieldId) => {
-                              const field = emailFields.find((f) => f.id === fieldId);
-                              return (
-                                <span key={fieldId} className="badge badge-outline gap-2 py-3">
-                                  {field?.label || fieldId}
-                                  <button
-                                    type="button"
-                                    className="btn btn-ghost btn-xs"
-                                    onClick={() => {
-                                      const next = selectedRecordEmailFieldIds.filter((v) => v !== fieldId);
-                                      updateStepInput(index, "to_field_ids", next);
-                                      updateStepInput(index, "to_field_id", next[0] || "");
-                                    }}
-                                  >
-                                    ×
-                                  </button>
-                                </span>
-                              );
-                            })}
-                            {!selectedRecordEmailFieldIds.length && <span className="text-xs opacity-60">No record email fields</span>}
-                          </div>
-                        </div>
                         <label className="form-control md:col-span-6">
                           <span className="label-text">Add lookup recipient field</span>
                           <select
@@ -859,13 +789,48 @@ export default function AutomationEditorPage({ user }) {
                           </select>
                         </label>
                         <div className="md:col-span-12">
-                          <span className="label-text">Lookup recipient fields</span>
+                          <span className="label-text">Selected recipient sources</span>
                           <div className="mt-2 flex flex-wrap gap-2">
+                            {selectedInternalEmails.map((email) => {
+                              const match = memberOptions.find((m) => (m.email || m.user_email) === email);
+                              const label = match?.name ? `${match.name} (${email})` : email;
+                              return (
+                                <span key={`internal:${email}`} className="badge badge-outline gap-2 py-3">
+                                  Internal: {label}
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-xs"
+                                    onClick={() => updateStepInput(index, "to_internal_emails", selectedInternalEmails.filter((v) => v !== email))}
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              );
+                            })}
+                            {selectedRecordEmailFieldIds.map((fieldId) => {
+                              const field = emailFields.find((f) => f.id === fieldId);
+                              return (
+                                <span key={`record:${fieldId}`} className="badge badge-outline gap-2 py-3">
+                                  Record field: {field?.label || fieldId}
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-xs"
+                                    onClick={() => {
+                                      const next = selectedRecordEmailFieldIds.filter((v) => v !== fieldId);
+                                      updateStepInput(index, "to_field_ids", next);
+                                      updateStepInput(index, "to_field_id", next[0] || "");
+                                    }}
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              );
+                            })}
                             {selectedLookupIds.map((fieldId) => {
                               const field = lookupFields.find((f) => f.id === fieldId);
                               return (
-                                <span key={fieldId} className="badge badge-outline gap-2 py-3">
-                                  {field?.label || fieldId}
+                                <span key={`lookup:${fieldId}`} className="badge badge-outline gap-2 py-3">
+                                  Lookup: {field?.label || fieldId}
                                   <button
                                     type="button"
                                     className="btn btn-ghost btn-xs"
@@ -880,7 +845,9 @@ export default function AutomationEditorPage({ user }) {
                                 </span>
                               );
                             })}
-                            {!selectedLookupIds.length && <span className="text-xs opacity-60">No lookup recipient fields</span>}
+                            {!selectedInternalEmails.length && !selectedRecordEmailFieldIds.length && !selectedLookupIds.length && (
+                              <span className="text-xs opacity-60">No dynamic recipient sources selected</span>
+                            )}
                           </div>
                         </div>
                           <label className="form-control md:col-span-12">
@@ -904,7 +871,7 @@ export default function AutomationEditorPage({ user }) {
                       </div>
                     )}
 
-                    {step.action_id === "system.generate_document" && (
+                    {step.kind === "action" && step.action_id === "system.generate_document" && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <label className="form-control">
                           <span className="label-text">Template</span>
@@ -949,7 +916,7 @@ export default function AutomationEditorPage({ user }) {
                   </div>
                 )}
 
-                    {step.action_id && !step.action_id.startsWith("system.") && (
+                    {step.kind === "action" && step.action_id && !step.action_id.startsWith("system.") && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <label className="form-control">
                           <span className="label-text">Entity</span>

@@ -34,18 +34,42 @@ def list_memberships(user_id: str) -> list[dict]:
 
 def list_workspace_members(workspace_id: str) -> list[dict]:
     with get_conn() as conn:
-        rows = fetch_all(
-            conn,
-            """
-            select workspace_id, user_id, role
-            from workspace_members
-            where workspace_id=%s
-            order by created_at asc
-            """,
-            [workspace_id],
-            query_name="workspace_members.list_by_workspace",
-        )
-        return rows or []
+        try:
+            rows = fetch_all(
+                conn,
+                """
+                select
+                  wm.workspace_id,
+                  wm.user_id,
+                  wm.role,
+                  u.email,
+                  coalesce(
+                    nullif(trim(u.raw_user_meta_data->>'full_name'), ''),
+                    nullif(trim(u.raw_user_meta_data->>'name'), '')
+                  ) as name
+                from workspace_members wm
+                left join auth.users u on u.id::text = wm.user_id
+                where wm.workspace_id=%s
+                order by wm.created_at asc
+                """,
+                [workspace_id],
+                query_name="workspace_members.list_by_workspace",
+            )
+            return rows or []
+        except Exception:
+            # Fallback for environments without auth.users access.
+            rows = fetch_all(
+                conn,
+                """
+                select workspace_id, user_id, role
+                from workspace_members
+                where workspace_id=%s
+                order by created_at asc
+                """,
+                [workspace_id],
+                query_name="workspace_members.list_by_workspace_fallback",
+            )
+            return rows or []
 
 
 def get_membership(user_id: str, workspace_id: str) -> dict | None:
