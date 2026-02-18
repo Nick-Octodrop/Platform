@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiFetch } from "../api.js";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
-import Tabs from "../components/Tabs.jsx";
+import { formatDateTime } from "../utils/dateTime.js";
 
 function providerFromType(type) {
   const raw = String(type || "");
@@ -18,10 +18,11 @@ export default function IntegrationConnectionPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [activeTab, setActiveTab] = useState("details");
+  const [activeTab, setActiveTab] = useState("overview");
 
   const [name, setName] = useState("");
   const [status, setStatus] = useState("active");
+  const [secretRef, setSecretRef] = useState("");
   const [configText, setConfigText] = useState("{}");
 
   async function load() {
@@ -35,6 +36,7 @@ export default function IntegrationConnectionPage() {
       setItem(conn);
       setName(conn?.name || "");
       setStatus(conn?.status || "active");
+      setSecretRef(conn?.secret_ref || "");
       setConfigText(JSON.stringify(conn?.config || {}, null, 2));
     } catch (err) {
       setItem(null);
@@ -51,8 +53,10 @@ export default function IntegrationConnectionPage() {
 
   const tabs = useMemo(
     () => [
-      { id: "details", label: "Details" },
+      { id: "overview", label: "Overview" },
+      { id: "authentication", label: "Authentication" },
       { id: "config", label: "Config" },
+      { id: "activity", label: "Activity" },
     ],
     [],
   );
@@ -71,7 +75,7 @@ export default function IntegrationConnectionPage() {
       }
       const res = await apiFetch(`/integrations/connections/${encodeURIComponent(item.id)}`, {
         method: "PATCH",
-        body: { name: name.trim(), status, config: nextConfig },
+        body: { name: name.trim(), status, secret_ref: secretRef || null, config: nextConfig },
       });
       const updated = res?.connection || null;
       setItem(updated);
@@ -89,6 +93,9 @@ export default function IntegrationConnectionPage() {
     <TabbedPaneShell
       title={item?.name || "Connection"}
       subtitle={item?.type ? `Provider: ${provider}` : "Integration connection"}
+      tabs={tabs}
+      activeTabId={activeTab}
+      onTabChange={setActiveTab}
       rightActions={(
         <div className="flex items-center gap-2">
           <button className="btn btn-sm btn-ghost" type="button" onClick={load} disabled={loading || saving}>
@@ -106,15 +113,33 @@ export default function IntegrationConnectionPage() {
       {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
       {notice ? <div className="alert alert-success text-sm mb-4">{notice}</div> : null}
 
-      <div className="rounded-box border border-base-300 bg-base-100 p-4">
-        <Tabs tabs={tabs} activeId={activeTab} onChange={setActiveTab} />
-      </div>
-
-      <div className="mt-4 rounded-box border border-base-300 bg-base-100 overflow-hidden min-h-[22rem]">
+      <div className="rounded-box border border-base-300 bg-base-100 overflow-hidden min-h-[22rem]">
         {loading ? (
           <div className="p-4 text-sm opacity-70">Loading…</div>
         ) : !item ? (
           <div className="p-4 text-sm opacity-60">Connection not found.</div>
+        ) : activeTab === "authentication" ? (
+          <div className="p-4 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+              <label className="form-control md:col-span-6">
+                <span className="label-text text-sm">Provider</span>
+                <input className="input input-bordered input-sm" value={provider} disabled />
+              </label>
+              <label className="form-control md:col-span-6">
+                <span className="label-text text-sm">Secret Ref</span>
+                <input
+                  className="input input-bordered input-sm font-mono"
+                  value={secretRef}
+                  placeholder="Secret ID (UUID)"
+                  onChange={(e) => setSecretRef(e.target.value)}
+                  disabled={saving}
+                />
+              </label>
+            </div>
+            <div className="text-xs opacity-70">
+              Store credentials in Secrets and reference them here.
+            </div>
+          </div>
         ) : activeTab === "config" ? (
           <div className="p-4 space-y-2">
             <div className="text-xs opacity-70">Config (JSON)</div>
@@ -124,6 +149,10 @@ export default function IntegrationConnectionPage() {
               onChange={(e) => setConfigText(e.target.value)}
               disabled={saving}
             />
+          </div>
+        ) : activeTab === "activity" ? (
+          <div className="p-4 text-sm opacity-70">
+            Connection activity and test runs will appear here.
           </div>
         ) : (
           <div className="p-4 space-y-4">
@@ -163,11 +192,11 @@ export default function IntegrationConnectionPage() {
               </div>
               <div>
                 <div className="text-xs opacity-70">Created</div>
-                <div>{item.created_at || "—"}</div>
+                <div>{formatDateTime(item.created_at, "—")}</div>
               </div>
               <div>
                 <div className="text-xs opacity-70">Updated</div>
-                <div>{item.updated_at || "—"}</div>
+                <div>{formatDateTime(item.updated_at, "—")}</div>
               </div>
             </div>
           </div>
@@ -176,4 +205,3 @@ export default function IntegrationConnectionPage() {
     </TabbedPaneShell>
   );
 }
-

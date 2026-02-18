@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { apiFetch } from "../api.js";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import Tabs from "../components/Tabs.jsx";
+import { formatDateTime } from "../utils/dateTime.js";
 
 export default function EmailOutboxItemPage() {
   const { outboxId } = useParams();
@@ -134,11 +135,11 @@ export default function EmailOutboxItemPage() {
               </div>
               <div>
                 <div className="text-xs opacity-70">Created</div>
-                <div className="text-sm">{item.created_at || "—"}</div>
+                <div className="text-sm">{formatDateTime(item.created_at, "—")}</div>
               </div>
               <div>
                 <div className="text-xs opacity-70">Sent</div>
-                <div className="text-sm">{item.sent_at || "—"}</div>
+                <div className="text-sm">{formatDateTime(item.sent_at, "—")}</div>
               </div>
               <div>
                 <div className="text-xs opacity-70">Provider Message ID</div>

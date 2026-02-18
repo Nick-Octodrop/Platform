@@ -93,6 +93,16 @@
           "label": "Progress %",
           "required_when": { "op": "in", "field": "project.status", "value": ["in_progress", "blocked", "completed"] }
         },
+        {
+          "id": "project.attachments",
+          "type": "attachments",
+          "label": "Project Attachments",
+          "ui": {
+            "title": "Project Files",
+            "description": "Upload drawings, briefs, and handover files.",
+            "button_label": "Attach Project Files"
+          }
+        },
         { "id": "project.tags", "type": "tags", "label": "Tags" },
         { "id": "project.notes", "type": "text", "label": "Internal Notes" },
         {
@@ -265,6 +275,7 @@
             { "id": "details", "label": "Details", "sections": ["details"] },
             { "id": "timeline", "label": "Timeline", "sections": ["timeline"] },
             { "id": "budget", "label": "Budget", "sections": ["budget"] },
+            { "id": "files", "label": "Files", "sections": ["files"] },
             { "id": "notes", "label": "Notes", "sections": ["notes"] }
           ]
         }
@@ -307,6 +318,13 @@
           "fields": [
             "project.budget"
           ]
+        },
+        {
+          "id": "files",
+          "title": "Files",
+          "layout": "columns",
+          "columns": 2,
+          "fields": ["project.attachments"]
         },
         {
           "id": "notes",

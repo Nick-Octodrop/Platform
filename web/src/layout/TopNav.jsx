@@ -24,7 +24,7 @@ export default function TopNav({ user, onSignOut }) {
   const isSettingsUsers = location.pathname.startsWith("/settings/users");
   const isSettingsWorkspaces = location.pathname.startsWith("/settings/workspaces");
   const isSettingsSecrets = location.pathname.startsWith("/settings/secrets");
-  const isDiagnostics = location.pathname === "/settings/diagnostics";
+  const isDiagnostics = location.pathname.startsWith("/settings/diagnostics");
   const isAudit = location.pathname.startsWith("/audit");
   const isIntegrations = location.pathname.startsWith("/integrations");
   const isOps = location.pathname.startsWith("/ops");

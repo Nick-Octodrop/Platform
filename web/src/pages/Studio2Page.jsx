@@ -30,6 +30,7 @@ import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import AgentChatInput from "../ui/AgentChatInput.jsx";
 import { useAccessContext } from "../access.js";
+import { formatDateTime, formatTime } from "../utils/dateTime.js";
 
 function nowIso() {
   return new Date().toISOString();
@@ -1965,7 +1966,7 @@ function buildPreviewManifest() {
   function renderProgressEvent(evt, idx) {
     const data = evt.data || {};
     const debugEnabled = localStorage.getItem("octo_layout_debug") === "1";
-    const ts = Number.isFinite(evt.ts_ms) ? new Date(evt.ts_ms).toLocaleTimeString() : "";
+    const ts = Number.isFinite(evt.ts_ms) ? formatTime(evt.ts_ms, "") : "";
     const debugLine = debugEnabled ? (
       <div className="text-[10px] opacity-60">
         {evt.event} {evt.request_id ? `· ${evt.request_id}` : ""} {ts ? `· ${ts}` : ""}
@@ -2212,7 +2213,7 @@ function buildPreviewManifest() {
                     <span className="badge badge-outline">{snap.action || "snapshot"}</span>
                     <span className="font-mono">{(snap.manifest_hash || "").slice(0, 12)}</span>
                     {snap.transaction_group_id && <span className="font-mono">{snap.transaction_group_id}</span>}
-                    <span className="opacity-60">{snap.created_at || ""}</span>
+                    <span className="opacity-60">{formatDateTime(snap.created_at, "")}</span>
                   </div>
                   <button
                     className="btn btn-xs btn-outline"
@@ -2234,7 +2235,7 @@ function buildPreviewManifest() {
                     <span className="badge badge-outline">draft</span>
                     <span className="font-mono">{(dv.draft_version_id || "").slice(0, 8)}</span>
                     {dv.note && <span>{dv.note}</span>}
-                    <span className="opacity-60">{dv.created_at || ""}</span>
+                    <span className="opacity-60">{formatDateTime(dv.created_at, "")}</span>
                   </div>
                   <button
                     className="btn btn-xs btn-outline"
@@ -2939,7 +2940,7 @@ function buildPreviewManifest() {
                           onChange={() => setRollbackSelected(snap.manifest_hash)}
                         />
                         <span className="font-mono">{(snap.manifest_hash || "").slice(0, 12)}</span>
-                        <span className="opacity-60">{snap.created_at || ""}</span>
+                        <span className="opacity-60">{formatDateTime(snap.created_at, "")}</span>
                       </label>
                     ))}
                   </div>
@@ -2953,7 +2954,7 @@ function buildPreviewManifest() {
                           <span className="badge badge-outline">{entry.action || "change"}</span>
                           {entry.transaction_group_id && <span className="font-mono">{entry.transaction_group_id}</span>}
                           {entry.patch_id && <span className="font-mono">{entry.patch_id}</span>}
-                          <span className="opacity-60">{entry.at || ""}</span>
+                          <span className="opacity-60">{formatDateTime(entry.at, "")}</span>
                         </div>
                       ))}
                     </div>
@@ -3063,7 +3064,7 @@ function buildPreviewManifest() {
                         onChange={() => setRollbackSelected(snap.manifest_hash)}
                       />
                       <span className="font-mono">{(snap.manifest_hash || "").slice(0, 12)}</span>
-                      <span className="opacity-60">{snap.created_at || ""}</span>
+                      <span className="opacity-60">{formatDateTime(snap.created_at, "")}</span>
                     </label>
                   ))}
                 </div>
@@ -3077,7 +3078,7 @@ function buildPreviewManifest() {
                         <span className="badge badge-outline">{entry.action || "change"}</span>
                         {entry.transaction_group_id && <span className="font-mono">{entry.transaction_group_id}</span>}
                         {entry.patch_id && <span className="font-mono">{entry.patch_id}</span>}
-                        <span className="opacity-60">{entry.at || ""}</span>
+                        <span className="opacity-60">{formatDateTime(entry.at, "")}</span>
                       </div>
                     ))}
                   </div>

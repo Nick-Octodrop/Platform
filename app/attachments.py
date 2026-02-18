@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
+import unicodedata
 from pathlib import Path
 from urllib.parse import quote
 
@@ -81,9 +83,26 @@ def public_url(bucket: str, storage_key: str) -> str:
     return f"{_supabase_url()}/storage/v1/object/public/{bucket}/{path}"
 
 
+def _safe_storage_name(filename: str) -> str:
+    raw = str(filename or "file")
+    normalized = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode("ascii")
+    base = normalized.replace("..", "_").replace("/", "_").replace("\\", "_").strip()
+    base = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("._")
+    if not base:
+        base = "file"
+    if len(base) > 120:
+        stem, dot, ext = base.rpartition(".")
+        if dot and ext:
+            keep_stem = max(1, 120 - len(ext) - 1)
+            base = f"{stem[:keep_stem]}.{ext}"
+        else:
+            base = base[:120]
+    return base
+
+
 def store_bytes(org_id: str, filename: str, data: bytes, mime_type: str | None = None, bucket: str | None = None) -> dict:
     digest = hashlib.sha256(data).hexdigest()
-    safe_name = filename.replace("..", "_").replace("/", "_")
+    safe_name = _safe_storage_name(filename)
     storage_key = f"{org_id}/{digest}_{safe_name}"
     selected_bucket = (bucket or attachments_bucket()).strip()
     if _supabase_enabled():

@@ -528,12 +528,14 @@ class MemoryAttachmentStore:
         self._links[item["id"]] = item
         return copy.deepcopy(item)
 
-    def list_links(self, workspace_id: str, entity_id: str, record_id: str) -> list[dict]:
+    def list_links(self, workspace_id: str, entity_id: str, record_id: str, purpose: str | None = None) -> list[dict]:
+        workspace_id = workspace_id or "default"
         items = [
             l for l in self._links.values()
             if l.get("workspace_id") == workspace_id
             and l.get("entity_id") == entity_id
             and l.get("record_id") == record_id
+            and (purpose is None or l.get("purpose") == purpose)
         ]
         return [copy.deepcopy(l) for l in items]
 
@@ -545,6 +547,37 @@ class MemoryAttachmentStore:
         ]
         items.sort(key=lambda l: l.get("created_at", ""), reverse=True)
         return [copy.deepcopy(l) for l in items[:limit]]
+
+    def unlink(self, workspace_id: str, entity_id: str, record_id: str, attachment_id: str, purpose: str | None = None) -> int:
+        workspace_id = workspace_id or "default"
+        to_remove = [
+            link_id
+            for link_id, link in self._links.items()
+            if link.get("workspace_id") == workspace_id
+            and link.get("entity_id") == entity_id
+            and link.get("record_id") == record_id
+            and link.get("attachment_id") == attachment_id
+            and (purpose is None or link.get("purpose") == purpose)
+        ]
+        for link_id in to_remove:
+            self._links.pop(link_id, None)
+        return len(to_remove)
+
+    def count_links(self, workspace_id: str, attachment_id: str) -> int:
+        workspace_id = workspace_id or "default"
+        return sum(
+            1
+            for link in self._links.values()
+            if link.get("workspace_id") == workspace_id and link.get("attachment_id") == attachment_id
+        )
+
+    def delete_attachment(self, workspace_id: str, attachment_id: str) -> dict | None:
+        workspace_id = workspace_id or "default"
+        item = self._attachments.get(attachment_id)
+        if not item or item.get("workspace_id") != workspace_id:
+            return None
+        self._attachments.pop(attachment_id, None)
+        return copy.deepcopy(item)
 
 
 class MemoryDocTemplateStore:
@@ -621,6 +654,9 @@ class MemoryConnectionStore:
         return [copy.deepcopy(i) for i in items]
 
     def get_default_email(self) -> dict | None:
+        for item in self._items.values():
+            if item.get("type") == "smtp" and item.get("status") == "active":
+                return copy.deepcopy(item)
         for item in self._items.values():
             if item.get("type") == "postmark" and item.get("status") == "active":
                 return copy.deepcopy(item)

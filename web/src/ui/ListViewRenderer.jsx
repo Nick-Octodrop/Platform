@@ -3,9 +3,11 @@ import { FixedSizeList as VirtualList } from "react-window";
 import { getFieldValue } from "./field_renderers.jsx";
 import { evalCondition } from "../utils/conditions.js";
 import { resolveFieldLabel } from "../utils/labels.js";
+import { formatDateLike } from "../utils/dateTime.js";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import { apiFetch } from "../api.js";
 import PaginationControls from "../components/PaginationControls.jsx";
+import DaisyTooltip from "../components/DaisyTooltip.jsx";
 
 const DEFAULT_PAGE_SIZE = 25;
 
@@ -132,7 +134,7 @@ export default function ListViewRenderer({
       const cacheKey = `${col.field_id}:${String(rawValue)}`;
       return String(lookupLabels[cacheKey] || rawValue);
     }
-    return String(rawValue);
+    return String(formatDateLike(rawValue, { fieldType: field?.type, fieldId: col.field_id }));
   };
   const filteredRecords = useMemo(() => {
     let next = Array.isArray(records) ? records : [];
@@ -213,19 +215,21 @@ export default function ListViewRenderer({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             {primaryActions.map((item) => (
-              <button
-                key={item.label}
-                className={`${PRIMARY_BUTTON_SM} tooltip`}
-                data-tip={item.label}
-                onClick={() => onActionClick?.(item.action)}
-                disabled={!item.enabled}
-              >
-                {item.label}
-              </button>
+              <DaisyTooltip key={item.label} label={item.label} placement="bottom">
+                <button
+                  className={PRIMARY_BUTTON_SM}
+                  onClick={() => onActionClick?.(item.action)}
+                  disabled={!item.enabled}
+                >
+                  {item.label}
+                </button>
+              </DaisyTooltip>
             ))}
             {secondaryActions.length > 0 && (
               <div className="dropdown">
-                <button className={`${SOFT_BUTTON_SM} tooltip`} data-tip="More actions">More</button>
+                <DaisyTooltip label="More actions" placement="bottom">
+                  <button className={SOFT_BUTTON_SM}>More</button>
+                </DaisyTooltip>
                 <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-48 z-50">
                   {secondaryActions.map((item) => (
                     <li key={item.label}>
@@ -251,9 +255,11 @@ export default function ListViewRenderer({
           <div className="flex items-center gap-2">
             {filters.length > 0 && (
               <div className="dropdown dropdown-end">
-                <button className={`${SOFT_BUTTON_SM} tooltip`} data-tip="Filters">
-                  {activeFilter?.label || "Filter"}
-                </button>
+                <DaisyTooltip label="Filters" placement="bottom">
+                  <button className={SOFT_BUTTON_SM}>
+                    {activeFilter?.label || "Filter"}
+                  </button>
+                </DaisyTooltip>
                 <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-50">
                   {filters.map((flt) => (
                     <li key={flt.id}>
@@ -268,7 +274,9 @@ export default function ListViewRenderer({
             )}
             {bulkActions.length > 0 && selectedIds.length > 0 && (
               <div className="dropdown dropdown-end">
-                <button className={`${SOFT_BUTTON_SM} tooltip`} data-tip="Bulk actions">Bulk actions</button>
+                <DaisyTooltip label="Bulk actions" placement="bottom">
+                  <button className={SOFT_BUTTON_SM}>Bulk actions</button>
+                </DaisyTooltip>
                 <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-50">
                   {bulkActions.map((item) => (
                     <li key={item.label}>

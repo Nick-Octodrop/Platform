@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { apiFetch } from "../api.js";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import Tabs from "../components/Tabs.jsx";
+import { formatDateTime } from "../utils/dateTime.js";
 
 export default function OpsJobPage() {
   const { jobId } = useParams();
@@ -174,7 +175,7 @@ export default function OpsJobPage() {
             ) : (
               events.map((evt) => (
                 <div key={evt.id || `${evt.ts}-${evt.message}`} className="text-xs">
-                  <span className="opacity-70">{evt.ts}</span> {evt.level} — {evt.message}
+                  <span className="opacity-70">{formatDateTime(evt.ts, evt.ts || "")}</span> {evt.level} — {evt.message}
                 </div>
               ))
             )}
@@ -208,11 +209,11 @@ export default function OpsJobPage() {
               </div>
               <div>
                 <div className="text-xs opacity-70">Created</div>
-                <div className="text-sm">{job.created_at || "—"}</div>
+                <div className="text-sm">{formatDateTime(job.created_at, "—")}</div>
               </div>
               <div>
                 <div className="text-xs opacity-70">Updated</div>
-                <div className="text-sm">{job.updated_at || "—"}</div>
+                <div className="text-sm">{formatDateTime(job.updated_at, "—")}</div>
               </div>
             </div>
           </div>

@@ -130,7 +130,7 @@ from app.stores_db import (
 from app.email import render_template, get_provider
 from app.template_render import collect_undeclared_vars, validate_templates
 from app.secrets import create_secret, encrypt_secret, resolve_secret, SecretStoreError
-from app.attachments import store_bytes, resolve_path, read_bytes, public_url, branding_bucket, using_supabase_storage
+from app.attachments import store_bytes, resolve_path, read_bytes, public_url, branding_bucket, using_supabase_storage, delete_storage
 from app.doc_render import render_html, render_pdf, normalize_margins
 from app.automations import match_event
 from app.automations_runtime import handle_event as handle_automation_event
@@ -9348,6 +9348,11 @@ async def automations_meta(request: Request) -> dict:
     workspace_id = actor.get("workspace_id")
     members = list_workspace_members(workspace_id) if isinstance(workspace_id, str) and workspace_id else []
     connections = connection_store.list() if connection_store else []
+    # Only expose email-capable connections in automation email pickers.
+    connections = [
+        c for c in (connections or [])
+        if c.get("type") in {"smtp", "postmark"}
+    ]
     email_templates = email_store.list_templates() if email_store else []
     doc_templates = doc_template_store.list() if doc_template_store else []
     response = _ok_response(
@@ -10437,7 +10442,11 @@ async def add_activity_attachment(
     if isinstance(activity_cfg, dict) and activity_cfg.get("allow_attachments") is False:
         return _error_response("ACTIVITY_ATTACHMENTS_DISABLED", "Attachments are disabled for this form", "activity.allow_attachments", status=400)
     data = await file.read()
-    stored = store_bytes(get_org_id(), file.filename, data)
+    try:
+        stored = store_bytes(get_org_id(), file.filename, data, mime_type=file.content_type or "application/octet-stream")
+    except Exception as exc:
+        logger.exception("activity_attachment_store_failed filename=%s", file.filename)
+        return _error_response("ATTACHMENT_UPLOAD_FAILED", str(exc), "file", status=400)
     attachment = attachment_store.create_attachment(
         {
             "filename": file.filename,
@@ -10865,6 +10874,62 @@ async def cancel_job(request: Request, job_id: str) -> dict:
 # ---- Secrets + Connections (admin) ----
 
 
+@app.get("/settings/secrets")
+async def list_settings_secrets(request: Request, limit: int = 200, include_system: bool = False) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "workspace.manage_settings", "Settings permission required")
+    if denied:
+        return denied
+    if not secret_store or not hasattr(secret_store, "list"):
+        return _ok_response({"secrets": []})
+    items = secret_store.list(limit=min(limit, 1000))
+    if not include_system:
+        system_names = {"postmark_api_token"}
+        items = [s for s in (items or []) if str(s.get("name") or "").strip().lower() not in system_names]
+    return _ok_response({"secrets": items})
+
+
+@app.post("/settings/secrets")
+async def create_settings_secret(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "workspace.manage_settings", "Settings permission required")
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    value = body.get("value")
+    name = body.get("name")
+    if not isinstance(value, str) or not value.strip():
+        return _error_response("SECRET_VALUE_REQUIRED", "value is required", "value", status=400)
+    try:
+        secret_id = create_secret(get_org_id(), (name or None), value.strip())
+    except SecretStoreError as exc:
+        return _error_response("SECRET_STORE_ERROR", str(exc), "value", status=500)
+    item = secret_store.get(secret_id) if secret_store else None
+    return _ok_response({"secret": item or {"id": secret_id, "name": name or None}})
+
+
+@app.delete("/settings/secrets/{secret_id}")
+async def delete_settings_secret(request: Request, secret_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "workspace.manage_settings", "Settings permission required")
+    if denied:
+        return denied
+    if not secret_store or not hasattr(secret_store, "delete"):
+        return _error_response("NOT_SUPPORTED", "Secret deletion not supported", "secret_id", status=400)
+    deleted = bool(secret_store.delete(secret_id))
+    if not deleted:
+        return _error_response("SECRET_NOT_FOUND", "Secret not found", "secret_id", status=404)
+    return _ok_response({"deleted": True, "id": secret_id})
+
+
 @app.post("/ops/secrets")
 async def create_secret_endpoint(request: Request) -> dict:
     actor = _resolve_actor(request)
@@ -10876,7 +10941,10 @@ async def create_secret_endpoint(request: Request) -> dict:
     name = body.get("name") if isinstance(body, dict) else None
     if not value:
         return _error_response("SECRET_VALUE_REQUIRED", "value is required", "value", status=400)
-    secret_id = create_secret(get_org_id(), name, value)
+    try:
+        secret_id = create_secret(get_org_id(), name, value)
+    except SecretStoreError as exc:
+        return _error_response("SECRET_STORE_ERROR", str(exc), "value", status=500)
     return _ok_response({"secret_id": secret_id})
 
 
@@ -10944,12 +11012,18 @@ async def create_integration_connection(request: Request) -> dict:
         return _error_response("PROVIDER_REQUIRED", "provider is required", "provider", status=400)
     if not isinstance(name, str) or not name.strip():
         return _error_response("NAME_REQUIRED", "name is required", "name", status=400)
+    status = body.get("status") or "active"
+    if not isinstance(status, str) or status not in {"active", "disabled"}:
+        return _error_response("STATUS_INVALID", "status must be active or disabled", "status", status=400)
+    secret_ref, secret_err = _validated_secret_ref(body.get("secret_ref"))
+    if secret_err:
+        return secret_err
     record = {
         "type": f"integration.{provider.strip().lower()}",
         "name": name.strip(),
         "config": body.get("config") if isinstance(body.get("config"), dict) else {},
-        "secret_ref": body.get("secret_ref"),
-        "status": body.get("status") or "active",
+        "secret_ref": secret_ref,
+        "status": status,
     }
     conn = connection_store.create(record)
     return _ok_response({"connection": conn})
@@ -10996,7 +11070,10 @@ async def update_integration_connection(request: Request, connection_id: str) ->
             return _error_response("CONFIG_INVALID", "config must be an object", "config", status=400)
         updates["config"] = config or {}
     if "secret_ref" in body:
-        updates["secret_ref"] = body.get("secret_ref")
+        secret_ref, secret_err = _validated_secret_ref(body.get("secret_ref"))
+        if secret_err:
+            return secret_err
+        updates["secret_ref"] = secret_ref
     updated = connection_store.update(connection_id, updates) if hasattr(connection_store, "update") else None
     if not updated:
         # fallback for older store implementations
@@ -11046,6 +11123,122 @@ async def read_all_notifications(request: Request) -> dict:
 
 
 # ---- Email ----
+
+
+@app.get("/email/connections")
+async def list_email_connections(request: Request, status: str | None = None) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "templates.manage", "Email templates permission required")
+    if denied:
+        return denied
+    items = connection_store.list(connection_type="smtp", status=status)
+    return _ok_response({"connections": items})
+
+
+def _validated_secret_ref(secret_ref: Any) -> tuple[str | None, dict | None]:
+    if secret_ref is None or secret_ref == "":
+        return None, None
+    if not isinstance(secret_ref, str):
+        return None, _error_response("SECRET_REF_INVALID", "secret_ref must be a UUID string", "secret_ref", status=400)
+    candidate = secret_ref.strip()
+    try:
+        uuid.UUID(candidate)
+    except Exception:
+        return None, _error_response("SECRET_REF_INVALID", "secret_ref must be a UUID string", "secret_ref", status=400)
+    if secret_store and not secret_store.get(candidate):
+        return None, _error_response("SECRET_NOT_FOUND", "Secret not found", "secret_ref", status=400)
+    return candidate, None
+
+
+@app.post("/email/connections")
+async def create_email_connection(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "templates.manage", "Email templates permission required")
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    name = body.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return _error_response("NAME_REQUIRED", "name is required", "name", status=400)
+    status = body.get("status") or "active"
+    if not isinstance(status, str) or status not in {"active", "disabled"}:
+        return _error_response("STATUS_INVALID", "status must be active or disabled", "status", status=400)
+    secret_ref, secret_err = _validated_secret_ref(body.get("secret_ref"))
+    if secret_err:
+        return secret_err
+    config = body.get("config")
+    if config is not None and not isinstance(config, dict):
+        return _error_response("CONFIG_INVALID", "config must be an object", "config", status=400)
+    record = {
+        "type": "smtp",
+        "name": name.strip(),
+        "config": config or {},
+        "secret_ref": secret_ref,
+        "status": status,
+    }
+    conn = connection_store.create(record)
+    return _ok_response({"connection": conn})
+
+
+@app.get("/email/connections/{connection_id}")
+async def get_email_connection(request: Request, connection_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "templates.manage", "Email templates permission required")
+    if denied:
+        return denied
+    conn = connection_store.get(connection_id)
+    if not conn or conn.get("type") != "smtp":
+        return _error_response("CONNECTION_NOT_FOUND", "Connection not found", "connection_id", status=404)
+    return _ok_response({"connection": conn})
+
+
+@app.patch("/email/connections/{connection_id}")
+async def update_email_connection(request: Request, connection_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "templates.manage", "Email templates permission required")
+    if denied:
+        return denied
+    conn = connection_store.get(connection_id)
+    if not conn or conn.get("type") != "smtp":
+        return _error_response("CONNECTION_NOT_FOUND", "Connection not found", "connection_id", status=404)
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    updates = {}
+    if "name" in body:
+        name = body.get("name")
+        if not isinstance(name, str) or not name.strip():
+            return _error_response("NAME_REQUIRED", "name is required", "name", status=400)
+        updates["name"] = name.strip()
+    if "status" in body:
+        st = body.get("status")
+        if not isinstance(st, str) or st not in {"active", "disabled"}:
+            return _error_response("STATUS_INVALID", "status must be active or disabled", "status", status=400)
+        updates["status"] = st
+    if "config" in body:
+        config = body.get("config")
+        if config is not None and not isinstance(config, dict):
+            return _error_response("CONFIG_INVALID", "config must be an object", "config", status=400)
+        updates["config"] = config or {}
+    if "secret_ref" in body:
+        secret_ref, secret_err = _validated_secret_ref(body.get("secret_ref"))
+        if secret_err:
+            return secret_err
+        updates["secret_ref"] = secret_ref
+    updated = connection_store.update(connection_id, updates) if hasattr(connection_store, "update") else None
+    if not updated:
+        updated = connection_store.get(connection_id)
+    return _ok_response({"connection": updated})
 
 
 @app.get("/templates/meta")
@@ -11924,7 +12117,11 @@ async def upload_attachment(request: Request, file: UploadFile = File(...)) -> d
     if isinstance(actor, JSONResponse):
         return actor
     data = await file.read()
-    stored = store_bytes(get_org_id(), file.filename, data, mime_type=file.content_type or "application/octet-stream")
+    try:
+        stored = store_bytes(get_org_id(), file.filename, data, mime_type=file.content_type or "application/octet-stream")
+    except Exception as exc:
+        logger.exception("attachment_store_failed filename=%s", file.filename)
+        return _error_response("ATTACHMENT_UPLOAD_FAILED", str(exc), "file", status=400)
     attachment = attachment_store.create_attachment(
         {
             "filename": file.filename,
@@ -12029,7 +12226,12 @@ async def download_attachment(request: Request, attachment_id: str):
         from fastapi.responses import FileResponse
 
         return FileResponse(path, media_type=attachment.get("mime_type"), filename=attachment.get("filename"))
-    headers = {"Content-Disposition": f'attachment; filename="{attachment.get("filename") or "attachment"}"'}
+    filename = str(attachment.get("filename") or "attachment")
+    safe_ascii = filename.encode("ascii", "ignore").decode("ascii").strip() or "attachment"
+    encoded_name = urllib.parse.quote(filename, safe="")
+    headers = {
+        "Content-Disposition": f'attachment; filename="{safe_ascii}"; filename*=UTF-8\'\'{encoded_name}'
+    }
     return Response(content=data, media_type=attachment.get("mime_type") or "application/octet-stream", headers=headers)
 
 
@@ -12046,6 +12248,9 @@ async def link_attachment(request: Request) -> dict:
         return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
     if not (body.get("attachment_id") and body.get("entity_id") and body.get("record_id")):
         return _error_response("ATTACHMENT_LINK_REQUIRED", "attachment_id, entity_id, record_id required", None, status=400)
+    purpose = body.get("purpose")
+    if purpose is not None:
+        body["purpose"] = str(purpose).strip() or "default"
     link = attachment_store.link(body)
     try:
         attachment = attachment_store.get_attachment(body.get("attachment_id"))
@@ -12069,13 +12274,85 @@ async def list_record_attachments(request: Request, entity_id: str, record_id: s
     denied = _require_capability(actor, "records.read", "Read access required")
     if denied:
         return denied
-    links = attachment_store.list_links(entity_id, record_id)
+    purpose = (request.query_params.get("purpose") or "").strip() or None
+    try:
+        links = attachment_store.list_links(entity_id, record_id, purpose)
+    except TypeError:
+        links = attachment_store.list_links(get_org_id(), entity_id, record_id, purpose)
     attachments = []
     for link in links:
         att = attachment_store.get_attachment(link.get("attachment_id"))
         if att:
             attachments.append(att)
     return _ok_response({"links": links, "attachments": attachments})
+
+
+@app.delete("/records/{entity_id}/{record_id}/attachments/{attachment_id}")
+async def delete_record_attachment(request: Request, entity_id: str, record_id: str, attachment_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "records.write", "Records write permission required")
+    if denied:
+        return denied
+    if not attachment_store or not hasattr(attachment_store, "unlink"):
+        return _error_response("NOT_SUPPORTED", "Attachment deletion is not supported", None, status=400)
+    attachment = attachment_store.get_attachment(attachment_id)
+
+    purpose = (request.query_params.get("purpose") or "").strip() or None
+    try:
+        removed_links = int(attachment_store.unlink(entity_id, record_id, attachment_id, purpose))
+    except TypeError:
+        removed_links = int(attachment_store.unlink(get_org_id(), entity_id, record_id, attachment_id, purpose))
+    if removed_links <= 0:
+        return _error_response("ATTACHMENT_NOT_FOUND", "Attachment not linked to this record", "attachment_id", status=404)
+
+    if attachment:
+        try:
+            activity_store.add_event(
+                _normalize_entity_id(entity_id),
+                record_id,
+                "attachment",
+                {
+                    "action": "removed",
+                    "attachment_id": attachment.get("id"),
+                    "filename": attachment.get("filename"),
+                    "mime_type": attachment.get("mime_type"),
+                    "size": attachment.get("size"),
+                    "purpose": purpose or "default",
+                },
+                actor=getattr(request.state, "user", None),
+            )
+        except Exception:
+            logger.exception("activity_attachment_remove_event_failed entity_id=%s record_id=%s attachment_id=%s", entity_id, record_id, attachment_id)
+
+    try:
+        remaining_links = int(attachment_store.count_links(attachment_id))
+    except TypeError:
+        remaining_links = int(attachment_store.count_links(get_org_id(), attachment_id))
+    deleted_attachment = False
+    if remaining_links <= 0 and hasattr(attachment_store, "delete_attachment"):
+        try:
+            removed = attachment_store.delete_attachment(attachment_id)
+        except TypeError:
+            removed = attachment_store.delete_attachment(get_org_id(), attachment_id)
+        if removed:
+            deleted_attachment = True
+            storage_key = (removed or {}).get("storage_key")
+            if storage_key:
+                try:
+                    delete_storage(get_org_id(), storage_key)
+                except Exception:
+                    logger.exception("attachment_storage_delete_failed attachment_id=%s storage_key=%s", attachment_id, storage_key)
+
+    return _ok_response(
+        {
+            "deleted": True,
+            "attachment_id": attachment_id,
+            "removed_links": removed_links,
+            "deleted_attachment": deleted_attachment,
+        }
+    )
 
 
 # ---- System actions (Phase 1) ----

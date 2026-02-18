@@ -246,7 +246,7 @@ Validation:
 ```
 
 Allowed `type` values:
-- `string`, `text`, `number`, `bool`, `date`, `datetime`, `enum`, `uuid`, `lookup`, `tags`
+- `string`, `text`, `number`, `bool`, `date`, `datetime`, `enum`, `uuid`, `lookup`, `tags`, `attachments`
 
 Rules:
 - `id` and `type` required.
@@ -262,6 +262,11 @@ Rules:
 ```
 Supported widgets:
 - `steps` (enum only, renders DaisyUI steps)
+
+Attachments field UI options:
+- `ui.title` (optional): section title shown above attachment gallery.
+- `ui.description` (optional): helper text shown below title.
+- `ui.button_label` (optional): upload button label (defaults to `Attach`).
 
 ### Field conditions (v1.2)
 ```json

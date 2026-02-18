@@ -4,8 +4,11 @@ import { supabase } from "../supabase.js";
 import { evalCondition } from "../utils/conditions.js";
 import Tabs from "../components/Tabs.jsx";
 import ViewModesBlock from "./ViewModesBlock.jsx";
-import { Info, Paperclip } from "lucide-react";
+import { Info, Paperclip, Trash2 } from "lucide-react";
 import { useAccessContext } from "../access.js";
+import { formatDateTime } from "../utils/dateTime.js";
+import AttachmentGallery from "./AttachmentGallery.jsx";
+import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 
 const GAP_MAP = {
   sm: "gap-2",
@@ -543,6 +546,8 @@ function ChatterPanel({ entityId, recordId }) {
   const [activeTab, setActiveTab] = useState("activity");
   const [attachments, setAttachments] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [deletingAttachmentId, setDeletingAttachmentId] = useState("");
+  const [attachmentToDelete, setAttachmentToDelete] = useState(null);
   const [error, setError] = useState("");
   const [currentUserLabel, setCurrentUserLabel] = useState("You");
   const quickAttachInputRef = useRef(null);
@@ -586,19 +591,6 @@ function ChatterPanel({ entityId, recordId }) {
       seen.add(id);
       return true;
     });
-  }
-
-  function formatWhen(value) {
-    if (!value) return "";
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return String(value);
-    return new Intl.DateTimeFormat(undefined, {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    }).format(date);
   }
 
   function itemAuthor(item) {
@@ -735,35 +727,50 @@ function ChatterPanel({ entityId, recordId }) {
   }, []);
 
   async function handleUpload(event) {
-    const file = event.target.files?.[0];
-    if (!canWriteRecords || !file || !entityId || !recordId) return;
+    const files = Array.from(event.target.files || []);
+    if (!canWriteRecords || files.length === 0 || !entityId || !recordId) return;
     burstUntilRef.current = Date.now() + BURST_WINDOW_MS;
     setUploading(true);
     setError("");
     try {
       const session = (await supabase.auth.getSession()).data.session;
       const token = session?.access_token;
-      const form = new FormData();
-      form.append("entity_id", entityId);
-      form.append("record_id", recordId);
-      form.append("file", file);
-      const res = await fetch(`${API_URL}/api/activity/attachment`, {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        body: form,
-      }).then((r) => r.json());
-      if (!res.ok) throw new Error(res?.errors?.[0]?.message || "Upload failed");
-      if (res?.item) {
-        setItems((prev) => [res.item, ...prev]);
-        const createdAt = res?.item?.created_at;
-        if (createdAt) {
+      const uploadedItems = [];
+      const failures = [];
+      for (const file of files) {
+        const form = new FormData();
+        form.append("entity_id", entityId);
+        form.append("record_id", recordId);
+        form.append("file", file);
+        try {
+          const res = await fetch(`${API_URL}/api/activity/attachment`, {
+            method: "POST",
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            body: form,
+          }).then((r) => r.json());
+          if (!res.ok) throw new Error(res?.errors?.[0]?.message || "Upload failed");
+          if (res?.item) {
+            uploadedItems.push(res.item);
+          }
+        } catch (err) {
+          const message = String(err?.message || "Upload failed");
+          failures.push(
+            `${file?.name || "file"}: ${message === "Failed to fetch" ? "Network error reaching upload API" : message}`
+          );
+        }
+      }
+      if (uploadedItems.length > 0) {
+        setItems((prev) => [...uploadedItems, ...prev]);
+        const newest = uploadedItems[0]?.created_at;
+        if (newest) {
           const prevTs = latestSeenAtRef.current ? Date.parse(latestSeenAtRef.current) : 0;
-          const nextTs = Date.parse(createdAt);
-          if (!Number.isNaN(nextTs) && nextTs > prevTs) latestSeenAtRef.current = createdAt;
+          const nextTs = Date.parse(newest);
+          if (!Number.isNaN(nextTs) && nextTs > prevTs) latestSeenAtRef.current = newest;
         }
       }
       const att = await apiFetch(`/records/${entityId}/${recordId}/attachments`);
       setAttachments(att.attachments || []);
+      if (failures.length > 0) setError(failures.join(" | "));
     } catch (err) {
       setError(err?.message || "Upload failed");
     } finally {
@@ -816,25 +823,27 @@ function ChatterPanel({ entityId, recordId }) {
     }
   }
 
-  async function handleOpenAttachment(attachment) {
-    if (!attachment?.id) return;
+  async function handleDeleteAttachment() {
+    if (!attachmentToDelete?.id || deletingAttachmentId) return;
+    setDeletingAttachmentId(attachmentToDelete.id);
+    setError("");
     try {
-      const session = (await supabase.auth.getSession()).data.session;
-      const token = session?.access_token;
-      if (!token) {
-        window.open(`${API_URL}/attachments/${attachment.id}/download`, "_blank", "noopener,noreferrer");
-        return;
-      }
-      const res = await fetch(`${API_URL}/attachments/${attachment.id}/download`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error("Download failed");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener,noreferrer");
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      await apiFetch(
+        `/records/${encodeURIComponent(entityId)}/${encodeURIComponent(recordId)}/attachments/${encodeURIComponent(attachmentToDelete.id)}`,
+        { method: "DELETE" }
+      );
+      setAttachments((prev) => prev.filter((attachment) => attachment?.id !== attachmentToDelete.id));
+      setItems((prev) =>
+        prev.filter((item) => {
+          if (item?.event_type !== "attachment") return true;
+          return String(item?.payload?.attachment_id || "") !== String(attachmentToDelete.id);
+        })
+      );
+      setAttachmentToDelete(null);
     } catch (err) {
-      console.warn("attachment_open_failed", err);
+      setError(err?.message || "Failed to delete attachment.");
+    } finally {
+      setDeletingAttachmentId("");
     }
   }
 
@@ -878,7 +887,7 @@ function ChatterPanel({ entityId, recordId }) {
             </button>
             <button
               type="button"
-              className="btn btn-sm"
+              className={SOFT_BUTTON_SM}
               onClick={() => quickAttachInputRef.current?.click()}
               disabled={!canWriteRecords || uploading}
               title="Attach file"
@@ -889,6 +898,7 @@ function ChatterPanel({ entityId, recordId }) {
             <input
               ref={quickAttachInputRef}
               type="file"
+              multiple
               className="hidden"
               onChange={handleUpload}
               disabled={!canWriteRecords || uploading}
@@ -898,24 +908,15 @@ function ChatterPanel({ entityId, recordId }) {
       )}
       {activeTab === "attachments" && (
         <div className="shrink-0 space-y-2 pt-4">
-          <input type="file" className="file-input file-input-bordered w-full" onChange={handleUpload} disabled={uploading} />
-          {attachments.length === 0 && <div className="text-xs opacity-60">No attachments</div>}
-          <div className="space-y-2">
-            {attachments.map((attachment) => (
-              <button
-                key={attachment.id}
-                className="w-full rounded-box border border-base-300 bg-base-100 px-3 py-2 text-left hover:border-primary/40 hover:bg-base-200"
-                type="button"
-                onClick={() => handleOpenAttachment(attachment)}
-              >
-                <div className="truncate text-sm font-medium">{attachment.filename || "Attachment"}</div>
-                <div className="mt-1 text-xs opacity-60">
-                  {attachment.mime_type || "file"}
-                  {typeof attachment.size === "number" ? ` · ${attachment.size} bytes` : ""}
-                </div>
-              </button>
-            ))}
-          </div>
+          <AttachmentGallery
+            attachments={attachments}
+            uploading={uploading}
+            deletingId={deletingAttachmentId}
+            canUpload={canWriteRecords}
+            canDelete={canWriteRecords}
+            onUpload={handleUpload}
+            onDelete={(attachment) => setAttachmentToDelete(attachment)}
+          />
         </div>
       )}
       {error && <div className="text-xs text-error pt-2">{error}</div>}
@@ -928,7 +929,7 @@ function ChatterPanel({ entityId, recordId }) {
           const type = item?.event_type;
           const kind = classifyEvent(item);
           const who = itemAuthor(item);
-          const when = formatWhen(item?.created_at);
+          const when = formatDateTime(item?.created_at);
           if (type === "comment") {
             return (
               <div key={item.id} className="card card-compact rounded-box border border-base-300 bg-base-100 text-sm">
@@ -940,19 +941,23 @@ function ChatterPanel({ entityId, recordId }) {
             );
           }
           if (type === "attachment") {
+            const removed = payload?.action === "removed";
             return (
               <div key={item.id} className="card card-compact rounded-box border border-base-300 bg-base-100 text-sm">
                 <div className="card-body gap-1 p-3">
                   <div className="mb-1 text-xs text-base-content/60">{who} · {when}</div>
                   <div className="flex items-center gap-2">
-                    <Paperclip className="h-4 w-4 text-base-content/60" />
-                    <button
-                      className="link link-primary text-sm"
-                      type="button"
-                      onClick={() => handleOpenAttachment({ id: payload?.attachment_id })}
-                    >
-                      {payload?.filename || "Attachment"}
-                    </button>
+                    {removed ? (
+                      <>
+                        <Trash2 className="h-4 w-4 text-base-content/60" />
+                        <span className="text-sm">Removed attachment: {payload?.filename || "Attachment"}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Paperclip className="h-4 w-4 text-base-content/60" />
+                        <span className="text-sm">{payload?.filename || "Attachment"}</span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -983,6 +988,27 @@ function ChatterPanel({ entityId, recordId }) {
         })}
       </div>
       )}
+      {attachmentToDelete ? (
+        <div className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-semibold text-base">Delete attachment?</h3>
+            <p className="mt-2 text-sm opacity-80 break-all">
+              This will remove <span className="font-medium">{attachmentToDelete.filename || "this file"}</span> from this record.
+            </p>
+            <div className="modal-action">
+              <button className="btn btn-sm" type="button" onClick={() => setAttachmentToDelete(null)} disabled={!!deletingAttachmentId}>
+                Cancel
+              </button>
+              <button className="btn btn-sm btn-error" type="button" onClick={handleDeleteAttachment} disabled={!!deletingAttachmentId}>
+                {deletingAttachmentId ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+          <button className="modal-backdrop" type="button" onClick={() => setAttachmentToDelete(null)}>
+            Close
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

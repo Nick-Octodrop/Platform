@@ -132,7 +132,7 @@ export default function EntityRecordPage() {
         <div className="card-body">
           <h3 className="card-title">No form view defined</h3>
           <div className="text-sm opacity-70">This entity has no form view in its manifest.</div>
-          <button className="btn btn-ghost" onClick={() => navigate(`/apps/${selected.moduleId}/details`)}>Open module details</button>
+          <button className="btn btn-ghost" onClick={() => navigate(`/settings/diagnostics/${encodeURIComponent(selected.moduleId)}`)}>Open diagnostics</button>
         </div>
       </div>
     );
@@ -143,7 +143,7 @@ export default function EntityRecordPage() {
         <div className="card-body">
           <h3 className="card-title">Form view not found</h3>
           <div className="text-sm opacity-70">This entity references a form view that is missing.</div>
-          <button className="btn btn-ghost" onClick={() => navigate(`/apps/${selected.moduleId}/details`)}>Open module details</button>
+          <button className="btn btn-ghost" onClick={() => navigate(`/settings/diagnostics/${encodeURIComponent(selected.moduleId)}`)}>Open diagnostics</button>
         </div>
       </div>
     );
@@ -166,7 +166,7 @@ export default function EntityRecordPage() {
             <div className="text-sm opacity-70">Record ID: {id}</div>
             <div className="flex gap-2 mt-2">
               <button className="btn btn-sm btn-ghost" onClick={() => navigate(`/apps/${selected.moduleId}`)}>Open module</button>
-              <button className="btn btn-sm btn-ghost" onClick={() => navigate(`/apps/${selected.moduleId}/details?tab=manifest`)}>Open manifest tab</button>
+              <button className="btn btn-sm btn-ghost" onClick={() => navigate(`/settings/diagnostics/${encodeURIComponent(selected.moduleId)}`)}>Open diagnostics</button>
             </div>
           </div>
         </div>

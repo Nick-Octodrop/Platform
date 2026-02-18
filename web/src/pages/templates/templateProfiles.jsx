@@ -4,6 +4,7 @@ import { API_URL } from "../../api.js";
 import { supabase } from "../../supabase.js";
 import { apiFetch } from "../../api.js";
 import CodeTextarea from "../../components/CodeTextarea.jsx";
+import { formatDateTime } from "../../utils/dateTime.js";
 
 function Fieldset({ label, hint, optional = false, className = "", children }) {
   return (
@@ -578,7 +579,7 @@ function EmailHistoryTab({ templateId }) {
               <td>{row.status}</td>
               <td className="text-xs">{(row.to || []).join(", ")}</td>
               <td className="text-xs">{row.subject}</td>
-              <td className="text-xs">{row.created_at}</td>
+              <td className="text-xs">{formatDateTime(row.created_at, row.created_at || "")}</td>
             </tr>
           ))}
         </tbody>
@@ -645,7 +646,7 @@ function DocHistoryTab({ templateId }) {
               <tr key={link.id}>
                 <td className="text-xs">{link.entity_id}:{link.record_id}</td>
                 <td className="text-xs">{attachment?.filename || link.attachment_id}</td>
-                <td className="text-xs">{attachment?.created_at || link.created_at}</td>
+                <td className="text-xs">{formatDateTime(attachment?.created_at || link.created_at, attachment?.created_at || link.created_at || "")}</td>
                 <td>
                   {attachment?.id && (
                     <a className="btn btn-ghost btn-xs" href={`/attachments/${attachment.id}/download`} target="_blank" rel="noreferrer">

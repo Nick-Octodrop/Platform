@@ -10,7 +10,7 @@ from app.manifest_normalize import normalize_manifest
 Issue = Dict[str, Any]
 
 
-ALLOWED_FIELD_TYPES = {"string", "text", "number", "bool", "date", "datetime", "enum", "uuid", "lookup", "tags"}
+ALLOWED_FIELD_TYPES = {"string", "text", "number", "bool", "date", "datetime", "enum", "uuid", "lookup", "tags", "attachments"}
 ALLOWED_V1_TOP_KEYS = {
     "manifest_version",
     "module",

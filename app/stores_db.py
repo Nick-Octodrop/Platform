@@ -1741,6 +1741,36 @@ class DbSecretStore:
             )
             return dict(row) if row else None
 
+    def list(self, limit: int = 200) -> list[dict]:
+        with get_conn() as conn:
+            rows = fetch_all(
+                conn,
+                """
+                select id, org_id, name, created_at, updated_at
+                from secrets
+                where org_id=%s
+                order by created_at desc
+                limit %s
+                """,
+                [get_org_id(), max(1, min(int(limit or 200), 1000))],
+                query_name="secrets.list",
+            )
+            return [dict(r) for r in rows]
+
+    def delete(self, secret_id: str) -> bool:
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                delete from secrets
+                where org_id=%s and id=%s
+                returning id
+                """,
+                [get_org_id(), secret_id],
+                query_name="secrets.delete",
+            )
+            return bool(row)
+
 
 class DbConnectionStore:
     def create(self, connection: dict) -> dict:
@@ -1829,8 +1859,8 @@ class DbConnectionStore:
                 conn,
                 """
                 select * from connections
-                where org_id=%s and type='postmark' and status='active'
-                order by created_at asc
+                where org_id=%s and type in ('smtp','postmark') and status='active'
+                order by case when type='smtp' then 0 else 1 end, created_at asc
                 limit 1
                 """,
                 [get_org_id()],
@@ -2363,19 +2393,85 @@ class DbAttachmentStore:
             )
             return dict(row)
 
-    def list_links(self, entity_id: str, record_id: str) -> list[dict]:
+    def list_links(self, entity_id: str, record_id: str, purpose: str | None = None) -> list[dict]:
         with get_conn() as conn:
-            rows = fetch_all(
+            if purpose:
+                rows = fetch_all(
+                    conn,
+                    """
+                    select * from attachment_links
+                    where org_id=%s and entity_id=%s and record_id=%s and purpose=%s
+                    order by created_at desc
+                    """,
+                    [get_org_id(), entity_id, record_id, purpose],
+                    query_name="attachment_links.list_by_record_purpose",
+                )
+            else:
+                rows = fetch_all(
+                    conn,
+                    """
+                    select * from attachment_links
+                    where org_id=%s and entity_id=%s and record_id=%s
+                    order by created_at desc
+                    """,
+                    [get_org_id(), entity_id, record_id],
+                    query_name="attachment_links.list",
+                )
+            return [dict(r) for r in rows]
+
+    def unlink(self, entity_id: str, record_id: str, attachment_id: str, purpose: str | None = None) -> int:
+        with get_conn() as conn:
+            if purpose:
+                rows = fetch_all(
+                    conn,
+                    """
+                    delete from attachment_links
+                    where org_id=%s and entity_id=%s and record_id=%s and attachment_id=%s and purpose=%s
+                    returning id
+                    """,
+                    [get_org_id(), entity_id, record_id, attachment_id, purpose],
+                    query_name="attachment_links.unlink_by_purpose",
+                )
+            else:
+                rows = fetch_all(
+                    conn,
+                    """
+                    delete from attachment_links
+                    where org_id=%s and entity_id=%s and record_id=%s and attachment_id=%s
+                    returning id
+                    """,
+                    [get_org_id(), entity_id, record_id, attachment_id],
+                    query_name="attachment_links.unlink",
+                )
+            return len(rows or [])
+
+    def count_links(self, attachment_id: str) -> int:
+        with get_conn() as conn:
+            row = fetch_one(
                 conn,
                 """
-                select * from attachment_links
-                where org_id=%s and entity_id=%s and record_id=%s
-                order by created_at desc
+                select count(*)::int as total
+                from attachment_links
+                where org_id=%s and attachment_id=%s
                 """,
-                [get_org_id(), entity_id, record_id],
-                query_name="attachment_links.list",
+                [get_org_id(), attachment_id],
+                query_name="attachment_links.count_by_attachment",
             )
-            return [dict(r) for r in rows]
+            return int((row or {}).get("total") or 0)
+
+    def delete_attachment(self, attachment_id: str) -> dict | None:
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                delete from attachments
+                where org_id=%s and id=%s
+                returning *
+                """,
+                [get_org_id(), attachment_id],
+                query_name="attachments.delete",
+            )
+            return dict(row) if row else None
 
 
 class DbDocTemplateStore:

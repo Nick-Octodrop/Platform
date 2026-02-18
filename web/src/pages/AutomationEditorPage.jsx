@@ -5,6 +5,7 @@ import TemplateStudioShell from "./templates/TemplateStudioShell.jsx";
 import CodeTextarea from "../components/CodeTextarea.jsx";
 import ValidationPanel from "../components/ValidationPanel.jsx";
 import AgentChatInput from "../ui/AgentChatInput.jsx";
+import { formatDateTime } from "../utils/dateTime.js";
 
 export default function AutomationEditorPage({ user }) {
   const { automationId } = useParams();
@@ -1234,7 +1235,7 @@ export default function AutomationEditorPage({ user }) {
               <div className="flex items-center gap-2">
                 <span className="badge badge-outline">{run.status || "run"}</span>
                 <span className="font-mono">{run.id}</span>
-                <span className="opacity-60">{run.started_at || run.created_at || ""}</span>
+                <span className="opacity-60">{formatDateTime(run.started_at || run.created_at || "", "")}</span>
               </div>
               <button className="btn btn-xs btn-outline" onClick={() => navigate(`/automation-runs/${run.id}`)}>
                 View

@@ -94,9 +94,9 @@ body {
   /* Keep DaisyUI tooltips above dropdowns/cards and other layered UI */
   .tooltip {
     position: relative;
-    z-index: 2147483000;
+    z-index: 2147483000 !important;
     isolation: isolate;
-    overflow: visible;
+    overflow: visible !important;
   }
 
   .tooltip::before,

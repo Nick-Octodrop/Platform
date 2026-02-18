@@ -9,6 +9,7 @@ export default function SettingsPage() {
     "/settings/password",
     "/settings/users",
     "/settings/workspaces",
+    "/settings/secrets",
     "/settings/email",
     "/settings/email/connections",
     "/settings/email-templates",
@@ -19,8 +20,6 @@ export default function SettingsPage() {
     "/settings/diagnostics",
   ]);
   const placeholderPages = new Set([
-    "/settings/email/connections",
-    "/settings/secrets",
   ]);
 
   const categories = [

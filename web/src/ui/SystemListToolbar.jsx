@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Bookmark, Filter, List as ListIcon, Plus, RefreshCw, Search as SearchIcon } from "lucide-react";
 import { PRIMARY_BUTTON_SM, SOFT_ICON_SM } from "../components/buttonStyles.js";
 import PaginationControls from "../components/PaginationControls.jsx";
+import DaisyTooltip from "../components/DaisyTooltip.jsx";
 
 export default function SystemListToolbar({
   title,
@@ -18,7 +19,7 @@ export default function SystemListToolbar({
   rightActions = null,
   pagination = null,
   showSavedViews = true,
-  showListToggle = true,
+  showListToggle = false,
 }) {
   const [filterPrompt, setFilterPrompt] = useState(null);
   const [filterPromptValue, setFilterPromptValue] = useState("");
@@ -28,22 +29,22 @@ export default function SystemListToolbar({
       <div className="flex flex-wrap items-center justify-between gap-3 relative z-30 shrink-0 w-full min-w-0">
         <div className="flex items-center gap-2 min-w-[12rem]">
           {onCreate && (
-            <button
-              className={`${PRIMARY_BUTTON_SM} tooltip`}
-              data-tip={createTooltip}
-              onClick={onCreate}
-            >
-              <Plus className="h-4 w-4" />
-            </button>
+            <DaisyTooltip label={createTooltip} placement="bottom">
+              <button className={PRIMARY_BUTTON_SM} onClick={onCreate}>
+                <Plus className="h-4 w-4" />
+              </button>
+            </DaisyTooltip>
           )}
           <div className="text-lg font-semibold">{title}</div>
         </div>
 
         <div className="flex items-center justify-center flex-1 min-w-0">
           <div className="join items-center overflow-visible">
-            <button className={`${SOFT_ICON_SM} join-item tooltip`} data-tip="Search">
-              <SearchIcon className="h-4 w-4" />
-            </button>
+            <DaisyTooltip label="Search" className="join-item" placement="bottom">
+              <button className={SOFT_ICON_SM}>
+                <SearchIcon className="h-4 w-4" />
+              </button>
+            </DaisyTooltip>
             <input
               className="input input-bordered input-sm join-item w-full max-w-xs h-8 min-h-8 py-0 leading-none"
               placeholder="Search…"
@@ -51,14 +52,11 @@ export default function SystemListToolbar({
               onChange={(e) => onSearchChange?.(e.target.value)}
             />
             <div className="dropdown dropdown-end dropdown-bottom join-item">
-              <button
-                className={`${SOFT_ICON_SM} join-item tooltip`}
-                data-tip="Filters"
-                type="button"
-                tabIndex={0}
-              >
-                <Filter className="h-4 w-4" />
-              </button>
+              <DaisyTooltip label="Filters" className="join-item" placement="bottom">
+                <button className={SOFT_ICON_SM} type="button" tabIndex={0}>
+                  <Filter className="h-4 w-4" />
+                </button>
+              </DaisyTooltip>
               <div className="dropdown-content p-2 shadow bg-base-100 rounded-box w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden">
                 <ul className="menu flex flex-col">
                   {filters.map((flt) => (
@@ -87,14 +85,11 @@ export default function SystemListToolbar({
             </div>
             {showSavedViews && (
               <div className="dropdown dropdown-end dropdown-bottom join-item">
-                <button
-                  className={`${SOFT_ICON_SM} join-item tooltip`}
-                  data-tip="Saved views"
-                  type="button"
-                  tabIndex={0}
-                >
-                  <Bookmark className="h-4 w-4" />
-                </button>
+                <DaisyTooltip label="Saved views" className="join-item" placement="bottom">
+                  <button className={SOFT_ICON_SM} type="button" tabIndex={0}>
+                    <Bookmark className="h-4 w-4" />
+                  </button>
+                </DaisyTooltip>
                 <div className="dropdown-content p-2 shadow bg-base-100 rounded-box w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden">
                   <ul className="menu flex flex-col">
                     <li><button disabled>Save current view</button></li>
@@ -103,13 +98,11 @@ export default function SystemListToolbar({
                 </div>
               </div>
             )}
-            <button
-              className={`${SOFT_ICON_SM} join-item tooltip`}
-              data-tip="Refresh"
-              onClick={onRefresh}
-            >
-              <RefreshCw className="h-4 w-4" />
-            </button>
+            <DaisyTooltip label="Refresh" className="join-item" placement="bottom">
+              <button className={SOFT_ICON_SM} onClick={onRefresh}>
+                <RefreshCw className="h-4 w-4" />
+              </button>
+            </DaisyTooltip>
           </div>
         </div>
 
@@ -117,9 +110,11 @@ export default function SystemListToolbar({
           {rightActions}
           {showListToggle && (
             <div className="join">
-              <button className={`${SOFT_ICON_SM} join-item tooltip bg-base-300`} data-tip="list" disabled>
-                <ListIcon className="h-4 w-4" />
-              </button>
+              <DaisyTooltip label="List" className="join-item" placement="top">
+                <button className={`${SOFT_ICON_SM} bg-base-300`} disabled>
+                  <ListIcon className="h-4 w-4" />
+                </button>
+              </DaisyTooltip>
             </div>
           )}
           {pagination && (

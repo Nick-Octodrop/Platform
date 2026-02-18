@@ -181,7 +181,7 @@ export default function DataExplorerPage() {
                   <div className="text-sm opacity-70">Manifest Hash: {manifestHash || "—"}</div>
                   <div className="flex gap-2 mt-2">
                     <Link className="btn btn-sm btn-ghost" to={`/apps/${selected.moduleId}`}>Open module</Link>
-                    <Link className="btn btn-sm btn-ghost" to={`/apps/${selected.moduleId}/details?tab=manifest`}>Open manifest tab</Link>
+                    <Link className="btn btn-sm btn-ghost" to={`/settings/diagnostics/${encodeURIComponent(selected.moduleId)}`}>Open diagnostics</Link>
                   </div>
                 </div>
               </div>
@@ -191,7 +191,7 @@ export default function DataExplorerPage() {
                 <div className="card-body">
                   <h3 className="card-title">No list view defined</h3>
                   <div className="text-sm opacity-70">This entity has no list view in its manifest.</div>
-                  <Link className="btn btn-ghost" to={`/apps/${selected.moduleId}/details`}>Open module details</Link>
+                  <Link className="btn btn-ghost" to={`/settings/diagnostics/${encodeURIComponent(selected.moduleId)}`}>Open diagnostics</Link>
                 </div>
               </div>
             )}

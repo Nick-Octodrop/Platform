@@ -21,6 +21,7 @@ import { supabase } from "../supabase.js";
 import ListViewRenderer from "./ListViewRenderer.jsx";
 import { evalCondition } from "../utils/conditions.js";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_BUTTON_XS, SOFT_ICON_SM } from "../components/buttonStyles.js";
+import DaisyTooltip from "../components/DaisyTooltip.jsx";
 
 function IconList() {
   return <List className="h-4 w-4" />;
@@ -911,16 +912,17 @@ export default function ViewModesBlock({
         <div className="flex flex-wrap items-center justify-between gap-3 relative z-30 shrink-0">
           <div className="flex items-center gap-2 min-w-[12rem]">
           {canWriteRecords && (
-            <button
-              className={`${PRIMARY_BUTTON_SM} tooltip tooltip-bottom`}
-              data-tip={`New ${entityLabel}`}
-              onClick={() => {
-                const target = resolveEntityDefaultFormPage(appDefaults, entityFullId);
-                if (target) onNavigate?.(target);
-              }}
-            >
-              <IconPlus />
-            </button>
+            <DaisyTooltip label={`New ${entityLabel}`} placement="bottom">
+              <button
+                className={PRIMARY_BUTTON_SM}
+                onClick={() => {
+                  const target = resolveEntityDefaultFormPage(appDefaults, entityFullId);
+                  if (target) onNavigate?.(target);
+                }}
+              >
+                <IconPlus />
+              </button>
+            </DaisyTooltip>
           )}
           <div className="text-lg font-semibold">{entityLabel}</div>
         </div>
@@ -930,9 +932,11 @@ export default function ViewModesBlock({
             <div className="join items-center overflow-visible">
               {showSearch && (
                 <>
-                  <button className={`${SOFT_ICON_SM} join-item tooltip tooltip-bottom`} data-tip="Search" type="button" aria-label="Search">
-                    <IconSearch />
-                  </button>
+                  <DaisyTooltip label="Search" className="join-item" placement="bottom">
+                    <button className={SOFT_ICON_SM} type="button" aria-label="Search">
+                      <IconSearch />
+                    </button>
+                  </DaisyTooltip>
                   <input
                     className="input input-bordered input-sm join-item w-full max-w-xs"
                     placeholder="Search…"
@@ -943,9 +947,11 @@ export default function ViewModesBlock({
               )}
               {showFilters && (
                 <div className="dropdown dropdown-end dropdown-bottom join-item">
-                  <button className={`${SOFT_ICON_SM} join-item tooltip tooltip-bottom`} data-tip="Filters" type="button" aria-label="Filters">
-                    <IconFilter />
-                  </button>
+                  <DaisyTooltip label="Filters" className="join-item" placement="bottom">
+                    <button className={SOFT_ICON_SM} type="button" aria-label="Filters">
+                      <IconFilter />
+                    </button>
+                  </DaisyTooltip>
                   <div className="dropdown-content p-2 shadow bg-base-100 rounded-box w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden">
                     <ul className="menu flex flex-col">
                       {manifestFilterList.map((flt) => (
@@ -980,9 +986,11 @@ export default function ViewModesBlock({
               )}
               {showGroupBy && (
                 <div className="dropdown dropdown-end dropdown-bottom join-item">
-                  <button className={`${SOFT_ICON_SM} join-item tooltip tooltip-bottom`} data-tip="Sort and group" type="button" aria-label="Sort and group">
-                    <IconSort />
-                  </button>
+                  <DaisyTooltip label="Sort and group" className="join-item" placement="bottom">
+                    <button className={SOFT_ICON_SM} type="button" aria-label="Sort and group">
+                      <IconSort />
+                    </button>
+                  </DaisyTooltip>
                   <div className="dropdown-content p-2 shadow bg-base-100 rounded-box w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden">
                     <ul className="menu flex flex-col">
                       {filterableFields.map((field) => (
@@ -999,9 +1007,11 @@ export default function ViewModesBlock({
               )}
               {showSavedViews && (
                 <div className="dropdown dropdown-end dropdown-bottom join-item">
-                  <button className={`${SOFT_ICON_SM} join-item tooltip tooltip-bottom`} data-tip="Saved views" type="button" aria-label="Saved views">
-                    <IconBookmark />
-                  </button>
+                  <DaisyTooltip label="Saved views" className="join-item" placement="bottom">
+                    <button className={SOFT_ICON_SM} type="button" aria-label="Saved views">
+                      <IconBookmark />
+                    </button>
+                  </DaisyTooltip>
                   <div className="dropdown-content p-2 shadow bg-base-100 rounded-box w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden">
                     <ul className="menu flex flex-col">
                       {savedFilters.map((flt) => (
@@ -1034,9 +1044,11 @@ export default function ViewModesBlock({
                   </div>
                 </div>
               )}
-              <button className={`${SOFT_ICON_SM} join-item tooltip tooltip-bottom`} data-tip="Refresh" type="button" onClick={() => setRefreshTick((v) => v + 1)} aria-label="Refresh">
-                <IconRefresh />
-              </button>
+              <DaisyTooltip label="Refresh" className="join-item" placement="bottom">
+                <button className={SOFT_ICON_SM} type="button" onClick={() => setRefreshTick((v) => v + 1)} aria-label="Refresh">
+                  <IconRefresh />
+                </button>
+              </DaisyTooltip>
             </div>
           )}
         </div>
@@ -1044,35 +1056,37 @@ export default function ViewModesBlock({
         <div className="flex items-center gap-2 min-w-[10rem] justify-end">
           {activeMode === "graph" && (
             <div className="join">
-              <button
-                className={`${SOFT_ICON_SM} join-item tooltip tooltip-left ${graphType === "bar" ? "bg-base-300" : ""}`}
-                data-tip="Bar chart"
-                onClick={() => handleGraphTypeChange("bar")}
-              >
-                <IconGraph />
-              </button>
-              <button
-                className={`${SOFT_ICON_SM} join-item tooltip tooltip-left ${graphType === "line" ? "bg-base-300" : ""}`}
-                data-tip="Line chart"
-                onClick={() => handleGraphTypeChange("line")}
-              >
-                <IconLine />
-              </button>
-              <button
-                className={`${SOFT_ICON_SM} join-item tooltip tooltip-left ${graphType === "pie" ? "bg-base-300" : ""}`}
-                data-tip="Pie chart"
-                onClick={() => handleGraphTypeChange("pie")}
-              >
-                <IconPie />
-              </button>
-              {showGraphMeasure && (
-                <div
-                  className="dropdown dropdown-end dropdown-bottom join-item tooltip tooltip-left"
-                  data-tip="Measure"
+              <DaisyTooltip label="Bar chart" className="join-item" placement="top">
+                <button
+                  className={`${SOFT_ICON_SM} ${graphType === "bar" ? "bg-base-300" : ""}`}
+                  onClick={() => handleGraphTypeChange("bar")}
                 >
-                  <button className={`${SOFT_ICON_SM} join-item`} type="button" tabIndex={0}>
-                    <IconMeasure />
-                  </button>
+                  <IconGraph />
+                </button>
+              </DaisyTooltip>
+              <DaisyTooltip label="Line chart" className="join-item" placement="top">
+                <button
+                  className={`${SOFT_ICON_SM} ${graphType === "line" ? "bg-base-300" : ""}`}
+                  onClick={() => handleGraphTypeChange("line")}
+                >
+                  <IconLine />
+                </button>
+              </DaisyTooltip>
+              <DaisyTooltip label="Pie chart" className="join-item" placement="top">
+                <button
+                  className={`${SOFT_ICON_SM} ${graphType === "pie" ? "bg-base-300" : ""}`}
+                  onClick={() => handleGraphTypeChange("pie")}
+                >
+                  <IconPie />
+                </button>
+              </DaisyTooltip>
+              {showGraphMeasure && (
+                <div className="dropdown dropdown-end dropdown-bottom join-item">
+                  <DaisyTooltip label="Measure" className="join-item" placement="top">
+                    <button className={SOFT_ICON_SM} type="button" tabIndex={0}>
+                      <IconMeasure />
+                    </button>
+                  </DaisyTooltip>
                   <div className="dropdown-content p-2 shadow bg-base-100 rounded-box w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden">
                     <ul className="menu flex flex-col">
                       {measureOptions.map((opt) => (
@@ -1088,13 +1102,12 @@ export default function ViewModesBlock({
           )}
           {activeMode === "pivot" && (
             <div className="join">
-              <div
-                className="dropdown dropdown-end dropdown-bottom join-item tooltip tooltip-left"
-                data-tip="Rows"
-              >
-                <button className={`${SOFT_ICON_SM} join-item`} type="button" tabIndex={0}>
-                  <IconGroup />
-                </button>
+              <div className="dropdown dropdown-end dropdown-bottom join-item">
+                <DaisyTooltip label="Rows" className="join-item" placement="top">
+                  <button className={SOFT_ICON_SM} type="button" tabIndex={0}>
+                    <IconGroup />
+                  </button>
+                </DaisyTooltip>
                 <div className="dropdown-content p-2 shadow bg-base-100 rounded-box w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden">
                   <ul className="menu flex flex-col">
                     {filterableFields.map((field) => (
@@ -1105,13 +1118,12 @@ export default function ViewModesBlock({
                   </ul>
                 </div>
               </div>
-              <div
-                className="dropdown dropdown-end dropdown-bottom join-item tooltip tooltip-left"
-                data-tip="Columns"
-              >
-                <button className={`${SOFT_ICON_SM} join-item`} type="button" tabIndex={0}>
-                  <IconColumns />
-                </button>
+              <div className="dropdown dropdown-end dropdown-bottom join-item">
+                <DaisyTooltip label="Columns" className="join-item" placement="top">
+                  <button className={SOFT_ICON_SM} type="button" tabIndex={0}>
+                    <IconColumns />
+                  </button>
+                </DaisyTooltip>
                 <div className="dropdown-content p-2 shadow bg-base-100 rounded-box w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden">
                   <ul className="menu flex flex-col">
                     {filterableFields.map((field) => (
@@ -1126,13 +1138,12 @@ export default function ViewModesBlock({
                 </div>
               </div>
               {showPivotMeasure && (
-                <div
-                  className="dropdown dropdown-end dropdown-bottom join-item tooltip tooltip-left"
-                  data-tip="Measure"
-                >
-                  <button className={`${SOFT_ICON_SM} join-item`} type="button" tabIndex={0}>
-                    <IconMeasure />
-                  </button>
+                <div className="dropdown dropdown-end dropdown-bottom join-item">
+                  <DaisyTooltip label="Measure" className="join-item" placement="top">
+                    <button className={SOFT_ICON_SM} type="button" tabIndex={0}>
+                      <IconMeasure />
+                    </button>
+                  </DaisyTooltip>
                   <div className="dropdown-content p-2 shadow bg-base-100 rounded-box w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden">
                     <ul className="menu flex flex-col">
                       {measureOptions.map((opt) => (
@@ -1152,17 +1163,17 @@ export default function ViewModesBlock({
               const icon = m.mode === "list" ? <IconList /> : m.mode === "kanban" ? <IconKanban /> : m.mode === "graph" ? <IconGraph /> : <IconPivot />;
               const modeTip = m.mode === "kanban" ? "Kanban" : m.mode === "graph" ? "Graph" : m.mode === "pivot" ? "Pivot" : "List";
               return (
-                <button
-                  key={m.mode}
-                  className={`${SOFT_ICON_SM} join-item tooltip tooltip-left ${active ? "bg-base-300" : ""}`}
-                  data-tip={modeTip}
-                  onClick={() => !m.disabled && handleModeChange(m.mode)}
-                  disabled={m.disabled}
-                  type="button"
-                  aria-label={m.mode}
-                >
-                  {icon}
-                </button>
+                <DaisyTooltip key={m.mode} label={modeTip} className="join-item" placement="top">
+                  <button
+                    className={`${SOFT_ICON_SM} ${active ? "bg-base-300" : ""}`}
+                    onClick={() => !m.disabled && handleModeChange(m.mode)}
+                    disabled={m.disabled}
+                    type="button"
+                    aria-label={m.mode}
+                  >
+                    {icon}
+                  </button>
+                </DaisyTooltip>
               );
             })}
           </div>

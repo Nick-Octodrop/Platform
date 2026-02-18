@@ -22,6 +22,7 @@ import SettingsUsersPage from "./pages/SettingsUsersPage.jsx";
 import SettingsWorkspacesPage from "./pages/SettingsWorkspacesPage.jsx";
 import SettingsSecretsPage from "./pages/SettingsSecretsPage.jsx";
 import DiagnosticsPage from "./pages/DiagnosticsPage.jsx";
+import DiagnosticsModulePage from "./pages/DiagnosticsModulePage.jsx";
 import DataExplorerPage from "./pages/DataExplorerPage.jsx";
 import OpsPage from "./pages/OpsPage.jsx";
 import OpsJobPage from "./pages/OpsJobPage.jsx";
@@ -30,6 +31,7 @@ import IntegrationsPage from "./pages/IntegrationsPage.jsx";
 import IntegrationConnectionPage from "./pages/IntegrationConnectionPage.jsx";
 import EmailHomePage from "./pages/EmailHomePage.jsx";
 import EmailConnectionsPage from "./pages/EmailConnectionsPage.jsx";
+import EmailConnectionDetailPage from "./pages/EmailConnectionDetailPage.jsx";
 import EmailTemplatesPage from "./pages/EmailTemplatesPage.jsx";
 import EmailOutboxPage from "./pages/EmailOutboxPage.jsx";
 import EmailOutboxItemPage from "./pages/EmailOutboxItemPage.jsx";
@@ -178,6 +180,14 @@ export default function App() {
               )}
             />
             <Route
+              path="settings/diagnostics/:moduleId"
+              element={(
+                <CapabilityRoute capability="workspace.manage_settings">
+                  <DiagnosticsModulePage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
               path="settings/email"
               element={(
                 <CapabilityRoute capability="templates.manage">
@@ -190,6 +200,14 @@ export default function App() {
               element={(
                 <CapabilityRoute capability="templates.manage">
                   <EmailConnectionsPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="settings/email/connections/:connectionId"
+              element={(
+                <CapabilityRoute capability="templates.manage">
+                  <EmailConnectionDetailPage />
                 </CapabilityRoute>
               )}
             />

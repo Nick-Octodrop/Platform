@@ -122,7 +122,7 @@ export default function AppsPage({ user }) {
   }
 
   function handleDetails(moduleId) {
-    navigate(`/apps/${moduleId}/details`);
+    navigate(`/settings/diagnostics/${encodeURIComponent(moduleId)}`);
   }
 
   function openDelete(moduleId) {
@@ -509,7 +509,8 @@ export default function AppsPage({ user }) {
                   <button
                     key={name}
                     type="button"
-                    className="btn btn-ghost h-20 flex flex-col items-center gap-1"
+                    className="btn btn-ghost h-16 w-full min-w-0 flex items-center justify-center overflow-hidden"
+                    title={name}
                     onClick={async () => {
                       if (!iconPickerApp) return;
                       try {
@@ -522,7 +523,6 @@ export default function AppsPage({ user }) {
                     }}
                   >
                     <Icon size={28} strokeWidth={1.31} />
-                    <span className="text-[10px] uppercase opacity-70">{name}</span>
                   </button>
                 );
               })}

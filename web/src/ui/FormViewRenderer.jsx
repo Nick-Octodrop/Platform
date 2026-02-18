@@ -4,7 +4,9 @@ import { apiFetch } from "../api.js";
 import { evalCondition } from "../utils/conditions.js";
 import Tabs from "../components/Tabs.jsx";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_BUTTON_XS } from "../components/buttonStyles.js";
+import DaisyTooltip from "../components/DaisyTooltip.jsx";
 import ActivityPanel from "./ActivityPanel.jsx";
+import AttachmentField from "./AttachmentField.jsx";
 
 export default function FormViewRenderer({
   view,
@@ -88,6 +90,7 @@ export default function FormViewRenderer({
     for (const fieldId of sections.flatMap((s) => s.fields)) {
       if (hiddenSet.has(fieldId)) continue;
       const field = fieldIndex[fieldId];
+      if (field?.type === "attachments") continue;
       const requiredWhen = field?.required_when;
       const requiredByCondition = requiredWhen ? evalCondition(requiredWhen, { record }) : false;
       const isRequired = field?.required || requiredByStatus.has(fieldId) || requiredByCondition;
@@ -284,9 +287,9 @@ export default function FormViewRenderer({
               );
               if (!reason) return button;
               return (
-                <div key={item.label} className="tooltip tooltip-bottom" data-tip={reason}>
+                <DaisyTooltip key={item.label} label={reason} placement="bottom">
                   {button}
-                </div>
+                </DaisyTooltip>
               );
             })}
             {secondaryActions.length > 0 && (
@@ -368,13 +371,24 @@ export default function FormViewRenderer({
                     const value = getFieldValue(record, fieldId);
                     const disabledWhen = field?.disabled_when;
                     const isDisabled = disabledWhen ? evalCondition(disabledWhen, { record }) : false;
+                    const isAttachmentField = field?.type === "attachments";
                     return (
                       <div key={fieldId}>
                         <fieldset className="fieldset">
                           <legend className="fieldset-legend text-xs uppercase opacity-60 tracking-wide">
                             {field.label || field.id}
                           </legend>
-                          {field.type === "lookup" ? (
+                          {isAttachmentField ? (
+                            <AttachmentField
+                              entityId={entityId}
+                              recordId={effectiveRecordId}
+                              fieldId={fieldId}
+                              readonly={readonly || isDisabled}
+                              previewMode={previewMode}
+                              buttonLabel={field?.ui?.button_label || field?.button_label || "Attach"}
+                              description={field?.ui?.description || field?.help_text || ""}
+                            />
+                          ) : field.type === "lookup" ? (
                             <LookupField
                               field={field}
                               value={value}
@@ -393,7 +407,7 @@ export default function FormViewRenderer({
                               readonly || isDisabled
                             )
                           )}
-                          {field.help_text && <span className="label label-text-alt opacity-50">{field.help_text}</span>}
+                          {!isAttachmentField && field.help_text && <span className="label label-text-alt opacity-50">{field.help_text}</span>}
                           {showValidation && validationErrors[fieldId] && <div className="text-xs text-error">{validationErrors[fieldId]}</div>}
                         </fieldset>
                       </div>

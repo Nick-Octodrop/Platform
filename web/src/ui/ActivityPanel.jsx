@@ -1,22 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Paperclip, Send } from "lucide-react";
+import { Paperclip, Send, Trash2 } from "lucide-react";
 import { API_URL, apiFetch } from "../api.js";
 import { supabase } from "../supabase.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import { useAccessContext } from "../access.js";
-
-function formatTime(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return new Intl.DateTimeFormat(undefined, {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-}
+import { formatDateTime } from "../utils/dateTime.js";
 
 function authorLabel(author) {
   if (!author || typeof author !== "object") return "System";
@@ -119,32 +107,45 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
   }
 
   async function handleUploadAttachment(event) {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files || []);
     event.target.value = "";
-    if (!canWriteRecords || !allowAttachments || !file || !entityId || !recordId) return;
+    if (!canWriteRecords || !allowAttachments || files.length === 0 || !entityId || !recordId) return;
     setUploading(true);
     setError("");
     try {
       const session = (await supabase.auth.getSession()).data.session;
       const token = session?.access_token;
-      const form = new FormData();
-      form.append("entity_id", entityId);
-      form.append("record_id", recordId);
-      form.append("file", file);
-      const response = await fetch(`${API_URL}/api/activity/attachment`, {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        body: form,
-      });
-      const data = await response.json();
-      if (!response.ok || !data?.ok) {
-        throw new Error(data?.errors?.[0]?.message || "Upload failed");
+      const uploadedItems = [];
+      const failures = [];
+      for (const file of files) {
+        const form = new FormData();
+        form.append("entity_id", entityId);
+        form.append("record_id", recordId);
+        form.append("file", file);
+        try {
+          const response = await fetch(`${API_URL}/api/activity/attachment`, {
+            method: "POST",
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            body: form,
+          });
+          const data = await response.json();
+          if (!response.ok || !data?.ok) {
+            throw new Error(data?.errors?.[0]?.message || "Upload failed");
+          }
+          if (data?.item) uploadedItems.push(data.item);
+        } catch (err) {
+          const message = String(err?.message || "Upload failed");
+          failures.push(
+            `${file?.name || "file"}: ${message === "Failed to fetch" ? "Network error reaching upload API" : message}`
+          );
+        }
       }
-      if (data?.item) {
-        setItems((prev) => [data.item, ...prev]);
+      if (uploadedItems.length > 0) {
+        setItems((prev) => [...uploadedItems, ...prev]);
       } else {
         await loadActivity();
       }
+      if (failures.length > 0) setError(failures.join(" | "));
     } catch (err) {
       setError(err?.message || "Failed to upload attachment.");
     } finally {
@@ -206,9 +207,10 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
           {allowAttachments && (
             <label className={`${SOFT_BUTTON_SM} cursor-pointer inline-flex items-center gap-2`}>
               <Paperclip className="h-4 w-4" />
-              <span>{uploading ? "Uploading..." : "Attach file"}</span>
+              <span>{uploading ? "Uploading..." : "Attach"}</span>
               <input
                 type="file"
+                multiple
                 className="hidden"
                 onChange={handleUploadAttachment}
                 disabled={uploading}
@@ -224,7 +226,7 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
         {items.map((item) => {
           const type = item?.event_type;
           const payload = item?.payload || {};
-          const createdAt = formatTime(item?.created_at);
+          const createdAt = formatDateTime(item?.created_at);
           const author = authorLabel(item?.author);
           if (type === "comment") {
             return (
@@ -237,18 +239,26 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
             );
           }
           if (type === "attachment") {
+            const removed = payload?.action === "removed";
             return (
               <div key={item.id} className="card card-compact rounded-box border border-base-300 bg-base-100">
                 <div className="card-body gap-1 p-3">
                 <div className="mb-1 text-xs opacity-70">{author} · {createdAt}</div>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm justify-start normal-case px-0 min-h-0 h-auto inline-flex items-center gap-2"
-                  onClick={() => openAttachment(payload?.attachment_id)}
-                >
-                  <Paperclip className="h-4 w-4" />
-                  <span>{payload?.filename || "Attachment"}</span>
-                </button>
+                {removed ? (
+                  <div className="inline-flex items-center gap-2 text-sm opacity-80">
+                    <Trash2 className="h-4 w-4" />
+                    <span>Removed attachment: {payload?.filename || "Attachment"}</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm justify-start normal-case px-0 min-h-0 h-auto inline-flex items-center gap-2"
+                    onClick={() => openAttachment(payload?.attachment_id)}
+                  >
+                    <Paperclip className="h-4 w-4" />
+                    <span>{payload?.filename || "Attachment"}</span>
+                  </button>
+                )}
                 </div>
               </div>
             );

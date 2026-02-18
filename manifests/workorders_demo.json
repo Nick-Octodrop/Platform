@@ -192,6 +192,39 @@
           "label": "Country"
         },
         {
+          "id": "workorder.site_attachments",
+          "type": "attachments",
+          "label": "Site Photos",
+          "help_text": "Upload photos for this site.",
+          "ui": {
+            "button_label": "Attach site photos",
+            "title": "Site Photos",
+            "description": "Upload photos and visual evidence."
+          }
+        },
+        {
+          "id": "workorder.site_drawings_attachments",
+          "type": "attachments",
+          "label": "Site Drawings",
+          "help_text": "Upload plans, schematics, and technical drawings.",
+          "ui": {
+            "button_label": "Attach drawings",
+            "title": "Site Drawings",
+            "description": "PDFs, DWGs, and drawing exports."
+          }
+        },
+        {
+          "id": "workorder.site_compliance_attachments",
+          "type": "attachments",
+          "label": "Site Compliance Docs",
+          "help_text": "Upload permits, certificates, and compliance paperwork.",
+          "ui": {
+            "button_label": "Attach compliance docs",
+            "title": "Compliance Documents",
+            "description": "Certificates, permits, and compliance records."
+          }
+        },
+        {
           "id": "workorder.labor_hours",
           "type": "number",
           "label": "Labor Hours",
@@ -724,7 +757,10 @@
             "workorder.site_name",
             "workorder.site_address",
             "workorder.city",
-            "workorder.country"
+            "workorder.country",
+            "workorder.site_attachments",
+            "workorder.site_drawings_attachments",
+            "workorder.site_compliance_attachments"
           ]
         },
         {
