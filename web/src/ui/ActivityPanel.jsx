@@ -3,6 +3,7 @@ import { Paperclip, Send } from "lucide-react";
 import { API_URL, apiFetch } from "../api.js";
 import { supabase } from "../supabase.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
+import { useAccessContext } from "../access.js";
 
 function formatTime(value) {
   if (!value) return "";
@@ -27,6 +28,8 @@ function isNonEmptyText(value) {
 }
 
 export default function ActivityPanel({ entityId, recordId, config = {} }) {
+  const { hasCapability } = useAccessContext();
+  const canWriteRecords = hasCapability("records.write");
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [posting, setPosting] = useState(false);
@@ -38,7 +41,7 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
   const allowComments = config?.allow_comments !== false;
   const allowAttachments = config?.allow_attachments !== false;
   const showChanges = config?.show_changes !== false;
-  const showComposer = allowComments || allowAttachments;
+  const showComposer = canWriteRecords && (allowComments || allowAttachments);
 
   async function loadActivity() {
     if (!entityId || !recordId) return;
@@ -89,7 +92,7 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
   }, [allowComments, allowAttachments, showComposer]);
 
   async function handlePostComment() {
-    if (!allowComments || !isNonEmptyText(comment) || !entityId || !recordId) return;
+    if (!canWriteRecords || !allowComments || !isNonEmptyText(comment) || !entityId || !recordId) return;
     setPosting(true);
     setError("");
     try {
@@ -118,7 +121,7 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
   async function handleUploadAttachment(event) {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!allowAttachments || !file || !entityId || !recordId) return;
+    if (!canWriteRecords || !allowAttachments || !file || !entityId || !recordId) return;
     setUploading(true);
     setError("");
     try {

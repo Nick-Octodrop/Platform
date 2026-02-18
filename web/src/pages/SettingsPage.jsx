@@ -5,33 +5,26 @@ import { useAccessContext } from "../access.js";
 export default function SettingsPage() {
   const { loading, hasCapability } = useAccessContext();
   const wiredPages = new Set([
-    "/settings/preferences",
+    "/settings/settings",
     "/settings/password",
-    "/studio",
     "/settings/users",
     "/settings/workspaces",
     "/settings/email",
     "/settings/email/connections",
     "/settings/email-templates",
     "/settings/email-outbox",
-    "/settings/email/diagnostics",
     "/settings/documents",
     "/settings/documents/templates",
     "/ops",
-    "/automations",
-    "/data",
     "/settings/diagnostics",
   ]);
   const placeholderPages = new Set([
     "/settings/email/connections",
-    "/settings/email/diagnostics",
-    "/settings/documents/defaults",
     "/settings/secrets",
   ]);
 
   const categories = [
     { id: "general", label: "General" },
-    { id: "modules", label: "Modules" },
     { id: "users", label: "Users & Access" },
     { id: "email", label: "Email" },
     { id: "documents", label: "Documents" },
@@ -41,29 +34,12 @@ export default function SettingsPage() {
 
   const blocks = [
     {
-      id: "preferences",
+      id: "settings",
       category_id: "general",
-      title: "Preferences",
-      description: "Theme, developer mode, and account profile.",
-      primary: { label: "Open Preferences", to_page: "/settings/preferences" },
-      keywords: ["theme", "profile", "account", "developer"],
-    },
-    {
-      id: "password",
-      category_id: "general",
-      title: "Password",
-      description: "Change your account password.",
-      primary: { label: "Change Password", to_page: "/settings/password" },
-      keywords: ["security", "password", "auth"],
-    },
-    {
-      id: "studio",
-      category_id: "modules",
-      title: "Studio",
-      description: "Create and manage custom modules.",
-      primary: { label: "Open Studio", to_page: "/studio" },
-      keywords: ["modules", "builder", "studio"],
-      required_capability: "modules.manage",
+      title: "Profile",
+      description: "Password, theme, preferences, and profile details.",
+      primary: { label: "Open Profile", to_page: "/settings/settings?tab=profile" },
+      keywords: ["theme", "profile", "account", "password", "preferences"],
     },
     {
       id: "users",
@@ -111,30 +87,12 @@ export default function SettingsPage() {
       required_capability: "templates.manage",
     },
     {
-      id: "email-diagnostics",
-      category_id: "email",
-      title: "Email Diagnostics",
-      description: "Connection status and recent failures.",
-      primary: { label: "Open Diagnostics", to_page: "/settings/email/diagnostics" },
-      keywords: ["health", "status", "smtp"],
-      required_capability: "templates.manage",
-    },
-    {
       id: "documents-templates",
       category_id: "documents",
       title: "Document Templates",
       description: "HTML → PDF templates with placeholders.",
       primary: { label: "Open Templates", to_page: "/settings/documents/templates" },
       keywords: ["pdf", "html", "template"],
-      required_capability: "templates.manage",
-    },
-    {
-      id: "documents-defaults",
-      category_id: "documents",
-      title: "Document Defaults",
-      description: "Naming rules and attachment behavior.",
-      primary: { label: "Configure Defaults", to_page: "/settings/documents/defaults" },
-      keywords: ["defaults", "naming"],
       required_capability: "templates.manage",
     },
     {
@@ -147,15 +105,6 @@ export default function SettingsPage() {
       required_capability: "automations.manage",
     },
     {
-      id: "automations",
-      category_id: "automations",
-      title: "Automations",
-      description: "Design and monitor automation workflows.",
-      primary: { label: "Open Automations", to_page: "/automations" },
-      keywords: ["workflow", "runs"],
-      required_capability: "automations.manage",
-    },
-    {
       id: "secrets",
       category_id: "developer",
       title: "Secrets",
@@ -163,15 +112,6 @@ export default function SettingsPage() {
       primary: { label: "Manage Secrets", to_page: "/settings/secrets" },
       keywords: ["keys", "tokens"],
       required_capability: "workspace.manage_settings",
-    },
-    {
-      id: "data-explorer",
-      category_id: "developer",
-      title: "Data Explorer",
-      description: "Browse entities and records.",
-      primary: { label: "Open Data", to_page: "/data" },
-      keywords: ["entities", "records"],
-      required_capability: "records.read",
     },
     {
       id: "diagnostics",
@@ -184,8 +124,14 @@ export default function SettingsPage() {
     },
   ].map((block) => ({
     ...block,
-    wired: wiredPages.has(block?.primary?.to_page) && !placeholderPages.has(block?.primary?.to_page),
-  })).filter((block) => loading || !block.required_capability || hasCapability(block.required_capability));
+    wired: (() => {
+      const raw = block?.primary?.to_page || "";
+      const path = String(raw).split("?")[0].split("#")[0];
+      return wiredPages.has(path) && !placeholderPages.has(path);
+    })(),
+  }))
+    // Deny-by-default: don't render privileged settings blocks until access context loads.
+    .filter((block) => !block.required_capability || hasCapability(block.required_capability));
 
   return (
     <div className="h-full min-h-0">

@@ -177,6 +177,7 @@ def _module_from_row(row: dict) -> dict:
         "archived": row.get("archived"),
         "icon_key": row.get("icon_key"),
         "display_order": row.get("display_order"),
+        "manifest_version": row.get("manifest_version"),
     }
 
 
@@ -257,7 +258,7 @@ def _insert_module_version(conn, module_id: str, manifest_hash_value: str, manif
             manifest_hash_value,
             json.dumps(manifest),
             _now(),
-            json.dumps(actor) if actor else None,
+            _json_dumps(actor) if actor else None,
             notes,
         ],
         query_name="module_versions.insert",
@@ -333,7 +334,7 @@ class DbManifestStore:
                 insert into manifest_snapshots (org_id, module_id, manifest_hash, manifest, created_at, actor, reason)
                 values (%s,%s,%s,%s,%s,%s,%s)
                 """,
-                [get_org_id(), module_id, new_hash, json.dumps(manifest_copy), _now(), json.dumps(actor) if actor else None, reason],
+                [get_org_id(), module_id, new_hash, json.dumps(manifest_copy), _now(), _json_dumps(actor) if actor else None, reason],
                 query_name="manifest_snapshots.insert",
             )
         return new_hash
@@ -428,7 +429,7 @@ class DbManifestStore:
                 values (%s,%s,%s,%s,%s,%s,%s)
                 on conflict do nothing
                 """,
-                [get_org_id(), module_id, to_hash, json.dumps(new_manifest), _now(), json.dumps(approved.get("approved_by")) if approved.get("approved_by") else None, patch.get("reason")],
+                [get_org_id(), module_id, to_hash, json.dumps(new_manifest), _now(), _json_dumps(approved.get("approved_by")) if approved.get("approved_by") else None, patch.get("reason")],
                 query_name="manifest_snapshots.insert_apply",
             )
 
@@ -450,7 +451,7 @@ class DbManifestStore:
                 insert into module_audit (org_id, module_id, audit_id, audit, created_at)
                 values (%s,%s,%s,%s,%s)
                 """,
-                [get_org_id(), module_id, audit_id, json.dumps(audit), _now()],
+                [get_org_id(), module_id, audit_id, _json_dumps(audit), _now()],
                 query_name="module_audit.insert_apply",
             )
 
@@ -489,7 +490,7 @@ class DbManifestStore:
                 insert into module_audit (org_id, module_id, audit_id, audit, created_at)
                 values (%s,%s,%s,%s,%s)
                 """,
-                [get_org_id(), module_id, audit_id, json.dumps(audit), _now()],
+                [get_org_id(), module_id, audit_id, _json_dumps(audit), _now()],
                 query_name="module_audit.insert_rollback",
             )
 
@@ -507,9 +508,12 @@ class DbModuleRegistry:
                 """
                 select m.module_id, m.name, m.enabled, m.current_hash, m.installed_at, m.updated_at, m.tags,
                        m.status, m.active_version, m.last_error, m.archived, m.display_order,
-                       coalesce(m.icon_key, mi.icon_key) as icon_key
+                       coalesce(m.icon_key, mi.icon_key) as icon_key,
+                       ms.manifest->>'manifest_version' as manifest_version
                 from modules_installed m
                 left join module_icons mi on mi.module_id = m.module_id
+                left join manifest_snapshots ms
+                  on ms.org_id = m.org_id and ms.module_id = m.module_id and ms.manifest_hash = m.current_hash
                 where m.org_id=%s and m.module_id=%s
                 """,
                 [get_org_id(), module_id],
@@ -524,9 +528,12 @@ class DbModuleRegistry:
                 """
                 select m.module_id, m.name, m.enabled, m.current_hash, m.installed_at, m.updated_at, m.tags,
                        m.status, m.active_version, m.last_error, m.archived, m.display_order,
-                       coalesce(m.icon_key, mi.icon_key) as icon_key
+                       coalesce(m.icon_key, mi.icon_key) as icon_key,
+                       ms.manifest->>'manifest_version' as manifest_version
                 from modules_installed m
                 left join module_icons mi on mi.module_id = m.module_id
+                left join manifest_snapshots ms
+                  on ms.org_id = m.org_id and ms.module_id = m.module_id and ms.manifest_hash = m.current_hash
                 where m.org_id=%s and m.archived=false
                 order by m.display_order nulls last, m.module_id
                 """,
@@ -643,7 +650,7 @@ class DbModuleRegistry:
                 insert into module_audit (org_id, module_id, audit_id, audit, created_at)
                 values (%s,%s,%s,%s,%s)
                 """,
-                [get_org_id(), module_id, audit_id, json.dumps(audit), _now()],
+                [get_org_id(), module_id, audit_id, _json_dumps(audit), _now()],
                 query_name="module_audit.insert_register",
             )
 
@@ -686,7 +693,7 @@ class DbModuleRegistry:
                 insert into module_audit (org_id, module_id, audit_id, audit, created_at)
                 values (%s,%s,%s,%s,%s)
                 """,
-                [get_org_id(), module_id, audit_id, json.dumps(audit), _now()],
+                [get_org_id(), module_id, audit_id, _json_dumps(audit), _now()],
                 query_name="module_audit.insert_enabled",
             )
 
@@ -811,7 +818,7 @@ class DbModuleRegistry:
                 insert into module_audit (org_id, module_id, audit_id, audit, created_at)
                 values (%s,%s,%s,%s,%s)
                 """,
-                [get_org_id(), module_id, audit_id, json.dumps(audit), _now()],
+                [get_org_id(), module_id, audit_id, _json_dumps(audit), _now()],
                 query_name="module_audit.insert_apply_action",
             )
 
@@ -893,7 +900,7 @@ class DbModuleRegistry:
                 insert into module_audit (org_id, module_id, audit_id, audit, created_at)
                 values (%s,%s,%s,%s,%s)
                 """,
-                [get_org_id(), module_id, audit_id, json.dumps(audit), _now()],
+                [get_org_id(), module_id, audit_id, _json_dumps(audit), _now()],
                 query_name="module_audit.insert_rollback_action",
             )
 
@@ -939,9 +946,10 @@ class DbDraftStore:
                 """
                 select module_id, manifest, updated_at, updated_by, base_snapshot_id
                 from module_drafts
+                where org_id=%s
                 order by updated_at desc
                 """,
-                [],
+                [get_org_id()],
                 query_name="module_drafts.list",
             )
             return [_deepcopy(r) for r in rows]
@@ -953,9 +961,9 @@ class DbDraftStore:
                 """
                 select module_id, manifest, created_at, updated_at, updated_by, base_snapshot_id
                 from module_drafts
-                where module_id=%s
+                where org_id=%s and module_id=%s
                 """,
-                [module_id],
+                [get_org_id(), module_id],
                 query_name="module_drafts.get",
             )
             return _deepcopy(row) if row else None
@@ -965,16 +973,16 @@ class DbDraftStore:
             row = fetch_one(
                 conn,
                 """
-                insert into module_drafts (module_id, manifest, updated_at, updated_by, base_snapshot_id)
-                values (%s,%s,%s,%s,%s)
-                on conflict (module_id) do update
+                insert into module_drafts (org_id, module_id, manifest, updated_at, updated_by, base_snapshot_id)
+                values (%s,%s,%s,%s,%s,%s)
+                on conflict (org_id, module_id) do update
                   set manifest = excluded.manifest,
                       updated_at = excluded.updated_at,
                       updated_by = excluded.updated_by,
                       base_snapshot_id = coalesce(excluded.base_snapshot_id, module_drafts.base_snapshot_id)
                 returning module_id, manifest, created_at, updated_at, updated_by, base_snapshot_id
                 """,
-                [module_id, json.dumps(manifest), _now(), updated_by, base_snapshot_id],
+                [get_org_id(), module_id, json.dumps(manifest), _now(), updated_by, base_snapshot_id],
                 query_name="module_drafts.upsert",
             )
             return _deepcopy(row)
@@ -996,15 +1004,16 @@ class DbDraftStore:
                     conn,
                     """
                     insert into module_draft_versions (
-                        id, module_id, manifest, note, created_at, created_by,
+                        id, org_id, module_id, manifest, note, created_at, created_by,
                         parent_version_id, ops_applied, validation_errors
                     )
-                    values (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     returning id, module_id, manifest, note, created_at, created_by,
                               parent_version_id, ops_applied, validation_errors
                     """,
                     [
                         version_id,
+                        get_org_id(),
                         module_id,
                         json.dumps(manifest),
                         note,
@@ -1024,15 +1033,16 @@ class DbDraftStore:
                     conn,
                     """
                     insert into module_draft_versions (
-                        id, module_id, manifest, note, created_at, created_by,
+                        id, org_id, module_id, manifest, note, created_at, created_by,
                         parent_version_id, ops_applied, validation_errors
                     )
-                    values (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     returning id, module_id, manifest, note, created_at, created_by,
                               parent_version_id, ops_applied, validation_errors
                     """,
                     [
                         version_id,
+                        get_org_id(),
                         module_id,
                         json.dumps(manifest),
                         note,
@@ -1070,10 +1080,10 @@ class DbDraftStore:
                     select id, module_id, manifest, note, created_at, created_by,
                            parent_version_id, ops_applied, validation_errors
                     from module_draft_versions
-                    where module_id=%s
+                    where org_id=%s and module_id=%s
                     order by created_at desc
                     """,
-                    [module_id],
+                    [get_org_id(), module_id],
                     query_name="module_draft_versions.list",
                 )
                 return [_deepcopy(r) for r in rows]
@@ -1087,10 +1097,10 @@ class DbDraftStore:
                     select id, module_id, manifest, note, created_at, created_by,
                            parent_version_id, ops_applied, validation_errors
                     from module_draft_versions
-                    where module_id=%s
+                    where org_id=%s and module_id=%s
                     order by created_at desc
                     """,
-                    [module_id],
+                    [get_org_id(), module_id],
                     query_name="module_draft_versions.list",
                 )
                 return [_deepcopy(r) for r in rows]
@@ -1107,9 +1117,9 @@ class DbDraftStore:
                     select id, module_id, manifest, note, created_at, created_by,
                            parent_version_id, ops_applied, validation_errors
                     from module_draft_versions
-                    where module_id=%s and id=%s
+                    where org_id=%s and module_id=%s and id=%s
                     """,
-                    [module_id, version_id],
+                    [get_org_id(), module_id, version_id],
                     query_name="module_draft_versions.get",
                 )
                 return _deepcopy(row) if row else None
@@ -1123,9 +1133,9 @@ class DbDraftStore:
                     select id, module_id, manifest, note, created_at, created_by,
                            parent_version_id, ops_applied, validation_errors
                     from module_draft_versions
-                    where module_id=%s and id=%s
+                    where org_id=%s and module_id=%s and id=%s
                     """,
-                    [module_id, version_id],
+                    [get_org_id(), module_id, version_id],
                     query_name="module_draft_versions.get",
                 )
                 return _deepcopy(row) if row else None
@@ -1135,9 +1145,9 @@ class DbDraftStore:
 
     def delete_draft(self, module_id: str) -> None:
         with get_conn() as conn:
-            execute(conn, "delete from module_drafts where module_id=%s", [module_id], query_name="module_drafts.delete")
+            execute(conn, "delete from module_drafts where org_id=%s and module_id=%s", [get_org_id(), module_id], query_name="module_drafts.delete")
             try:
-                execute(conn, "delete from module_draft_versions where module_id=%s", [module_id], query_name="module_draft_versions.delete")
+                execute(conn, "delete from module_draft_versions where org_id=%s and module_id=%s", [get_org_id(), module_id], query_name="module_draft_versions.delete")
             except psycopg2.errors.UndefinedTable:
                 logger.warning("module_draft_versions table missing; skip delete")
 
@@ -1414,7 +1424,7 @@ class DbChatterStore:
                     insert into records_chatter (org_id, entity_id, record_id, id, type, body, actor, created_at)
                     values (%s,%s,%s,%s,%s,%s,%s,%s)
                     """,
-                    [get_org_id(), entity_id, record_id, entry_id, entry_type, body, json.dumps(actor) if actor else None, _now()],
+                    [get_org_id(), entity_id, record_id, entry_id, entry_type, body, _json_dumps(actor) if actor else None, _now()],
                     query_name="records_chatter.insert",
                 )
         except Exception as exc:
@@ -1503,6 +1513,25 @@ class DbActivityStore:
         }
         return self.add_event(entity_id, record_id, "attachment", payload, actor=actor)
 
+    def _row_to_item(self, row: dict) -> dict:
+        payload = _ensure_json(row.get("payload")) or {}
+        author_user_id = row.get("author_user_id")
+        payload_author = payload.get("_author") if isinstance(payload, dict) else None
+        if isinstance(payload_author, dict):
+            author = payload_author
+        else:
+            author = {"id": str(author_user_id), "name": str(author_user_id)} if author_user_id else None
+        if isinstance(payload, dict) and "_author" in payload:
+            payload = dict(payload)
+            payload.pop("_author", None)
+        return {
+            "id": row.get("id"),
+            "event_type": row.get("event_type"),
+            "author": author,
+            "payload": payload,
+            "created_at": _to_iso(row.get("created_at")),
+        }
+
     def list(self, entity_id: str, record_id: str, limit: int = 50) -> list[dict]:
         with get_conn() as conn:
             rows = fetch_all(
@@ -1517,28 +1546,24 @@ class DbActivityStore:
                 [get_org_id(), entity_id, str(record_id), max(1, min(int(limit or 50), 200))],
                 query_name="record_activity_events.list",
             )
-        items: list[dict] = []
-        for row in rows:
-            payload = _ensure_json(row.get("payload")) or {}
-            author_user_id = row.get("author_user_id")
-            payload_author = payload.get("_author") if isinstance(payload, dict) else None
-            if isinstance(payload_author, dict):
-                author = payload_author
-            else:
-                author = {"id": str(author_user_id), "name": str(author_user_id)} if author_user_id else None
-            if isinstance(payload, dict) and "_author" in payload:
-                payload = dict(payload)
-                payload.pop("_author", None)
-            items.append(
-                {
-                    "id": row.get("id"),
-                    "event_type": row.get("event_type"),
-                    "author": author,
-                    "payload": payload,
-                    "created_at": _to_iso(row.get("created_at")),
-                }
+        return [self._row_to_item(row) for row in rows]
+
+    def list_since(self, entity_id: str, record_id: str, since: str, limit: int = 50) -> list[dict]:
+        # `since` is expected to be an ISO8601 timestamp string (validated by the API layer).
+        with get_conn() as conn:
+            rows = fetch_all(
+                conn,
+                """
+                select id, event_type, payload, author_user_id, created_at
+                from record_activity_events
+                where org_id=%s and entity_id=%s and record_id=%s and created_at > %s
+                order by created_at desc, id desc
+                limit %s
+                """,
+                [get_org_id(), entity_id, str(record_id), since, max(1, min(int(limit or 50), 200))],
+                query_name="record_activity_events.list_since",
             )
-        return items
+        return [self._row_to_item(row) for row in rows]
 
 
 class DbWorkflowStore:

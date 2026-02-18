@@ -7,6 +7,7 @@ import { getAppDisplayName } from "../state/appCatalog.js";
 import { getPinnedApps, getRecentApps, recordRecentApp, subscribeAppUsage } from "../state/appUsage.js";
 import { getManifest } from "../api";
 import { buildTargetRoute } from "../apps/appShellUtils.js";
+import { useAccessContext } from "../access.js";
 
 const navLinkClass = ({ isActive }) =>
   `btn btn-ghost justify-start w-full ${isActive ? "bg-base-200" : ""}`;
@@ -37,6 +38,7 @@ function AppShortcut({ id, label }) {
 
 export default function SideNav() {
   const { modules } = useModuleStore();
+  const { loading: accessLoading, hasCapability } = useAccessContext();
   const [pinned, setPinned] = useState(getPinnedApps());
   const [recent, setRecent] = useState(getRecentApps());
   const enabledApps = modules.filter((m) => m.enabled);
@@ -64,6 +66,8 @@ export default function SideNav() {
     return [...pinnedFirst, ...recentNext, ...rest];
   }, [enabledApps, pinned, recent]);
 
+  const canSeeIntegrations = !accessLoading && hasCapability("workspace.manage_settings");
+
   return (
     <div className="w-64 min-h-full bg-base-200 p-4">
       <div className="text-lg font-semibold mb-4">OCTO</div>
@@ -74,6 +78,7 @@ export default function SideNav() {
           <NavLink to="/apps" className={navLinkClass}>Apps</NavLink>
           <NavLink to="/studio" className={navLinkClass}>Studio</NavLink>
           <NavLink to="/automations" className={navLinkClass}>Automations</NavLink>
+          {canSeeIntegrations ? <NavLink to="/integrations" className={navLinkClass}>Integrations</NavLink> : null}
           <NavLink to="/ops" className={navLinkClass}>Ops</NavLink>
         </div>
         <div>

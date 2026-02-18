@@ -50,7 +50,7 @@ export default function AuthSetPasswordPage({ user }) {
           {notice ? <div className="alert alert-success">{notice}</div> : null}
           <form className="space-y-3" onSubmit={handleSubmit}>
             <input
-              className="input input-bordered w-full"
+              className="input input-bordered input-sm w-full"
               type="password"
               placeholder="New password"
               value={password}
@@ -59,7 +59,7 @@ export default function AuthSetPasswordPage({ user }) {
               required
             />
             <input
-              className="input input-bordered w-full"
+              className="input input-bordered input-sm w-full"
               type="password"
               placeholder="Confirm password"
               value={confirm}
@@ -67,7 +67,7 @@ export default function AuthSetPasswordPage({ user }) {
               onChange={(e) => setConfirm(e.target.value)}
               required
             />
-            <button className="btn btn-primary w-full" type="submit" disabled={!canSet || saving}>
+            <button className="btn btn-primary btn-sm w-full" type="submit" disabled={!canSet || saving}>
               {saving ? "Saving..." : "Set password"}
             </button>
           </form>

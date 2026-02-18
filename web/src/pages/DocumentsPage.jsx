@@ -15,6 +15,8 @@ export default function DocumentsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [clientFilters, setClientFilters] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
+  const [page, setPage] = useState(0);
+  const [totalItems, setTotalItems] = useState(0);
 
   async function load() {
     try {
@@ -136,9 +138,15 @@ export default function DocumentsPage() {
                   createTooltip="New Template"
                   onCreate={createTemplate}
                   searchValue={search}
-                  onSearchChange={setSearch}
+                  onSearchChange={(v) => {
+                    setSearch(v);
+                    setPage(0);
+                  }}
                   filters={listFilters}
-                  onFilterChange={setStatusFilter}
+                  onFilterChange={(id) => {
+                    setStatusFilter(id);
+                    setPage(0);
+                  }}
                   filterableFields={filterableFields}
                   onAddCustomFilter={(field, value) => {
                     if (!field?.id) return;
@@ -146,12 +154,20 @@ export default function DocumentsPage() {
                       ...prev,
                       { field_id: field.id, label: field.label || field.id, op: "contains", value },
                     ]);
+                    setPage(0);
                   }}
                   onClearFilters={() => {
                     setStatusFilter("all");
                     setClientFilters([]);
+                    setPage(0);
                   }}
                   onRefresh={load}
+                  pagination={{
+                    page,
+                    pageSize: 25,
+                    totalItems,
+                    onPageChange: setPage,
+                  }}
                   rightActions={
                     selectedIds.length === 1 ? (
                       <button
@@ -176,6 +192,11 @@ export default function DocumentsPage() {
                   filters={listFilters}
                   activeFilter={activeListFilter}
                   clientFilters={clientFilters}
+                  page={page}
+                  pageSize={25}
+                  onPageChange={setPage}
+                  onTotalItemsChange={setTotalItems}
+                  showPaginationControls={false}
                   selectedIds={selectedIds}
                   onToggleSelect={(id, checked) => {
                     if (!id) return;

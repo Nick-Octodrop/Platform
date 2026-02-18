@@ -681,6 +681,7 @@ export default function Studio2Page({ user }) {
   const [pendingDelete, setPendingDelete] = useState(null);
   const [pendingDeleteKind, setPendingDeleteKind] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deleteMode, setDeleteMode] = useState("keep_records"); // keep_records | delete_records
   const [deleteBlocked, setDeleteBlocked] = useState(null);
   const [forceConfirm, setForceConfirm] = useState("");
   const [publishModalOpen, setPublishModalOpen] = useState(false);
@@ -1423,6 +1424,18 @@ function buildPreviewManifest() {
       }
       try {
         const res = await installStudio2Draft(routeModuleId, draftText);
+        if (res?.ok === false) {
+          setValidation({
+            status: "ok",
+            errors: Array.isArray(res?.errors) ? res.errors : [{ message: "Install blocked by validation errors" }],
+            warnings: Array.isArray(res?.warnings) ? res.warnings : [],
+            strictErrors: [],
+            completenessErrors: [],
+            designWarnings: [],
+          });
+          pushToast("error", res?.errors?.[0]?.message || "Install blocked by validation errors");
+          return;
+        }
         const info = { ...res.data, applied_at: nowIso() };
         setApplyInfo(info);
         setRollbackTarget(info.transaction_group_id || "");
@@ -1432,6 +1445,16 @@ function buildPreviewManifest() {
         setHistorySnapshots(historyRes.data?.snapshots || []);
         setHistoryDrafts(historyRes.data?.draft_versions || []);
       } catch (err) {
+        if (Array.isArray(err?.errors)) {
+          setValidation({
+            status: "ok",
+            errors: err.errors,
+            warnings: Array.isArray(err?.warnings) ? err.warnings : [],
+            strictErrors: [],
+            completenessErrors: [],
+            designWarnings: [],
+          });
+        }
         pushToast("error", err.message || "Install failed");
       }
       return;
@@ -1777,6 +1800,7 @@ function buildPreviewManifest() {
     setPendingDelete(moduleId);
     setPendingDeleteKind(kind);
     setDeleteConfirm("");
+    setDeleteMode("keep_records");
     setDeleteBlocked(null);
     setForceConfirm("");
   }
@@ -1785,6 +1809,7 @@ function buildPreviewManifest() {
     setPendingDelete(null);
     setPendingDeleteKind(null);
     setDeleteConfirm("");
+    setDeleteMode("keep_records");
     setDeleteBlocked(null);
     setForceConfirm("");
   }
@@ -2041,7 +2066,8 @@ function buildPreviewManifest() {
     if (pendingDeleteKind === "draft") {
       await handleDeleteDraft(pendingDelete);
     } else {
-      const blocked = await handleDeleteModule(pendingDelete);
+      const opts = deleteMode === "delete_records" ? { force: true } : { archive: true };
+      const blocked = await handleDeleteModule(pendingDelete, opts);
       if (blocked) return;
     }
     closeDelete();
@@ -2531,23 +2557,77 @@ function buildPreviewManifest() {
         <p className="text-sm opacity-70 mt-2">
           {pendingDeleteKind === "draft"
             ? "This will remove the draft without affecting any installed module."
-            : "This will delete the module and all its data."}
+            : "Choose whether to keep records created by this module, or delete everything."}
         </p>
+        {pendingDeleteKind !== "draft" && (
+          <div className="mt-4 space-y-2">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="radio"
+                name="delete-mode"
+                className="radio radio-sm mt-1"
+                checked={deleteMode === "keep_records"}
+                onChange={() => setDeleteMode("keep_records")}
+              />
+              <div>
+                <div className="font-semibold">Remove module (keep records)</div>
+                <div className="text-xs opacity-70">
+                  The app is archived/disabled, but your workspace data remains.
+                </div>
+              </div>
+            </label>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="radio"
+                name="delete-mode"
+                className="radio radio-sm mt-1"
+                checked={deleteMode === "delete_records"}
+                onChange={() => setDeleteMode("delete_records")}
+              />
+              <div>
+                <div className="font-semibold text-error">Delete module + records</div>
+                <div className="text-xs opacity-70">
+                  Irreversible. Removes all records for entities defined by this module (and any other module using the same entities).
+                </div>
+              </div>
+            </label>
+          </div>
+        )}
         <p className="text-sm mt-2">Type <span className="font-mono">{pendingDelete}</span> to confirm.</p>
         <input
-          className="input input-bordered w-full mt-3"
+          className="input input-bordered input-sm w-full mt-3"
           value={deleteConfirm}
           onChange={(e) => setDeleteConfirm(e.target.value)}
           placeholder="module id"
         />
+        {pendingDeleteKind !== "draft" && deleteMode === "delete_records" && (
+          <div className="mt-3">
+            <div className="text-sm">Also type <span className="font-mono">DELETE</span> to confirm record deletion.</div>
+            <input
+              className="input input-bordered input-sm w-full mt-2"
+              value={forceConfirm}
+              onChange={(e) => setForceConfirm(e.target.value)}
+              placeholder="DELETE"
+            />
+          </div>
+        )}
         <div className="modal-action">
           <button className="btn" onClick={closeDelete}>Cancel</button>
           <button
-            className={`btn ${pendingDeleteKind === "draft" ? "btn-warning" : "btn-error"}`}
+            className={`btn ${
+              pendingDeleteKind === "draft"
+                ? "btn-warning"
+                : deleteMode === "delete_records"
+                  ? "btn-error"
+                  : "btn-warning"
+            }`}
             onClick={confirmDelete}
-            disabled={deleteConfirm !== pendingDelete}
+            disabled={
+              deleteConfirm !== pendingDelete ||
+              (pendingDeleteKind !== "draft" && deleteMode === "delete_records" && forceConfirm !== "DELETE")
+            }
           >
-            Delete
+            {pendingDeleteKind === "draft" ? "Delete" : deleteMode === "delete_records" ? "Delete" : "Remove"}
           </button>
         </div>
       </div>
@@ -2578,7 +2658,7 @@ function buildPreviewManifest() {
         <div className="mt-4">
           <div className="text-sm">Type <span className="font-mono">DELETE</span> to force delete.</div>
           <input
-            className="input input-bordered w-full mt-2"
+            className="input input-bordered input-sm w-full mt-2"
             value={forceConfirm}
             onChange={(e) => setForceConfirm(e.target.value)}
             placeholder="DELETE"
@@ -2610,7 +2690,7 @@ function buildPreviewManifest() {
               <span className="label-text">Title</span>
             </div>
             <input
-              className="input input-bordered w-full"
+              className="input input-bordered input-sm w-full"
               value={publishTitle}
               onChange={(e) => setPublishTitle(e.target.value)}
               placeholder="Marketplace title"
@@ -2621,7 +2701,7 @@ function buildPreviewManifest() {
               <span className="label-text">Description</span>
             </div>
             <textarea
-              className="textarea textarea-bordered w-full min-h-[92px]"
+              className="textarea textarea-bordered textarea-sm w-full min-h-[92px]"
               value={publishDescription}
               onChange={(e) => setPublishDescription(e.target.value)}
               placeholder="Optional description"
@@ -2633,7 +2713,7 @@ function buildPreviewManifest() {
                 <span className="label-text">Slug (optional)</span>
               </div>
               <input
-                className="input input-bordered w-full"
+                className="input input-bordered input-sm w-full"
                 value={publishSlug}
                 onChange={(e) => setPublishSlug(e.target.value)}
                 placeholder="work-orders"
@@ -2644,7 +2724,7 @@ function buildPreviewManifest() {
                 <span className="label-text">Category (optional)</span>
               </div>
               <input
-                className="input input-bordered w-full"
+                className="input input-bordered input-sm w-full"
                 value={publishCategory}
                 onChange={(e) => setPublishCategory(e.target.value)}
                 placeholder="Operations"
@@ -2749,7 +2829,8 @@ function buildPreviewManifest() {
                                   selectedRows.map((row) => {
                                     if (!row) return Promise.resolve();
                                     return row.installed
-                                      ? deleteModule(row.module_id)
+                                      // Bulk deletes should be safe by default: archive/disable but keep records.
+                                      ? deleteModule(row.module_id, { archive: true })
                                       : deleteStudio2Draft(row.module_id);
                                   })
                                 )
@@ -2812,7 +2893,7 @@ function buildPreviewManifest() {
                 <div>
                   <label className="text-xs opacity-70">Module Name</label>
                   <input
-                    className="input input-bordered w-full"
+                    className="input input-bordered input-sm w-full"
                     placeholder="Work Orders"
                     value={newModuleName}
                     onChange={(e) => setNewModuleName(e.target.value)}
@@ -2821,7 +2902,7 @@ function buildPreviewManifest() {
                 <div>
                   <label className="text-xs opacity-70">Description (optional)</label>
                   <textarea
-                    className="textarea textarea-bordered w-full"
+                    className="textarea textarea-bordered textarea-sm w-full"
                     rows={3}
                     placeholder="Short description of this module"
                     value={newModuleDescription}
@@ -2934,7 +3015,7 @@ function buildPreviewManifest() {
               <div>
                 <label className="text-xs opacity-70">Module Name</label>
                 <input
-                  className="input input-bordered w-full"
+                  className="input input-bordered input-sm w-full"
                   placeholder="Work Orders"
                   value={newModuleName}
                   onChange={(e) => setNewModuleName(e.target.value)}
@@ -2943,7 +3024,7 @@ function buildPreviewManifest() {
               <div>
                 <label className="text-xs opacity-70">Description (optional)</label>
                 <textarea
-                  className="textarea textarea-bordered w-full text-xs"
+                  className="textarea textarea-bordered textarea-sm w-full text-xs"
                   rows={3}
                   placeholder="Short description of this module"
                   value={newModuleDescription}

@@ -1,16 +1,32 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { API_URL, apiFetch, getActiveWorkspaceId, getUiPrefs, setActiveWorkspaceId, setUiPrefs } from "../api";
 import { useToast } from "../components/Toast.jsx";
+import PaginationControls from "../components/PaginationControls.jsx";
 import { applyBrandColors, setBrandColors } from "../theme/theme.js";
 import { supabase } from "../supabase.js";
+import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
+
+const TAB_IDS = ["workspaces", "branding"];
+
+function normalizeTabId(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  return TAB_IDS.includes(raw) ? raw : "workspaces";
+}
 
 export default function SettingsWorkspacesPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = normalizeTabId(searchParams.get("tab"));
+  const [activeTab, setActiveTab] = useState(initialTab);
+
   const [context, setContext] = useState(null);
   const [workspaces, setWorkspaces] = useState([]);
+  const [workspacesPage, setWorkspacesPage] = useState(0);
   const [workspacePrefs, setWorkspacePrefs] = useState({ logo_url: "", colors: { primary: "", secondary: "", accent: "" } });
   const [workspaceName, setWorkspaceName] = useState("");
   const [workspaceNameSaving, setWorkspaceNameSaving] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
+  const [logoPreviewError, setLogoPreviewError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeWorkspaceId, setActive] = useState(getActiveWorkspaceId());
@@ -46,6 +62,11 @@ export default function SettingsWorkspacesPage() {
     load();
   }, []);
 
+  useEffect(() => {
+    setActiveTab(normalizeTabId(searchParams.get("tab")));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams.get("tab")]);
+
   const actor = context?.actor || {};
   const displayWorkspaces = useMemo(() => {
     return (workspaces || []).map((w) => ({
@@ -55,6 +76,21 @@ export default function SettingsWorkspacesPage() {
       member_count: w.member_count,
     }));
   }, [workspaces, actor.platform_role]);
+
+  const workspacesPageSize = 25;
+  const workspacesTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(displayWorkspaces.length / workspacesPageSize)),
+    [displayWorkspaces.length],
+  );
+
+  useEffect(() => {
+    setWorkspacesPage((prev) => Math.min(Math.max(0, prev), workspacesTotalPages - 1));
+  }, [workspacesTotalPages]);
+
+  const pagedWorkspaces = useMemo(() => {
+    const start = workspacesPage * workspacesPageSize;
+    return displayWorkspaces.slice(start, start + workspacesPageSize);
+  }, [displayWorkspaces, workspacesPage]);
   const activeWorkspace = useMemo(
     () => displayWorkspaces.find((w) => w.workspace_id === activeWorkspaceId) || null,
     [displayWorkspaces, activeWorkspaceId],
@@ -71,6 +107,24 @@ export default function SettingsWorkspacesPage() {
   }
 
   const canEditWorkspaceSettings = actor.platform_role === "superadmin" || actor.workspace_role === "admin";
+
+  function goTab(nextId) {
+    const next = normalizeTabId(nextId);
+    setActiveTab(next);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("tab", next);
+    setSearchParams(nextParams, { replace: true });
+  }
+
+  function Section({ title, description, children }) {
+    return (
+      <div className="rounded-box border border-base-300 bg-base-100 p-4">
+        <div className="text-sm font-semibold">{title}</div>
+        {description ? <div className="text-sm opacity-70 mt-1">{description}</div> : null}
+        <div className="mt-4">{children}</div>
+      </div>
+    );
+  }
 
   async function saveWorkspacePrefs(next) {
     setWorkspacePrefs(next);
@@ -106,6 +160,7 @@ export default function SettingsWorkspacesPage() {
       }
       const next = { ...workspacePrefs, logo_url: data.logo_url };
       await saveWorkspacePrefs(next);
+      setLogoPreviewError(false);
       pushToast("success", "Logo uploaded");
     } catch (err) {
       pushToast("error", err?.message || "Logo upload failed");
@@ -137,164 +192,188 @@ export default function SettingsWorkspacesPage() {
   }
 
   return (
-    <div className="p-4 md:p-6 space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold">Workspaces</h1>
-        <p className="text-sm opacity-70">
-          {actor.platform_role === "superadmin"
-            ? "Superadmin view: access and switch any workspace."
-            : "Switch between your workspace memberships."}
-        </p>
-      </div>
+    <TabbedPaneShell
+      title="Workspaces"
+      subtitle={actor.platform_role === "superadmin"
+        ? "Superadmin view: access and switch any workspace."
+        : "Switch between your workspace memberships."}
+      tabs={[
+        { id: "workspaces", label: "Workspaces" },
+        { id: "branding", label: "Branding" },
+      ]}
+      activeTabId={activeTab}
+      onTabChange={goTab}
+      rightActions={(
+        <button className="btn btn-sm btn-ghost" type="button" disabled={loading || workspaceNameSaving || logoUploading} onClick={load}>
+          Refresh
+        </button>
+      )}
+    >
+      <div className="space-y-4">
+        {error && <div className="alert alert-error text-sm">{error}</div>}
 
-      {error && <div className="alert alert-error">{error}</div>}
-
-      <div className="card bg-base-100 border border-base-300">
-        <div className="card-body">
-          {loading ? (
-            <div className="text-sm opacity-60">Loading workspaces…</div>
-          ) : displayWorkspaces.length === 0 ? (
-            <div className="text-sm opacity-60">No workspaces available.</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="table table-sm">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Role</th>
-                    <th>Members</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {displayWorkspaces.map((workspace) => (
-                    <tr key={workspace.workspace_id}>
-                      <td>{workspace.workspace_name}</td>
-                      <td>{workspace.role || "—"}</td>
-                      <td>{workspace.member_count ?? "—"}</td>
-                      <td>
-                        <button
-                          className={`btn btn-xs ${activeWorkspaceId === workspace.workspace_id ? "btn-primary" : "btn-outline"}`}
-                          onClick={() => switchWorkspace(workspace.workspace_id)}
-                        >
-                          {activeWorkspaceId === workspace.workspace_id ? "Active" : "Switch"}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="card bg-base-100 border border-base-300">
-        <div className="card-body">
-          <h2 className="card-title">Workspace Settings</h2>
-          <p className="text-sm opacity-70">Branding and color settings apply to the active workspace only.</p>
-          {!canEditWorkspaceSettings ? (
-            <div className="alert alert-warning mt-2">Only workspace admins can edit these settings.</div>
-          ) : (
-            <div className="space-y-4 mt-2">
-              <label className="form-control max-w-3xl">
-                <span className="label-text">Workspace name</span>
-                <div className="join">
-                  <input
-                    type="text"
-                    className="input input-bordered join-item w-full"
-                    value={workspaceName}
-                    placeholder="Workspace name"
-                    onChange={(e) => setWorkspaceName(e.target.value)}
+        {activeTab === "workspaces" && (
+          <Section title="Workspaces" description="Switch your active workspace.">
+            {loading ? (
+              <div className="text-sm opacity-60">Loading workspaces…</div>
+            ) : displayWorkspaces.length === 0 ? (
+              <div className="text-sm opacity-60">No workspaces available.</div>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center justify-end">
+                  <PaginationControls
+                    page={workspacesPage}
+                    pageSize={workspacesPageSize}
+                    totalItems={displayWorkspaces.length}
+                    onPageChange={setWorkspacesPage}
                   />
-                  <button
-                    type="button"
-                    className="btn btn-primary join-item"
-                    disabled={workspaceNameSaving || !workspaceName.trim()}
-                    onClick={saveWorkspaceName}
-                  >
-                    {workspaceNameSaving ? "Saving..." : "Save"}
-                  </button>
                 </div>
-              </label>
-              <label className="form-control max-w-3xl">
-                <span className="label-text">Logo URL</span>
-                <input
-                  type="url"
-                  className="input input-bordered"
-                  placeholder="https://cdn.example.com/logo.png"
-                  value={workspacePrefs.logo_url || ""}
-                  onChange={(e) => saveWorkspacePrefs({ ...workspacePrefs, logo_url: e.target.value })}
-                />
-              </label>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="btn btn-outline btn-sm"
-                  onClick={() => logoFileRef.current?.click()}
-                  disabled={logoUploading}
-                >
-                  {logoUploading ? "Uploading..." : "Upload Logo"}
-                </button>
-                <input
-                  ref={logoFileRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleLogoFileChange}
-                />
-                {workspacePrefs.logo_url ? (
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => saveWorkspacePrefs({ ...workspacePrefs, logo_url: "" })}
-                  >
-                    Clear Logo
-                  </button>
-                ) : null}
+
+                <div className="overflow-x-auto">
+                  <table className="table table-sm">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Role</th>
+                      <th>Members</th>
+                      <th className="w-32">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedWorkspaces.map((workspace) => (
+                      <tr key={workspace.workspace_id}>
+                        <td className="whitespace-nowrap">{workspace.workspace_name}</td>
+                        <td className="whitespace-nowrap">{workspace.role || "—"}</td>
+                        <td className="whitespace-nowrap">{workspace.member_count ?? "—"}</td>
+                        <td>
+                          <button
+                            className={`btn btn-xs ${activeWorkspaceId === workspace.workspace_id ? "btn-primary" : "btn-outline"}`}
+                            onClick={() => switchWorkspace(workspace.workspace_id)}
+                            type="button"
+                          >
+                            {activeWorkspaceId === workspace.workspace_id ? "Active" : "Switch"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  </table>
+                </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl">
-                <label className="form-control">
-                  <span className="label-text">Primary</span>
+            )}
+          </Section>
+        )}
+
+        {activeTab === "branding" && (
+          <Section title="Branding" description="Applies to the active workspace only.">
+            {!canEditWorkspaceSettings ? (
+              <div className="alert alert-warning text-sm">Only workspace admins can edit these settings.</div>
+            ) : (
+              <div className="space-y-4">
+                <label className="form-control max-w-3xl">
+                  <span className="label-text text-sm">Workspace name</span>
+                  <div className="join">
+                    <input
+                      type="text"
+                      className="input input-bordered input-sm join-item w-full"
+                      value={workspaceName}
+                      placeholder="Workspace name"
+                      onChange={(e) => setWorkspaceName(e.target.value)}
+                      disabled={workspaceNameSaving}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm join-item"
+                      disabled={workspaceNameSaving || !workspaceName.trim()}
+                      onClick={saveWorkspaceName}
+                    >
+                      {workspaceNameSaving ? "Saving..." : "Save"}
+                    </button>
+                  </div>
+                </label>
+
+                <label className="form-control max-w-3xl">
+                  <span className="label-text text-sm">Logo URL</span>
                   <input
-                    type="color"
-                    className="input input-bordered h-10"
-                    value={workspacePrefs.colors?.primary || "#4f46e5"}
+                    type="url"
+                    className="input input-bordered input-sm"
+                    placeholder="https://cdn.example.com/logo.png"
+                    value={workspacePrefs.logo_url || ""}
                     onChange={(e) => {
-                      const colors = { ...workspacePrefs.colors, primary: e.target.value };
-                      saveWorkspacePrefs({ ...workspacePrefs, colors });
+                      setLogoPreviewError(false);
+                      saveWorkspacePrefs({ ...workspacePrefs, logo_url: e.target.value });
                     }}
                   />
                 </label>
-                <label className="form-control">
-                  <span className="label-text">Secondary</span>
-                  <input
-                    type="color"
-                    className="input input-bordered h-10"
-                    value={workspacePrefs.colors?.secondary || "#0ea5e9"}
-                    onChange={(e) => {
-                      const colors = { ...workspacePrefs.colors, secondary: e.target.value };
-                      saveWorkspacePrefs({ ...workspacePrefs, colors });
-                    }}
-                  />
-                </label>
-                <label className="form-control">
-                  <span className="label-text">Accent</span>
-                  <input
-                    type="color"
-                    className="input input-bordered h-10"
-                    value={workspacePrefs.colors?.accent || "#22c55e"}
-                    onChange={(e) => {
-                      const colors = { ...workspacePrefs.colors, accent: e.target.value };
-                      saveWorkspacePrefs({ ...workspacePrefs, colors });
-                    }}
-                  />
-                </label>
+
+                <div className="flex flex-col md:flex-row md:items-center gap-3">
+                  <div className="shrink-0">
+                    <div className="text-sm opacity-70">Logo preview</div>
+                    <div className="mt-2 w-40 h-16 rounded-box border border-base-300 bg-base-200 flex items-center justify-center overflow-hidden">
+                      {workspacePrefs.logo_url && !logoPreviewError ? (
+                        <img
+                          src={workspacePrefs.logo_url}
+                          alt="Workspace logo"
+                          className="max-w-full max-h-full object-contain"
+                          onError={() => setLogoPreviewError(true)}
+                        />
+                      ) : (
+                        <div className="text-xs opacity-60 px-3 text-center">
+                          {workspacePrefs.logo_url ? "Unable to load logo" : "No logo"}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      onClick={() => logoFileRef.current?.click()}
+                      disabled={logoUploading}
+                    >
+                      {logoUploading ? "Uploading..." : "Upload logo"}
+                    </button>
+                    <input
+                      ref={logoFileRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleLogoFileChange}
+                    />
+                    {workspacePrefs.logo_url ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => {
+                          setLogoPreviewError(false);
+                          saveWorkspacePrefs({ ...workspacePrefs, logo_url: "" });
+                        }}
+                      >
+                        Clear logo
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="max-w-3xl">
+                  <label className="form-control">
+                    <span className="label-text text-sm">Primary</span>
+                    <input
+                      type="color"
+                      className="input input-bordered h-10"
+                      value={workspacePrefs.colors?.primary || "#4f46e5"}
+                      onChange={(e) => {
+                        const colors = { ...(workspacePrefs.colors || {}), primary: e.target.value };
+                        saveWorkspacePrefs({ ...workspacePrefs, colors });
+                      }}
+                    />
+                  </label>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </Section>
+        )}
       </div>
-    </div>
+    </TabbedPaneShell>
   );
 }

@@ -51,7 +51,7 @@ export default function LoginPage() {
           {notice && <div className="alert alert-success">{notice}</div>}
           <form onSubmit={handleLogin} className="space-y-3">
             <input
-              className="input input-bordered w-full"
+              className="input input-bordered input-sm w-full"
               type="email"
               placeholder="Email"
               value={email}
@@ -59,7 +59,7 @@ export default function LoginPage() {
               required
             />
             <input
-              className="input input-bordered w-full"
+              className="input input-bordered input-sm w-full"
               type="password"
               placeholder="Password"
               value={password}

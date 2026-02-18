@@ -18,26 +18,28 @@ export default function TopNav({ user, onSignOut }) {
   const isHome = location.pathname === "/home";
   const isAppsStore = location.pathname === "/apps";
   const isSettingsRoot = location.pathname === "/settings";
+  const isSettingsSettings = location.pathname.startsWith("/settings/settings");
   const isSettingsPreferences = location.pathname.startsWith("/settings/preferences");
+  const isSettingsPassword = location.pathname.startsWith("/settings/password");
   const isSettingsUsers = location.pathname.startsWith("/settings/users");
   const isSettingsWorkspaces = location.pathname.startsWith("/settings/workspaces");
   const isSettingsSecrets = location.pathname.startsWith("/settings/secrets");
   const isDiagnostics = location.pathname === "/settings/diagnostics";
   const isAudit = location.pathname.startsWith("/audit");
-  const isData = location.pathname.startsWith("/data");
+  const isIntegrations = location.pathname.startsWith("/integrations");
   const isOps = location.pathname.startsWith("/ops");
   const isEmailHome = location.pathname === "/settings/email";
   const isEmailConnections = location.pathname.startsWith("/settings/email/connections");
-  const isEmailDiagnostics = location.pathname.startsWith("/settings/email/diagnostics");
   const isEmailTemplates = location.pathname.startsWith("/settings/email-templates");
   const isEmailOutbox = location.pathname.startsWith("/settings/email-outbox");
   const isEmailTemplateStudio = location.pathname.startsWith("/email/templates/");
   const isDocsHome = location.pathname === "/settings/documents";
   const isDocsTemplates = location.pathname.startsWith("/settings/documents/templates");
-  const isDocsDefaults = location.pathname.startsWith("/settings/documents/defaults");
   const isDocTemplateStudio = location.pathname.startsWith("/documents/templates/");
-  const settingsLeafLabel = isSettingsPreferences
-    ? "Preferences"
+  const settingsLeafLabel = isSettingsSettings || isSettingsPreferences
+    ? "Profile"
+    : isSettingsPassword
+      ? "Password"
     : isSettingsUsers
       ? "Users"
       : isSettingsWorkspaces
@@ -48,14 +50,10 @@ export default function TopNav({ user, onSignOut }) {
             ? "Diagnostics"
             : isAudit
               ? "Audit"
-              : isData
-                ? "Data Explorer"
-                : isEmailHome
+              : isEmailHome
                   ? "Email"
                   : isEmailConnections
                     ? "Email Connections"
-                    : isEmailDiagnostics
-                      ? "Email Diagnostics"
                       : isEmailTemplates
                         ? "Email Templates"
                         : isEmailOutbox
@@ -63,31 +61,28 @@ export default function TopNav({ user, onSignOut }) {
                           : isEmailTemplateStudio
                             ? "Email Template"
                             : isDocsHome
-                              ? "Documents"
-                              : isDocsTemplates
-                                ? "Document Templates"
-                                : isDocsDefaults
-                                  ? "Document Defaults"
-                                  : isDocTemplateStudio
-                                    ? "Document Template"
-                                    : "";
+                            ? "Documents"
+                            : isDocsTemplates
+                              ? "Document Templates"
+                                : isDocTemplateStudio
+                                  ? "Document Template"
+                                  : "";
   const isSettingsRoute = isSettingsRoot
+    || isSettingsSettings
     || isSettingsPreferences
+    || isSettingsPassword
     || isSettingsUsers
     || isSettingsWorkspaces
     || isSettingsSecrets
     || isDiagnostics
     || isAudit
-    || isData
     || isEmailHome
     || isEmailConnections
-    || isEmailDiagnostics
     || isEmailTemplates
     || isEmailOutbox
     || isEmailTemplateStudio
     || isDocsHome
     || isDocsTemplates
-    || isDocsDefaults
     || isDocTemplateStudio;
   const isNotifications = location.pathname.startsWith("/notifications");
   const isAutomations = location.pathname.startsWith("/automations");
@@ -277,6 +272,13 @@ export default function TopNav({ user, onSignOut }) {
             <ul>
               <li><Link to="/home">Home</Link></li>
               <li><Link to="/automations">Automations</Link></li>
+            </ul>
+          </div>
+        ) : isIntegrations ? (
+          <div className="breadcrumbs text-sm pl-2">
+            <ul>
+              <li><Link to="/home">Home</Link></li>
+              <li>Integrations</li>
             </ul>
           </div>
         ) : isAutomationRuns ? (

@@ -33,14 +33,6 @@ export default function EmailHomePage() {
       primary: { label: "View Outbox", to_page: "/settings/email-outbox" },
       keywords: ["queue", "deliverability"],
     },
-    {
-      id: "email-diagnostics",
-      category_id: "operations",
-      title: "Diagnostics",
-      description: "Connection status, recent failures, worker health.",
-      primary: { label: "Open Diagnostics", to_page: "/settings/email/diagnostics" },
-      keywords: ["health", "errors"],
-    },
   ];
 
   return (

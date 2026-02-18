@@ -274,6 +274,24 @@ class MemoryActivityStore:
         items = self._entries.get(self._key(entity_id, str(record_id)), [])
         return [copy.deepcopy(item) for item in items[: max(1, min(limit, 200))]]
 
+    def list_since(self, entity_id: str, record_id: str, since: str, limit: int = 50) -> list[dict]:
+        def _parse(val: str) -> datetime | None:
+            try:
+                return datetime.fromisoformat(str(val).replace("Z", "+00:00"))
+            except Exception:
+                return None
+
+        since_dt = _parse(since)
+        items = self._entries.get(self._key(entity_id, str(record_id)), [])
+        if not since_dt:
+            return [copy.deepcopy(item) for item in items[: max(1, min(limit, 200))]]
+        out: list[dict] = []
+        for item in items:
+            created_dt = _parse(item.get("created_at", ""))
+            if created_dt and created_dt > since_dt:
+                out.append(copy.deepcopy(item))
+        return out[: max(1, min(limit, 200))]
+
 
 class MemoryJobStore:
     def __init__(self) -> None:
@@ -577,14 +595,28 @@ class MemoryConnectionStore:
         self._items[item["id"]] = item
         return copy.deepcopy(item)
 
+    def update(self, connection_id: str, updates: dict) -> dict | None:
+        item = self._items.get(connection_id)
+        if not item:
+            return None
+        next_updates = copy.deepcopy(updates or {})
+        next_updates.pop("id", None)
+        next_updates.pop("created_at", None)
+        item.update(next_updates)
+        item["updated_at"] = _now()
+        self._items[connection_id] = item
+        return copy.deepcopy(item)
+
     def get(self, connection_id: str) -> dict | None:
         item = self._items.get(connection_id)
         return copy.deepcopy(item) if item else None
 
-    def list(self, connection_type: str | None = None) -> list[dict]:
+    def list(self, connection_type: str | None = None, status: str | None = None) -> list[dict]:
         items = list(self._items.values())
         if connection_type:
             items = [i for i in items if i.get("type") == connection_type]
+        if status:
+            items = [i for i in items if i.get("status") == status]
         items.sort(key=lambda i: i.get("created_at", ""), reverse=True)
         return [copy.deepcopy(i) for i in items]
 

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Bookmark, Filter, List as ListIcon, Plus, RefreshCw, Search as SearchIcon } from "lucide-react";
 import { PRIMARY_BUTTON_SM, SOFT_ICON_SM } from "../components/buttonStyles.js";
+import PaginationControls from "../components/PaginationControls.jsx";
 
 export default function SystemListToolbar({
   title,
@@ -15,6 +16,7 @@ export default function SystemListToolbar({
   onClearFilters,
   onRefresh,
   rightActions = null,
+  pagination = null,
   showSavedViews = true,
   showListToggle = true,
 }) {
@@ -120,6 +122,14 @@ export default function SystemListToolbar({
               </button>
             </div>
           )}
+          {pagination && (
+            <PaginationControls
+              page={pagination.page || 0}
+              pageSize={pagination.pageSize || 25}
+              totalItems={pagination.totalItems || 0}
+              onPageChange={pagination.onPageChange}
+            />
+          )}
         </div>
       </div>
 
@@ -131,7 +141,7 @@ export default function SystemListToolbar({
             </h3>
             <div className="py-2 text-sm opacity-70">Enter a value to filter by.</div>
             <input
-              className="input input-bordered w-full"
+              className="input input-bordered input-sm w-full"
               placeholder="Value"
               value={filterPromptValue}
               onChange={(e) => setFilterPromptValue(e.target.value)}

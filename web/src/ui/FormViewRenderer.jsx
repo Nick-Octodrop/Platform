@@ -263,16 +263,21 @@ export default function FormViewRenderer({
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {primaryActions.map((item) => {
-              const reason = !item.enabled ? actionDisabledReason(item.action) : null;
+              const disabled = !item.enabled || previewMode || readonly;
+              const reason = readonly
+                ? "Read-only access."
+                : !item.enabled
+                  ? actionDisabledReason(item.action)
+                  : null;
               const button = (
                 <button
                   key={item.label}
                   className={SOFT_BUTTON_SM}
                   onClick={() => {
-                    if (previewMode) return;
+                    if (disabled) return;
                     onActionClick?.(item.action);
                   }}
-                  disabled={!item.enabled || previewMode}
+                  disabled={disabled}
                 >
                   {item.label}
                 </button>
@@ -286,16 +291,18 @@ export default function FormViewRenderer({
             })}
             {secondaryActions.length > 0 && (
               <div className="dropdown dropdown-end">
-                <button className={SOFT_BUTTON_SM}>More</button>
+                <button className={SOFT_BUTTON_SM} disabled={previewMode || readonly}>
+                  More
+                </button>
                 <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-48 z-50">
                   {secondaryActions.map((item) => (
                     <li key={item.label}>
                       <button
                         onClick={() => {
-                          if (previewMode) return;
+                          if (previewMode || readonly || !item.enabled) return;
                           onActionClick?.(item.action);
                         }}
-                        disabled={!item.enabled || previewMode}
+                        disabled={!item.enabled || previewMode || readonly}
                       >
                         {item.label}
                       </button>

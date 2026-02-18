@@ -16,7 +16,7 @@ import HomePage from "./pages/HomePage.jsx";
 import Studio2Page from "./pages/Studio2Page.jsx";
 import AuditPage from "./pages/AuditPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
-import SettingsPreferencesPage from "./pages/SettingsPreferencesPage.jsx";
+import SettingsSettingsPage from "./pages/SettingsSettingsPage.jsx";
 import SettingsPasswordPage from "./pages/SettingsPasswordPage.jsx";
 import SettingsUsersPage from "./pages/SettingsUsersPage.jsx";
 import SettingsWorkspacesPage from "./pages/SettingsWorkspacesPage.jsx";
@@ -24,17 +24,19 @@ import SettingsSecretsPage from "./pages/SettingsSecretsPage.jsx";
 import DiagnosticsPage from "./pages/DiagnosticsPage.jsx";
 import DataExplorerPage from "./pages/DataExplorerPage.jsx";
 import OpsPage from "./pages/OpsPage.jsx";
+import OpsJobPage from "./pages/OpsJobPage.jsx";
 import NotificationsPage from "./pages/NotificationsPage.jsx";
+import IntegrationsPage from "./pages/IntegrationsPage.jsx";
+import IntegrationConnectionPage from "./pages/IntegrationConnectionPage.jsx";
 import EmailHomePage from "./pages/EmailHomePage.jsx";
 import EmailConnectionsPage from "./pages/EmailConnectionsPage.jsx";
-import EmailDiagnosticsPage from "./pages/EmailDiagnosticsPage.jsx";
 import EmailTemplatesPage from "./pages/EmailTemplatesPage.jsx";
 import EmailOutboxPage from "./pages/EmailOutboxPage.jsx";
+import EmailOutboxItemPage from "./pages/EmailOutboxItemPage.jsx";
 import EmailTemplateStudioPage from "./pages/email/EmailTemplateStudioPage.jsx";
 import DocumentsHomePage from "./pages/DocumentsHomePage.jsx";
 import DocumentsPage from "./pages/DocumentsPage.jsx";
 import DocumentTemplateStudioPage from "./pages/documents/DocumentTemplateStudioPage.jsx";
-import DocumentsDefaultsPage from "./pages/DocumentsDefaultsPage.jsx";
 import AutomationsPage from "./pages/AutomationsPage.jsx";
 import AutomationEditorPage from "./pages/AutomationEditorPage.jsx";
 import AutomationRunsPage from "./pages/AutomationRunsPage.jsx";
@@ -140,7 +142,8 @@ export default function App() {
             <Route path="studio2/:moduleId" element={<Navigate to="/studio" replace />} />
             <Route path="audit" element={<AuditPage />} />
             <Route path="settings" element={<SettingsPage />} />
-            <Route path="settings/preferences" element={<SettingsPreferencesPage user={user} onSignOut={handleSignOut} />} />
+            <Route path="settings/settings" element={<SettingsSettingsPage user={user} onSignOut={handleSignOut} />} />
+            <Route path="settings/preferences" element={<Navigate to="/settings/settings" replace />} />
             <Route path="settings/password" element={<SettingsPasswordPage user={user} />} />
             <Route
               path="settings/users"
@@ -191,14 +194,6 @@ export default function App() {
               )}
             />
             <Route
-              path="settings/email/diagnostics"
-              element={(
-                <CapabilityRoute capability="templates.manage">
-                  <EmailDiagnosticsPage />
-                </CapabilityRoute>
-              )}
-            />
-            <Route
               path="settings/email-templates"
               element={(
                 <CapabilityRoute capability="templates.manage">
@@ -211,6 +206,14 @@ export default function App() {
               element={(
                 <CapabilityRoute capability="templates.manage">
                   <EmailOutboxPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="settings/email-outbox/:outboxId"
+              element={(
+                <CapabilityRoute capability="templates.manage">
+                  <EmailOutboxItemPage />
                 </CapabilityRoute>
               )}
             />
@@ -246,15 +249,23 @@ export default function App() {
                 </CapabilityRoute>
               )}
             />
+            <Route path="notifications" element={<NotificationsPage />} />
             <Route
-              path="settings/documents/defaults"
+              path="integrations"
               element={(
-                <CapabilityRoute capability="templates.manage">
-                  <DocumentsDefaultsPage />
+                <CapabilityRoute capability="workspace.manage_settings">
+                  <IntegrationsPage />
                 </CapabilityRoute>
               )}
             />
-            <Route path="notifications" element={<NotificationsPage />} />
+            <Route
+              path="integrations/connections/:connectionId"
+              element={(
+                <CapabilityRoute capability="workspace.manage_settings">
+                  <IntegrationConnectionPage />
+                </CapabilityRoute>
+              )}
+            />
             <Route
               path="automations"
               element={(
@@ -292,6 +303,14 @@ export default function App() {
               element={(
                 <CapabilityRoute capability="automations.manage">
                   <OpsPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="ops/jobs/:jobId"
+              element={(
+                <CapabilityRoute capability="automations.manage">
+                  <OpsJobPage />
                 </CapabilityRoute>
               )}
             />

@@ -1120,13 +1120,13 @@ def _get_snapshot(request: Request, module_id: str, manifest_hash: str):
     cached = _req_cache_get(request, cache_key)
     if cached is not None:
         return cached
-    global_cached = _cache_get("manifest", f"{module_id}:{manifest_hash}")
+    global_cached = _cache_get("manifest", f"{get_org_id()}:{module_id}:{manifest_hash}")
     if global_cached is not None:
         _req_cache_set(request, cache_key, global_cached)
         return global_cached
     manifest = store.get_snapshot(module_id, manifest_hash)
     _req_cache_set(request, cache_key, manifest)
-    _cache_set("manifest", manifest, f"{module_id}:{manifest_hash}")
+    _cache_set("manifest", manifest, f"{get_org_id()}:{module_id}:{manifest_hash}")
     return manifest
 
 
@@ -1425,7 +1425,7 @@ def _get_installed_manifest(request: Request, module_id: str) -> tuple[dict | No
     manifest_hash = module.get("current_hash")
     if not manifest_hash:
         return module, None
-    cache_key = f"{module_id}:{manifest_hash}"
+    cache_key = f"{get_org_id()}:{module_id}:{manifest_hash}"
     cached = _cache_get("manifest", cache_key)
     if cached is not None:
         return module, cached
@@ -1478,7 +1478,7 @@ def _find_entity_def(request: Request, entity_id: str) -> tuple[str, dict, dict]
 
 
 def _get_compiled_manifest(module_id: str, manifest_hash: str, manifest: dict) -> dict:
-    cache_key = f"{module_id}:{manifest_hash}"
+    cache_key = f"{get_org_id()}:{module_id}:{manifest_hash}"
     entry = _compiled_cache.get(cache_key)
     now = time.time()
     if entry and now - entry["ts"] < _CACHE_TTL_S:
@@ -1491,6 +1491,20 @@ def _get_compiled_manifest(module_id: str, manifest_hash: str, manifest: dict) -
 def _cache_get(bucket: str, key: str | None = None):
     now = time.time()
     if key is None:
+        # Buckets below must be tenant-scoped. Otherwise module lists leak across workspaces.
+        if bucket in {"modules", "studio_modules", "registry_list"}:
+            org_id = get_org_id()
+            entry = _cache[bucket]
+            value_map = entry.get("value")
+            ts_map = entry.get("ts")
+            if not isinstance(value_map, dict) or not isinstance(ts_map, dict):
+                # Migrate old single-tenant shape to per-tenant maps.
+                entry["value"] = {}
+                entry["ts"] = {}
+                return None
+            if org_id in value_map and org_id in ts_map and now - float(ts_map[org_id] or 0.0) < _CACHE_TTL_S:
+                return value_map[org_id]
+            return None
         entry = _cache[bucket]
         if entry["value"] is not None and now - entry["ts"] < _CACHE_TTL_S:
             return entry["value"]
@@ -1503,6 +1517,15 @@ def _cache_get(bucket: str, key: str | None = None):
 
 def _cache_set(bucket: str, value, key: str | None = None):
     if key is None:
+        if bucket in {"modules", "studio_modules", "registry_list"}:
+            org_id = get_org_id()
+            entry = _cache[bucket]
+            if not isinstance(entry.get("value"), dict) or not isinstance(entry.get("ts"), dict):
+                entry["value"] = {}
+                entry["ts"] = {}
+            entry["value"][org_id] = value
+            entry["ts"][org_id] = time.time()
+            return
         _cache[bucket]["value"] = value
         _cache[bucket]["ts"] = time.time()
     else:
@@ -1512,8 +1535,12 @@ def _cache_set(bucket: str, value, key: str | None = None):
 def _cache_invalidate(bucket: str, key: str | None = None):
     if key is None:
         if "value" in _cache[bucket]:
-            _cache[bucket]["value"] = None
-            _cache[bucket]["ts"] = 0.0
+            if bucket in {"modules", "studio_modules", "registry_list"}:
+                _cache[bucket]["value"] = {}
+                _cache[bucket]["ts"] = {}
+            else:
+                _cache[bucket]["value"] = None
+                _cache[bucket]["ts"] = 0.0
         else:
             _cache[bucket].clear()
     else:
@@ -2167,6 +2194,8 @@ async def _safe_json(request: Request) -> dict:
 
 def _studio2_registry_fingerprint(installed: list[dict]) -> str:
     parts = []
+    # Must be tenant-scoped. Otherwise empty/new workspaces can reuse cached studio payloads.
+    parts.append(f"org:{get_org_id()}")
     for mod in sorted(installed, key=lambda m: m.get("module_id") or ""):
         module_id = mod.get("module_id") or ""
         current_hash = mod.get("current_hash") or ""
@@ -2938,7 +2967,7 @@ def _apply_module_change_db(module_id: str, manifest: dict, actor: dict | None, 
                 insert into module_audit (org_id, module_id, audit_id, audit, created_at)
                 values (%s,%s,%s,%s,%s)
                 """,
-                [get_org_id(), module_id, audit_id, json.dumps(audit), _now()],
+                [get_org_id(), module_id, audit_id, json.dumps(audit, default=str), _now()],
                 query_name="module_audit.insert_install",
             )
         return {"ok": True, "errors": [], "warnings": warnings, "module": registry.get(module_id), "audit_id": audit_id}
@@ -3039,6 +3068,10 @@ def _normalize_marketplace_row(row: dict | None) -> dict | None:
             manifest = json.loads(manifest)
         except Exception:
             manifest = {}
+    manifest_version = manifest.get("manifest_version") if isinstance(manifest, dict) else None
+    module_def = manifest.get("module") if isinstance(manifest, dict) else None
+    module_def = module_def if isinstance(module_def, dict) else {}
+    module_version = module_def.get("version")
     return {
         "id": row.get("id"),
         "slug": row.get("slug"),
@@ -3050,6 +3083,8 @@ def _normalize_marketplace_row(row: dict | None) -> dict | None:
         "source_org_id": row.get("source_org_id"),
         "source_module_id": row.get("source_module_id"),
         "source_manifest_hash": row.get("source_manifest_hash"),
+        "manifest_version": manifest_version if isinstance(manifest_version, str) else None,
+        "module_version": module_version if isinstance(module_version, str) else None,
         "source_manifest": manifest if isinstance(manifest, dict) else {},
         "published_by_user_id": row.get("published_by_user_id"),
         "created_at": row.get("created_at"),
@@ -3142,7 +3177,7 @@ def _delete_module_db(module_id: str, actor: dict | None, reason: str, force: bo
                 [get_org_id(), *sorted(entity_ids)],
                 query_name="records_generic.delete_module_entities",
             )
-        execute(conn, "delete from module_drafts where module_id=%s", [module_id], query_name="module_drafts.delete")
+        execute(conn, "delete from module_drafts where org_id=%s and module_id=%s", [get_org_id(), module_id], query_name="module_drafts.delete")
         execute(conn, "delete from module_draft_versions where module_id=%s", [module_id], query_name="module_draft_versions.delete")
         execute(
             conn,
@@ -3160,7 +3195,7 @@ def _delete_module_db(module_id: str, actor: dict | None, reason: str, force: bo
             insert into module_audit (org_id, module_id, audit_id, audit, created_at)
             values (%s,%s,%s,%s,%s)
             """,
-            [get_org_id(), module_id, audit_id, json.dumps(audit), _now()],
+            [get_org_id(), module_id, audit_id, json.dumps(audit, default=str), _now()],
             query_name="module_audit.insert_delete",
         )
     return {"ok": True, "errors": [], "warnings": [], "module": None, "audit_id": audit_id}
@@ -3187,7 +3222,15 @@ async def list_modules(request: Request) -> dict:
         return {"modules": cached}
     modules = _get_registry_list(request)
     for mod in modules:
-        if mod.get("name"):
+        # Fill missing display metadata from the current manifest snapshot.
+        # modules_installed stores the operational state; the manifest is the source of truth for app meta.
+        need_meta = not (
+            (isinstance(mod.get("name"), str) and mod.get("name").strip())
+            and (isinstance(mod.get("description"), str) and mod.get("description").strip())
+            and (isinstance(mod.get("category"), str) and mod.get("category").strip())
+            and (isinstance(mod.get("module_version"), str) and mod.get("module_version").strip())
+        )
+        if not need_meta:
             continue
         module_id = mod.get("module_id")
         manifest_hash = mod.get("current_hash")
@@ -3197,9 +3240,28 @@ async def list_modules(request: Request) -> dict:
             manifest = _get_snapshot(request, module_id, manifest_hash)
         except Exception:
             continue
-        name = _module_name_from_manifest(manifest)
-        if name:
-            mod["name"] = name
+        module_def = manifest.get("module") if isinstance(manifest, dict) else None
+        module_def = module_def if isinstance(module_def, dict) else {}
+        if not (isinstance(mod.get("name"), str) and mod.get("name").strip()):
+            name = _module_name_from_manifest(manifest) or module_def.get("name")
+            if isinstance(name, str) and name.strip():
+                mod["name"] = name.strip()
+        if not (isinstance(mod.get("description"), str) and mod.get("description").strip()):
+            desc = module_def.get("description")
+            if isinstance(desc, str) and desc.strip():
+                mod["description"] = desc.strip()
+        if not (isinstance(mod.get("category"), str) and mod.get("category").strip()):
+            cat = module_def.get("category")
+            if isinstance(cat, str) and cat.strip():
+                mod["category"] = cat.strip()
+        if not (isinstance(mod.get("module_version"), str) and mod.get("module_version").strip()):
+            ver = module_def.get("version")
+            if isinstance(ver, str) and ver.strip():
+                mod["module_version"] = ver.strip()
+        if not (isinstance(mod.get("icon_key"), str) and mod.get("icon_key").strip()):
+            icon_key = module_def.get("icon_key") or module_def.get("icon")
+            if isinstance(icon_key, str) and icon_key.strip():
+                mod["icon_key"] = icon_key.strip()
     _cache_set("modules", modules)
     return {"modules": modules}
 
@@ -3252,12 +3314,21 @@ async def publish_marketplace_app(request: Request) -> dict:
     if not isinstance(source_hash, str) or not source_hash:
         return _error_response("MODULE_INVALID", "Module snapshot hash missing", "module_id", status=400)
     module_meta = manifest.get("module") if isinstance(manifest, dict) else {}
+    module_meta = module_meta if isinstance(module_meta, dict) else {}
     default_title = module.get("name") or (module_meta.get("name") if isinstance(module_meta, dict) else None) or module_id
     title = body.get("title") if isinstance(body, dict) else None
     title = title.strip() if isinstance(title, str) and title.strip() else default_title
     description = body.get("description") if isinstance(body, dict) and isinstance(body.get("description"), str) else None
+    if description is None and isinstance(module_meta.get("description"), str):
+        description = module_meta.get("description")
     category = body.get("category") if isinstance(body, dict) and isinstance(body.get("category"), str) else None
-    icon_url = body.get("icon_url") if isinstance(body, dict) and isinstance(body.get("icon_url"), str) else module.get("icon_key")
+    if category is None and isinstance(module_meta.get("category"), str):
+        category = module_meta.get("category")
+    icon_url = body.get("icon_url") if isinstance(body, dict) and isinstance(body.get("icon_url"), str) else None
+    if icon_url is None:
+        icon_url = module.get("icon_key")
+    if icon_url is None:
+        icon_url = module_meta.get("icon_key") or module_meta.get("icon") or module_meta.get("icon_url")
     if category is not None:
         category = category.strip() or None
     if description is not None:
@@ -3398,6 +3469,22 @@ async def clone_marketplace_app(request: Request, app_id: str) -> dict:
             first.get("detail"),
             status=400,
         )
+    # Default installs from marketplace should be disabled so the admin can review/configure before users see it.
+    with get_conn() as conn:
+        execute(
+            conn,
+            "update modules_installed set enabled=false, updated_at=%s where org_id=%s and module_id=%s",
+            [_now(), get_org_id(), new_module_id],
+            query_name="modules_installed.disable_after_marketplace_clone",
+        )
+        icon_key = listing.get("icon_url")
+        if isinstance(icon_key, str) and icon_key.strip():
+            execute(
+                conn,
+                "update modules_installed set icon_key=%s, updated_at=%s where org_id=%s and module_id=%s",
+                [icon_key.strip(), _now(), get_org_id(), new_module_id],
+                query_name="modules_installed.set_icon_after_marketplace_clone",
+            )
     _cache_invalidate("modules")
     _cache_invalidate("registry_list")
     _cache_invalidate("manifest")
@@ -3412,6 +3499,58 @@ async def clone_marketplace_app(request: Request, app_id: str) -> dict:
         },
         warnings=result.get("warnings") or [],
     )
+
+
+@app.post("/marketplace/apps/{app_id}/status")
+async def set_marketplace_app_status(request: Request, app_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    if actor.get("platform_role") != "superadmin":
+        return _error_response("FORBIDDEN", "Superadmin role required", status=403)
+    body = await _safe_json(request)
+    status = body.get("status") if isinstance(body, dict) else None
+    if not isinstance(status, str) or status.strip() not in {"draft", "published", "archived"}:
+        return _error_response("STATUS_INVALID", "status must be draft, published, or archived", "status", status=400)
+    status = status.strip()
+    with get_conn() as conn:
+        row = fetch_one(
+            conn,
+            """
+            update marketplace_apps
+            set status=%s, updated_at=%s
+            where id=%s
+            returning id, slug, title, description, category, icon_url, status,
+                      source_org_id, source_module_id, source_manifest_hash, source_manifest,
+                      published_by_user_id, created_at, updated_at
+            """,
+            [status, _now(), app_id],
+            query_name="marketplace.status.update",
+        )
+    listing = _normalize_marketplace_row(row)
+    if not listing:
+        return _error_response("MARKETPLACE_APP_NOT_FOUND", "Marketplace app not found", "app_id", status=404)
+    listing.pop("source_manifest", None)
+    return _ok_response({"app": listing})
+
+
+@app.delete("/marketplace/apps/{app_id}")
+async def delete_marketplace_app(request: Request, app_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    if actor.get("platform_role") != "superadmin":
+        return _error_response("FORBIDDEN", "Superadmin role required", status=403)
+    with get_conn() as conn:
+        row = fetch_one(
+            conn,
+            "delete from marketplace_apps where id=%s returning id",
+            [app_id],
+            query_name="marketplace.delete",
+        )
+    if not row:
+        return _error_response("MARKETPLACE_APP_NOT_FOUND", "Marketplace app not found", "app_id", status=404)
+    return _ok_response({"deleted": True, "id": row.get("id")})
 
 
 @app.post("/modules/{module_id}/icon")
@@ -3460,7 +3599,7 @@ async def get_module_manifest(module_id: str, request: Request) -> dict:
     if not module.get("enabled"):
         return _error_response("MODULE_DISABLED", "Module is disabled", "module_id", status=400)
     manifest_hash = module.get("current_hash")
-    cache_key = f"{module_id}:{manifest_hash}"
+    cache_key = f"{get_org_id()}:{module_id}:{manifest_hash}"
     cached = _cache_get("manifest", cache_key)
     if cached is not None:
         return _ok_response({"module_id": module_id, "manifest_hash": manifest_hash, "manifest": cached})
@@ -3640,7 +3779,7 @@ def _upgrade_module_db(module_id: str, manifest: dict, actor: dict | None, reaso
                 insert into module_audit (org_id, module_id, audit_id, audit, created_at)
                 values (%s,%s,%s,%s,%s)
                 """,
-                [get_org_id(), module_id, audit_id, json.dumps(audit), _now()],
+                [get_org_id(), module_id, audit_id, json.dumps(audit, default=str), _now()],
                 query_name="module_audit.insert_upgrade",
             )
     except Exception as exc:
@@ -4496,17 +4635,16 @@ async def studio2_install_manifest(module_id: str, request: Request) -> dict:
             warnings = (warnings or []) + normalization_warnings
         return _validation_response(completeness_errors, warnings)
 
-    module = _get_module(request, module_id)
-    if module and module.get("current_hash"):
-        base_hash = module.get("current_hash")
-        base_manifest = _get_snapshot(request, module_id, base_hash)
-        mode = "upgrade"
-    else:
-        base_hash = store.get_head(module_id)
-        if not base_hash:
-            base_hash = store.init_module(module_id, {}, actor=actor, reason="studio2_base")
+    # Always base changes off the DB head. The in-memory registry can be briefly stale after an install/upgrade,
+    # which would cause APPLY_HASH_MISMATCH when we attempt to apply a patch built on an old head.
+    base_hash = store.get_head(module_id)
+    if not base_hash:
+        base_hash = store.init_module(module_id, {}, actor=actor, reason="studio2_base")
         base_manifest = store.get_snapshot(module_id, base_hash)
         mode = "install"
+    else:
+        base_manifest = store.get_snapshot(module_id, base_hash)
+        mode = "upgrade" if registry.get(module_id) is not None else "install"
 
     patchset = _studio2_build_patchset_from_manifest(module_id, base_manifest, normalized)
     applied = _studio2_apply_patchset(base_manifest, patchset)
@@ -4544,6 +4682,48 @@ async def studio2_install_manifest(module_id: str, request: Request) -> dict:
         "approved_at": _now(),
     }
     result = registry.install(approved) if mode == "install" else registry.upgrade(approved)
+    if not result.get("ok"):
+        # A race (or a stale in-memory registry view) can cause a head mismatch.
+        # Rebase once on the latest DB head and retry.
+        first = (result.get("errors") or [{}])[0]
+        if first.get("code") == "APPLY_HASH_MISMATCH":
+            latest_head = store.get_head(module_id)
+            if isinstance(latest_head, str) and latest_head and latest_head != base_hash:
+                base_hash = latest_head
+                base_manifest = store.get_snapshot(module_id, base_hash)
+                patchset = _studio2_build_patchset_from_manifest(module_id, base_manifest, normalized)
+                applied = _studio2_apply_patchset(base_manifest, patchset)
+                if applied.get("ok"):
+                    normalized_after, val_errors, val_warnings = validate_manifest_raw(applied.get("manifest"), expected_module_id=module_id)
+                    strict_errors = _studio2_strict_validate(normalized_after, expected_module_id=module_id)
+                    if strict_errors:
+                        val_errors = (val_errors or []) + strict_errors
+                    if not val_errors:
+                        transaction_group_id = f"tg_{uuid.uuid4().hex}"
+                        patch_payload = {
+                            "patch_id": patchset.get("patchset_id") or f"ps_{uuid.uuid4().hex}",
+                            "transaction_group_id": transaction_group_id,
+                            "target_module_id": module_id,
+                            "target_manifest_hash": base_hash,
+                            "mode": "preview",
+                            "reason": body.get("reason", "studio2_install"),
+                            "operations": applied.get("resolved_ops", []),
+                        }
+                        preview_payload = {
+                            "ok": True,
+                            "errors": [],
+                            "warnings": [],
+                            "impact": None,
+                            "resolved_ops": applied.get("resolved_ops", []),
+                            "diff_summary": _studio2_diff_summary(applied.get("resolved_ops", [])),
+                        }
+                        approved = {
+                            "patch": patch_payload,
+                            "preview": preview_payload,
+                            "approved_by": actor,
+                            "approved_at": _now(),
+                        }
+                        result = registry.install(approved) if mode == "install" else registry.upgrade(approved)
     if not result.get("ok"):
         return _error_response(result["errors"][0]["code"], result["errors"][0]["message"], result["errors"][0].get("path"), result["errors"][0].get("detail"))
     # keep draft history; do not delete drafts on install
@@ -10156,6 +10336,7 @@ async def list_activity(
     record_id: str | None = None,
     limit: int = 50,
     cursor: str | None = None,
+    since: str | None = None,
 ) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
@@ -10172,6 +10353,18 @@ async def list_activity(
     if not existing:
         return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
     limit_cap = max(1, min(int(limit or 50), 200))
+
+    if since is not None:
+        if not isinstance(since, str) or not since.strip():
+            return _error_response("ACTIVITY_SINCE_INVALID", "since must be an ISO8601 datetime string", "since", status=400)
+        try:
+            # Accept "Z" suffix.
+            datetime.fromisoformat(since.strip().replace("Z", "+00:00"))
+        except Exception:
+            return _error_response("ACTIVITY_SINCE_INVALID", "since must be an ISO8601 datetime string", "since", status=400)
+        items = activity_store.list_since(normalized_entity, record_id, since.strip(), limit=limit_cap)
+        return _ok_response({"items": items, "next_cursor": None})
+
     try:
         offset = max(0, int(cursor)) if cursor is not None else 0
     except Exception:
@@ -10188,6 +10381,9 @@ async def add_activity_comment(request: Request) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_capability(actor, "records.write", "Write access required")
+    if denied:
+        return denied
     body = await _safe_json(request)
     if not isinstance(body, dict):
         return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
@@ -10225,6 +10421,9 @@ async def add_activity_attachment(
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_capability(actor, "records.write", "Write access required")
+    if denied:
+        return denied
     if not entity_id or not record_id:
         return _error_response("ACTIVITY_REQUIRED", "entity_id and record_id required", None, status=400)
     normalized_entity = _normalize_entity_id(entity_id)
@@ -10481,6 +10680,16 @@ async def update_member_role(request: Request, user_id: str) -> dict:
     member = get_membership(user_id, workspace_id)
     if not member and actor.get("platform_role") != "superadmin":
         return _error_response("MEMBER_NOT_FOUND", "Member not found", "user_id", status=404)
+    # Prevent lockout: a workspace must always have at least one admin member.
+    if member and (member.get("role") or "") == "admin" and role != "admin":
+        admins = [m for m in (list_workspace_members(workspace_id) or []) if (m.get("role") or "") == "admin"]
+        if len(admins) <= 1:
+            return _error_response(
+                "LAST_ADMIN_REQUIRED",
+                "At least one admin user is required in every workspace",
+                "role",
+                status=400,
+            )
     updated = update_workspace_member_role(workspace_id, user_id, role)
     if not updated:
         updated = add_workspace_member(workspace_id, user_id, role)
@@ -10498,6 +10707,16 @@ async def delete_member(request: Request, user_id: str) -> dict:
     if user_id == actor.get("user_id") and actor.get("platform_role") != "superadmin":
         return _error_response("FORBIDDEN", "You cannot remove yourself from this workspace", status=400)
     member_before = get_membership(user_id, workspace_id)
+    # Prevent lockout: a workspace must always have at least one admin member.
+    if (member_before or {}).get("role") == "admin":
+        admins = [m for m in (list_workspace_members(workspace_id) or []) if (m.get("role") or "") == "admin"]
+        if len(admins) <= 1:
+            return _error_response(
+                "LAST_ADMIN_REQUIRED",
+                "At least one admin user is required in every workspace",
+                "user_id",
+                status=400,
+            )
     ok = remove_workspace_member(workspace_id, user_id)
     if not ok:
         return _error_response("MEMBER_NOT_FOUND", "Member not found", "user_id", status=404)
@@ -10594,6 +10813,29 @@ async def get_job(request: Request, job_id: str) -> dict:
     return _ok_response({"job": job, "events": events})
 
 
+@app.get("/ops/jobs/{job_id}/preview")
+async def get_job_preview(request: Request, job_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    job = job_store.get(job_id)
+    if not job:
+        return _error_response("JOB_NOT_FOUND", "Job not found", "job_id", status=404)
+    job_type = job.get("type")
+    payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+    # Currently only email jobs have a meaningful preview in the UI.
+    if job_type == "email.send":
+        outbox_id = payload.get("outbox_id")
+        if not isinstance(outbox_id, str) or not outbox_id.strip():
+            return _error_response("OUTBOX_ID_MISSING", "Missing outbox_id", "payload.outbox_id", status=400)
+        item = email_store.get_outbox(outbox_id.strip())
+        if not item:
+            return _error_response("OUTBOX_NOT_FOUND", "Outbox item not found", "payload.outbox_id", status=404)
+        return _ok_response({"kind": "email", "outbox": item})
+    return _ok_response({"kind": "none"})
+
+
 @app.post("/ops/jobs/{job_id}/retry")
 async def retry_job(request: Request, job_id: str) -> dict:
     actor = _resolve_actor(request)
@@ -10659,6 +10901,107 @@ async def list_connections_endpoint(request: Request, connection_type: str | Non
         return denied
     items = connection_store.list(connection_type=connection_type)
     return _ok_response({"connections": items})
+
+
+# ---- Integrations (admin) ----
+
+
+def _is_integration_type(value: Any) -> bool:
+    return isinstance(value, str) and value.startswith("integration.")
+
+
+def _integration_provider_from_type(value: Any) -> str:
+    if not _is_integration_type(value):
+        return ""
+    return value.split(".", 1)[1] or ""
+
+
+@app.get("/integrations/connections")
+async def list_integration_connections(request: Request, provider: str | None = None) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    items = connection_store.list()
+    integrations = [c for c in (items or []) if _is_integration_type(c.get("type"))]
+    if provider:
+        integrations = [c for c in integrations if _integration_provider_from_type(c.get("type")) == provider]
+    return _ok_response({"connections": integrations})
+
+
+@app.post("/integrations/connections")
+async def create_integration_connection(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    provider = body.get("provider")
+    name = body.get("name")
+    if not isinstance(provider, str) or not provider.strip():
+        return _error_response("PROVIDER_REQUIRED", "provider is required", "provider", status=400)
+    if not isinstance(name, str) or not name.strip():
+        return _error_response("NAME_REQUIRED", "name is required", "name", status=400)
+    record = {
+        "type": f"integration.{provider.strip().lower()}",
+        "name": name.strip(),
+        "config": body.get("config") if isinstance(body.get("config"), dict) else {},
+        "secret_ref": body.get("secret_ref"),
+        "status": body.get("status") or "active",
+    }
+    conn = connection_store.create(record)
+    return _ok_response({"connection": conn})
+
+
+@app.get("/integrations/connections/{connection_id}")
+async def get_integration_connection(request: Request, connection_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    item = connection_store.get(connection_id)
+    if not item or not _is_integration_type(item.get("type")):
+        return _error_response("CONNECTION_NOT_FOUND", "Connection not found", "connection_id", status=404)
+    return _ok_response({"connection": item})
+
+
+@app.patch("/integrations/connections/{connection_id}")
+async def update_integration_connection(request: Request, connection_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    item = connection_store.get(connection_id)
+    if not item or not _is_integration_type(item.get("type")):
+        return _error_response("CONNECTION_NOT_FOUND", "Connection not found", "connection_id", status=404)
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    updates = {}
+    if "name" in body:
+        name = body.get("name")
+        if not isinstance(name, str) or not name.strip():
+            return _error_response("NAME_REQUIRED", "name is required", "name", status=400)
+        updates["name"] = name.strip()
+    if "status" in body:
+        status = body.get("status")
+        if not isinstance(status, str) or status not in ("active", "disabled"):
+            return _error_response("STATUS_INVALID", "status must be active or disabled", "status", status=400)
+        updates["status"] = status
+    if "config" in body:
+        config = body.get("config")
+        if config is not None and not isinstance(config, dict):
+            return _error_response("CONFIG_INVALID", "config must be an object", "config", status=400)
+        updates["config"] = config or {}
+    if "secret_ref" in body:
+        updates["secret_ref"] = body.get("secret_ref")
+    updated = connection_store.update(connection_id, updates) if hasattr(connection_store, "update") else None
+    if not updated:
+        # fallback for older store implementations
+        updated = connection_store.get(connection_id)
+    return _ok_response({"connection": updated})
 
 
 # ---- Notifications ----
@@ -10984,8 +11327,32 @@ async def list_email_outbox(request: Request, limit: int = 200, template_id: str
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_capability(actor, "templates.manage", "Email templates permission required")
+    if denied:
+        return denied
     items = email_store.list_outbox(limit=min(limit, 500), template_id=template_id)
-    return _ok_response({"outbox": items})
+    # Keep list payload light: bodies are fetched via the detail endpoint.
+    stripped = []
+    for row in items or []:
+        item = dict(row or {})
+        item.pop("body_html", None)
+        item.pop("body_text", None)
+        stripped.append(item)
+    return _ok_response({"outbox": stripped})
+
+
+@app.get("/email/outbox/{outbox_id}")
+async def get_email_outbox_item(request: Request, outbox_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "templates.manage", "Email templates permission required")
+    if denied:
+        return denied
+    item = email_store.get_outbox(outbox_id)
+    if not item:
+        return _error_response("OUTBOX_NOT_FOUND", "Outbox item not found", "outbox_id", status=404)
+    return _ok_response({"outbox": item})
 
 
 @app.get("/email/templates/{template_id}/history")

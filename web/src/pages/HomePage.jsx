@@ -6,8 +6,9 @@ import { getAppDisplayName } from "../state/appCatalog.js";
 import { getAppIcon, subscribeAppIcons } from "../state/appIcons.js";
 import { getDefaultOpenRoute, loadEntityIndex } from "../data/entityIndex.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
-import { LayoutGrid, Package, Settings as SettingsIcon } from "lucide-react";
+import { LayoutGrid, Package, PenTool, Settings as SettingsIcon, Workflow, Wrench } from "lucide-react";
 import { normalizeLucideKey, resolveLucideIcon } from "../state/lucideIconCatalog.js";
+import { useAccessContext } from "../access.js";
 
 function AppTile({ app, module, onOpen }) {
   const disabled = module && !module.enabled;
@@ -45,6 +46,10 @@ export default function HomePage({ user }) {
   const navigate = useNavigate();
   const [entityIndex, setEntityIndex] = useState(null);
   const [iconVersion, setIconVersion] = useState(0);
+  const { loading: accessLoading, hasCapability } = useAccessContext();
+  const canSeeStudio = !accessLoading && hasCapability("modules.manage");
+  const canSeeAutomations = !accessLoading && hasCapability("automations.manage");
+  const canSeeIntegrations = !accessLoading && hasCapability("workspace.manage_settings");
 
   useEffect(() => {
     async function buildIndex() {
@@ -61,7 +66,10 @@ export default function HomePage({ user }) {
 
   const systemApps = [
     { id: "apps", name: "App Manager", route: "/apps", system: true, icon: <LayoutGrid size={56} strokeWidth={1.31} className="text-primary" /> },
-    { id: "settings", name: "System", route: "/settings", system: true, icon: <SettingsIcon size={56} strokeWidth={1.31} className="text-primary" /> },
+    ...(canSeeStudio ? [{ id: "studio", name: "Studio", route: "/studio", system: true, icon: <PenTool size={56} strokeWidth={1.31} className="text-primary" /> }] : []),
+    ...(canSeeAutomations ? [{ id: "automations", name: "Automations", route: "/automations", system: true, icon: <Workflow size={56} strokeWidth={1.31} className="text-primary" /> }] : []),
+    ...(canSeeIntegrations ? [{ id: "integrations", name: "Integrations", route: "/integrations", system: true, icon: <Wrench size={56} strokeWidth={1.31} className="text-primary" /> }] : []),
+    { id: "settings", name: "Settings", route: "/settings", system: true, icon: <SettingsIcon size={56} strokeWidth={1.31} className="text-primary" /> },
   ].map((app) => ({ ...app, icon_url: getAppIcon(app.id) }));
 
   const installedApps = useMemo(() => {

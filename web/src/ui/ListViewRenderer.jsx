@@ -5,6 +5,9 @@ import { evalCondition } from "../utils/conditions.js";
 import { resolveFieldLabel } from "../utils/labels.js";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import { apiFetch } from "../api.js";
+import PaginationControls from "../components/PaginationControls.jsx";
+
+const DEFAULT_PAGE_SIZE = 25;
 
 function normalizeEnumOptions(options) {
   if (!Array.isArray(options)) return [];
@@ -46,6 +49,11 @@ export default function ListViewRenderer({
   hideHeader = false,
   disableHorizontalScroll = false,
   tableClassName = "",
+  page: externalPage = null,
+  pageSize = DEFAULT_PAGE_SIZE,
+  onPageChange,
+  onTotalItemsChange,
+  showPaginationControls = true,
 }) {
   if (!view) return <div className="alert">Missing list view</div>;
   const columns = view.columns || [];
@@ -55,6 +63,11 @@ export default function ListViewRenderer({
   }
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const [lookupLabels, setLookupLabels] = useState({});
+  const [internalPage, setInternalPage] = useState(0);
+
+  const isExternalPagination = typeof externalPage === "number" && typeof onPageChange === "function";
+  const page = isExternalPagination ? externalPage : internalPage;
+  const safePageSize = Number.isFinite(pageSize) && pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE;
 
   useEffect(() => {
     let cancelled = false;
@@ -156,11 +169,42 @@ export default function ListViewRenderer({
     return next;
   }, [records, searchQuery, searchFields, activeFilter, clientFilters]);
 
-  const allIds = useMemo(() => filteredRecords.map((r) => r.record_id || r.record?.id).filter(Boolean), [filteredRecords]);
-  const allSelected = useMemo(() => allIds.length > 0 && allIds.every((id) => selectedSet.has(id)), [allIds, selectedSet]);
-  const useVirtual = filteredRecords.length > 200;
+  const totalItems = filteredRecords.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / Math.max(1, safePageSize)));
+
+  useEffect(() => {
+    onTotalItemsChange?.(totalItems);
+  }, [totalItems, onTotalItemsChange]);
+
+  useEffect(() => {
+    if (page < 0) {
+      if (isExternalPagination) onPageChange?.(0);
+      else setInternalPage(0);
+      return;
+    }
+    if (page > totalPages - 1) {
+      const next = Math.max(0, totalPages - 1);
+      if (isExternalPagination) onPageChange?.(next);
+      else setInternalPage(next);
+    }
+  }, [isExternalPagination, onPageChange, page, totalPages]);
+
+  const pagedRecords = useMemo(() => {
+    const start = page * Math.max(1, safePageSize);
+    return filteredRecords.slice(start, start + Math.max(1, safePageSize));
+  }, [filteredRecords, page, safePageSize]);
+
+  const pageIds = useMemo(
+    () => pagedRecords.map((r) => r.record_id || r.record?.id).filter(Boolean),
+    [pagedRecords],
+  );
+  const pageAllSelected = useMemo(
+    () => pageIds.length > 0 && pageIds.every((id) => selectedSet.has(id)),
+    [pageIds, selectedSet],
+  );
+  const useVirtual = pagedRecords.length > 200;
   const rowHeight = 40;
-  const listHeight = Math.min(520, filteredRecords.length * rowHeight + 2);
+  const listHeight = Math.min(520, pagedRecords.length * rowHeight + 2);
   const gridTemplate = `2.5rem repeat(${columns.length}, minmax(140px, 1fr))`;
 
   return (
@@ -236,9 +280,36 @@ export default function ListViewRenderer({
                 </ul>
               </div>
             )}
+
+            {showPaginationControls && totalItems > safePageSize && (
+              <PaginationControls
+                page={page}
+                pageSize={safePageSize}
+                totalItems={totalItems}
+                onPageChange={(next) => {
+                  if (isExternalPagination) onPageChange?.(next);
+                  else setInternalPage(next);
+                }}
+              />
+            )}
           </div>
         </div>
       )}
+
+      {showPaginationControls && (hideHeader || !header) && totalItems > safePageSize ? (
+        <div className="flex items-center justify-end w-full">
+          <PaginationControls
+            page={page}
+            pageSize={safePageSize}
+            totalItems={totalItems}
+            onPageChange={(next) => {
+              if (isExternalPagination) onPageChange?.(next);
+              else setInternalPage(next);
+            }}
+            className="ml-auto"
+          />
+        </div>
+      ) : null}
 
       <div className={disableHorizontalScroll ? "overflow-x-hidden" : "overflow-x-auto"}>
         {useVirtual ? (
@@ -248,8 +319,8 @@ export default function ListViewRenderer({
                 <input
                   className="checkbox"
                   type="checkbox"
-                  checked={allSelected}
-                  onChange={(e) => onToggleAll?.(e.target.checked, allIds)}
+                  checked={pageAllSelected}
+                  onChange={(e) => onToggleAll?.(e.target.checked, pageIds)}
                   onClick={(e) => e.stopPropagation()}
                 />
               </div>
@@ -264,10 +335,10 @@ export default function ListViewRenderer({
             </div>
             <VirtualList
               height={listHeight}
-              itemCount={filteredRecords.length}
+              itemCount={pagedRecords.length}
               itemSize={rowHeight}
               width="100%"
-              itemData={{ rows: filteredRecords, columns, selectedSet, onSelectRow, onToggleSelect, gridTemplate }}
+              itemData={{ rows: pagedRecords, columns, selectedSet, onSelectRow, onToggleSelect, gridTemplate }}
             >
               {({ index, style, data }) => {
                 const row = data.rows[index];
@@ -314,8 +385,8 @@ export default function ListViewRenderer({
                   <input
                     className="checkbox"
                     type="checkbox"
-                    checked={allSelected}
-                    onChange={(e) => onToggleAll?.(e.target.checked, allIds)}
+                    checked={pageAllSelected}
+                    onChange={(e) => onToggleAll?.(e.target.checked, pageIds)}
                     onClick={(e) => e.stopPropagation()}
                   />
                 </th>
@@ -330,7 +401,7 @@ export default function ListViewRenderer({
               </tr>
             </thead>
             <tbody>
-              {filteredRecords.map((row) => {
+              {pagedRecords.map((row) => {
                 const rowId = row.record_id || row.record?.id;
                 const selected = rowId && selectedSet.has(rowId);
                 return (

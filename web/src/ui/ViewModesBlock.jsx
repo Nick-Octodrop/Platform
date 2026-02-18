@@ -430,6 +430,7 @@ export default function ViewModesBlock({
   bootstrap = null,
   bootstrapVersion = 0,
   bootstrapLoading = false,
+  canWriteRecords = true,
 }) {
   const modes = Array.isArray(block?.modes) ? block.modes : [];
   const views = Array.isArray(manifest?.views) ? manifest.views : [];
@@ -907,18 +908,20 @@ export default function ViewModesBlock({
 
   return (
     <div className="flex flex-col gap-4 h-full min-h-0 overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 relative z-30 shrink-0">
-        <div className="flex items-center gap-2 min-w-[12rem]">
-          <button
-            className={`${PRIMARY_BUTTON_SM} tooltip tooltip-bottom`}
-            data-tip={`New ${entityLabel}`}
-            onClick={() => {
-              const target = resolveEntityDefaultFormPage(appDefaults, entityFullId);
-              if (target) onNavigate?.(target);
-            }}
-          >
-            <IconPlus />
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-3 relative z-30 shrink-0">
+          <div className="flex items-center gap-2 min-w-[12rem]">
+          {canWriteRecords && (
+            <button
+              className={`${PRIMARY_BUTTON_SM} tooltip tooltip-bottom`}
+              data-tip={`New ${entityLabel}`}
+              onClick={() => {
+                const target = resolveEntityDefaultFormPage(appDefaults, entityFullId);
+                if (target) onNavigate?.(target);
+              }}
+            >
+              <IconPlus />
+            </button>
+          )}
           <div className="text-lg font-semibold">{entityLabel}</div>
         </div>
 

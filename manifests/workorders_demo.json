@@ -3,7 +3,10 @@
   "module": {
     "id": "workorders",
     "name": "Work Orders",
-    "version": "1.0.0"
+    "version": "1.0.0",
+    "description": "Create, schedule, and track work orders from intake to completion.",
+    "category": "Operations",
+    "icon_key": "lucide:ClipboardList"
   },
   "app": {
     "home": "page:workorder.list_page",

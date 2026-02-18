@@ -5,6 +5,7 @@ import { evalCondition } from "../utils/conditions.js";
 import Tabs from "../components/Tabs.jsx";
 import ViewModesBlock from "./ViewModesBlock.jsx";
 import { Info, Paperclip } from "lucide-react";
+import { useAccessContext } from "../access.js";
 
 const GAP_MAP = {
   sm: "gap-2",
@@ -70,11 +71,16 @@ function hasFillHeight(blocks) {
   return false;
 }
 
-export default function ContentBlocksRenderer({ blocks, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, onNavigate, onRunAction, onConfirm, onPrompt, externalRefreshTick = 0, previewMode = false, bootstrap = null, bootstrapVersion = 0, bootstrapLoading = false }) {
+export default function ContentBlocksRenderer({ blocks, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, onNavigate, onRunAction, onConfirm, onPrompt, externalRefreshTick = 0, previewMode = false, bootstrap = null, bootstrapVersion = 0, bootstrapLoading = false, canWriteRecords = null }) {
   const safeBlocks = Array.isArray(blocks) ? blocks : [];
   const fullHeight = hasViewModes(safeBlocks) || hasFillHeight(safeBlocks);
   const inherited = useContext(RecordScopeContext);
   const baseContext = inherited || (recordId ? { entityId: null, recordId, record: null, setRecord: () => {} } : null);
+  const { hasCapability } = useAccessContext();
+  const effectiveCanWriteRecords =
+    typeof canWriteRecords === "boolean"
+      ? canWriteRecords
+      : hasCapability("records.write") && bootstrap?.permissions?.records_write !== false;
   const content = (
     <div className={fullHeight ? "h-full min-h-0 flex flex-col overflow-hidden" : "space-y-4"}>
       {safeBlocks.map((block, idx) => {
@@ -99,6 +105,7 @@ export default function ContentBlocksRenderer({ blocks, renderView, recordId, se
             bootstrap={bootstrap}
             bootstrapVersion={bootstrapVersion}
             bootstrapLoading={bootstrapLoading}
+            canWriteRecords={effectiveCanWriteRecords}
           />
         );
         if (!fullHeight) return node;
@@ -116,7 +123,7 @@ export default function ContentBlocksRenderer({ blocks, renderView, recordId, se
   return content;
 }
 
-function BlockRenderer({ block, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, recordContext, onNavigate, onRunAction, onConfirm, onPrompt, externalRefreshTick = 0, previewMode = false, bootstrap, bootstrapVersion, bootstrapLoading }) {
+function BlockRenderer({ block, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, recordContext, onNavigate, onRunAction, onConfirm, onPrompt, externalRefreshTick = 0, previewMode = false, bootstrap, bootstrapVersion, bootstrapLoading, canWriteRecords }) {
   if (!block || typeof block !== "object") {
     return <div className="alert alert-warning">Invalid block</div>;
   }
@@ -149,6 +156,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
         bootstrap={bootstrap}
         bootstrapVersion={bootstrapVersion}
         bootstrapLoading={bootstrapLoading}
+        canWriteRecords={canWriteRecords}
       />
     );
   }
@@ -156,7 +164,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
   if (kind === "stack") {
     return (
       <div className={`flex flex-col ${gapClass(block.gap)}`}>
-        <ContentBlocksRenderer blocks={block.content} renderView={renderView} recordId={recordId} searchParams={searchParams} setSearchParams={setSearchParams} manifest={manifest} moduleId={moduleId} actionsMap={actionsMap} onNavigate={onNavigate} onRunAction={onRunAction} onConfirm={onConfirm} onPrompt={onPrompt} externalRefreshTick={externalRefreshTick} previewMode={previewMode} bootstrap={bootstrap} bootstrapVersion={bootstrapVersion} bootstrapLoading={bootstrapLoading} />
+        <ContentBlocksRenderer blocks={block.content} renderView={renderView} recordId={recordId} searchParams={searchParams} setSearchParams={setSearchParams} manifest={manifest} moduleId={moduleId} actionsMap={actionsMap} onNavigate={onNavigate} onRunAction={onRunAction} onConfirm={onConfirm} onPrompt={onPrompt} externalRefreshTick={externalRefreshTick} previewMode={previewMode} bootstrap={bootstrap} bootstrapVersion={bootstrapVersion} bootstrapLoading={bootstrapLoading} canWriteRecords={canWriteRecords} />
       </div>
     );
   }
@@ -185,6 +193,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
                 bootstrap={bootstrap}
                 bootstrapVersion={bootstrapVersion}
                 bootstrapLoading={bootstrapLoading}
+                canWriteRecords={canWriteRecords}
               />
             </div>
           </div>
@@ -204,7 +213,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
         <div className="mt-4">
           {tabs.map((tab) =>
             tab.id === activeId ? (
-              <ContentBlocksRenderer key={tab.id} blocks={tab.content} renderView={renderView} recordId={recordId} searchParams={searchParams} setSearchParams={setSearchParams} manifest={manifest} moduleId={moduleId} actionsMap={actionsMap} onNavigate={onNavigate} onRunAction={onRunAction} onConfirm={onConfirm} onPrompt={onPrompt} externalRefreshTick={externalRefreshTick} previewMode={previewMode} bootstrap={bootstrap} bootstrapVersion={bootstrapVersion} bootstrapLoading={bootstrapLoading} />
+              <ContentBlocksRenderer key={tab.id} blocks={tab.content} renderView={renderView} recordId={recordId} searchParams={searchParams} setSearchParams={setSearchParams} manifest={manifest} moduleId={moduleId} actionsMap={actionsMap} onNavigate={onNavigate} onRunAction={onRunAction} onConfirm={onConfirm} onPrompt={onPrompt} externalRefreshTick={externalRefreshTick} previewMode={previewMode} bootstrap={bootstrap} bootstrapVersion={bootstrapVersion} bootstrapLoading={bootstrapLoading} canWriteRecords={canWriteRecords} />
             ) : null
           )}
         </div>
@@ -241,6 +250,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
         bootstrap={bootstrap}
         bootstrapVersion={bootstrapVersion}
         bootstrapLoading={bootstrapLoading}
+        canWriteRecords={canWriteRecords}
       />
     );
     if (variant === "panel") {
@@ -308,6 +318,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
               bootstrap={bootstrap}
               bootstrapVersion={bootstrapVersion}
               bootstrapLoading={bootstrapLoading}
+              canWriteRecords={canWriteRecords}
             />
           </div>
         </RecordScopeProvider>
@@ -523,6 +534,8 @@ function StatusBarBlock({ block, manifest, recordContext }) {
 }
 
 function ChatterPanel({ entityId, recordId }) {
+  const { hasCapability } = useAccessContext();
+  const canWriteRecords = hasCapability("records.write");
   const [items, setItems] = useState([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
@@ -534,6 +547,46 @@ function ChatterPanel({ entityId, recordId }) {
   const [currentUserLabel, setCurrentUserLabel] = useState("You");
   const quickAttachInputRef = useRef(null);
   const listRef = useRef(null);
+  const pollTimerRef = useRef(null);
+  const latestSeenAtRef = useRef(null);
+  const burstUntilRef = useRef(0);
+  const lastAttachmentRefreshAtRef = useRef(0);
+
+  const DEFAULT_POLL_MS = 15000;
+  const BURST_POLL_MS = 3000;
+  const BURST_WINDOW_MS = 30000;
+  const ATTACHMENTS_POLL_MS = 20000;
+
+  async function fetchActivity({ since } = {}) {
+    const qs = new URLSearchParams({
+      entity_id: String(entityId || ""),
+      record_id: String(recordId || ""),
+      limit: "100",
+    });
+    if (since) qs.set("since", String(since));
+    const res = await apiFetch(`/api/activity?${qs.toString()}`);
+    return Array.isArray(res.items) ? res.items : [];
+  }
+
+  async function fetchAttachments() {
+    const att = await apiFetch(`/records/${entityId}/${recordId}/attachments`);
+    return att.attachments || [];
+  }
+
+  function mergeIncoming(prev, incoming) {
+    const allPrev = Array.isArray(prev) ? prev : [];
+    const temps = allPrev.filter((item) => String(item?.id || "").startsWith("temp-"));
+    const existing = allPrev.filter((item) => !String(item?.id || "").startsWith("temp-"));
+    const merged = [...(Array.isArray(incoming) ? incoming : []), ...existing, ...temps];
+    const seen = new Set();
+    return merged.filter((item) => {
+      const id = String(item?.id || "");
+      if (!id) return false;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }
 
   function formatWhen(value) {
     if (!value) return "";
@@ -573,10 +626,12 @@ function ChatterPanel({ entityId, recordId }) {
       setLoading(true);
       setError("");
       try {
-        const res = await apiFetch(`/api/activity?entity_id=${encodeURIComponent(entityId)}&record_id=${encodeURIComponent(recordId)}&limit=100`);
-        setItems(Array.isArray(res.items) ? res.items : []);
-        const att = await apiFetch(`/records/${entityId}/${recordId}/attachments`);
-        setAttachments(att.attachments || []);
+        const serverItems = await fetchActivity();
+        setItems(serverItems);
+        latestSeenAtRef.current = serverItems[0]?.created_at || null;
+        const nextAtt = await fetchAttachments();
+        setAttachments(nextAtt);
+        lastAttachmentRefreshAtRef.current = Date.now();
       } catch (err) {
         setItems([]);
         setAttachments([]);
@@ -587,6 +642,79 @@ function ChatterPanel({ entityId, recordId }) {
     }
     load();
   }, [entityId, recordId]);
+
+  useEffect(() => {
+    if (!entityId || !recordId) return undefined;
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    pollTimerRef.current = null;
+    let stopped = false;
+
+    function nextDelay() {
+      const now = Date.now();
+      const burst = now < (burstUntilRef.current || 0);
+      if (activeTab === "activity") return burst ? BURST_POLL_MS : DEFAULT_POLL_MS;
+      // Attachments don't need to be as aggressive.
+      return burst ? Math.max(5000, BURST_POLL_MS * 2) : ATTACHMENTS_POLL_MS;
+    }
+
+    function scheduleNext() {
+      if (stopped) return;
+      pollTimerRef.current = setTimeout(tick, nextDelay());
+    }
+
+    async function tick() {
+      // Avoid fighting local optimistic UI. We'll still merge in local temps.
+      try {
+        if (activeTab === "activity") {
+          const since = latestSeenAtRef.current;
+          const incoming = await fetchActivity(since ? { since } : undefined);
+          if (incoming.length > 0) {
+            latestSeenAtRef.current = incoming[0]?.created_at || latestSeenAtRef.current;
+            setItems((prev) => mergeIncoming(prev, incoming));
+
+            // If a new attachment event arrived, refresh the attachment list too.
+            const hasNewAttachment = incoming.some((it) => it?.event_type === "attachment");
+            const staleAtt = Date.now() - (lastAttachmentRefreshAtRef.current || 0) > ATTACHMENTS_POLL_MS;
+            if (hasNewAttachment && staleAtt) {
+              const nextAtt = await fetchAttachments();
+              setAttachments(nextAtt);
+              lastAttachmentRefreshAtRef.current = Date.now();
+            }
+          }
+        } else if (activeTab === "attachments") {
+          const staleAtt = Date.now() - (lastAttachmentRefreshAtRef.current || 0) > ATTACHMENTS_POLL_MS;
+          if (staleAtt) {
+            const nextAtt = await fetchAttachments();
+            setAttachments(nextAtt);
+            lastAttachmentRefreshAtRef.current = Date.now();
+          }
+        }
+      } catch (err) {
+        // Quietly ignore; next tick will retry. We don't want background polling to spam errors.
+        console.warn("chatter_poll_failed", err);
+      } finally {
+        scheduleNext();
+      }
+    }
+
+    // Prime quickly when switching tabs/records.
+    tick();
+
+    function onVisibility() {
+      if (document.visibilityState !== "visible") return;
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+      tick();
+    }
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      stopped = true;
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    };
+  }, [activeTab, entityId, recordId]);
 
   useEffect(() => {
     let mounted = true;
@@ -608,7 +736,8 @@ function ChatterPanel({ entityId, recordId }) {
 
   async function handleUpload(event) {
     const file = event.target.files?.[0];
-    if (!file || !entityId || !recordId) return;
+    if (!canWriteRecords || !file || !entityId || !recordId) return;
+    burstUntilRef.current = Date.now() + BURST_WINDOW_MS;
     setUploading(true);
     setError("");
     try {
@@ -626,6 +755,12 @@ function ChatterPanel({ entityId, recordId }) {
       if (!res.ok) throw new Error(res?.errors?.[0]?.message || "Upload failed");
       if (res?.item) {
         setItems((prev) => [res.item, ...prev]);
+        const createdAt = res?.item?.created_at;
+        if (createdAt) {
+          const prevTs = latestSeenAtRef.current ? Date.parse(latestSeenAtRef.current) : 0;
+          const nextTs = Date.parse(createdAt);
+          if (!Number.isNaN(nextTs) && nextTs > prevTs) latestSeenAtRef.current = createdAt;
+        }
       }
       const att = await apiFetch(`/records/${entityId}/${recordId}/attachments`);
       setAttachments(att.attachments || []);
@@ -638,7 +773,8 @@ function ChatterPanel({ entityId, recordId }) {
   }
 
   async function handlePost() {
-    if (!text.trim() || !entityId || !recordId) return;
+    if (!canWriteRecords || !text.trim() || !entityId || !recordId) return;
+    burstUntilRef.current = Date.now() + BURST_WINDOW_MS;
     const body = text.trim();
     const tempId = `temp-${Date.now()}`;
     setItems((prev) => [
@@ -662,6 +798,12 @@ function ChatterPanel({ entityId, recordId }) {
       });
       if (res?.item) {
         setItems((prev) => [res.item, ...prev.filter((item) => item.id !== tempId)]);
+        const createdAt = res?.item?.created_at;
+        if (createdAt) {
+          const prevTs = latestSeenAtRef.current ? Date.parse(latestSeenAtRef.current) : 0;
+          const nextTs = Date.parse(createdAt);
+          if (!Number.isNaN(nextTs) && nextTs > prevTs) latestSeenAtRef.current = createdAt;
+        }
       } else {
         setItems((prev) => prev.filter((item) => item.id !== tempId));
       }
@@ -728,16 +870,17 @@ function ChatterPanel({ entityId, recordId }) {
             placeholder="Add a note…"
             value={text}
             onChange={(e) => setText(e.target.value)}
+            disabled={!canWriteRecords || posting || uploading}
           />
           <div className="flex items-center gap-2">
-            <button className="btn btn-primary btn-sm" onClick={handlePost} disabled={posting || !text.trim()}>
+            <button className="btn btn-primary btn-sm" onClick={handlePost} disabled={!canWriteRecords || posting || !text.trim()}>
               Add Note
             </button>
             <button
               type="button"
               className="btn btn-sm"
               onClick={() => quickAttachInputRef.current?.click()}
-              disabled={uploading}
+              disabled={!canWriteRecords || uploading}
               title="Attach file"
             >
               <Paperclip className="h-4 w-4" />
@@ -748,7 +891,7 @@ function ChatterPanel({ entityId, recordId }) {
               type="file"
               className="hidden"
               onChange={handleUpload}
-              disabled={uploading}
+              disabled={!canWriteRecords || uploading}
             />
           </div>
         </div>

@@ -1,61 +1,36 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
+import ListViewRenderer from "../ui/ListViewRenderer.jsx";
+import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 
 export default function OpsPage() {
   const { pushToast } = useToast();
   const [jobs, setJobs] = useState([]);
-  const [selectedId, setSelectedId] = useState("");
   const [status, setStatus] = useState("");
-  const [jobType, setJobType] = useState("");
-  const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [clientFilters, setClientFilters] = useState([]);
+  const [page, setPage] = useState(0);
+  const [totalItems, setTotalItems] = useState(0);
+  const navigate = useNavigate();
 
   async function loadJobs() {
     setLoading(true);
+    setError("");
     try {
       const params = new URLSearchParams();
       if (status) params.append("status", status);
-      if (jobType) params.append("job_type", jobType);
       const res = await apiFetch(`/ops/jobs?${params.toString()}`);
       setJobs(res.jobs || []);
-      if (!selectedId && res.jobs?.length) {
-        setSelectedId(res.jobs[0].id);
-      }
     } catch (err) {
-      pushToast("error", err.message || "Failed to load jobs");
+      setError(err?.message || "Failed to load jobs");
+      pushToast("error", err?.message || "Failed to load jobs");
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function loadDetail(id) {
-    if (!id) return;
-    try {
-      const res = await apiFetch(`/ops/jobs/${id}`);
-      setDetail(res);
-    } catch (err) {
-      pushToast("error", err.message || "Failed to load job detail");
-    }
-  }
-
-  async function retryJob(id) {
-    try {
-      await apiFetch(`/ops/jobs/${id}/retry`, { method: "POST" });
-      await loadJobs();
-      await loadDetail(id);
-    } catch (err) {
-      pushToast("error", err.message || "Retry failed");
-    }
-  }
-
-  async function cancelJob(id) {
-    try {
-      await apiFetch(`/ops/jobs/${id}/cancel`, { method: "POST" });
-      await loadJobs();
-      await loadDetail(id);
-    } catch (err) {
-      pushToast("error", err.message || "Cancel failed");
     }
   }
 
@@ -63,87 +38,168 @@ export default function OpsPage() {
     loadJobs();
   }, []);
 
-  useEffect(() => {
-    if (selectedId) loadDetail(selectedId);
-  }, [selectedId]);
+  const rows = useMemo(
+    () => (jobs || []).map((j) => ({
+      id: j.id,
+      type: j.type || "",
+      status: j.status || "",
+      attempt: j.attempt ?? 0,
+      max_attempts: j.max_attempts ?? 0,
+      run_at: j.run_at || "",
+      created_at: j.created_at || "",
+      updated_at: j.updated_at || "",
+      last_error: j.last_error || "",
+    })),
+    [jobs],
+  );
+
+  const listFieldIndex = useMemo(
+    () => ({
+      "job.type": { id: "job.type", label: "Type" },
+      "job.status": { id: "job.status", label: "Status" },
+      "job.attempt": { id: "job.attempt", label: "Attempts" },
+      "job.run_at": { id: "job.run_at", label: "Run At" },
+    }),
+    [],
+  );
+
+  const listView = useMemo(
+    () => ({
+      id: "system.ops.jobs.list",
+      kind: "list",
+      columns: [
+        { field_id: "job.type" },
+        { field_id: "job.status" },
+        { field_id: "job.attempt" },
+        { field_id: "job.run_at" },
+      ],
+    }),
+    [],
+  );
+
+  const listRecords = useMemo(
+    () => rows.map((row) => ({
+      record_id: row.id,
+      record: {
+        "job.type": row.type,
+        "job.status": row.status,
+        "job.attempt": `${row.attempt}${row.max_attempts ? ` / ${row.max_attempts}` : ""}`,
+        "job.run_at": row.run_at || row.created_at || "",
+        "job.id": row.id,
+        "job.last_error": row.last_error,
+      },
+    })),
+    [rows],
+  );
+
+  const filters = useMemo(
+    () => [
+      { id: "all", label: "All", domain: null },
+      { id: "queued", label: "Queued", domain: { op: "eq", field: "job.status", value: "queued" } },
+      { id: "running", label: "Running", domain: { op: "eq", field: "job.status", value: "running" } },
+      { id: "succeeded", label: "Succeeded", domain: { op: "eq", field: "job.status", value: "succeeded" } },
+      { id: "failed", label: "Failed", domain: { op: "eq", field: "job.status", value: "failed" } },
+      { id: "dead", label: "Dead", domain: { op: "eq", field: "job.status", value: "dead" } },
+    ],
+    [],
+  );
+
+  const statusFilter = useMemo(() => {
+    if (!status) return filters.find((f) => f.id === "all") || null;
+    return filters.find((f) => f.id === status) || null;
+  }, [filters, status]);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
-      <div className="card bg-base-100 shadow">
-        <div className="card-body">
-          <h2 className="card-title">Jobs</h2>
-          <div className="flex flex-col gap-2">
-            <select className="select select-bordered w-full" value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="">All statuses</option>
-              <option value="queued">Queued</option>
-              <option value="running">Running</option>
-              <option value="succeeded">Succeeded</option>
-              <option value="failed">Failed</option>
-              <option value="dead">Dead</option>
-            </select>
-            <input
-              className="input input-bordered w-full"
-              placeholder="Type (email.send)"
-              value={jobType}
-              onChange={(e) => setJobType(e.target.value)}
-            />
-            <button className="btn btn-sm" onClick={loadJobs} disabled={loading}>Refresh</button>
-          </div>
-          <div className="mt-4 space-y-2 max-h-[60vh] overflow-auto">
-            {jobs.length === 0 && <div className="text-sm opacity-60">No jobs</div>}
-            {jobs.map((job) => (
-              <button
-                key={job.id}
-                className={`btn btn-ghost justify-start w-full ${selectedId === job.id ? "bg-base-200" : ""}`}
-                onClick={() => setSelectedId(job.id)}
-              >
-                <div className="flex flex-col items-start">
-                  <span className="font-medium text-sm">{job.type}</span>
-                  <span className="text-xs opacity-70">{job.status} · attempts {job.attempt}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
+    <div className="h-full min-h-0 flex flex-col overflow-hidden">
+      <div className="card bg-base-100 shadow h-full min-h-0 flex flex-col overflow-hidden">
+        <div className="card-body flex flex-col min-h-0">
+          <div className="mt-4 flex-1 min-h-0 overflow-auto overflow-x-hidden">
+            {error && <div className="alert alert-error text-sm mb-4">{error}</div>}
+            {loading ? (
+              <div className="text-sm opacity-70">Loading…</div>
+            ) : (
+              <div className="flex flex-col gap-4 min-w-0">
+                <SystemListToolbar
+                  title="Jobs / Ops"
+                  searchValue={search}
+                  onSearchChange={(v) => {
+                    setSearch(v);
+                    setPage(0);
+                  }}
+                  filters={filters}
+                  onFilterChange={(id) => {
+                    setStatus(id === "all" ? "" : id);
+                    setPage(0);
+                  }}
+                  filterableFields={[
+                    { id: "job.type", label: "Type" },
+                    { id: "job.id", label: "Job ID" },
+                  ]}
+                  onAddCustomFilter={(field, value) => {
+                    if (!field?.id) return;
+                    setClientFilters((prev) => [
+                      ...prev,
+                      { field_id: field.id, label: field.label || field.id, op: "contains", value },
+                    ]);
+                    setPage(0);
+                  }}
+                  onClearFilters={() => {
+                    setStatus("");
+                    setClientFilters([]);
+                    setPage(0);
+                  }}
+                  onRefresh={loadJobs}
+                  showSavedViews={false}
+                  pagination={{
+                    page,
+                    pageSize: 25,
+                    totalItems,
+                    onPageChange: setPage,
+                  }}
+                />
 
-      <div className="card bg-base-100 shadow">
-        <div className="card-body">
-          <div className="flex items-center justify-between">
-            <h2 className="card-title">Job Detail</h2>
-            {detail?.job && (
-              <div className="flex gap-2">
-                <button className="btn btn-xs" onClick={() => retryJob(detail.job.id)}>Retry</button>
-                <button className="btn btn-xs" onClick={() => cancelJob(detail.job.id)}>Cancel</button>
+                {rows.length === 0 ? (
+                  <div className="text-sm opacity-60">No jobs.</div>
+                ) : (
+                  <ListViewRenderer
+                    view={listView}
+                    fieldIndex={listFieldIndex}
+                    records={listRecords}
+                    hideHeader
+                    disableHorizontalScroll
+                    tableClassName="w-full table-fixed min-w-0"
+                    searchQuery={search}
+                    searchFields={["job.type", "job.id", "job.last_error"]}
+                    filters={filters}
+                    activeFilter={statusFilter}
+                    clientFilters={clientFilters}
+                    page={page}
+                    pageSize={25}
+                    onPageChange={setPage}
+                    onTotalItemsChange={setTotalItems}
+                    showPaginationControls={false}
+                    selectedIds={selectedIds}
+                    onToggleSelect={(id, checked) => {
+                      if (!id) return;
+                      setSelectedIds((prev) => {
+                        const next = new Set(prev);
+                        if (checked) next.add(id);
+                        else next.delete(id);
+                        return Array.from(next);
+                      });
+                    }}
+                    onToggleAll={(checked, allIds) => {
+                      setSelectedIds(checked ? allIds || [] : []);
+                    }}
+                    onSelectRow={(row) => {
+                      const id = row?.record_id;
+                      if (id) navigate(`/ops/jobs/${id}`);
+                    }}
+                  />
+                )}
               </div>
             )}
           </div>
-          {!detail?.job && <div className="text-sm opacity-60">Select a job to view details.</div>}
-          {detail?.job && (
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-                <div><span className="opacity-70">ID:</span> {detail.job.id}</div>
-                <div><span className="opacity-70">Type:</span> {detail.job.type}</div>
-                <div><span className="opacity-70">Status:</span> {detail.job.status}</div>
-                <div><span className="opacity-70">Attempts:</span> {detail.job.attempt}</div>
-              </div>
-              <div>
-                <div className="text-sm font-semibold">Payload</div>
-                <pre className="text-xs bg-base-200 p-2 rounded overflow-auto">{JSON.stringify(detail.job.payload, null, 2)}</pre>
-              </div>
-              <div>
-                <div className="text-sm font-semibold">Events</div>
-                <div className="space-y-1">
-                  {(detail.events || []).map((evt) => (
-                    <div key={evt.id} className="text-xs">
-                      <span className="opacity-70">{evt.ts}</span> {evt.level} — {evt.message}
-                    </div>
-                  ))}
-                  {(detail.events || []).length === 0 && <div className="text-xs opacity-60">No events</div>}
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>

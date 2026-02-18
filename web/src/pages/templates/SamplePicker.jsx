@@ -8,6 +8,7 @@ export default function SamplePicker({
   entities = [],
   showEntitySelect = true,
   rightAction = null,
+  size = "md", // md | sm
 }) {
   const [searchText, setSearchText] = useState("");
   const [results, setResults] = useState([]);
@@ -142,7 +143,7 @@ export default function SamplePicker({
           <label className="form-control">
             <span className="label-text">Entity</span>
             <select
-              className="select select-bordered"
+              className={`select select-bordered ${size === "sm" ? "select-sm" : ""}`}
               value={entityId}
               onChange={(e) => setSample((prev) => ({ ...(prev || {}), entity_id: e.target.value, record_id: "" }))}
             >
@@ -159,7 +160,7 @@ export default function SamplePicker({
           <span className="label-text">Record search</span>
           <div className="relative">
             <input
-              className="input input-bordered w-full pr-10"
+              className={`input input-bordered w-full pr-10 ${size === "sm" ? "input-sm" : ""}`}
               placeholder="Search record..."
               value={opened ? searchText : (searchText || selectedLabel || "")}
               onChange={(e) => setSearchText(e.target.value)}

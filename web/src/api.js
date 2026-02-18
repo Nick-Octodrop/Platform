@@ -158,6 +158,9 @@ export async function apiFetch(path, options = {}) {
           err.code = code;
           err.detail = data?.errors?.[0]?.detail;
           err.path = data?.errors?.[0]?.path;
+          err.status = response.status;
+          if (Array.isArray(data?.errors)) err.errors = data.errors;
+          if (Array.isArray(data?.warnings)) err.warnings = data.warnings;
           throw err;
         }
         if (cacheAllowed) {

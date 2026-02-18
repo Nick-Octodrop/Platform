@@ -11,6 +11,7 @@ import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { PRIMARY_BUTTON, PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_BUTTON_XS } from "../components/buttonStyles.js";
 import { buildTargetRoute, resolveAppTarget, resolveRouteTarget } from "./appShellUtils.js";
 import { evalCondition } from "../utils/conditions.js";
+import { useAccessContext } from "../access.js";
 
 function deriveRecordEntityId(entityId) {
   if (!entityId) return "";
@@ -121,7 +122,33 @@ function resolveActionLabel(action, manifest, views) {
 }
 
 function isWriteActionKind(kind) {
-  return kind === "create_record" || kind === "update_record" || kind === "bulk_update";
+  // `open_form` is the primary "New" affordance for Studio modules.
+  return kind === "create_record" || kind === "open_form" || kind === "update_record" || kind === "bulk_update";
+}
+
+function collectFormPageIds(appDefaults) {
+  const ids = new Set();
+  if (!appDefaults || typeof appDefaults !== "object") return ids;
+  const normalize = (v) => {
+    const s = typeof v === "string" ? v.trim() : "";
+    if (!s) return "";
+    return s.startsWith("page:") ? s.slice("page:".length) : s;
+  };
+  if (typeof appDefaults.entity_form_page === "string" && appDefaults.entity_form_page.trim()) {
+    const id = normalize(appDefaults.entity_form_page);
+    if (id) ids.add(id);
+  }
+  const entities = appDefaults.entities && typeof appDefaults.entities === "object" ? appDefaults.entities : null;
+  if (entities) {
+    for (const entDefaults of Object.values(entities)) {
+      if (!entDefaults || typeof entDefaults !== "object") continue;
+      if (typeof entDefaults.entity_form_page === "string" && entDefaults.entity_form_page.trim()) {
+        const id = normalize(entDefaults.entity_form_page);
+        if (id) ids.add(id);
+      }
+    }
+  }
+  return ids;
 }
 
 function buildFieldIndex(manifest, compiled, entityFullId) {
@@ -185,7 +212,9 @@ export default function AppShell({
   const errorFlashTimerRef = useRef(null);
 
   const recordId = (previewMode ? previewSearchParams : searchParams).get("record");
-  const canWriteRecords = bootstrap?.permissions?.records_write !== false;
+  const { hasCapability } = useAccessContext();
+  // Respect both platform/workspace permissions and optional per-page bootstrap overrides.
+  const canWriteRecords = hasCapability("records.write") && bootstrap?.permissions?.records_write !== false;
 
   useEffect(() => {
     if (typeof performance !== "undefined" && performance.mark) {
@@ -294,6 +323,7 @@ export default function AppShell({
   }, [moduleId, pageId, viewId, recordId, manifestOverride]);
 
   const appDef = manifest?.app || null;
+  const formPageIds = useMemo(() => collectFormPageIds(appDef?.defaults), [appDef?.defaults]);
   const pages = Array.isArray(manifest?.pages) ? manifest.pages : [];
   const views = Array.isArray(manifest?.views) ? manifest.views : [];
   const actionsList = Array.isArray(manifest?.actions) ? manifest.actions : [];
@@ -528,6 +558,16 @@ export default function AppShell({
   }, []);
 
   function setTarget(next, opts = {}) {
+    // Prevent "create new record" navigation for read-only users.
+    // Opening existing records passes `opts.recordId`, so it is unaffected.
+    if (!canWriteRecords && !opts.recordId) {
+      const target = typeof next === "string" ? next : "";
+      const pageId = target.startsWith("page:") ? target.slice("page:".length) : target;
+      if (pageId && formPageIds.has(pageId)) {
+        pushToast("error", "Write access required");
+        return;
+      }
+    }
     if (previewMode) {
       if (!previewAllowNav) return;
       setPreviewTarget(next);
@@ -757,6 +797,11 @@ export default function AppShell({
       );
     }
     if (resolvedAction.kind === "navigate" && resolvedAction.target) {
+      if (!canWriteRecords) {
+        const target = resolvedAction.target;
+        const pageId = target.startsWith("page:") ? target.slice("page:".length) : target;
+        if (pageId && formPageIds.has(pageId)) return null;
+      }
       return (
         <button
           className={SOFT_BUTTON_SM}
@@ -1001,6 +1046,7 @@ export default function AppShell({
               onPrompt={promptDialog}
               externalRefreshTick={viewModesRefreshTick}
               previewMode={previewMode}
+              canWriteRecords={canWriteRecords}
               bootstrap={bootstrap}
               bootstrapVersion={bootstrapVersion}
               bootstrapLoading={bootstrapLoading}
@@ -1028,7 +1074,7 @@ export default function AppShell({
                 <div className="mt-3">
                   {modal.label && <div className="text-xs opacity-60 mb-1">{modal.label}</div>}
                   <input
-                    className="input input-bordered w-full"
+                    className="input input-bordered input-sm w-full"
                     placeholder={modal.placeholder}
                     value={modalInput}
                     onChange={(e) => setModalInput(e.target.value)}

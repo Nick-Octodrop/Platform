@@ -405,7 +405,7 @@ function EmailPreviewTab({
           <div className="modal-box">
             <h3 className="font-bold text-lg">Select record to preview</h3>
             <div className="mt-3">
-              <SamplePicker sample={renderSample} setSample={setRenderSample} entities={entities} />
+              <SamplePicker sample={renderSample} setSample={setRenderSample} entities={entities} size="sm" />
             </div>
             <div className="modal-action">
               <button className="btn btn-ghost" onClick={() => setRenderModalOpen(false)}>

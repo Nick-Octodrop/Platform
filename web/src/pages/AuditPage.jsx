@@ -1,22 +1,26 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../api";
 import { useModuleStore } from "../state/moduleStore.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
+import PaginationControls from "../components/PaginationControls.jsx";
+
+const FETCH_LIMIT = 500;
 
 export default function AuditPage() {
   const { modules } = useModuleStore();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [limit, setLimit] = useState(50);
   const [moduleFilter, setModuleFilter] = useState("");
+  const [page, setPage] = useState(0);
+  const pageSize = 25;
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
         const params = new URLSearchParams();
-        params.set("limit", String(limit));
+        params.set("limit", String(FETCH_LIMIT));
         if (moduleFilter) params.set("module_id", moduleFilter);
         const res = await apiFetch(`/audit?${params.toString()}`);
         setEvents(res.data?.events || []);
@@ -28,7 +32,18 @@ export default function AuditPage() {
       }
     }
     load();
-  }, [limit, moduleFilter]);
+  }, [moduleFilter]);
+
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(events.length / pageSize)), [events.length]);
+
+  useEffect(() => {
+    setPage((prev) => Math.min(Math.max(0, prev), totalPages - 1));
+  }, [totalPages]);
+
+  const pagedEvents = useMemo(() => {
+    const start = page * pageSize;
+    return events.slice(start, start + pageSize);
+  }, [events, page]);
 
   return (
     <div className="space-y-4">
@@ -43,17 +58,20 @@ export default function AuditPage() {
             <option key={m.module_id} value={m.module_id}>{m.module_id}</option>
           ))}
         </select>
-        <select className="select select-bordered" value={limit} onChange={(e) => setLimit(Number(e.target.value))}>
-          <option value={25}>25</option>
-          <option value={50}>50</option>
-          <option value={100}>100</option>
-        </select>
       </div>
       <div className="card bg-base-100 shadow">
         <div className="card-body">
           <h2 className="card-title">Activity</h2>
           {error && <div className="alert alert-error mb-4">{error}</div>}
           {loading && <LoadingSpinner className="min-h-[16vh]" />}
+          <div className="flex items-center justify-end mb-2">
+            <PaginationControls
+              page={page}
+              pageSize={pageSize}
+              totalItems={events.length}
+              onPageChange={setPage}
+            />
+          </div>
           <div className="overflow-x-auto">
             <table className="table">
               <thead>
@@ -72,7 +90,7 @@ export default function AuditPage() {
                     <td colSpan={6} className="opacity-70">No audit events.</td>
                   </tr>
                 )}
-                {events.map((e) => (
+                {pagedEvents.map((e) => (
                   <tr key={e.id}>
                     <td>{e.ts || "—"}</td>
                     <td>{e.type || "—"}</td>

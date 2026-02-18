@@ -192,7 +192,6 @@ export default function SettingsPreferencesPage({ user, onSignOut }) {
             <div className="flex flex-wrap gap-2">
               <Link className="btn btn-outline btn-sm" to="/settings/diagnostics">Diagnostics</Link>
               <Link className="btn btn-outline btn-sm" to="/audit">Audit</Link>
-              <Link className="btn btn-outline btn-sm" to="/data">Data explorer</Link>
               <Link className="btn btn-outline btn-sm" to="/settings/email-templates">Email templates</Link>
               <Link className="btn btn-outline btn-sm" to="/settings/email-outbox">Email outbox</Link>
               <Link className="btn btn-outline btn-sm" to="/settings/documents/templates">Documents</Link>
