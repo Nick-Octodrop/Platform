@@ -24,13 +24,14 @@ ALLOWED_V1_TOP_KEYS = {
     "interfaces",
     "app",
     "pages",
+    "modals",
 }
 ALLOWED_V1_APP_KEYS = {"home", "nav", "defaults"}
 ALLOWED_V1_NAV_GROUP_KEYS = {"group", "items"}
 ALLOWED_V1_NAV_ITEM_KEYS = {"label", "to"}
 ALLOWED_V1_PAGE_KEYS = {"id", "title", "layout", "header", "content", "breadcrumbs"}
 ALLOWED_V1_PAGE_HEADER_KEYS = {"actions", "variant"}
-ALLOWED_V1_PAGE_ACTION_KEYS = {"kind", "label", "target", "action_id", "enabled_when", "visible_when", "confirm"}
+ALLOWED_V1_PAGE_ACTION_KEYS = {"kind", "label", "target", "action_id", "enabled_when", "visible_when", "confirm", "modal_id"}
 ALLOWED_V1_BLOCK_KEYS = {
     "kind",
     "target",
@@ -84,9 +85,24 @@ ALLOWED_WORKFLOW_STATE_KEYS = {"id", "label", "order", "required_fields"}
 ALLOWED_WORKFLOW_TRANSITION_KEYS = {"from", "to", "label"}
 ALLOWED_CONDITION_OPS = {"eq", "neq", "gt", "gte", "lt", "lte", "in", "contains", "exists", "and", "or", "not"}
 ALLOWED_CONDITION_KEYS = {"op", "field", "value", "left", "right", "conditions", "condition"}
-ALLOWED_V1_ACTION_KEYS = {"id", "kind", "label", "target", "entity_id", "defaults", "patch", "enabled_when", "visible_when", "confirm"}
+ALLOWED_V1_ACTION_KEYS = {"id", "kind", "label", "target", "entity_id", "defaults", "patch", "enabled_when", "visible_when", "confirm", "modal_id"}
 ALLOWED_V1_VIEW_HEADER_KEYS = {"title_field", "primary_actions", "secondary_actions", "search", "filters", "bulk_actions", "save_mode", "open_record_target", "auto_save", "auto_save_debounce_ms", "statusbar", "tabs"}
-ALLOWED_V1_VIEW_HEADER_ACTION_KEYS = {"action_id", "kind", "label", "target", "enabled_when", "visible_when", "confirm"}
+ALLOWED_V1_VIEW_HEADER_ACTION_KEYS = {"action_id", "kind", "label", "target", "enabled_when", "visible_when", "confirm", "modal_id"}
+ALLOWED_V1_MODAL_KEYS = {"id", "title", "description", "entity_id", "fields", "defaults", "actions"}
+ALLOWED_V1_MODAL_ACTION_KEYS = {
+    "action_id",
+    "kind",
+    "label",
+    "target",
+    "entity_id",
+    "defaults",
+    "patch",
+    "enabled_when",
+    "visible_when",
+    "confirm",
+    "close_on_success",
+    "variant",
+}
 ALLOWED_V1_VIEW_HEADER_SEARCH_KEYS = {"enabled", "placeholder", "fields"}
 ALLOWED_V1_VIEW_HEADER_FILTER_KEYS = {"id", "label", "domain"}
 ALLOWED_V1_VIEW_ACTIVITY_KEYS = {"enabled", "mode", "tab_label", "allow_comments", "allow_attachments", "show_changes", "tracked_fields"}
@@ -754,6 +770,63 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
             confirm = _get(action, "confirm")
             if confirm is not None and not isinstance(confirm, dict):
                 errors.append(_issue("MANIFEST_ACTION_CONFIRM_INVALID", "confirm must be object", f"{apath}.confirm"))
+
+    modals = _get(manifest, "modals", [])
+    modal_by_id: dict[str, dict] = {}
+    if modals is not None and not isinstance(modals, list):
+        errors.append(_issue("MANIFEST_MODALS_INVALID", "modals must be a list", "modals"))
+        modals = []
+    if isinstance(modals, list):
+        for midx, modal in enumerate(modals):
+            mpath = f"modals[{midx}]"
+            if not isinstance(modal, dict):
+                errors.append(_issue("MANIFEST_MODAL_INVALID", "modal must be an object", mpath))
+                continue
+            _reject_unknown_keys(errors, modal, ALLOWED_V1_MODAL_KEYS, mpath)
+            modal_id = _get(modal, "id")
+            if not isinstance(modal_id, str) or not modal_id:
+                errors.append(_issue("MANIFEST_MODAL_ID_INVALID", "modal.id is required", f"{mpath}.id"))
+                continue
+            modal_by_id[modal_id] = modal
+            if _get(modal, "title") is not None and not isinstance(_get(modal, "title"), str):
+                errors.append(_issue("MANIFEST_MODAL_INVALID", "modal.title must be string", f"{mpath}.title"))
+            if _get(modal, "description") is not None and not isinstance(_get(modal, "description"), str):
+                errors.append(_issue("MANIFEST_MODAL_INVALID", "modal.description must be string", f"{mpath}.description"))
+            fields = _get(modal, "fields")
+            if fields is not None:
+                if not isinstance(fields, list):
+                    errors.append(_issue("MANIFEST_MODAL_INVALID", "modal.fields must be a list", f"{mpath}.fields"))
+                else:
+                    for fidx, field_id in enumerate(fields):
+                        if not isinstance(field_id, str) or not field_id:
+                            errors.append(_issue("MANIFEST_MODAL_INVALID", "modal.fields values must be field ids", f"{mpath}.fields[{fidx}]"))
+            defaults = _get(modal, "defaults")
+            if defaults is not None and not isinstance(defaults, dict):
+                errors.append(_issue("MANIFEST_MODAL_INVALID", "modal.defaults must be object", f"{mpath}.defaults"))
+            modal_actions = _get(modal, "actions")
+            if modal_actions is not None:
+                if not isinstance(modal_actions, list):
+                    errors.append(_issue("MANIFEST_MODAL_INVALID", "modal.actions must be a list", f"{mpath}.actions"))
+                else:
+                    for aidx, action in enumerate(modal_actions):
+                        apath = f"{mpath}.actions[{aidx}]"
+                        if not isinstance(action, dict):
+                            errors.append(_issue("MANIFEST_MODAL_ACTION_INVALID", "modal action must be an object", apath))
+                            continue
+                        _reject_unknown_keys(errors, action, ALLOWED_V1_MODAL_ACTION_KEYS, apath)
+                        action_id = _get(action, "action_id")
+                        kind = _get(action, "kind")
+                        if action_id is None and kind is None:
+                            errors.append(_issue("MANIFEST_MODAL_ACTION_INVALID", "modal action requires action_id or kind", apath))
+                        if action_id is not None:
+                            if not isinstance(action_id, str) or not action_id:
+                                errors.append(_issue("MANIFEST_MODAL_ACTION_INVALID", "modal action_id must be string", f"{apath}.action_id"))
+                            elif action_id not in action_by_id:
+                                errors.append(_issue("MANIFEST_MODAL_ACTION_UNKNOWN", "modal action_id not found", f"{apath}.action_id"))
+                        if kind is not None and kind not in ALLOWED_V1_ACTION_KINDS and kind != "close_modal":
+                            errors.append(_issue("MANIFEST_MODAL_ACTION_INVALID", "modal action kind must be allowlisted", f"{apath}.kind"))
+                        if _get(action, "close_on_success") is not None and not isinstance(_get(action, "close_on_success"), bool):
+                            errors.append(_issue("MANIFEST_MODAL_ACTION_INVALID", "close_on_success must be boolean", f"{apath}.close_on_success"))
 
     triggers = _get(manifest, "triggers", [])
     if triggers is not None and not isinstance(triggers, list):

@@ -17,6 +17,7 @@ Legacy manifests continue to work (defaulting to `manifest_version: "0.x"`), whi
   "relations": [ ... ],
   "workflows": [ ... ],
   "actions": [ ... ],
+  "modals": [ ... ],
   "queries": { ... },
   "interfaces": { ... }
 }
@@ -98,6 +99,7 @@ Rules:
 - v1.3: `page.content[]` adds structured UI composition blocks (container/toolbar/statusbar/record).
 - `page.header.variant` (optional) may be `"default"` or `"none"` (use `"none"` to suppress the page title card).
 - `page.header.actions[]` allowlisted kinds: `navigate`, `open_form`, `refresh`, `create_record`, `update_record`, `bulk_update`.
+- `page.header.actions[]` may also set `modal_id` to open a top-level modal.
 - `navigate` targets are `page:<id>` or `view:<id>`.
 - `open_form` targets a **view id** (no prefix).
 - All targets must exist.
@@ -342,6 +344,7 @@ Top‑level actions:
 
 Template refs in `defaults` / `patch`:
 - Values can use `{ "ref": "$record.id" }` or `{ "ref": "$record.<field>" }` and will resolve from the current record context at runtime.
+- Actions may include `modal_id` to open a manifest-defined modal before follow-up actions run.
 
 Page header actions can reference actions:
 ```json
@@ -356,6 +359,36 @@ Page header actions can reference actions:
 Action guards (v1.2):
 - `visible_when` and `enabled_when` accept the condition DSL and evaluate against the current record draft.
 - `confirm` may provide `{ "title": "...", "body": "..." }` for a confirmation dialog.
+
+## Modals (v1.3 extension)
+
+Top-level modals define reusable dialog flows:
+```json
+"modals": [
+  {
+    "id": "modal.workorder_on_hold_reason",
+    "title": "Put Work Order On Hold",
+    "description": "Add a reason before moving this work order to On Hold.",
+    "entity_id": "entity.workorder",
+    "fields": ["workorder.on_hold_reason"],
+    "defaults": { "workorder.on_hold_reason": "" },
+    "actions": [
+      { "action_id": "action.put_on_hold_decline", "label": "Decline", "variant": "soft", "close_on_success": true },
+      { "action_id": "action.put_on_hold_confirm", "label": "Confirm Hold", "variant": "primary", "close_on_success": true }
+    ]
+  }
+]
+```
+
+Rules:
+- Open a modal from any action via `modal_id`.
+- `fields[]` are rendered against `entity_id` field definitions.
+- `defaults` supports template refs (`$record.*`) and seeds modal draft values.
+- `actions[]` can reference top-level actions (`action_id`) or provide inline actions.
+- Modal action context is passed as `record_draft`, so refs like `{ "ref": "$record.<field>" }` resolve from modal values.
+- `variant` is UI-only (`primary` / `soft`).
+- `close_on_success` controls auto-close behavior.
+- Modal-local `kind: "close_modal"` is supported as a UI-only action.
 
 ## Triggers (v1.3)
 
@@ -464,6 +497,47 @@ Rules:
   - `open_form` (default): open the form in create mode.
   - `create_record`: create immediately (only safe if required fields have defaults).
 
+### Form section line editor (v1.3 extension)
+
+```json
+{
+  "id": "line_items",
+  "title": "Line Items",
+  "line_editor": {
+    "entity_id": "entity.workorder_line",
+    "parent_field": "workorder_line.workorder_id",
+    "item_lookup_field": "workorder_line.item_id",
+    "item_lookup_entity": "entity.item",
+    "item_lookup_display_field": "item.name",
+    "item_field_map": {
+      "workorder_line.unit_price": "item.unit_price",
+      "workorder_line.tax_rate": "item.tax_rate",
+      "workorder_line.description": "item.description"
+    },
+    "description_field": "workorder_line.description",
+    "defaults": { "workorder_line.qty": 1 },
+    "columns": [
+      { "field_id": "workorder_line.item_id", "label": "Item", "readonly": true },
+      { "field_id": "workorder_line.qty", "label": "Qty", "type": "number" }
+    ]
+  }
+}
+```
+
+Optional fallback map at form-view level:
+```json
+"line_editors": {
+  "line_items": { "...same config..." }
+}
+```
+
+Rules:
+- `line_editor.entity_id` is the child entity edited inline.
+- `parent_field` links child rows to the current parent record id.
+- `item_lookup_*` drives the bottom lookup/search row.
+- `item_field_map` copies values from selected lookup record into new child row.
+- `columns[]` controls editable table columns.
+
 ### View header (v1.4-compatible extension)
 Odoo-style headers for list/form views:
 
@@ -495,6 +569,7 @@ Odoo-style headers for list/form views:
 Rules:
 - `title_field` (optional) must be a field on the view entity.
 - `primary_actions`, `secondary_actions`, `bulk_actions` items must reference existing actions (`action_id`) or use inline `navigate/open_form/refresh`.
+- Header action entries may set `modal_id` to launch a top-level modal.
 - `bulk_actions` only valid on list views.
 - `search.fields` must be fields on the view entity.
 - `filters[].domain` uses the condition DSL and requires v1.2+.

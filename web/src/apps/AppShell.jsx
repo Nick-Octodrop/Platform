@@ -6,6 +6,7 @@ import { realtimeEnabled, supabase } from "../supabase";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import FormViewRenderer from "../ui/FormViewRenderer.jsx";
 import ContentBlocksRenderer from "../ui/ContentBlocksRenderer.jsx";
+import { getFieldValue, renderField, setFieldValue } from "../ui/field_renderers.jsx";
 import { useToast } from "../components/Toast.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { PRIMARY_BUTTON, PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_BUTTON_XS } from "../components/buttonStyles.js";
@@ -170,6 +171,35 @@ function humanizeEntityId(entityId) {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function getByPath(data, path) {
+  if (!data || typeof data !== "object" || typeof path !== "string") return undefined;
+  if (path in data) return data[path];
+  const parts = path.split(".");
+  let cur = data;
+  for (const part of parts) {
+    if (cur && typeof cur === "object" && part in cur) cur = cur[part];
+    else return undefined;
+  }
+  return cur;
+}
+
+function resolveTemplateRefs(value, record) {
+  if (Array.isArray(value)) return value.map((item) => resolveTemplateRefs(item, record));
+  if (value && typeof value === "object") {
+    if (typeof value.ref === "string") {
+      if (value.ref === "$record.id") return record?.id ?? null;
+      if (value.ref.startsWith("$record.")) return getByPath(record, value.ref.slice("$record.".length));
+      return getByPath(record, value.ref);
+    }
+    const next = {};
+    for (const [key, nested] of Object.entries(value)) {
+      next[key] = resolveTemplateRefs(nested, record);
+    }
+    return next;
+  }
+  return value;
 }
 
 export default function AppShell({
@@ -653,7 +683,7 @@ export default function AppShell({
     return store.order.map((id) => store.records.get(id)).filter(Boolean);
   }
 
-  async function runAction(action) {
+  async function runAction(action, runtimeContext = {}) {
     if (isWriteActionKind(action?.kind) && !canWriteRecords) {
       pushToast("error", "Write access required");
       return null;
@@ -666,6 +696,17 @@ export default function AppShell({
       pushToast("error", "Action missing id");
       return null;
     }
+    const contextRecordId = runtimeContext?.recordId || recordId;
+    const contextSelectedIds = Array.isArray(runtimeContext?.selectedIds) ? runtimeContext.selectedIds : selectedIds;
+    const contextRecordDraft = runtimeContext?.recordDraft && typeof runtimeContext.recordDraft === "object"
+      ? runtimeContext.recordDraft
+      : recordDraft;
+    const resolvedDefaults = action?.defaults && typeof action.defaults === "object"
+      ? resolveTemplateRefs(action.defaults, contextRecordDraft || {})
+      : action?.defaults;
+    const resolvedPatch = action?.patch && typeof action.patch === "object"
+      ? resolveTemplateRefs(action.patch, contextRecordDraft || {})
+      : action?.patch;
     if (action.confirm && typeof action.confirm === "object") {
       const title = action.confirm.title || "Confirm";
       const body = action.confirm.body || "Are you sure?";
@@ -676,7 +717,7 @@ export default function AppShell({
       if (previewMode && previewAllowNav) {
         if (action.kind === "create_record") {
           const entityFullId = resolveEntityFullId(manifest, action.entity_id);
-          const created = previewUpsert(entityFullId, null, action.defaults || {});
+          const created = previewUpsert(entityFullId, null, resolvedDefaults || {});
           if (created) {
             const defaultForm = resolveEntityDefaultFormPage(appDef?.defaults, entityFullId);
             if (defaultForm) {
@@ -686,21 +727,21 @@ export default function AppShell({
             return { record_id: created.record_id, record: created.record };
           }
         }
-        if (action.kind === "update_record" && action.patch && typeof action.patch === "object") {
+        if (action.kind === "update_record" && resolvedPatch && typeof resolvedPatch === "object") {
           const entityFullId = resolveEntityFullId(manifest, action.entity_id);
-          const current = previewGet(entityFullId, recordId);
-          const updated = previewUpsert(entityFullId, recordId, { ...(current?.record || {}), ...action.patch });
+          const current = previewGet(entityFullId, contextRecordId);
+          const updated = previewUpsert(entityFullId, contextRecordId, { ...(current?.record || {}), ...resolvedPatch });
           if (updated) {
             pushToast("success", "Updated (local preview)");
             return { record_id: updated.record_id, record: updated.record };
           }
         }
-        if (action.kind === "bulk_update" && action.patch && typeof action.patch === "object") {
+        if (action.kind === "bulk_update" && resolvedPatch && typeof resolvedPatch === "object") {
           const entityFullId = resolveEntityFullId(manifest, action.entity_id);
-          const ids = Array.isArray(selectedIds) ? selectedIds : [];
+          const ids = Array.isArray(contextSelectedIds) ? contextSelectedIds : [];
           for (const id of ids) {
             const current = previewGet(entityFullId, id);
-            previewUpsert(entityFullId, id, { ...(current?.record || {}), ...action.patch });
+            previewUpsert(entityFullId, id, { ...(current?.record || {}), ...resolvedPatch });
           }
           pushToast("success", "Updated (local preview)");
           return { updated: true };
@@ -712,9 +753,9 @@ export default function AppShell({
           module_id: moduleId,
           action_id: action.id,
           context: {
-            record_id: recordId,
-            record_draft: recordDraft,
-            selected_ids: selectedIds,
+            record_id: contextRecordId,
+            record_draft: contextRecordDraft,
+            selected_ids: contextSelectedIds,
           },
         }),
       });
@@ -753,8 +794,8 @@ export default function AppShell({
           }
         }
       }
-      if (actionKind === "update_record" && action.patch && typeof action.patch === "object") {
-        setRecordDraft((prev) => ({ ...(prev || {}), ...action.patch }));
+      if (actionKind === "update_record" && resolvedPatch && typeof resolvedPatch === "object") {
+        setRecordDraft((prev) => ({ ...(prev || {}), ...resolvedPatch }));
       }
       if (result.updated) {
         setRefreshTick((v) => v + 1);
@@ -1218,9 +1259,19 @@ function AppView({
   const bootstrapUsedRef = useRef({ list: null, form: null });
   const perfMarkRef = useRef({ list: null, form: null });
   const openCreateModal = onLookupCreate;
+  const [activeManifestModal, setActiveManifestModal] = useState(null);
 
   const kind = view.kind || view.type;
   const views = Array.isArray(manifest?.views) ? manifest.views : [];
+  const manifestModals = Array.isArray(manifest?.modals) ? manifest.modals : [];
+  const modalById = useMemo(() => {
+    const next = new Map();
+    for (const modal of manifestModals) {
+      if (!modal || typeof modal !== "object" || !modal.id) continue;
+      next.set(modal.id, modal);
+    }
+    return next;
+  }, [manifestModals]);
   const appDefaults = manifest?.app?.defaults || {};
   const rawViewEntity = view.entity || view.entity_id || view.entityId;
   const fallbackEntity = !rawViewEntity && typeof view.id === "string" ? view.id.split(".")[0] : null;
@@ -1350,6 +1401,16 @@ function AppView({
     return action;
   }
 
+  function resolveModalAction(action) {
+    if (!action || typeof action !== "object") return null;
+    if (action.action_id) {
+      const base = actionsMap?.get(action.action_id);
+      if (!base) return null;
+      return { ...base, ...action, id: base.id };
+    }
+    return action;
+  }
+
   async function confirmAction(action) {
     if (action?.confirm && typeof action.confirm === "object") {
       if (!onConfirm) return false;
@@ -1366,8 +1427,99 @@ function AppView({
     return `${defaultPrefix}${target}`;
   }
 
+  function openManifestModal(modalId, contextRecord = draft || {}) {
+    const def = modalById.get(modalId);
+    if (!def) {
+      pushToast("error", `Modal not found: ${modalId}`);
+      return;
+    }
+    const modalEntity = def.entity_id || recordEntityId || entityFullId;
+    const modalEntityFullId = resolveEntityFullId(manifest, modalEntity);
+    const modalFieldIndex = buildFieldIndex(manifest, compiled, modalEntityFullId);
+    const fields = Array.isArray(def.fields) ? def.fields.filter((fieldId) => typeof fieldId === "string") : [];
+    const defaultValues = def.defaults && typeof def.defaults === "object" ? resolveTemplateRefs(def.defaults, contextRecord || {}) : {};
+    const seeded = { ...(contextRecord || {}), ...(defaultValues || {}) };
+    setActiveManifestModal({
+      id: def.id,
+      title: def.title || def.label || "Modal",
+      description: def.description || "",
+      fields,
+      actions: Array.isArray(def.actions) ? def.actions : [],
+      draft: seeded,
+      fieldIndex: modalFieldIndex,
+      busy: false,
+      error: "",
+    });
+  }
+
+  async function runManifestModalAction(action) {
+    if (!activeManifestModal) return;
+    const resolvedAction = resolveModalAction(action);
+    if (!resolvedAction) return;
+    if (resolvedAction.kind === "close_modal") {
+      setActiveManifestModal(null);
+      return;
+    }
+    if (isWriteActionKind(resolvedAction.kind) && !canWriteRecords) return;
+    if (!(await confirmAction(resolvedAction))) return;
+    const modalDraft = activeManifestModal.draft || {};
+    const closeOnSuccess = resolvedAction.close_on_success !== false;
+    if (resolvedAction.kind === "update_record" && resolvedAction.patch && typeof resolvedAction.patch === "object") {
+      const resolvedPatch = resolveTemplateRefs(resolvedAction.patch, modalDraft);
+      const prevDraft = draft || {};
+      const prevInitial = initialDraft || {};
+      const optimistic = { ...prevDraft, ...resolvedPatch };
+      setDraft(optimistic);
+      setInitialDraft({ ...prevInitial, ...resolvedPatch });
+      setActiveManifestModal((prev) => (prev ? { ...prev, busy: true, error: "" } : prev));
+      const run = onRunAction?.(resolvedAction, {
+        recordId: effectiveRecordId,
+        recordDraft: modalDraft,
+        selectedIds,
+      });
+      Promise.resolve(run)
+        .then((result) => {
+          if (!result) {
+            setDraft(prevDraft);
+            setInitialDraft(prevInitial);
+            setActiveManifestModal((prev) => (prev ? { ...prev, busy: false } : prev));
+            return;
+          }
+          if (result.record) {
+            setDraft(result.record);
+            setInitialDraft(result.record);
+          }
+          if (closeOnSuccess) setActiveManifestModal(null);
+          else setActiveManifestModal((prev) => (prev ? { ...prev, busy: false } : prev));
+        })
+        .catch((err) => {
+          setDraft(prevDraft);
+          setInitialDraft(prevInitial);
+          setActiveManifestModal((prev) =>
+            prev ? { ...prev, busy: false, error: err?.message || "Action failed." } : prev
+          );
+        });
+      return;
+    }
+    setActiveManifestModal((prev) => (prev ? { ...prev, busy: true, error: "" } : prev));
+    const result = await onRunAction?.(resolvedAction, {
+      recordId: effectiveRecordId,
+      recordDraft: modalDraft,
+      selectedIds,
+    });
+    if (result && closeOnSuccess) {
+      setActiveManifestModal(null);
+      return;
+    }
+    setActiveManifestModal((prev) => (prev ? { ...prev, busy: false } : prev));
+  }
+
   async function handleHeaderAction(action) {
     if (!action) return;
+    if (action.modal_id) {
+      openManifestModal(action.modal_id, draft || {});
+      return;
+    }
     if (isWriteActionKind(action.kind) && !canWriteRecords) return;
     if (!(await confirmAction(action))) return;
     if (action.kind === "refresh") {
@@ -1413,12 +1565,17 @@ function AppView({
       }
     }
     if (action.kind === "update_record" && action.patch && typeof action.patch === "object") {
+      const resolvedPatch = resolveTemplateRefs(action.patch, draft || {});
       const prevDraft = draft || {};
       const prevInitial = initialDraft || {};
-      const optimistic = { ...prevDraft, ...action.patch };
+      const optimistic = { ...prevDraft, ...resolvedPatch };
       setDraft(optimistic);
-      setInitialDraft({ ...prevInitial, ...action.patch });
-      const run = onRunAction?.(action);
+      setInitialDraft({ ...prevInitial, ...resolvedPatch });
+      const run = onRunAction?.(action, {
+        recordId: effectiveRecordId,
+        recordDraft: draft || {},
+        selectedIds,
+      });
       Promise.resolve(run)
         .then((result) => {
           if (!result) {
@@ -1488,6 +1645,10 @@ function AppView({
   }, [kind, recordEntityId, refreshTick, listFieldIds, previewMode, previewStore?.version, bootstrapVersion, bootstrap, view?.id, bootstrapLoading]);
 
   const effectiveRecordId = recordContext?.recordId || recordId;
+
+  useEffect(() => {
+    setActiveManifestModal(null);
+  }, [view?.id, effectiveRecordId]);
 
   useEffect(() => {
     if (kind === "form") {
@@ -1730,6 +1891,82 @@ function AppView({
   if (state.error) return <div className="alert alert-error">{state.error}</div>;
 
   const transitionTargets = transitions.filter((t) => t?.from === currentStatus);
+  const modalReadonly = !canWriteRecords || activeManifestModal?.busy;
+  const manifestModalNode =
+    activeManifestModal &&
+    createPortal(
+      <div className="modal modal-open">
+        <div className="modal-box max-w-2xl">
+          <h3 className="font-bold text-lg">{activeManifestModal.title}</h3>
+          {activeManifestModal.description ? (
+            <p className="py-2 text-sm opacity-70">{activeManifestModal.description}</p>
+          ) : null}
+          <div className="space-y-3">
+            {activeManifestModal.fields.map((fieldId) => {
+              const field = activeManifestModal.fieldIndex?.[fieldId];
+              if (!field) {
+                return (
+                  <div key={fieldId} className="text-xs text-error">
+                    Missing field in modal: {fieldId}
+                  </div>
+                );
+              }
+              const value = getFieldValue(activeManifestModal.draft, fieldId);
+              return (
+                <fieldset key={fieldId} className="fieldset">
+                  <legend className="fieldset-legend text-xs uppercase opacity-60 tracking-wide">
+                    {field.label || field.id}
+                  </legend>
+                  {renderField(
+                    field,
+                    value,
+                    (next) =>
+                      setActiveManifestModal((prev) =>
+                        prev ? { ...prev, draft: setFieldValue(prev.draft || {}, fieldId, next), error: "" } : prev
+                      ),
+                    modalReadonly
+                  )}
+                </fieldset>
+              );
+            })}
+            {activeManifestModal.error ? <div className="text-xs text-error">{activeManifestModal.error}</div> : null}
+          </div>
+          <div className="modal-action">
+            {activeManifestModal.actions.map((action, idx) => {
+              const resolvedAction = resolveModalAction(action);
+              if (!resolvedAction) return null;
+              const label = action?.label || resolveActionLabel(resolvedAction, manifest, views);
+              const variant = action?.variant || "soft";
+              const btnClass = variant === "primary" ? PRIMARY_BUTTON_SM : SOFT_BUTTON_SM;
+              const enabled = resolvedAction.enabled_when
+                ? evalCondition(resolvedAction.enabled_when, { record: activeManifestModal.draft || {} })
+                : true;
+              return (
+                <button
+                  key={`${resolvedAction.id || label}-${idx}`}
+                  className={btnClass}
+                  disabled={!enabled || modalReadonly || (isWriteActionKind(resolvedAction.kind) && !canWriteRecords)}
+                  onClick={() => runManifestModalAction(action)}
+                >
+                  {label}
+                </button>
+              );
+            })}
+            <button className={SOFT_BUTTON_SM} onClick={() => setActiveManifestModal(null)} disabled={activeManifestModal.busy}>
+              Close
+            </button>
+          </div>
+        </div>
+        <button
+          className="modal-backdrop"
+          onClick={() => {
+            if (!activeManifestModal.busy) setActiveManifestModal(null);
+          }}
+          aria-label="Close"
+        />
+      </div>,
+      document.body
+    );
 
   if (kind === "list") {
     const header = view.header || null;
@@ -1866,6 +2103,7 @@ function AppView({
     const entityLabel = entityDef?.label || humanizeEntityId(entityFullId) || view.title || view.id;
 
     return (
+      <>
       <div className="space-y-4">
         {hasHeader && (
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2003,6 +2241,8 @@ function AppView({
           onSelectRow={handleSelectRow}
         />
       </div>
+      {manifestModalNode}
+      </>
     );
   }
 
@@ -2031,6 +2271,7 @@ function AppView({
     const secondaryActions = decorateActions(header?.secondary_actions, draft);
     const showFormSkeleton = state.status === "running" && Boolean(effectiveRecordId);
     return (
+      <>
       <div className="h-full min-h-0 flex flex-col overflow-hidden">
         {state.status === "running" && (
           <div className="shrink-0 text-xs opacity-60">Loading record…</div>
@@ -2069,8 +2310,15 @@ function AppView({
           )}
         </div>
       </div>
+      {manifestModalNode}
+      </>
     );
   }
 
-  return <div className="alert alert-error">Unsupported view type: {kind}</div>;
+  return (
+    <>
+      <div className="alert alert-error">Unsupported view type: {kind}</div>
+      {manifestModalNode}
+    </>
+  );
 }

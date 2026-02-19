@@ -257,6 +257,11 @@
           "label": "Internal Notes"
         },
         {
+          "id": "workorder.on_hold_reason",
+          "type": "text",
+          "label": "On Hold Reason"
+        },
+        {
           "id": "workorder.tags",
           "type": "tags",
           "label": "Tags",
@@ -543,17 +548,36 @@
     },
     {
       "id": "action.put_on_hold",
-      "kind": "update_record",
+      "kind": "refresh",
       "label": "Put On Hold",
+      "modal_id": "modal.workorder_on_hold_reason",
+      "visible_when": {
+        "op": "eq",
+        "field": "workorder.status",
+        "value": "in_progress"
+      }
+    },
+    {
+      "id": "action.put_on_hold_confirm",
+      "kind": "update_record",
+      "label": "Confirm Hold",
       "entity_id": "entity.workorder",
       "patch": {
-        "workorder.status": "on_hold"
+        "workorder.status": "on_hold",
+        "workorder.on_hold_reason": {
+          "ref": "$record.workorder.on_hold_reason"
+        }
       },
       "visible_when": {
         "op": "eq",
         "field": "workorder.status",
         "value": "in_progress"
       }
+    },
+    {
+      "id": "action.put_on_hold_decline",
+      "kind": "refresh",
+      "label": "Decline"
     },
     {
       "id": "action.resume_work",
@@ -642,6 +666,31 @@
       }
     }
   ],
+  "modals": [
+    {
+      "id": "modal.workorder_on_hold_reason",
+      "title": "Put Work Order On Hold",
+      "description": "Add a reason before moving this work order to On Hold.",
+      "entity_id": "entity.workorder",
+      "fields": [
+        "workorder.on_hold_reason"
+      ],
+      "actions": [
+        {
+          "action_id": "action.put_on_hold_decline",
+          "label": "Decline",
+          "variant": "soft",
+          "close_on_success": true
+        },
+        {
+          "action_id": "action.put_on_hold_confirm",
+          "label": "Confirm Hold",
+          "variant": "primary",
+          "close_on_success": true
+        }
+      ]
+    }
+  ],
   "triggers": [
     {
       "id": "workorders.record.created",
@@ -667,6 +716,11 @@
       "id": "workorders.action.put_on_hold",
       "event": "action.clicked",
       "action_id": "action.put_on_hold"
+    },
+    {
+      "id": "workorders.action.put_on_hold_confirm",
+      "event": "action.clicked",
+      "action_id": "action.put_on_hold_confirm"
     },
     {
       "id": "workorders.action.resume_work",
@@ -846,20 +900,6 @@
       "id": "workorder.form",
       "entity": "entity.workorder",
       "kind": "form",
-      "activity": {
-        "enabled": true,
-        "mode": "tab",
-        "tab_label": "Activity",
-        "allow_comments": true,
-        "allow_attachments": true,
-        "show_changes": true,
-        "tracked_fields": [
-          "workorder.status",
-          "workorder.assignee_id",
-          "workorder.scheduled_start",
-          "workorder.scheduled_end"
-        ]
-      },
       "sections": [
         {
           "id": "main",
@@ -914,6 +954,65 @@
           "fields": [
             "workorder.internal_notes"
           ]
+        },
+        {
+          "id": "line_items",
+          "title": "Line Items",
+          "line_editor": {
+            "entity_id": "entity.workorder_line",
+            "parent_field": "workorder_line.workorder_id",
+            "item_lookup_field": "workorder_line.item_id",
+            "item_lookup_entity": "entity.item",
+            "item_lookup_display_field": "item.name",
+            "item_field_map": {
+              "workorder_line.unit_price": "item.unit_price",
+              "workorder_line.tax_rate": "item.tax_rate",
+              "workorder_line.description": "item.description"
+            },
+            "description_field": "workorder_line.description",
+            "defaults": {
+              "workorder_line.qty": 1,
+              "workorder_line.unit_price": 0,
+              "workorder_line.tax_rate": 0,
+              "workorder_line.discount_pct": 0
+            },
+            "columns": [
+              {
+                "field_id": "workorder_line.item_id",
+                "label": "Item",
+                "readonly": true
+              },
+              {
+                "field_id": "workorder_line.description",
+                "label": "Description"
+              },
+              {
+                "field_id": "workorder_line.qty",
+                "label": "Qty",
+                "type": "number"
+              },
+              {
+                "field_id": "workorder_line.unit_price",
+                "label": "Unit Price",
+                "type": "number"
+              },
+              {
+                "field_id": "workorder_line.discount_pct",
+                "label": "Discount %",
+                "type": "number"
+              },
+              {
+                "field_id": "workorder_line.tax_rate",
+                "label": "Tax %",
+                "type": "number"
+              },
+              {
+                "field_id": "workorder_line.line_total",
+                "label": "Line Total",
+                "type": "number"
+              }
+            ]
+          }
         }
       ],
       "header": {
@@ -993,6 +1092,70 @@
               "sections": [
                 "notes"
               ]
+            },
+            {
+              "id": "line_items",
+              "label": "Line Items",
+              "sections": [
+                "line_items"
+              ]
+            }
+          ]
+        }
+      },
+      "line_editors": {
+        "line_items": {
+          "entity_id": "entity.workorder_line",
+          "parent_field": "workorder_line.workorder_id",
+          "item_lookup_field": "workorder_line.item_id",
+          "item_lookup_entity": "entity.item",
+          "item_lookup_display_field": "item.name",
+          "item_field_map": {
+            "workorder_line.unit_price": "item.unit_price",
+            "workorder_line.tax_rate": "item.tax_rate",
+            "workorder_line.description": "item.description"
+          },
+          "description_field": "workorder_line.description",
+          "defaults": {
+            "workorder_line.qty": 1,
+            "workorder_line.unit_price": 0,
+            "workorder_line.tax_rate": 0,
+            "workorder_line.discount_pct": 0
+          },
+          "columns": [
+            {
+              "field_id": "workorder_line.item_id",
+              "label": "Item",
+              "readonly": true
+            },
+            {
+              "field_id": "workorder_line.description",
+              "label": "Description"
+            },
+            {
+              "field_id": "workorder_line.qty",
+              "label": "Qty",
+              "type": "number"
+            },
+            {
+              "field_id": "workorder_line.unit_price",
+              "label": "Unit Price",
+              "type": "number"
+            },
+            {
+              "field_id": "workorder_line.discount_pct",
+              "label": "Discount %",
+              "type": "number"
+            },
+            {
+              "field_id": "workorder_line.tax_rate",
+              "label": "Tax %",
+              "type": "number"
+            },
+            {
+              "field_id": "workorder_line.line_total",
+              "label": "Line Total",
+              "type": "number"
             }
           ]
         }
@@ -1187,36 +1350,6 @@
                       ]
                     }
                   ]
-                }
-              ]
-            },
-            {
-              "kind": "container",
-              "variant": "card",
-              "title": "Line Items",
-              "content": [
-                {
-                  "kind": "related_list",
-                  "entity_id": "entity.workorder_line",
-                  "target": "view:workorder_line.list",
-                  "record_domain": {
-                    "op": "eq",
-                    "field": "workorder_line.workorder_id",
-                    "value": {
-                      "ref": "$record.id"
-                    }
-                  },
-                  "create_modal": true,
-                  "create_defaults": {
-                    "workorder_line.workorder_id": {
-                      "ref": "$record.id"
-                    },
-                    "workorder_line.description": "New line item",
-                    "workorder_line.qty": 1,
-                    "workorder_line.unit_price": 0,
-                    "workorder_line.tax_rate": 0,
-                    "workorder_line.discount_pct": 0
-                  }
                 }
               ]
             }

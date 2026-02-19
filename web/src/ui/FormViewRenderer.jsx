@@ -38,6 +38,49 @@ export default function FormViewRenderer({
 }) {
   if (!view) return <div className="alert">Missing form view</div>;
   const sections = view.sections || [];
+  const viewLineEditors = useMemo(() => {
+    const raw = view?.line_editors ?? view?.lineEditors;
+    return raw && typeof raw === "object" ? raw : {};
+  }, [view]);
+  const demoLineItemsConfig = useMemo(
+    () => ({
+      entity_id: "entity.workorder_line",
+      parent_field: "workorder_line.workorder_id",
+      item_lookup_field: "workorder_line.item_id",
+      item_lookup_entity: "entity.item",
+      item_lookup_display_field: "item.name",
+      description_field: "workorder_line.description",
+      defaults: {
+        "workorder_line.qty": 1,
+        "workorder_line.unit_price": 0,
+        "workorder_line.tax_rate": 0,
+        "workorder_line.discount_pct": 0,
+      },
+      columns: [
+        { field_id: "workorder_line.item_id", label: "Item", readonly: true },
+        { field_id: "workorder_line.description", label: "Description" },
+        { field_id: "workorder_line.qty", label: "Qty", type: "number" },
+        { field_id: "workorder_line.unit_price", label: "Unit Price", type: "number" },
+        { field_id: "workorder_line.discount_pct", label: "Discount %", type: "number" },
+        { field_id: "workorder_line.tax_rate", label: "Tax %", type: "number" },
+        { field_id: "workorder_line.line_total", label: "Line Total", type: "number" },
+      ],
+    }),
+    []
+  );
+  const sectionFieldIds = useMemo(
+    () => sections.flatMap((s) => (Array.isArray(s?.fields) ? s.fields : [])),
+    [sections]
+  );
+  const isWorkorderForm = useMemo(() => {
+    const eid = String(entityId || "");
+    if (eid === "entity.workorder" || eid === "workorder" || eid.endsWith(".workorder")) {
+      return true;
+    }
+    return sections.some((section) =>
+      Array.isArray(section?.fields) && section.fields.some((fieldId) => typeof fieldId === "string" && fieldId.startsWith("workorder."))
+    );
+  }, [entityId, sections]);
   const [defaultsApplied, setDefaultsApplied] = useState(false);
   const tabsConfig = header?.tabs || null;
   const activityConfig = view?.activity && view.activity.enabled === true ? view.activity : null;
@@ -62,9 +105,7 @@ export default function FormViewRenderer({
   const [activeTab, setActiveTab] = useState(() => tabsConfig?.default_tab || tabsForUi[0]?.id || null);
   const [sectionTabs, setSectionTabs] = useState({});
 
-  const missing = sections
-    .flatMap((s) => s.fields)
-    .find((fieldId) => !fieldIndex[fieldId]);
+  const missing = sectionFieldIds.find((fieldId) => !fieldIndex[fieldId]);
   if (missing) {
     return <div className="alert alert-error">Missing field in manifest: {missing}</div>;
   }
@@ -87,7 +128,7 @@ export default function FormViewRenderer({
   const validationErrors = useMemo(() => {
     const errors = {};
     const requiredByStatus = new Set(Array.isArray(requiredFields) ? requiredFields : []);
-    for (const fieldId of sections.flatMap((s) => s.fields)) {
+    for (const fieldId of sectionFieldIds) {
       if (hiddenSet.has(fieldId)) continue;
       const field = fieldIndex[fieldId];
       if (field?.type === "attachments") continue;
@@ -109,7 +150,7 @@ export default function FormViewRenderer({
       }
     }
     return errors;
-  }, [record, sections, fieldIndex, readonly, requiredFields, hiddenSet]);
+  }, [record, sectionFieldIds, fieldIndex, readonly, requiredFields, hiddenSet]);
 
   const saveMode = header?.save_mode || "bottom";
   const showTopSave = saveMode === "top" || saveMode === "both";
@@ -133,7 +174,7 @@ export default function FormViewRenderer({
     if (!applyDefaults || defaultsApplied || readonly) return;
     if (!record || typeof record !== "object") return;
     const updates = {};
-    for (const fieldId of sections.flatMap((s) => s.fields)) {
+    for (const fieldId of sectionFieldIds) {
       const field = fieldIndex[fieldId];
       if (!field || !Object.prototype.hasOwnProperty.call(field, "default")) continue;
       const existing = getFieldValue(record, fieldId);
@@ -152,7 +193,7 @@ export default function FormViewRenderer({
     }
     setDefaultsApplied(true);
     onChange(next);
-  }, [applyDefaults, defaultsApplied, readonly, record, sections, fieldIndex, onChange]);
+  }, [applyDefaults, defaultsApplied, readonly, record, sectionFieldIds, fieldIndex, onChange]);
 
   const renderSections = (() => {
     if (!hasTabs) {
@@ -227,9 +268,37 @@ export default function FormViewRenderer({
     return `Missing: ${labels.join(", ")}`;
   }
 
-  const renderedSections = renderSections
-    .map((section) => ({ section, fields: getVisibleFields(section) }))
-    .filter((item) => item.fields.length > 0);
+  let renderedSections = renderSections
+    .map((section) => ({
+      section,
+      fields: getVisibleFields(section),
+      lineEditorConfig:
+        ((section?.line_editor ?? section?.lineEditor) && typeof (section?.line_editor ?? section?.lineEditor) === "object"
+          ? (section?.line_editor ?? section?.lineEditor)
+          : null) ||
+        (viewLineEditors[section?.id] && typeof viewLineEditors[section.id] === "object" ? viewLineEditors[section.id] : null) ||
+        (section?.id === "line_items" && isWorkorderForm ? demoLineItemsConfig : null),
+    }))
+    .filter((item) => item.fields.length > 0 || Boolean(item.lineEditorConfig));
+
+  const activeSection = activeTab ? sections.find((section) => section?.id === activeTab) : null;
+  const activeFallbackConfig =
+    (((activeSection?.line_editor ?? activeSection?.lineEditor) &&
+      typeof (activeSection?.line_editor ?? activeSection?.lineEditor) === "object"
+      ? (activeSection?.line_editor ?? activeSection?.lineEditor)
+      : null)) ||
+    (activeTab && viewLineEditors[activeTab] && typeof viewLineEditors[activeTab] === "object" ? viewLineEditors[activeTab] : null) ||
+    (activeTab === "line_items" && isWorkorderForm ? demoLineItemsConfig : null);
+
+  if (renderedSections.length === 0 && hasTabs && activeTab && activeFallbackConfig) {
+    renderedSections = [
+      {
+        section: { id: activeTab, title: activeTab },
+        fields: [],
+        lineEditorConfig: activeFallbackConfig,
+      },
+    ];
+  }
 
   const emptyTabState =
     hasTabs &&
@@ -342,12 +411,21 @@ export default function FormViewRenderer({
             Nothing here yet. This section becomes available after the required fields are completed or status changes.
           </div>
         )}
-        {activeTab !== activityTabId && renderedSections.map(({ section, fields }) => (
+        {activeTab !== activityTabId && renderedSections.map(({ section, fields, lineEditorConfig }) => (
           <div key={section.id} className="space-y-3">
             {!hasTabs && (
               <div className="text-sm font-semibold">{section.title || section.id}</div>
             )}
-            {(() => {
+            {lineEditorConfig ? (
+              <InlineLineItemsTable
+                config={lineEditorConfig}
+                parentRecordId={effectiveRecordId}
+                readonly={readonly}
+                previewMode={previewMode}
+                onLookupCreate={onLookupCreate}
+                canCreateLookup={canCreateLookup}
+              />
+            ) : (() => {
               const layout = section.layout;
               const isSectionTabs = layout === "tabs" && Array.isArray(section.tabs) && section.tabs.length > 0;
               const columns = !isSectionTabs && layout === "columns" && section.columns === 2 ? 2 : 1;
@@ -438,6 +516,377 @@ export default function FormViewRenderer({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function coerceEditorValue(value, type) {
+  if (type === "number") {
+    if (value === "" || value === null || value === undefined) return null;
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
+  if (type === "bool") return Boolean(value);
+  return value;
+}
+
+function InlineLineItemsTable({
+  config,
+  parentRecordId,
+  readonly,
+  previewMode = false,
+  onLookupCreate,
+  canCreateLookup,
+}) {
+  const childEntityId = config?.entity_id || null;
+  const parentField = config?.parent_field || null;
+  const itemField = config?.item_lookup_field || null;
+  const itemEntityId = config?.item_lookup_entity || null;
+  const itemDisplayField = config?.item_lookup_display_field || null;
+  const descriptionField = config?.description_field || null;
+  const itemFieldMap = config?.item_field_map && typeof config.item_field_map === "object" ? config.item_field_map : {};
+  const defaults = config?.defaults && typeof config.defaults === "object" ? config.defaults : {};
+  const columns = Array.isArray(config?.columns) ? config.columns : [];
+  const itemPrefix = useMemo(() => {
+    if (typeof itemDisplayField === "string" && itemDisplayField.includes(".")) {
+      return itemDisplayField.split(".")[0];
+    }
+    if (typeof itemField === "string" && itemField.includes(".")) {
+      return itemField.split(".")[0];
+    }
+    return "item";
+  }, [itemDisplayField, itemField]);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [searchDebounced, setSearchDebounced] = useState("");
+  const [lookupOpen, setLookupOpen] = useState(false);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupOptions, setLookupOptions] = useState([]);
+  const [lookupCache, setLookupCache] = useState({});
+  const lookupRef = useRef(null);
+
+  const fetchRows = React.useCallback(async () => {
+    if (!childEntityId || !parentField || !parentRecordId || previewMode) {
+      setRows([]);
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const fieldIds = Array.from(
+        new Set(
+          [
+            ...columns.map((c) => c?.field_id).filter(Boolean),
+            itemField,
+            descriptionField,
+          ].filter(Boolean)
+        )
+      );
+      const qs = new URLSearchParams();
+      if (fieldIds.length) qs.set("fields", fieldIds.join(","));
+      qs.set(
+        "domain",
+        JSON.stringify({
+          op: "eq",
+          field: parentField,
+          value: parentRecordId,
+        })
+      );
+      const res = await apiFetch(`/records/${childEntityId}?${qs.toString()}`);
+      const next = (res?.records || []).map((r) => ({
+        record_id: r.record_id,
+        record: r.record || {},
+      }));
+      setRows(next);
+    } catch (err) {
+      setError(err?.message || "Failed to load line items.");
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [childEntityId, parentField, parentRecordId, previewMode, columns, itemField, descriptionField]);
+
+  useEffect(() => {
+    fetchRows();
+  }, [fetchRows]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setSearchDebounced(search.trim()), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      if (!lookupOpen || !itemEntityId || previewMode) return;
+      if (searchDebounced.length < 2) {
+        setLookupOptions([]);
+        return;
+      }
+      setLookupLoading(true);
+      try {
+        const res = await apiFetch(`/lookup/${itemEntityId}/options`, {
+          method: "POST",
+          body: JSON.stringify({
+            q: searchDebounced,
+            limit: 30,
+          }),
+        });
+        const opts = (res?.records || []).map((item) => {
+          const rec = item.record || {};
+          const rid = item.record_id || rec.id;
+          const label = (itemDisplayField && rec[itemDisplayField]) || rid || "—";
+          return { value: rid, label };
+        });
+        if (!cancelled) setLookupOptions(opts);
+      } catch {
+        if (!cancelled) setLookupOptions([]);
+      } finally {
+        if (!cancelled) setLookupLoading(false);
+      }
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [lookupOpen, itemEntityId, itemDisplayField, previewMode, searchDebounced]);
+
+  useEffect(() => {
+    function onOutside(e) {
+      if (!lookupRef.current) return;
+      if (lookupRef.current.contains(e.target)) return;
+      setLookupOpen(false);
+    }
+    if (!lookupOpen) return;
+    document.addEventListener("mousedown", onOutside);
+    return () => document.removeEventListener("mousedown", onOutside);
+  }, [lookupOpen]);
+
+  async function patchRow(recordId, fieldId, rawValue, type) {
+    const value = coerceEditorValue(rawValue, type);
+    setRows((prev) =>
+      prev.map((row) =>
+        row.record_id === recordId
+          ? { ...row, record: { ...row.record, [fieldId]: value } }
+          : row
+      )
+    );
+    try {
+      await apiFetch(`/records/${childEntityId}/${recordId}`, {
+        method: "PUT",
+        body: JSON.stringify({ [fieldId]: value }),
+      });
+    } catch {
+      fetchRows();
+    }
+  }
+
+  async function deleteRow(recordId) {
+    try {
+      await apiFetch(`/records/${childEntityId}/${recordId}`, { method: "DELETE" });
+      setRows((prev) => prev.filter((row) => row.record_id !== recordId));
+    } catch {
+      fetchRows();
+    }
+  }
+
+  async function addRowFromOption(option) {
+    if (!option?.value || !parentRecordId) return;
+    let itemRecord = null;
+    try {
+      const itemRes = await apiFetch(`/records/${itemEntityId}/${option.value}`);
+      itemRecord = itemRes?.record || itemRes || null;
+    } catch {
+      itemRecord = null;
+    }
+    const payload = {
+      ...defaults,
+      [parentField]: parentRecordId,
+      [itemField]: option.value,
+    };
+    const explicitMappings = Object.entries(itemFieldMap);
+    if (itemRecord && explicitMappings.length > 0) {
+      for (const [targetField, sourceField] of explicitMappings) {
+        if (typeof targetField !== "string" || typeof sourceField !== "string") continue;
+        const mapped = itemRecord[sourceField];
+        if (mapped !== undefined && mapped !== null && mapped !== "") {
+          payload[targetField] = mapped;
+        }
+      }
+    } else if (itemRecord) {
+      const unitPriceColumn = columns.find((c) => typeof c?.field_id === "string" && c.field_id.endsWith(".unit_price"));
+      const taxRateColumn = columns.find((c) => typeof c?.field_id === "string" && c.field_id.endsWith(".tax_rate"));
+      const itemUnitPrice = itemRecord[`${itemPrefix}.unit_price`];
+      const itemTaxRate = itemRecord[`${itemPrefix}.tax_rate`];
+      const itemDescription = itemRecord[`${itemPrefix}.description`];
+      if (unitPriceColumn?.field_id && itemUnitPrice !== undefined && itemUnitPrice !== null) {
+        payload[unitPriceColumn.field_id] = itemUnitPrice;
+      }
+      if (taxRateColumn?.field_id && itemTaxRate !== undefined && itemTaxRate !== null) {
+        payload[taxRateColumn.field_id] = itemTaxRate;
+      }
+      if (descriptionField && !payload[descriptionField] && itemDescription) {
+        payload[descriptionField] = itemDescription;
+      }
+    }
+    if (descriptionField && !payload[descriptionField]) payload[descriptionField] = option.label || "";
+    try {
+      const created = await apiFetch(`/records/${childEntityId}`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      const createdId = created?.record_id;
+      if (createdId) {
+        setLookupCache((prev) => ({ ...prev, [createdId]: option.label || option.value }));
+      }
+      setSearch("");
+      setSearchDebounced("");
+      setLookupOpen(false);
+      await fetchRows();
+    } catch (err) {
+      setError(err?.message || "Failed to add line item.");
+    }
+  }
+
+  if (!childEntityId || !parentField || !itemField || !itemEntityId) {
+    return <div className="text-sm text-error">Line editor is missing configuration.</div>;
+  }
+
+  if (!parentRecordId) {
+    return <div className="text-sm opacity-70">Save the work order first, then add line items.</div>;
+  }
+
+  return (
+    <div className="rounded-box border border-base-300 bg-base-100">
+      <div className="overflow-x-auto min-h-80">
+        <table className="table table-sm">
+          <thead>
+            <tr>
+              {columns.map((col) => (
+                <th key={col.field_id || col.label}>{col.label || col.field_id}</th>
+              ))}
+              {!readonly ? <th className="w-12" /> : null}
+            </tr>
+          </thead>
+          <tbody>
+            {loading && (
+              <tr>
+                <td colSpan={columns.length + (readonly ? 0 : 1)} className="text-sm opacity-70">Loading line items...</td>
+              </tr>
+            )}
+            {!loading && rows.length === 0 && (
+              <tr>
+                <td colSpan={columns.length + (readonly ? 0 : 1)} className="text-sm opacity-70">No line items yet.</td>
+              </tr>
+            )}
+            {!loading && rows.map((row) => (
+              <tr key={row.record_id}>
+                {columns.map((col) => {
+                  const fieldId = col.field_id;
+                  const raw = row.record?.[fieldId];
+                  if (fieldId === itemField) {
+                    const label = lookupCache[row.record_id] || row.record?.[descriptionField] || raw || "";
+                    return <td key={`${row.record_id}-${fieldId}`}>{label}</td>;
+                  }
+                  if (readonly || col.readonly) {
+                    return <td key={`${row.record_id}-${fieldId}`}>{String(raw ?? "")}</td>;
+                  }
+                  return (
+                    <td key={`${row.record_id}-${fieldId}`}>
+                      <input
+                        className="input input-bordered input-xs w-full"
+                        type={col.type === "number" ? "number" : "text"}
+                        value={raw ?? ""}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          setRows((prev) =>
+                            prev.map((r) =>
+                              r.record_id === row.record_id
+                                ? { ...r, record: { ...r.record, [fieldId]: next } }
+                                : r
+                            )
+                          );
+                        }}
+                        onBlur={(e) => patchRow(row.record_id, fieldId, e.target.value, col.type)}
+                      />
+                    </td>
+                  );
+                })}
+                {!readonly ? (
+                  <td>
+                    <button
+                      type="button"
+                      className={SOFT_BUTTON_XS}
+                      onClick={() => deleteRow(row.record_id)}
+                    >
+                      Remove
+                    </button>
+                  </td>
+                ) : null}
+              </tr>
+            ))}
+          </tbody>
+          {!readonly && (
+            <tfoot>
+              <tr>
+                <td colSpan={columns.length + 1}>
+                  <div ref={lookupRef} className="relative">
+                    <input
+                      className="input input-bordered input-sm w-full"
+                      placeholder="Add line: search item..."
+                      value={search}
+                      onFocus={() => setLookupOpen(true)}
+                      onChange={(e) => {
+                        setSearch(e.target.value);
+                        setLookupOpen(true);
+                      }}
+                    />
+                    {lookupOpen && (
+                      <div className="absolute z-30 mt-1 w-full rounded-box border border-base-300 bg-base-100 shadow">
+                        <ul className="menu menu-compact max-h-64 overflow-auto">
+                          {lookupLoading && <li className="menu-title"><span>Loading...</span></li>}
+                          {!lookupLoading && searchDebounced.length < 2 && <li className="menu-title"><span>Type at least 2 characters...</span></li>}
+                          {!lookupLoading && searchDebounced.length >= 2 && lookupOptions.length === 0 && <li className="menu-title"><span>No results</span></li>}
+                          {lookupOptions.map((opt) => (
+                            <li key={opt.value}>
+                              <button type="button" onClick={() => addRowFromOption(opt)}>
+                                {opt.label}
+                              </button>
+                            </li>
+                          ))}
+                          {typeof canCreateLookup === "function" && canCreateLookup(itemEntityId) && (
+                            <li className="border-t border-base-300 mt-1 pt-1">
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (typeof onLookupCreate !== "function") return;
+                                  const result = await onLookupCreate({
+                                    entityId: itemEntityId,
+                                    displayField: itemDisplayField,
+                                    initialValue: searchDebounced || "",
+                                  });
+                                  if (result?.record_id) {
+                                    await addRowFromOption({ value: result.record_id, label: result.label || result.record_id });
+                                  }
+                                }}
+                              >
+                                + Create new item
+                              </button>
+                            </li>
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+      {error ? <div className="px-3 pb-3 text-xs text-error">{error}</div> : null}
     </div>
   );
 }
