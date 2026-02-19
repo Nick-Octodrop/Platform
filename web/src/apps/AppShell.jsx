@@ -423,7 +423,7 @@ export default function AppShell({
     [openPrompt]
   );
 
-  async function openCreateModal({ entityId, displayField, initialValue }) {
+  async function openCreateModal({ entityId, displayField, initialValue, defaults }) {
     if (previewMode) return null;
     const entityFullId = entityId?.startsWith("entity.") ? entityId : `entity.${entityId}`;
     const entityShortId = entityId?.startsWith("entity.") ? entityId.slice("entity.".length) : entityId;
@@ -498,6 +498,7 @@ export default function AppShell({
         formViewId,
         displayField: resolvedDisplayField,
         initialValue,
+        defaults: defaults && typeof defaults === "object" ? defaults : null,
         resolve,
         manifest: modalManifest,
         compiled: modalCompiled,
@@ -507,7 +508,9 @@ export default function AppShell({
 
   useEffect(() => {
     if (!createModal) return;
-    const nextDraft = {};
+    const nextDraft = createModal.defaults && typeof createModal.defaults === "object"
+      ? { ...createModal.defaults }
+      : {};
     if (createModal.initialValue && createModal.displayField) {
       nextDraft[createModal.displayField] = createModal.initialValue;
     }
@@ -1044,6 +1047,7 @@ export default function AppShell({
               onRunAction={runAction}
               onConfirm={confirmDialog}
               onPrompt={promptDialog}
+              onLookupCreate={openCreateModal}
               externalRefreshTick={viewModesRefreshTick}
               previewMode={previewMode}
               canWriteRecords={canWriteRecords}

@@ -197,6 +197,11 @@ Rules:
 {
   "kind": "view_modes",
   "entity_id": "entity.contact",
+  "record_domain": {
+    "op": "eq",
+    "field": "contact.account_id",
+    "value": { "ref": "$record.id" }
+  },
   "default_mode": "list",
   "modes": [
     { "mode": "list", "target": "view:contact.list" },
@@ -208,11 +213,37 @@ Rules:
 ```
 Rules:
 - `modes[]` must be non-empty; each item requires `mode` and `target`.
-- `mode` allowlist: `list`, `kanban`, `graph`, `pivot` (pivot can be disabled in UI).
+- `mode` allowlist: `list`, `kanban`, `graph`, `calendar`, `pivot` (pivot can be disabled in UI).
 - `target` must be a valid view id (or `view:<id>`).
 - `default_mode` optional; falls back to first mode.
 - `default_group_by` optional; used for kanban/pivot.
 - `default_filter_id` optional; may refer to a manifest filter id or user-saved filter id.
+- `record_domain` optional; when used inside a `record` block, it can reference `$record.*` for embedded related lists.
+
+### Block: related_list (v1.3)
+```json
+{
+  "kind": "related_list",
+  "entity_id": "entity.workorder_line",
+  "target": "view:workorder_line.list_inline",
+  "record_domain": {
+    "op": "eq",
+    "field": "workorder_line.workorder_id",
+    "value": { "ref": "$record.id" }
+  },
+  "create_modal": true,
+  "create_defaults": {
+    "workorder_line.workorder_id": { "ref": "$record.id" },
+    "workorder_line.qty": 1
+  }
+}
+```
+Rules:
+- Renders a list-only embedded table intended for form/page composition.
+- `target` (or `view`) must point to a list view.
+- `record_domain` supports `$record.*` refs inside a `record` block.
+- `create_modal` opens quick-create modal from `+` (default: `true`).
+- `create_defaults` pre-fills quick-create values and supports `{ "ref": "$record.*" }`.
 
 Validation:
 - Max block nesting depth is limited.
@@ -309,6 +340,9 @@ Top‑level actions:
 ]
 ```
 
+Template refs in `defaults` / `patch`:
+- Values can use `{ "ref": "$record.id" }` or `{ "ref": "$record.<field>" }` and will resolve from the current record context at runtime.
+
 Page header actions can reference actions:
 ```json
 "header": {
@@ -397,9 +431,29 @@ Graph view:
 }
 ```
 
+Calendar view:
+```json
+{
+  "id": "workorder.calendar",
+  "kind": "calendar",
+  "entity": "entity.workorder",
+  "calendar": {
+    "title_field": "workorder.title",
+    "date_start": "workorder.scheduled_start",
+    "date_end": "workorder.scheduled_end",
+    "all_day_field": "workorder.is_all_day",
+    "color_field": "workorder.assignee_id",
+    "default_scale": "month"
+  }
+}
+```
+
 Rules:
 - Views must reference a known entity.
 - All referenced fields must exist in the entity.
+- Calendar views require `calendar.title_field` and `calendar.date_start`.
+- Calendar views support optional `calendar.date_end`, `calendar.all_day_field`, `calendar.color_field`.
+- `calendar.default_scale` (optional) can be `month`, `week`, `day`, or `year`.
 - `section.layout` (v1.3) can be `"columns"` with `columns: 2` for 2‑col layouts.
 - List views may include `open_record` to control row click navigation:
 ```json

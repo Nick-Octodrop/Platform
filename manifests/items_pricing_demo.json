@@ -1,0 +1,269 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "items_pricing",
+    "name": "Items & Pricing",
+    "version": "0.1.0",
+    "description": "Manage products, services, and pricing used across operational modules.",
+    "category": "Catalog",
+    "icon_key": "lucide:Package"
+  },
+  "app": {
+    "home": "page:item.list_page",
+    "defaults": {
+      "entity_home_page": "page:item.list_page",
+      "entity_form_page": "page:item.form_page",
+      "entities": {
+        "entity.item": {
+          "entity_home_page": "page:item.list_page",
+          "entity_form_page": "page:item.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Catalog",
+        "items": [
+          {
+            "label": "Items & Pricing",
+            "to": "page:item.list_page"
+          }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.item",
+      "display_field": "item.name",
+      "fields": [
+        { "id": "item.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "item.sku", "type": "string", "label": "SKU", "required": true },
+        { "id": "item.name", "type": "string", "label": "Name", "required": true },
+        {
+          "id": "item.type",
+          "type": "enum",
+          "label": "Type",
+          "required": true,
+          "default": "service",
+          "options": [
+            { "label": "Service", "value": "service" },
+            { "label": "Product", "value": "product" },
+            { "label": "Consumable", "value": "consumable" }
+          ]
+        },
+        {
+          "id": "item.status",
+          "type": "enum",
+          "label": "Status",
+          "required": true,
+          "default": "active",
+          "options": [
+            { "label": "Active", "value": "active" },
+            { "label": "Inactive", "value": "inactive" }
+          ]
+        },
+        { "id": "item.category", "type": "string", "label": "Category" },
+        { "id": "item.uom", "type": "string", "label": "Unit of Measure", "default": "EA" },
+        { "id": "item.cost", "type": "number", "label": "Cost", "default": 0 },
+        { "id": "item.unit_price", "type": "number", "label": "Unit Price", "required": true, "default": 0 },
+        { "id": "item.tax_rate", "type": "number", "label": "Tax %", "default": 0 },
+        { "id": "item.description", "type": "text", "label": "Description" },
+        { "id": "item.tags", "type": "tags", "label": "Tags" }
+      ]
+    }
+  ],
+  "relations": [],
+  "workflows": [
+    {
+      "id": "item_status_workflow",
+      "entity": "entity.item",
+      "status_field": "item.status",
+      "states": [
+        { "id": "active", "label": "Active" },
+        { "id": "inactive", "label": "Inactive" }
+      ]
+    }
+  ],
+  "actions": [
+    { "id": "action.refresh", "kind": "refresh", "label": "Refresh" },
+    { "id": "action.item_new", "kind": "open_form", "target": "item.form", "label": "New" },
+    {
+      "id": "action.item_set_active",
+      "kind": "update_record",
+      "entity_id": "entity.item",
+      "label": "Set Active",
+      "patch": { "item.status": "active" }
+    },
+    {
+      "id": "action.item_set_inactive",
+      "kind": "update_record",
+      "entity_id": "entity.item",
+      "label": "Set Inactive",
+      "patch": { "item.status": "inactive" }
+    },
+    {
+      "id": "action.item_bulk_set_active",
+      "kind": "bulk_update",
+      "entity_id": "entity.item",
+      "label": "Set Active",
+      "patch": { "item.status": "active" }
+    },
+    {
+      "id": "action.item_bulk_set_inactive",
+      "kind": "bulk_update",
+      "entity_id": "entity.item",
+      "label": "Set Inactive",
+      "patch": { "item.status": "inactive" }
+    }
+  ],
+  "triggers": [
+    { "id": "items.record.created", "event": "record.created", "entity_id": "entity.item" },
+    { "id": "items.record.updated", "event": "record.updated", "entity_id": "entity.item" },
+    {
+      "id": "items.workflow.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.item",
+      "status_field": "item.status"
+    }
+  ],
+  "views": [
+    {
+      "id": "item.list",
+      "entity": "entity.item",
+      "kind": "list",
+      "columns": [
+        { "field_id": "item.sku" },
+        { "field_id": "item.name" },
+        { "field_id": "item.type" },
+        { "field_id": "item.category" },
+        { "field_id": "item.unit_price" },
+        { "field_id": "item.tax_rate" },
+        { "field_id": "item.status" }
+      ],
+      "open_record": { "to": "page:item.form_page", "param": "record" },
+      "header": {
+        "primary_actions": [{ "action_id": "action.item_new" }],
+        "bulk_actions": [
+          { "action_id": "action.item_bulk_set_active" },
+          { "action_id": "action.item_bulk_set_inactive" }
+        ],
+        "search": {
+          "enabled": true,
+          "placeholder": "Search items...",
+          "fields": ["item.sku", "item.name", "item.category", "item.description"]
+        }
+      },
+      "create_behavior": "open_form"
+    },
+    {
+      "id": "item.kanban",
+      "kind": "kanban",
+      "entity": "entity.item",
+      "card": {
+        "title_field": "item.name",
+        "subtitle_fields": ["item.sku", "item.category"],
+        "badge_fields": ["item.type", "item.status", "item.tags"]
+      }
+    },
+    {
+      "id": "item.graph",
+      "kind": "graph",
+      "entity": "entity.item",
+      "default": { "type": "bar", "group_by": "item.category", "measure": "count" }
+    },
+    {
+      "id": "item.form",
+      "entity": "entity.item",
+      "kind": "form",
+      "sections": [
+        {
+          "id": "main",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "item.sku",
+            "item.name",
+            "item.type",
+            "item.status",
+            "item.category",
+            "item.uom",
+            "item.cost",
+            "item.unit_price",
+            "item.tax_rate",
+            "item.tags"
+          ]
+        },
+        {
+          "id": "notes",
+          "fields": ["item.description"]
+        }
+      ],
+      "header": {
+        "title_field": "item.name",
+        "save_mode": "top",
+        "auto_save": true,
+        "auto_save_debounce_ms": 750,
+        "statusbar": { "field_id": "item.status" },
+        "primary_actions": [
+          { "action_id": "action.item_set_active" },
+          { "action_id": "action.item_set_inactive" }
+        ],
+        "secondary_actions": [{ "action_id": "action.refresh" }]
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "item.list_page",
+      "title": "Items & Pricing",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.refresh" },
+          { "kind": "navigate", "label": "New", "target": "page:item.form_page" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.item",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:item.list" },
+                { "mode": "kanban", "target": "view:item.kanban", "default_group_by": "item.type" },
+                { "mode": "graph", "target": "view:item.graph" },
+                { "mode": "pivot", "target": "view:item.graph" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "item.form_page",
+      "title": "Item",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.item",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [{ "kind": "view", "target": "view:item.form" }]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

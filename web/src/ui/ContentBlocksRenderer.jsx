@@ -51,7 +51,7 @@ function hasViewModes(blocks) {
   if (!Array.isArray(blocks)) return false;
   for (const block of blocks) {
     if (!block || typeof block !== "object") continue;
-    if (block.kind === "view_modes") return true;
+    if (block.kind === "view_modes" || block.kind === "related_list") return true;
     if (block.kind === "container" && hasViewModes(block.content)) return true;
     if (block.kind === "stack" && hasViewModes(block.content)) return true;
     if (block.kind === "grid" && Array.isArray(block.items) && block.items.some((item) => hasViewModes(item?.content))) return true;
@@ -65,7 +65,7 @@ function hasFillHeight(blocks) {
   if (!Array.isArray(blocks)) return false;
   for (const block of blocks) {
     if (!block || typeof block !== "object") continue;
-    if (block.kind === "view_modes" || block.kind === "view" || block.kind === "record" || block.kind === "chatter") return true;
+    if (block.kind === "view_modes" || block.kind === "related_list" || block.kind === "view" || block.kind === "record" || block.kind === "chatter") return true;
     if (block.kind === "container" && hasFillHeight(block.content)) return true;
     if (block.kind === "stack" && hasFillHeight(block.content)) return true;
     if (block.kind === "grid" && Array.isArray(block.items) && block.items.some((item) => hasFillHeight(item?.content))) return true;
@@ -74,7 +74,7 @@ function hasFillHeight(blocks) {
   return false;
 }
 
-export default function ContentBlocksRenderer({ blocks, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, onNavigate, onRunAction, onConfirm, onPrompt, externalRefreshTick = 0, previewMode = false, bootstrap = null, bootstrapVersion = 0, bootstrapLoading = false, canWriteRecords = null }) {
+export default function ContentBlocksRenderer({ blocks, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, onNavigate, onRunAction, onConfirm, onPrompt, onLookupCreate, externalRefreshTick = 0, previewMode = false, bootstrap = null, bootstrapVersion = 0, bootstrapLoading = false, canWriteRecords = null }) {
   const safeBlocks = Array.isArray(blocks) ? blocks : [];
   const fullHeight = hasViewModes(safeBlocks) || hasFillHeight(safeBlocks);
   const inherited = useContext(RecordScopeContext);
@@ -102,6 +102,7 @@ export default function ContentBlocksRenderer({ blocks, renderView, recordId, se
             onRunAction={onRunAction}
             onConfirm={onConfirm}
             onPrompt={onPrompt}
+            onLookupCreate={onLookupCreate}
             externalRefreshTick={externalRefreshTick}
             recordContext={baseContext}
             previewMode={previewMode}
@@ -126,7 +127,7 @@ export default function ContentBlocksRenderer({ blocks, renderView, recordId, se
   return content;
 }
 
-function BlockRenderer({ block, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, recordContext, onNavigate, onRunAction, onConfirm, onPrompt, externalRefreshTick = 0, previewMode = false, bootstrap, bootstrapVersion, bootstrapLoading, canWriteRecords }) {
+function BlockRenderer({ block, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, recordContext, onNavigate, onRunAction, onConfirm, onPrompt, onLookupCreate, externalRefreshTick = 0, previewMode = false, bootstrap, bootstrapVersion, bootstrapLoading, canWriteRecords }) {
   if (!block || typeof block !== "object") {
     return <div className="alert alert-warning">Invalid block</div>;
   }
@@ -154,12 +155,50 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
         actionsMap={actionsMap}
         onConfirm={onConfirm}
         onPrompt={onPrompt}
+        onLookupCreate={onLookupCreate}
         externalRefreshTick={externalRefreshTick}
         previewMode={previewMode}
         bootstrap={bootstrap}
         bootstrapVersion={bootstrapVersion}
         bootstrapLoading={bootstrapLoading}
         canWriteRecords={canWriteRecords}
+        recordContext={recordContext}
+      />
+    );
+  }
+
+  if (kind === "related_list") {
+    const targetViewId = normalizeViewTarget(block.target || block.view);
+    if (!targetViewId) return <div className="alert alert-error">related_list requires a list view target</div>;
+    const mappedBlock = {
+      kind: "view_modes",
+      entity_id: block.entity_id,
+      default_mode: "list",
+      modes: [{ mode: "list", target: `view:${targetViewId}` }],
+      record_domain: block.record_domain || null,
+      create_defaults: block.create_defaults || null,
+      create_modal: block.create_modal !== false,
+    };
+    return (
+      <ViewModesBlock
+        block={mappedBlock}
+        manifest={manifest}
+        searchParams={searchParams}
+        setSearchParams={setSearchParams}
+        onNavigate={onNavigate}
+        onRunAction={onRunAction}
+        actionsMap={actionsMap}
+        onConfirm={onConfirm}
+        onPrompt={onPrompt}
+        onLookupCreate={onLookupCreate}
+        externalRefreshTick={externalRefreshTick}
+        previewMode={previewMode}
+        bootstrap={bootstrap}
+        bootstrapVersion={bootstrapVersion}
+        bootstrapLoading={bootstrapLoading}
+        canWriteRecords={canWriteRecords}
+        recordContext={recordContext}
+        forceListOnly={true}
       />
     );
   }
@@ -167,7 +206,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
   if (kind === "stack") {
     return (
       <div className={`flex flex-col ${gapClass(block.gap)}`}>
-        <ContentBlocksRenderer blocks={block.content} renderView={renderView} recordId={recordId} searchParams={searchParams} setSearchParams={setSearchParams} manifest={manifest} moduleId={moduleId} actionsMap={actionsMap} onNavigate={onNavigate} onRunAction={onRunAction} onConfirm={onConfirm} onPrompt={onPrompt} externalRefreshTick={externalRefreshTick} previewMode={previewMode} bootstrap={bootstrap} bootstrapVersion={bootstrapVersion} bootstrapLoading={bootstrapLoading} canWriteRecords={canWriteRecords} />
+        <ContentBlocksRenderer blocks={block.content} renderView={renderView} recordId={recordId} searchParams={searchParams} setSearchParams={setSearchParams} manifest={manifest} moduleId={moduleId} actionsMap={actionsMap} onNavigate={onNavigate} onRunAction={onRunAction} onConfirm={onConfirm} onPrompt={onPrompt} onLookupCreate={onLookupCreate} externalRefreshTick={externalRefreshTick} previewMode={previewMode} bootstrap={bootstrap} bootstrapVersion={bootstrapVersion} bootstrapLoading={bootstrapLoading} canWriteRecords={canWriteRecords} />
       </div>
     );
   }
@@ -191,6 +230,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
                 onRunAction={onRunAction}
                 onConfirm={onConfirm}
                 onPrompt={onPrompt}
+                onLookupCreate={onLookupCreate}
                 externalRefreshTick={externalRefreshTick}
                 previewMode={previewMode}
                 bootstrap={bootstrap}
@@ -216,7 +256,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
         <div className="mt-4">
           {tabs.map((tab) =>
             tab.id === activeId ? (
-              <ContentBlocksRenderer key={tab.id} blocks={tab.content} renderView={renderView} recordId={recordId} searchParams={searchParams} setSearchParams={setSearchParams} manifest={manifest} moduleId={moduleId} actionsMap={actionsMap} onNavigate={onNavigate} onRunAction={onRunAction} onConfirm={onConfirm} onPrompt={onPrompt} externalRefreshTick={externalRefreshTick} previewMode={previewMode} bootstrap={bootstrap} bootstrapVersion={bootstrapVersion} bootstrapLoading={bootstrapLoading} canWriteRecords={canWriteRecords} />
+              <ContentBlocksRenderer key={tab.id} blocks={tab.content} renderView={renderView} recordId={recordId} searchParams={searchParams} setSearchParams={setSearchParams} manifest={manifest} moduleId={moduleId} actionsMap={actionsMap} onNavigate={onNavigate} onRunAction={onRunAction} onConfirm={onConfirm} onPrompt={onPrompt} onLookupCreate={onLookupCreate} externalRefreshTick={externalRefreshTick} previewMode={previewMode} bootstrap={bootstrap} bootstrapVersion={bootstrapVersion} bootstrapLoading={bootstrapLoading} canWriteRecords={canWriteRecords} />
             ) : null
           )}
         </div>
@@ -231,9 +271,9 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
   if (kind === "container") {
     const variant = block.variant || "card";
     const title = block.title;
-    const hasViewModes = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view_modes");
-    const hasInnerScroll = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view" || b?.kind === "view_modes");
-    const shouldFill = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view" || b?.kind === "view_modes" || b?.kind === "chatter");
+    const hasViewModes = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view_modes" || b?.kind === "related_list");
+    const hasInnerScroll = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view" || b?.kind === "view_modes" || b?.kind === "related_list");
+    const shouldFill = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view" || b?.kind === "view_modes" || b?.kind === "related_list" || b?.kind === "chatter");
     const content = (
       <ContentBlocksRenderer
         blocks={block.content || []}
@@ -248,6 +288,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
         onRunAction={onRunAction}
         onConfirm={onConfirm}
         onPrompt={onPrompt}
+        onLookupCreate={onLookupCreate}
         externalRefreshTick={externalRefreshTick}
         previewMode={previewMode}
         bootstrap={bootstrap}
@@ -316,6 +357,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
               onRunAction={onRunAction}
               onConfirm={onConfirm}
               onPrompt={onPrompt}
+              onLookupCreate={onLookupCreate}
               externalRefreshTick={externalRefreshTick}
               previewMode={previewMode}
               bootstrap={bootstrap}

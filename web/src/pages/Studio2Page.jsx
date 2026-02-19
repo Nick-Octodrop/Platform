@@ -313,6 +313,7 @@ function findUnsupportedBlocks(manifest) {
     "statusbar",
     "chatter",
     "view_modes",
+    "related_list",
   ]);
 
   function walkBlocks(blocks, basePath) {

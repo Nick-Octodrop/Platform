@@ -3,6 +3,9 @@ import {
   ArrowUpDown,
   BarChart3,
   Bookmark,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   Columns2,
   Columns3,
   Filter,
@@ -45,6 +48,10 @@ function IconPie() {
 
 function IconPivot() {
   return <Table2 className="h-4 w-4" />;
+}
+
+function IconCalendar() {
+  return <CalendarDays className="h-4 w-4" />;
 }
 
 function IconSearch() {
@@ -132,8 +139,96 @@ function buildFieldIndex(manifest, entityFullId) {
   return index;
 }
 
-function buildDomain(activeFilter, clientFilters) {
+function getByPath(data, path) {
+  if (!data || typeof data !== "object" || typeof path !== "string") return undefined;
+  if (path in data) return data[path];
+  const parts = path.split(".");
+  let cur = data;
+  for (const part of parts) {
+    if (cur && typeof cur === "object" && part in cur) {
+      cur = cur[part];
+    } else {
+      return undefined;
+    }
+  }
+  return cur;
+}
+
+function resolveTemplateRefs(value, record) {
+  if (Array.isArray(value)) return value.map((item) => resolveTemplateRefs(item, record));
+  if (value && typeof value === "object") {
+    if (typeof value.ref === "string") {
+      if (value.ref === "$record.id") return record?.id ?? null;
+      if (value.ref.startsWith("$record.")) return getByPath(record, value.ref.slice("$record.".length));
+      return getByPath(record, value.ref);
+    }
+    const next = {};
+    for (const [key, nested] of Object.entries(value)) {
+      next[key] = resolveTemplateRefs(nested, record);
+    }
+    return next;
+  }
+  return value;
+}
+
+function resolveConditionRefs(condition, record) {
+  if (!condition || typeof condition !== "object") return condition;
+  const op = condition.op;
+  if (op === "and" || op === "or") {
+    return {
+      ...condition,
+      conditions: Array.isArray(condition.conditions)
+        ? condition.conditions.map((item) => resolveConditionRefs(item, record))
+        : [],
+    };
+  }
+  if (op === "not") {
+    return {
+      ...condition,
+      condition: resolveConditionRefs(condition.condition, record),
+    };
+  }
+  const resolveOperand = (operand) => {
+    if (operand && typeof operand === "object" && typeof operand.ref === "string") {
+      if (operand.ref === "$record.id") return record?.id;
+      if (operand.ref.startsWith("$record.")) return getByPath(record, operand.ref.slice("$record.".length));
+      return getByPath(record, operand.ref);
+    }
+    return operand;
+  };
+  if ("left" in condition || "right" in condition) {
+    return {
+      ...condition,
+      left: resolveOperand(condition.left),
+      right: resolveOperand(condition.right),
+    };
+  }
+  if ("value" in condition) {
+    return {
+      ...condition,
+      value: resolveOperand(condition.value),
+    };
+  }
+  return condition;
+}
+
+function hasRecordRef(condition) {
+  if (!condition || typeof condition !== "object") return false;
+  const scanValue = (value) => {
+    if (!value || typeof value !== "object") return false;
+    if (typeof value.ref === "string" && value.ref.startsWith("$record.")) return true;
+    return false;
+  };
+  if (scanValue(condition.left) || scanValue(condition.right) || scanValue(condition.value)) return true;
+  if (typeof condition.field === "string" && condition.field.startsWith("$record.")) return true;
+  if (Array.isArray(condition.conditions) && condition.conditions.some((item) => hasRecordRef(item))) return true;
+  if (condition.condition && hasRecordRef(condition.condition)) return true;
+  return false;
+}
+
+function buildDomain(activeFilter, clientFilters, recordDomain) {
   const conditions = [];
+  if (recordDomain) conditions.push(recordDomain);
   if (activeFilter?.domain) conditions.push(activeFilter.domain);
   if (Array.isArray(clientFilters)) {
     for (const flt of clientFilters) {
@@ -368,6 +463,541 @@ function GraphView({ data, type = "bar" }) {
   );
 }
 
+function toDateValue(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function atMidnight(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function ymdKey(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function formatClockLabel(date) {
+  if (!(date instanceof Date)) return "";
+  return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+function hasTimeComponent(date) {
+  if (!(date instanceof Date)) return false;
+  return date.getHours() !== 0 || date.getMinutes() !== 0 || date.getSeconds() !== 0 || date.getMilliseconds() !== 0;
+}
+
+function minutesSinceMidnight(date) {
+  if (!(date instanceof Date)) return 0;
+  return date.getHours() * 60 + date.getMinutes();
+}
+
+function layoutTimedEvents(events) {
+  const sorted = [...(events || [])].sort((a, b) => {
+    if (a.startMin !== b.startMin) return a.startMin - b.startMin;
+    if (a.endMin !== b.endMin) return a.endMin - b.endMin;
+    return String(a.title || "").localeCompare(String(b.title || ""));
+  });
+  const active = [];
+  let maxColumns = 1;
+  const items = [];
+  for (const ev of sorted) {
+    for (let i = active.length - 1; i >= 0; i -= 1) {
+      if (active[i].endMin <= ev.startMin) active.splice(i, 1);
+    }
+    const used = new Set(active.map((a) => a.col));
+    let col = 0;
+    while (used.has(col)) col += 1;
+    active.push({ endMin: ev.endMin, col });
+    if (col + 1 > maxColumns) maxColumns = col + 1;
+    items.push({ ...ev, col });
+  }
+  return { items, maxColumns };
+}
+
+function CalendarView({ view, records, onSelectRow }) {
+  const calendar = view?.calendar || {};
+  const titleField = calendar.title_field || view?.title_field || "id";
+  const startField = calendar.date_start || view?.date_start;
+  const endField = calendar.date_end || view?.date_end || startField;
+  const allDayField = calendar.all_day_field || view?.all_day_field;
+  const allowedScales = new Set(["day", "week", "month", "year"]);
+  const configuredScale = String(calendar.default_scale || view?.default_scale || "month").toLowerCase();
+  const [scale, setScale] = useState(allowedScales.has(configuredScale) ? configuredScale : "month");
+  const [cursorMonth, setCursorMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  });
+  const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  const eventsByDay = useMemo(() => {
+    const out = new Map();
+    for (const row of records || []) {
+      const rec = row?.record || {};
+      const start = toDateValue(rec?.[startField]);
+      if (!start) continue;
+      const endRaw = toDateValue(rec?.[endField]);
+      const end = endRaw && endRaw >= start ? endRaw : start;
+      const startDay = atMidnight(start);
+      const endDay = atMidnight(end);
+      const eventTitle = String(rec?.[titleField] || row?.record_id || "Record");
+      const allDay = Boolean(allDayField && rec?.[allDayField]);
+
+      const walker = new Date(startDay);
+      let guard = 0;
+      while (walker <= endDay && guard < 92) {
+        const key = ymdKey(walker);
+        const existing = out.get(key) || [];
+        const dayStart = atMidnight(walker);
+        const dayEnd = new Date(dayStart);
+        dayEnd.setHours(23, 59, 59, 999);
+        const segStart = start > dayStart ? start : dayStart;
+        const segEnd = end < dayEnd ? end : dayEnd;
+        const sameDay = atMidnight(segStart).getTime() === atMidnight(segEnd).getTime();
+        const startLabel = formatClockLabel(segStart);
+        const endLabel = formatClockLabel(segEnd);
+        const sortMinutes = allDay ? -1 : segStart.getHours() * 60 + segStart.getMinutes();
+        let timeLabel = "";
+        if (allDay) {
+          timeLabel = "All day";
+        } else if (sameDay) {
+          timeLabel = `${startLabel}${segEnd > segStart ? ` - ${endLabel}` : ""}`;
+        } else {
+          timeLabel = `${startLabel}+`;
+        }
+        existing.push({ row, title: eventTitle, sortMinutes, timeLabel, allDay });
+        out.set(key, existing);
+        walker.setDate(walker.getDate() + 1);
+        guard += 1;
+      }
+    }
+    return out;
+  }, [records, startField, endField, titleField, allDayField]);
+
+  const timedByDay = useMemo(() => {
+    const out = new Map();
+    function ensureBucket(key) {
+      if (!out.has(key)) out.set(key, { raw: [], allDayCount: 0, layout: { items: [], maxColumns: 1 } });
+      return out.get(key);
+    }
+    for (const row of records || []) {
+      const rec = row?.record || {};
+      const start = toDateValue(rec?.[startField]);
+      if (!start) continue;
+      const endRaw = toDateValue(rec?.[endField]);
+      const end = endRaw && endRaw >= start ? endRaw : start;
+      const startDay = atMidnight(start);
+      const endDay = atMidnight(end);
+      const eventTitle = String(rec?.[titleField] || row?.record_id || "Record");
+      const explicitAllDay = Boolean(allDayField && rec?.[allDayField]);
+      const treatAsTimed = !explicitAllDay && (hasTimeComponent(start) || hasTimeComponent(end));
+
+      const walker = new Date(startDay);
+      let guard = 0;
+      while (walker <= endDay && guard < 92) {
+        const key = ymdKey(walker);
+        const bucket = ensureBucket(key);
+        if (!treatAsTimed) {
+          bucket.allDayCount += 1;
+          walker.setDate(walker.getDate() + 1);
+          guard += 1;
+          continue;
+        }
+        const dayStart = atMidnight(walker);
+        const dayEnd = new Date(dayStart);
+        dayEnd.setHours(23, 59, 59, 999);
+        const segStart = start > dayStart ? start : dayStart;
+        const segEnd = end < dayEnd ? end : dayEnd;
+        const startMin = minutesSinceMidnight(segStart);
+        const rawEndMin = minutesSinceMidnight(segEnd);
+        const endMin = Math.min(24 * 60, Math.max(startMin + 15, rawEndMin || startMin + 30));
+        const startLabel = formatClockLabel(segStart);
+        const endLabel = formatClockLabel(segEnd);
+        bucket.raw.push({
+          row,
+          title: eventTitle,
+          startMin,
+          endMin,
+          timeLabel: `${startLabel}${segEnd > segStart ? ` - ${endLabel}` : ""}`,
+        });
+        walker.setDate(walker.getDate() + 1);
+        guard += 1;
+      }
+    }
+    for (const bucket of out.values()) {
+      bucket.layout = layoutTimedEvents(bucket.raw);
+    }
+    return out;
+  }, [records, startField, endField, titleField, allDayField]);
+
+  function startOfWeek(value) {
+    const d = atMidnight(value);
+    const mondayOffset = (d.getDay() + 6) % 7;
+    d.setDate(d.getDate() - mondayOffset);
+    return d;
+  }
+
+  function moveCursor(direction) {
+    setCursorMonth((current) => {
+      const next = new Date(current);
+      if (scale === "year") {
+        next.setFullYear(next.getFullYear() + direction);
+      } else if (scale === "day") {
+        next.setDate(next.getDate() + direction);
+      } else if (scale === "week") {
+        next.setDate(next.getDate() + direction * 7);
+      } else {
+        next.setMonth(next.getMonth() + direction);
+      }
+      return next;
+    });
+  }
+
+  const monthDays = useMemo(() => {
+    const monthStart = new Date(cursorMonth.getFullYear(), cursorMonth.getMonth(), 1);
+    const mondayOffset = (monthStart.getDay() + 6) % 7;
+    const monthEnd = new Date(cursorMonth.getFullYear(), cursorMonth.getMonth() + 1, 0);
+    const dayCount = monthEnd.getDate();
+    const totalCells = Math.ceil((mondayOffset + dayCount) / 7) * 7;
+    const firstGridDay = new Date(monthStart);
+    firstGridDay.setDate(firstGridDay.getDate() - mondayOffset);
+
+    const cells = [];
+    const walker = new Date(firstGridDay);
+    for (let i = 0; i < totalCells; i += 1) {
+      const key = ymdKey(walker);
+      cells.push({
+        key,
+        date: new Date(walker),
+        inMonth: walker.getMonth() === cursorMonth.getMonth(),
+        events: eventsByDay.get(key) || [],
+      });
+      walker.setDate(walker.getDate() + 1);
+    }
+    return { monthStart, cells, rowCount: Math.max(1, totalCells / 7) };
+  }, [cursorMonth, eventsByDay]);
+
+  const weekDays = useMemo(() => {
+    const start = startOfWeek(cursorMonth);
+    const cells = [];
+    const walker = new Date(start);
+    for (let i = 0; i < 7; i += 1) {
+      const key = ymdKey(walker);
+      cells.push({
+        key,
+        date: new Date(walker),
+        events: eventsByDay.get(key) || [],
+      });
+      walker.setDate(walker.getDate() + 1);
+    }
+    return cells;
+  }, [cursorMonth, eventsByDay]);
+
+  const dayCell = useMemo(() => {
+    const day = atMidnight(cursorMonth);
+    const key = ymdKey(day);
+    return {
+      key,
+      date: day,
+      events: eventsByDay.get(key) || [],
+    };
+  }, [cursorMonth, eventsByDay]);
+
+  const yearMonths = useMemo(() => {
+    const year = cursorMonth.getFullYear();
+    return Array.from({ length: 12 }).map((_, idx) => {
+      const monthStart = new Date(year, idx, 1);
+      const monthEnd = new Date(year, idx + 1, 0);
+      let total = 0;
+      for (let d = 1; d <= monthEnd.getDate(); d += 1) {
+        const key = ymdKey(new Date(year, idx, d));
+        total += (eventsByDay.get(key) || []).length;
+      }
+      return {
+        idx,
+        label: monthStart.toLocaleDateString(undefined, { month: "long" }),
+        total,
+      };
+    });
+  }, [cursorMonth, eventsByDay]);
+
+  const todayKey = ymdKey(new Date());
+  const monthLabel =
+    scale === "year"
+      ? `${cursorMonth.getFullYear()}`
+      : scale === "day"
+        ? cursorMonth.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" })
+      : scale === "week"
+        ? `Week of ${startOfWeek(cursorMonth).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`
+        : cursorMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const describeEvent = (event) => {
+    const rec = event?.row?.record || {};
+    const number = rec["workorder.number"] ? `#${rec["workorder.number"]}` : "";
+    const title = event?.title || rec["workorder.title"] || "Work Order";
+    const status = rec["workorder.status"] ? `Status: ${String(rec["workorder.status"]).replace(/_/g, " ")}` : "";
+    const when = event?.timeLabel ? `When: ${event.timeLabel}` : "";
+    return [number, title, when, status].filter(Boolean).join(" | ");
+  };
+
+  return (
+    <div className="h-full min-h-0 w-full rounded-box border border-base-300 bg-base-100 p-3 flex flex-col gap-3 overflow-hidden">
+      <div className="flex items-center justify-between gap-2">
+        <div className="join">
+          <button className={`${SOFT_BUTTON_SM} join-item`} onClick={() => moveCursor(-1)}>
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button className={`${SOFT_BUTTON_SM} join-item`} onClick={() => setCursorMonth(new Date())}>
+            Today
+          </button>
+          <button className={`${SOFT_BUTTON_SM} join-item`} onClick={() => moveCursor(1)}>
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="font-semibold">{monthLabel}</div>
+        <div className="join">
+          <button className={`${SOFT_BUTTON_SM} join-item ${scale === "day" ? "bg-base-300" : ""}`} onClick={() => setScale("day")}>Day</button>
+          <button className={`${SOFT_BUTTON_SM} join-item ${scale === "week" ? "bg-base-300" : ""}`} onClick={() => setScale("week")}>Week</button>
+          <button className={`${SOFT_BUTTON_SM} join-item ${scale === "month" ? "bg-base-300" : ""}`} onClick={() => setScale("month")}>Month</button>
+          <button className={`${SOFT_BUTTON_SM} join-item ${scale === "year" ? "bg-base-300" : ""}`} onClick={() => setScale("year")}>Year</button>
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-hidden">
+        {scale !== "year" ? (
+          <div className="h-full min-h-0 flex flex-col overflow-hidden">
+            {scale === "month" && (
+              <div className="shrink-0 grid grid-cols-7 gap-2 text-xs font-semibold text-base-content/60 mb-2">
+                {weekdays.map((w) => (
+                  <div key={w} className="px-1 py-1">{w}</div>
+                ))}
+              </div>
+            )}
+
+            {scale === "month" ? (
+              <div
+                className="flex-1 min-h-0 grid gap-2 grid-cols-7"
+                style={{ gridTemplateRows: `repeat(${monthDays.rowCount || 6}, minmax(0, 1fr))` }}
+              >
+                {monthDays.cells.map((cell) => (
+                  <div
+                    key={cell.key}
+                    className={`h-full min-h-0 rounded-box border p-2 flex flex-col gap-1 overflow-hidden hover:border-primary/40 cursor-pointer ${
+                      !cell.inMonth ? "border-base-200 bg-base-200/35" : "border-base-300 bg-base-100"
+                    } ${cell.key === todayKey ? "ring-1 ring-inset ring-primary/40" : ""}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      setCursorMonth(new Date(cell.date));
+                      setScale("day");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setCursorMonth(new Date(cell.date));
+                        setScale("day");
+                      }
+                    }}
+                  >
+                    <div className={`text-xs font-medium ${!cell.inMonth ? "text-base-content/50" : "text-base-content"}`}>
+                      {cell.date.getDate()}
+                    </div>
+                    <div className="space-y-1 flex-1 min-h-0 overflow-auto pr-1">
+                      {[...(cell.events || [])]
+                        .sort((a, b) => {
+                          if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
+                          if (a.sortMinutes !== b.sortMinutes) return a.sortMinutes - b.sortMinutes;
+                          return String(a.title).localeCompare(String(b.title));
+                        })
+                        .map((event, idx) => (
+                          <DaisyTooltip key={`${cell.key}-${idx}`} label={describeEvent(event)} placement="top">
+                            <button
+                              type="button"
+                              className="w-full text-left truncate rounded-md bg-primary/10 hover:bg-primary/20 text-base-content px-1.5 py-1 text-[11px]"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectRow?.(event.row);
+                              }}
+                              title={event.title}
+                            >
+                              {event.title}
+                            </button>
+                          </DaisyTooltip>
+                        ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              (() => {
+                const cells = scale === "week" ? weekDays : [dayCell];
+                const defaultStart = 6 * 60;
+                const defaultEnd = 20 * 60;
+                let minStart = defaultStart;
+                let maxEnd = defaultEnd;
+                for (const cell of cells) {
+                  const layout = timedByDay.get(cell.key)?.layout;
+                  for (const ev of layout?.items || []) {
+                    if (ev.startMin < minStart) minStart = ev.startMin;
+                    if (ev.endMin > maxEnd) maxEnd = ev.endMin;
+                  }
+                }
+                minStart = Math.max(0, Math.floor((minStart - 60) / 60) * 60);
+                maxEnd = Math.min(24 * 60, Math.ceil((maxEnd + 60) / 60) * 60);
+                if (maxEnd - minStart < 6 * 60) maxEnd = Math.min(24 * 60, minStart + 6 * 60);
+                const hourHeight = 56;
+                const pxPerMin = hourHeight / 60;
+                const dayHeight = Math.max(560, Math.round((maxEnd - minStart) * pxPerMin));
+                const marks = [];
+                for (let m = minStart; m <= maxEnd; m += 30) marks.push(m);
+                const laneWidth = 140;
+                const gridTemplateColumns = `64px repeat(${cells.length}, minmax(0, 1fr))`;
+
+                const now = new Date();
+                const nowMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+                const showNowInRange = nowMinutes >= minStart && nowMinutes <= maxEnd;
+                const nowTop = (nowMinutes - minStart) * pxPerMin;
+
+                return (
+                  <div className="flex-1 min-h-0 overflow-hidden">
+                    <div className="h-full min-h-0 overflow-y-auto overflow-x-hidden pr-1">
+                      <div className="grid gap-2 mb-2" style={{ gridTemplateColumns }}>
+                        <div />
+                        {cells.map((cell) => {
+                          const allDayCount = timedByDay.get(cell.key)?.allDayCount || 0;
+                          const isClickable = scale === "week";
+                          return (
+                            <button
+                              key={`hdr-${cell.key}`}
+                              type="button"
+                              className={`px-2 text-left text-xs font-semibold text-base-content/70 ${isClickable ? "hover:text-base-content" : "cursor-default"}`}
+                              onClick={() => {
+                                if (!isClickable) return;
+                                setCursorMonth(new Date(cell.date));
+                                setScale("day");
+                              }}
+                            >
+                              {cell.date.toLocaleDateString(undefined, scale === "week"
+                                ? { weekday: "short", day: "numeric", month: "short" }
+                                : { weekday: "long", day: "numeric", month: "short" })}
+                              {allDayCount > 0 ? <span className="ml-2 text-base-content/50">({allDayCount} all-day)</span> : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="grid gap-2" style={{ gridTemplateColumns }}>
+                        <div className="relative border-r border-base-300" style={{ height: dayHeight }}>
+                          {marks.map((m) => (
+                            <div key={`t-${m}`} className="absolute left-0 right-0" style={{ top: (m - minStart) * pxPerMin }}>
+                              {m % 60 === 0 ? (
+                                <div className="-translate-y-1/2 pr-2 text-right text-[11px] text-base-content/60">
+                                  {formatClockLabel(new Date(2000, 0, 1, Math.floor(m / 60), m % 60))}
+                                </div>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                        {cells.map((cell) => {
+                          const layout = timedByDay.get(cell.key)?.layout || { items: [], maxColumns: 1 };
+                          const lanes = Math.max(1, layout.maxColumns || 1);
+                          const canvasWidth = Math.max(0, lanes * laneWidth);
+                          const useFixedWidthCanvas = lanes > 4;
+                          return (
+                            <div
+                              key={cell.key}
+                              className={`rounded-box border border-base-300 bg-base-100 overflow-hidden ${scale === "week" ? "cursor-pointer hover:border-primary/40" : ""}`}
+                              style={{ height: dayHeight }}
+                              onClick={() => {
+                                if (scale !== "week") return;
+                                setCursorMonth(new Date(cell.date));
+                                setScale("day");
+                              }}
+                            >
+                              <div className={useFixedWidthCanvas ? "h-full overflow-x-auto overflow-y-hidden" : "h-full overflow-hidden"}>
+                                <div className="relative min-w-full" style={{ width: useFixedWidthCanvas ? `${canvasWidth}px` : "100%", height: dayHeight }}>
+                                {marks.map((m) => (
+                                  <div
+                                    key={`${cell.key}-line-${m}`}
+                                    className={`absolute left-0 right-0 z-0 ${m % 60 === 0 ? "border-t border-base-300/80" : "border-t border-base-300/35"}`}
+                                    style={{ top: (m - minStart) * pxPerMin }}
+                                  />
+                                ))}
+                                {layout.items.map((ev, idx) => {
+                                  const rawTop = (ev.startMin - minStart) * pxPerMin;
+                                  const rawHeight = Math.max(18, (ev.endMin - ev.startMin) * pxPerMin);
+                                  const eventInset = 2;
+                                  const top = Math.max(eventInset, rawTop + eventInset);
+                                  const height = Math.max(18, rawHeight - eventInset * 2);
+                                  const leftPct = (ev.col / lanes) * 100;
+                                  const widthPct = 100 / lanes;
+                                  return (
+                                    <DaisyTooltip key={`${cell.key}-ev-${idx}`} label={describeEvent(ev)} placement="top">
+                                      <button
+                                        type="button"
+                                        className="absolute z-10 box-border text-left rounded-box bg-primary/10 hover:bg-primary/20 text-base-content px-1.5 py-1 text-[11px] overflow-hidden"
+                                        style={{
+                                          top,
+                                          height,
+                                          left: `calc(${leftPct}% + 2px)`,
+                                          width: `calc(${widthPct}% - 4px)`,
+                                        }}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onSelectRow?.(ev.row);
+                                        }}
+                                        title={`${ev.timeLabel} - ${ev.title}`}
+                                      >
+                                        <div className="font-medium truncate">{ev.title}</div>
+                                        <div className="text-[10px] opacity-70 truncate">{ev.timeLabel}</div>
+                                      </button>
+                                    </DaisyTooltip>
+                                  );
+                                })}
+                                {showNowInRange && cell.key === todayKey ? (
+                                  <div
+                                    className="absolute left-0 right-0 z-20 border-t border-error/80 pointer-events-none"
+                                    style={{ top: nowTop }}
+                                  />
+                                ) : null}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()
+            )}
+          </div>
+        ) : (
+          <div className="h-full min-h-0 overflow-auto">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+            {yearMonths.map((month) => (
+              <button
+                key={month.idx}
+                type="button"
+                className="rounded-box border border-base-300 bg-base-100 hover:bg-base-200 p-3 text-left flex flex-col gap-2"
+                onClick={() => {
+                  setCursorMonth(new Date(cursorMonth.getFullYear(), month.idx, 1));
+                  setScale("month");
+                }}
+              >
+                <div className="font-medium">{month.label}</div>
+                <div className="text-xs text-base-content/60">{month.total} event{month.total === 1 ? "" : "s"}</div>
+              </button>
+            ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PivotView({ data, measure }) {
   if (!data || !Array.isArray(data.rows) || !Array.isArray(data.cols)) {
     return <div className="text-sm opacity-60">No data</div>;
@@ -423,6 +1053,7 @@ export default function ViewModesBlock({
   setSearchParams,
   onNavigate,
   onRunAction,
+  onLookupCreate,
   actionsMap,
   externalRefreshTick = 0,
   previewMode = false,
@@ -432,6 +1063,8 @@ export default function ViewModesBlock({
   bootstrapVersion = 0,
   bootstrapLoading = false,
   canWriteRecords = true,
+  recordContext = null,
+  forceListOnly = false,
 }) {
   const modes = Array.isArray(block?.modes) ? block.modes : [];
   const views = Array.isArray(manifest?.views) ? manifest.views : [];
@@ -470,16 +1103,17 @@ export default function ViewModesBlock({
     .filter((m) => m.mode && m.targetId && m.view);
 
   const modeButtons = useMemo(() => {
+    if (forceListOnly) return resolvedModes.filter((m) => m.mode === "list");
     const list = [...resolvedModes];
     if (!list.find((m) => m.mode === "pivot")) {
       list.push({ mode: "pivot", disabled: true });
     }
     return list;
-  }, [resolvedModes]);
+  }, [resolvedModes, forceListOnly]);
 
-  const defaultMode = block?.default_mode || resolvedModes[0]?.mode || "list";
+  const defaultMode = forceListOnly ? "list" : (block?.default_mode || resolvedModes[0]?.mode || "list");
 
-  const activeMode = resolvedModes.find((m) => m.mode === modeParam)?.mode || defaultMode;
+  const activeMode = forceListOnly ? "list" : (resolvedModes.find((m) => m.mode === modeParam)?.mode || defaultMode);
   const activeModeDef = resolvedModes.find((m) => m.mode === activeMode) || resolvedModes[0] || null;
   const activeView = activeModeDef?.view || null;
 
@@ -515,7 +1149,20 @@ export default function ViewModesBlock({
     savedFilterList.find((f) => f.id === filterParam) ||
     manifestFilterList.find((f) => f.id === filterParam) ||
     null;
-  const domain = buildDomain(activeFilter, clientFilters);
+  const recordScope = useMemo(() => {
+    const base = recordContext?.record && typeof recordContext.record === "object" ? recordContext.record : {};
+    const id = recordContext?.recordId || base?.id || null;
+    return id ? { ...base, id } : base;
+  }, [recordContext]);
+  const recordDomain = useMemo(
+    () => resolveConditionRefs(block?.record_domain || null, recordScope),
+    [block?.record_domain, recordScope]
+  );
+  const createDefaults = useMemo(
+    () => resolveTemplateRefs(block?.create_defaults || null, recordScope),
+    [block?.create_defaults, recordScope]
+  );
+  const domain = buildDomain(activeFilter, clientFilters, recordDomain);
 
   useEffect(() => {
     if (previewMode || !entityFullId) return;
@@ -554,6 +1201,7 @@ export default function ViewModesBlock({
   }, [entityFullId, previewMode]);
 
   useEffect(() => {
+    if (forceListOnly) return;
     if (!setSearchParams) return;
     if (!prefsLoadedRef.current) return;
     const params = new URLSearchParams(searchParams || "");
@@ -578,9 +1226,10 @@ export default function ViewModesBlock({
       }
     }
     if (changed) setSearchParams(params, { replace: true });
-  }, [prefs, searchParams, setSearchParams, defaultMode, activeModeDef, block, clientFilters.length]);
+  }, [forceListOnly, prefs, searchParams, setSearchParams, defaultMode, activeModeDef, block, clientFilters.length]);
 
   useEffect(() => {
+    if (forceListOnly) return;
     if (!setSearchParams || !activeView) return;
     const params = new URLSearchParams(searchParams || "");
     let changed = false;
@@ -606,7 +1255,7 @@ export default function ViewModesBlock({
       }
     }
     if (changed) setSearchParams(params, { replace: true });
-  }, [activeMode, activeView, searchParams, setSearchParams, groupByParam]);
+  }, [forceListOnly, activeMode, activeView, searchParams, setSearchParams, groupByParam]);
 
   useEffect(() => {
     if (!activeView || previewMode) return;
@@ -627,6 +1276,11 @@ export default function ViewModesBlock({
     if (bootstrapLoading && viewKind === "list") {
       return;
     }
+    if (block?.record_domain && hasRecordRef(block.record_domain) && !recordScope?.id) {
+      setRecords([]);
+      setSelectedIds([]);
+      return;
+    }
     const listFields = [];
     if (viewKind === "list") {
       const cols = Array.isArray(activeView.columns) ? activeView.columns : [];
@@ -641,6 +1295,17 @@ export default function ViewModesBlock({
       for (const fid of card.badge_fields || []) listFields.push(fid);
       if (groupByParam) listFields.push(groupByParam);
     }
+    if (viewKind === "calendar") {
+      const calendar = activeView.calendar || {};
+      const titleField = calendar.title_field || activeView.title_field || entityDef?.display_field;
+      const startField = calendar.date_start || activeView.date_start;
+      const endField = calendar.date_end || activeView.date_end;
+      if (titleField) listFields.push(titleField);
+      if (startField) listFields.push(startField);
+      if (endField) listFields.push(endField);
+      if (calendar.color_field) listFields.push(calendar.color_field);
+      if (calendar.all_day_field) listFields.push(calendar.all_day_field);
+    }
     if (entityDef?.display_field) listFields.push(entityDef.display_field);
     const uniq = Array.from(new Set(listFields));
     const qs = new URLSearchParams();
@@ -654,7 +1319,7 @@ export default function ViewModesBlock({
         setSelectedIds([]);
       })
       .catch(() => setRecords([]));
-  }, [activeView, entityFullId, searchText, searchFields, domain, groupByParam, previewMode, entityDef, refreshTick, externalRefreshTick, bootstrap, bootstrapVersion, bootstrapLoading]);
+  }, [activeView, entityFullId, searchText, searchFields, domain, groupByParam, previewMode, entityDef, refreshTick, externalRefreshTick, bootstrap, bootstrapVersion, bootstrapLoading, block, recordScope]);
 
   const [graphData, setGraphData] = useState([]);
   useEffect(() => {
@@ -899,11 +1564,12 @@ export default function ViewModesBlock({
     }
     return opts;
   }, [entityDef]);
+  const createInModal = Boolean(forceListOnly && block?.create_modal !== false && typeof onLookupCreate === "function");
   const searchEnabled = Boolean(listView?.header?.search?.enabled);
   const showSearch = searchEnabled;
-  const showFilters = manifestFilterList.length > 0 || filterableFields.length > 0;
-  const showSavedViews = savedFilters.length > 0 || showFilters;
-  const showGroupBy = activeMode !== "list" && filterableFields.length > 0;
+  const showFilters = !forceListOnly && (manifestFilterList.length > 0 || filterableFields.length > 0);
+  const showSavedViews = !forceListOnly && (savedFilters.length > 0 || showFilters);
+  const showGroupBy = !forceListOnly && (activeMode === "kanban" || activeMode === "graph" || activeMode === "pivot") && filterableFields.length > 0;
   const showGraphMeasure = activeMode === "graph" && measureOptions.length > 0;
   const showPivotMeasure = activeMode === "pivot" && measureOptions.length > 0;
 
@@ -915,7 +1581,16 @@ export default function ViewModesBlock({
             <DaisyTooltip label={`New ${entityLabel}`} placement="bottom">
               <button
                 className={PRIMARY_BUTTON_SM}
-                onClick={() => {
+                onClick={async () => {
+                  if (createInModal) {
+                    const created = await onLookupCreate({
+                      entityId: entityFullId,
+                      displayField: entityDef?.display_field,
+                      defaults: createDefaults,
+                    });
+                    if (created?.record_id) setRefreshTick((v) => v + 1);
+                    return;
+                  }
                   const target = resolveEntityDefaultFormPage(appDefaults, entityFullId);
                   if (target) onNavigate?.(target);
                 }}
@@ -1157,26 +1832,44 @@ export default function ViewModesBlock({
               )}
             </div>
           )}
-          <div className="join">
-            {modeButtons.map((m) => {
-              const active = m.mode === activeMode;
-              const icon = m.mode === "list" ? <IconList /> : m.mode === "kanban" ? <IconKanban /> : m.mode === "graph" ? <IconGraph /> : <IconPivot />;
-              const modeTip = m.mode === "kanban" ? "Kanban" : m.mode === "graph" ? "Graph" : m.mode === "pivot" ? "Pivot" : "List";
-              return (
-                <DaisyTooltip key={m.mode} label={modeTip} className="join-item" placement="top">
-                  <button
-                    className={`${SOFT_ICON_SM} ${active ? "bg-base-300" : ""}`}
-                    onClick={() => !m.disabled && handleModeChange(m.mode)}
-                    disabled={m.disabled}
-                    type="button"
-                    aria-label={m.mode}
-                  >
-                    {icon}
-                  </button>
-                </DaisyTooltip>
-              );
-            })}
-          </div>
+          {!forceListOnly && (
+            <div className="join">
+              {modeButtons.map((m) => {
+                const active = m.mode === activeMode;
+                const icon = m.mode === "list"
+                  ? <IconList />
+                  : m.mode === "kanban"
+                    ? <IconKanban />
+                    : m.mode === "graph"
+                      ? <IconGraph />
+                      : m.mode === "calendar"
+                        ? <IconCalendar />
+                        : <IconPivot />;
+                const modeTip = m.mode === "kanban"
+                  ? "Kanban"
+                  : m.mode === "graph"
+                    ? "Graph"
+                    : m.mode === "calendar"
+                      ? "Calendar"
+                      : m.mode === "pivot"
+                        ? "Pivot"
+                        : "List";
+                return (
+                  <DaisyTooltip key={m.mode} label={modeTip} className="join-item" placement="top">
+                    <button
+                      className={`${SOFT_ICON_SM} ${active ? "bg-base-300" : ""}`}
+                      onClick={() => !m.disabled && handleModeChange(m.mode)}
+                      disabled={m.disabled}
+                      type="button"
+                      aria-label={m.mode}
+                    >
+                      {icon}
+                    </button>
+                  </DaisyTooltip>
+                );
+              })}
+            </div>
+          )}
           {selectedIds.length > 0 && (
             <button className={SOFT_BUTTON_SM} onClick={handleBulkDelete}>Delete ({selectedIds.length})</button>
           )}
@@ -1208,7 +1901,7 @@ export default function ViewModesBlock({
         </div>
       )}
 
-      <div className="flex-1 min-h-0 overflow-auto relative z-0">
+      <div className={`flex-1 min-h-0 relative z-0 ${activeMode === "calendar" ? "overflow-hidden" : "overflow-auto"}`}>
         {activeView && (activeView.kind === "list" || activeView.type === "list") && (
           <div className="h-full min-h-0">
             <ListViewRenderer
@@ -1257,6 +1950,22 @@ export default function ViewModesBlock({
               entityDef={entityDef}
               records={records}
               groupBy={groupByParam}
+              onSelectRow={(row) => {
+                if (!openRecordTarget) return;
+                const recordId = row.record_id || row.record?.id;
+                if (!recordId) return;
+                const target = openRecordTarget.startsWith("page:") || openRecordTarget.startsWith("view:") ? openRecordTarget : `page:${openRecordTarget}`;
+                onNavigate?.(target, { recordId, recordParamName: openRecordParam, preserveParams: true });
+              }}
+            />
+          </div>
+        )}
+
+        {activeView && (activeView.kind === "calendar" || activeView.type === "calendar") && (
+          <div className="h-full min-h-0 overflow-hidden">
+            <CalendarView
+              view={activeView}
+              records={records}
               onSelectRow={(row) => {
                 if (!openRecordTarget) return;
                 const recordId = row.record_id || row.record?.id;

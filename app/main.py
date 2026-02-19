@@ -231,6 +231,37 @@ def _legacy_entity_id(entity_id: str) -> str | None:
     return None
 
 
+def _get_by_path(data: dict | None, path: str) -> Any:
+    if not isinstance(data, dict) or not isinstance(path, str):
+        return None
+    if path in data:
+        return data.get(path)
+    cur: Any = data
+    for part in path.split("."):
+        if isinstance(cur, dict) and part in cur:
+            cur = cur.get(part)
+        else:
+            return None
+    return cur
+
+
+def _resolve_action_templates(value: Any, context: dict | None) -> Any:
+    if isinstance(value, dict):
+        if set(value.keys()) == {"ref"} and isinstance(value.get("ref"), str):
+            ref = value.get("ref")
+            ctx = context if isinstance(context, dict) else {}
+            record = ctx.get("record") or ctx.get("record_draft") or {}
+            if ref == "$record.id":
+                return ctx.get("record_id") or _get_by_path(record, "id")
+            if ref.startswith("$record."):
+                return _get_by_path(record, ref[len("$record.") :])
+            return _get_by_path(record, ref)
+        return {k: _resolve_action_templates(v, context) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_resolve_action_templates(v, context) for v in value]
+    return value
+
+
 def _find_record_anywhere(record_id: str) -> tuple[str, dict] | None:
     if not isinstance(record_id, str) or not record_id:
         return None
@@ -7361,6 +7392,12 @@ def _studio2_completeness_check(manifest: dict) -> list[dict]:
                             page_view_targets.add(target)
                             if not target.startswith("view:"):
                                 page_view_targets.add(f"view:{target}")
+            if node.get("kind") == "related_list":
+                target = node.get("target") or node.get("view")
+                if isinstance(target, str):
+                    page_view_targets.add(target)
+                    if not target.startswith("view:"):
+                        page_view_targets.add(f"view:{target}")
             for value in node.values():
                 _collect(value, page_id)
         elif isinstance(node, list):
@@ -8935,6 +8972,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
     if kind == "create_record":
         t0 = time.perf_counter()
         values = action.get("defaults") if isinstance(action.get("defaults"), dict) else {}
+        values = _resolve_action_templates(values, context)
         workflow = _find_entity_workflow(found[2], entity_def.get("id"))
         errors, clean = _validate_record_payload(entity_def, values, for_create=True, workflow=workflow)
         lookup_errors = _validate_lookup_fields(entity_def, _registry_for_request(request), lambda module_id, manifest_hash: _get_snapshot(request, module_id, manifest_hash))
@@ -9000,6 +9038,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
         return _ok_response({"result": {"record_id": record["record_id"], "record": record["record"], "entity_id": entity_id}})
 
     patch = action.get("patch") if isinstance(action.get("patch"), dict) else {}
+    patch = _resolve_action_templates(patch, context)
     if kind == "update_record":
         t0 = time.perf_counter()
         record_id = context.get("record_id") if isinstance(context, dict) else None

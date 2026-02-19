@@ -55,6 +55,10 @@ ALLOWED_V1_BLOCK_KEYS = {
     "default_mode",
     "default_group_by",
     "default_filter_id",
+    "record_domain",
+    "view",
+    "create_defaults",
+    "create_modal",
 }
 ALLOWED_V1_ACTION_KINDS = {"navigate", "open_form", "refresh", "create_record", "update_record", "bulk_update"}
 ALLOWED_V1_TRIGGER_KEYS = {"id", "event", "entity_id", "action_id", "status_field"}
@@ -70,7 +74,8 @@ ALLOWED_V1_CONTAINER_KEYS = {"kind", "variant", "title", "content"}
 ALLOWED_V1_TOOLBAR_KEYS = {"kind", "align", "actions"}
 ALLOWED_V1_STATUSBAR_KEYS = {"kind", "entity_id", "record_ref", "field_id", "mode"}
 ALLOWED_V1_RECORD_KEYS = {"kind", "entity_id", "record_id_query", "content"}
-ALLOWED_V1_VIEW_MODES_KEYS = {"kind", "entity_id", "modes", "default_mode", "default_group_by", "default_filter_id"}
+ALLOWED_V1_VIEW_MODES_KEYS = {"kind", "entity_id", "modes", "default_mode", "default_group_by", "default_filter_id", "record_domain"}
+ALLOWED_V1_RELATED_LIST_KEYS = {"kind", "entity_id", "target", "view", "record_domain", "create_defaults", "create_modal"}
 ALLOWED_V1_VIEW_MODE_ITEM_KEYS = {"mode", "target", "default_group_by"}
 MAX_BLOCK_DEPTH = 6
 MAX_CONDITION_DEPTH = 6
@@ -438,7 +443,7 @@ def _validate_blocks(
             if not isinstance(modes, list) or len(modes) == 0:
                 errors.append(_issue("MANIFEST_VIEW_MODES_INVALID", "view_modes.modes must be a non-empty list", f"{bpath}.modes"))
                 continue
-            allowed_modes = {"list", "kanban", "graph", "pivot"}
+            allowed_modes = {"list", "kanban", "graph", "pivot", "calendar"}
             mode_ids = []
             for midx, mode in enumerate(modes):
                 mpath = f"{bpath}.modes[{midx}]"
@@ -449,7 +454,7 @@ def _validate_blocks(
                 mode_id = _get(mode, "mode")
                 target = _get(mode, "target")
                 if not isinstance(mode_id, str) or mode_id not in allowed_modes:
-                    errors.append(_issue("MANIFEST_VIEW_MODE_INVALID", "mode must be list|kanban|graph|pivot", f"{mpath}.mode"))
+                    errors.append(_issue("MANIFEST_VIEW_MODE_INVALID", "mode must be list|kanban|graph|pivot|calendar", f"{mpath}.mode"))
                 else:
                     mode_ids.append(mode_id)
                 target_id = _parse_view_target(target)
@@ -460,6 +465,27 @@ def _validate_blocks(
             default_mode = _get(block, "default_mode")
             if default_mode and default_mode not in mode_ids:
                 errors.append(_issue("MANIFEST_VIEW_MODES_INVALID", "default_mode must match modes[].mode", f"{bpath}.default_mode"))
+            record_domain = _get(block, "record_domain")
+            if record_domain is not None:
+                _validate_condition(record_domain, f"{bpath}.record_domain", errors)
+        elif kind == "related_list":
+            if not allow_v13:
+                errors.append(_issue("MANIFEST_BLOCK_KIND_INVALID", "related_list blocks require manifest_version >= 1.3", f"{bpath}.kind"))
+                continue
+            _reject_unknown_keys(errors, block, ALLOWED_V1_RELATED_LIST_KEYS, bpath)
+            entity_id = _get(block, "entity_id")
+            if not isinstance(entity_id, str) or not entity_id:
+                errors.append(_issue("MANIFEST_RELATED_LIST_ENTITY_INVALID", "related_list.entity_id is required", f"{bpath}.entity_id"))
+            elif entity_id not in entity_by_id and f"entity.{entity_id}" not in entity_by_id:
+                errors.append(_issue("MANIFEST_RELATED_LIST_ENTITY_UNKNOWN", "related_list.entity_id not found", f"{bpath}.entity_id"))
+            target_id = _parse_view_target(_get(block, "target") or _get(block, "view"))
+            if not target_id:
+                errors.append(_issue("MANIFEST_TARGET_INVALID", "related_list target must be a view id or view:<id>", f"{bpath}.target"))
+            elif target_id not in view_ids:
+                errors.append(_issue("MANIFEST_TARGET_UNKNOWN", "related_list target view not found", f"{bpath}.target"))
+            record_domain = _get(block, "record_domain")
+            if record_domain is not None:
+                _validate_condition(record_domain, f"{bpath}.record_domain", errors)
         elif kind == "chatter":
             if not allow_chatter:
                 errors.append(_issue("MANIFEST_BLOCK_KIND_INVALID", "chatter blocks require manifest_version >= 1.2", f"{bpath}.kind"))
@@ -799,8 +825,8 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
             errors.append(_issue("MANIFEST_VIEW_ENTITY_UNKNOWN", "view entity not found", f"{vpath}.entity"))
         entity_obj = entity_by_id.get(full_entity_id) or entity_by_id.get(entity_id)
         vtype = _get(view, "type") or _get(view, "kind")
-        if vtype not in {"list", "form", "kanban", "graph"}:
-            errors.append(_issue("MANIFEST_VIEW_TYPE_INVALID", "view.type must be list, form, kanban, or graph", f"{vpath}.type"))
+        if vtype not in {"list", "form", "kanban", "graph", "calendar"}:
+            errors.append(_issue("MANIFEST_VIEW_TYPE_INVALID", "view.type must be list, form, kanban, graph, or calendar", f"{vpath}.type"))
 
         open_record = _get(view, "open_record")
         if open_record is not None:
@@ -1120,6 +1146,44 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
                         mfield = measure.split(":", 1)[1]
                         if mfield and mfield not in _field_ids(entity_obj):
                             errors.append(_issue("MANIFEST_VIEW_FIELD_UNKNOWN", "graph.default.measure field not found", f"{vpath}.default.measure"))
+
+        if vtype == "calendar":
+            calendar = _get(view, "calendar")
+            if calendar is not None and not isinstance(calendar, dict):
+                errors.append(_issue("MANIFEST_VIEW_CALENDAR_INVALID", "calendar must be an object", f"{vpath}.calendar"))
+                calendar = None
+            date_start = _get(calendar, "date_start") if isinstance(calendar, dict) else _get(view, "date_start")
+            date_end = _get(calendar, "date_end") if isinstance(calendar, dict) else _get(view, "date_end")
+            title_field = _get(calendar, "title_field") if isinstance(calendar, dict) else _get(view, "title_field")
+            all_day_field = _get(calendar, "all_day_field") if isinstance(calendar, dict) else _get(view, "all_day_field")
+            color_field = _get(calendar, "color_field") if isinstance(calendar, dict) else _get(view, "color_field")
+            default_scale = _get(calendar, "default_scale") if isinstance(calendar, dict) else _get(view, "default_scale")
+
+            if not isinstance(date_start, str) or not date_start:
+                errors.append(_issue("MANIFEST_VIEW_CALENDAR_INVALID", "calendar.date_start is required", f"{vpath}.calendar.date_start"))
+            elif entity_obj and date_start not in _field_ids(entity_obj):
+                errors.append(_issue("MANIFEST_VIEW_FIELD_UNKNOWN", "calendar.date_start field not found", f"{vpath}.calendar.date_start"))
+            if date_end is not None:
+                if not isinstance(date_end, str):
+                    errors.append(_issue("MANIFEST_VIEW_CALENDAR_INVALID", "calendar.date_end must be string", f"{vpath}.calendar.date_end"))
+                elif entity_obj and date_end not in _field_ids(entity_obj):
+                    errors.append(_issue("MANIFEST_VIEW_FIELD_UNKNOWN", "calendar.date_end field not found", f"{vpath}.calendar.date_end"))
+            if not isinstance(title_field, str) or not title_field:
+                errors.append(_issue("MANIFEST_VIEW_CALENDAR_INVALID", "calendar.title_field is required", f"{vpath}.calendar.title_field"))
+            elif entity_obj and title_field not in _field_ids(entity_obj):
+                errors.append(_issue("MANIFEST_VIEW_FIELD_UNKNOWN", "calendar.title_field field not found", f"{vpath}.calendar.title_field"))
+            if all_day_field is not None:
+                if not isinstance(all_day_field, str):
+                    errors.append(_issue("MANIFEST_VIEW_CALENDAR_INVALID", "calendar.all_day_field must be string", f"{vpath}.calendar.all_day_field"))
+                elif entity_obj and all_day_field not in _field_ids(entity_obj):
+                    errors.append(_issue("MANIFEST_VIEW_FIELD_UNKNOWN", "calendar.all_day_field field not found", f"{vpath}.calendar.all_day_field"))
+            if color_field is not None:
+                if not isinstance(color_field, str):
+                    errors.append(_issue("MANIFEST_VIEW_CALENDAR_INVALID", "calendar.color_field must be string", f"{vpath}.calendar.color_field"))
+                elif entity_obj and color_field not in _field_ids(entity_obj):
+                    errors.append(_issue("MANIFEST_VIEW_FIELD_UNKNOWN", "calendar.color_field field not found", f"{vpath}.calendar.color_field"))
+            if default_scale is not None and default_scale not in {"month", "week", "day", "year"}:
+                errors.append(_issue("MANIFEST_VIEW_CALENDAR_INVALID", "calendar.default_scale must be month|week|day|year", f"{vpath}.calendar.default_scale"))
 
     view_ids = {v.get("id") for v in views if isinstance(v, dict) and isinstance(v.get("id"), str)}
 
