@@ -262,6 +262,11 @@
           "label": "On Hold Reason"
         },
         {
+          "id": "workorder.cancel_reason",
+          "type": "text",
+          "label": "Cancel Reason"
+        },
+        {
           "id": "workorder.tags",
           "type": "tags",
           "label": "Tags",
@@ -580,6 +585,54 @@
       "label": "Decline"
     },
     {
+      "id": "action.cancel_work",
+      "kind": "refresh",
+      "label": "Cancel Work",
+      "modal_id": "modal.workorder_cancel_reason",
+      "visible_when": {
+        "op": "or",
+        "conditions": [
+          {
+            "op": "eq",
+            "field": "workorder.status",
+            "value": "new"
+          },
+          {
+            "op": "eq",
+            "field": "workorder.status",
+            "value": "scheduled"
+          },
+          {
+            "op": "eq",
+            "field": "workorder.status",
+            "value": "in_progress"
+          },
+          {
+            "op": "eq",
+            "field": "workorder.status",
+            "value": "on_hold"
+          }
+        ]
+      }
+    },
+    {
+      "id": "action.cancel_work_confirm",
+      "kind": "update_record",
+      "label": "Confirm Cancel",
+      "entity_id": "entity.workorder",
+      "patch": {
+        "workorder.status": "cancelled",
+        "workorder.cancel_reason": {
+          "ref": "$record.workorder.cancel_reason"
+        }
+      }
+    },
+    {
+      "id": "action.cancel_work_decline",
+      "kind": "refresh",
+      "label": "Decline Cancel"
+    },
+    {
       "id": "action.resume_work",
       "kind": "update_record",
       "label": "Resume Work",
@@ -689,6 +742,29 @@
           "close_on_success": true
         }
       ]
+    },
+    {
+      "id": "modal.workorder_cancel_reason",
+      "title": "Cancel Work Order",
+      "description": "Add a reason before cancelling this work order.",
+      "entity_id": "entity.workorder",
+      "fields": [
+        "workorder.cancel_reason"
+      ],
+      "actions": [
+        {
+          "action_id": "action.cancel_work_decline",
+          "label": "Decline",
+          "variant": "soft",
+          "close_on_success": true
+        },
+        {
+          "action_id": "action.cancel_work_confirm",
+          "label": "Confirm Cancel",
+          "variant": "primary",
+          "close_on_success": true
+        }
+      ]
     }
   ],
   "triggers": [
@@ -721,6 +797,16 @@
       "id": "workorders.action.put_on_hold_confirm",
       "event": "action.clicked",
       "action_id": "action.put_on_hold_confirm"
+    },
+    {
+      "id": "workorders.action.cancel_work",
+      "event": "action.clicked",
+      "action_id": "action.cancel_work"
+    },
+    {
+      "id": "workorders.action.cancel_work_confirm",
+      "event": "action.clicked",
+      "action_id": "action.cancel_work_confirm"
     },
     {
       "id": "workorders.action.resume_work",
@@ -952,7 +1038,9 @@
         {
           "id": "notes",
           "fields": [
-            "workorder.internal_notes"
+            "workorder.internal_notes",
+            "workorder.on_hold_reason",
+            "workorder.cancel_reason"
           ]
         },
         {
@@ -1026,6 +1114,9 @@
           },
           {
             "action_id": "action.put_on_hold"
+          },
+          {
+            "action_id": "action.cancel_work"
           },
           {
             "action_id": "action.resume_work"

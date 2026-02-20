@@ -1952,9 +1952,6 @@ function AppView({
                 </button>
               );
             })}
-            <button className={SOFT_BUTTON_SM} onClick={() => setActiveManifestModal(null)} disabled={activeManifestModal.busy}>
-              Close
-            </button>
           </div>
         </div>
         <button
