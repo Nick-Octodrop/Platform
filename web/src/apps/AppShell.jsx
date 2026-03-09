@@ -2122,7 +2122,7 @@ function AppView({
               <div className="join">
                 {searchConfig && (
                   <input
-                    className="input input-bordered input-sm join-item w-full max-w-xs h-8 min-h-8"
+                    className="input input-bordered input-sm join-item toolbar-search-input w-full max-w-xs"
                     placeholder={searchConfig.placeholder || "Search..."}
                     value={activeQuery}
                     onChange={(e) => updateSearchParams(e.target.value, activeFilterId)}
@@ -2130,7 +2130,7 @@ function AppView({
                 )}
                 {(filters.length > 0 || filterableFields.length > 0) && (
                   <div className="dropdown dropdown-end join-item">
-                    <button className={SOFT_BUTTON_SM + " h-8 min-h-8 w-full"}>
+                    <button className={SOFT_BUTTON_SM + " w-full"}>
                       {selectedFilter?.label || "Filter"}
                     </button>
                     <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-64 z-50">
@@ -2155,7 +2155,7 @@ function AppView({
                 )}
                 {bulkActions.length > 0 && selectedIds.length > 0 && (
                   <div className="dropdown dropdown-end join-item">
-                    <button className={SOFT_BUTTON_SM + " h-8 min-h-8 w-full"}>Bulk</button>
+                    <button className={SOFT_BUTTON_SM + " w-full"}>Bulk</button>
                     <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-50">
                       {bulkActions.map((item) => (
                         <li key={`${item.action?.id || item.label}`}>

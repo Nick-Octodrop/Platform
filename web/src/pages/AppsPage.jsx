@@ -10,6 +10,14 @@ import { apiFetch, invalidateModulesCache, setModuleIcon, setModuleOrder } from 
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { Package } from "lucide-react";
 import { LUCIDE_ICON_LIST, normalizeLucideKey, resolveLucideIcon } from "../state/lucideIconCatalog.js";
+import {
+  HERO_ICON_FAMILIES,
+  HERO_ICON_LIST_BY_FAMILY,
+  heroKey,
+  normalizeHeroFamily,
+  normalizeHeroKey,
+  resolveHeroIcon,
+} from "../state/heroIconCatalog.js";
 import { useAccessContext } from "../access.js";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 
@@ -19,15 +27,26 @@ function AppIcon({ app }) {
   const iconUrl = app.icon_url;
   const lucideKey = normalizeLucideKey(iconUrl);
   const LucideIcon = lucideKey ? resolveLucideIcon(lucideKey) : null;
+  const heroParsed = normalizeHeroKey(iconUrl);
+  const HeroIcon = heroParsed ? resolveHeroIcon(iconUrl) : null;
   const isImageUrl =
     typeof iconUrl === "string" &&
     !LucideIcon &&
+    !HeroIcon &&
     !iconUrl.includes("lucide:") &&
+    !iconUrl.includes("hero:") &&
     (iconUrl.startsWith("data:") || iconUrl.startsWith("http"));
   if (LucideIcon) {
     return (
       <div className="text-primary">
         <LucideIcon size={40} strokeWidth={1.31} />
+      </div>
+    );
+  }
+  if (HeroIcon) {
+    return (
+      <div className="text-primary">
+        <HeroIcon className="w-10 h-10" />
       </div>
     );
   }
@@ -51,6 +70,8 @@ export default function AppsPage({ user }) {
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [iconPickerApp, setIconPickerApp] = useState(null);
   const [iconQuery, setIconQuery] = useState("");
+  const [iconLibrary, setIconLibrary] = useState("lucide");
+  const [heroFamily, setHeroFamily] = useState("24/outline");
   const [marketplaceApps, setMarketplaceApps] = useState([]);
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
   const [marketplaceError, setMarketplaceError] = useState("");
@@ -240,11 +261,18 @@ export default function AppsPage({ user }) {
     });
   }, [activeFilter, items, query]);
 
-  const filteredIcons = useMemo(() => {
+  const filteredLucideIcons = useMemo(() => {
     const q = iconQuery.trim().toLowerCase();
     if (!q) return LUCIDE_ICON_LIST;
     return LUCIDE_ICON_LIST.filter((icon) => icon.name.toLowerCase().includes(q));
   }, [iconQuery]);
+
+  const filteredHeroIcons = useMemo(() => {
+    const q = iconQuery.trim().toLowerCase();
+    const source = HERO_ICON_LIST_BY_FAMILY[normalizeHeroFamily(heroFamily)] || [];
+    if (!q) return source;
+    return source.filter((icon) => icon.name.toLowerCase().includes(q));
+  }, [heroFamily, iconQuery]);
 
   return (
     <div className="h-full min-h-0 flex flex-col overflow-hidden">
@@ -395,6 +423,8 @@ export default function AppsPage({ user }) {
                                       onClick={() => {
                                         setIconPickerApp(app);
                                         setIconQuery("");
+                                        setIconLibrary("lucide");
+                                        setHeroFamily("24/outline");
                                         setIconPickerOpen(true);
                                       }}
                                     >
@@ -501,13 +531,43 @@ export default function AppsPage({ user }) {
               value={iconQuery}
               onChange={(e) => setIconQuery(e.target.value)}
             />
+            <div className="tabs tabs-boxed mb-4">
+              <button
+                type="button"
+                className={`tab ${iconLibrary === "lucide" ? "tab-active" : ""}`}
+                onClick={() => setIconLibrary("lucide")}
+              >
+                Lucide
+              </button>
+              <button
+                type="button"
+                className={`tab ${iconLibrary === "hero" ? "tab-active" : ""}`}
+                onClick={() => setIconLibrary("hero")}
+              >
+                Heroicons
+              </button>
+            </div>
+            {iconLibrary === "hero" && (
+              <div className="tabs tabs-boxed mb-4">
+                {HERO_ICON_FAMILIES.map((family) => (
+                  <button
+                    key={family.id}
+                    type="button"
+                    className={`tab ${heroFamily === family.id ? "tab-active" : ""}`}
+                    onClick={() => setHeroFamily(family.id)}
+                  >
+                    {family.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-3 max-h-[60vh] overflow-auto">
-              {filteredIcons.map(({ name }) => {
+              {iconLibrary === "lucide" && filteredLucideIcons.map(({ name }) => {
                 const Icon = resolveLucideIcon(name);
                 if (!Icon) return null;
                 return (
                   <button
-                    key={name}
+                    key={`lucide:${name}`}
                     type="button"
                     className="btn btn-ghost h-16 w-full min-w-0 flex items-center justify-center overflow-hidden"
                     title={name}
@@ -523,6 +583,30 @@ export default function AppsPage({ user }) {
                     }}
                   >
                     <Icon size={28} strokeWidth={1.31} />
+                  </button>
+                );
+              })}
+              {iconLibrary === "hero" && filteredHeroIcons.map(({ name }) => {
+                const Icon = resolveHeroIcon(name, heroFamily);
+                if (!Icon) return null;
+                return (
+                  <button
+                    key={heroKey(heroFamily, name)}
+                    type="button"
+                    className="btn btn-ghost h-16 w-full min-w-0 flex items-center justify-center overflow-hidden"
+                    title={name}
+                    onClick={async () => {
+                      if (!iconPickerApp) return;
+                      try {
+                        await setModuleIcon(iconPickerApp.id, heroKey(heroFamily, name));
+                        setIconPickerOpen(false);
+                        await actions.refresh({ force: true });
+                      } catch (err) {
+                        pushToast("error", err.message || "Failed to set icon");
+                      }
+                    }}
+                  >
+                    <Icon className="w-7 h-7" />
                   </button>
                 );
               })}

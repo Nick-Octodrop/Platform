@@ -9973,7 +9973,7 @@ async def get_ui_prefs(request: Request) -> dict:
     with get_conn() as conn:
         workspace = fetch_one(
             conn,
-            "select org_id, theme, colors, logo_url from workspace_ui_prefs where org_id=%s",
+            "select org_id, theme, colors, logo_url, ui_density from workspace_ui_prefs where org_id=%s",
             [org_id],
             query_name="workspace_ui_prefs.get",
         )
@@ -9981,7 +9981,11 @@ async def get_ui_prefs(request: Request) -> dict:
         if user_id:
             user = fetch_one(
                 conn,
-                "select org_id, user_id, theme from user_ui_prefs where org_id=%s and user_id=%s",
+                """
+                select org_id, user_id, theme, ui_density, first_name, last_name, phone
+                from user_ui_prefs
+                where org_id=%s and user_id=%s
+                """,
                 [org_id, user_id],
                 query_name="user_ui_prefs.get",
             )
@@ -10111,35 +10115,52 @@ async def set_ui_prefs(request: Request) -> dict:
         if workspace_data is not None:
             current = fetch_one(
                 conn,
-                "select theme, colors, logo_url from workspace_ui_prefs where org_id=%s",
+                "select theme, colors, logo_url, ui_density from workspace_ui_prefs where org_id=%s",
                 [org_id],
                 query_name="workspace_ui_prefs.current",
             ) or {}
             theme = workspace_data.get("theme") if "theme" in workspace_data else current.get("theme")
             colors = workspace_data.get("colors") if "colors" in workspace_data else current.get("colors")
             logo_url = workspace_data.get("logo_url") if "logo_url" in workspace_data else current.get("logo_url")
+            ui_density = workspace_data.get("ui_density") if "ui_density" in workspace_data else current.get("ui_density")
             execute(
                 conn,
                 """
-                insert into workspace_ui_prefs (org_id, theme, colors, logo_url, updated_at)
-                values (%s, %s, %s, %s, %s)
+                insert into workspace_ui_prefs (org_id, theme, colors, logo_url, ui_density, updated_at)
+                values (%s, %s, %s, %s, %s, %s)
                 on conflict (org_id)
-                do update set theme=excluded.theme, colors=excluded.colors, logo_url=excluded.logo_url, updated_at=excluded.updated_at
+                do update set theme=excluded.theme, colors=excluded.colors, logo_url=excluded.logo_url, ui_density=excluded.ui_density, updated_at=excluded.updated_at
                 """,
-                [org_id, theme, json.dumps(colors) if colors is not None else None, logo_url, _now()],
+                [org_id, theme, json.dumps(colors) if colors is not None else None, logo_url, ui_density, _now()],
                 query_name="workspace_ui_prefs.upsert",
             )
         if user_data is not None and user_id:
-            theme = user_data.get("theme")
+            current_user = fetch_one(
+                conn,
+                "select theme, ui_density, first_name, last_name, phone from user_ui_prefs where org_id=%s and user_id=%s",
+                [org_id, user_id],
+                query_name="user_ui_prefs.current",
+            ) or {}
+            theme = user_data.get("theme") if "theme" in user_data else current_user.get("theme")
+            ui_density = user_data.get("ui_density") if "ui_density" in user_data else current_user.get("ui_density")
+            first_name = user_data.get("first_name") if "first_name" in user_data else current_user.get("first_name")
+            last_name = user_data.get("last_name") if "last_name" in user_data else current_user.get("last_name")
+            phone = user_data.get("phone") if "phone" in user_data else current_user.get("phone")
             execute(
                 conn,
                 """
-                insert into user_ui_prefs (org_id, user_id, theme, updated_at)
-                values (%s, %s, %s, %s)
+                insert into user_ui_prefs (org_id, user_id, theme, ui_density, first_name, last_name, phone, updated_at)
+                values (%s, %s, %s, %s, %s, %s, %s, %s)
                 on conflict (org_id, user_id)
-                do update set theme=excluded.theme, updated_at=excluded.updated_at
+                do update set
+                    theme=excluded.theme,
+                    ui_density=excluded.ui_density,
+                    first_name=excluded.first_name,
+                    last_name=excluded.last_name,
+                    phone=excluded.phone,
+                    updated_at=excluded.updated_at
                 """,
-                [org_id, user_id, theme, _now()],
+                [org_id, user_id, theme, ui_density, first_name, last_name, phone, _now()],
                 query_name="user_ui_prefs.upsert",
             )
     return _ok_response({"ok": True})
@@ -10419,6 +10440,138 @@ async def list_activity(
     return _ok_response({"items": items, "next_cursor": next_cursor})
 
 
+_MENTION_EMAIL_RE = re.compile(r"@([A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,})", re.IGNORECASE)
+_MENTION_TOKEN_RE = re.compile(r"@([A-Z0-9._%+\-@]{2,})", re.IGNORECASE)
+
+
+def _extract_mention_emails(text: str) -> set[str]:
+    if not isinstance(text, str) or not text:
+        return set()
+    return {match.group(1).strip().lower() for match in _MENTION_EMAIL_RE.finditer(text) if match.group(1)}
+
+
+def _extract_mention_tokens(text: str) -> set[str]:
+    if not isinstance(text, str) or not text:
+        return set()
+    return {match.group(1).strip().lower() for match in _MENTION_TOKEN_RE.finditer(text) if match.group(1)}
+
+
+def _resolve_workspace_mention_user_ids(actor: dict, text: str, mentions: Any) -> list[str]:
+    workspace_id = actor.get("workspace_id") if isinstance(actor, dict) else None
+    if not isinstance(workspace_id, str) or not workspace_id:
+        return []
+    members = list_workspace_members(workspace_id) or []
+    members_by_user_id: dict[str, dict] = {}
+    members_by_email: dict[str, dict] = {}
+    members_by_name_token: dict[str, dict] = {}
+    members_by_email_local: dict[str, dict] = {}
+    for member in members:
+        user_id = member.get("user_id")
+        email = member.get("email")
+        name = member.get("name")
+        if isinstance(user_id, str) and user_id:
+            members_by_user_id[user_id] = member
+        if isinstance(email, str) and email.strip():
+            email_key = email.strip().lower()
+            members_by_email[email_key] = member
+            local = email_key.split("@", 1)[0].strip()
+            if local:
+                members_by_email_local[local] = member
+        if isinstance(name, str) and name.strip():
+            token = re.sub(r"\s+", "", name.strip().lower())
+            if token:
+                members_by_name_token[token] = member
+    mentioned_user_ids: set[str] = set()
+    candidate_tokens: set[str] = set()
+    candidate_tokens.update(_extract_mention_tokens(text))
+    if isinstance(mentions, list):
+        for raw in mentions:
+            if isinstance(raw, str) and raw.strip():
+                token = raw.strip().lower()
+                if token.startswith("@"):
+                    token = token[1:]
+                candidate_tokens.add(token)
+
+    for token in candidate_tokens:
+        if token in members_by_user_id:
+            mentioned_user_ids.add(token)
+            continue
+        member = members_by_email.get(token)
+        if not member:
+            member = members_by_email_local.get(token)
+        if not member:
+            name_key = re.sub(r"\s+", "", token)
+            member = members_by_name_token.get(name_key)
+        user_id = member.get("user_id") if isinstance(member, dict) else None
+        if (not isinstance(user_id, str) or not user_id) and "@" in token:
+            resolved_user_id = _find_auth_user_id_by_email(token)
+            if isinstance(resolved_user_id, str) and resolved_user_id and get_membership(resolved_user_id, workspace_id):
+                user_id = resolved_user_id
+        if isinstance(user_id, str) and user_id:
+            mentioned_user_ids.add(user_id)
+    actor_user_id = actor.get("user_id") if isinstance(actor, dict) else None
+    if isinstance(actor_user_id, str) and actor_user_id:
+        mentioned_user_ids.discard(actor_user_id)
+    return sorted(mentioned_user_ids)
+
+
+def _activity_mention_notification_title(actor: dict | None) -> str:
+    if not isinstance(actor, dict):
+        return "You were mentioned"
+    author_name = actor.get("name") or actor.get("full_name") or actor.get("display_name") or actor.get("email")
+    clean = str(author_name).strip() if author_name else ""
+    return f"{clean} mentioned you" if clean else "You were mentioned"
+
+
+def _activity_entity_label(entity_id: str) -> str:
+    raw = str(entity_id or "").strip()
+    if raw.startswith("entity."):
+        raw = raw.split(".", 1)[1]
+    raw = raw.replace("_", " ").strip()
+    return raw.title() if raw else "Record"
+
+
+def _activity_record_label(entity_id: str, entity_def: dict | None, existing: dict | None, record_id: str) -> str:
+    payload = existing.get("record") if isinstance(existing, dict) and isinstance(existing.get("record"), dict) else {}
+    display_field = entity_def.get("display_field") if isinstance(entity_def, dict) else None
+    display_value = payload.get(display_field) if isinstance(display_field, str) and display_field else None
+    text = str(display_value or "").strip()
+    base = _activity_entity_label(entity_id)
+    if text:
+        return f"{base} {text}"
+    return f"{base} {str(record_id)}"
+
+
+def _activity_mention_notification_body(text: str) -> str:
+    snippet = re.sub(r"\s+", " ", (text or "").strip())
+    if len(snippet) > 220:
+        snippet = f"{snippet[:217]}..."
+    return snippet or "You were mentioned in activity."
+
+
+def _activity_record_link(module_id: str, manifest: dict | None, entity_id: str, record_id: str) -> str:
+    safe_record_id = urllib.parse.quote(str(record_id), safe="")
+    defaults = manifest.get("app", {}).get("defaults", {}) if isinstance(manifest, dict) else {}
+    entity_defaults = defaults.get("entities") if isinstance(defaults, dict) else None
+    form_target = None
+    if isinstance(entity_defaults, dict):
+        form_target = (
+            (entity_defaults.get(entity_id) or {}).get("entity_form_page")
+            if isinstance(entity_defaults.get(entity_id), dict)
+            else None
+        )
+    if not isinstance(form_target, str) or not form_target.strip():
+        form_target = defaults.get("entity_form_page") if isinstance(defaults, dict) else None
+    short_entity = entity_id[7:] if entity_id.startswith("entity.") else entity_id
+    if not isinstance(form_target, str) or not form_target.strip():
+        page_id = f"{short_entity}.form_page"
+    else:
+        page_id = form_target.strip()
+        if page_id.startswith("page:"):
+            page_id = page_id[5:]
+    return f"/apps/{urllib.parse.quote(str(module_id), safe='')}/page/{urllib.parse.quote(page_id, safe='')}?record={safe_record_id}"
+
+
 @app.post("/api/activity/comment")
 @app.post("/activity/comment")
 async def add_activity_comment(request: Request) -> dict:
@@ -10450,7 +10603,53 @@ async def add_activity_comment(request: Request) -> dict:
     activity_cfg = _activity_view_config(found[2], found[1].get("id"))
     if isinstance(activity_cfg, dict) and activity_cfg.get("allow_comments") is False:
         return _error_response("ACTIVITY_COMMENTS_DISABLED", "Comments are disabled for this form", "activity.allow_comments", status=400)
-    item = activity_store.add_comment(normalized_entity, record_id, text.strip(), actor=getattr(request.state, "user", None))
+    actor_user = actor if isinstance(actor, dict) else (getattr(request.state, "user", None) or {})
+    item = activity_store.add_comment(normalized_entity, record_id, text.strip(), actor=actor_user)
+    mentioned_user_ids = _resolve_workspace_mention_user_ids(actor_user, text.strip(), body.get("mentions"))
+    logger.info(
+        "activity_mentions_resolved workspace_id=%s actor=%s entity=%s record=%s mentions_input=%s resolved=%s",
+        actor_user.get("workspace_id"),
+        actor_user.get("user_id"),
+        normalized_entity,
+        record_id,
+        body.get("mentions"),
+        mentioned_user_ids,
+    )
+    if mentioned_user_ids:
+        base_title = _activity_mention_notification_title(actor_user)
+        record_label = _activity_record_label(normalized_entity, found[1] if isinstance(found, tuple) else None, existing, str(record_id))
+        title = f"{base_title} in {record_label}"
+        body_text = _activity_mention_notification_body(text.strip())
+        link_to = _activity_record_link(
+            found[0] if isinstance(found, tuple) and len(found) > 0 else "",
+            found[2] if isinstance(found, tuple) and len(found) > 2 and isinstance(found[2], dict) else None,
+            normalized_entity,
+            str(record_id),
+        )
+        for recipient_user_id in mentioned_user_ids:
+            try:
+                notification_store.create(
+                    {
+                        "recipient_user_id": recipient_user_id,
+                        "title": title,
+                        "body": body_text,
+                        "severity": "info",
+                        "link_to": link_to,
+                        "source_event": {
+                            "type": "activity.mention",
+                            "entity_id": normalized_entity,
+                            "record_id": str(record_id),
+                            "activity_id": item.get("id"),
+                        },
+                    }
+                )
+            except Exception:
+                logger.exception(
+                    "activity_mention_notification_failed recipient=%s entity=%s record=%s",
+                    recipient_user_id,
+                    normalized_entity,
+                    record_id,
+                )
     return _ok_response({"item": item})
 
 
@@ -11124,11 +11323,43 @@ async def update_integration_connection(request: Request, connection_id: str) ->
 
 
 @app.get("/notifications")
-async def list_notifications(request: Request, unread_only: int = 0) -> dict:
+async def list_notifications(
+    request: Request,
+    unread_only: int = 0,
+    limit: int = 200,
+    since: str | None = None,
+) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
-    items = notification_store.list(actor["user_id"], unread_only=bool(unread_only))
+    limit_cap = max(1, min(int(limit or 200), 500))
+    if since is not None:
+        if not isinstance(since, str) or not since.strip():
+            return _error_response("NOTIFICATIONS_SINCE_INVALID", "since must be an ISO8601 datetime string", "since", status=400)
+        try:
+            datetime.fromisoformat(since.strip().replace("Z", "+00:00"))
+        except Exception:
+            return _error_response("NOTIFICATIONS_SINCE_INVALID", "since must be an ISO8601 datetime string", "since", status=400)
+        if hasattr(notification_store, "list_since"):
+            items = notification_store.list_since(
+                actor["user_id"],
+                since.strip(),
+                unread_only=bool(unread_only),
+                limit=limit_cap,
+            )
+        else:
+            items = notification_store.list(actor["user_id"], unread_only=bool(unread_only), limit=limit_cap)
+            try:
+                since_dt = datetime.fromisoformat(since.strip().replace("Z", "+00:00"))
+                items = [
+                    item
+                    for item in (items or [])
+                    if datetime.fromisoformat(str(item.get("created_at", "")).replace("Z", "+00:00")) > since_dt
+                ]
+            except Exception:
+                pass
+    else:
+        items = notification_store.list(actor["user_id"], unread_only=bool(unread_only), limit=limit_cap)
     return _ok_response({"notifications": items})
 
 

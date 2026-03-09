@@ -1,5 +1,6 @@
 const THEME_KEY = "octo_theme";
 const BRAND_KEY = "octo_brand_colors";
+const UI_DENSITY_KEY = "octo_ui_density";
 
 function hexToOklch(hex) {
   if (!hex) return null;
@@ -52,6 +53,15 @@ export function getInitialTheme() {
   const stored = localStorage.getItem(THEME_KEY);
   if (stored) return stored;
   return "dark";
+}
+
+export function normalizeUiDensity(value) {
+  return String(value || "").trim().toLowerCase() === "md" ? "md" : "sm";
+}
+
+export function getInitialUiDensity() {
+  const stored = localStorage.getItem(UI_DENSITY_KEY);
+  return normalizeUiDensity(stored || "sm");
 }
 
 export function getBrandColors() {
@@ -128,4 +138,17 @@ export function applyTheme(theme) {
 export function setTheme(theme) {
   localStorage.setItem(THEME_KEY, theme);
   applyTheme(theme);
+}
+
+export function applyUiDensity(density) {
+  const normalized = normalizeUiDensity(density);
+  const root = document.documentElement;
+  root.classList.remove("ui-density-sm", "ui-density-md");
+  root.classList.add(`ui-density-${normalized}`);
+}
+
+export function setUiDensity(density) {
+  const normalized = normalizeUiDensity(density);
+  localStorage.setItem(UI_DENSITY_KEY, normalized);
+  applyUiDensity(normalized);
 }

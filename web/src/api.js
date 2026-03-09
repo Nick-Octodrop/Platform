@@ -174,6 +174,11 @@ export async function apiFetch(path, options = {}) {
             const recId = parts.length > 2 ? parts[2] : null;
             invalidateRecordCache(entityId, recId);
           }
+          if (path.startsWith("/actions/")) {
+            // Actions can mutate arbitrary records, so clear record/list bootstrap caches broadly.
+            invalidateRequestPrefix("/records/");
+            invalidateRequestPrefix("/page/bootstrap");
+          }
           if (path.startsWith("/modules") || path.startsWith("/studio2/")) {
             modulesCache = null;
             modulesCacheTs = 0;

@@ -1,0 +1,2442 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "holiday_planner",
+    "name": "Holiday Planner",
+    "version": "1.1.0",
+    "description": "Plan trips, schedule activities, manage packing, and track travel budget in one place.",
+    "category": "Lifestyle",
+    "icon_key": "lucide:PlaneTakeoff"
+  },
+  "app": {
+    "home": "page:trip_plan.list_page",
+    "defaults": {
+      "entity_home_page": "page:trip_plan.list_page",
+      "entity_form_page": "page:trip_plan.form_page",
+      "entities": {
+        "entity.trip_plan": {
+          "entity_home_page": "page:trip_plan.list_page",
+          "entity_form_page": "page:trip_plan.form_page"
+        },
+        "entity.trip_activity": {
+          "entity_home_page": "page:trip_activity.list_page",
+          "entity_form_page": "page:trip_activity.form_page"
+        },
+        "entity.trip_packing_item": {
+          "entity_home_page": "page:trip_packing_item.list_page",
+          "entity_form_page": "page:trip_packing_item.form_page"
+        },
+        "entity.trip_expense": {
+          "entity_home_page": "page:trip_expense.list_page",
+          "entity_form_page": "page:trip_expense.form_page"
+        },
+        "entity.trip_itinerary_entry": {
+          "entity_home_page": "page:trip_itinerary_entry.list_page",
+          "entity_form_page": "page:trip_itinerary_entry.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Travel",
+        "items": [
+          {
+            "label": "Trips",
+            "to": "page:trip_plan.list_page"
+          },
+          {
+            "label": "Activities",
+            "to": "page:trip_activity.list_page"
+          },
+          {
+            "label": "Packing",
+            "to": "page:trip_packing_item.list_page"
+          },
+          {
+            "label": "Expenses",
+            "to": "page:trip_expense.list_page"
+          }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.trip_plan",
+      "display_field": "trip_plan.name",
+      "fields": [
+        {
+          "id": "trip_plan.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "trip_plan.code",
+          "type": "string",
+          "label": "Trip Code"
+        },
+        {
+          "id": "trip_plan.name",
+          "type": "string",
+          "label": "Trip Name",
+          "required": true
+        },
+        {
+          "id": "trip_plan.status",
+          "type": "enum",
+          "label": "Status",
+          "required": true,
+          "default": "planning",
+          "options": [
+            {
+              "value": "planning",
+              "label": "Planning"
+            },
+            {
+              "value": "booked",
+              "label": "Booked"
+            },
+            {
+              "value": "in_trip",
+              "label": "In Trip"
+            },
+            {
+              "value": "completed",
+              "label": "Completed"
+            },
+            {
+              "value": "cancelled",
+              "label": "Cancelled"
+            }
+          ]
+        },
+        {
+          "id": "trip_plan.theme",
+          "type": "enum",
+          "label": "Trip Style",
+          "default": "mixed",
+          "options": [
+            {
+              "value": "relaxation",
+              "label": "Relaxation"
+            },
+            {
+              "value": "adventure",
+              "label": "Adventure"
+            },
+            {
+              "value": "city_break",
+              "label": "City Break"
+            },
+            {
+              "value": "foodie",
+              "label": "Foodie"
+            },
+            {
+              "value": "family",
+              "label": "Family"
+            },
+            {
+              "value": "mixed",
+              "label": "Mixed"
+            }
+          ]
+        },
+        {
+          "id": "trip_plan.destination_city",
+          "type": "string",
+          "label": "Destination City",
+          "required": true
+        },
+        {
+          "id": "trip_plan.destination_country",
+          "type": "string",
+          "label": "Destination Country",
+          "required": true
+        },
+        {
+          "id": "trip_plan.timezone",
+          "type": "string",
+          "label": "Timezone"
+        },
+        {
+          "id": "trip_plan.starts_at",
+          "type": "datetime",
+          "label": "Trip Start",
+          "required": true
+        },
+        {
+          "id": "trip_plan.ends_at",
+          "type": "datetime",
+          "label": "Trip End",
+          "required": true
+        },
+        {
+          "id": "trip_plan.traveler_count",
+          "type": "number",
+          "label": "Travelers",
+          "default": 1
+        },
+        {
+          "id": "trip_plan.currency",
+          "type": "string",
+          "label": "Currency",
+          "default": "USD"
+        },
+        {
+          "id": "trip_plan.budget_total",
+          "type": "number",
+          "label": "Budget Total",
+          "default": 0
+        },
+        {
+          "id": "trip_plan.budget_spent",
+          "type": "number",
+          "label": "Budget Spent",
+          "default": 0
+        },
+        {
+          "id": "trip_plan.accommodation_name",
+          "type": "string",
+          "label": "Accommodation"
+        },
+        {
+          "id": "trip_plan.accommodation_address",
+          "type": "text",
+          "label": "Accommodation Address"
+        },
+        {
+          "id": "trip_plan.checkin_at",
+          "type": "datetime",
+          "label": "Check-in"
+        },
+        {
+          "id": "trip_plan.checkout_at",
+          "type": "datetime",
+          "label": "Check-out"
+        },
+        {
+          "id": "trip_plan.transport_summary",
+          "type": "text",
+          "label": "Transport Summary"
+        },
+        {
+          "id": "trip_plan.must_do_list",
+          "type": "text",
+          "label": "Must-Do List"
+        },
+        {
+          "id": "trip_plan.notes",
+          "type": "text",
+          "label": "Notes"
+        },
+        {
+          "id": "trip_plan.cancel_reason",
+          "type": "text",
+          "label": "Cancel Reason"
+        },
+        {
+          "id": "trip_plan.cover_attachments",
+          "type": "attachments",
+          "label": "Moodboard / Tickets",
+          "ui": {
+            "button_label": "Attach files",
+            "title": "Trip Files",
+            "description": "Store tickets, confirmations, screenshots, and inspiration."
+          }
+        },
+        {
+          "id": "trip_plan.tags",
+          "type": "tags",
+          "label": "Tags"
+        }
+      ]
+    },
+    {
+      "id": "entity.trip_activity",
+      "display_field": "trip_activity.title",
+      "fields": [
+        {
+          "id": "trip_activity.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "trip_activity.trip_id",
+          "type": "lookup",
+          "label": "Trip",
+          "entity": "entity.trip_plan",
+          "display_field": "trip_plan.name",
+          "required": true
+        },
+        {
+          "id": "trip_activity.title",
+          "type": "string",
+          "label": "Activity",
+          "required": true
+        },
+        {
+          "id": "trip_activity.category",
+          "type": "enum",
+          "label": "Category",
+          "default": "activity",
+          "options": [
+            {
+              "value": "flight",
+              "label": "Flight"
+            },
+            {
+              "value": "hotel",
+              "label": "Hotel"
+            },
+            {
+              "value": "train",
+              "label": "Train"
+            },
+            {
+              "value": "car",
+              "label": "Car"
+            },
+            {
+              "value": "activity",
+              "label": "Activity"
+            },
+            {
+              "value": "food",
+              "label": "Food"
+            },
+            {
+              "value": "transport",
+              "label": "Local Transport"
+            },
+            {
+              "value": "rest",
+              "label": "Free Time"
+            }
+          ]
+        },
+        {
+          "id": "trip_activity.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "planned",
+          "options": [
+            {
+              "value": "wishlist",
+              "label": "Wishlist"
+            },
+            {
+              "value": "planned",
+              "label": "Planned"
+            },
+            {
+              "value": "booked",
+              "label": "Booked"
+            },
+            {
+              "value": "confirmed",
+              "label": "Confirmed"
+            },
+            {
+              "value": "done",
+              "label": "Done"
+            },
+            {
+              "value": "skipped",
+              "label": "Skipped"
+            },
+            {
+              "value": "cancelled",
+              "label": "Cancelled"
+            }
+          ]
+        },
+        {
+          "id": "trip_activity.priority",
+          "type": "enum",
+          "label": "Priority",
+          "default": "normal",
+          "options": [
+            {
+              "value": "low",
+              "label": "Low"
+            },
+            {
+              "value": "normal",
+              "label": "Normal"
+            },
+            {
+              "value": "high",
+              "label": "High"
+            },
+            {
+              "value": "must_do",
+              "label": "Must Do"
+            }
+          ]
+        },
+        {
+          "id": "trip_activity.starts_at",
+          "type": "datetime",
+          "label": "Start",
+          "required": true
+        },
+        {
+          "id": "trip_activity.ends_at",
+          "type": "datetime",
+          "label": "End"
+        },
+        {
+          "id": "trip_activity.location_name",
+          "type": "string",
+          "label": "Location"
+        },
+        {
+          "id": "trip_activity.address",
+          "type": "text",
+          "label": "Address"
+        },
+        {
+          "id": "trip_activity.booking_required",
+          "type": "enum",
+          "label": "Booking Required",
+          "default": "no",
+          "options": [
+            {
+              "value": "yes",
+              "label": "Yes"
+            },
+            {
+              "value": "no",
+              "label": "No"
+            }
+          ]
+        },
+        {
+          "id": "trip_activity.booking_status",
+          "type": "enum",
+          "label": "Booking Status",
+          "default": "not_needed",
+          "options": [
+            {
+              "value": "not_needed",
+              "label": "Not Needed"
+            },
+            {
+              "value": "to_book",
+              "label": "To Book"
+            },
+            {
+              "value": "reserved",
+              "label": "Reserved"
+            },
+            {
+              "value": "paid",
+              "label": "Paid"
+            }
+          ]
+        },
+        {
+          "id": "trip_activity.provider",
+          "type": "string",
+          "label": "Provider"
+        },
+        {
+          "id": "trip_activity.booking_reference",
+          "type": "string",
+          "label": "Booking Ref"
+        },
+        {
+          "id": "trip_activity.cost_estimate",
+          "type": "number",
+          "label": "Estimated Cost",
+          "default": 0
+        },
+        {
+          "id": "trip_activity.cost_actual",
+          "type": "number",
+          "label": "Actual Cost",
+          "default": 0
+        },
+        {
+          "id": "trip_activity.reminder_at",
+          "type": "datetime",
+          "label": "Reminder"
+        },
+        {
+          "id": "trip_activity.weather_backup_plan",
+          "type": "text",
+          "label": "Backup Plan"
+        },
+        {
+          "id": "trip_activity.notes",
+          "type": "text",
+          "label": "Notes"
+        },
+        {
+          "id": "trip_activity.links",
+          "type": "text",
+          "label": "Useful Links"
+        },
+        {
+          "id": "trip_activity.attachments",
+          "type": "attachments",
+          "label": "Confirmations / Tickets",
+          "ui": {
+            "button_label": "Attach confirmations",
+            "title": "Activity Files",
+            "description": "Store tickets, QR codes, and confirmations."
+          }
+        },
+        {
+          "id": "trip_activity.tags",
+          "type": "tags",
+          "label": "Tags"
+        }
+      ]
+    },
+    {
+      "id": "entity.trip_packing_item",
+      "display_field": "trip_packing_item.name",
+      "fields": [
+        {
+          "id": "trip_packing_item.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "trip_packing_item.trip_id",
+          "type": "lookup",
+          "label": "Trip",
+          "entity": "entity.trip_plan",
+          "display_field": "trip_plan.name",
+          "required": true
+        },
+        {
+          "id": "trip_packing_item.name",
+          "type": "string",
+          "label": "Item",
+          "required": true
+        },
+        {
+          "id": "trip_packing_item.category",
+          "type": "enum",
+          "label": "Category",
+          "default": "clothing",
+          "options": [
+            {
+              "value": "documents",
+              "label": "Documents"
+            },
+            {
+              "value": "clothing",
+              "label": "Clothing"
+            },
+            {
+              "value": "toiletries",
+              "label": "Toiletries"
+            },
+            {
+              "value": "electronics",
+              "label": "Electronics"
+            },
+            {
+              "value": "medication",
+              "label": "Medication"
+            },
+            {
+              "value": "misc",
+              "label": "Misc"
+            }
+          ]
+        },
+        {
+          "id": "trip_packing_item.qty",
+          "type": "number",
+          "label": "Qty",
+          "default": 1
+        },
+        {
+          "id": "trip_packing_item.is_packed",
+          "type": "enum",
+          "label": "Packed",
+          "default": "no",
+          "options": [
+            {
+              "value": "yes",
+              "label": "Yes"
+            },
+            {
+              "value": "no",
+              "label": "No"
+            }
+          ]
+        },
+        {
+          "id": "trip_packing_item.priority",
+          "type": "enum",
+          "label": "Priority",
+          "default": "normal",
+          "options": [
+            {
+              "value": "optional",
+              "label": "Optional"
+            },
+            {
+              "value": "normal",
+              "label": "Normal"
+            },
+            {
+              "value": "essential",
+              "label": "Essential"
+            }
+          ]
+        },
+        {
+          "id": "trip_packing_item.notes",
+          "type": "text",
+          "label": "Notes"
+        },
+        {
+          "id": "trip_packing_item.tags",
+          "type": "tags",
+          "label": "Tags"
+        }
+      ]
+    },
+    {
+      "id": "entity.trip_expense",
+      "display_field": "trip_expense.title",
+      "fields": [
+        {
+          "id": "trip_expense.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "trip_expense.trip_id",
+          "type": "lookup",
+          "label": "Trip",
+          "entity": "entity.trip_plan",
+          "display_field": "trip_plan.name",
+          "required": true
+        },
+        {
+          "id": "trip_expense.activity_id",
+          "type": "lookup",
+          "label": "Activity",
+          "entity": "entity.trip_activity",
+          "display_field": "trip_activity.title"
+        },
+        {
+          "id": "trip_expense.title",
+          "type": "string",
+          "label": "Expense",
+          "required": true
+        },
+        {
+          "id": "trip_expense.type",
+          "type": "enum",
+          "label": "Type",
+          "default": "food",
+          "options": [
+            {
+              "value": "transport",
+              "label": "Transport"
+            },
+            {
+              "value": "stay",
+              "label": "Stay"
+            },
+            {
+              "value": "food",
+              "label": "Food"
+            },
+            {
+              "value": "tickets",
+              "label": "Tickets"
+            },
+            {
+              "value": "shopping",
+              "label": "Shopping"
+            },
+            {
+              "value": "misc",
+              "label": "Misc"
+            }
+          ]
+        },
+        {
+          "id": "trip_expense.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "planned",
+          "options": [
+            {
+              "value": "planned",
+              "label": "Planned"
+            },
+            {
+              "value": "paid",
+              "label": "Paid"
+            },
+            {
+              "value": "refunded",
+              "label": "Refunded"
+            },
+            {
+              "value": "cancelled",
+              "label": "Cancelled"
+            }
+          ]
+        },
+        {
+          "id": "trip_expense.incurred_at",
+          "type": "datetime",
+          "label": "Date"
+        },
+        {
+          "id": "trip_expense.currency",
+          "type": "string",
+          "label": "Currency",
+          "default": "USD"
+        },
+        {
+          "id": "trip_expense.amount_estimate",
+          "type": "number",
+          "label": "Estimated",
+          "default": 0
+        },
+        {
+          "id": "trip_expense.amount_actual",
+          "type": "number",
+          "label": "Actual",
+          "default": 0
+        },
+        {
+          "id": "trip_expense.payment_method",
+          "type": "string",
+          "label": "Payment Method"
+        },
+        {
+          "id": "trip_expense.notes",
+          "type": "text",
+          "label": "Notes"
+        },
+        {
+          "id": "trip_expense.receipt_attachments",
+          "type": "attachments",
+          "label": "Receipts",
+          "ui": {
+            "button_label": "Attach receipts",
+            "title": "Receipts",
+            "description": "Store expense receipts and confirmations."
+          }
+        },
+        {
+          "id": "trip_expense.tags",
+          "type": "tags",
+          "label": "Tags"
+        }
+      ]
+    },
+    {
+      "id": "entity.trip_itinerary_entry",
+      "display_field": "trip_itinerary_entry.title",
+      "fields": [
+        {
+          "id": "trip_itinerary_entry.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "trip_itinerary_entry.trip_id",
+          "type": "lookup",
+          "label": "Trip",
+          "entity": "entity.trip_plan",
+          "display_field": "trip_plan.name",
+          "required": true
+        },
+        {
+          "id": "trip_itinerary_entry.activity_id",
+          "type": "lookup",
+          "label": "Activity",
+          "entity": "entity.trip_activity",
+          "display_field": "trip_activity.title"
+        },
+        {
+          "id": "trip_itinerary_entry.day_date",
+          "type": "datetime",
+          "label": "Day"
+        },
+        {
+          "id": "trip_itinerary_entry.slot_label",
+          "type": "string",
+          "label": "Slot"
+        },
+        {
+          "id": "trip_itinerary_entry.title",
+          "type": "string",
+          "label": "Plan Item",
+          "required": true
+        },
+        {
+          "id": "trip_itinerary_entry.starts_at",
+          "type": "datetime",
+          "label": "Start"
+        },
+        {
+          "id": "trip_itinerary_entry.ends_at",
+          "type": "datetime",
+          "label": "End"
+        },
+        {
+          "id": "trip_itinerary_entry.location_name",
+          "type": "string",
+          "label": "Location"
+        },
+        {
+          "id": "trip_itinerary_entry.notes",
+          "type": "text",
+          "label": "Notes"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "from": "trip_activity.trip_id",
+      "to": "trip_plan.id",
+      "label_field": "trip_plan.name"
+    },
+    {
+      "from": "trip_packing_item.trip_id",
+      "to": "trip_plan.id",
+      "label_field": "trip_plan.name"
+    },
+    {
+      "from": "trip_expense.trip_id",
+      "to": "trip_plan.id",
+      "label_field": "trip_plan.name"
+    },
+    {
+      "from": "trip_expense.activity_id",
+      "to": "trip_activity.id",
+      "label_field": "trip_activity.title"
+    },
+    {
+      "from": "trip_itinerary_entry.trip_id",
+      "to": "trip_plan.id",
+      "label_field": "trip_plan.name"
+    },
+    {
+      "from": "trip_itinerary_entry.activity_id",
+      "to": "trip_activity.id",
+      "label_field": "trip_activity.title"
+    }
+  ],
+  "workflows": [
+    {
+      "id": "trip_plan_status_workflow",
+      "entity": "entity.trip_plan",
+      "status_field": "trip_plan.status",
+      "states": [
+        {
+          "id": "planning",
+          "label": "Planning"
+        },
+        {
+          "id": "booked",
+          "label": "Booked"
+        },
+        {
+          "id": "in_trip",
+          "label": "In Trip"
+        },
+        {
+          "id": "completed",
+          "label": "Completed"
+        },
+        {
+          "id": "cancelled",
+          "label": "Cancelled"
+        }
+      ]
+    },
+    {
+      "id": "trip_activity_status_workflow",
+      "entity": "entity.trip_activity",
+      "status_field": "trip_activity.status",
+      "states": [
+        {
+          "id": "wishlist",
+          "label": "Wishlist"
+        },
+        {
+          "id": "planned",
+          "label": "Planned"
+        },
+        {
+          "id": "booked",
+          "label": "Booked"
+        },
+        {
+          "id": "confirmed",
+          "label": "Confirmed"
+        },
+        {
+          "id": "done",
+          "label": "Done"
+        },
+        {
+          "id": "skipped",
+          "label": "Skipped"
+        },
+        {
+          "id": "cancelled",
+          "label": "Cancelled"
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "action.refresh",
+      "kind": "refresh",
+      "label": "Refresh"
+    },
+    {
+      "id": "action.trip_new",
+      "kind": "open_form",
+      "target": "trip_plan.form",
+      "label": "New Trip"
+    },
+    {
+      "id": "action.activity_new",
+      "kind": "open_form",
+      "target": "trip_activity.form",
+      "label": "New Activity"
+    },
+    {
+      "id": "action.packing_item_new",
+      "kind": "open_form",
+      "target": "trip_packing_item.form",
+      "label": "New Packing Item"
+    },
+    {
+      "id": "action.expense_new",
+      "kind": "open_form",
+      "target": "trip_expense.form",
+      "label": "New Expense"
+    },
+    {
+      "id": "action.activity_new_for_trip",
+      "kind": "create_record",
+      "entity_id": "entity.trip_activity",
+      "label": "Add Activity",
+      "defaults": {
+        "trip_activity.trip_id": {
+          "ref": "$record.id"
+        },
+        "trip_activity.title": "New Activity",
+        "trip_activity.category": "activity",
+        "trip_activity.status": "planned"
+      },
+      "visible_when": {
+        "op": "exists",
+        "field": "trip_plan.name"
+      }
+    },
+    {
+      "id": "action.packing_item_new_for_trip",
+      "kind": "create_record",
+      "entity_id": "entity.trip_packing_item",
+      "label": "Add Packing Item",
+      "defaults": {
+        "trip_packing_item.trip_id": {
+          "ref": "$record.id"
+        },
+        "trip_packing_item.name": "New item",
+        "trip_packing_item.qty": 1,
+        "trip_packing_item.is_packed": "no"
+      },
+      "visible_when": {
+        "op": "exists",
+        "field": "trip_plan.name"
+      }
+    },
+    {
+      "id": "action.expense_new_for_trip",
+      "kind": "create_record",
+      "entity_id": "entity.trip_expense",
+      "label": "Add Expense",
+      "defaults": {
+        "trip_expense.trip_id": {
+          "ref": "$record.id"
+        },
+        "trip_expense.title": "New expense",
+        "trip_expense.status": "planned",
+        "trip_expense.type": "misc"
+      },
+      "visible_when": {
+        "op": "exists",
+        "field": "trip_plan.name"
+      }
+    },
+    {
+      "id": "action.trip_mark_booked",
+      "kind": "update_record",
+      "entity_id": "entity.trip_plan",
+      "label": "Mark Booked",
+      "patch": {
+        "trip_plan.status": "booked"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "trip_plan.status",
+        "value": "planning"
+      }
+    },
+    {
+      "id": "action.trip_start",
+      "kind": "update_record",
+      "entity_id": "entity.trip_plan",
+      "label": "Start Trip",
+      "patch": {
+        "trip_plan.status": "in_trip"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "trip_plan.status",
+        "value": "booked"
+      }
+    },
+    {
+      "id": "action.trip_complete",
+      "kind": "update_record",
+      "entity_id": "entity.trip_plan",
+      "label": "Complete Trip",
+      "patch": {
+        "trip_plan.status": "completed"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "trip_plan.status",
+        "value": "in_trip"
+      }
+    },
+    {
+      "id": "action.trip_reopen",
+      "kind": "update_record",
+      "entity_id": "entity.trip_plan",
+      "label": "Reopen Planning",
+      "patch": {
+        "trip_plan.status": "planning"
+      },
+      "visible_when": {
+        "op": "or",
+        "conditions": [
+          {
+            "op": "eq",
+            "field": "trip_plan.status",
+            "value": "completed"
+          },
+          {
+            "op": "eq",
+            "field": "trip_plan.status",
+            "value": "cancelled"
+          }
+        ]
+      }
+    },
+    {
+      "id": "action.trip_cancel",
+      "kind": "refresh",
+      "label": "Cancel Trip",
+      "modal_id": "modal.trip_cancel_reason",
+      "visible_when": {
+        "op": "or",
+        "conditions": [
+          {
+            "op": "eq",
+            "field": "trip_plan.status",
+            "value": "planning"
+          },
+          {
+            "op": "eq",
+            "field": "trip_plan.status",
+            "value": "booked"
+          },
+          {
+            "op": "eq",
+            "field": "trip_plan.status",
+            "value": "in_trip"
+          }
+        ]
+      }
+    },
+    {
+      "id": "action.trip_cancel_confirm",
+      "kind": "update_record",
+      "entity_id": "entity.trip_plan",
+      "label": "Confirm Cancel",
+      "patch": {
+        "trip_plan.status": "cancelled",
+        "trip_plan.cancel_reason": {
+          "ref": "$record.trip_plan.cancel_reason"
+        }
+      }
+    },
+    {
+      "id": "action.trip_cancel_decline",
+      "kind": "refresh",
+      "label": "Keep Trip"
+    },
+    {
+      "id": "action.activity_mark_booked",
+      "kind": "update_record",
+      "entity_id": "entity.trip_activity",
+      "label": "Mark Booked",
+      "patch": {
+        "trip_activity.status": "booked"
+      }
+    },
+    {
+      "id": "action.activity_confirm",
+      "kind": "update_record",
+      "entity_id": "entity.trip_activity",
+      "label": "Confirm",
+      "patch": {
+        "trip_activity.status": "confirmed"
+      }
+    },
+    {
+      "id": "action.activity_done",
+      "kind": "update_record",
+      "entity_id": "entity.trip_activity",
+      "label": "Done",
+      "patch": {
+        "trip_activity.status": "done"
+      }
+    },
+    {
+      "id": "action.activity_skip",
+      "kind": "update_record",
+      "entity_id": "entity.trip_activity",
+      "label": "Skip",
+      "patch": {
+        "trip_activity.status": "skipped"
+      }
+    },
+    {
+      "id": "action.packing_mark_packed",
+      "kind": "update_record",
+      "entity_id": "entity.trip_packing_item",
+      "label": "Mark Packed",
+      "patch": {
+        "trip_packing_item.is_packed": "yes"
+      }
+    },
+    {
+      "id": "action.packing_mark_unpacked",
+      "kind": "update_record",
+      "entity_id": "entity.trip_packing_item",
+      "label": "Mark Unpacked",
+      "patch": {
+        "trip_packing_item.is_packed": "no"
+      }
+    },
+    {
+      "id": "action.expense_mark_paid",
+      "kind": "update_record",
+      "entity_id": "entity.trip_expense",
+      "label": "Mark Paid",
+      "patch": {
+        "trip_expense.status": "paid"
+      }
+    }
+  ],
+  "modals": [
+    {
+      "id": "modal.trip_cancel_reason",
+      "title": "Cancel Trip",
+      "description": "Add a reason before cancelling this trip.",
+      "entity_id": "entity.trip_plan",
+      "fields": [
+        "trip_plan.cancel_reason"
+      ],
+      "actions": [
+        {
+          "action_id": "action.trip_cancel_decline",
+          "label": "Keep Trip",
+          "variant": "soft",
+          "close_on_success": true
+        },
+        {
+          "action_id": "action.trip_cancel_confirm",
+          "label": "Confirm Cancel",
+          "variant": "primary",
+          "close_on_success": true
+        }
+      ]
+    }
+  ],
+  "triggers": [
+    {
+      "id": "holiday.trip.record.created",
+      "event": "record.created",
+      "entity_id": "entity.trip_plan"
+    },
+    {
+      "id": "holiday.trip.record.updated",
+      "event": "record.updated",
+      "entity_id": "entity.trip_plan"
+    },
+    {
+      "id": "holiday.activity.record.created",
+      "event": "record.created",
+      "entity_id": "entity.trip_activity"
+    },
+    {
+      "id": "holiday.expense.record.created",
+      "event": "record.created",
+      "entity_id": "entity.trip_expense"
+    },
+    {
+      "id": "holiday.action.trip_cancel_confirm",
+      "event": "action.clicked",
+      "action_id": "action.trip_cancel_confirm"
+    }
+  ],
+  "views": [
+    {
+      "id": "trip_plan.list",
+      "entity": "entity.trip_plan",
+      "kind": "list",
+      "columns": [
+        {
+          "field_id": "trip_plan.name"
+        },
+        {
+          "field_id": "trip_plan.status"
+        },
+        {
+          "field_id": "trip_plan.theme"
+        },
+        {
+          "field_id": "trip_plan.destination_city"
+        },
+        {
+          "field_id": "trip_plan.destination_country"
+        },
+        {
+          "field_id": "trip_plan.starts_at"
+        },
+        {
+          "field_id": "trip_plan.ends_at"
+        },
+        {
+          "field_id": "trip_plan.budget_total"
+        },
+        {
+          "field_id": "trip_plan.budget_spent"
+        }
+      ],
+      "open_record": {
+        "to": "page:trip_plan.form_page",
+        "param": "record"
+      },
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.trip_new"
+          }
+        ],
+        "search": {
+          "enabled": true,
+          "placeholder": "Search trips...",
+          "fields": [
+            "trip_plan.name",
+            "trip_plan.destination_city",
+            "trip_plan.destination_country",
+            "trip_plan.status",
+            "trip_plan.theme"
+          ]
+        },
+        "filters": [
+          {
+            "id": "all",
+            "label": "All",
+            "domain": {
+              "op": "exists",
+              "field": "trip_plan.name"
+            }
+          },
+          {
+            "id": "planning",
+            "label": "Planning",
+            "domain": {
+              "op": "eq",
+              "field": "trip_plan.status",
+              "value": "planning"
+            }
+          },
+          {
+            "id": "booked",
+            "label": "Booked",
+            "domain": {
+              "op": "eq",
+              "field": "trip_plan.status",
+              "value": "booked"
+            }
+          },
+          {
+            "id": "in_trip",
+            "label": "In Trip",
+            "domain": {
+              "op": "eq",
+              "field": "trip_plan.status",
+              "value": "in_trip"
+            }
+          }
+        ]
+      },
+      "create_behavior": "open_form"
+    },
+    {
+      "id": "trip_plan.kanban",
+      "kind": "kanban",
+      "entity": "entity.trip_plan",
+      "card": {
+        "title_field": "trip_plan.name",
+        "subtitle_fields": [
+          "trip_plan.destination_city",
+          "trip_plan.destination_country"
+        ],
+        "badge_fields": [
+          "trip_plan.status",
+          "trip_plan.theme",
+          "trip_plan.tags"
+        ]
+      }
+    },
+    {
+      "id": "trip_plan.calendar",
+      "kind": "calendar",
+      "entity": "entity.trip_plan",
+      "calendar": {
+        "title_field": "trip_plan.name",
+        "date_start": "trip_plan.starts_at",
+        "date_end": "trip_plan.ends_at",
+        "color_field": "trip_plan.status",
+        "default_scale": "month"
+      }
+    },
+    {
+      "id": "trip_plan.graph",
+      "kind": "graph",
+      "entity": "entity.trip_plan",
+      "default": {
+        "type": "bar",
+        "group_by": "trip_plan.status",
+        "measure": "count"
+      }
+    },
+    {
+      "id": "trip_plan.form",
+      "entity": "entity.trip_plan",
+      "kind": "form",
+      "sections": [
+        {
+          "id": "overview",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "trip_plan.code",
+            "trip_plan.name",
+            "trip_plan.status",
+            "trip_plan.theme",
+            "trip_plan.destination_city",
+            "trip_plan.destination_country",
+            "trip_plan.timezone",
+            "trip_plan.traveler_count",
+            "trip_plan.tags"
+          ]
+        },
+        {
+          "id": "schedule",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "trip_plan.starts_at",
+            "trip_plan.ends_at",
+            "trip_plan.checkin_at",
+            "trip_plan.checkout_at"
+          ]
+        },
+        {
+          "id": "stay_transport",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "trip_plan.accommodation_name",
+            "trip_plan.accommodation_address",
+            "trip_plan.transport_summary"
+          ]
+        },
+        {
+          "id": "budget",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "trip_plan.currency",
+            "trip_plan.budget_total",
+            "trip_plan.budget_spent"
+          ]
+        },
+        {
+          "id": "ideas",
+          "fields": [
+            "trip_plan.must_do_list"
+          ]
+        },
+        {
+          "id": "notes",
+          "fields": [
+            "trip_plan.notes",
+            "trip_plan.cancel_reason",
+            "trip_plan.cover_attachments"
+          ]
+        },
+        {
+          "id": "itinerary_board",
+          "title": "Itinerary Board",
+          "line_editor": {
+            "entity_id": "entity.trip_itinerary_entry",
+            "parent_field": "trip_itinerary_entry.trip_id",
+            "item_lookup_field": "trip_itinerary_entry.activity_id",
+            "item_lookup_entity": "entity.trip_activity",
+            "item_lookup_display_field": "trip_activity.title",
+            "item_field_map": {
+              "trip_itinerary_entry.title": "trip_activity.title",
+              "trip_itinerary_entry.starts_at": "trip_activity.starts_at",
+              "trip_itinerary_entry.ends_at": "trip_activity.ends_at",
+              "trip_itinerary_entry.location_name": "trip_activity.location_name"
+            },
+            "description_field": "trip_itinerary_entry.title",
+            "defaults": {
+              "trip_itinerary_entry.slot_label": "Anytime"
+            },
+            "columns": [
+              {
+                "field_id": "trip_itinerary_entry.activity_id",
+                "label": "Activity",
+                "readonly": true
+              },
+              {
+                "field_id": "trip_itinerary_entry.day_date",
+                "label": "Day",
+                "type": "datetime"
+              },
+              {
+                "field_id": "trip_itinerary_entry.slot_label",
+                "label": "Slot"
+              },
+              {
+                "field_id": "trip_itinerary_entry.title",
+                "label": "Plan Item"
+              },
+              {
+                "field_id": "trip_itinerary_entry.starts_at",
+                "label": "Start",
+                "type": "datetime"
+              },
+              {
+                "field_id": "trip_itinerary_entry.ends_at",
+                "label": "End",
+                "type": "datetime"
+              },
+              {
+                "field_id": "trip_itinerary_entry.location_name",
+                "label": "Location"
+              }
+            ]
+          }
+        }
+      ],
+      "header": {
+        "title_field": "trip_plan.name",
+        "primary_actions": [
+          {
+            "action_id": "action.trip_mark_booked"
+          },
+          {
+            "action_id": "action.trip_start"
+          },
+          {
+            "action_id": "action.trip_complete"
+          },
+          {
+            "action_id": "action.trip_cancel"
+          },
+          {
+            "action_id": "action.trip_reopen"
+          },
+          {
+            "action_id": "action.activity_new_for_trip"
+          },
+          {
+            "action_id": "action.packing_item_new_for_trip"
+          },
+          {
+            "action_id": "action.expense_new_for_trip"
+          }
+        ],
+        "secondary_actions": [
+          {
+            "action_id": "action.refresh"
+          }
+        ],
+        "save_mode": "top",
+        "auto_save": true,
+        "auto_save_debounce_ms": 700,
+        "statusbar": {
+          "field_id": "trip_plan.status"
+        },
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "overview_tab",
+          "tabs": [
+            {
+              "id": "overview_tab",
+              "label": "Overview",
+              "sections": [
+                "overview"
+              ]
+            },
+            {
+              "id": "schedule_tab",
+              "label": "Schedule",
+              "sections": [
+                "schedule",
+                "itinerary_board"
+              ]
+            },
+            {
+              "id": "stay_tab",
+              "label": "Stay & Transport",
+              "sections": [
+                "stay_transport"
+              ]
+            },
+            {
+              "id": "budget_tab",
+              "label": "Budget",
+              "sections": [
+                "budget"
+              ]
+            },
+            {
+              "id": "ideas_tab",
+              "label": "Ideas",
+              "sections": [
+                "ideas"
+              ]
+            },
+            {
+              "id": "notes_tab",
+              "label": "Notes & Files",
+              "sections": [
+                "notes"
+              ]
+            }
+          ]
+        }
+      },
+      "line_editors": {
+        "itinerary_board": {
+          "entity_id": "entity.trip_itinerary_entry",
+          "parent_field": "trip_itinerary_entry.trip_id",
+          "item_lookup_field": "trip_itinerary_entry.activity_id",
+          "item_lookup_entity": "entity.trip_activity",
+          "item_lookup_display_field": "trip_activity.title",
+          "item_field_map": {
+            "trip_itinerary_entry.title": "trip_activity.title",
+            "trip_itinerary_entry.starts_at": "trip_activity.starts_at",
+            "trip_itinerary_entry.ends_at": "trip_activity.ends_at",
+            "trip_itinerary_entry.location_name": "trip_activity.location_name"
+          },
+          "description_field": "trip_itinerary_entry.title",
+          "defaults": {
+            "trip_itinerary_entry.slot_label": "Anytime"
+          },
+          "columns": [
+            {
+              "field_id": "trip_itinerary_entry.activity_id",
+              "label": "Activity",
+              "readonly": true
+            },
+            {
+              "field_id": "trip_itinerary_entry.day_date",
+              "label": "Day",
+              "type": "datetime"
+            },
+            {
+              "field_id": "trip_itinerary_entry.slot_label",
+              "label": "Slot"
+            },
+            {
+              "field_id": "trip_itinerary_entry.title",
+              "label": "Plan Item"
+            },
+            {
+              "field_id": "trip_itinerary_entry.starts_at",
+              "label": "Start",
+              "type": "datetime"
+            },
+            {
+              "field_id": "trip_itinerary_entry.ends_at",
+              "label": "End",
+              "type": "datetime"
+            },
+            {
+              "field_id": "trip_itinerary_entry.location_name",
+              "label": "Location"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "trip_activity.list",
+      "entity": "entity.trip_activity",
+      "kind": "list",
+      "columns": [
+        {
+          "field_id": "trip_activity.trip_id"
+        },
+        {
+          "field_id": "trip_activity.title"
+        },
+        {
+          "field_id": "trip_activity.category"
+        },
+        {
+          "field_id": "trip_activity.status"
+        },
+        {
+          "field_id": "trip_activity.priority"
+        },
+        {
+          "field_id": "trip_activity.starts_at"
+        },
+        {
+          "field_id": "trip_activity.ends_at"
+        },
+        {
+          "field_id": "trip_activity.location_name"
+        },
+        {
+          "field_id": "trip_activity.booking_status"
+        },
+        {
+          "field_id": "trip_activity.cost_estimate"
+        }
+      ],
+      "open_record": {
+        "to": "page:trip_activity.form_page",
+        "param": "record"
+      },
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.activity_new"
+          }
+        ],
+        "search": {
+          "enabled": true,
+          "placeholder": "Search activities...",
+          "fields": [
+            "trip_activity.title",
+            "trip_activity.location_name",
+            "trip_activity.provider",
+            "trip_activity.category",
+            "trip_activity.status"
+          ]
+        }
+      },
+      "create_behavior": "open_form"
+    },
+    {
+      "id": "trip_activity.calendar",
+      "kind": "calendar",
+      "entity": "entity.trip_activity",
+      "calendar": {
+        "title_field": "trip_activity.title",
+        "date_start": "trip_activity.starts_at",
+        "date_end": "trip_activity.ends_at",
+        "color_field": "trip_activity.category",
+        "default_scale": "week"
+      }
+    },
+    {
+      "id": "trip_activity.kanban",
+      "kind": "kanban",
+      "entity": "entity.trip_activity",
+      "card": {
+        "title_field": "trip_activity.title",
+        "subtitle_fields": [
+          "trip_activity.trip_id",
+          "trip_activity.starts_at"
+        ],
+        "badge_fields": [
+          "trip_activity.category",
+          "trip_activity.status",
+          "trip_activity.priority",
+          "trip_activity.tags"
+        ]
+      }
+    },
+    {
+      "id": "trip_activity.graph",
+      "kind": "graph",
+      "entity": "entity.trip_activity",
+      "default": {
+        "type": "bar",
+        "group_by": "trip_activity.category",
+        "measure": "count"
+      }
+    },
+    {
+      "id": "trip_activity.form",
+      "entity": "entity.trip_activity",
+      "kind": "form",
+      "sections": [
+        {
+          "id": "main",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "trip_activity.trip_id",
+            "trip_activity.title",
+            "trip_activity.category",
+            "trip_activity.status",
+            "trip_activity.priority",
+            "trip_activity.starts_at",
+            "trip_activity.ends_at",
+            "trip_activity.location_name",
+            "trip_activity.address"
+          ]
+        },
+        {
+          "id": "booking",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "trip_activity.booking_required",
+            "trip_activity.booking_status",
+            "trip_activity.provider",
+            "trip_activity.booking_reference",
+            "trip_activity.reminder_at"
+          ]
+        },
+        {
+          "id": "money",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "trip_activity.cost_estimate",
+            "trip_activity.cost_actual"
+          ]
+        },
+        {
+          "id": "notes",
+          "fields": [
+            "trip_activity.weather_backup_plan",
+            "trip_activity.notes",
+            "trip_activity.links",
+            "trip_activity.attachments",
+            "trip_activity.tags"
+          ]
+        }
+      ],
+      "header": {
+        "title_field": "trip_activity.title",
+        "primary_actions": [
+          {
+            "action_id": "action.activity_mark_booked"
+          },
+          {
+            "action_id": "action.activity_confirm"
+          },
+          {
+            "action_id": "action.activity_done"
+          },
+          {
+            "action_id": "action.activity_skip"
+          }
+        ],
+        "secondary_actions": [
+          {
+            "action_id": "action.refresh"
+          }
+        ],
+        "save_mode": "top",
+        "auto_save": true,
+        "auto_save_debounce_ms": 700,
+        "statusbar": {
+          "field_id": "trip_activity.status"
+        }
+      }
+    },
+    {
+      "id": "trip_packing_item.list",
+      "entity": "entity.trip_packing_item",
+      "kind": "list",
+      "columns": [
+        {
+          "field_id": "trip_packing_item.trip_id"
+        },
+        {
+          "field_id": "trip_packing_item.name"
+        },
+        {
+          "field_id": "trip_packing_item.category"
+        },
+        {
+          "field_id": "trip_packing_item.qty"
+        },
+        {
+          "field_id": "trip_packing_item.is_packed"
+        },
+        {
+          "field_id": "trip_packing_item.priority"
+        }
+      ],
+      "open_record": {
+        "to": "page:trip_packing_item.form_page",
+        "param": "record"
+      },
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.packing_item_new"
+          }
+        ],
+        "search": {
+          "enabled": true,
+          "placeholder": "Search packing items...",
+          "fields": [
+            "trip_packing_item.name",
+            "trip_packing_item.category",
+            "trip_packing_item.trip_id"
+          ]
+        }
+      },
+      "create_behavior": "open_form"
+    },
+    {
+      "id": "trip_packing_item.form",
+      "entity": "entity.trip_packing_item",
+      "kind": "form",
+      "sections": [
+        {
+          "id": "main",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "trip_packing_item.trip_id",
+            "trip_packing_item.name",
+            "trip_packing_item.category",
+            "trip_packing_item.qty",
+            "trip_packing_item.is_packed",
+            "trip_packing_item.priority"
+          ]
+        },
+        {
+          "id": "notes",
+          "fields": [
+            "trip_packing_item.notes",
+            "trip_packing_item.tags"
+          ]
+        }
+      ],
+      "header": {
+        "title_field": "trip_packing_item.name",
+        "primary_actions": [
+          {
+            "action_id": "action.packing_mark_packed"
+          },
+          {
+            "action_id": "action.packing_mark_unpacked"
+          }
+        ],
+        "secondary_actions": [
+          {
+            "action_id": "action.refresh"
+          }
+        ],
+        "save_mode": "top",
+        "auto_save": true,
+        "auto_save_debounce_ms": 700
+      }
+    },
+    {
+      "id": "trip_expense.list",
+      "entity": "entity.trip_expense",
+      "kind": "list",
+      "columns": [
+        {
+          "field_id": "trip_expense.trip_id"
+        },
+        {
+          "field_id": "trip_expense.title"
+        },
+        {
+          "field_id": "trip_expense.type"
+        },
+        {
+          "field_id": "trip_expense.status"
+        },
+        {
+          "field_id": "trip_expense.incurred_at"
+        },
+        {
+          "field_id": "trip_expense.currency"
+        },
+        {
+          "field_id": "trip_expense.amount_estimate"
+        },
+        {
+          "field_id": "trip_expense.amount_actual"
+        }
+      ],
+      "open_record": {
+        "to": "page:trip_expense.form_page",
+        "param": "record"
+      },
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.expense_new"
+          }
+        ],
+        "search": {
+          "enabled": true,
+          "placeholder": "Search expenses...",
+          "fields": [
+            "trip_expense.title",
+            "trip_expense.type",
+            "trip_expense.status",
+            "trip_expense.trip_id"
+          ]
+        }
+      },
+      "create_behavior": "open_form"
+    },
+    {
+      "id": "trip_expense.graph",
+      "kind": "graph",
+      "entity": "entity.trip_expense",
+      "default": {
+        "type": "bar",
+        "group_by": "trip_expense.type",
+        "measure": "count"
+      }
+    },
+    {
+      "id": "trip_expense.form",
+      "entity": "entity.trip_expense",
+      "kind": "form",
+      "sections": [
+        {
+          "id": "main",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "trip_expense.trip_id",
+            "trip_expense.activity_id",
+            "trip_expense.title",
+            "trip_expense.type",
+            "trip_expense.status",
+            "trip_expense.incurred_at",
+            "trip_expense.currency",
+            "trip_expense.amount_estimate",
+            "trip_expense.amount_actual",
+            "trip_expense.payment_method"
+          ]
+        },
+        {
+          "id": "notes",
+          "fields": [
+            "trip_expense.notes",
+            "trip_expense.receipt_attachments",
+            "trip_expense.tags"
+          ]
+        }
+      ],
+      "header": {
+        "title_field": "trip_expense.title",
+        "primary_actions": [
+          {
+            "action_id": "action.expense_mark_paid"
+          }
+        ],
+        "secondary_actions": [
+          {
+            "action_id": "action.refresh"
+          }
+        ],
+        "save_mode": "top",
+        "auto_save": true,
+        "auto_save_debounce_ms": 700,
+        "statusbar": {
+          "field_id": "trip_expense.status"
+        }
+      }
+    },
+    {
+      "id": "trip_itinerary_entry.list",
+      "entity": "entity.trip_itinerary_entry",
+      "kind": "list",
+      "columns": [
+        {
+          "field_id": "trip_itinerary_entry.trip_id"
+        },
+        {
+          "field_id": "trip_itinerary_entry.day_date"
+        },
+        {
+          "field_id": "trip_itinerary_entry.slot_label"
+        },
+        {
+          "field_id": "trip_itinerary_entry.title"
+        },
+        {
+          "field_id": "trip_itinerary_entry.starts_at"
+        },
+        {
+          "field_id": "trip_itinerary_entry.ends_at"
+        }
+      ],
+      "open_record": {
+        "to": "page:trip_itinerary_entry.form_page",
+        "param": "record"
+      }
+    },
+    {
+      "id": "trip_itinerary_entry.form",
+      "entity": "entity.trip_itinerary_entry",
+      "kind": "form",
+      "sections": [
+        {
+          "id": "main",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "trip_itinerary_entry.trip_id",
+            "trip_itinerary_entry.activity_id",
+            "trip_itinerary_entry.day_date",
+            "trip_itinerary_entry.slot_label",
+            "trip_itinerary_entry.title",
+            "trip_itinerary_entry.starts_at",
+            "trip_itinerary_entry.ends_at",
+            "trip_itinerary_entry.location_name"
+          ]
+        },
+        {
+          "id": "notes",
+          "fields": [
+            "trip_itinerary_entry.notes"
+          ]
+        }
+      ],
+      "header": {
+        "title_field": "trip_itinerary_entry.title",
+        "secondary_actions": [
+          {
+            "action_id": "action.refresh"
+          }
+        ],
+        "save_mode": "top",
+        "auto_save": true,
+        "auto_save_debounce_ms": 700
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "trip_plan.list_page",
+      "title": "Trips",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.refresh"
+          },
+          {
+            "kind": "navigate",
+            "label": "New Trip",
+            "target": "page:trip_plan.form_page"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.trip_plan",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:trip_plan.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:trip_plan.kanban",
+                  "default_group_by": "trip_plan.status"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:trip_plan.calendar"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:trip_plan.graph"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "trip_plan.form_page",
+      "title": "Trip Planner",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.trip_plan",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:trip_plan.form"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.trip_plan",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "trip_activity.list_page",
+      "title": "Activities",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.refresh"
+          },
+          {
+            "kind": "navigate",
+            "label": "New Activity",
+            "target": "page:trip_activity.form_page"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.trip_activity",
+              "default_mode": "calendar",
+              "modes": [
+                {
+                  "mode": "calendar",
+                  "target": "view:trip_activity.calendar"
+                },
+                {
+                  "mode": "list",
+                  "target": "view:trip_activity.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:trip_activity.kanban",
+                  "default_group_by": "trip_activity.status"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:trip_activity.graph"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "trip_activity.form_page",
+      "title": "Activity",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.trip_activity",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                {
+                  "kind": "view",
+                  "target": "view:trip_activity.form"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "trip_packing_item.list_page",
+      "title": "Packing",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.refresh"
+          },
+          {
+            "kind": "navigate",
+            "label": "New Packing Item",
+            "target": "page:trip_packing_item.form_page"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.trip_packing_item",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:trip_packing_item.list"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "trip_packing_item.form_page",
+      "title": "Packing Item",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.trip_packing_item",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                {
+                  "kind": "view",
+                  "target": "view:trip_packing_item.form"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "trip_expense.list_page",
+      "title": "Expenses",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.refresh"
+          },
+          {
+            "kind": "navigate",
+            "label": "New Expense",
+            "target": "page:trip_expense.form_page"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.trip_expense",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:trip_expense.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:trip_expense.graph"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "trip_expense.form_page",
+      "title": "Expense",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.trip_expense",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                {
+                  "kind": "view",
+                  "target": "view:trip_expense.form"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "trip_itinerary_entry.list_page",
+      "title": "Itinerary Entries",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.trip_itinerary_entry",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:trip_itinerary_entry.list"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "trip_itinerary_entry.form_page",
+      "title": "Itinerary Entry",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.trip_itinerary_entry",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                {
+                  "kind": "view",
+                  "target": "view:trip_itinerary_entry.form"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

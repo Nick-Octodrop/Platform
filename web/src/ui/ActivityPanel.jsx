@@ -15,6 +15,44 @@ function isNonEmptyText(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function parseMentionTokens(value, members = []) {
+  if (typeof value !== "string" || !value.trim()) return [];
+  const normalizeNameToken = (v) => String(v || "").trim().toLowerCase().replace(/\s+/g, "");
+  const byEmail = new Map(
+    (Array.isArray(members) ? members : [])
+      .map((member) => [String(member?.email || "").trim().toLowerCase(), String(member?.user_id || "").trim()])
+      .filter(([email]) => email)
+  );
+  const byName = new Map(
+    (Array.isArray(members) ? members : [])
+      .map((member) => [normalizeNameToken(member?.name), String(member?.user_id || "").trim()])
+      .filter(([name, userId]) => name && userId)
+  );
+  const seen = new Set();
+  const out = [];
+  const matches = value.match(/@[A-Z0-9._%+\-@]+/gi) || [];
+  for (const raw of matches) {
+    const token = raw.slice(1).toLowerCase();
+    const mapped = byEmail.get(token) || byName.get(normalizeNameToken(token)) || token;
+    if (!mapped || seen.has(mapped)) continue;
+    seen.add(mapped);
+    out.push(mapped);
+  }
+  return out;
+}
+
+function getActiveMentionQuery(value) {
+  if (typeof value !== "string") return null;
+  const match = value.match(/(?:^|\s)@([^\s@]*)$/);
+  if (!match) return null;
+  return String(match[1] || "");
+}
+
+function replaceTrailingMention(value, token) {
+  const source = typeof value === "string" ? value : "";
+  return source.replace(/(^|\s)@[^\s@]*$/, `$1@${String(token).trim()} `);
+}
+
 export default function ActivityPanel({ entityId, recordId, config = {} }) {
   const { hasCapability } = useAccessContext();
   const canWriteRecords = hasCapability("records.write");
@@ -25,6 +63,8 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
   const [comment, setComment] = useState("");
   const [error, setError] = useState("");
   const [currentUserLabel, setCurrentUserLabel] = useState("You");
+  const [members, setMembers] = useState([]);
+  const [mentionIndex, setMentionIndex] = useState(0);
 
   const allowComments = config?.allow_comments !== false;
   const allowAttachments = config?.allow_attachments !== false;
@@ -72,6 +112,85 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
     };
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+    async function loadMembers() {
+      try {
+        const res = await apiFetch("/access/members");
+        const rows = Array.isArray(res?.members) ? res.members : [];
+        if (mounted) {
+          setMembers(
+            rows.filter(
+              (member) =>
+                (typeof member?.email === "string" && member.email.trim()) ||
+                (typeof member?.name === "string" && member.name.trim()) ||
+                (typeof member?.user_id === "string" && member.user_id.trim())
+            )
+          );
+        }
+      } catch {
+        if (mounted) setMembers([]);
+      }
+    }
+    if (showComposer && allowComments) loadMembers();
+    return () => {
+      mounted = false;
+    };
+  }, [showComposer, allowComments]);
+
+  const mentionQuery = useMemo(() => getActiveMentionQuery(comment), [comment]);
+  const mentionSuggestions = useMemo(() => {
+    if (mentionQuery === null) return [];
+    const q = mentionQuery.trim().toLowerCase();
+    const rows = members.filter((member) => {
+      const email = String(member?.email || "").toLowerCase();
+      const name = String(member?.name || "").toLowerCase();
+      const userId = String(member?.user_id || "").toLowerCase();
+      if (!email && !name && !userId) return false;
+      if (!q) return true;
+      return email.includes(q) || name.includes(q) || userId.includes(q);
+    });
+    return rows.slice(0, 8);
+  }, [members, mentionQuery]);
+  const showMentionMenu = allowComments && mentionQuery !== null && mentionSuggestions.length > 0;
+
+  useEffect(() => {
+    setMentionIndex(0);
+  }, [mentionQuery]);
+
+  function applyMention(member) {
+    const email = String(member?.email || "").trim();
+    const nameToken = String(member?.name || "").trim().toLowerCase().replace(/\s+/g, "");
+    const userId = String(member?.user_id || "").trim();
+    const token = email || nameToken || userId;
+    if (!token) return;
+    setComment((prev) => replaceTrailingMention(prev, token));
+  }
+
+  function handleCommentKeyDown(event) {
+    if (!showMentionMenu) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setMentionIndex((prev) => Math.min(prev + 1, mentionSuggestions.length - 1));
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setMentionIndex((prev) => Math.max(prev - 1, 0));
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "Enter" && !event.shiftKey) {
+      const picked = mentionSuggestions[mentionIndex];
+      if (!picked) return;
+      event.preventDefault();
+      applyMention(picked);
+    }
+  }
+
   const placeholderText = useMemo(() => {
     if (!showComposer) return "";
     if (allowComments && allowAttachments) return "Add a comment or attach a file...";
@@ -90,6 +209,7 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
           entity_id: entityId,
           record_id: recordId,
           body: comment.trim(),
+          mentions: parseMentionTokens(comment, members),
         },
       });
       const item = res?.item;
@@ -192,6 +312,7 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
                 placeholder={placeholderText}
                 value={comment}
                 onChange={(event) => setComment(event.target.value)}
+                onKeyDown={handleCommentKeyDown}
               />
               <button
                 className={`${SOFT_BUTTON_SM} join-item`}
@@ -202,6 +323,30 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
               >
                 <Send className="h-4 w-4" />
               </button>
+            </div>
+          )}
+          {showMentionMenu && (
+            <div className="rounded-box border border-base-300 bg-base-100 p-1 max-h-48 overflow-auto">
+              {mentionSuggestions.map((member, idx) => {
+                const email = String(member?.email || "").trim();
+                const userId = String(member?.user_id || "").trim();
+                const label = member?.name || email || userId;
+                if (!label) return null;
+                return (
+                  <button
+                    key={String(member?.user_id || email || label)}
+                    type="button"
+                    className={`w-full text-left px-2 py-1 rounded ${idx === mentionIndex ? "bg-base-200" : "hover:bg-base-200"}`}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      applyMention(member);
+                    }}
+                  >
+                    <div className="text-sm">{label}</div>
+                    {email && label !== email && <div className="text-xs opacity-70">{email}</div>}
+                  </button>
+                );
+              })}
             </div>
           )}
           {allowAttachments && (

@@ -1,0 +1,994 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "joinery_kitchen_quoting",
+    "name": "Kitchen Joinery Quotes",
+    "version": "1.0.0",
+    "description": "Demo quoting workflow for a joiner building custom kitchens, from measure to quote acceptance.",
+    "category": "Sales",
+    "icon_key": "lucide:Ruler"
+  },
+  "app": {
+    "home": "page:joinery_quote.list_page",
+    "defaults": {
+      "entity_home_page": "page:joinery_quote.list_page",
+      "entity_form_page": "page:joinery_quote.form_page",
+      "entities": {
+        "entity.joinery_quote": {
+          "entity_home_page": "page:joinery_quote.list_page",
+          "entity_form_page": "page:joinery_quote.form_page"
+        },
+        "entity.joinery_quote_line": {
+          "entity_home_page": "page:joinery_quote_line.list_page",
+          "entity_form_page": "page:joinery_quote_line.form_page"
+        },
+        "entity.joinery_quote_task": {
+          "entity_home_page": "page:joinery_quote_task.list_page",
+          "entity_form_page": "page:joinery_quote_task.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Joinery Quotes",
+        "items": [
+          { "label": "Quotes", "to": "page:joinery_quote.list_page" },
+          { "label": "Tasks", "to": "page:joinery_quote_task.list_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.joinery_quote",
+      "display_field": "joinery_quote.quote_number",
+      "fields": [
+        { "id": "joinery_quote.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "joinery_quote.quote_number", "type": "string", "label": "Quote #", "required": true },
+        { "id": "joinery_quote.status", "type": "enum", "label": "Status", "required": true, "default": "lead", "options": [
+          { "value": "lead", "label": "Lead" },
+          { "value": "site_measure_booked", "label": "Site Measure Booked" },
+          { "value": "measured", "label": "Measured" },
+          { "value": "draft_quote", "label": "Draft Quote" },
+          { "value": "sent", "label": "Sent" },
+          { "value": "revision_requested", "label": "Revision Requested" },
+          { "value": "accepted", "label": "Accepted" },
+          { "value": "declined", "label": "Declined" }
+        ] },
+        { "id": "joinery_quote.customer_contact_id", "type": "lookup", "label": "Customer", "entity": "entity.contact", "display_field": "contact.display_name", "required": true },
+        { "id": "joinery_quote.site_contact_id", "type": "lookup", "label": "Site Contact", "entity": "entity.contact", "display_field": "contact.display_name" },
+        { "id": "joinery_quote.sales_owner_id", "type": "lookup", "label": "Estimator / Sales", "entity": "entity.contact", "display_field": "contact.display_name" },
+        { "id": "joinery_quote.project_name", "type": "string", "label": "Project Name" },
+        { "id": "joinery_quote.project_type", "type": "enum", "label": "Project Type", "default": "kitchen", "options": [
+          { "value": "kitchen", "label": "Kitchen" },
+          { "value": "kitchen_laundry", "label": "Kitchen + Laundry" },
+          { "value": "kitchen_pantry", "label": "Kitchen + Pantry" },
+          { "value": "full_joinery", "label": "Full Joinery Package" }
+        ] },
+        { "id": "joinery_quote.kitchen_layout", "type": "enum", "label": "Kitchen Layout", "default": "l_shape", "options": [
+          { "value": "straight", "label": "Straight" },
+          { "value": "galley", "label": "Galley" },
+          { "value": "l_shape", "label": "L-Shape" },
+          { "value": "u_shape", "label": "U-Shape" },
+          { "value": "island", "label": "Island" },
+          { "value": "peninsula", "label": "Peninsula" }
+        ] },
+        { "id": "joinery_quote.design_style", "type": "enum", "label": "Style", "default": "modern", "options": [
+          { "value": "modern", "label": "Modern" },
+          { "value": "shaker", "label": "Shaker" },
+          { "value": "hamptons", "label": "Hamptons" },
+          { "value": "minimalist", "label": "Minimalist" },
+          { "value": "custom", "label": "Custom" }
+        ] },
+        { "id": "joinery_quote.cabinet_finish", "type": "string", "label": "Cabinet Finish" },
+        { "id": "joinery_quote.benchtop_material", "type": "string", "label": "Benchtop Material" },
+        { "id": "joinery_quote.appliance_scope", "type": "enum", "label": "Appliance Scope", "default": "client_supply", "options": [
+          { "value": "client_supply", "label": "Client Supply" },
+          { "value": "joiner_supply", "label": "Joiner Supply" },
+          { "value": "mixed", "label": "Mixed" }
+        ] },
+        { "id": "joinery_quote.installation_included", "type": "enum", "label": "Installation Included", "default": "yes", "options": [
+          { "value": "yes", "label": "Yes" },
+          { "value": "no", "label": "No" }
+        ] },
+        { "id": "joinery_quote.site_address", "type": "text", "label": "Site Address" },
+        { "id": "joinery_quote.measure_date", "type": "datetime", "label": "Measure Date" },
+        { "id": "joinery_quote.quote_date", "type": "datetime", "label": "Quote Date" },
+        { "id": "joinery_quote.quote_expiry", "type": "datetime", "label": "Quote Expiry" },
+        { "id": "joinery_quote.lead_source", "type": "enum", "label": "Lead Source", "default": "referral", "options": [
+          { "value": "referral", "label": "Referral" },
+          { "value": "website", "label": "Website" },
+          { "value": "instagram", "label": "Instagram" },
+          { "value": "builder", "label": "Builder" },
+          { "value": "walk_in", "label": "Walk-in" },
+          { "value": "other", "label": "Other" }
+        ] },
+        { "id": "joinery_quote.estimated_lead_time_weeks", "type": "number", "label": "Lead Time (Weeks)", "default": 8 },
+        { "id": "joinery_quote.deposit_pct", "type": "number", "label": "Deposit %", "default": 50 },
+        { "id": "joinery_quote.subtotal", "type": "number", "label": "Subtotal", "default": 0 },
+        { "id": "joinery_quote.discount_pct", "type": "number", "label": "Discount %", "default": 0 },
+        { "id": "joinery_quote.tax_rate", "type": "number", "label": "Tax %", "default": 10 },
+        { "id": "joinery_quote.total_quote", "type": "number", "label": "Total Quote", "default": 0 },
+        { "id": "joinery_quote.deposit_amount", "type": "number", "label": "Deposit Amount", "default": 0 },
+        { "id": "joinery_quote.variation_notes", "type": "text", "label": "Revision / Variation Notes" },
+        { "id": "joinery_quote.decline_reason", "type": "text", "label": "Decline Reason" },
+        { "id": "joinery_quote.scope_notes", "type": "text", "label": "Scope Notes" },
+        { "id": "joinery_quote.internal_notes", "type": "text", "label": "Internal Notes" },
+        { "id": "joinery_quote.site_photos_attachments", "type": "attachments", "label": "Site Photos", "ui": {
+          "button_label": "Attach site photos",
+          "title": "Site Photos",
+          "description": "Measure photos, existing kitchen photos, and site constraints."
+        } },
+        { "id": "joinery_quote.drawings_attachments", "type": "attachments", "label": "Drawings / Renders", "ui": {
+          "button_label": "Attach drawings",
+          "title": "Drawings & Renders",
+          "description": "Plans, sketches, elevations, and design renders."
+        } },
+        { "id": "joinery_quote.quote_docs_attachments", "type": "attachments", "label": "Quote Documents", "ui": {
+          "button_label": "Attach quote docs",
+          "title": "Quote Documents",
+          "description": "Generated quote PDFs, terms, and signed documents."
+        } },
+        { "id": "joinery_quote.tags", "type": "tags", "label": "Tags" }
+      ]
+    },
+    {
+      "id": "entity.joinery_quote_line",
+      "display_field": "joinery_quote_line.description",
+      "fields": [
+        { "id": "joinery_quote_line.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "joinery_quote_line.quote_id", "type": "lookup", "label": "Quote", "entity": "entity.joinery_quote", "display_field": "joinery_quote.quote_number", "required": true },
+        { "id": "joinery_quote_line.item_id", "type": "lookup", "label": "Item", "entity": "entity.item", "display_field": "item.name" },
+        { "id": "joinery_quote_line.category", "type": "enum", "label": "Category", "default": "cabinetry", "options": [
+          { "value": "cabinetry", "label": "Cabinetry" },
+          { "value": "benchtop", "label": "Benchtop" },
+          { "value": "hardware", "label": "Hardware" },
+          { "value": "appliance", "label": "Appliance" },
+          { "value": "delivery", "label": "Delivery" },
+          { "value": "installation", "label": "Installation" },
+          { "value": "other", "label": "Other" }
+        ] },
+        { "id": "joinery_quote_line.description", "type": "string", "label": "Description", "required": true },
+        { "id": "joinery_quote_line.qty", "type": "number", "label": "Qty", "default": 1 },
+        { "id": "joinery_quote_line.unit", "type": "string", "label": "Unit" },
+        { "id": "joinery_quote_line.unit_price", "type": "number", "label": "Unit Price", "default": 0 },
+        { "id": "joinery_quote_line.discount_pct", "type": "number", "label": "Discount %", "default": 0 },
+        { "id": "joinery_quote_line.tax_rate", "type": "number", "label": "Tax %", "default": 10 },
+        { "id": "joinery_quote_line.line_total", "type": "number", "label": "Line Total", "default": 0 },
+        { "id": "joinery_quote_line.notes", "type": "text", "label": "Notes" }
+      ]
+    },
+    {
+      "id": "entity.joinery_quote_task",
+      "display_field": "joinery_quote_task.subject",
+      "fields": [
+        { "id": "joinery_quote_task.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "joinery_quote_task.quote_id", "type": "lookup", "label": "Quote", "entity": "entity.joinery_quote", "display_field": "joinery_quote.quote_number", "required": true },
+        { "id": "joinery_quote_task.subject", "type": "string", "label": "Task", "required": true },
+        { "id": "joinery_quote_task.type", "type": "enum", "label": "Type", "default": "task", "options": [
+          { "value": "task", "label": "Task" },
+          { "value": "call", "label": "Call" },
+          { "value": "site_measure", "label": "Site Measure" },
+          { "value": "design", "label": "Design" },
+          { "value": "quote_send", "label": "Quote Send" },
+          { "value": "follow_up", "label": "Follow Up" }
+        ] },
+        { "id": "joinery_quote_task.status", "type": "enum", "label": "Status", "default": "todo", "options": [
+          { "value": "todo", "label": "To Do" },
+          { "value": "in_progress", "label": "In Progress" },
+          { "value": "done", "label": "Done" },
+          { "value": "cancelled", "label": "Cancelled" }
+        ] },
+        { "id": "joinery_quote_task.priority", "type": "enum", "label": "Priority", "default": "normal", "options": [
+          { "value": "low", "label": "Low" },
+          { "value": "normal", "label": "Normal" },
+          { "value": "high", "label": "High" },
+          { "value": "urgent", "label": "Urgent" }
+        ] },
+        { "id": "joinery_quote_task.assignee_id", "type": "lookup", "label": "Assigned To", "entity": "entity.contact", "display_field": "contact.display_name" },
+        { "id": "joinery_quote_task.due_at", "type": "datetime", "label": "Due" },
+        { "id": "joinery_quote_task.starts_at", "type": "datetime", "label": "Start" },
+        { "id": "joinery_quote_task.ends_at", "type": "datetime", "label": "End" },
+        { "id": "joinery_quote_task.outcome", "type": "text", "label": "Outcome" },
+        { "id": "joinery_quote_task.notes", "type": "text", "label": "Notes" }
+      ]
+    }
+  ],
+  "relations": [
+    { "from": "joinery_quote.customer_contact_id", "to": "contact.id", "label_field": "contact.display_name" },
+    { "from": "joinery_quote.site_contact_id", "to": "contact.id", "label_field": "contact.display_name" },
+    { "from": "joinery_quote.sales_owner_id", "to": "contact.id", "label_field": "contact.display_name" },
+    { "from": "joinery_quote_line.quote_id", "to": "joinery_quote.id", "label_field": "joinery_quote.quote_number" },
+    { "from": "joinery_quote_line.item_id", "to": "item.id", "label_field": "item.name" },
+    { "from": "joinery_quote_task.quote_id", "to": "joinery_quote.id", "label_field": "joinery_quote.quote_number" },
+    { "from": "joinery_quote_task.assignee_id", "to": "contact.id", "label_field": "contact.display_name" }
+  ],
+  "workflows": [
+    {
+      "id": "joinery_quote_status_workflow",
+      "entity": "entity.joinery_quote",
+      "status_field": "joinery_quote.status",
+      "states": [
+        { "id": "lead", "label": "Lead" },
+        { "id": "site_measure_booked", "label": "Site Measure Booked" },
+        { "id": "measured", "label": "Measured" },
+        { "id": "draft_quote", "label": "Draft Quote" },
+        { "id": "sent", "label": "Sent" },
+        { "id": "revision_requested", "label": "Revision Requested" },
+        { "id": "accepted", "label": "Accepted" },
+        { "id": "declined", "label": "Declined" }
+      ]
+    }
+  ],
+  "actions": [
+    { "id": "action.refresh", "kind": "refresh", "label": "Refresh" },
+    { "id": "action.joinery_quote_new", "kind": "open_form", "target": "joinery_quote.form", "label": "New Quote" },
+    { "id": "action.joinery_quote_task_new", "kind": "open_form", "target": "joinery_quote_task.form", "label": "New Task" },
+    { "id": "action.joinery_quote_line_new", "kind": "open_form", "target": "joinery_quote_line.form", "label": "New Line" },
+
+    {
+      "id": "action.joinery_quote_book_measure",
+      "kind": "update_record",
+      "entity_id": "entity.joinery_quote",
+      "label": "Book Measure",
+      "patch": { "joinery_quote.status": "site_measure_booked" },
+      "visible_when": {
+        "op": "and",
+        "conditions": [
+          { "op": "eq", "field": "joinery_quote.status", "value": "lead" },
+          { "op": "exists", "field": "joinery_quote.measure_date" }
+        ]
+      }
+    },
+    {
+      "id": "action.joinery_quote_mark_measured",
+      "kind": "update_record",
+      "entity_id": "entity.joinery_quote",
+      "label": "Mark Measured",
+      "patch": { "joinery_quote.status": "measured" },
+      "visible_when": { "op": "eq", "field": "joinery_quote.status", "value": "site_measure_booked" }
+    },
+    {
+      "id": "action.joinery_quote_start_draft",
+      "kind": "update_record",
+      "entity_id": "entity.joinery_quote",
+      "label": "Start Draft Quote",
+      "patch": { "joinery_quote.status": "draft_quote" },
+      "visible_when": { "op": "eq", "field": "joinery_quote.status", "value": "measured" }
+    },
+    {
+      "id": "action.joinery_quote_send",
+      "kind": "update_record",
+      "entity_id": "entity.joinery_quote",
+      "label": "Send Quote",
+      "patch": { "joinery_quote.status": "sent" },
+      "visible_when": {
+        "op": "and",
+        "conditions": [
+          { "op": "eq", "field": "joinery_quote.status", "value": "draft_quote" },
+          { "op": "exists", "field": "joinery_quote.quote_docs_attachments" }
+        ]
+      }
+    },
+    {
+      "id": "action.joinery_quote_request_revision",
+      "kind": "update_record",
+      "entity_id": "entity.joinery_quote",
+      "label": "Revision Requested",
+      "patch": { "joinery_quote.status": "revision_requested" },
+      "visible_when": { "op": "eq", "field": "joinery_quote.status", "value": "sent" }
+    },
+    {
+      "id": "action.joinery_quote_back_to_draft",
+      "kind": "update_record",
+      "entity_id": "entity.joinery_quote",
+      "label": "Back to Draft",
+      "patch": { "joinery_quote.status": "draft_quote" },
+      "visible_when": { "op": "eq", "field": "joinery_quote.status", "value": "revision_requested" }
+    },
+    {
+      "id": "action.joinery_quote_accept",
+      "kind": "update_record",
+      "entity_id": "entity.joinery_quote",
+      "label": "Mark Accepted",
+      "patch": { "joinery_quote.status": "accepted" },
+      "visible_when": {
+        "op": "or",
+        "conditions": [
+          { "op": "eq", "field": "joinery_quote.status", "value": "sent" },
+          { "op": "eq", "field": "joinery_quote.status", "value": "revision_requested" }
+        ]
+      }
+    },
+    {
+      "id": "action.joinery_quote_decline",
+      "kind": "refresh",
+      "label": "Mark Declined",
+      "modal_id": "modal.joinery_quote_decline_reason",
+      "visible_when": {
+        "op": "or",
+        "conditions": [
+          { "op": "eq", "field": "joinery_quote.status", "value": "sent" },
+          { "op": "eq", "field": "joinery_quote.status", "value": "revision_requested" }
+        ]
+      }
+    },
+    {
+      "id": "action.joinery_quote_decline_confirm",
+      "kind": "update_record",
+      "entity_id": "entity.joinery_quote",
+      "label": "Confirm Declined",
+      "patch": {
+        "joinery_quote.status": "declined",
+        "joinery_quote.decline_reason": { "ref": "$record.joinery_quote.decline_reason" }
+      }
+    },
+    { "id": "action.joinery_quote_decline_cancel", "kind": "refresh", "label": "Keep Open" },
+    {
+      "id": "action.joinery_quote_reopen",
+      "kind": "update_record",
+      "entity_id": "entity.joinery_quote",
+      "label": "Reopen Quote",
+      "patch": { "joinery_quote.status": "draft_quote" },
+      "visible_when": {
+        "op": "or",
+        "conditions": [
+          { "op": "eq", "field": "joinery_quote.status", "value": "accepted" },
+          { "op": "eq", "field": "joinery_quote.status", "value": "declined" }
+        ]
+      }
+    },
+
+    {
+      "id": "action.joinery_quote_task_new_for_quote",
+      "kind": "create_record",
+      "entity_id": "entity.joinery_quote_task",
+      "label": "Add Task",
+      "defaults": {
+        "joinery_quote_task.quote_id": { "ref": "$record.id" },
+        "joinery_quote_task.subject": "Follow up customer",
+        "joinery_quote_task.type": "follow_up",
+        "joinery_quote_task.status": "todo"
+      },
+      "visible_when": { "op": "exists", "field": "joinery_quote.quote_number" }
+    },
+    {
+      "id": "action.joinery_quote_add_measure_task",
+      "kind": "create_record",
+      "entity_id": "entity.joinery_quote_task",
+      "label": "Create Measure Task",
+      "defaults": {
+        "joinery_quote_task.quote_id": { "ref": "$record.id" },
+        "joinery_quote_task.subject": "Site measure and check services / access",
+        "joinery_quote_task.type": "site_measure",
+        "joinery_quote_task.status": "todo"
+      },
+      "visible_when": { "op": "exists", "field": "joinery_quote.quote_number" }
+    },
+    {
+      "id": "action.joinery_quote_add_design_task",
+      "kind": "create_record",
+      "entity_id": "entity.joinery_quote_task",
+      "label": "Create Design Task",
+      "defaults": {
+        "joinery_quote_task.quote_id": { "ref": "$record.id" },
+        "joinery_quote_task.subject": "Prepare design and quote draft",
+        "joinery_quote_task.type": "design",
+        "joinery_quote_task.status": "todo"
+      },
+      "visible_when": { "op": "exists", "field": "joinery_quote.quote_number" }
+    },
+    {
+      "id": "action.joinery_quote_add_send_task",
+      "kind": "create_record",
+      "entity_id": "entity.joinery_quote_task",
+      "label": "Create Send Task",
+      "defaults": {
+        "joinery_quote_task.quote_id": { "ref": "$record.id" },
+        "joinery_quote_task.subject": "Send quote package to customer",
+        "joinery_quote_task.type": "quote_send",
+        "joinery_quote_task.status": "todo"
+      },
+      "visible_when": { "op": "exists", "field": "joinery_quote.quote_number" }
+    },
+    {
+      "id": "action.joinery_quote_task_start",
+      "kind": "update_record",
+      "entity_id": "entity.joinery_quote_task",
+      "label": "Start",
+      "patch": { "joinery_quote_task.status": "in_progress" }
+    },
+    {
+      "id": "action.joinery_quote_task_done",
+      "kind": "update_record",
+      "entity_id": "entity.joinery_quote_task",
+      "label": "Mark Done",
+      "patch": { "joinery_quote_task.status": "done" }
+    }
+  ],
+  "modals": [
+    {
+      "id": "modal.joinery_quote_decline_reason",
+      "title": "Mark Quote Declined",
+      "description": "Capture the reason for loss to improve future quoting.",
+      "entity_id": "entity.joinery_quote",
+      "fields": ["joinery_quote.decline_reason"],
+      "actions": [
+        {
+          "action_id": "action.joinery_quote_decline_cancel",
+          "label": "Keep Open",
+          "variant": "soft",
+          "close_on_success": true
+        },
+        {
+          "action_id": "action.joinery_quote_decline_confirm",
+          "label": "Confirm Declined",
+          "variant": "primary",
+          "close_on_success": true
+        }
+      ]
+    }
+  ],
+  "triggers": [
+    { "id": "joinery.quote.created", "event": "record.created", "entity_id": "entity.joinery_quote" },
+    { "id": "joinery.quote.updated", "event": "record.updated", "entity_id": "entity.joinery_quote" },
+    { "id": "joinery.quote_task.created", "event": "record.created", "entity_id": "entity.joinery_quote_task" },
+    { "id": "joinery.action.quote_declined", "event": "action.clicked", "action_id": "action.joinery_quote_decline_confirm" }
+  ],
+  "views": [
+    {
+      "id": "joinery_quote.list",
+      "entity": "entity.joinery_quote",
+      "kind": "list",
+      "columns": [
+        { "field_id": "joinery_quote.quote_number" },
+        { "field_id": "joinery_quote.status" },
+        { "field_id": "joinery_quote.customer_contact_id" },
+        { "field_id": "joinery_quote.project_name" },
+        { "field_id": "joinery_quote.kitchen_layout" },
+        { "field_id": "joinery_quote.measure_date" },
+        { "field_id": "joinery_quote.quote_expiry" },
+        { "field_id": "joinery_quote.total_quote" }
+      ],
+      "open_record": { "to": "page:joinery_quote.form_page", "param": "record" },
+      "header": {
+        "primary_actions": [{ "action_id": "action.joinery_quote_new" }],
+        "search": {
+          "enabled": true,
+          "placeholder": "Search kitchen quotes...",
+          "fields": [
+            "joinery_quote.quote_number",
+            "joinery_quote.project_name",
+            "joinery_quote.status",
+            "joinery_quote.site_address"
+          ]
+        },
+        "filters": [
+          { "id": "all", "label": "All", "domain": { "op": "exists", "field": "joinery_quote.quote_number" } },
+          { "id": "draft", "label": "Draft", "domain": { "op": "eq", "field": "joinery_quote.status", "value": "draft_quote" } },
+          { "id": "sent", "label": "Sent", "domain": { "op": "eq", "field": "joinery_quote.status", "value": "sent" } },
+          { "id": "accepted", "label": "Accepted", "domain": { "op": "eq", "field": "joinery_quote.status", "value": "accepted" } }
+        ]
+      },
+      "create_behavior": "open_form"
+    },
+    {
+      "id": "joinery_quote.kanban",
+      "kind": "kanban",
+      "entity": "entity.joinery_quote",
+      "card": {
+        "title_field": "joinery_quote.quote_number",
+        "subtitle_fields": ["joinery_quote.customer_contact_id", "joinery_quote.project_name"],
+        "badge_fields": ["joinery_quote.status", "joinery_quote.kitchen_layout", "joinery_quote.tags"]
+      }
+    },
+    {
+      "id": "joinery_quote.graph",
+      "kind": "graph",
+      "entity": "entity.joinery_quote",
+      "default": { "type": "bar", "group_by": "joinery_quote.status", "measure": "count" }
+    },
+    {
+      "id": "joinery_quote.calendar",
+      "kind": "calendar",
+      "entity": "entity.joinery_quote",
+      "calendar": {
+        "title_field": "joinery_quote.quote_number",
+        "date_start": "joinery_quote.measure_date",
+        "date_end": "joinery_quote.measure_date",
+        "color_field": "joinery_quote.status",
+        "default_scale": "week"
+      }
+    },
+    {
+      "id": "joinery_quote.form",
+      "entity": "entity.joinery_quote",
+      "kind": "form",
+      "sections": [
+        {
+          "id": "overview",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "joinery_quote.quote_number",
+            "joinery_quote.status",
+            "joinery_quote.customer_contact_id",
+            "joinery_quote.site_contact_id",
+            "joinery_quote.sales_owner_id",
+            "joinery_quote.project_name",
+            "joinery_quote.project_type",
+            "joinery_quote.lead_source",
+            "joinery_quote.tags"
+          ]
+        },
+        {
+          "id": "design_scope",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "joinery_quote.kitchen_layout",
+            "joinery_quote.design_style",
+            "joinery_quote.cabinet_finish",
+            "joinery_quote.benchtop_material",
+            "joinery_quote.appliance_scope",
+            "joinery_quote.installation_included",
+            "joinery_quote.scope_notes"
+          ]
+        },
+        {
+          "id": "site_measure",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "joinery_quote.site_address",
+            "joinery_quote.measure_date",
+            "joinery_quote.site_photos_attachments",
+            "joinery_quote.drawings_attachments"
+          ]
+        },
+        {
+          "id": "pricing",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "joinery_quote.quote_date",
+            "joinery_quote.quote_expiry",
+            "joinery_quote.estimated_lead_time_weeks",
+            "joinery_quote.deposit_pct",
+            "joinery_quote.subtotal",
+            "joinery_quote.discount_pct",
+            "joinery_quote.tax_rate",
+            "joinery_quote.total_quote",
+            "joinery_quote.deposit_amount"
+          ]
+        },
+        {
+          "id": "notes",
+          "fields": [
+            "joinery_quote.variation_notes",
+            "joinery_quote.decline_reason",
+            "joinery_quote.internal_notes",
+            "joinery_quote.quote_docs_attachments"
+          ]
+        },
+        {
+          "id": "quote_lines",
+          "title": "Quote Lines",
+          "line_editor": {
+            "entity_id": "entity.joinery_quote_line",
+            "parent_field": "joinery_quote_line.quote_id",
+            "item_lookup_field": "joinery_quote_line.item_id",
+            "item_lookup_entity": "entity.item",
+            "item_lookup_display_field": "item.name",
+            "item_field_map": {
+              "joinery_quote_line.description": "item.description",
+              "joinery_quote_line.unit_price": "item.unit_price"
+            },
+            "description_field": "joinery_quote_line.description",
+            "defaults": {
+              "joinery_quote_line.qty": 1,
+              "joinery_quote_line.unit_price": 0,
+              "joinery_quote_line.discount_pct": 0,
+              "joinery_quote_line.tax_rate": 10,
+              "joinery_quote_line.line_total": 0
+            },
+            "columns": [
+              { "field_id": "joinery_quote_line.item_id", "label": "Item", "readonly": true },
+              { "field_id": "joinery_quote_line.category", "label": "Category" },
+              { "field_id": "joinery_quote_line.description", "label": "Description" },
+              { "field_id": "joinery_quote_line.qty", "label": "Qty", "type": "number" },
+              { "field_id": "joinery_quote_line.unit_price", "label": "Unit Price", "type": "number" },
+              { "field_id": "joinery_quote_line.discount_pct", "label": "Discount %", "type": "number" },
+              { "field_id": "joinery_quote_line.tax_rate", "label": "Tax %", "type": "number" },
+              { "field_id": "joinery_quote_line.line_total", "label": "Line Total", "type": "number" }
+            ]
+          }
+        }
+      ],
+      "header": {
+        "title_field": "joinery_quote.quote_number",
+        "primary_actions": [
+          { "action_id": "action.joinery_quote_book_measure" },
+          { "action_id": "action.joinery_quote_mark_measured" },
+          { "action_id": "action.joinery_quote_start_draft" },
+          { "action_id": "action.joinery_quote_send" },
+          { "action_id": "action.joinery_quote_request_revision" },
+          { "action_id": "action.joinery_quote_back_to_draft" },
+          { "action_id": "action.joinery_quote_accept" },
+          { "action_id": "action.joinery_quote_decline" },
+          { "action_id": "action.joinery_quote_reopen" },
+          { "action_id": "action.joinery_quote_task_new_for_quote" },
+          { "action_id": "action.joinery_quote_add_measure_task" },
+          { "action_id": "action.joinery_quote_add_design_task" },
+          { "action_id": "action.joinery_quote_add_send_task" }
+        ],
+        "secondary_actions": [{ "action_id": "action.refresh" }],
+        "save_mode": "top",
+        "auto_save": true,
+        "auto_save_debounce_ms": 700,
+        "statusbar": { "field_id": "joinery_quote.status" },
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "overview_tab",
+          "tabs": [
+            { "id": "overview_tab", "label": "Overview", "sections": ["overview"] },
+            { "id": "design_tab", "label": "Design & Scope", "sections": ["design_scope"] },
+            { "id": "measure_tab", "label": "Site Measure", "sections": ["site_measure"] },
+            { "id": "pricing_tab", "label": "Pricing", "sections": ["pricing", "quote_lines"] },
+            { "id": "notes_tab", "label": "Notes & Docs", "sections": ["notes"] }
+          ]
+        }
+      },
+      "line_editors": {
+        "quote_lines": {
+          "entity_id": "entity.joinery_quote_line",
+          "parent_field": "joinery_quote_line.quote_id",
+          "item_lookup_field": "joinery_quote_line.item_id",
+          "item_lookup_entity": "entity.item",
+          "item_lookup_display_field": "item.name",
+          "item_field_map": {
+            "joinery_quote_line.description": "item.description",
+            "joinery_quote_line.unit_price": "item.unit_price"
+          },
+          "description_field": "joinery_quote_line.description",
+          "defaults": {
+            "joinery_quote_line.qty": 1,
+            "joinery_quote_line.unit_price": 0,
+            "joinery_quote_line.discount_pct": 0,
+            "joinery_quote_line.tax_rate": 10,
+            "joinery_quote_line.line_total": 0
+          },
+          "columns": [
+            { "field_id": "joinery_quote_line.item_id", "label": "Item", "readonly": true },
+            { "field_id": "joinery_quote_line.category", "label": "Category" },
+            { "field_id": "joinery_quote_line.description", "label": "Description" },
+            { "field_id": "joinery_quote_line.qty", "label": "Qty", "type": "number" },
+            { "field_id": "joinery_quote_line.unit_price", "label": "Unit Price", "type": "number" },
+            { "field_id": "joinery_quote_line.discount_pct", "label": "Discount %", "type": "number" },
+            { "field_id": "joinery_quote_line.tax_rate", "label": "Tax %", "type": "number" },
+            { "field_id": "joinery_quote_line.line_total", "label": "Line Total", "type": "number" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "joinery_quote_task.list",
+      "entity": "entity.joinery_quote_task",
+      "kind": "list",
+      "columns": [
+        { "field_id": "joinery_quote_task.quote_id" },
+        { "field_id": "joinery_quote_task.subject" },
+        { "field_id": "joinery_quote_task.type" },
+        { "field_id": "joinery_quote_task.status" },
+        { "field_id": "joinery_quote_task.priority" },
+        { "field_id": "joinery_quote_task.assignee_id" },
+        { "field_id": "joinery_quote_task.due_at" }
+      ],
+      "open_record": { "to": "page:joinery_quote_task.form_page", "param": "record" },
+      "header": {
+        "primary_actions": [{ "action_id": "action.joinery_quote_task_new" }],
+        "search": {
+          "enabled": true,
+          "placeholder": "Search quote tasks...",
+          "fields": ["joinery_quote_task.subject", "joinery_quote_task.type", "joinery_quote_task.status"]
+        },
+        "filters": [
+          { "id": "todo", "label": "To Do", "domain": { "op": "eq", "field": "joinery_quote_task.status", "value": "todo" } },
+          { "id": "done", "label": "Done", "domain": { "op": "eq", "field": "joinery_quote_task.status", "value": "done" } }
+        ]
+      },
+      "create_behavior": "open_form"
+    },
+    {
+      "id": "joinery_quote_task.calendar",
+      "kind": "calendar",
+      "entity": "entity.joinery_quote_task",
+      "calendar": {
+        "title_field": "joinery_quote_task.subject",
+        "date_start": "joinery_quote_task.starts_at",
+        "date_end": "joinery_quote_task.ends_at",
+        "color_field": "joinery_quote_task.type",
+        "default_scale": "week"
+      }
+    },
+    {
+      "id": "joinery_quote_task.kanban",
+      "kind": "kanban",
+      "entity": "entity.joinery_quote_task",
+      "card": {
+        "title_field": "joinery_quote_task.subject",
+        "subtitle_fields": ["joinery_quote_task.quote_id", "joinery_quote_task.due_at"],
+        "badge_fields": ["joinery_quote_task.type", "joinery_quote_task.status", "joinery_quote_task.priority"]
+      }
+    },
+    {
+      "id": "joinery_quote_task.form",
+      "entity": "entity.joinery_quote_task",
+      "kind": "form",
+      "sections": [
+        {
+          "id": "main",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "joinery_quote_task.quote_id",
+            "joinery_quote_task.subject",
+            "joinery_quote_task.type",
+            "joinery_quote_task.status",
+            "joinery_quote_task.priority",
+            "joinery_quote_task.assignee_id",
+            "joinery_quote_task.due_at",
+            "joinery_quote_task.starts_at",
+            "joinery_quote_task.ends_at"
+          ]
+        },
+        {
+          "id": "notes",
+          "fields": [
+            "joinery_quote_task.outcome",
+            "joinery_quote_task.notes"
+          ]
+        }
+      ],
+      "header": {
+        "title_field": "joinery_quote_task.subject",
+        "primary_actions": [
+          { "action_id": "action.joinery_quote_task_start" },
+          { "action_id": "action.joinery_quote_task_done" }
+        ],
+        "secondary_actions": [{ "action_id": "action.refresh" }],
+        "save_mode": "top",
+        "auto_save": true,
+        "auto_save_debounce_ms": 700,
+        "statusbar": { "field_id": "joinery_quote_task.status" }
+      }
+    },
+    {
+      "id": "joinery_quote_line.list",
+      "entity": "entity.joinery_quote_line",
+      "kind": "list",
+      "columns": [
+        { "field_id": "joinery_quote_line.quote_id" },
+        { "field_id": "joinery_quote_line.item_id" },
+        { "field_id": "joinery_quote_line.category" },
+        { "field_id": "joinery_quote_line.description" },
+        { "field_id": "joinery_quote_line.qty" },
+        { "field_id": "joinery_quote_line.unit_price" },
+        { "field_id": "joinery_quote_line.line_total" }
+      ],
+      "open_record": { "to": "page:joinery_quote_line.form_page", "param": "record" },
+      "header": { "primary_actions": [{ "action_id": "action.joinery_quote_line_new" }] },
+      "create_behavior": "open_form"
+    },
+    {
+      "id": "joinery_quote_line.form",
+      "entity": "entity.joinery_quote_line",
+      "kind": "form",
+      "sections": [
+        {
+          "id": "main",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "joinery_quote_line.quote_id",
+            "joinery_quote_line.item_id",
+            "joinery_quote_line.category",
+            "joinery_quote_line.description",
+            "joinery_quote_line.qty",
+            "joinery_quote_line.unit",
+            "joinery_quote_line.unit_price",
+            "joinery_quote_line.discount_pct",
+            "joinery_quote_line.tax_rate",
+            "joinery_quote_line.line_total"
+          ]
+        },
+        {
+          "id": "notes",
+          "fields": ["joinery_quote_line.notes"]
+        }
+      ],
+      "header": {
+        "title_field": "joinery_quote_line.description",
+        "secondary_actions": [{ "action_id": "action.refresh" }],
+        "save_mode": "top",
+        "auto_save": true,
+        "auto_save_debounce_ms": 700
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "joinery_quote.list_page",
+      "title": "Kitchen Quotes",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.refresh" },
+          { "kind": "navigate", "label": "New Quote", "target": "page:joinery_quote.form_page" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.joinery_quote",
+              "default_mode": "kanban",
+              "modes": [
+                { "mode": "kanban", "target": "view:joinery_quote.kanban", "default_group_by": "joinery_quote.status" },
+                { "mode": "list", "target": "view:joinery_quote.list" },
+                { "mode": "calendar", "target": "view:joinery_quote.calendar" },
+                { "mode": "graph", "target": "view:joinery_quote.graph" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "joinery_quote.form_page",
+      "title": "Kitchen Quote",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.joinery_quote",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "view", "target": "view:joinery_quote.form" }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "chatter", "entity_id": "entity.joinery_quote", "record_ref": "$record.id" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "joinery_quote_task.list_page",
+      "title": "Quote Tasks",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.refresh" },
+          { "kind": "navigate", "label": "New Task", "target": "page:joinery_quote_task.form_page" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.joinery_quote_task",
+              "default_mode": "calendar",
+              "modes": [
+                { "mode": "calendar", "target": "view:joinery_quote_task.calendar" },
+                { "mode": "list", "target": "view:joinery_quote_task.list" },
+                { "mode": "kanban", "target": "view:joinery_quote_task.kanban", "default_group_by": "joinery_quote_task.status" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "joinery_quote_task.form_page",
+      "title": "Quote Task",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.joinery_quote_task",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                { "kind": "view", "target": "view:joinery_quote_task.form" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "joinery_quote_line.list_page",
+      "title": "Quote Lines",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.joinery_quote_line",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:joinery_quote_line.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "joinery_quote_line.form_page",
+      "title": "Quote Line",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.joinery_quote_line",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                { "kind": "view", "target": "view:joinery_quote_line.form" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

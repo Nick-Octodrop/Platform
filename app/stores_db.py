@@ -2088,6 +2088,25 @@ class DbNotificationStore:
             )
             return [dict(r) for r in rows]
 
+    def list_since(self, user_id: str, since: str, unread_only: bool = False, limit: int = 200) -> list[dict]:
+        clauses = ["org_id=%s", "recipient_user_id=%s", "created_at > %s"]
+        params = [get_org_id(), user_id, since]
+        if unread_only:
+            clauses.append("read_at is null")
+        where = " and ".join(clauses)
+        with get_conn() as conn:
+            rows = fetch_all(
+                conn,
+                f"""
+                select * from notifications where {where}
+                order by created_at desc
+                limit %s
+                """,
+                params + [limit],
+                query_name="notifications.list_since",
+            )
+            return [dict(r) for r in rows]
+
     def mark_read(self, notification_id: str) -> dict | None:
         with get_conn() as conn:
             row = fetch_one(

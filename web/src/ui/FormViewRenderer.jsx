@@ -308,8 +308,8 @@ export default function FormViewRenderer({
   return (
     <div className="h-full min-h-0 flex flex-col gap-4">
       {header && !hideHeader && (
-        <div className="shrink-0 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="shrink-0 flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             <h1 className="text-base font-semibold truncate">{titleText}</h1>
             {!autoSaveEnabled && !readonly && isDirty && (
               <span className="text-sm opacity-60">Unsaved changes</span>
@@ -333,7 +333,7 @@ export default function FormViewRenderer({
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center justify-end gap-2 shrink-0 w-full md:w-auto md:max-w-[60%]">
             {primaryActions.map((item) => {
               const disabled = !item.enabled || previewMode || readonly;
               const reason = readonly

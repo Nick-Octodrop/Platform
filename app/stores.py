@@ -410,6 +410,22 @@ class MemoryNotificationStore:
         items.sort(key=lambda n: n.get("created_at", ""), reverse=True)
         return [copy.deepcopy(n) for n in items[:limit]]
 
+    def list_since(self, user_id: str, since: str, unread_only: bool = False, limit: int = 200) -> list[dict]:
+        items = self.list(user_id, unread_only=unread_only, limit=1000)
+        try:
+            since_dt = datetime.fromisoformat(str(since).replace("Z", "+00:00"))
+        except Exception:
+            return items[:limit]
+        out: list[dict] = []
+        for item in items:
+            try:
+                created_dt = datetime.fromisoformat(str(item.get("created_at", "")).replace("Z", "+00:00"))
+            except Exception:
+                continue
+            if created_dt > since_dt:
+                out.append(item)
+        return out[:limit]
+
     def mark_read(self, notification_id: str) -> dict | None:
         item = self._items.get(notification_id)
         if not item:

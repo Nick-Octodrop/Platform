@@ -7,7 +7,16 @@ import ShellLayout from "./layout/ShellLayout.jsx";
 import { ModuleStoreProvider } from "./state/moduleStore.jsx";
 import { ToastProvider } from "./components/Toast.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
-import { applyBrandColors, getInitialTheme, setBrandColors, setTheme } from "./theme/theme.js";
+import {
+  applyBrandColors,
+  applyUiDensity,
+  getInitialUiDensity,
+  getInitialTheme,
+  normalizeUiDensity,
+  setBrandColors,
+  setTheme,
+  setUiDensity,
+} from "./theme/theme.js";
 import { getUiPrefs } from "./api.js";
 import LoginPage from "./pages/LoginPage.jsx";
 import AppsPage from "./pages/AppsPage.jsx";
@@ -70,6 +79,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    applyUiDensity(getInitialUiDensity());
+  }, []);
+
+  useEffect(() => {
     let mounted = true;
     (async () => {
       if (!session?.user) return;
@@ -86,6 +99,9 @@ export default function App() {
         if (nextTheme) {
           setTheme(nextTheme);
         }
+        // Keep local preference as fallback so navigation/reload does not unexpectedly drop to "sm".
+        const nextUiDensity = normalizeUiDensity(userPrefs?.ui_density || workspace?.ui_density || getInitialUiDensity());
+        setUiDensity(nextUiDensity);
       } catch {
         // ignore
       }

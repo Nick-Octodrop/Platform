@@ -8,6 +8,7 @@ import { getDefaultOpenRoute, loadEntityIndex } from "../data/entityIndex.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { LayoutGrid, Package, PenTool, Settings as SettingsIcon, Workflow, Wrench } from "lucide-react";
 import { normalizeLucideKey, resolveLucideIcon } from "../state/lucideIconCatalog.js";
+import { normalizeHeroKey, resolveHeroIcon } from "../state/heroIconCatalog.js";
 import { useAccessContext } from "../access.js";
 
 function AppTile({ app, module, onOpen }) {
@@ -16,7 +17,9 @@ function AppTile({ app, module, onOpen }) {
   const iconUrl = app.icon_url;
   const lucideKey = normalizeLucideKey(iconUrl);
   const LucideIcon = lucideKey ? resolveLucideIcon(lucideKey) : null;
-  const isImageUrl = typeof iconUrl === "string" && !LucideIcon && !iconUrl.includes("lucide:") && (
+  const heroKey = normalizeHeroKey(iconUrl);
+  const HeroIcon = heroKey ? resolveHeroIcon(heroKey) : null;
+  const isImageUrl = typeof iconUrl === "string" && !LucideIcon && !HeroIcon && !iconUrl.includes("lucide:") && !iconUrl.includes("hero:") && (
     iconUrl.startsWith("data:") || iconUrl.startsWith("http")
   );
   return (
@@ -29,6 +32,10 @@ function AppTile({ app, module, onOpen }) {
         {LucideIcon ? (
           <div className="text-5xl text-primary">
             <LucideIcon size={56} strokeWidth={1.31} />
+          </div>
+        ) : HeroIcon ? (
+          <div className="text-primary">
+            <HeroIcon className="w-14 h-14" />
           </div>
         ) : isImageUrl ? (
           <img src={iconUrl} alt={app.name} className="w-24 h-24 object-contain" />
@@ -50,6 +57,7 @@ export default function HomePage({ user }) {
   const canSeeStudio = !accessLoading && hasCapability("modules.manage");
   const canSeeAutomations = !accessLoading && hasCapability("automations.manage");
   const canSeeIntegrations = !accessLoading && hasCapability("workspace.manage_settings");
+  const homeLoading = loading || accessLoading;
 
   useEffect(() => {
     async function buildIndex() {
@@ -100,8 +108,8 @@ export default function HomePage({ user }) {
 
   return (
     <div className="w-full h-full flex justify-center overflow-hidden">
-      {loading && <LoadingSpinner className="h-full w-full" />}
-      {!loading && (
+      {homeLoading && <LoadingSpinner className="h-full w-full" />}
+      {!homeLoading && (
         <div className="w-full flex justify-center items-start pt-[12vh]">
           {allApps.length === 0 ? (
             <div className="card bg-base-100 shadow p-6">

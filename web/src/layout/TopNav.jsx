@@ -211,7 +211,13 @@ export default function TopNav({ user, onSignOut }) {
       if (!group || !Array.isArray(group.items)) continue;
       const groupLabel = group.group || "Navigation";
       const groupItems = group.items.filter((i) => i && i.label && i.to);
-      items.push({ groupLabel, items: groupItems });
+      items.push({
+        groupLabel,
+        items: groupItems,
+        mode: group.mode,
+        inline: group.inline,
+        asLink: group.as_link,
+      });
     }
     return items;
   }, [navGroups, moduleId]);
@@ -312,7 +318,11 @@ export default function TopNav({ user, onSignOut }) {
           <div className="flex items-center gap-4">
             {navItems.map((group) => {
               const items = group.items || [];
-              const single = items.length === 1 && items[0]?.label === group.groupLabel;
+              const explicitLink =
+                group.asLink === true ||
+                group.inline === true ||
+                String(group.mode || "").toLowerCase() === "link";
+              const single = items.length === 1 && (items[0]?.label === group.groupLabel || explicitLink);
               if (single) {
                 const target = buildTargetRoute(moduleId, items[0].to);
                 const active = target && currentPath.startsWith(target);
@@ -322,7 +332,7 @@ export default function TopNav({ user, onSignOut }) {
                     to={target || "#"}
                     className={`text-sm font-medium ${active ? "text-primary" : "opacity-80"}`}
                   >
-                    {group.groupLabel}
+                    {group.groupLabel || items[0]?.label}
                   </Link>
                 );
               }

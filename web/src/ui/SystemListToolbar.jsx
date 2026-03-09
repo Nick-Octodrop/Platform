@@ -46,7 +46,7 @@ export default function SystemListToolbar({
               </button>
             </DaisyTooltip>
             <input
-              className="input input-bordered input-sm join-item w-full max-w-xs h-8 min-h-8 py-0 leading-none"
+              className="input input-bordered input-sm join-item toolbar-search-input w-full max-w-xs py-0 leading-none"
               placeholder="Search…"
               value={searchValue}
               onChange={(e) => onSearchChange?.(e.target.value)}

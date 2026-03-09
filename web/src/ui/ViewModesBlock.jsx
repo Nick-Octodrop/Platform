@@ -22,6 +22,7 @@ import {
 import { apiFetch } from "../api.js";
 import { supabase } from "../supabase.js";
 import ListViewRenderer from "./ListViewRenderer.jsx";
+import PaginationControls from "../components/PaginationControls.jsx";
 import { evalCondition } from "../utils/conditions.js";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_BUTTON_XS, SOFT_ICON_SM } from "../components/buttonStyles.js";
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
@@ -245,10 +246,13 @@ function buildDomain(activeFilter, clientFilters, recordDomain) {
   return { op: "and", conditions };
 }
 
-function KanbanView({ view, entityDef, records, groupBy, onSelectRow }) {
+function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCards = false, onMoveCard }) {
   const card = view.card || {};
   const titleField = card.title_field;
   const humanize = (value) => String(value || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const [dragging, setDragging] = useState(null);
+  const [busyRowId, setBusyRowId] = useState("");
+  const [moveError, setMoveError] = useState("");
   const priorityTone = (value) => {
     const v = String(value || "").toLowerCase();
     if (v === "urgent") return "badge-error";
@@ -275,25 +279,61 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow }) {
     const groupField = Array.isArray(entityDef?.fields) ? entityDef.fields.find((f) => f?.id === groupBy) : null;
     const optionOrder = Array.isArray(groupField?.options) ? groupField.options.map((opt) => String(opt?.value ?? "")).filter(Boolean) : [];
     if (optionOrder.length === 0) return currentKeys;
-    const known = optionOrder.filter((key) => currentKeys.includes(key));
-    const remaining = currentKeys.filter((key) => !known.includes(key));
-    return [...known, ...remaining];
+    const remaining = currentKeys.filter((key) => !optionOrder.includes(key));
+    return [...optionOrder, ...remaining];
   }, [grouped, groupBy, entityDef]);
+
+  async function handleDrop(targetGroupKey) {
+    if (!dragging || !canDragCards || typeof onMoveCard !== "function") return;
+    if (dragging.groupKey === targetGroupKey) {
+      setDragging(null);
+      return;
+    }
+    setMoveError("");
+    setBusyRowId(dragging.rowId);
+    try {
+      const result = await onMoveCard(dragging.row, targetGroupKey);
+      if (result && result.ok === false && result.message) {
+        setMoveError(result.message);
+      }
+    } finally {
+      setBusyRowId("");
+      setDragging(null);
+    }
+  }
+
   return (
     <div className="h-full min-h-0">
       <div className="h-full min-h-0">
+        {moveError ? (
+          <div className="alert alert-warning mb-3 py-2 text-sm">{moveError}</div>
+        ) : null}
         <div className="h-full min-h-0 overflow-x-auto overflow-y-hidden pb-2">
           <div className="flex h-full min-h-0 gap-4 min-w-max">
             {groupKeys.map((groupKey) => (
-              <div key={groupKey} className="w-[320px] shrink-0 bg-base-100 rounded-box border border-base-300 shadow-sm p-2 h-full min-h-0 flex flex-col">
+              <div
+                key={groupKey}
+                className={`w-[320px] shrink-0 bg-base-100 rounded-box border shadow-sm p-2 h-full min-h-0 flex flex-col ${
+                  dragging && dragging.groupKey !== groupKey ? "border-primary/40" : "border-base-300"
+                }`}
+                onDragOver={(e) => {
+                  if (!canDragCards || !dragging) return;
+                  e.preventDefault();
+                }}
+                onDrop={(e) => {
+                  if (!canDragCards || !dragging) return;
+                  e.preventDefault();
+                  handleDrop(groupKey);
+                }}
+              >
                 <div className="p-2 flex items-center justify-between gap-2">
                   <div className="font-semibold truncate">{groupBy ? (groupKey ? humanize(groupKey) : "Ungrouped") : "All"}</div>
-                  <span className="badge badge-ghost badge-sm">{grouped[groupKey].length}</span>
+                  <span className="badge badge-ghost badge-sm">{(grouped[groupKey] || []).length}</span>
                 </div>
                 <div className="p-[7px] space-y-3 overflow-y-auto min-h-0">
-                  {grouped[groupKey].length === 0 ? (
+                  {(grouped[groupKey] || []).length === 0 ? (
                     <div className="text-xs text-base-content/50 p-2">No work orders</div>
-                  ) : grouped[groupKey].map((row) => {
+                  ) : (grouped[groupKey] || []).map((row) => {
                     const record = row.record || {};
                     const rowId = row.record_id || record.id;
                     const workOrderNo = String(record[titleField] ?? "");
@@ -302,8 +342,13 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow }) {
                     return (
                       <div
                         key={rowId}
-                        className="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-base-300 transition cursor-pointer"
+                        className={`card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-base-300 transition cursor-pointer ${
+                          dragging?.rowId === rowId ? "opacity-60" : ""
+                        }`}
                         onClick={() => onSelectRow?.(row)}
+                        draggable={canDragCards && !busyRowId}
+                        onDragStart={() => setDragging({ row, rowId, groupKey })}
+                        onDragEnd={() => setDragging(null)}
                       >
                         <div className="card-body p-[7px] gap-1">
                           <div className="text-base font-semibold truncate">{workOrderNo}</div>
@@ -1073,6 +1118,7 @@ export default function ViewModesBlock({
   const entityDef = (manifest?.entities || []).find((e) => e.id === entityFullId);
   const entityLabel = entityDef?.label || humanizeEntityId(entityFullId);
   const fieldIndex = useMemo(() => buildFieldIndex(manifest, entityFullId), [manifest, entityFullId]);
+  const actions = Array.isArray(manifest?.actions) ? manifest.actions : [];
 
   const [records, setRecords] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
@@ -1080,6 +1126,8 @@ export default function ViewModesBlock({
   const [savedFilters, setSavedFilters] = useState([]);
   const [prefs, setPrefs] = useState(null);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [listPage, setListPage] = useState(0);
+  const [listTotalItems, setListTotalItems] = useState(0);
   const prefsLoadedRef = useRef(false);
   const bootstrapUsedRef = useRef(null);
 
@@ -1113,6 +1161,108 @@ export default function ViewModesBlock({
 
   const defaultMode = forceListOnly ? "list" : (block?.default_mode || resolvedModes[0]?.mode || "list");
 
+  const groupByFieldDef = useMemo(
+    () => (Array.isArray(entityDef?.fields) ? entityDef.fields.find((f) => f?.id === groupByParam) : null),
+    [entityDef, groupByParam]
+  );
+  const workflowStatusField = useMemo(() => {
+    const workflows = Array.isArray(manifest?.workflows) ? manifest.workflows : [];
+    const wf = workflows.find((item) => item?.entity === entityFullId && typeof item?.status_field === "string");
+    return wf?.status_field || null;
+  }, [manifest, entityFullId]);
+  const kanbanCanDrag = useMemo(() => {
+    if (!canWriteRecords || previewMode) return false;
+    if (!groupByParam) return false;
+    if (groupByFieldDef?.readonly) return false;
+    const t = String(groupByFieldDef?.type || "").toLowerCase();
+    return t === "enum" || t === "string" || t === "number" || t === "bool";
+  }, [canWriteRecords, previewMode, groupByParam, groupByFieldDef]);
+
+  function castGroupValue(rawValue) {
+    if (rawValue === "") return null;
+    const fieldType = String(groupByFieldDef?.type || "").toLowerCase();
+    if (fieldType === "number") {
+      const n = Number(rawValue);
+      return Number.isFinite(n) ? n : null;
+    }
+    if (fieldType === "bool") {
+      if (rawValue === true || rawValue === "true") return true;
+      if (rawValue === false || rawValue === "false") return false;
+      return null;
+    }
+    return rawValue;
+  }
+
+  function findTransitionAction(record, targetValue) {
+    const matches = actions.filter((action) => {
+      if (!action || action.kind !== "update_record" || action.entity_id !== entityFullId) return false;
+      const patch = action.patch;
+      if (!patch || typeof patch !== "object") return false;
+      if (!(groupByParam in patch)) return false;
+      if (patch[groupByParam] !== targetValue) return false;
+      return true;
+    });
+    const visible = matches.filter((action) => {
+      if (!action.visible_when) return true;
+      return evalCondition(action.visible_when, { record: record || {} });
+    });
+    return { matches, visible, action: visible[0] || null };
+  }
+
+  async function handleKanbanMove(row, targetGroupKey) {
+    const record = row?.record || {};
+    const rowId = row?.record_id || record?.id;
+    if (!rowId || !groupByParam) return { ok: false, message: "Invalid record." };
+    const targetValue = castGroupValue(targetGroupKey);
+    const currentValue = record[groupByParam] ?? null;
+    if (currentValue === targetValue) return { ok: true };
+
+    const transition = findTransitionAction(record, targetValue);
+    const transitionAction = transition.action;
+    const isStatusMove = workflowStatusField && groupByParam === workflowStatusField;
+    if (transitionAction?.modal_id) {
+      return { ok: false, message: "This transition requires a modal. Open the record to continue." };
+    }
+    if (!transitionAction) {
+      if (transition.matches.length > 0) {
+        return { ok: false, message: "Move blocked by validation/visibility rules for this action." };
+      }
+      if (isStatusMove) {
+        return { ok: false, message: "No valid transition action for this move." };
+      }
+      return { ok: false, message: "No matching action for this move. Drag/drop only runs defined actions." };
+    }
+
+    try {
+      if (typeof onRunAction !== "function") {
+        return { ok: false, message: "Action runner unavailable for drag/drop." };
+      }
+      const result = await onRunAction(transitionAction, {
+        recordId: rowId,
+        recordDraft: { ...(record || {}), [groupByParam]: targetValue },
+      });
+      if (!result) return { ok: false, message: "Transition failed." };
+      const patch = transitionAction?.patch && typeof transitionAction.patch === "object" ? transitionAction.patch : null;
+      const nextRecord = result?.record && typeof result.record === "object"
+        ? result.record
+        : { ...(record || {}), ...(patch || {}), [groupByParam]: targetValue };
+      setRecords((prev) =>
+        (Array.isArray(prev) ? prev : []).map((entry) => {
+          const entryId = entry?.record_id || entry?.record?.id;
+          if (entryId !== rowId) return entry;
+          return {
+            ...entry,
+            record: { ...(entry.record || {}), ...(nextRecord || {}) },
+          };
+        })
+      );
+      setRefreshTick((v) => v + 1);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, message: err?.message || "Move failed." };
+    }
+  }
+
   const activeMode = forceListOnly ? "list" : (resolvedModes.find((m) => m.mode === modeParam)?.mode || defaultMode);
   const activeModeDef = resolvedModes.find((m) => m.mode === activeMode) || resolvedModes[0] || null;
   const activeView = activeModeDef?.view || null;
@@ -1125,6 +1275,9 @@ export default function ViewModesBlock({
   const graphGroupBy = graphGroupByParam || groupByParam || graphDefault.group_by || "";
   const graphMeasure = graphMeasureParam || graphDefault.measure || "count";
   const showGraphMode = activeMode === "graph";
+  const listPageSize = Number.isFinite(Number(listView?.page_size)) && Number(listView?.page_size) > 0
+    ? Number(listView?.page_size)
+    : 25;
   const pivotRowGroupBy = pivotRowParam || groupByParam || activeModeDef?.default_group_by || block?.default_group_by || "";
   const pivotColGroupBy = pivotColParam || "";
   const pivotMeasure = pivotMeasureParam || "count";
@@ -1870,6 +2023,14 @@ export default function ViewModesBlock({
               })}
             </div>
           )}
+          {activeMode === "list" && (
+            <PaginationControls
+              page={listPage}
+              pageSize={listPageSize}
+              totalItems={listTotalItems}
+              onPageChange={setListPage}
+            />
+          )}
           {selectedIds.length > 0 && (
             <button className={SOFT_BUTTON_SM} onClick={handleBulkDelete}>Delete ({selectedIds.length})</button>
           )}
@@ -1915,6 +2076,11 @@ export default function ViewModesBlock({
               filters={manifestFilters}
               activeFilter={activeFilter && activeFilter.source === "manifest" ? activeFilter : null}
               clientFilters={clientFilters}
+              page={listPage}
+              pageSize={listPageSize}
+              onPageChange={setListPage}
+              onTotalItemsChange={setListTotalItems}
+              showPaginationControls={false}
               selectedIds={selectedIds}
               onToggleSelect={(recordId, checked) => {
                 setSelectedIds((prev) => {
@@ -1950,6 +2116,8 @@ export default function ViewModesBlock({
               entityDef={entityDef}
               records={records}
               groupBy={groupByParam}
+              canDragCards={kanbanCanDrag}
+              onMoveCard={handleKanbanMove}
               onSelectRow={(row) => {
                 if (!openRecordTarget) return;
                 const recordId = row.record_id || row.record?.id;

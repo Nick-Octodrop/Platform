@@ -32,7 +32,7 @@ export default function PaginationControls({
             <ChevronLeft className="h-4 w-4" />
           </button>
         </DaisyTooltip>
-        <div className="join-item h-8 min-h-8 px-2 flex items-center text-xs opacity-80 tabular-nums border border-base-content/20 bg-base-100">
+        <div className="join-item pagination-page-indicator h-8 min-h-8 px-2 flex items-center text-xs opacity-80 tabular-nums border border-base-content/20 bg-base-100">
           {safePage + 1} / {totalPages}
         </div>
         <DaisyTooltip label="Next" className="join-item" placement="top">

@@ -36,43 +36,122 @@ body {
     @apply w-full;
   }
 
-  .form-control .input,
-  .fieldset .input {
+  html.ui-density-sm .form-control .input,
+  html.ui-density-sm .fieldset .input {
     @apply input-sm;
   }
 
-  .form-control .select,
-  .fieldset .select {
+  html.ui-density-sm .form-control .select,
+  html.ui-density-sm .fieldset .select {
     @apply select-sm;
   }
 
-  .form-control .textarea:not(.code-textarea),
-  .fieldset .textarea:not(.code-textarea) {
+  html.ui-density-sm .form-control .textarea:not(.code-textarea),
+  html.ui-density-sm .fieldset .textarea:not(.code-textarea) {
     @apply textarea-sm;
   }
 
-  .btn:not(.btn-xs):not(.btn-sm):not(.btn-lg) {
+  html.ui-density-sm .btn:not(.btn-xs):not(.btn-sm):not(.btn-lg) {
     @apply text-xs min-h-8 h-8 px-3;
+  }
+
+  html.ui-density-sm .file-input {
+    @apply file-input-sm;
+  }
+
+  html.ui-density-sm .tabs {
+    @apply tabs-sm;
+  }
+
+  html.ui-density-sm .table {
+    @apply table-sm;
+  }
+
+  html.ui-density-sm .menu {
+    @apply menu-sm;
+  }
+
+  html.ui-density-md .btn:not(.btn-xs):not(.btn-sm):not(.btn-lg) {
+    @apply text-sm min-h-10 h-10 px-4;
+  }
+
+  html.ui-density-md .input {
+    min-height: 2.5rem;
+    height: 2.5rem;
+    font-size: 0.95rem;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  html.ui-density-md .select {
+    min-height: 2.5rem;
+    height: 2.5rem;
+    font-size: 0.95rem;
+    padding-left: 0.75rem;
+    padding-right: 2rem;
+  }
+
+  html.ui-density-md .textarea:not(.code-textarea) {
+    font-size: 0.95rem;
+    padding: 0.625rem 0.75rem;
+  }
+
+  html.ui-density-md .btn.btn-sm:not(.p-0):not(.btn-square):not(.btn-circle) {
+    @apply text-sm min-h-10 h-10 px-4;
+  }
+
+  /* Scale button glyphs in md density so icon controls visually match larger inputs/buttons. */
+  html.ui-density-md .btn.btn-sm svg {
+    width: 1.1rem;
+    height: 1.1rem;
+  }
+
+  .icon-btn-sm {
+    min-height: 2rem;
+    height: 2rem;
+    width: 2rem;
+    min-width: 2rem;
+  }
+
+  html.ui-density-md .icon-btn-sm {
+    min-height: 2.5rem;
+    height: 2.5rem;
+    width: 2.5rem;
+    min-width: 2.5rem;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  html.ui-density-md .pagination-page-indicator {
+    min-height: 2.5rem;
+    height: 2.5rem;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+    font-size: 0.95rem;
+  }
+
+  html.ui-density-md .file-input {
+    min-height: 2.5rem;
+    height: 2.5rem;
+    font-size: 0.95rem;
+  }
+
+  html.ui-density-md .checkbox {
+    width: 1.2rem;
+    height: 1.2rem;
+  }
+
+  html.ui-density-md .toggle {
+    width: 2.75rem;
+    height: 1.45rem;
   }
 
   .toggle {
     @apply toggle-sm;
   }
 
-  .file-input {
-    @apply file-input-sm;
-  }
-
-  .tabs {
-    @apply tabs-sm;
-  }
-
-  .table {
-    @apply table-sm;
-  }
-
-  .menu {
-    @apply menu-sm;
+  .checkbox {
+    @apply checkbox-sm;
   }
 
   .dropdown-content {
@@ -81,10 +160,6 @@ body {
 
   .dropdown-content .btn {
     @apply btn-xs;
-  }
-
-  .checkbox {
-    @apply checkbox-sm;
   }
 
   .navbar {

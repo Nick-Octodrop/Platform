@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { clearCaches, getUiPrefs, setUiPrefs } from "../api";
 import { useModuleStore } from "../state/moduleStore.jsx";
 import { useToast } from "../components/Toast.jsx";
-import { getInitialTheme, setTheme } from "../theme/theme.js";
+import { getInitialTheme, getInitialUiDensity, normalizeUiDensity, setTheme, setUiDensity } from "../theme/theme.js";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import { supabase } from "../supabase";
 
@@ -19,12 +19,23 @@ function normalizeTheme(value) {
   return String(value || "").trim().toLowerCase() === "dark" ? "dark" : "light";
 }
 
+function Section({ title, description, children }) {
+  return (
+    <div className="rounded-box border border-base-300 bg-base-100 p-4">
+      <div className="text-sm font-semibold">{title}</div>
+      {description ? <div className="text-sm opacity-70 mt-1">{description}</div> : null}
+      <div className="mt-4">{children}</div>
+    </div>
+  );
+}
+
 export default function SettingsSettingsPage({ user, onSignOut }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = normalizeTabId(searchParams.get("tab"));
   const [activeTab, setActiveTab] = useState(initialTab);
 
   const [theme, setThemeState] = useState(() => normalizeTheme(getInitialTheme()));
+  const [uiDensity, setUiDensityState] = useState(() => normalizeUiDensity(getInitialUiDensity()));
   const { actions } = useModuleStore();
   const { pushToast } = useToast();
 
@@ -68,7 +79,12 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
         const res = await getUiPrefs();
         if (!mounted) return;
         const userPrefs = res?.user || {};
+        const workspacePrefs = res?.workspace || {};
         const nextTheme = normalizeTheme(userPrefs?.theme || getInitialTheme());
+        const nextUiDensity = normalizeUiDensity(userPrefs?.ui_density || workspacePrefs?.ui_density || getInitialUiDensity());
+        const prefFirst = String(userPrefs?.first_name || "").trim();
+        const prefLast = String(userPrefs?.last_name || "").trim();
+        const prefPhone = String(userPrefs?.phone || "").trim();
         if (nextTheme) {
           setThemeState(nextTheme);
           setTheme(nextTheme);
@@ -76,6 +92,18 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
           if (userPrefs?.theme && normalizeTheme(userPrefs.theme) !== userPrefs.theme) {
             setUiPrefs({ user: { theme: nextTheme } }).catch(() => {});
           }
+        }
+        if (nextUiDensity) {
+          setUiDensityState(nextUiDensity);
+          setUiDensity(nextUiDensity);
+          if (userPrefs?.ui_density && normalizeUiDensity(userPrefs.ui_density) !== userPrefs.ui_density) {
+            setUiPrefs({ user: { ui_density: nextUiDensity } }).catch(() => {});
+          }
+        }
+        if (prefFirst || prefLast || prefPhone) {
+          setProfileFirstName(prefFirst);
+          setProfileLastName(prefLast);
+          setProfilePhone(prefPhone);
         }
       } catch {
         // fall back to local values
@@ -98,6 +126,19 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
     }, 300);
     return () => clearTimeout(timeout);
   }, [theme]);
+
+  useEffect(() => {
+    const normalized = normalizeUiDensity(uiDensity);
+    if (normalized !== uiDensity) {
+      setUiDensityState(normalized);
+      return;
+    }
+    setUiDensity(normalized);
+    const timeout = setTimeout(() => {
+      setUiPrefs({ user: { ui_density: normalized } }).catch(() => {});
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [uiDensity]);
 
   function goTab(nextId) {
     const next = normalizeTabId(nextId);
@@ -138,6 +179,13 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
         },
       });
       if (error) throw error;
+      await setUiPrefs({
+        user: {
+          first_name: first,
+          last_name: last,
+          phone,
+        },
+      });
       pushToast("success", "Profile updated");
     } catch (err) {
       pushToast("error", err?.message || "Failed to update profile");
@@ -158,16 +206,6 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
   const pageTitle = "Profile";
   const pageSubtitle = "Account details, password, and appearance.";
 
-  function Section({ title, description, children }) {
-    return (
-      <div className="rounded-box border border-base-300 bg-base-100 p-4">
-        <div className="text-sm font-semibold">{title}</div>
-        {description ? <div className="text-sm opacity-70 mt-1">{description}</div> : null}
-        <div className="mt-4">{children}</div>
-      </div>
-    );
-  }
-
   return (
     <TabbedPaneShell
       title={pageTitle}
@@ -177,19 +215,39 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
       onTabChange={goTab}
     >
       {activeTab === "appearance" && (
-        <Section title="Theme" description="Light / dark mode.">
-          <label className="label cursor-pointer gap-3 justify-start">
-            <span className="label-text text-sm">
-              {theme === "dark" ? "Dark" : "Light"}
-            </span>
-            <input
-              type="checkbox"
-              className="toggle toggle-sm"
-              checked={theme === "dark"}
-              onChange={(e) => setThemeState(e.target.checked ? "dark" : "light")}
-            />
-          </label>
-        </Section>
+        <div className="space-y-4">
+          <Section title="Theme" description="Light / dark mode.">
+            <label className="label cursor-pointer gap-3 justify-start">
+              <span className="label-text text-sm">
+                {theme === "dark" ? "Dark" : "Light"}
+              </span>
+              <input
+                type="checkbox"
+                className="toggle toggle-sm"
+                checked={theme === "dark"}
+                onChange={(e) => setThemeState(e.target.checked ? "dark" : "light")}
+              />
+            </label>
+          </Section>
+          <Section title="Field Size" description="Choose compact (sm) or comfortable (md) UI controls across the app.">
+            <div className="join">
+              <button
+                type="button"
+                className={`btn join-item ${uiDensity === "sm" ? "btn-primary" : "btn-outline"}`}
+                onClick={() => setUiDensityState("sm")}
+              >
+                Small
+              </button>
+              <button
+                type="button"
+                className={`btn join-item ${uiDensity === "md" ? "btn-primary" : "btn-outline"}`}
+                onClick={() => setUiDensityState("md")}
+              >
+                Medium
+              </button>
+            </div>
+          </Section>
+        </div>
       )}
 
       {activeTab === "profile" && (

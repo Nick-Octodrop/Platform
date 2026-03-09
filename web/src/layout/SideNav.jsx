@@ -84,7 +84,6 @@ export default function SideNav() {
         <div>
           <div className="text-xs uppercase opacity-60 mb-2">Settings</div>
           <NavLink to="/settings" className={navLinkClass}>Settings</NavLink>
-          <NavLink to="/notifications" className={navLinkClass}>Notifications</NavLink>
         </div>
         <div className="divider"></div>
         <div>
