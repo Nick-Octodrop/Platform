@@ -56,6 +56,7 @@ import EntityCreatePage from "./pages/EntityCreatePage.jsx";
 import EntityRecordPage from "./pages/EntityRecordPage.jsx";
 import AppShell from "./apps/AppShell.jsx";
 import AuthSetPasswordPage from "./pages/AuthSetPasswordPage.jsx";
+import DesktopOnlyGate from "./components/DesktopOnlyGate.jsx";
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -144,7 +145,9 @@ export default function App() {
               path="studio"
               element={(
                 <CapabilityRoute capability="modules.manage">
-                  <Studio2Page user={user} />
+                  <DesktopOnlyGate feature="Studio">
+                    <Studio2Page user={user} />
+                  </DesktopOnlyGate>
                 </CapabilityRoute>
               )}
             />
@@ -152,7 +155,9 @@ export default function App() {
               path="studio/:moduleId"
               element={(
                 <CapabilityRoute capability="modules.manage">
-                  <Studio2Page user={user} />
+                  <DesktopOnlyGate feature="Studio">
+                    <Studio2Page user={user} />
+                  </DesktopOnlyGate>
                 </CapabilityRoute>
               )}
             />
@@ -288,7 +293,9 @@ export default function App() {
               path="integrations"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
-                  <IntegrationsPage />
+                  <DesktopOnlyGate feature="Integrations">
+                    <IntegrationsPage />
+                  </DesktopOnlyGate>
                 </CapabilityRoute>
               )}
             />
@@ -296,7 +303,9 @@ export default function App() {
               path="integrations/connections/:connectionId"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
-                  <IntegrationConnectionPage />
+                  <DesktopOnlyGate feature="Integrations">
+                    <IntegrationConnectionPage />
+                  </DesktopOnlyGate>
                 </CapabilityRoute>
               )}
             />
@@ -304,7 +313,9 @@ export default function App() {
               path="automations"
               element={(
                 <CapabilityRoute capability="automations.manage">
-                  <AutomationsPage />
+                  <DesktopOnlyGate feature="Automations">
+                    <AutomationsPage />
+                  </DesktopOnlyGate>
                 </CapabilityRoute>
               )}
             />
@@ -312,7 +323,9 @@ export default function App() {
               path="automations/:automationId"
               element={(
                 <CapabilityRoute capability="automations.manage">
-                  <AutomationEditorPage user={user} />
+                  <DesktopOnlyGate feature="Automations">
+                    <AutomationEditorPage user={user} />
+                  </DesktopOnlyGate>
                 </CapabilityRoute>
               )}
             />
@@ -320,7 +333,9 @@ export default function App() {
               path="automations/:automationId/runs"
               element={(
                 <CapabilityRoute capability="automations.manage">
-                  <AutomationRunsPage />
+                  <DesktopOnlyGate feature="Automations">
+                    <AutomationRunsPage />
+                  </DesktopOnlyGate>
                 </CapabilityRoute>
               )}
             />
@@ -328,7 +343,9 @@ export default function App() {
               path="automation-runs/:runId"
               element={(
                 <CapabilityRoute capability="automations.manage">
-                  <AutomationRunDetailPage />
+                  <DesktopOnlyGate feature="Automations">
+                    <AutomationRunDetailPage />
+                  </DesktopOnlyGate>
                 </CapabilityRoute>
               )}
             />

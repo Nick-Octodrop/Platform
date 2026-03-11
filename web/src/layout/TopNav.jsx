@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useMatch, useParams } from "react-router-dom";
+import { Menu } from "lucide-react";
 import UserMenu from "../components/UserMenu.jsx";
 import NotificationBell from "../components/NotificationBell.jsx";
 import { apiFetch, getManifest, listStudio2Modules } from "../api.js";
 import { buildTargetRoute } from "../apps/appShellUtils.js";
+import useMediaQuery from "../hooks/useMediaQuery.js";
 
 export default function TopNav({ user, onSignOut }) {
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const location = useLocation();
   const { moduleId } = useParams();
   const isAppRoute = !!useMatch("/apps/:moduleId/*");
@@ -225,20 +228,21 @@ export default function TopNav({ user, onSignOut }) {
   const studioModuleId = studioMatch?.params?.moduleId || "";
   const studioModuleName = studioModules.find((m) => m.module_id === studioModuleId)?.name
     || (studioLoading ? "Loading…" : studioModuleId);
+  const breadcrumbClass = "breadcrumbs text-xs sm:text-sm pl-1 sm:pl-2 overflow-x-auto no-scrollbar max-w-full";
 
   return (
-    <div className="navbar bg-base-100 shadow overflow-visible relative z-40">
-      <div className="flex-none gap-2">
+    <div className="navbar bg-base-100 shadow overflow-visible relative z-40 px-2 sm:px-4">
+      <div className="flex-1 min-w-0 gap-2">
         {isStudioRoute ? (
-          <div className="breadcrumbs text-sm pl-2">
+          <div className={breadcrumbClass}>
             <ul>
               <li><Link to="/home">Home</Link></li>
               <li><Link to="/studio">Studio</Link></li>
-              {isStudioEditor && <li>{studioModuleName}</li>}
+              {isStudioEditor && !isMobile && <li>{studioModuleName}</li>}
             </ul>
           </div>
         ) : isAppRoute ? (
-          <div className="breadcrumbs text-sm pl-2">
+          <div className={breadcrumbClass}>
             <ul>
               <li><Link to="/home">Home</Link></li>
               <li>
@@ -248,18 +252,18 @@ export default function TopNav({ user, onSignOut }) {
                   appName || moduleId
                 )}
               </li>
-              {isRecordPage && <li>{recordCrumbLabel || "Record"}</li>}
+              {isRecordPage && !isMobile && <li>{recordCrumbLabel || "Record"}</li>}
             </ul>
           </div>
         ) : isAppsStore ? (
-          <div className="breadcrumbs text-sm pl-2">
+          <div className={breadcrumbClass}>
             <ul>
               <li><Link to="/home">Home</Link></li>
               <li>Apps</li>
             </ul>
           </div>
         ) : isSettingsRoute ? (
-          <div className="breadcrumbs text-sm pl-2">
+          <div className={breadcrumbClass}>
             <ul>
               <li><Link to="/home">Home</Link></li>
               <li><Link to="/settings">Settings</Link></li>
@@ -267,28 +271,28 @@ export default function TopNav({ user, onSignOut }) {
             </ul>
           </div>
         ) : isNotifications ? (
-          <div className="breadcrumbs text-sm pl-2">
+          <div className={breadcrumbClass}>
             <ul>
               <li><Link to="/home">Home</Link></li>
               <li>Notifications</li>
             </ul>
           </div>
         ) : isAutomations ? (
-          <div className="breadcrumbs text-sm pl-2">
+          <div className={breadcrumbClass}>
             <ul>
               <li><Link to="/home">Home</Link></li>
               <li><Link to="/automations">Automations</Link></li>
             </ul>
           </div>
         ) : isIntegrations ? (
-          <div className="breadcrumbs text-sm pl-2">
+          <div className={breadcrumbClass}>
             <ul>
               <li><Link to="/home">Home</Link></li>
               <li>Integrations</li>
             </ul>
           </div>
         ) : isAutomationRuns ? (
-          <div className="breadcrumbs text-sm pl-2">
+          <div className={breadcrumbClass}>
             <ul>
               <li><Link to="/home">Home</Link></li>
               <li><Link to="/automations">Automations</Link></li>
@@ -296,7 +300,7 @@ export default function TopNav({ user, onSignOut }) {
             </ul>
           </div>
         ) : isOps ? (
-          <div className="breadcrumbs text-sm pl-2">
+          <div className={breadcrumbClass}>
             <ul>
               <li><Link to="/home">Home</Link></li>
               <li>Ops</li>
@@ -308,7 +312,7 @@ export default function TopNav({ user, onSignOut }) {
           )
         )}
       </div>
-      <div className="flex-1 justify-center">
+      <div className="flex-1 justify-center hidden md:flex">
         {isStudioRoute && (
           <div className="text-sm font-medium text-primary">
             {isStudioEditor ? studioModuleName : "Studio"}
@@ -360,7 +364,32 @@ export default function TopNav({ user, onSignOut }) {
           </div>
         )}
       </div>
-      <div className="flex-none">
+      <div className="flex-none flex items-center gap-1 sm:gap-2 ml-2">
+        {isMobile && isAppRoute && !isStudioRoute && navItems.length > 0 && (
+          <div className="dropdown dropdown-end">
+            <button className="btn btn-ghost btn-sm" type="button" aria-label="App navigation">
+              <Menu className="w-4 h-4" />
+            </button>
+            <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-64 z-50">
+              {navItems.map((group) => (
+                <React.Fragment key={`mobile-${group.groupLabel}`}>
+                  <li className="menu-title"><span>{group.groupLabel}</span></li>
+                  {group.items.map((item) => {
+                    const target = buildTargetRoute(moduleId, item.to);
+                    const active = target && currentPath.startsWith(target);
+                    return (
+                      <li key={`mobile-${group.groupLabel}-${item.label}`}>
+                        <Link to={target || "#"} className={active ? "text-primary" : ""}>
+                          {item.label}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </React.Fragment>
+              ))}
+            </ul>
+          </div>
+        )}
         <NotificationBell />
         <UserMenu user={user} onSignOut={onSignOut} />
       </div>

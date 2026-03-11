@@ -936,16 +936,18 @@ function InlineLineItemsTable({
 function StatusBar({ field, value }) {
   if (!field || !Array.isArray(field.options)) return null;
   return (
-    <ul className="steps steps-horizontal w-full">
-      {field.options.map((opt) => {
-        const isActive = value === opt.value;
-        return (
-          <li key={opt.value} className={`step ${isActive ? "step-primary" : ""}`}>
-            {opt.label ?? opt.value}
-          </li>
-        );
-      })}
-    </ul>
+    <div className="w-full overflow-x-auto no-scrollbar">
+      <ul className="steps steps-horizontal min-w-max">
+        {field.options.map((opt) => {
+          const isActive = value === opt.value;
+          return (
+            <li key={opt.value} className={`step whitespace-nowrap text-xs sm:text-sm ${isActive ? "step-primary" : ""}`}>
+              {opt.label ?? opt.value}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 

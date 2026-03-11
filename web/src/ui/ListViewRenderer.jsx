@@ -7,6 +7,7 @@ import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM } from "../components/buttonStyles.js
 import { apiFetch } from "../api.js";
 import PaginationControls from "../components/PaginationControls.jsx";
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
+import useMediaQuery from "../hooks/useMediaQuery.js";
 
 const DEFAULT_PAGE_SIZE = 25;
 
@@ -63,6 +64,7 @@ export default function ListViewRenderer({
     return <div className="alert alert-error">Missing field in manifest: {missing.field_id}</div>;
   }
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const [lookupLabels, setLookupLabels] = useState({});
   const [memberLabels, setMemberLabels] = useState({});
   const [internalPage, setInternalPage] = useState(0);
@@ -238,7 +240,7 @@ export default function ListViewRenderer({
     () => pageIds.length > 0 && pageIds.every((id) => selectedSet.has(id)),
     [pageIds, selectedSet],
   );
-  const useVirtual = pagedRecords.length > 200;
+  const useVirtual = !isMobile && pagedRecords.length > 200;
   const rowHeight = 40;
   const listHeight = Math.min(520, pagedRecords.length * rowHeight + 2);
   const gridTemplate = `2.5rem repeat(${columns.length}, minmax(140px, 1fr))`;
@@ -354,7 +356,61 @@ export default function ListViewRenderer({
       ) : null}
 
       <div className={disableHorizontalScroll ? "overflow-x-hidden" : "overflow-x-auto"}>
-        {useVirtual ? (
+        {isMobile ? (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between rounded-box border border-base-300 bg-base-100 px-3 py-2">
+              <div className="text-xs opacity-70">{pagedRecords.length} row(s) on this page</div>
+              <label className="label cursor-pointer gap-2">
+                <span className="label-text text-xs">Select page</span>
+                <input
+                  className="checkbox"
+                  type="checkbox"
+                  checked={pageAllSelected}
+                  onChange={(e) => onToggleAll?.(e.target.checked, pageIds)}
+                />
+              </label>
+            </div>
+            {pagedRecords.map((row, idx) => {
+              const rowId = row.record_id || row.record?.id;
+              const selected = rowId && selectedSet.has(rowId);
+              return (
+                <button
+                  key={rowId || `row-${idx}`}
+                  type="button"
+                  className={`w-full text-left rounded-box border ${selected ? "border-primary bg-base-200" : "border-base-300 bg-base-100"} p-3`}
+                  onClick={() => onSelectRow?.(row)}
+                >
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="text-xs uppercase tracking-wide opacity-60">Record</div>
+                    <input
+                      className="checkbox"
+                      type="checkbox"
+                      checked={Boolean(selected)}
+                      onChange={(e) => onToggleSelect?.(rowId, e.target.checked)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    {columns.map((col) => {
+                      const value = formatCellValue(row, col);
+                      return (
+                        <div key={col.field_id} className="flex items-start justify-between gap-3 text-xs">
+                          <div className="opacity-60 min-w-[6rem]">{resolveFieldLabel(col, fieldIndex)}</div>
+                          <div className="text-right break-all">{value || "—"}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </button>
+              );
+            })}
+            {pagedRecords.length === 0 && (
+              <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-70">
+                No records found.
+              </div>
+            )}
+          </div>
+        ) : useVirtual ? (
           <div className="w-full">
             <div className="grid items-center gap-2 text-sm font-semibold px-3 py-2" style={{ gridTemplateColumns: gridTemplate }}>
               <div>

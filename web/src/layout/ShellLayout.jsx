@@ -21,7 +21,7 @@ export default function ShellLayout({ user, onSignOut, children }) {
   const isHome = location.pathname === "/";
   const mainClass = isHome
     ? "flex-1 min-h-0 overflow-hidden p-0"
-    : "flex-1 min-h-0 overflow-y-auto p-6";
+    : "flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 lg:p-6";
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">

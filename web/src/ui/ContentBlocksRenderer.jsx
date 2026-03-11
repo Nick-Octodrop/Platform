@@ -15,27 +15,14 @@ const GAP_MAP = {
   md: "gap-4",
   lg: "gap-6",
 };
-const SPAN_MAP = {
-  1: "col-span-1",
-  2: "col-span-2",
-  3: "col-span-3",
-  4: "col-span-4",
-  5: "col-span-5",
-  6: "col-span-6",
-  7: "col-span-7",
-  8: "col-span-8",
-  9: "col-span-9",
-  10: "col-span-10",
-  11: "col-span-11",
-  12: "col-span-12",
-};
-
 function gapClass(value) {
   return GAP_MAP[value] || GAP_MAP.md;
 }
 
 function spanClass(span) {
-  return SPAN_MAP[span] || SPAN_MAP[12];
+  const parsed = Number.isFinite(Number(span)) ? Math.max(1, Math.min(12, Number(span))) : 12;
+  if (parsed >= 12) return "col-span-12";
+  return `col-span-12 md:col-span-${parsed}`;
 }
 
 function normalizeViewTarget(target) {
@@ -420,16 +407,18 @@ function StatusBar({ field, value }) {
     return null;
   }).filter(Boolean);
   return (
-    <ul className="steps steps-horizontal w-full">
-      {options.map((opt) => {
-        const isActive = value === opt.value;
-        return (
-          <li key={opt.value} className={`step ${isActive ? "step-primary" : ""}`}>
-            {opt.label ?? opt.value}
-          </li>
-        );
-      })}
-    </ul>
+    <div className="w-full overflow-x-auto no-scrollbar">
+      <ul className="steps steps-horizontal min-w-max">
+        {options.map((opt) => {
+          const isActive = value === opt.value;
+          return (
+            <li key={opt.value} className={`step whitespace-nowrap text-xs sm:text-sm ${isActive ? "step-primary" : ""}`}>
+              {opt.label ?? opt.value}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 

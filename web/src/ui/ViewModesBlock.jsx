@@ -902,8 +902,8 @@ function CalendarView({ view, records, onSelectRow }) {
 
   return (
     <div className="h-full min-h-0 w-full rounded-box border border-base-300 bg-base-100 p-3 flex flex-col gap-3 overflow-hidden">
-      <div className="flex items-center justify-between gap-2">
-        <div className="join">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="join shrink-0">
           <button className={`${SOFT_BUTTON_SM} join-item`} onClick={() => moveCursor(-1)}>
             <ChevronLeft className="h-4 w-4" />
           </button>
@@ -914,20 +914,22 @@ function CalendarView({ view, records, onSelectRow }) {
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>
-        <div className="font-semibold">{monthLabel}</div>
-        <div className="join">
-          <button className={`${SOFT_BUTTON_SM} join-item ${scale === "day" ? "bg-base-300" : ""}`} onClick={() => setScale("day")}>Day</button>
-          <button className={`${SOFT_BUTTON_SM} join-item ${scale === "week" ? "bg-base-300" : ""}`} onClick={() => setScale("week")}>Week</button>
-          <button className={`${SOFT_BUTTON_SM} join-item ${scale === "month" ? "bg-base-300" : ""}`} onClick={() => setScale("month")}>Month</button>
-          <button className={`${SOFT_BUTTON_SM} join-item ${scale === "year" ? "bg-base-300" : ""}`} onClick={() => setScale("year")}>Year</button>
+        <div className="min-w-0 flex-1 text-sm sm:text-base font-semibold text-center sm:text-left">{monthLabel}</div>
+        <div className="w-full sm:w-auto overflow-x-auto no-scrollbar">
+          <div className="join min-w-max">
+            <button className={`${SOFT_BUTTON_SM} join-item ${scale === "day" ? "bg-base-300" : ""}`} onClick={() => setScale("day")}>Day</button>
+            <button className={`${SOFT_BUTTON_SM} join-item ${scale === "week" ? "bg-base-300" : ""}`} onClick={() => setScale("week")}>Week</button>
+            <button className={`${SOFT_BUTTON_SM} join-item ${scale === "month" ? "bg-base-300" : ""}`} onClick={() => setScale("month")}>Month</button>
+            <button className={`${SOFT_BUTTON_SM} join-item ${scale === "year" ? "bg-base-300" : ""}`} onClick={() => setScale("year")}>Year</button>
+          </div>
         </div>
       </div>
 
       <div className="flex-1 min-h-0 overflow-hidden">
         {scale !== "year" ? (
-          <div className="h-full min-h-0 flex flex-col overflow-hidden">
+          <div className={`h-full min-h-0 flex flex-col ${scale === "month" ? "overflow-auto" : "overflow-hidden"}`}>
             {scale === "month" && (
-              <div className="shrink-0 grid grid-cols-7 gap-2 text-xs font-semibold text-base-content/60 mb-2">
+              <div className="shrink-0 min-w-[700px] grid grid-cols-7 gap-2 text-xs font-semibold text-base-content/60 mb-2">
                 {weekdays.map((w) => (
                   <div key={w} className="px-1 py-1">{w}</div>
                 ))}
@@ -936,7 +938,7 @@ function CalendarView({ view, records, onSelectRow }) {
 
             {scale === "month" ? (
               <div
-                className="flex-1 min-h-0 grid gap-2 grid-cols-7"
+                className="flex-1 min-h-0 min-w-[700px] grid gap-2 grid-cols-7"
                 style={{ gridTemplateRows: `repeat(${monthDays.rowCount || 6}, minmax(0, 1fr))` }}
               >
                 {monthDays.cells.map((cell) => (
@@ -1012,6 +1014,7 @@ function CalendarView({ view, records, onSelectRow }) {
                 for (let m = minStart; m <= maxEnd; m += 30) marks.push(m);
                 const laneWidth = 140;
                 const gridTemplateColumns = `64px repeat(${cells.length}, minmax(0, 1fr))`;
+                const timelineMinWidth = scale === "week" ? Math.max(760, 64 + cells.length * 120) : 0;
 
                 const now = new Date();
                 const nowMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
@@ -1020,110 +1023,112 @@ function CalendarView({ view, records, onSelectRow }) {
 
                 return (
                   <div className="flex-1 min-h-0 overflow-hidden">
-                    <div className="h-full min-h-0 overflow-y-auto overflow-x-hidden pr-1">
-                      <div className="grid gap-2 mb-2" style={{ gridTemplateColumns }}>
-                        <div />
-                        {cells.map((cell) => {
-                          const allDayCount = timedByDay.get(cell.key)?.allDayCount || 0;
-                          const isClickable = scale === "week";
-                          return (
-                            <button
-                              key={`hdr-${cell.key}`}
-                              type="button"
-                              className={`px-2 text-left text-xs font-semibold text-base-content/70 ${isClickable ? "hover:text-base-content" : "cursor-default"}`}
-                              onClick={() => {
-                                if (!isClickable) return;
-                                setCursorMonth(new Date(cell.date));
-                                setScale("day");
-                              }}
-                            >
-                              {cell.date.toLocaleDateString(undefined, scale === "week"
-                                ? { weekday: "short", day: "numeric", month: "short" }
-                                : { weekday: "long", day: "numeric", month: "short" })}
-                              {allDayCount > 0 ? <span className="ml-2 text-base-content/50">({allDayCount} all-day)</span> : null}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <div className="grid gap-2" style={{ gridTemplateColumns }}>
-                        <div className="relative border-r border-base-300" style={{ height: dayHeight }}>
-                          {marks.map((m) => (
-                            <div key={`t-${m}`} className="absolute left-0 right-0" style={{ top: (m - minStart) * pxPerMin }}>
-                              {m % 60 === 0 ? (
-                                <div className="-translate-y-1/2 pr-2 text-right text-[11px] text-base-content/60">
-                                  {formatClockLabel(new Date(2000, 0, 1, Math.floor(m / 60), m % 60))}
-                                </div>
-                              ) : null}
-                            </div>
-                          ))}
+                    <div className="h-full min-h-0 overflow-y-auto overflow-x-auto no-scrollbar pr-1">
+                      <div style={timelineMinWidth > 0 ? { minWidth: `${timelineMinWidth}px` } : undefined}>
+                        <div className="grid gap-2 mb-2" style={{ gridTemplateColumns }}>
+                          <div />
+                          {cells.map((cell) => {
+                            const allDayCount = timedByDay.get(cell.key)?.allDayCount || 0;
+                            const isClickable = scale === "week";
+                            return (
+                              <button
+                                key={`hdr-${cell.key}`}
+                                type="button"
+                                className={`px-2 text-left text-xs font-semibold text-base-content/70 ${isClickable ? "hover:text-base-content" : "cursor-default"}`}
+                                onClick={() => {
+                                  if (!isClickable) return;
+                                  setCursorMonth(new Date(cell.date));
+                                  setScale("day");
+                                }}
+                              >
+                                {cell.date.toLocaleDateString(undefined, scale === "week"
+                                  ? { weekday: "short", day: "numeric", month: "short" }
+                                  : { weekday: "long", day: "numeric", month: "short" })}
+                                {allDayCount > 0 ? <span className="ml-2 text-base-content/50">({allDayCount} all-day)</span> : null}
+                              </button>
+                            );
+                          })}
                         </div>
-                        {cells.map((cell) => {
-                          const layout = timedByDay.get(cell.key)?.layout || { items: [], maxColumns: 1 };
-                          const lanes = Math.max(1, layout.maxColumns || 1);
-                          const canvasWidth = Math.max(0, lanes * laneWidth);
-                          const useFixedWidthCanvas = lanes > 4;
-                          return (
-                            <div
-                              key={cell.key}
-                              className={`rounded-box border border-base-300 bg-base-100 overflow-hidden ${scale === "week" ? "cursor-pointer hover:border-primary/40" : ""}`}
-                              style={{ height: dayHeight }}
-                              onClick={() => {
-                                if (scale !== "week") return;
-                                setCursorMonth(new Date(cell.date));
-                                setScale("day");
-                              }}
-                            >
-                              <div className={useFixedWidthCanvas ? "h-full overflow-x-auto overflow-y-hidden" : "h-full overflow-hidden"}>
-                                <div className="relative min-w-full" style={{ width: useFixedWidthCanvas ? `${canvasWidth}px` : "100%", height: dayHeight }}>
-                                {marks.map((m) => (
-                                  <div
-                                    key={`${cell.key}-line-${m}`}
-                                    className={`absolute left-0 right-0 z-0 ${m % 60 === 0 ? "border-t border-base-300/80" : "border-t border-base-300/35"}`}
-                                    style={{ top: (m - minStart) * pxPerMin }}
-                                  />
-                                ))}
-                                {layout.items.map((ev, idx) => {
-                                  const rawTop = (ev.startMin - minStart) * pxPerMin;
-                                  const rawHeight = Math.max(18, (ev.endMin - ev.startMin) * pxPerMin);
-                                  const eventInset = 2;
-                                  const top = Math.max(eventInset, rawTop + eventInset);
-                                  const height = Math.max(18, rawHeight - eventInset * 2);
-                                  const leftPct = (ev.col / lanes) * 100;
-                                  const widthPct = 100 / lanes;
-                                  return (
-                                    <DaisyTooltip key={`${cell.key}-ev-${idx}`} label={describeEvent(ev)} placement="top">
-                                      <button
-                                        type="button"
-                                        className="absolute z-10 box-border text-left rounded-box bg-primary/10 hover:bg-primary/20 text-base-content px-1.5 py-1 text-[11px] overflow-hidden"
-                                        style={{
-                                          top,
-                                          height,
-                                          left: `calc(${leftPct}% + 2px)`,
-                                          width: `calc(${widthPct}% - 4px)`,
-                                        }}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          onSelectRow?.(ev.row);
-                                        }}
-                                        title={`${ev.timeLabel} - ${ev.title}`}
-                                      >
-                                        <div className="font-medium truncate">{ev.title}</div>
-                                        <div className="text-[10px] opacity-70 truncate">{ev.timeLabel}</div>
-                                      </button>
-                                    </DaisyTooltip>
-                                  );
-                                })}
-                                {showNowInRange && cell.key === todayKey ? (
-                                  <div
-                                    className="absolute left-0 right-0 z-20 border-t border-error/80 pointer-events-none"
-                                    style={{ top: nowTop }}
-                                  />
+                        <div className="grid gap-2" style={{ gridTemplateColumns }}>
+                          <div className="relative border-r border-base-300" style={{ height: dayHeight }}>
+                            {marks.map((m) => (
+                              <div key={`t-${m}`} className="absolute left-0 right-0" style={{ top: (m - minStart) * pxPerMin }}>
+                                {m % 60 === 0 ? (
+                                  <div className="-translate-y-1/2 pr-2 text-right text-[11px] text-base-content/60">
+                                    {formatClockLabel(new Date(2000, 0, 1, Math.floor(m / 60), m % 60))}
+                                  </div>
                                 ) : null}
+                              </div>
+                            ))}
+                          </div>
+                          {cells.map((cell) => {
+                            const layout = timedByDay.get(cell.key)?.layout || { items: [], maxColumns: 1 };
+                            const lanes = Math.max(1, layout.maxColumns || 1);
+                            const canvasWidth = Math.max(0, lanes * laneWidth);
+                            const useFixedWidthCanvas = lanes > 4;
+                            return (
+                              <div
+                                key={cell.key}
+                                className={`rounded-box border border-base-300 bg-base-100 overflow-hidden ${scale === "week" ? "cursor-pointer hover:border-primary/40" : ""}`}
+                                style={{ height: dayHeight }}
+                                onClick={() => {
+                                  if (scale !== "week") return;
+                                  setCursorMonth(new Date(cell.date));
+                                  setScale("day");
+                                }}
+                              >
+                                <div className={useFixedWidthCanvas ? "h-full overflow-x-auto overflow-y-hidden" : "h-full overflow-hidden"}>
+                                  <div className="relative min-w-full" style={{ width: useFixedWidthCanvas ? `${canvasWidth}px` : "100%", height: dayHeight }}>
+                                  {marks.map((m) => (
+                                    <div
+                                      key={`${cell.key}-line-${m}`}
+                                      className={`absolute left-0 right-0 z-0 ${m % 60 === 0 ? "border-t border-base-300/80" : "border-t border-base-300/35"}`}
+                                      style={{ top: (m - minStart) * pxPerMin }}
+                                    />
+                                  ))}
+                                  {layout.items.map((ev, idx) => {
+                                    const rawTop = (ev.startMin - minStart) * pxPerMin;
+                                    const rawHeight = Math.max(18, (ev.endMin - ev.startMin) * pxPerMin);
+                                    const eventInset = 2;
+                                    const top = Math.max(eventInset, rawTop + eventInset);
+                                    const height = Math.max(18, rawHeight - eventInset * 2);
+                                    const leftPct = (ev.col / lanes) * 100;
+                                    const widthPct = 100 / lanes;
+                                    return (
+                                      <DaisyTooltip key={`${cell.key}-ev-${idx}`} label={describeEvent(ev)} placement="top">
+                                        <button
+                                          type="button"
+                                          className="absolute z-10 box-border text-left rounded-box bg-primary/10 hover:bg-primary/20 text-base-content px-1.5 py-1 text-[11px] overflow-hidden"
+                                          style={{
+                                            top,
+                                            height,
+                                            left: `calc(${leftPct}% + 2px)`,
+                                            width: `calc(${widthPct}% - 4px)`,
+                                          }}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onSelectRow?.(ev.row);
+                                          }}
+                                          title={`${ev.timeLabel} - ${ev.title}`}
+                                        >
+                                          <div className="font-medium truncate">{ev.title}</div>
+                                          <div className="text-[10px] opacity-70 truncate">{ev.timeLabel}</div>
+                                        </button>
+                                      </DaisyTooltip>
+                                    );
+                                  })}
+                                  {showNowInRange && cell.key === todayKey ? (
+                                    <div
+                                      className="absolute left-0 right-0 z-20 border-t border-error/80 pointer-events-none"
+                                      style={{ top: nowTop }}
+                                    />
+                                  ) : null}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2180,7 +2185,7 @@ export default function ViewModesBlock({
   return (
     <div className="flex flex-col gap-4 h-full min-h-0 overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 relative z-30 shrink-0">
-          <div className="flex items-center gap-2 min-w-[12rem]">
+          <div className="flex items-center gap-2 min-w-0">
           {canWriteRecords && (
             <DaisyTooltip label={`New ${entityLabel}`} placement="bottom">
               <button
@@ -2206,7 +2211,7 @@ export default function ViewModesBlock({
           <div className="text-lg font-semibold">{entityLabel}</div>
         </div>
 
-        <div className="flex items-center justify-center flex-1 min-w-[16rem]">
+        <div className="order-3 w-full sm:order-none sm:w-auto flex items-center justify-start sm:justify-center flex-1 min-w-0 sm:min-w-[16rem]">
           {(showSearch || showFilters || showGroupBy || showSavedViews) && (
             <div className="join items-center overflow-visible">
               {showSearch && (
@@ -2332,7 +2337,7 @@ export default function ViewModesBlock({
           )}
         </div>
 
-        <div className="flex items-center gap-2 min-w-[10rem] justify-end">
+        <div className="w-full sm:w-auto flex items-center gap-2 min-w-0 sm:min-w-[10rem] justify-start sm:justify-end overflow-x-auto no-scrollbar">
           <div className="dropdown dropdown-end">
             <DaisyTooltip label="Import / export settings" placement="top">
               <button className={SOFT_ICON_SM} type="button" aria-label="Import export settings">

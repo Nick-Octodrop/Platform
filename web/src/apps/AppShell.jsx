@@ -1158,11 +1158,11 @@ export default function AppShell({
       {active.type === "page" && activePage?.header?.variant !== "none" && (
         <div className="card bg-base-100 shadow mb-4">
           <div className="card-body">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
-                <h2 className="text-2xl font-semibold">{activePage?.title || manifest?.module?.name || moduleId}</h2>
+                <h2 className="text-xl sm:text-2xl font-semibold">{activePage?.title || manifest?.module?.name || moduleId}</h2>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {(activePage?.header?.actions || []).map(renderAction)}
               </div>
             </div>
@@ -1200,7 +1200,7 @@ export default function AppShell({
         {active.type === "view" && (
           <div className="flex-1 min-h-0 overflow-hidden">
             <div className="card bg-base-100 shadow h-full min-h-0">
-              <div className="card-body h-full min-h-0 p-4">{renderView(activeViewId)}</div>
+              <div className="card-body h-full min-h-0 p-3 sm:p-4">{renderView(activeViewId)}</div>
             </div>
           </div>
         )}
