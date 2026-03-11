@@ -312,14 +312,14 @@ export default function TopNav({ user, onSignOut }) {
           )
         )}
       </div>
-      <div className="flex-1 justify-center hidden md:flex">
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 hidden md:flex items-center justify-center z-[1] max-w-[50vw] pointer-events-none">
         {isStudioRoute && (
-          <div className="text-sm font-medium text-primary">
+          <div className="text-sm font-medium text-primary pointer-events-auto truncate">
             {isStudioEditor ? studioModuleName : "Studio"}
           </div>
         )}
         {isAppRoute && !isStudioRoute && navItems.length > 0 && (
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 pointer-events-auto">
             {navItems.map((group) => {
               const items = group.items || [];
               const explicitLink =

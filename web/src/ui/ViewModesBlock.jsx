@@ -1266,6 +1266,8 @@ export default function ViewModesBlock({
   const [importUnmappedHeaders, setImportUnmappedHeaders] = useState([]);
   const [importBusy, setImportBusy] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const settingsMenuRef = useRef(null);
   const prefsLoadedRef = useRef(false);
   const bootstrapUsedRef = useRef(null);
 
@@ -1315,6 +1317,22 @@ export default function ViewModesBlock({
     const t = String(groupByFieldDef?.type || "").toLowerCase();
     return t === "enum" || t === "string" || t === "number" || t === "bool" || t === "user";
   }, [canWriteRecords, previewMode, groupByParam, groupByFieldDef]);
+
+  useEffect(() => {
+    if (!settingsMenuOpen) return undefined;
+    function handlePointerDown(event) {
+      if (!settingsMenuRef.current) return;
+      if (!settingsMenuRef.current.contains(event.target)) {
+        setSettingsMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+    };
+  }, [settingsMenuOpen]);
 
   function castGroupValue(rawValue) {
     if (rawValue === "") return null;
@@ -2337,33 +2355,45 @@ export default function ViewModesBlock({
           )}
         </div>
 
-        <div className="w-full sm:w-auto flex items-center gap-2 min-w-0 sm:min-w-[10rem] justify-start sm:justify-end overflow-x-auto no-scrollbar">
-          <div className="dropdown dropdown-end">
-            <DaisyTooltip label="Import / export settings" placement="top">
-              <button className={SOFT_ICON_SM} type="button" aria-label="Import export settings">
-                <MoreHorizontal className="h-4 w-4" />
-              </button>
-            </DaisyTooltip>
-            <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-64 z-50">
-              <li>
-                <button onClick={handleDownloadImportTemplate} disabled={!templateFieldDefs.length}>
-                  <Download className="h-4 w-4" />
-                  Download import template
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => {
-                    resetImportState();
-                    setImportModalOpen(true);
-                  }}
-                  disabled={!canWriteRecords}
-                >
-                  <Upload className="h-4 w-4" />
-                  Import CSV
-                </button>
-              </li>
-            </ul>
+        <div className="w-full sm:w-auto flex flex-wrap items-center gap-2 min-w-0 sm:min-w-[10rem] justify-start sm:justify-end overflow-visible">
+          <div className="relative" ref={settingsMenuRef}>
+            <button
+              className={SOFT_ICON_SM}
+              type="button"
+              aria-label="Import export settings"
+              onClick={() => setSettingsMenuOpen((open) => !open)}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+            {settingsMenuOpen && (
+              <ul className="absolute right-0 mt-2 menu p-2 shadow bg-base-100 rounded-box w-64 z-[210] border border-base-300">
+                <li>
+                  <button
+                    onClick={() => {
+                      handleDownloadImportTemplate();
+                      setSettingsMenuOpen(false);
+                    }}
+                    disabled={!templateFieldDefs.length}
+                  >
+                    <Download className="h-4 w-4" />
+                    Download import template
+                  </button>
+                </li>
+                <li>
+                  <button
+                    onClick={() => {
+                      resetImportState();
+                      setImportModalOpen(true);
+                      setSettingsMenuOpen(false);
+                    }}
+                    disabled={!canWriteRecords}
+                  >
+                    <Upload className="h-4 w-4" />
+                    Import CSV
+                  </button>
+                </li>
+              </ul>
+            )}
           </div>
           {activeMode === "graph" && (
             <div className="join">

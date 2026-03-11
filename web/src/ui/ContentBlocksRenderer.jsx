@@ -9,6 +9,7 @@ import { useAccessContext } from "../access.js";
 import { formatDateTime } from "../utils/dateTime.js";
 import AttachmentGallery from "./AttachmentGallery.jsx";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
+import useMediaQuery from "../hooks/useMediaQuery.js";
 
 const GAP_MAP = {
   sm: "gap-2",
@@ -115,6 +116,8 @@ export default function ContentBlocksRenderer({ blocks, renderView, recordId, se
 }
 
 function BlockRenderer({ block, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, recordContext, onNavigate, onRunAction, onConfirm, onPrompt, onLookupCreate, externalRefreshTick = 0, previewMode = false, bootstrap, bootstrapVersion, bootstrapLoading, canWriteRecords }) {
+  const isMobile = useMediaQuery("(max-width: 768px)");
+  const [mobileChatterOpen, setMobileChatterOpen] = useState(false);
   if (!block || typeof block !== "object") {
     return <div className="alert alert-warning">Invalid block</div>;
   }
@@ -380,6 +383,39 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
     if (typeof ref === "string" && ref !== "$record.id") {
       resolvedId = ref;
     }
+    if (isMobile) {
+      return (
+        <>
+          <div className="w-full">
+            <button
+              type="button"
+              className="btn btn-outline btn-sm w-full"
+              onClick={() => setMobileChatterOpen(true)}
+            >
+              Activity & Attachments
+            </button>
+          </div>
+          {mobileChatterOpen ? (
+            <div className="modal modal-open">
+              <div className="modal-box w-[96vw] max-w-none h-[86vh] p-0 flex flex-col">
+                <div className="px-4 py-3 border-b border-base-300 flex items-center justify-between gap-2">
+                  <div className="text-sm font-semibold">Activity & Attachments</div>
+                  <button type="button" className={SOFT_BUTTON_SM} onClick={() => setMobileChatterOpen(false)}>
+                    Done
+                  </button>
+                </div>
+                <div className="flex-1 min-h-0 p-3 overflow-hidden">
+                  <ChatterPanel entityId={entityId} recordId={resolvedId} />
+                </div>
+              </div>
+              <button className="modal-backdrop" type="button" onClick={() => setMobileChatterOpen(false)}>
+                Close
+              </button>
+            </div>
+          ) : null}
+        </>
+      );
+    }
     return <ChatterPanel entityId={entityId} recordId={resolvedId} />;
   }
 
@@ -407,8 +443,8 @@ function StatusBar({ field, value }) {
     return null;
   }).filter(Boolean);
   return (
-    <div className="w-full overflow-x-auto no-scrollbar">
-      <ul className="steps steps-horizontal min-w-max">
+    <div className="w-full overflow-x-auto md:overflow-visible no-scrollbar">
+      <ul className="steps steps-horizontal w-full min-w-max md:min-w-0">
         {options.map((opt) => {
           const isActive = value === opt.value;
           return (

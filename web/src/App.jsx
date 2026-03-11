@@ -84,6 +84,63 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return undefined;
+    const mobileLike = window.matchMedia("(hover: none), (pointer: coarse)");
+    if (!mobileLike.matches) return undefined;
+
+    const openClass = "dropdown-open";
+    const closeAll = (except = null) => {
+      document.querySelectorAll(`.dropdown.${openClass}`).forEach((node) => {
+        if (node !== except) node.classList.remove(openClass);
+      });
+    };
+
+    function onDocumentClick(event) {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      const dropdown = target.closest(".dropdown");
+      const insideContent = !!target.closest(".dropdown-content");
+      const trigger = target.closest("button, label, summary, [role='button']");
+
+      if (!dropdown) {
+        closeAll();
+        return;
+      }
+
+      if (insideContent) {
+        closeAll();
+        return;
+      }
+
+      const triggerInsideDropdown = !!(trigger && dropdown.contains(trigger));
+      if (!triggerInsideDropdown) {
+        closeAll();
+        return;
+      }
+
+      const isOpen = dropdown.classList.contains(openClass);
+      closeAll(dropdown);
+      if (isOpen) {
+        dropdown.classList.remove(openClass);
+      } else {
+        dropdown.classList.add(openClass);
+      }
+    }
+
+    function onEsc(event) {
+      if (event.key === "Escape") closeAll();
+    }
+
+    document.addEventListener("click", onDocumentClick);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("click", onDocumentClick);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, []);
+
+  useEffect(() => {
     let mounted = true;
     (async () => {
       if (!session?.user) return;

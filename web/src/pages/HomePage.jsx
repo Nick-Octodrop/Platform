@@ -107,10 +107,10 @@ export default function HomePage({ user }) {
   }, [installedApps, systemApps]);
 
   return (
-    <div className="w-full h-full flex justify-center overflow-hidden">
-      {homeLoading && <LoadingSpinner className="h-full w-full" />}
+    <div className="w-full min-h-full md:h-full flex justify-center overflow-x-hidden overflow-y-auto md:overflow-hidden">
+      {homeLoading && <LoadingSpinner className="min-h-full w-full" />}
       {!homeLoading && (
-        <div className="w-full flex justify-center items-start pt-[12vh]">
+        <div className="w-full flex justify-center items-start pt-4 sm:pt-[12vh] pb-6 sm:pb-0">
           {allApps.length === 0 ? (
             <div className="card bg-base-100 shadow p-6">
               <div className="text-sm opacity-70 mb-3">No apps installed yet.</div>

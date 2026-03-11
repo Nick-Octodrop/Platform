@@ -936,8 +936,8 @@ function InlineLineItemsTable({
 function StatusBar({ field, value }) {
   if (!field || !Array.isArray(field.options)) return null;
   return (
-    <div className="w-full overflow-x-auto no-scrollbar">
-      <ul className="steps steps-horizontal min-w-max">
+    <div className="w-full overflow-x-auto md:overflow-visible no-scrollbar">
+      <ul className="steps steps-horizontal w-full min-w-max md:min-w-0">
         {field.options.map((opt) => {
           const isActive = value === opt.value;
           return (
