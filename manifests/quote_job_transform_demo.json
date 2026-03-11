@@ -1,0 +1,246 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "quote_job_transform_demo",
+    "name": "Quote To Job Transform Demo",
+    "version": "1.0.0",
+    "description": "Demonstrates reusable record transformation from Quote to Job with child lines.",
+    "category": "Sales",
+    "icon_key": "lucide:ArrowRightLeft"
+  },
+  "app": {
+    "home": "page:quote.list_page",
+    "defaults": {
+      "entity_home_page": "page:quote.list_page",
+      "entity_form_page": "page:quote.form_page",
+      "entities": {
+        "entity.quote": {
+          "entity_home_page": "page:quote.list_page",
+          "entity_form_page": "page:quote.form_page"
+        },
+        "entity.job": {
+          "entity_home_page": "page:job.list_page",
+          "entity_form_page": "page:job.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Sales Ops",
+        "items": [
+          { "label": "Quotes", "to": "page:quote.list_page" },
+          { "label": "Jobs", "to": "page:job.list_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.quote",
+      "display_field": "quote.number",
+      "fields": [
+        { "id": "quote.number", "type": "string", "label": "Quote #", "required": true },
+        { "id": "quote.customer_id", "type": "string", "label": "Customer ID" },
+        { "id": "quote.status", "type": "enum", "label": "Status", "required": true, "default": "draft", "options": [
+          { "value": "draft", "label": "Draft" },
+          { "value": "accepted", "label": "Accepted" },
+          { "value": "converted", "label": "Converted" }
+        ] },
+        { "id": "quote.job_id", "type": "string", "label": "Job ID", "readonly": true }
+      ]
+    },
+    {
+      "id": "entity.quote_line",
+      "display_field": "quote_line.description",
+      "fields": [
+        { "id": "quote_line.quote_id", "type": "lookup", "label": "Quote", "entity": "entity.quote", "display_field": "quote.number", "required": true },
+        { "id": "quote_line.description", "type": "string", "label": "Description", "required": true },
+        { "id": "quote_line.qty", "type": "number", "label": "Qty", "default": 1 }
+      ]
+    },
+    {
+      "id": "entity.job",
+      "display_field": "job.number",
+      "fields": [
+        { "id": "job.number", "type": "string", "label": "Job #", "required": true },
+        { "id": "job.customer_id", "type": "string", "label": "Customer ID" },
+        { "id": "job.status", "type": "enum", "label": "Status", "required": true, "default": "new", "options": [
+          { "value": "new", "label": "New" },
+          { "value": "in_progress", "label": "In Progress" },
+          { "value": "done", "label": "Done" }
+        ] },
+        { "id": "job.source_quote_id", "type": "string", "label": "Source Quote ID", "readonly": true }
+      ]
+    },
+    {
+      "id": "entity.job_line",
+      "display_field": "job_line.description",
+      "fields": [
+        { "id": "job_line.job_id", "type": "lookup", "label": "Job", "entity": "entity.job", "display_field": "job.number", "required": true },
+        { "id": "job_line.description", "type": "string", "label": "Description", "required": true },
+        { "id": "job_line.qty", "type": "number", "label": "Qty", "default": 1 },
+        { "id": "job_line.source_quote_line_id", "type": "string", "label": "Source Quote Line ID", "readonly": true }
+      ]
+    }
+  ],
+  "transformations": [
+    {
+      "key": "quote_to_job",
+      "source_entity_id": "entity.quote",
+      "target_entity_id": "entity.job",
+      "field_mappings": {
+        "job.number": { "from": "quote.number" },
+        "job.customer_id": { "from": "quote.customer_id" },
+        "job.status": { "value": "new" }
+      },
+      "child_mappings": [
+        {
+          "source_entity_id": "entity.quote_line",
+          "target_entity_id": "entity.job_line",
+          "source_link_field": "quote_line.quote_id",
+          "target_link_field": "job_line.job_id",
+          "field_mappings": {
+            "job_line.description": { "from": "quote_line.description" },
+            "job_line.qty": { "from": "quote_line.qty" },
+            "job_line.source_quote_line_id": { "ref": "$source.id" }
+          }
+        }
+      ],
+      "link_fields": {
+        "source_to_target": "quote.job_id",
+        "target_to_source": "job.source_quote_id"
+      },
+      "source_update": {
+        "patch": {
+          "quote.status": "converted"
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "event_type": "transform",
+        "targets": ["source", "target"]
+      },
+      "feed": {
+        "enabled": true,
+        "message": "Created {target.entity_id} {target.id} from {source.entity_id} {source.id}",
+        "targets": ["source"]
+      },
+      "hooks": {
+        "emit_events": ["quote.transformed_to_job"]
+      },
+      "validation": {
+        "require_source_fields": ["quote.number"],
+        "require_child_records": true,
+        "prevent_if_target_linked": true
+      }
+    }
+  ],
+  "actions": [
+    { "id": "action.refresh", "kind": "refresh", "label": "Refresh" },
+    { "id": "action.quote_new", "kind": "open_form", "label": "New Quote", "target": "quote.form" },
+    {
+      "id": "action.quote_to_job",
+      "kind": "transform_record",
+      "entity_id": "entity.quote",
+      "label": "Convert To Job",
+      "transformation_key": "quote_to_job",
+      "visible_when": {
+        "op": "eq",
+        "field": "quote.status",
+        "value": "accepted"
+      },
+      "confirm": {
+        "title": "Convert quote to job?",
+        "body": "This creates a Job and copies all Quote lines."
+      }
+    }
+  ],
+  "views": [
+    {
+      "id": "quote.list",
+      "kind": "list",
+      "entity": "entity.quote",
+      "columns": [
+        { "field_id": "quote.number" },
+        { "field_id": "quote.status" },
+        { "field_id": "quote.job_id" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.quote_new" }]
+      }
+    },
+    {
+      "id": "quote.form",
+      "kind": "form",
+      "entity": "entity.quote",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Quote",
+          "fields": ["quote.number", "quote.customer_id", "quote.status", "quote.job_id"]
+        }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.quote_to_job" }],
+        "secondary_actions": [{ "action_id": "action.refresh" }]
+      }
+    },
+    {
+      "id": "job.list",
+      "kind": "list",
+      "entity": "entity.job",
+      "columns": [
+        { "field_id": "job.number" },
+        { "field_id": "job.status" },
+        { "field_id": "job.source_quote_id" }
+      ]
+    },
+    {
+      "id": "job.form",
+      "kind": "form",
+      "entity": "entity.job",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Job",
+          "fields": ["job.number", "job.customer_id", "job.status", "job.source_quote_id"]
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "id": "quote.list_page",
+      "title": "Quotes",
+      "layout": "single",
+      "content": [
+        { "kind": "view", "target": "quote.list" }
+      ]
+    },
+    {
+      "id": "quote.form_page",
+      "title": "Quote",
+      "layout": "single",
+      "content": [
+        { "kind": "view", "target": "quote.form" }
+      ]
+    },
+    {
+      "id": "job.list_page",
+      "title": "Jobs",
+      "layout": "single",
+      "content": [
+        { "kind": "view", "target": "job.list" }
+      ]
+    },
+    {
+      "id": "job.form_page",
+      "title": "Job",
+      "layout": "single",
+      "content": [
+        { "kind": "view", "target": "job.form" }
+      ]
+    }
+  ],
+  "workflows": []
+}

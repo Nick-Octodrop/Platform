@@ -986,11 +986,15 @@ export default function Studio2Page({ user }) {
     const items = studioModules?.modules || [];
     return items.map((m) => ({
       module_id: m.module_id,
+      module_key: m.module_key || m.module_id,
       name: m.name || m.module_id,
       installed: Boolean(m.installed),
       enabled: m.enabled,
       has_draft: Boolean(m.draft),
-      draft_in_sync: false,
+      draft_in_sync:
+        typeof m.draft_in_sync === "boolean"
+          ? m.draft_in_sync
+          : Boolean(m.draft_hash && m.current_hash && m.draft_hash === m.current_hash),
       updated_at: m.draft?.updated_at || m.updated_at,
     }));
   }, [studioModules]);
@@ -1000,6 +1004,7 @@ export default function Studio2Page({ user }) {
       "studio.name": { id: "studio.name", label: "Name" },
       "studio.status": { id: "studio.status", label: "Status" },
       "studio.updated_at": { id: "studio.updated_at", label: "Updated" },
+      "studio.module_key": { id: "studio.module_key", label: "Key" },
       "studio.module_id": { id: "studio.module_id", label: "Module ID" },
     }),
     []
@@ -1013,6 +1018,7 @@ export default function Studio2Page({ user }) {
         { field_id: "studio.name" },
         { field_id: "studio.status" },
         { field_id: "studio.updated_at" },
+        { field_id: "studio.module_key", label: "Key" },
         { field_id: "studio.module_id", label: "ID" },
       ],
     }),
@@ -1021,12 +1027,14 @@ export default function Studio2Page({ user }) {
 
   const listRecords = useMemo(() => {
     return moduleRows.map((row) => {
-      const status = row.has_draft
-        ? row.draft_in_sync
+      const status = row.installed
+        ? row.has_draft
+          ? row.draft_in_sync
+            ? "Installed"
+            : "Dirty"
+          : "Installed"
+        : row.has_draft
           ? "Draft"
-          : "Dirty"
-        : row.installed
-          ? "Installed"
           : "—";
       return {
         record_id: row.module_id,
@@ -1034,6 +1042,7 @@ export default function Studio2Page({ user }) {
           "studio.name": row.name,
           "studio.status": status,
           "studio.updated_at": row.updated_at || "—",
+          "studio.module_key": row.module_key || "—",
           "studio.module_id": row.module_id,
         },
       };
@@ -1066,6 +1075,7 @@ export default function Studio2Page({ user }) {
       { id: "studio.name", label: "Name" },
       { id: "studio.status", label: "Status" },
       { id: "studio.updated_at", label: "Updated" },
+      { id: "studio.module_key", label: "Key" },
       { id: "studio.module_id", label: "Module ID" },
     ],
     []

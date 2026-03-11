@@ -1,0 +1,842 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "tasks",
+    "key": "tasks",
+    "name": "Tasks",
+    "version": "1.1.2",
+    "description": "General task and follow-up management for teams and operators.",
+    "category": "Operations",
+    "icon_key": "lucide:ListTodo"
+  },
+  "depends_on": {
+    "optional": [
+      {
+        "module": "jobs",
+        "version": ">=1.3.1"
+      }
+    ]
+  },
+  "app": {
+    "home": "page:task.list_page",
+    "defaults": {
+      "entity_home_page": "page:task.list_page",
+      "entity_form_page": "page:task.form_page",
+      "entities": {
+        "entity.task": {
+          "entity_home_page": "page:task.list_page",
+          "entity_form_page": "page:task.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Tasks",
+        "items": [
+          {
+            "label": "All Tasks",
+            "to": "page:task.list_page"
+          },
+          {
+            "label": "Calendar",
+            "to": "page:task.calendar_page"
+          }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.task",
+      "display_field": "task.title",
+      "fields": [
+        {
+          "id": "task.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "task.title",
+          "type": "string",
+          "label": "Title",
+          "required": true
+        },
+        {
+          "id": "task.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "new",
+          "options": [
+            {
+              "value": "new",
+              "label": "New"
+            },
+            {
+              "value": "in_progress",
+              "label": "In Progress"
+            },
+            {
+              "value": "blocked",
+              "label": "Blocked"
+            },
+            {
+              "value": "done",
+              "label": "Done"
+            },
+            {
+              "value": "cancelled",
+              "label": "Cancelled"
+            }
+          ]
+        },
+        {
+          "id": "task.priority",
+          "type": "enum",
+          "label": "Priority",
+          "default": "normal",
+          "options": [
+            {
+              "value": "low",
+              "label": "Low"
+            },
+            {
+              "value": "normal",
+              "label": "Normal"
+            },
+            {
+              "value": "high",
+              "label": "High"
+            }
+          ]
+        },
+        {
+          "id": "task.owner_id",
+          "type": "user",
+          "label": "Owner"
+        },
+        {
+          "id": "task.assignee_id",
+          "type": "user",
+          "label": "Assignee"
+        },
+        {
+          "id": "task.participant_ids",
+          "type": "users",
+          "label": "Participants"
+        },
+        {
+          "id": "task.start_date",
+          "type": "date",
+          "label": "Start Date"
+        },
+        {
+          "id": "task.due_date",
+          "type": "date",
+          "label": "Due Date"
+        },
+        {
+          "id": "task.related_entity",
+          "type": "string",
+          "label": "Related Entity"
+        },
+        {
+          "id": "task.related_record_id",
+          "type": "string",
+          "label": "Related Record",
+          "visible_when": {
+            "op": "exists",
+            "field": "task.related_entity"
+          }
+        },
+        {
+          "id": "task.description",
+          "type": "text",
+          "label": "Description"
+        },
+        {
+          "id": "task.attachments",
+          "type": "attachments",
+          "label": "Attachments"
+        },
+        {
+          "id": "task.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "action.task_refresh",
+      "kind": "refresh",
+      "label": "Refresh"
+    },
+    {
+      "id": "action.task_new",
+      "kind": "open_form",
+      "label": "+ New Task",
+      "target": "task.form"
+    },
+    {
+      "id": "action.task_start",
+      "kind": "update_record",
+      "label": "Start",
+      "entity_id": "entity.task",
+      "patch": {
+        "task.status": "in_progress"
+      },
+      "enabled_when": {
+        "op": "in",
+        "field": "task.status",
+        "value": [
+          "new",
+          "blocked"
+        ]
+      },
+      "visible_when": {
+        "op": "in",
+        "field": "task.status",
+        "value": [
+          "new",
+          "blocked"
+        ]
+      }
+    },
+    {
+      "id": "action.task_block",
+      "kind": "update_record",
+      "label": "Block",
+      "entity_id": "entity.task",
+      "patch": {
+        "task.status": "blocked"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "task.status",
+        "value": "in_progress"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "task.status",
+        "value": "in_progress"
+      }
+    },
+    {
+      "id": "action.task_done",
+      "kind": "update_record",
+      "label": "Mark Done",
+      "entity_id": "entity.task",
+      "patch": {
+        "task.status": "done"
+      },
+      "enabled_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "task.status",
+          "value": [
+            "done",
+            "cancelled"
+          ]
+        }
+      },
+      "visible_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "task.status",
+          "value": [
+            "done",
+            "cancelled"
+          ]
+        }
+      }
+    },
+    {
+      "id": "action.task_cancel",
+      "kind": "update_record",
+      "label": "Cancel",
+      "entity_id": "entity.task",
+      "patch": {
+        "task.status": "cancelled"
+      },
+      "enabled_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "task.status",
+          "value": [
+            "done",
+            "cancelled"
+          ]
+        }
+      },
+      "visible_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "task.status",
+          "value": [
+            "done",
+            "cancelled"
+          ]
+        }
+      },
+      "confirm": {
+        "title": "Cancel Task",
+        "body": "This task will be cancelled."
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "id": "tasks.record.task.created",
+      "event": "record.created",
+      "entity_id": "entity.task"
+    },
+    {
+      "id": "tasks.record.task.updated",
+      "event": "record.updated",
+      "entity_id": "entity.task"
+    },
+    {
+      "id": "tasks.workflow.task.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.task",
+      "status_field": "task.status"
+    },
+    {
+      "id": "tasks.action.task_refresh.clicked",
+      "event": "action.clicked",
+      "action_id": "action.task_refresh"
+    },
+    {
+      "id": "tasks.action.task_new.clicked",
+      "event": "action.clicked",
+      "action_id": "action.task_new"
+    },
+    {
+      "id": "tasks.action.task_start.clicked",
+      "event": "action.clicked",
+      "action_id": "action.task_start"
+    },
+    {
+      "id": "tasks.action.task_block.clicked",
+      "event": "action.clicked",
+      "action_id": "action.task_block"
+    },
+    {
+      "id": "tasks.action.task_done.clicked",
+      "event": "action.clicked",
+      "action_id": "action.task_done"
+    },
+    {
+      "id": "tasks.action.task_cancel.clicked",
+      "event": "action.clicked",
+      "action_id": "action.task_cancel"
+    }
+  ],
+  "views": [
+    {
+      "id": "task.list",
+      "kind": "list",
+      "entity": "entity.task",
+      "columns": [
+        {
+          "field_id": "task.title"
+        },
+        {
+          "field_id": "task.status"
+        },
+        {
+          "field_id": "task.priority"
+        },
+        {
+          "field_id": "task.assignee_id"
+        },
+        {
+          "field_id": "task.start_date"
+        },
+        {
+          "field_id": "task.due_date"
+        }
+      ],
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.task_new"
+          }
+        ],
+        "secondary_actions": [
+          {
+            "action_id": "action.task_refresh"
+          }
+        ],
+        "open_record_target": "page:task.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search tasks...",
+          "fields": [
+            "task.title",
+            "task.assignee_id",
+            "task.participant_ids",
+            "task.related_entity",
+            "task.related_record_id"
+          ]
+        },
+        "filters": [
+          {
+            "id": "open",
+            "label": "Open",
+            "domain": {
+              "op": "not",
+              "condition": {
+                "op": "in",
+                "field": "task.status",
+                "value": [
+                  "done",
+                  "cancelled"
+                ]
+              }
+            }
+          },
+          {
+            "id": "mine",
+            "label": "Mine",
+            "domain": {
+              "op": "or",
+              "conditions": [
+                {
+                  "op": "eq",
+                  "field": "task.owner_id",
+                  "value": {
+                    "ref": "$actor.user_id"
+                  }
+                },
+                {
+                  "op": "eq",
+                  "field": "task.assignee_id",
+                  "value": {
+                    "ref": "$actor.user_id"
+                  }
+                },
+                {
+                  "op": "contains",
+                  "field": "task.participant_ids",
+                  "value": {
+                    "ref": "$actor.user_id"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "overdue",
+            "label": "Has Due Date",
+            "domain": {
+              "op": "exists",
+              "field": "task.due_date"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "task.kanban",
+      "kind": "kanban",
+      "entity": "entity.task",
+      "card": {
+        "title_field": "task.title",
+        "subtitle_fields": [
+          "task.assignee_id",
+          "task.due_date"
+        ],
+        "badge_fields": [
+          "task.status",
+          "task.priority",
+          "task.participant_ids"
+        ]
+      }
+    },
+    {
+      "id": "task.calendar",
+      "kind": "calendar",
+      "entity": "entity.task",
+      "calendar": {
+        "title_field": "task.title",
+        "date_start": "task.start_date",
+        "date_end": "task.due_date",
+        "color_field": "task.assignee_id",
+        "default_scale": "week"
+      }
+    },
+    {
+      "id": "task.form",
+      "kind": "form",
+      "entity": "entity.task",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Task",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "task.title",
+            "task.status",
+            "task.priority",
+            "task.owner_id",
+            "task.assignee_id",
+            "task.participant_ids",
+            "task.start_date",
+            "task.due_date"
+          ]
+        },
+        {
+          "id": "related",
+          "title": "Related Record",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "task.related_entity",
+            "task.related_record_id"
+          ]
+        },
+        {
+          "id": "details",
+          "title": "Details",
+          "fields": [
+            "task.description",
+            "task.attachments"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": {
+          "field_id": "task.status"
+        },
+        "secondary_actions": [
+          {
+            "action_id": "action.task_start"
+          },
+          {
+            "action_id": "action.task_block"
+          },
+          {
+            "action_id": "action.task_done"
+          },
+          {
+            "action_id": "action.task_cancel"
+          },
+          {
+            "action_id": "action.task_refresh"
+          }
+        ]
+      }
+    },
+    {
+      "id": "task.graph",
+      "kind": "graph",
+      "entity": "entity.task",
+      "default": {
+        "type": "bar",
+        "group_by": "task.status",
+        "measure": "count"
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "task.list_page",
+      "title": "Tasks",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.task_new"
+          },
+          {
+            "action_id": "action.task_refresh"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.task",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:task.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:task.kanban",
+                  "default_group_by": "task.status"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:task.calendar"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:task.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:task.list",
+                  "default_group_by": "task.status"
+                }
+              ],
+              "default_filter_id": "mine"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "task.form_page",
+      "title": "Task",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.task",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:task.form"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.task",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "task.calendar_page",
+      "title": "Task Calendar",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.task",
+              "default_mode": "calendar",
+              "modes": [
+                {
+                  "mode": "calendar",
+                  "target": "view:task.calendar"
+                },
+                {
+                  "mode": "list",
+                  "target": "view:task.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:task.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:task.list",
+                  "default_group_by": "task.status"
+                }
+              ],
+              "default_filter_id": "mine"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "interfaces": {
+    "schedulable": [
+      {
+        "entity_id": "entity.task",
+        "enabled": true,
+        "scope": "module_and_global",
+        "title_field": "task.title",
+        "date_start": "task.start_date",
+        "date_end": "task.due_date",
+        "owner_field": "task.assignee_id",
+        "status_field": "task.status",
+        "color_field": "task.assignee_id"
+      }
+    ],
+    "documentable": [
+      {
+        "entity_id": "entity.task",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "task.attachments",
+        "title_field": "task.title",
+        "owner_field": "task.owner_id",
+        "category_field": "task.status",
+        "date_field": "task.created_at",
+        "record_label_field": "task.title",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
+      }
+    ],
+    "dashboardable": [
+      {
+        "entity_id": "entity.task",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "task.created_at",
+        "measures": [
+          "count"
+        ],
+        "group_bys": [
+          "task.status",
+          "task.priority",
+          "task.assignee_id"
+        ],
+        "default_widgets": [
+          {
+            "id": "tasks_by_status",
+            "type": "group",
+            "title": "Tasks by Status",
+            "group_by": "task.status",
+            "measure": "count"
+          }
+        ]
+      }
+    ]
+  },
+  "relations": [],
+  "workflows": [
+    {
+      "id": "workflow.task_status",
+      "entity": "entity.task",
+      "status_field": "task.status",
+      "states": [
+        {
+          "id": "new",
+          "label": "New",
+          "order": 1
+        },
+        {
+          "id": "in_progress",
+          "label": "In Progress",
+          "order": 2
+        },
+        {
+          "id": "blocked",
+          "label": "Blocked",
+          "order": 3
+        },
+        {
+          "id": "done",
+          "label": "Done",
+          "order": 4
+        },
+        {
+          "id": "cancelled",
+          "label": "Cancelled",
+          "order": 5
+        }
+      ],
+      "transitions": [
+        {
+          "from": "new",
+          "to": "in_progress",
+          "label": "Start"
+        },
+        {
+          "from": "blocked",
+          "to": "in_progress",
+          "label": "Start"
+        },
+        {
+          "from": "in_progress",
+          "to": "blocked",
+          "label": "Block"
+        },
+        {
+          "from": "new",
+          "to": "done",
+          "label": "Mark Done"
+        },
+        {
+          "from": "in_progress",
+          "to": "done",
+          "label": "Mark Done"
+        },
+        {
+          "from": "blocked",
+          "to": "done",
+          "label": "Mark Done"
+        },
+        {
+          "from": "new",
+          "to": "cancelled",
+          "label": "Cancel"
+        },
+        {
+          "from": "in_progress",
+          "to": "cancelled",
+          "label": "Cancel"
+        },
+        {
+          "from": "blocked",
+          "to": "cancelled",
+          "label": "Cancel"
+        }
+      ]
+    }
+  ],
+  "transformations": [],
+  "modals": [],
+  "queries": {}
+}

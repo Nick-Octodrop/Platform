@@ -30,6 +30,14 @@ function getByPath(data, path) {
 
 function resolveRef(ref, context) {
   if (typeof ref !== "string") return undefined;
+  if (ref === "$actor") return context.actor || {};
+  if (ref.startsWith("$actor.")) {
+    return getByPath(context.actor || {}, ref.slice("$actor.".length));
+  }
+  if (ref === "$user") return context.actor || {};
+  if (ref.startsWith("$user.")) {
+    return getByPath(context.actor || {}, ref.slice("$user.".length));
+  }
   if (ref.startsWith("$record.")) {
     return getByPath(context.record || {}, ref.slice("$record.".length));
   }
@@ -70,7 +78,7 @@ export function evalCondition(condition, context) {
     right = resolveOperand(condition.right, context);
   } else {
     left = resolveRef(condition.field, context);
-    right = condition.value;
+    right = resolveOperand(condition.value, context);
   }
 
   if (op === "exists") {

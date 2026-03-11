@@ -74,6 +74,18 @@ from app.agent_stream import (
 from app.auth import SupabaseAuthMiddleware
 from app.db import get_db_ms, reset_db_ms, get_db_stats, get_db_query_log
 from app.manifest_validate import validate_manifest, validate_manifest_raw
+from app.module_dependencies import (
+    build_dependency_graph,
+    build_reverse_dependents,
+    collect_external_entity_references,
+    find_cycle,
+    module_version_from_manifest,
+    module_key_from_manifest,
+    normalize_depends_on,
+    topological_install_order,
+    validate_required_dependencies,
+    version_satisfies_constraint,
+)
 from app.diagnostics import build_diagnostics
 from app.records_validation import (
     entities_from_manifest as _entities_from_manifest,
@@ -221,7 +233,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
 SUPABASE_AUD = os.getenv("SUPABASE_JWT_AUD", "").strip() or None
 DISABLE_AUTH = os.getenv("OCTO_DISABLE_AUTH", "").strip().lower() in ("1", "true", "yes")
 logger.info("auth_disabled=%s supabase_url=%s supabase_aud=%s", DISABLE_AUTH, SUPABASE_URL, SUPABASE_AUD)
-ALLOWED_ACTION_KINDS = {"navigate", "open_form", "refresh", "create_record", "update_record", "bulk_update"}
+ALLOWED_ACTION_KINDS = {"navigate", "open_form", "refresh", "create_record", "update_record", "bulk_update", "transform_record"}
 LEGACY_ENTITY_PREFIX = "entity."
 
 
@@ -1161,14 +1173,197 @@ def _get_snapshot(request: Request, module_id: str, manifest_hash: str):
     return manifest
 
 
-def _filter_records_by_domain(items: list[dict], domain: dict | None, record_context: dict) -> list[dict]:
+def _dependency_manifest_index(request: Request, overrides: dict[str, dict] | None = None) -> dict[str, dict]:
+    cache_key = "dependency_manifest_index"
+    cached = _req_cache_get(request, cache_key)
+    if isinstance(cached, dict):
+        base = copy.deepcopy(cached)
+    else:
+        base = {}
+        for module in _get_registry_list(request):
+            module_id = module.get("module_id")
+            manifest_hash = module.get("current_hash")
+            if not isinstance(module_id, str) or not module_id or not isinstance(manifest_hash, str) or not manifest_hash:
+                continue
+            try:
+                manifest = _get_snapshot(request, module_id, manifest_hash)
+            except Exception:
+                continue
+            base[module_id] = {
+                "module_id": module_id,
+                "manifest": manifest if isinstance(manifest, dict) else {},
+                "module_key": module_key_from_manifest(manifest if isinstance(manifest, dict) else {}) or module_id,
+                "version": module_version_from_manifest(manifest if isinstance(manifest, dict) else {}),
+                "enabled": bool(module.get("enabled")),
+            }
+        _req_cache_set(request, cache_key, copy.deepcopy(base))
+    if isinstance(overrides, dict):
+        for module_id, manifest in overrides.items():
+            if not isinstance(module_id, str) or not module_id:
+                continue
+            manifest_obj = manifest if isinstance(manifest, dict) else {}
+            current = base.get(module_id) or {"module_id": module_id, "enabled": False}
+            current["manifest"] = manifest_obj
+            current["module_key"] = module_key_from_manifest(manifest_obj) or module_id
+            current["version"] = module_version_from_manifest(manifest_obj)
+            base[module_id] = current
+    return base
+
+
+def _dependency_entity_owner_index(manifest_index: dict[str, dict]) -> dict[str, str]:
+    owners: dict[str, str] = {}
+    for module_id, info in manifest_index.items():
+        owner_key = info.get("module_key")
+        if not isinstance(owner_key, str) or not owner_key:
+            owner_key = module_id
+        manifest = info.get("manifest")
+        entities = manifest.get("entities") if isinstance(manifest, dict) else None
+        if not isinstance(entities, list):
+            continue
+        for entity in entities:
+            if not isinstance(entity, dict):
+                continue
+            entity_id = entity.get("id")
+            if not isinstance(entity_id, str) or not entity_id:
+                continue
+            normalized = entity_id if entity_id.startswith("entity.") else f"entity.{entity_id}"
+            owners.setdefault(normalized, owner_key)
+    return owners
+
+
+def _validate_dependency_state(
+    request: Request,
+    module_id: str,
+    manifest: dict,
+    mode: str,
+) -> tuple[list[dict], list[dict]]:
+    errors: list[dict] = []
+    warnings: list[dict] = []
+    manifest_obj = manifest if isinstance(manifest, dict) else {}
+    module_key = module_key_from_manifest(manifest_obj) or module_id
+    manifest_index = _dependency_manifest_index(request, overrides={module_id: manifest_obj})
+    available_versions = {}
+    available_enabled = {}
+    for _, data in manifest_index.items():
+        key = data.get("module_key")
+        if not isinstance(key, str) or not key:
+            continue
+        available_versions[key] = data.get("version")
+        available_enabled[key] = bool(data.get("enabled"))
+    if mode in {"install", "upgrade"}:
+        # A module being installed/upgraded can satisfy other modules even if currently disabled.
+        available_enabled[module_key] = True
+    req_errors = validate_required_dependencies(
+        module_key,
+        manifest_obj,
+        available_versions=available_versions,
+        available_enabled=available_enabled,
+        require_enabled=(mode == "enable"),
+    )
+    if req_errors:
+        errors.extend(req_errors)
+
+    manifests_by_key = {}
+    for _, data in manifest_index.items():
+        key = data.get("module_key")
+        if not isinstance(key, str) or not key:
+            continue
+        manifests_by_key[key] = data.get("manifest") or {}
+    graph = build_dependency_graph(manifests_by_key)
+    cycle = find_cycle(graph)
+    if cycle and module_key in set(cycle):
+        errors.append(
+            {
+                "code": "MODULE_DEPENDENCY_CYCLE",
+                "message": "circular module dependency detected",
+                "path": "depends_on.required",
+                "detail": {"cycle": cycle},
+            }
+        )
+
+    declared_required = {item.get("module") for item in normalize_depends_on(manifest_obj).get("required", []) if isinstance(item, dict)}
+    entity_owners = _dependency_entity_owner_index(manifest_index)
+    for ref in collect_external_entity_references(manifest_obj):
+        entity_id = ref.get("entity_id")
+        if not isinstance(entity_id, str):
+            continue
+        owner = entity_owners.get(entity_id)
+        if not isinstance(owner, str) or owner == module_key:
+            continue
+        if owner not in declared_required:
+            warnings.append(
+                {
+                    "code": "MODULE_DEPENDENCY_NOT_DECLARED",
+                    "message": "external entity reference found without required dependency declaration",
+                    "path": ref.get("path"),
+                    "detail": {"entity_id": entity_id, "owner_module": owner, "suggested_dependency": owner},
+                }
+            )
+    return errors, warnings
+
+
+def _enabled_dependents_for_module(request: Request, module_id: str) -> list[dict]:
+    manifest_index = _dependency_manifest_index(request)
+    target_info = manifest_index.get(module_id) or {}
+    target_key = target_info.get("module_key") if isinstance(target_info.get("module_key"), str) else module_id
+    manifests_by_key = {}
+    for _, data in manifest_index.items():
+        key = data.get("module_key")
+        if not isinstance(key, str) or not key:
+            continue
+        manifests_by_key[key] = data.get("manifest") or {}
+    graph = build_dependency_graph(manifests_by_key)
+    reverse = build_reverse_dependents(graph)
+    dependents: list[dict] = []
+    dependent_keys = set(reverse.get(target_key, []))
+    for dependent_id, info in manifest_index.items():
+        dep_key = info.get("module_key")
+        if dep_key not in dependent_keys:
+            continue
+        if not bool(info.get("enabled")):
+            continue
+        constraint = None
+        dep_items = normalize_depends_on(info.get("manifest") if isinstance(info.get("manifest"), dict) else {}).get("required") or []
+        for item in dep_items:
+            if isinstance(item, dict) and item.get("module") == target_key:
+                constraint = item.get("version") if isinstance(item.get("version"), str) else None
+                break
+        dependents.append({"module_id": dependent_id, "module_key": dep_key, "version_constraint": constraint})
+    return sorted(dependents, key=lambda item: item.get("module_id") or "")
+
+
+def _disable_block_issue(request: Request, module_id: str) -> dict | None:
+    enabled_dependents = _enabled_dependents_for_module(request, module_id)
+    if not enabled_dependents:
+        return None
+    return {
+        "code": "MODULE_DISABLE_BLOCKED_BY_DEPENDENTS",
+        "message": "Cannot disable module while enabled dependents still require it",
+        "path": "module_id",
+        "detail": {"module_id": module_id, "enabled_dependents": enabled_dependents},
+    }
+
+
+def _filter_records_by_domain(
+    items: list[dict],
+    domain: dict | None,
+    record_context: dict,
+    actor_context: dict | None = None,
+) -> list[dict]:
     if not domain:
         return items
     filtered = []
     for item in items:
         record = item.get("record") or {}
         try:
-            if eval_condition(domain, {"record": record_context or {}, "candidate": record}):
+            if eval_condition(
+                domain,
+                {
+                    "record": record_context or {},
+                    "candidate": record,
+                    "actor": actor_context or {},
+                },
+            ):
                 filtered.append(item)
         except Exception:
             continue
@@ -1314,10 +1509,12 @@ def _compile_manifest(manifest: dict) -> dict:
     entities = manifest.get("entities") if isinstance(manifest, dict) else None
     views = manifest.get("views") if isinstance(manifest, dict) else None
     actions = manifest.get("actions") if isinstance(manifest, dict) else None
+    transformations = manifest.get("transformations") if isinstance(manifest, dict) else None
     entity_by_id: dict = {}
     view_by_id: dict = {}
     field_by_entity: dict = {}
     action_by_id: dict = {}
+    transformation_by_key: dict = {}
     if isinstance(entities, list):
         for entity in entities:
             if not isinstance(entity, dict):
@@ -1341,11 +1538,16 @@ def _compile_manifest(manifest: dict) -> dict:
         for action in actions:
             if isinstance(action, dict) and isinstance(action.get("id"), str):
                 action_by_id[action["id"]] = action
+    if isinstance(transformations, list):
+        for transformation in transformations:
+            if isinstance(transformation, dict) and isinstance(transformation.get("key"), str):
+                transformation_by_key[transformation["key"]] = transformation
     return {
         "entity_by_id": entity_by_id,
         "field_by_entity": field_by_entity,
         "view_by_id": view_by_id,
         "action_by_id": action_by_id,
+        "transformation_by_key": transformation_by_key,
     }
 
 
@@ -1508,6 +1710,183 @@ def _find_entity_def(request: Request, entity_id: str) -> tuple[str, dict, dict]
     return result
 
 
+def _manifest_entity_by_id(manifest: dict) -> dict[str, dict]:
+    entities = manifest.get("entities") if isinstance(manifest, dict) else None
+    out: dict[str, dict] = {}
+    if not isinstance(entities, list):
+        return out
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+        entity_id = entity.get("id")
+        if not isinstance(entity_id, str) or not entity_id:
+            continue
+        out[entity_id] = entity
+        if entity_id.startswith("entity."):
+            out[entity_id[len("entity.") :]] = entity
+        else:
+            out[f"entity.{entity_id}"] = entity
+    return out
+
+
+def _normalize_interface_scope(scope: Any) -> str:
+    if isinstance(scope, str) and scope in {"module_only", "global_only", "module_and_global"}:
+        return scope
+    return "module_and_global"
+
+
+def _interface_enabled(entry: dict) -> bool:
+    enabled = entry.get("enabled")
+    if enabled is None:
+        return True
+    return enabled is True
+
+
+def _should_include_global_scope(entry: dict) -> bool:
+    scope = _normalize_interface_scope(entry.get("scope"))
+    return scope in {"global_only", "module_and_global"}
+
+
+def _interface_entity_id(entry: dict) -> str | None:
+    entity_id = entry.get("entity_id")
+    if not isinstance(entity_id, str) or not entity_id:
+        return None
+    return _normalize_entity_id(entity_id)
+
+
+def _read_interface_list(manifest: dict, kind: str) -> list[dict]:
+    interfaces = manifest.get("interfaces") if isinstance(manifest, dict) else None
+    if not isinstance(interfaces, dict):
+        return []
+    items = interfaces.get(kind)
+    if not isinstance(items, list):
+        return []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _collect_interface_sources(request: Request, kind: str) -> list[dict]:
+    modules = _get_registry_list(request)
+    sources: list[dict] = []
+    for module in modules:
+        if not isinstance(module, dict) or not module.get("enabled"):
+            continue
+        module_id = module.get("module_id")
+        manifest_hash = module.get("current_hash")
+        if not isinstance(module_id, str) or not isinstance(manifest_hash, str):
+            continue
+        try:
+            manifest = _get_snapshot(request, module_id, manifest_hash)
+        except Exception:
+            continue
+        entity_by_id = _manifest_entity_by_id(manifest)
+        for idx, entry in enumerate(_read_interface_list(manifest, kind)):
+            if not _interface_enabled(entry):
+                continue
+            if not _should_include_global_scope(entry):
+                continue
+            entity_id = _interface_entity_id(entry)
+            if not isinstance(entity_id, str):
+                continue
+            entity_def = entity_by_id.get(entity_id) or entity_by_id.get(f"entity.{entity_id}") or entity_by_id.get(entity_id[7:] if entity_id.startswith("entity.") else entity_id)
+            if not isinstance(entity_def, dict):
+                continue
+            source_key = f"{module_id}:{kind}:{entity_id}:{idx}"
+            sources.append(
+                {
+                    "source_key": source_key,
+                    "kind": kind,
+                    "module_id": module_id,
+                    "module_name": module.get("name"),
+                    "manifest_hash": manifest_hash,
+                    "entity_id": entity_id,
+                    "entity_label": entity_def.get("label") or entity_id,
+                    "display_field": entity_def.get("display_field"),
+                    "scope": _normalize_interface_scope(entry.get("scope")),
+                    "config": dict(entry),
+                }
+            )
+    return sources
+
+
+def _to_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        if len(text) == 10 and text.count("-") == 2:
+            return datetime.fromisoformat(f"{text}T00:00:00")
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _records_list_page_all(
+    entity_id: str,
+    *,
+    fields: list[str] | None = None,
+    q: str | None = None,
+    search_fields: list[str] | None = None,
+    cap: int = 1000,
+) -> list[dict]:
+    out: list[dict] = []
+    cursor = None
+    remaining = max(1, int(cap or 1000))
+    while remaining > 0:
+        batch_size = min(remaining, 200)
+        items, next_cursor = generic_records.list_page(
+            entity_id,
+            limit=batch_size,
+            cursor=cursor,
+            q=q,
+            search_fields=search_fields,
+            fields=fields,
+        )
+        items = items if isinstance(items, list) else []
+        out.extend(items)
+        remaining -= len(items)
+        if not next_cursor or len(items) == 0:
+            break
+        cursor = next_cursor
+    return out
+
+
+def _record_value(record: dict, field_id: str | None):
+    if not isinstance(record, dict) or not isinstance(field_id, str) or not field_id:
+        return None
+    return record.get(field_id)
+
+
+def _extract_attachment_items(attachment_value: Any) -> list[dict]:
+    if attachment_value is None:
+        return []
+    if isinstance(attachment_value, list):
+        out = []
+        for item in attachment_value:
+            if isinstance(item, dict):
+                out.append(item)
+            elif isinstance(item, str) and item:
+                out.append({"id": item})
+        return out
+    if isinstance(attachment_value, dict):
+        return [attachment_value]
+    if isinstance(attachment_value, str) and attachment_value:
+        return [{"id": attachment_value}]
+    return []
+
+
+def _find_source_by_key(sources: list[dict], source_key: str | None) -> dict | None:
+    if not isinstance(source_key, str) or not source_key:
+        return None
+    for source in sources:
+        if source.get("source_key") == source_key:
+            return source
+    return None
+
+
 def _get_compiled_manifest(module_id: str, manifest_hash: str, manifest: dict) -> dict:
     cache_key = f"{get_org_id()}:{module_id}:{manifest_hash}"
     entry = _compiled_cache.get(cache_key)
@@ -1632,6 +2011,17 @@ def _context_hash(ctx: dict | None) -> str:
     return str(abs(hash(payload)))
 
 
+def _actor_domain_context(actor: dict | None) -> dict:
+    if not isinstance(actor, dict):
+        return {}
+    context = {}
+    for key in ("user_id", "email", "workspace_id", "workspace_role", "role", "platform_role"):
+        value = actor.get(key)
+        if isinstance(value, str) and value:
+            context[key] = value
+    return context
+
+
 def _compiled_cache_invalidate(module_id: str | None = None):
     if module_id is None:
         _compiled_cache.clear()
@@ -1708,8 +2098,17 @@ def _generate_module_id() -> str:
     return f"module_{uuid.uuid4().hex[:6]}"
 
 
-def _draft_hash(manifest: dict) -> str:
-    normalized, _, _ = validate_manifest_raw(manifest)
+def _draft_hash(manifest: dict, module_id: str | None = None) -> str:
+    # Keep draft/install hash comparison consistent with Studio2 install:
+    # sanitize -> ensure_module_id -> ensure_app_home -> normalize_v13 -> validate.
+    normalized_input = manifest if isinstance(manifest, dict) else {}
+    if isinstance(module_id, str) and module_id:
+        normalized_input = _ensure_app_home(_ensure_module_id(_sanitize_manifest(normalized_input), module_id))
+        normalized_input, _ = normalize_manifest_v13(normalized_input, module_id=module_id, cache={})
+    normalized, _, _ = validate_manifest_raw(
+        normalized_input,
+        expected_module_id=module_id if isinstance(module_id, str) else None,
+    )
     return manifest_hash(normalized)
 
 
@@ -2238,18 +2637,38 @@ def _studio2_registry_fingerprint(installed: list[dict]) -> str:
 
 def _studio2_extract_view_ids_from_blocks(blocks: list) -> list[str]:
     view_ids: set[str] = set()
+    ordered_view_ids: list[str] = []
+
+    def _add_view_id(target) -> None:
+        if not isinstance(target, str) or not target:
+            return
+        normalized = target.split("view:", 1)[1] if target.startswith("view:") else target
+        if normalized and normalized not in view_ids:
+            view_ids.add(normalized)
+            ordered_view_ids.append(normalized)
 
     def visit(block) -> None:
         if not isinstance(block, dict):
             return
         kind = block.get("kind")
         if kind == "view":
-            target = block.get("target")
-            if isinstance(target, str) and target:
-                if target.startswith("view:"):
-                    view_ids.add(target.split("view:", 1)[1])
-                else:
-                    view_ids.add(target)
+            _add_view_id(block.get("target"))
+        elif kind == "view_modes":
+            modes = block.get("modes")
+            default_mode = block.get("default_mode") if isinstance(block.get("default_mode"), str) else None
+            if isinstance(modes, list):
+                # Prefer the default_mode target first for page bootstrap.
+                if default_mode:
+                    for mode in modes:
+                        if not isinstance(mode, dict):
+                            continue
+                        if mode.get("mode") == default_mode:
+                            _add_view_id(mode.get("target"))
+                            break
+                for mode in modes:
+                    if not isinstance(mode, dict):
+                        continue
+                    _add_view_id(mode.get("target"))
         for key in ("content",):
             nested = block.get(key)
             if isinstance(nested, list):
@@ -2274,7 +2693,7 @@ def _studio2_extract_view_ids_from_blocks(blocks: list) -> list[str]:
 
     for block in blocks or []:
         visit(block)
-    return sorted(view_ids)
+    return ordered_view_ids
 
 
 def _resolve_bootstrap_view(manifest: dict, page_id: str | None, view_id: str | None) -> tuple[dict | None, dict | None]:
@@ -2527,6 +2946,7 @@ def _studio2_list_modules(request: Request) -> dict:
     installed = _get_registry_list(request)
     drafts_list = drafts.list_drafts()
     drafts_by_id = {d.get("module_id"): d for d in drafts_list if isinstance(d, dict)}
+    dep_index = _dependency_manifest_index(request)
     def _draft_name(draft_row: dict | None) -> str | None:
         if not isinstance(draft_row, dict):
             return None
@@ -2543,14 +2963,22 @@ def _studio2_list_modules(request: Request) -> dict:
         module_id = mod.get("module_id")
         draft = drafts_by_id.get(module_id)
         draft_name = _draft_name(draft)
+        draft_manifest = draft.get("manifest") if isinstance(draft, dict) and isinstance(draft.get("manifest"), dict) else None
+        draft_hash = _draft_hash(draft_manifest, module_id=module_id) if isinstance(draft_manifest, dict) else None
+        current_hash = mod.get("current_hash")
+        dep_info = dep_index.get(module_id) if isinstance(module_id, str) else None
+        module_key = dep_info.get("module_key") if isinstance(dep_info, dict) else None
         items.append(
             {
                 "module_id": module_id,
+                "module_key": module_key or module_id,
                 "name": draft_name or mod.get("name") or module_id,
                 "installed": True,
                 "enabled": mod.get("enabled"),
-                "current_hash": mod.get("current_hash"),
+                "current_hash": current_hash,
                 "updated_at": mod.get("updated_at"),
+                "draft_hash": draft_hash,
+                "draft_in_sync": bool(draft_hash and isinstance(current_hash, str) and draft_hash == current_hash),
                 "draft": {
                     "updated_at": draft.get("updated_at") if isinstance(draft, dict) else None,
                     "updated_by": draft.get("updated_by") if isinstance(draft, dict) else None,
@@ -2565,14 +2993,20 @@ def _studio2_list_modules(request: Request) -> dict:
         if not module_id or any(item["module_id"] == module_id for item in items):
             continue
         draft_name = _draft_name(draft)
+        draft_manifest = draft.get("manifest") if isinstance(draft.get("manifest"), dict) else None
+        draft_hash = _draft_hash(draft_manifest, module_id=module_id) if isinstance(draft_manifest, dict) else None
+        module_key = module_key_from_manifest(draft_manifest) if isinstance(draft_manifest, dict) else None
         items.append(
             {
                 "module_id": module_id,
+                "module_key": module_key or module_id,
                 "name": draft_name or module_id,
                 "installed": False,
                 "enabled": False,
                 "current_hash": None,
                 "updated_at": None,
+                "draft_hash": draft_hash,
+                "draft_in_sync": False,
                 "draft": {
                     "updated_at": draft.get("updated_at"),
                     "updated_by": draft.get("updated_by"),
@@ -3055,10 +3489,17 @@ def _apply_module_change_memory(module_id: str, manifest: dict, actor: dict | No
 
 
 def _apply_module_change(request: Request, module_id: str, manifest: dict, mode: str, reason: str, patch_id: str | None) -> dict:
+    dep_errors, dep_warnings = _validate_dependency_state(request, module_id, manifest, mode)
+    if dep_errors:
+        return {"ok": False, "errors": dep_errors, "warnings": dep_warnings, "module": None, "audit_id": None}
     actor = getattr(request.state, "actor", None)
     if USE_DB:
-        return _apply_module_change_db(module_id, manifest, actor=actor, mode=mode, reason=reason, patch_id=patch_id)
-    return _apply_module_change_memory(module_id, manifest, actor=actor, mode=mode, reason=reason, patch_id=patch_id)
+        result = _apply_module_change_db(module_id, manifest, actor=actor, mode=mode, reason=reason, patch_id=patch_id)
+    else:
+        result = _apply_module_change_memory(module_id, manifest, actor=actor, mode=mode, reason=reason, patch_id=patch_id)
+    if dep_warnings:
+        result["warnings"] = (result.get("warnings") or []) + dep_warnings
+    return result
 
 
 def _marketplace_slugify(text: str) -> str:
@@ -3293,8 +3734,140 @@ async def list_modules(request: Request) -> dict:
             icon_key = module_def.get("icon_key") or module_def.get("icon")
             if isinstance(icon_key, str) and icon_key.strip():
                 mod["icon_key"] = icon_key.strip()
+        if not (isinstance(mod.get("module_key"), str) and mod.get("module_key").strip()):
+            stable_key = module_def.get("key") if isinstance(module_def.get("key"), str) else module_def.get("id")
+            if isinstance(stable_key, str) and stable_key.strip():
+                mod["module_key"] = stable_key.strip()
     _cache_set("modules", modules)
     return {"modules": modules}
+
+
+def _dependency_status_for_module(module_id: str, manifest_index: dict[str, dict]) -> dict:
+    info = manifest_index.get(module_id)
+    manifest = info.get("manifest") if isinstance(info, dict) else {}
+    deps = normalize_depends_on(manifest if isinstance(manifest, dict) else {})
+    available_versions = {}
+    available_enabled = {}
+    for _, data in manifest_index.items():
+        key = data.get("module_key")
+        if not isinstance(key, str) or not key:
+            continue
+        available_versions[key] = data.get("version")
+        available_enabled[key] = bool(data.get("enabled"))
+    required = []
+    for item in deps.get("required", []):
+        dep_module = item.get("module")
+        if not isinstance(dep_module, str):
+            continue
+        constraint = item.get("version")
+        actual = available_versions.get(dep_module)
+        installed = dep_module in available_versions
+        enabled = bool(available_enabled.get(dep_module)) if installed else False
+        required.append(
+            {
+                "module": dep_module,
+                "constraint": constraint,
+                "installed": installed,
+                "enabled": enabled,
+                "actual_version": actual,
+                "version_ok": True if not installed else (True if not isinstance(constraint, str) else version_satisfies_constraint(actual, constraint)),
+            }
+        )
+    optional = []
+    for item in deps.get("optional", []):
+        dep_module = item.get("module")
+        if not isinstance(dep_module, str):
+            continue
+        constraint = item.get("version")
+        actual = available_versions.get(dep_module)
+        installed = dep_module in available_versions
+        enabled = bool(available_enabled.get(dep_module)) if installed else False
+        optional.append(
+            {
+                "module": dep_module,
+                "constraint": constraint,
+                "installed": installed,
+                "enabled": enabled,
+                "actual_version": actual,
+            }
+        )
+    return {"required": required, "optional": optional}
+
+
+@app.get("/modules/{module_id}/dependencies")
+async def module_dependencies(module_id: str, request: Request) -> dict:
+    actor = getattr(request.state, "actor", None)
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    module = _get_module(request, module_id)
+    if not isinstance(module, dict):
+        return _error_response("MODULE_NOT_INSTALLED", "Module not installed", "module_id", status=404)
+    manifest_index = _dependency_manifest_index(request)
+    if module_id not in manifest_index:
+        return _error_response("MODULE_NOT_INSTALLED", "Module manifest missing", "module_id", status=404)
+    manifests_by_key = {}
+    for _, data in manifest_index.items():
+        key = data.get("module_key")
+        if not isinstance(key, str) or not key:
+            continue
+        manifests_by_key[key] = data.get("manifest") or {}
+    graph = build_dependency_graph(manifests_by_key)
+    reverse = build_reverse_dependents(graph)
+    cycle = find_cycle(graph)
+    dep_state = _dependency_status_for_module(module_id, manifest_index)
+    module_key = manifest_index[module_id].get("module_key") if isinstance(manifest_index.get(module_id), dict) else module_id
+    return _ok_response(
+        {
+            "module_id": module_id,
+            "module_key": module_key,
+            "dependencies": dep_state,
+            "dependents": reverse.get(module_key, []),
+            "cycle_detected": bool(cycle),
+            "cycle": cycle,
+        }
+    )
+
+
+@app.get("/modules/{module_id}/dependents")
+async def module_dependents(module_id: str, request: Request) -> dict:
+    actor = getattr(request.state, "actor", None)
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    manifest_index = _dependency_manifest_index(request)
+    if module_id not in manifest_index:
+        return _error_response("MODULE_NOT_INSTALLED", "Module not installed", "module_id", status=404)
+    graph = build_dependency_graph({mid: data.get("manifest") or {} for mid, data in manifest_index.items()})
+    reverse = build_reverse_dependents(graph)
+    return _ok_response({"module_id": module_id, "dependents": reverse.get(module_id, [])})
+
+
+@app.post("/modules/dependencies/resolve")
+async def resolve_module_dependencies(request: Request) -> dict:
+    actor = getattr(request.state, "actor", None)
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    module_ids = body.get("module_ids") if isinstance(body, dict) else None
+    manifest_index = _dependency_manifest_index(request)
+    available_ids = sorted(manifest_index.keys())
+    selected_ids: list[str]
+    if module_ids is None:
+        selected_ids = available_ids
+    elif isinstance(module_ids, list) and all(isinstance(mid, str) and mid for mid in module_ids):
+        selected_ids = sorted(set(module_ids))
+    else:
+        return _error_response("MODULE_DEPENDENCY_INVALID", "module_ids must be a list of module ids", "module_ids", status=400)
+    missing = [mid for mid in selected_ids if mid not in manifest_index]
+    if missing:
+        return _error_response("MODULE_NOT_INSTALLED", "One or more modules are not installed", "module_ids", {"missing": missing}, status=400)
+    graph = build_dependency_graph({mid: data.get("manifest") or {} for mid, data in manifest_index.items()}, module_ids=selected_ids)
+    cycle = find_cycle(graph)
+    order = [] if cycle else topological_install_order(graph)
+    reverse = build_reverse_dependents(graph)
+    return _ok_response({"module_ids": selected_ids, "graph": graph, "order": order, "cycle": cycle, "dependents": reverse})
 
 
 @app.get("/marketplace/apps")
@@ -3727,6 +4300,7 @@ async def page_bootstrap(
                 parsed_domain = json.loads(domain)
             except Exception:
                 parsed_domain = None
+        actor_ctx = _actor_domain_context(actor)
         items, next_cursor = generic_records.list_page(
             view_entity,
             limit=limit,
@@ -3736,7 +4310,7 @@ async def page_bootstrap(
             fields=None if parsed_domain else field_ids,
         )
         if parsed_domain:
-            items = _filter_records_by_domain(items, parsed_domain, {})
+            items = _filter_records_by_domain(items, parsed_domain, {}, actor_ctx)
         payload["list"] = {
             "entity_id": view_entity,
             "records": items,
@@ -3838,6 +4412,20 @@ async def module_enable(module_id: str, request: Request) -> dict:
     if denied:
         return denied
     body = await request.json()
+    module = _get_module(request, module_id)
+    if not isinstance(module, dict):
+        return _error_response("MODULE_NOT_FOUND", "module not found", "module_id", status=404)
+    manifest_hash = module.get("current_hash")
+    if not isinstance(manifest_hash, str) or not manifest_hash:
+        return _error_response("MODULE_INVALID", "module manifest hash missing", "module_id", status=400)
+    try:
+        manifest = _get_snapshot(request, module_id, manifest_hash)
+    except Exception:
+        return _error_response("MODULE_INVALID", "module manifest snapshot missing", "module_id", status=400)
+    dep_errors, dep_warnings = _validate_dependency_state(request, module_id, manifest, "enable")
+    if dep_errors:
+        first = dep_errors[0]
+        return _error_response(first.get("code"), first.get("message"), first.get("path"), first.get("detail"), status=400)
     result = registry.set_enabled(module_id, True, actor=actor, reason=body.get("reason", "enable"))
     if not result["ok"]:
         return _error_response(result["errors"][0]["code"], result["errors"][0]["message"], result["errors"][0].get("path"), result["errors"][0].get("detail"))
@@ -3845,7 +4433,8 @@ async def module_enable(module_id: str, request: Request) -> dict:
     _cache_invalidate("registry_list")
     _cache_invalidate("manifest")
     _compiled_cache_invalidate(module_id)
-    return _ok_response({"module": result["module"], "audit_id": result["audit_id"]}, warnings=result["warnings"])
+    warnings = (result.get("warnings") or []) + dep_warnings
+    return _ok_response({"module": result["module"], "audit_id": result["audit_id"]}, warnings=warnings)
 
 
 @app.post("/modules/{module_id}/disable")
@@ -3854,6 +4443,9 @@ async def module_disable(module_id: str, request: Request) -> dict:
     denied = _require_admin(actor)
     if denied:
         return denied
+    block = _disable_block_issue(request, module_id)
+    if block:
+        return _error_response(block["code"], block["message"], block.get("path"), block.get("detail"), status=409)
     body = await request.json()
     result = registry.set_enabled(module_id, False, actor=actor, reason=body.get("reason", "disable"))
     if not result["ok"]:
@@ -3871,6 +4463,10 @@ async def module_delete(module_id: str, request: Request, force: bool = False, a
     denied = _require_admin(actor)
     if denied:
         return denied
+    if archive:
+        block = _disable_block_issue(request, module_id)
+        if block:
+            return _error_response(block["code"], block["message"], block.get("path"), block.get("detail"), status=409)
     reason = "delete"
     if not _begin_module_mutation(module_id):
         return _error_response("MODULE_MUTATION_IN_PROGRESS", "Module mutation in progress", "module_id", status=409)
@@ -3953,7 +4549,7 @@ async def studio_list_modules(request: Request) -> dict:
     for draft in drafts_list:
         module_id = draft.get("module_id")
         draft_manifest = draft.get("manifest") if isinstance(draft.get("manifest"), dict) else None
-        draft_hash = _draft_hash(draft_manifest) if isinstance(draft_manifest, dict) else None
+        draft_hash = _draft_hash(draft_manifest, module_id=module_id) if isinstance(draft_manifest, dict) else None
         draft_name = _module_name_from_manifest(draft_manifest)
         installed = installed_by_id.get(module_id) if module_id else None
         installed_hash = installed.get("current_hash") if installed else None
@@ -4115,7 +4711,7 @@ async def studio_get_draft(module_id: str) -> dict:
             installed_manifest = None
     draft_hash = None
     if draft and isinstance(draft.get("manifest"), dict):
-        draft_hash = _draft_hash(draft.get("manifest"))
+        draft_hash = _draft_hash(draft.get("manifest"), module_id=module_id)
     installed_hash = installed.get("current_hash") if installed else None
     payload = {"draft": draft, "installed": installed, "installed_manifest": installed_manifest, "draft_hash": draft_hash, "installed_hash": installed_hash}
     if draft is None and installed is None:
@@ -4273,6 +4869,10 @@ async def studio_module_delete(module_id: str, request: Request, force: bool = F
     denied = _require_admin(actor)
     if denied:
         return denied
+    if archive:
+        block = _disable_block_issue(request, module_id)
+        if block:
+            return _error_response(block["code"], block["message"], block.get("path"), block.get("detail"), status=409)
     reason = "delete"
     if not _begin_module_mutation(module_id):
         return _error_response("MODULE_MUTATION_IN_PROGRESS", "Module mutation in progress", "module_id", status=409)
@@ -4401,6 +5001,8 @@ async def studio2_save_draft(module_id: str, request: Request) -> dict:
         manifest = _parse_manifest_text(body)
     if not isinstance(manifest, dict):
         return _error_response("MANIFEST_INVALID", "manifest_json required", "manifest_json")
+    # Keep draft manifest canonical for this Studio2 module route.
+    manifest = _ensure_app_home(_ensure_module_id(_sanitize_manifest(manifest), module_id))
     note = body.get("note") if isinstance(body, dict) else None
     actor = getattr(request.state, "actor", None)
     created_by = actor.get("email") if isinstance(actor, dict) else None
@@ -4677,6 +5279,10 @@ async def studio2_install_manifest(module_id: str, request: Request) -> dict:
         base_manifest = store.get_snapshot(module_id, base_hash)
         mode = "upgrade" if registry.get(module_id) is not None else "install"
 
+    dep_errors, dep_warnings = _validate_dependency_state(request, module_id, normalized, mode)
+    if dep_errors:
+        return _validation_response(dep_errors, dep_warnings, status=200)
+
     patchset = _studio2_build_patchset_from_manifest(module_id, base_manifest, normalized)
     applied = _studio2_apply_patchset(base_manifest, patchset)
     if not applied.get("ok"):
@@ -4773,7 +5379,7 @@ async def studio2_install_manifest(module_id: str, request: Request) -> dict:
                 "transaction_group_id": transaction_group_id,
             }
         },
-        warnings=val_warnings,
+        warnings=(val_warnings or []) + dep_warnings,
     )
 
 
@@ -4884,6 +5490,10 @@ async def studio2_patchset_apply(request: Request) -> dict:
             val_errors = (val_errors or []) + strict_errors
         if val_errors:
             return _validation_response(val_errors, val_warnings, status=200)
+        mode = "upgrade" if registry.get(module_id) else "install"
+        dep_errors, dep_warnings = _validate_dependency_state(request, module_id, normalized, mode)
+        if dep_errors:
+            return _validation_response(dep_errors, dep_warnings, status=200)
         transaction_group_id = patchset.get("transaction_group_id") or f"tg_{uuid.uuid4().hex}"
         patch_payload = {
             "patch_id": patchset.get("patchset_id") or f"ps_{uuid.uuid4().hex}",
@@ -4908,7 +5518,7 @@ async def studio2_patchset_apply(request: Request) -> dict:
             "approved_by": getattr(request.state, "user", None),
             "approved_at": _now(),
         }
-        result = registry.upgrade(approved) if registry.get(module_id) else registry.install(approved)
+        result = registry.upgrade(approved) if mode == "upgrade" else registry.install(approved)
         if not result.get("ok"):
             return _error_response(result["errors"][0]["code"], result["errors"][0]["message"], result["errors"][0].get("path"), result["errors"][0].get("detail"))
         _cache_invalidate("modules")
@@ -4925,7 +5535,7 @@ async def studio2_patchset_apply(request: Request) -> dict:
                     "transaction_group_id": transaction_group_id,
                 }
             },
-            warnings=val_warnings,
+            warnings=(val_warnings or []) + dep_warnings,
         )
     finally:
         _end_module_mutation(module_id)
@@ -6913,6 +7523,15 @@ def _ensure_module_id(manifest: dict, module_id: str) -> dict:
     module_section = manifest_copy.get("module")
     if not isinstance(module_section, dict):
         module_section = {}
+    existing_id = module_section.get("id")
+    if (
+        isinstance(existing_id, str)
+        and existing_id.strip()
+        and existing_id != module_id
+        and not (isinstance(module_section.get("key"), str) and module_section.get("key").strip())
+    ):
+        # Preserve stable manifest key when route/module instance ids differ.
+        module_section["key"] = existing_id.strip()
     module_section["id"] = module_id
     if "name" not in module_section:
         module_section["name"] = module_id.replace("_", " ").replace("-", " ").title() or module_id
@@ -8879,6 +9498,511 @@ async def debug_diagnostics(request: Request) -> dict:
     return _ok_response({"data": data})
 
 
+def _unwrap_store_record(record: dict | None) -> tuple[str | None, dict | None]:
+    if not isinstance(record, dict):
+        return None, None
+    payload = record.get("record")
+    if isinstance(payload, dict):
+        rid = record.get("record_id") if isinstance(record.get("record_id"), str) else payload.get("id")
+        return rid, payload
+    rid = record.get("id") if isinstance(record.get("id"), str) else None
+    return rid, record
+
+
+def _normalize_field_mappings(field_mappings: Any) -> list[dict]:
+    if isinstance(field_mappings, list):
+        out: list[dict] = []
+        for item in field_mappings:
+            if isinstance(item, dict):
+                out.append(item)
+        return out
+    if isinstance(field_mappings, dict):
+        out = []
+        for target_field, spec in field_mappings.items():
+            if not isinstance(target_field, str) or not target_field:
+                continue
+            if isinstance(spec, str):
+                out.append({"to": target_field, "from": spec})
+                continue
+            if isinstance(spec, dict):
+                item = {"to": target_field}
+                if "from" in spec:
+                    item["from"] = spec.get("from")
+                if "value" in spec:
+                    item["value"] = spec.get("value")
+                if "ref" in spec:
+                    item["ref"] = spec.get("ref")
+                out.append(item)
+        return out
+    return []
+
+
+def _resolve_transform_ref(ref: str, source_record: dict, target_record: dict | None, context: dict) -> Any:
+    if not isinstance(ref, str) or not ref:
+        return None
+    if ref == "$source.id":
+        return source_record.get("id")
+    if ref.startswith("$source."):
+        return source_record.get(ref[len("$source.") :])
+    if ref == "$target.id":
+        return (target_record or {}).get("id")
+    if ref.startswith("$target."):
+        return (target_record or {}).get(ref[len("$target.") :])
+    if ref == "$context.record_id":
+        return context.get("record_id")
+    if ref.startswith("$context.record."):
+        record = context.get("record")
+        if isinstance(record, dict):
+            return record.get(ref[len("$context.record.") :])
+    return None
+
+
+def _resolve_mapping_value(mapping: dict, source_record: dict, target_record: dict | None, context: dict) -> tuple[bool, Any]:
+    if "from" in mapping:
+        field_id = mapping.get("from")
+        if not isinstance(field_id, str) or not field_id:
+            return False, None
+        return True, source_record.get(field_id)
+    if "ref" in mapping:
+        ref = mapping.get("ref")
+        if not isinstance(ref, str) or not ref:
+            return False, None
+        return True, _resolve_transform_ref(ref, source_record, target_record, context)
+    if "value" in mapping:
+        return True, mapping.get("value")
+    return False, None
+
+
+def _apply_field_mappings(field_mappings: list[dict], source_record: dict, target_record: dict | None, context: dict) -> tuple[list[dict], dict]:
+    errors: list[dict] = []
+    mapped: dict = {}
+    for idx, mapping in enumerate(field_mappings):
+        target_field = mapping.get("to")
+        if not isinstance(target_field, str) or not target_field:
+            errors.append({"code": "TRANSFORMATION_MAPPING_INVALID", "message": "field mapping.to is required", "path": f"field_mappings[{idx}].to", "detail": None})
+            continue
+        present, value = _resolve_mapping_value(mapping, source_record, target_record, context)
+        if not present:
+            errors.append(
+                {
+                    "code": "TRANSFORMATION_MAPPING_INVALID",
+                    "message": "field mapping requires exactly one of from/ref/value",
+                    "path": f"field_mappings[{idx}]",
+                    "detail": None,
+                }
+            )
+            continue
+        mapped[target_field] = value
+    return errors, mapped
+
+
+def _list_entity_records_for_transform(entity_id: str) -> list[dict]:
+    if not USE_DB and hasattr(generic_records, "list"):
+        try:
+            rows = generic_records.list(entity_id)
+            out = []
+            for row in rows if isinstance(rows, list) else []:
+                rid, payload = _unwrap_store_record(row if isinstance(row, dict) else None)
+                if rid and isinstance(payload, dict):
+                    out.append({"record_id": rid, "record": payload})
+            return out
+        except Exception:
+            return []
+    records: list[dict] = []
+    cursor = None
+    while True:
+        items, next_cursor = generic_records.list_page(entity_id, limit=200, cursor=cursor)
+        for item in items if isinstance(items, list) else []:
+            rid, payload = _unwrap_store_record(item if isinstance(item, dict) else None)
+            if rid and isinstance(payload, dict):
+                records.append({"record_id": rid, "record": payload})
+        if not next_cursor:
+            break
+        cursor = next_cursor
+    return records
+
+
+def _emit_transform_hook_event(request: Request, module_id: str, manifest: dict, event_name: str, payload: dict) -> None:
+    if not isinstance(event_name, str) or not event_name:
+        return
+    module = _get_module(request, module_id)
+    manifest_hash = module.get("current_hash") if isinstance(module, dict) else None
+    actor = getattr(request.state, "actor", None)
+    meta = {
+        "module_id": module_id,
+        "manifest_hash": manifest_hash,
+        "actor": _actor_event_meta(actor),
+        "org_id": actor.get("workspace_id") if isinstance(actor, dict) else None,
+        "trace_id": request.headers.get("x-request-id") if hasattr(request, "headers") else None,
+    }
+    try:
+        event_payload = dict(payload or {})
+        event_payload["event"] = event_name
+        emitted = make_event(event_name, event_payload, meta)
+        event_bus.publish(emitted)
+        _handle_automation_event(emitted)
+    except Exception as exc:
+        logger.warning("transform_hook_emit_failed module_id=%s event=%s error=%s", module_id, event_name, exc)
+
+
+def _render_transform_feed_message(template: str, source_entity_id: str, source_id: str, target_entity_id: str, target_id: str) -> str:
+    text = template if isinstance(template, str) and template.strip() else "Transformation completed"
+    return (
+        text.replace("{source.entity_id}", source_entity_id)
+        .replace("{source.id}", source_id)
+        .replace("{target.entity_id}", target_entity_id)
+        .replace("{target.id}", target_id)
+    )
+
+
+def _run_transform_record_action(
+    request: Request,
+    module_id: str,
+    manifest: dict,
+    compiled: dict | None,
+    action_id: str,
+    action: dict,
+    context: dict,
+    actor: dict | None,
+    phase_ms: dict[str, float],
+    action_start: float,
+) -> dict:
+    transformation_key = action.get("transformation_key")
+    if not isinstance(transformation_key, str) or not transformation_key:
+        return _error_response("ACTION_INVALID", "transformation_key is required", "transformation_key", status=400)
+    transformation = None
+    if isinstance(compiled, dict):
+        transformation = (compiled.get("transformation_by_key") or {}).get(transformation_key)
+    if not isinstance(transformation, dict):
+        for item in manifest.get("transformations", []) if isinstance(manifest.get("transformations"), list) else []:
+            if isinstance(item, dict) and item.get("key") == transformation_key:
+                transformation = item
+                break
+    if not isinstance(transformation, dict):
+        return _error_response("TRANSFORMATION_NOT_FOUND", "Transformation not found", "transformation_key", status=404)
+
+    record_id = context.get("record_id") if isinstance(context, dict) else None
+    if not isinstance(record_id, str) or not record_id:
+        return _error_response("ACTION_INVALID", "record_id is required", "record_id", status=400)
+
+    source_entity_from_action = action.get("entity_id")
+    source_entity = transformation.get("source_entity_id")
+    if isinstance(source_entity_from_action, str) and source_entity_from_action:
+        source_entity = source_entity_from_action
+    if not isinstance(source_entity, str) or not source_entity:
+        return _error_response("TRANSFORMATION_INVALID", "source_entity_id is required", "source_entity_id", status=400)
+    source_entity = _normalize_entity_id(source_entity)
+    if isinstance(transformation.get("source_entity_id"), str):
+        declared_source = _normalize_entity_id(transformation.get("source_entity_id"))
+        if source_entity != declared_source:
+            return _error_response("TRANSFORMATION_INVALID", "action.entity_id must match transformation.source_entity_id", "entity_id", status=400)
+    target_entity = transformation.get("target_entity_id")
+    if not isinstance(target_entity, str) or not target_entity:
+        return _error_response("TRANSFORMATION_INVALID", "target_entity_id is required", "target_entity_id", status=400)
+    target_entity = _normalize_entity_id(target_entity)
+
+    source_found = _find_entity_def(request, source_entity)
+    if not source_found:
+        return _error_response("ENTITY_NOT_FOUND", "Source entity not found or disabled", "source_entity_id", status=404)
+    target_found = _find_entity_def(request, target_entity)
+    if not target_found:
+        return _error_response("ENTITY_NOT_FOUND", "Target entity not found or disabled", "target_entity_id", status=404)
+
+    source_raw = generic_records.get(source_entity, record_id)
+    source_id, source_record = _unwrap_store_record(source_raw)
+    if not source_id or not isinstance(source_record, dict):
+        return _error_response("RECORD_NOT_FOUND", "Source record not found", "record_id", status=404)
+
+    validation_cfg = transformation.get("validation") if isinstance(transformation.get("validation"), dict) else {}
+    required_source_fields = validation_cfg.get("require_source_fields") if isinstance(validation_cfg.get("require_source_fields"), list) else []
+    missing_required = [field_id for field_id in required_source_fields if not source_record.get(field_id)]
+    if missing_required:
+        errors = [
+            {
+                "code": "TRANSFORMATION_SOURCE_REQUIRED",
+                "message": "Required source field is missing",
+                "path": field_id,
+                "detail": None,
+            }
+            for field_id in missing_required
+            if isinstance(field_id, str)
+        ]
+        return _validation_response(errors, [])
+
+    link_fields = transformation.get("link_fields") if isinstance(transformation.get("link_fields"), dict) else {}
+    source_to_target_field = link_fields.get("source_to_target")
+    if validation_cfg.get("prevent_if_target_linked") is True and isinstance(source_to_target_field, str) and source_record.get(source_to_target_field):
+        return _error_response(
+            "TRANSFORMATION_ALREADY_LINKED",
+            "Source record is already linked to a target record",
+            source_to_target_field,
+            detail={"target_id": source_record.get(source_to_target_field)},
+            status=409,
+        )
+
+    child_defs = transformation.get("child_mappings") if isinstance(transformation.get("child_mappings"), list) else []
+    child_sources: list[dict] = []
+    total_source_child_records = 0
+    for child_idx, child_def in enumerate(child_defs):
+        if not isinstance(child_def, dict):
+            return _error_response("TRANSFORMATION_INVALID", "child_mappings entries must be objects", f"child_mappings[{child_idx}]", status=400)
+        source_child_entity = child_def.get("source_entity_id")
+        source_link_field = child_def.get("source_link_field")
+        if not isinstance(source_child_entity, str) or not isinstance(source_link_field, str):
+            return _error_response("TRANSFORMATION_INVALID", "child mapping source_entity_id/source_link_field required", f"child_mappings[{child_idx}]", status=400)
+        source_child_entity = _normalize_entity_id(source_child_entity)
+        source_child_found = _find_entity_def(request, source_child_entity)
+        if not source_child_found:
+            return _error_response("ENTITY_NOT_FOUND", "Source child entity not found or disabled", f"child_mappings[{child_idx}].source_entity_id", status=404)
+        source_items = _list_entity_records_for_transform(source_child_entity)
+        scoped = [item for item in source_items if isinstance(item.get("record"), dict) and item.get("record", {}).get(source_link_field) == source_id]
+        total_source_child_records += len(scoped)
+        child_sources.append({"def": child_def, "source_entity_id": source_child_entity, "source_records": scoped, "source_found": source_child_found})
+    if validation_cfg.get("require_child_records") is True and total_source_child_records == 0 and len(child_defs) > 0:
+        return _error_response("TRANSFORMATION_CHILD_REQUIRED", "At least one child record is required", "child_mappings", status=400)
+
+    t0 = time.perf_counter()
+    field_mappings = _normalize_field_mappings(transformation.get("field_mappings"))
+    map_errors, target_values = _apply_field_mappings(field_mappings, source_record, None, context)
+    if map_errors:
+        return _validation_response(map_errors, [])
+    target_workflow = _find_entity_workflow(target_found[2], target_found[1].get("id"))
+    errors, clean_target = _validate_record_payload(target_found[1], target_values, for_create=True, workflow=target_workflow)
+    lookup_errors = _validate_lookup_fields(target_found[1], _registry_for_request(request), lambda m_id, m_hash: _get_snapshot(request, m_id, m_hash))
+    errors.extend(lookup_errors)
+    domain_errors = _enforce_lookup_domains(target_found[1], clean_target if isinstance(clean_target, dict) else {})
+    errors.extend(domain_errors)
+    if errors:
+        _log_record_validation_errors(target_entity, target_values, errors, target_workflow)
+        return _validation_response(errors, [])
+    phase_ms["transform_validate_target"] = (time.perf_counter() - t0) * 1000
+
+    t0 = time.perf_counter()
+    target_created = generic_records.create(target_entity, clean_target)
+    target_id, target_record = _unwrap_store_record(target_created if isinstance(target_created, dict) else None)
+    if not target_id or not isinstance(target_record, dict):
+        return _error_response("TRANSFORMATION_FAILED", "Failed to create target record", "target_entity_id", status=500)
+    _resp_cache_invalidate_entity(target_entity)
+    phase_ms["transform_create_target"] = (time.perf_counter() - t0) * 1000
+
+    created_children: list[tuple[str, str]] = []
+    child_created_count = 0
+    for child_bundle in child_sources:
+        child_def = child_bundle["def"]
+        target_child_entity = child_def.get("target_entity_id")
+        target_link_field = child_def.get("target_link_field")
+        if not isinstance(target_child_entity, str) or not isinstance(target_link_field, str):
+            for ent_id, rec_id in created_children:
+                generic_records.delete(ent_id, rec_id)
+            generic_records.delete(target_entity, target_id)
+            return _error_response("TRANSFORMATION_INVALID", "child mapping target_entity_id/target_link_field required", "child_mappings", status=400)
+        target_child_entity = _normalize_entity_id(target_child_entity)
+        target_child_found = _find_entity_def(request, target_child_entity)
+        if not target_child_found:
+            for ent_id, rec_id in created_children:
+                generic_records.delete(ent_id, rec_id)
+            generic_records.delete(target_entity, target_id)
+            return _error_response("ENTITY_NOT_FOUND", "Target child entity not found or disabled", "child_mappings.target_entity_id", status=404)
+        child_field_mappings = _normalize_field_mappings(child_def.get("field_mappings"))
+        for source_child in child_bundle["source_records"]:
+            source_child_record = source_child.get("record") if isinstance(source_child.get("record"), dict) else {}
+            map_errors, child_values = _apply_field_mappings(child_field_mappings, source_child_record, target_record, context)
+            if map_errors:
+                for ent_id, rec_id in created_children:
+                    generic_records.delete(ent_id, rec_id)
+                generic_records.delete(target_entity, target_id)
+                return _validation_response(map_errors, [])
+            child_values[target_link_field] = target_id
+            child_workflow = _find_entity_workflow(target_child_found[2], target_child_found[1].get("id"))
+            child_errors, clean_child = _validate_record_payload(target_child_found[1], child_values, for_create=True, workflow=child_workflow)
+            child_lookup_errors = _validate_lookup_fields(target_child_found[1], _registry_for_request(request), lambda m_id, m_hash: _get_snapshot(request, m_id, m_hash))
+            child_errors.extend(child_lookup_errors)
+            child_domain_errors = _enforce_lookup_domains(target_child_found[1], clean_child if isinstance(clean_child, dict) else {})
+            child_errors.extend(child_domain_errors)
+            if child_errors:
+                for ent_id, rec_id in created_children:
+                    generic_records.delete(ent_id, rec_id)
+                generic_records.delete(target_entity, target_id)
+                _log_record_validation_errors(target_child_entity, child_values, child_errors, child_workflow)
+                return _validation_response(child_errors, [])
+            created_child = generic_records.create(target_child_entity, clean_child)
+            created_child_id, _ = _unwrap_store_record(created_child if isinstance(created_child, dict) else None)
+            if created_child_id:
+                created_children.append((target_child_entity, created_child_id))
+                child_created_count += 1
+        _resp_cache_invalidate_entity(target_child_entity)
+
+    source_patch: dict = {}
+    if isinstance(source_to_target_field, str) and source_to_target_field:
+        source_patch[source_to_target_field] = target_id
+    source_update = transformation.get("source_update") if isinstance(transformation.get("source_update"), dict) else {}
+    source_update_patch = source_update.get("patch") if isinstance(source_update.get("patch"), dict) else {}
+    source_patch.update(source_update_patch)
+    updated_source_record = source_record
+    if source_patch:
+        source_workflow = _find_entity_workflow(source_found[2], source_found[1].get("id"))
+        source_patch_errors, merged_source = _validate_patch_payload(source_found[1], source_patch, source_record, workflow=source_workflow)
+        if source_patch_errors:
+            for ent_id, rec_id in created_children:
+                generic_records.delete(ent_id, rec_id)
+            generic_records.delete(target_entity, target_id)
+            return _validation_response(source_patch_errors, [])
+        updated_source = generic_records.update(source_entity, source_id, merged_source)
+        _, updated_source_record = _unwrap_store_record(updated_source if isinstance(updated_source, dict) else None)
+        _resp_cache_invalidate_record(source_entity, source_id)
+        _resp_cache_invalidate_entity(source_entity)
+        changed = _changed_fields(source_record or {}, updated_source_record or {})
+        before_snapshot = _automation_record_snapshot(source_record, source_found[1])
+        after_snapshot = _automation_record_snapshot(updated_source_record, source_found[1])
+        _emit_triggers(
+            request,
+            module_id,
+            manifest,
+            "record.updated",
+            {
+                "entity_id": source_found[1].get("id"),
+                "record_id": source_id,
+                "changed_fields": changed,
+                "before": before_snapshot,
+                "after": after_snapshot,
+                "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
+                "timestamp": _now(),
+            },
+            entity_id=source_found[1].get("id"),
+        )
+        status_field = (source_workflow or {}).get("status_field")
+        if isinstance(status_field, str) and source_record.get(status_field) != (updated_source_record or {}).get(status_field):
+            _emit_triggers(
+                request,
+                module_id,
+                manifest,
+                "workflow.status_changed",
+                {
+                    "entity_id": source_found[1].get("id"),
+                    "record_id": source_id,
+                    "changed_fields": [status_field],
+                    "from": source_record.get(status_field),
+                    "to": (updated_source_record or {}).get(status_field),
+                    "before": before_snapshot,
+                    "after": after_snapshot,
+                    "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
+                    "timestamp": _now(),
+                },
+                entity_id=source_found[1].get("id"),
+                status_field=status_field,
+            )
+
+    target_to_source_field = link_fields.get("target_to_source")
+    if isinstance(target_to_source_field, str) and target_to_source_field:
+        target_patch_errors, merged_target = _validate_patch_payload(target_found[1], {target_to_source_field: source_id}, target_record, workflow=target_workflow)
+        if target_patch_errors:
+            for ent_id, rec_id in created_children:
+                generic_records.delete(ent_id, rec_id)
+            generic_records.delete(target_entity, target_id)
+            return _validation_response(target_patch_errors, [])
+        target_updated = generic_records.update(target_entity, target_id, merged_target)
+        _, target_record = _unwrap_store_record(target_updated if isinstance(target_updated, dict) else None)
+        _resp_cache_invalidate_record(target_entity, target_id)
+        _resp_cache_invalidate_entity(target_entity)
+
+    activity_cfg = transformation.get("activity") if isinstance(transformation.get("activity"), dict) else {}
+    if activity_cfg.get("enabled") is not False:
+        event_type = activity_cfg.get("event_type") if isinstance(activity_cfg.get("event_type"), str) else "transform"
+        targets = activity_cfg.get("targets") if isinstance(activity_cfg.get("targets"), list) else ["source", "target"]
+        payload = {
+            "transformation_key": transformation_key,
+            "source_entity_id": source_entity,
+            "source_record_id": source_id,
+            "target_entity_id": target_entity,
+            "target_record_id": target_id,
+            "child_created": child_created_count,
+        }
+        if "source" in targets:
+            try:
+                activity_store.add_event(source_entity, source_id, event_type, payload, actor=getattr(request.state, "user", None))
+            except Exception:
+                pass
+        if "target" in targets:
+            try:
+                activity_store.add_event(target_entity, target_id, event_type, payload, actor=getattr(request.state, "user", None))
+            except Exception:
+                pass
+
+    feed_cfg = transformation.get("feed") if isinstance(transformation.get("feed"), dict) else {}
+    if feed_cfg.get("enabled") is True:
+        targets = feed_cfg.get("targets") if isinstance(feed_cfg.get("targets"), list) else ["source"]
+        message = _render_transform_feed_message(feed_cfg.get("message"), source_entity, source_id, target_entity, target_id)
+        if "source" in targets:
+            _add_chatter_entry(source_entity, source_id, "system", message, getattr(request.state, "user", None))
+        if "target" in targets:
+            _add_chatter_entry(target_entity, target_id, "system", message, getattr(request.state, "user", None))
+
+    hooks_cfg = transformation.get("hooks") if isinstance(transformation.get("hooks"), dict) else {}
+    emit_events = hooks_cfg.get("emit_events") if isinstance(hooks_cfg.get("emit_events"), list) else []
+    hook_payload = {
+        "transformation_key": transformation_key,
+        "source_entity_id": source_entity,
+        "source_record_id": source_id,
+        "target_entity_id": target_entity,
+        "target_record_id": target_id,
+        "child_created": child_created_count,
+        "action_id": action_id,
+    }
+    for event_name in emit_events:
+        if isinstance(event_name, str) and event_name:
+            _emit_transform_hook_event(request, module_id, manifest, event_name, hook_payload)
+
+    _emit_triggers(
+        request,
+        module_id,
+        manifest,
+        "record.created",
+        {
+            "entity_id": target_found[1].get("id"),
+            "record_id": target_id,
+            "changed_fields": sorted((target_record or {}).keys()),
+            "record": _automation_record_snapshot(target_record, target_found[1]),
+            "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
+            "timestamp": _now(),
+        },
+        entity_id=target_found[1].get("id"),
+    )
+    _emit_triggers(
+        request,
+        module_id,
+        manifest,
+        "action.clicked",
+        {
+            "action_id": action_id,
+            "kind": "transform_record",
+            "entity_id": source_found[1].get("id"),
+            "record_id": target_id,
+            "source_record_id": source_id,
+            "target_entity_id": target_found[1].get("id"),
+            "changed_fields": sorted((target_record or {}).keys()),
+            "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
+            "timestamp": _now(),
+        },
+        action_id=action_id,
+    )
+    phase_ms["total"] = (time.perf_counter() - action_start) * 1000
+    _action_logger.info("action_perf=%s", {"action_id": action_id, "kind": "transform_record", "ms": phase_ms})
+    return _ok_response(
+        {
+            "result": {
+                "record_id": target_id,
+                "record": target_record,
+                "entity_id": target_entity,
+                "kind": "transform_record",
+                "transformation_key": transformation_key,
+                "source_record_id": source_id,
+                "source_entity_id": source_entity,
+                "child_created": child_created_count,
+            }
+        }
+    )
+
+
 @app.post("/actions/run")
 async def run_action(request: Request) -> dict:
     body = await _safe_json(request)
@@ -8919,7 +10043,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
     if kind not in ALLOWED_ACTION_KINDS:
         return _error_response("ACTION_INVALID", "Action kind not allowed", "kind", status=400)
     actor = getattr(request.state, "actor", None)
-    if kind in {"create_record", "update_record", "bulk_update"}:
+    if kind in {"create_record", "update_record", "bulk_update", "transform_record"}:
         denied = _require_capability(actor, "records.write", "Write access required")
         if denied:
             return denied
@@ -8959,6 +10083,20 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
             action_id=action_id,
         )
         return _ok_response({"result": {"kind": kind, "target": action.get("target")}})
+
+    if kind == "transform_record":
+        return _run_transform_record_action(
+            request=request,
+            module_id=module_id,
+            manifest=manifest,
+            compiled=compiled if isinstance(compiled, dict) else None,
+            action_id=action_id,
+            action=action,
+            context=context,
+            actor=actor,
+            phase_ms=phase_ms,
+            action_start=action_start,
+        )
 
     entity_id = action.get("entity_id")
     if not isinstance(entity_id, str) or not entity_id:
@@ -9005,6 +10143,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
         created_record = record.get("record") if isinstance(record, dict) else None
         created_id = record.get("record_id") if isinstance(record, dict) else None
         if created_id and isinstance(created_record, dict):
+            created_snapshot = _automation_record_snapshot(created_record, entity_def)
             _emit_triggers(
                 request,
                 module_id,
@@ -9014,6 +10153,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                     "entity_id": entity_def.get("id"),
                     "record_id": created_id,
                     "changed_fields": sorted(created_record.keys()),
+                    "record": created_snapshot,
                     "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
                     "timestamp": _now(),
                 },
@@ -9097,6 +10237,8 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                     except Exception:
                         pass
         if isinstance(after_record, dict):
+            before_snapshot = _automation_record_snapshot(before_record, entity_def)
+            after_snapshot = _automation_record_snapshot(after_record, entity_def)
             _emit_triggers(
                 request,
                 module_id,
@@ -9106,6 +10248,8 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                     "entity_id": entity_def.get("id"),
                     "record_id": record_id,
                     "changed_fields": changed,
+                    "before": before_snapshot,
+                    "after": after_snapshot,
                     "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
                     "timestamp": _now(),
                 },
@@ -9124,6 +10268,8 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                         "changed_fields": [status_field],
                         "from": before_record.get(status_field),
                         "to": after_record.get(status_field),
+                        "before": before_snapshot,
+                        "after": after_snapshot,
                         "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
                         "timestamp": _now(),
                     },
@@ -9196,6 +10342,8 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                         except Exception:
                             pass
             if isinstance(after_record, dict):
+                before_snapshot = _automation_record_snapshot(before_record, entity_def)
+                after_snapshot = _automation_record_snapshot(after_record, entity_def)
                 _emit_triggers(
                     request,
                     module_id,
@@ -9205,6 +10353,8 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                         "entity_id": entity_def.get("id"),
                         "record_id": record_id,
                         "changed_fields": changed,
+                        "before": before_snapshot,
+                        "after": after_snapshot,
                         "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
                         "timestamp": _now(),
                     },
@@ -9223,6 +10373,8 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                             "changed_fields": [status_field],
                             "from": before_record.get(status_field),
                             "to": after_record.get(status_field),
+                            "before": before_snapshot,
+                            "after": after_snapshot,
                             "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
                             "timestamp": _now(),
                         },
@@ -9460,6 +10612,7 @@ async def lookup_options(request: Request, entity_id: str) -> dict:
     found = _find_entity_def(request, entity_id)
     if not found:
         return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "entity_id", status=404)
+    actor_ctx = _actor_domain_context(getattr(request.state, "actor", None))
     body = await _safe_json(request)
     q = body.get("q") if isinstance(body, dict) else None
     limit = body.get("limit") if isinstance(body, dict) else None
@@ -9473,7 +10626,10 @@ async def lookup_options(request: Request, entity_id: str) -> dict:
     if isinstance(q, str) and len(q.strip()) < 2:
         return _ok_response({"records": []})
     display_field = found[1].get("display_field") if isinstance(found[1], dict) else None
-    cache_key = f"lookup:{get_org_id()}:{entity_id}:{display_field}:{limit_cap}:{q or ''}:{_domain_hash(domain)}:{_context_hash(record_context)}"
+    cache_key = (
+        f"lookup:{get_org_id()}:{entity_id}:{display_field}:{limit_cap}:{q or ''}:"
+        f"{_domain_hash(domain)}:{_context_hash(record_context)}:{_context_hash(actor_ctx)}"
+    )
     cached = _resp_cache_get(cache_key)
     if cached is not None:
         logger.info("cache_hit=lookup key=%s", cache_key)
@@ -9484,7 +10640,7 @@ async def lookup_options(request: Request, entity_id: str) -> dict:
     else:
         items = generic_records.list_lookup(entity_id, display_field, limit=limit_cap, q=q)
     if domain:
-        items = _filter_records_by_domain(items, domain, record_context or {})
+        items = _filter_records_by_domain(items, domain, record_context or {}, actor_ctx)
     if isinstance(limit_cap, int) and limit_cap > 0:
         items = items[:limit_cap]
     response = _ok_response({"records": items})
@@ -9504,6 +10660,7 @@ async def aggregate_records(
     domain: str | None = None,
     limit: int = 2000,
 ) -> dict:
+    actor_ctx = _actor_domain_context(getattr(request.state, "actor", None))
     entity_id = _normalize_entity_id(entity_id)
     found = _find_entity_def(request, entity_id)
     if not found:
@@ -9522,7 +10679,7 @@ async def aggregate_records(
         limit_cap = 5000
     items = generic_records.list(entity_id, limit=limit_cap, q=q, search_fields=fields_list)
     if parsed_domain:
-        items = _filter_records_by_domain(items, parsed_domain, {})
+        items = _filter_records_by_domain(items, parsed_domain, {}, actor_ctx)
     if isinstance(limit_cap, int) and limit_cap > 0:
         items = items[:limit_cap]
     if not isinstance(measure, str) or not measure:
@@ -9561,6 +10718,7 @@ async def pivot_records(
     domain: str | None = None,
     limit: int = 2000,
 ) -> dict:
+    actor_ctx = _actor_domain_context(getattr(request.state, "actor", None))
     entity_id = _normalize_entity_id(entity_id)
     found = _find_entity_def(request, entity_id)
     if not found:
@@ -9579,7 +10737,7 @@ async def pivot_records(
         limit_cap = 5000
     items = generic_records.list(entity_id, limit=limit_cap, q=q, search_fields=fields_list)
     if parsed_domain:
-        items = _filter_records_by_domain(items, parsed_domain, {})
+        items = _filter_records_by_domain(items, parsed_domain, {}, actor_ctx)
     if isinstance(limit_cap, int) and limit_cap > 0:
         items = items[:limit_cap]
     if not isinstance(measure, str) or not measure:
@@ -9645,6 +10803,347 @@ async def pivot_records(
     )
 
 
+@app.get("/system/interfaces/sources")
+async def system_interface_sources(request: Request, kind: str | None = None) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "records.read", "Read access required")
+    if denied:
+        return denied
+    allowed_kinds = {"schedulable", "documentable", "dashboardable"}
+    if kind is not None and kind not in allowed_kinds:
+        return _error_response("INTERFACE_INVALID", "kind must be schedulable|documentable|dashboardable", "kind", status=400)
+    kinds = [kind] if isinstance(kind, str) else sorted(allowed_kinds)
+    data = {k: _collect_interface_sources(request, k) for k in kinds}
+    return _ok_response({"sources": data})
+
+
+@app.get("/system/calendar/sources")
+async def system_calendar_sources(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "records.read", "Read access required")
+    if denied:
+        return denied
+    sources = _collect_interface_sources(request, "schedulable")
+    return _ok_response({"sources": sources})
+
+
+@app.get("/system/calendar/events")
+async def system_calendar_events(
+    request: Request,
+    source_key: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    q: str | None = None,
+    mine: bool = False,
+    limit: int = 500,
+) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "records.read", "Read access required")
+    if denied:
+        return denied
+    start_dt = _to_datetime(start) if isinstance(start, str) and start else None
+    end_dt = _to_datetime(end) if isinstance(end, str) and end else None
+    if isinstance(start, str) and start and start_dt is None:
+        return _error_response("DATE_INVALID", "start must be ISO date/datetime", "start", status=400)
+    if isinstance(end, str) and end and end_dt is None:
+        return _error_response("DATE_INVALID", "end must be ISO date/datetime", "end", status=400)
+    limit_cap = max(1, min(int(limit or 500), 2000))
+    sources = _collect_interface_sources(request, "schedulable")
+    if source_key:
+        selected = _find_source_by_key(sources, source_key)
+        if not selected:
+            return _error_response("SOURCE_NOT_FOUND", "source_key not found", "source_key", status=404)
+        sources = [selected]
+    per_source_cap = max(50, min(500, int(limit_cap / max(1, len(sources))) + 25))
+    user_id = actor.get("user_id") if isinstance(actor, dict) else None
+    events: list[dict] = []
+    for source in sources:
+        entity_id = source.get("entity_id")
+        cfg = source.get("config") if isinstance(source.get("config"), dict) else {}
+        if not isinstance(entity_id, str):
+            continue
+        date_start_field = cfg.get("date_start")
+        title_field = cfg.get("title_field")
+        if not isinstance(date_start_field, str) or not isinstance(title_field, str):
+            continue
+        fields = [title_field, date_start_field]
+        for maybe in ("date_end", "owner_field", "location_field", "status_field", "all_day_field", "color_field"):
+            field_id = cfg.get(maybe)
+            if isinstance(field_id, str) and field_id:
+                fields.append(field_id)
+        fields = list(dict.fromkeys(fields))
+        items = _records_list_page_all(entity_id, fields=fields, q=q, search_fields=[title_field], cap=per_source_cap)
+        for item in items:
+            record = item.get("record") if isinstance(item, dict) else None
+            record_id = item.get("record_id") if isinstance(item, dict) else None
+            if not isinstance(record, dict) or not isinstance(record_id, str):
+                continue
+            owner_field = cfg.get("owner_field")
+            if mine and isinstance(owner_field, str) and user_id:
+                if record.get(owner_field) != user_id:
+                    continue
+            start_value = _record_value(record, date_start_field)
+            start_value_dt = _to_datetime(start_value)
+            if start_dt and start_value_dt and start_value_dt < start_dt:
+                continue
+            end_field = cfg.get("date_end")
+            end_value = _record_value(record, end_field) if isinstance(end_field, str) else None
+            end_value_dt = _to_datetime(end_value) if end_value is not None else start_value_dt
+            if end_dt and end_value_dt and end_value_dt > end_dt:
+                continue
+            events.append(
+                {
+                    "source_key": source.get("source_key"),
+                    "module_id": source.get("module_id"),
+                    "entity_id": entity_id,
+                    "record_id": record_id,
+                    "title": _record_value(record, title_field) or record_id,
+                    "start": start_value,
+                    "end": end_value,
+                    "owner": _record_value(record, cfg.get("owner_field")),
+                    "location": _record_value(record, cfg.get("location_field")),
+                    "status": _record_value(record, cfg.get("status_field")),
+                    "all_day": _record_value(record, cfg.get("all_day_field")),
+                    "color": _record_value(record, cfg.get("color_field")),
+                    "record": record,
+                }
+            )
+            if len(events) >= limit_cap:
+                break
+        if len(events) >= limit_cap:
+            break
+    return _ok_response({"events": events[:limit_cap], "sources": sources})
+
+
+@app.get("/system/documents/sources")
+async def system_documents_sources(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "records.read", "Read access required")
+    if denied:
+        return denied
+    sources = _collect_interface_sources(request, "documentable")
+    return _ok_response({"sources": sources})
+
+
+@app.get("/system/documents/items")
+async def system_document_items(
+    request: Request,
+    source_key: str | None = None,
+    q: str | None = None,
+    mine: bool = False,
+    limit: int = 500,
+) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "records.read", "Read access required")
+    if denied:
+        return denied
+    limit_cap = max(1, min(int(limit or 500), 2000))
+    sources = _collect_interface_sources(request, "documentable")
+    if source_key:
+        selected = _find_source_by_key(sources, source_key)
+        if not selected:
+            return _error_response("SOURCE_NOT_FOUND", "source_key not found", "source_key", status=404)
+        sources = [selected]
+    per_source_cap = max(50, min(600, int(limit_cap / max(1, len(sources))) + 25))
+    user_id = actor.get("user_id") if isinstance(actor, dict) else None
+    items_out: list[dict] = []
+    for source in sources:
+        entity_id = source.get("entity_id")
+        cfg = source.get("config") if isinstance(source.get("config"), dict) else {}
+        if not isinstance(entity_id, str):
+            continue
+        attachment_field = cfg.get("attachment_field")
+        if not isinstance(attachment_field, str) or not attachment_field:
+            continue
+        title_field = cfg.get("title_field")
+        owner_field = cfg.get("owner_field")
+        category_field = cfg.get("category_field")
+        date_field = cfg.get("date_field")
+        label_field = cfg.get("record_label_field")
+        fields = [attachment_field]
+        for field_id in (title_field, owner_field, category_field, date_field, label_field):
+            if isinstance(field_id, str) and field_id:
+                fields.append(field_id)
+        fields = list(dict.fromkeys(fields))
+        search_fields = [title_field] if isinstance(title_field, str) and title_field else None
+        records = _records_list_page_all(entity_id, fields=fields, q=q, search_fields=search_fields, cap=per_source_cap)
+        for item in records:
+            record = item.get("record") if isinstance(item, dict) else None
+            record_id = item.get("record_id") if isinstance(item, dict) else None
+            if not isinstance(record, dict) or not isinstance(record_id, str):
+                continue
+            if mine and isinstance(owner_field, str) and user_id and record.get(owner_field) != user_id:
+                continue
+            attachment_items = _extract_attachment_items(record.get(attachment_field))
+            if not attachment_items:
+                continue
+            record_title = None
+            for candidate in (title_field, label_field):
+                if isinstance(candidate, str) and record.get(candidate):
+                    record_title = record.get(candidate)
+                    break
+            if record_title is None:
+                record_title = record_id
+            for attachment in attachment_items:
+                items_out.append(
+                    {
+                        "source_key": source.get("source_key"),
+                        "module_id": source.get("module_id"),
+                        "entity_id": entity_id,
+                        "record_id": record_id,
+                        "record_label": record_title,
+                        "attachment_field": attachment_field,
+                        "attachment": attachment,
+                        "owner": _record_value(record, owner_field),
+                        "category": _record_value(record, category_field),
+                        "date": _record_value(record, date_field),
+                        "preview_enabled": cfg.get("preview_enabled") is not False,
+                        "allow_delete": cfg.get("allow_delete") is True,
+                        "allow_download": cfg.get("allow_download") is not False,
+                    }
+                )
+                if len(items_out) >= limit_cap:
+                    break
+            if len(items_out) >= limit_cap:
+                break
+        if len(items_out) >= limit_cap:
+            break
+    return _ok_response({"items": items_out[:limit_cap], "sources": sources})
+
+
+@app.get("/system/dashboard/sources")
+async def system_dashboard_sources(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "records.read", "Read access required")
+    if denied:
+        return denied
+    sources = _collect_interface_sources(request, "dashboardable")
+    return _ok_response({"sources": sources})
+
+
+@app.post("/system/dashboard/query")
+async def system_dashboard_query(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "records.read", "Read access required")
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    source_key = body.get("source_key") if isinstance(body, dict) else None
+    group_by = body.get("group_by") if isinstance(body, dict) else None
+    measure = body.get("measure") if isinstance(body, dict) else None
+    date_field = body.get("date_field") if isinstance(body, dict) else None
+    start = body.get("start") if isinstance(body, dict) else None
+    end = body.get("end") if isinstance(body, dict) else None
+    limit = body.get("limit") if isinstance(body, dict) else 2000
+    q = body.get("q") if isinstance(body, dict) else None
+    source_filter = body.get("filter") if isinstance(body, dict) else None
+    sources = _collect_interface_sources(request, "dashboardable")
+    source = _find_source_by_key(sources, source_key)
+    if not source:
+        return _error_response("SOURCE_NOT_FOUND", "source_key not found", "source_key", status=404)
+    cfg = source.get("config") if isinstance(source.get("config"), dict) else {}
+    entity_id = source.get("entity_id")
+    if not isinstance(entity_id, str):
+        return _error_response("SOURCE_INVALID", "source entity missing", "source_key", status=400)
+    limit_cap = max(1, min(int(limit or 2000), 5000))
+    date_field_effective = date_field if isinstance(date_field, str) and date_field else (cfg.get("date_field") if isinstance(cfg.get("date_field"), str) else None)
+    fields: list[str] = []
+    if isinstance(group_by, str) and group_by:
+        fields.append(group_by)
+    if isinstance(measure, str) and measure.startswith("sum:"):
+        fields.append(measure.split(":", 1)[1])
+    if isinstance(date_field_effective, str):
+        fields.append(date_field_effective)
+    fields = list(dict.fromkeys([f for f in fields if isinstance(f, str) and f]))
+    items = _records_list_page_all(entity_id, fields=fields or None, q=q, cap=limit_cap)
+    start_dt = _to_datetime(start) if isinstance(start, str) and start else None
+    end_dt = _to_datetime(end) if isinstance(end, str) and end else None
+    filtered: list[dict] = []
+    for item in items:
+        record = item.get("record") if isinstance(item, dict) else None
+        if not isinstance(record, dict):
+            continue
+        if start_dt and isinstance(date_field_effective, str):
+            value_dt = _to_datetime(record.get(date_field_effective))
+            if value_dt and value_dt < start_dt:
+                continue
+        if end_dt and isinstance(date_field_effective, str):
+            value_dt = _to_datetime(record.get(date_field_effective))
+            if value_dt and value_dt > end_dt:
+                continue
+        if isinstance(source_filter, dict):
+            try:
+                if not eval_condition(source_filter, {"record": record}):
+                    continue
+            except Exception:
+                continue
+        filtered.append(item)
+    effective_measure = measure if isinstance(measure, str) and measure else "count"
+    measure_field = effective_measure.split(":", 1)[1] if effective_measure.startswith("sum:") else None
+    if not isinstance(group_by, str) or not group_by:
+        if measure_field:
+            total = 0.0
+            for item in filtered:
+                record = item.get("record") or {}
+                try:
+                    total += float(record.get(measure_field) or 0)
+                except Exception:
+                    continue
+            return _ok_response(
+                {
+                    "source": source,
+                    "measure": effective_measure,
+                    "value": total,
+                    "count": len(filtered),
+                }
+            )
+        return _ok_response(
+            {
+                "source": source,
+                "measure": "count",
+                "value": len(filtered),
+            }
+        )
+    groups: dict[str, float] = {}
+    for item in filtered:
+        record = item.get("record") or {}
+        key = record.get(group_by)
+        key_text = str(key) if key is not None else ""
+        if measure_field:
+            try:
+                value = float(record.get(measure_field) or 0)
+            except Exception:
+                value = 0.0
+            groups[key_text] = groups.get(key_text, 0.0) + value
+        else:
+            groups[key_text] = groups.get(key_text, 0.0) + 1.0
+    output = [{"key": key, "value": value} for key, value in groups.items()]
+    output.sort(key=lambda row: row.get("value", 0), reverse=True)
+    return _ok_response(
+        {
+            "source": source,
+            "group_by": group_by,
+            "measure": effective_measure,
+            "groups": output,
+            "count": len(filtered),
+        }
+    )
+
+
 @app.get("/records/{entity_id}")
 async def list_generic_records(
     request: Request,
@@ -9678,7 +11177,11 @@ async def list_generic_records(
             parsed_domain = json.loads(domain)
         except Exception as exc:
             return _error_response("DOMAIN_INVALID", "domain must be valid JSON", "domain", detail={"error": str(exc)}, status=400)
-    cache_key = f"records:list:{get_org_id()}:{entity_id}:{limit_cap}:{offset_val}:{cursor or ''}:{fields or ''}:{search_fields or ''}:{q or ''}:{_domain_hash(parsed_domain)}"
+    actor_ctx = _actor_domain_context(actor)
+    cache_key = (
+        f"records:list:{get_org_id()}:{entity_id}:{limit_cap}:{offset_val}:{cursor or ''}:{fields or ''}:"
+        f"{search_fields or ''}:{q or ''}:{_domain_hash(parsed_domain)}:{_context_hash(actor_ctx)}"
+    )
     cached = _resp_cache_get(cache_key)
     if cached is not None:
         logger.info("cache_hit=records_list key=%s", cache_key)
@@ -9698,7 +11201,7 @@ async def list_generic_records(
         items = generic_records.list(entity_id, limit=limit_cap, offset=offset_val, q=q, search_fields=fields_list)
         next_cursor = None
     if parsed_domain:
-        items = _filter_records_by_domain(items, parsed_domain, {})
+        items = _filter_records_by_domain(items, parsed_domain, {}, actor_ctx)
     if isinstance(limit_cap, int) and limit_cap > 0:
         items = items[:limit_cap]
     if isinstance(field_ids, list) and field_ids:
@@ -10099,6 +11602,41 @@ def _enrich_template_record(record: dict, entity_def: dict | None) -> dict:
     return enriched
 
 
+def _expand_dotted_fields(values: dict) -> dict:
+    nested: dict = {}
+    for raw_key, raw_value in (values or {}).items():
+        if not isinstance(raw_key, str) or not raw_key:
+            continue
+        parts = [part for part in raw_key.split(".") if part]
+        if not parts:
+            continue
+        current = nested
+        for idx, part in enumerate(parts):
+            if idx == len(parts) - 1:
+                current[part] = raw_value
+                continue
+            child = current.get(part)
+            if not isinstance(child, dict):
+                child = {}
+                current[part] = child
+            current = child
+    return nested
+
+
+def _automation_record_snapshot(record: dict | None, entity_def: dict | None) -> dict | None:
+    if not isinstance(record, dict):
+        return None
+    flat = _enrich_template_record(record, entity_def)
+    fields = _expand_dotted_fields(flat)
+    for key, value in flat.items():
+        if not isinstance(key, str) or "." not in key:
+            continue
+        short = key.split(".", 1)[1]
+        if short and short not in fields:
+            fields[short] = value
+    return {"fields": fields, "flat": flat}
+
+
 @app.put("/prefs/ui")
 async def set_ui_prefs(request: Request) -> dict:
     actor = _resolve_actor(request)
@@ -10206,6 +11744,7 @@ async def create_generic_record(request: Request, entity_id: str) -> dict:
     record_id = record.get("record_id") if isinstance(record, dict) else None
     record_payload = record.get("record") if isinstance(record, dict) else None
     if record_id and isinstance(record_payload, dict):
+        created_snapshot = _automation_record_snapshot(record_payload, found[1])
         _emit_triggers(
             request,
             found[0],
@@ -10215,6 +11754,7 @@ async def create_generic_record(request: Request, entity_id: str) -> dict:
                 "entity_id": found[1].get("id"),
                 "record_id": record_id,
                 "changed_fields": sorted(record_payload.keys()),
+                "record": created_snapshot,
                 "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
                 "timestamp": _now(),
             },
@@ -10311,6 +11851,8 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
                 except Exception:
                     pass
         changed = _changed_fields(before_record, after_record)
+        before_snapshot = _automation_record_snapshot(before_record, found[1])
+        after_snapshot = _automation_record_snapshot(after_record, found[1])
         _emit_triggers(
             request,
             found[0],
@@ -10320,6 +11862,8 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
                 "entity_id": found[1].get("id"),
                 "record_id": record_id,
                 "changed_fields": changed,
+                "before": before_snapshot,
+                "after": after_snapshot,
                 "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
                 "timestamp": _now(),
             },
@@ -10338,6 +11882,8 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
                     "changed_fields": [status_field],
                     "from": before_record.get(status_field),
                     "to": after_record.get(status_field),
+                    "before": before_snapshot,
+                    "after": after_snapshot,
                     "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
                     "timestamp": _now(),
                 },

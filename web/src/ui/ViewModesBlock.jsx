@@ -8,16 +8,19 @@ import {
   ChevronRight,
   Columns2,
   Columns3,
+  Download,
   Filter,
   LineChart,
   List,
   ListFilter,
+  MoreHorizontal,
   PieChart,
   Plus,
   RefreshCw,
   Ruler,
   Search,
   Table2,
+  Upload,
 } from "lucide-react";
 import { apiFetch } from "../api.js";
 import { supabase } from "../supabase.js";
@@ -140,6 +143,112 @@ function buildFieldIndex(manifest, entityFullId) {
   return index;
 }
 
+function normalizeEnumOptions(options) {
+  if (!Array.isArray(options)) return [];
+  return options
+    .map((opt) => {
+      if (typeof opt === "string") return { value: opt, label: opt };
+      if (opt && typeof opt === "object") {
+        const value = opt.value ?? opt.id ?? opt.key;
+        if (value == null) return null;
+        return { value, label: opt.label ?? value };
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
+
+function csvEscape(value, delimiter = ",") {
+  if (value === null || value === undefined) return "";
+  const text = String(value);
+  if (!text.includes("\"") && !text.includes("\n") && !text.includes("\r") && !text.includes(delimiter)) {
+    return text;
+  }
+  return `"${text.replaceAll("\"", "\"\"")}"`;
+}
+
+function makeDelimitedContent(headers, rows, delimiter = ",") {
+  const headerLine = headers.map((value) => csvEscape(value, delimiter)).join(delimiter);
+  const bodyLines = rows.map((row) => row.map((value) => csvEscape(value, delimiter)).join(delimiter));
+  return [headerLine, ...bodyLines].join("\r\n");
+}
+
+function downloadTextFile(filename, content, mime = "text/plain;charset=utf-8") {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
+
+function suggestEntitySlug(entityFullId) {
+  if (!entityFullId) return "records";
+  return String(entityFullId)
+    .replace(/^entity\./, "")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase() || "records";
+}
+
+function parseCsvText(text) {
+  const rows = [];
+  let cur = "";
+  let row = [];
+  let inQuotes = false;
+  const source = String(text || "").replace(/^\uFEFF/, "");
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i];
+    const next = source[i + 1];
+    if (inQuotes) {
+      if (ch === "\"" && next === "\"") {
+        cur += "\"";
+        i += 1;
+        continue;
+      }
+      if (ch === "\"") {
+        inQuotes = false;
+        continue;
+      }
+      cur += ch;
+      continue;
+    }
+    if (ch === "\"") {
+      inQuotes = true;
+      continue;
+    }
+    if (ch === ",") {
+      row.push(cur);
+      cur = "";
+      continue;
+    }
+    if (ch === "\n") {
+      row.push(cur);
+      rows.push(row);
+      row = [];
+      cur = "";
+      continue;
+    }
+    if (ch === "\r") continue;
+    cur += ch;
+  }
+  if (cur !== "" || row.length > 0) {
+    row.push(cur);
+    rows.push(row);
+  }
+  return rows;
+}
+
+function normalizeFieldLookupKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
 function getByPath(data, path) {
   if (!data || typeof data !== "object" || typeof path !== "string") return undefined;
   if (path in data) return data[path];
@@ -193,7 +302,11 @@ function resolveConditionRefs(condition, record) {
     if (operand && typeof operand === "object" && typeof operand.ref === "string") {
       if (operand.ref === "$record.id") return record?.id;
       if (operand.ref.startsWith("$record.")) return getByPath(record, operand.ref.slice("$record.".length));
-      return getByPath(record, operand.ref);
+      if (operand.ref.startsWith("record.")) return getByPath(record, operand.ref.slice("record.".length));
+      const resolved = getByPath(record, operand.ref);
+      // Keep unresolved refs (for example $actor.user_id) for backend evaluation.
+      if (resolved === undefined) return operand;
+      return resolved;
     }
     return operand;
   };
@@ -1047,6 +1160,13 @@ function PivotView({ data, measure }) {
   if (!data || !Array.isArray(data.rows) || !Array.isArray(data.cols)) {
     return <div className="text-sm opacity-60">No data</div>;
   }
+  const humanize = (value) =>
+    String(value || "")
+      .split(".")
+      .pop()
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (m) => m.toUpperCase());
+  const rowHeader = data?.row_group_by ? humanize(data.row_group_by) : "Row";
   const formatValue = (value) => {
     if (measure?.startsWith("sum:")) return Number(value || 0).toFixed(2);
     return String(value || 0);
@@ -1056,7 +1176,7 @@ function PivotView({ data, measure }) {
       <table className="table table-sm">
         <thead>
           <tr>
-            <th className="bg-base-300">Row</th>
+            <th className="bg-base-300">{rowHeader}</th>
             {data.cols.map((col) => (
               <th key={col.key} className="bg-base-300">
                 {col.label || "(empty)"}
@@ -1128,6 +1248,19 @@ export default function ViewModesBlock({
   const [refreshTick, setRefreshTick] = useState(0);
   const [listPage, setListPage] = useState(0);
   const [listTotalItems, setListTotalItems] = useState(0);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState("csv");
+  const [exportColumnScope, setExportColumnScope] = useState("visible");
+  const [exportBusy, setExportBusy] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importFileName, setImportFileName] = useState("");
+  const [importParseError, setImportParseError] = useState("");
+  const [importHeaders, setImportHeaders] = useState([]);
+  const [importRows, setImportRows] = useState([]);
+  const [importMappedFields, setImportMappedFields] = useState([]);
+  const [importUnmappedHeaders, setImportUnmappedHeaders] = useState([]);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importResult, setImportResult] = useState(null);
   const prefsLoadedRef = useRef(false);
   const bootstrapUsedRef = useRef(null);
 
@@ -1175,7 +1308,7 @@ export default function ViewModesBlock({
     if (!groupByParam) return false;
     if (groupByFieldDef?.readonly) return false;
     const t = String(groupByFieldDef?.type || "").toLowerCase();
-    return t === "enum" || t === "string" || t === "number" || t === "bool";
+    return t === "enum" || t === "string" || t === "number" || t === "bool" || t === "user";
   }, [canWriteRecords, previewMode, groupByParam, groupByFieldDef]);
 
   function castGroupValue(rawValue) {
@@ -1266,6 +1399,7 @@ export default function ViewModesBlock({
   const activeMode = forceListOnly ? "list" : (resolvedModes.find((m) => m.mode === modeParam)?.mode || defaultMode);
   const activeModeDef = resolvedModes.find((m) => m.mode === activeMode) || resolvedModes[0] || null;
   const activeView = activeModeDef?.view || null;
+  const activeViewKind = String(activeView?.kind || activeView?.type || "").toLowerCase();
 
   const listView = resolvedModes.find((m) => m.mode === "list")?.view || activeView;
   const searchFields = Array.isArray(listView?.header?.search?.fields) ? listView.header.search.fields : [];
@@ -1275,6 +1409,9 @@ export default function ViewModesBlock({
   const graphGroupBy = graphGroupByParam || groupByParam || graphDefault.group_by || "";
   const graphMeasure = graphMeasureParam || graphDefault.measure || "count";
   const showGraphMode = activeMode === "graph";
+  const showListMode = activeMode === "list";
+  const showKanbanMode = activeMode === "kanban";
+  const showCalendarMode = activeMode === "calendar";
   const listPageSize = Number.isFinite(Number(listView?.page_size)) && Number(listView?.page_size) > 0
     ? Number(listView?.page_size)
     : 25;
@@ -1566,8 +1703,17 @@ export default function ViewModesBlock({
   }
 
   function handlePivotRowChange(value) {
-    updateParam("pivot_row_group_by", value);
-    updateParam("group_by", value);
+    if (!setSearchParams) return;
+    const params = new URLSearchParams(searchParams || "");
+    if (value) {
+      params.set("pivot_row_group_by", value);
+      params.set("group_by", value);
+    } else {
+      params.delete("pivot_row_group_by");
+      params.delete("group_by");
+    }
+    params.delete("record");
+    setSearchParams(params, { replace: true });
   }
 
   function handlePivotColChange(value) {
@@ -1702,10 +1848,36 @@ export default function ViewModesBlock({
 
   const openRecordTarget = listView?.open_record?.to || resolveEntityDefaultFormPage(appDefaults, entityFullId);
   const openRecordParam = listView?.open_record?.param || "record";
+  const selectedRows = useMemo(() => {
+    if (!Array.isArray(records) || !selectedIds.length) return [];
+    const selected = new Set(selectedIds.map((id) => String(id)));
+    return records.filter((row) => {
+      const rowId = row?.record_id || row?.record?.id;
+      return rowId && selected.has(String(rowId));
+    });
+  }, [records, selectedIds]);
+  const visibleExportFields = useMemo(() => {
+    const cols = Array.isArray(listView?.columns) ? listView.columns : [];
+    return cols.map((col) => col?.field_id).filter(Boolean);
+  }, [listView]);
+  const allExportFields = useMemo(() => {
+    const fields = Array.isArray(entityDef?.fields) ? entityDef.fields : [];
+    return fields.map((field) => field?.id).filter(Boolean);
+  }, [entityDef]);
+  const templateFieldDefs = useMemo(() => {
+    const fields = Array.isArray(entityDef?.fields) ? entityDef.fields : [];
+    return fields.filter((field) => {
+      if (!field?.id) return false;
+      if (field.readonly) return false;
+      if (field.type === "attachments") return false;
+      if (field.type === "uuid") return false;
+      return true;
+    });
+  }, [entityDef]);
 
   const filterableFields = useMemo(() => {
     if (!entityDef || !Array.isArray(entityDef.fields)) return [];
-    return entityDef.fields.filter((f) => f?.id && ["string", "text", "enum", "bool", "date", "datetime", "number"].includes(f.type));
+    return entityDef.fields.filter((f) => f?.id && ["string", "text", "enum", "bool", "date", "datetime", "number", "user"].includes(f.type));
   }, [entityDef]);
   const measureOptions = useMemo(() => {
     const opts = [{ value: "count", label: "Count" }];
@@ -1725,6 +1897,285 @@ export default function ViewModesBlock({
   const showGroupBy = !forceListOnly && (activeMode === "kanban" || activeMode === "graph" || activeMode === "pivot") && filterableFields.length > 0;
   const showGraphMeasure = activeMode === "graph" && measureOptions.length > 0;
   const showPivotMeasure = activeMode === "pivot" && measureOptions.length > 0;
+
+  function formatExportValue(fieldDef, rawValue, lookupLabels, memberLabels) {
+    if (rawValue === null || rawValue === undefined) return "";
+    const type = String(fieldDef?.type || "").toLowerCase();
+    if (type === "enum") {
+      const option = normalizeEnumOptions(fieldDef?.options).find((item) => String(item.value) === String(rawValue));
+      return String(option?.label ?? rawValue);
+    }
+    if (type === "lookup") {
+      const key = `${fieldDef?.id}:${String(rawValue)}`;
+      return String(lookupLabels[key] || rawValue);
+    }
+    if (type === "user") {
+      const userId = String(rawValue || "").trim();
+      return String(memberLabels[userId] || userId);
+    }
+    if (type === "users") {
+      const values = Array.isArray(rawValue)
+        ? rawValue
+        : (typeof rawValue === "string"
+            ? rawValue.split(",").map((item) => item.trim()).filter(Boolean)
+            : []);
+      return values.map((userId) => memberLabels[userId] || userId).join(", ");
+    }
+    if (Array.isArray(rawValue)) return rawValue.join(", ");
+    if (typeof rawValue === "object") return JSON.stringify(rawValue);
+    return String(rawValue);
+  }
+
+  async function buildLookupLabelMap(rows, fieldIds) {
+    const lookupFieldDefs = fieldIds
+      .map((fieldId) => fieldIndex[fieldId])
+      .filter((fieldDef) => fieldDef?.type === "lookup" && typeof fieldDef?.entity === "string");
+    if (!lookupFieldDefs.length || !rows.length) return {};
+    const pending = [];
+    for (const fieldDef of lookupFieldDefs) {
+      const targetEntityId = String(fieldDef.entity).startsWith("entity.") ? fieldDef.entity : `entity.${fieldDef.entity}`;
+      const labelField = typeof fieldDef.display_field === "string" ? fieldDef.display_field : "";
+      const ids = new Set();
+      for (const row of rows) {
+        const rec = row?.record || {};
+        const value = getByPath(rec, fieldDef.id);
+        if (value === null || value === undefined || value === "") continue;
+        ids.add(String(value));
+      }
+      for (const recordId of ids) {
+        pending.push({ fieldId: fieldDef.id, targetEntityId, labelField, recordId });
+      }
+    }
+    if (!pending.length) return {};
+    const resolved = await Promise.all(
+      pending.map(async ({ fieldId, targetEntityId, labelField, recordId }) => {
+        const cacheKey = `${fieldId}:${recordId}`;
+        try {
+          const res = await apiFetch(`/records/${encodeURIComponent(targetEntityId)}/${encodeURIComponent(recordId)}`);
+          const rec = res?.record || {};
+          const label = (labelField && rec?.[labelField]) || rec?.display_name || rec?.full_name || rec?.name || recordId;
+          return [cacheKey, String(label)];
+        } catch {
+          return [cacheKey, recordId];
+        }
+      }),
+    );
+    return Object.fromEntries(resolved);
+  }
+
+  async function fetchMemberLabelMap() {
+    try {
+      const res = await apiFetch("/access/members");
+      const rows = Array.isArray(res?.members) ? res.members : [];
+      const next = {};
+      for (const member of rows) {
+        const userId = String(member?.user_id || "").trim();
+        if (!userId) continue;
+        const name = String(member?.name || "").trim();
+        const email = String(member?.email || "").trim();
+        next[userId] = name || email || userId;
+      }
+      return next;
+    } catch {
+      return {};
+    }
+  }
+
+  async function handleExportSelectedRows() {
+    if (!selectedRows.length || exportBusy) return;
+    const fieldIds = exportColumnScope === "all" ? allExportFields : visibleExportFields;
+    if (!fieldIds.length) return;
+    setExportBusy(true);
+    try {
+      const lookupLabels = await buildLookupLabelMap(selectedRows, fieldIds);
+      const memberLabels = await fetchMemberLabelMap();
+      const headers = fieldIds.map((fieldId) => fieldIndex[fieldId]?.label || fieldId);
+      const body = selectedRows.map((row) => {
+        const rec = row?.record || {};
+        return fieldIds.map((fieldId) => {
+          const fieldDef = fieldIndex[fieldId] || null;
+          const rawValue = getByPath(rec, fieldId);
+          return formatExportValue(fieldDef, rawValue, lookupLabels, memberLabels);
+        });
+      });
+      const timestamp = new Date().toISOString().slice(0, 19).replaceAll(":", "-");
+      const entitySlug = suggestEntitySlug(entityFullId);
+      if (exportFormat === "excel") {
+        const content = makeDelimitedContent(headers, body, "\t");
+        downloadTextFile(`${entitySlug}_${timestamp}.xls`, content, "application/vnd.ms-excel;charset=utf-8");
+      } else {
+        const content = makeDelimitedContent(headers, body, ",");
+        downloadTextFile(`${entitySlug}_${timestamp}.csv`, content, "text/csv;charset=utf-8");
+      }
+      setExportModalOpen(false);
+    } finally {
+      setExportBusy(false);
+    }
+  }
+
+  function handleDownloadImportTemplate() {
+    if (!templateFieldDefs.length) return;
+    const headers = templateFieldDefs.map((field) => field.id);
+    const exampleRow = templateFieldDefs.map((field) => {
+      const type = String(field?.type || "").toLowerCase();
+      if (type === "enum") {
+        const first = normalizeEnumOptions(field?.options)[0];
+        return first?.value ?? "";
+      }
+      if (type === "number") return "0";
+      if (type === "bool") return "false";
+      if (type === "date") return "2026-03-12";
+      if (type === "datetime") return "2026-03-12T09:00:00Z";
+      if (type === "lookup" || type === "user" || type === "users") return "";
+      return "";
+    });
+    const entitySlug = suggestEntitySlug(entityFullId);
+    const content = makeDelimitedContent(headers, [exampleRow], ",");
+    downloadTextFile(`${entitySlug}_import_template.csv`, content, "text/csv;charset=utf-8");
+  }
+
+  function resetImportState() {
+    setImportFileName("");
+    setImportParseError("");
+    setImportHeaders([]);
+    setImportRows([]);
+    setImportMappedFields([]);
+    setImportUnmappedHeaders([]);
+    setImportResult(null);
+  }
+
+  function parseScalarByType(rawValue, fieldDef) {
+    const text = String(rawValue ?? "").trim();
+    if (!text) return undefined;
+    const type = String(fieldDef?.type || "").toLowerCase();
+    if (type === "number") {
+      const num = Number(text);
+      return Number.isFinite(num) ? num : text;
+    }
+    if (type === "bool" || type === "boolean") {
+      const low = text.toLowerCase();
+      if (["true", "1", "yes", "y"].includes(low)) return true;
+      if (["false", "0", "no", "n"].includes(low)) return false;
+      return text;
+    }
+    if (type === "users" || type === "tags") {
+      if (text.startsWith("[") && text.endsWith("]")) {
+        try {
+          const parsed = JSON.parse(text);
+          if (Array.isArray(parsed)) return parsed;
+        } catch {
+          // Fall back to delimiter parsing.
+        }
+      }
+      return text
+        .split(/[;,]/g)
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+    return text;
+  }
+
+  async function parseImportFile(file) {
+    if (!file) return;
+    setImportBusy(false);
+    setImportParseError("");
+    setImportResult(null);
+    setImportFileName(file.name || "");
+    try {
+      const text = await file.text();
+      const parsed = parseCsvText(text);
+      if (!parsed.length) {
+        setImportParseError("CSV is empty.");
+        setImportHeaders([]);
+        setImportRows([]);
+        setImportMappedFields([]);
+        setImportUnmappedHeaders([]);
+        return;
+      }
+      const headerRow = parsed[0].map((value) => String(value || "").trim());
+      if (!headerRow.length) {
+        setImportParseError("CSV header row is missing.");
+        return;
+      }
+      const fieldDefs = Array.isArray(templateFieldDefs) ? templateFieldDefs : [];
+      const byId = new Map();
+      const byLabel = new Map();
+      for (const field of fieldDefs) {
+        if (!field?.id) continue;
+        byId.set(normalizeFieldLookupKey(field.id), field.id);
+        if (field?.label) byLabel.set(normalizeFieldLookupKey(field.label), field.id);
+      }
+      const mappedFields = [];
+      const unmapped = [];
+      for (const header of headerRow) {
+        const key = normalizeFieldLookupKey(header);
+        const mapped = byId.get(key) || byLabel.get(key) || null;
+        mappedFields.push(mapped);
+        if (!mapped) unmapped.push(header);
+      }
+      const rows = parsed
+        .slice(1)
+        .filter((cells) => Array.isArray(cells) && cells.some((cell) => String(cell || "").trim() !== ""));
+      setImportHeaders(headerRow);
+      setImportRows(rows);
+      setImportMappedFields(mappedFields);
+      setImportUnmappedHeaders(unmapped);
+      if (!rows.length) setImportParseError("CSV has no data rows.");
+    } catch (err) {
+      setImportParseError(err?.message || "Failed to parse CSV.");
+      setImportHeaders([]);
+      setImportRows([]);
+      setImportMappedFields([]);
+      setImportUnmappedHeaders([]);
+    }
+  }
+
+  async function handleImportCsv() {
+    if (!importRows.length || importBusy) return;
+    const mappedCount = importMappedFields.filter(Boolean).length;
+    if (!mappedCount) {
+      setImportParseError("No CSV columns map to manifest fields.");
+      return;
+    }
+    setImportBusy(true);
+    setImportParseError("");
+    const successes = [];
+    const failures = [];
+    for (let rowIndex = 0; rowIndex < importRows.length; rowIndex += 1) {
+      const cells = importRows[rowIndex] || [];
+      const payload = {};
+      for (let colIndex = 0; colIndex < importMappedFields.length; colIndex += 1) {
+        const fieldId = importMappedFields[colIndex];
+        if (!fieldId) continue;
+        const rawValue = cells[colIndex];
+        const fieldDef = fieldIndex[fieldId];
+        const parsedValue = parseScalarByType(rawValue, fieldDef);
+        if (parsedValue === undefined) continue;
+        payload[fieldId] = parsedValue;
+      }
+      try {
+        const res = await apiFetch(`/records/${entityFullId}`, {
+          method: "POST",
+          body: JSON.stringify({ record: payload }),
+        });
+        const recordId = res?.record?.id || res?.record_id || null;
+        successes.push({ row: rowIndex + 2, recordId });
+      } catch (err) {
+        failures.push({
+          row: rowIndex + 2,
+          error: err?.message || "Import failed",
+        });
+      }
+    }
+    setImportBusy(false);
+    setImportResult({
+      total: importRows.length,
+      successCount: successes.length,
+      failureCount: failures.length,
+      failures: failures.slice(0, 20),
+    });
+    if (successes.length) setRefreshTick((v) => v + 1);
+  }
 
   return (
     <div className="flex flex-col gap-4 h-full min-h-0 overflow-hidden">
@@ -1882,6 +2333,33 @@ export default function ViewModesBlock({
         </div>
 
         <div className="flex items-center gap-2 min-w-[10rem] justify-end">
+          <div className="dropdown dropdown-end">
+            <DaisyTooltip label="Import / export settings" placement="top">
+              <button className={SOFT_ICON_SM} type="button" aria-label="Import export settings">
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+            </DaisyTooltip>
+            <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-64 z-50">
+              <li>
+                <button onClick={handleDownloadImportTemplate} disabled={!templateFieldDefs.length}>
+                  <Download className="h-4 w-4" />
+                  Download import template
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={() => {
+                    resetImportState();
+                    setImportModalOpen(true);
+                  }}
+                  disabled={!canWriteRecords}
+                >
+                  <Upload className="h-4 w-4" />
+                  Import CSV
+                </button>
+              </li>
+            </ul>
+          </div>
           {activeMode === "graph" && (
             <div className="join">
               <DaisyTooltip label="Bar chart" className="join-item" placement="top">
@@ -2034,6 +2512,11 @@ export default function ViewModesBlock({
           {selectedIds.length > 0 && (
             <button className={SOFT_BUTTON_SM} onClick={handleBulkDelete}>Delete ({selectedIds.length})</button>
           )}
+          {activeMode === "list" && selectedIds.length > 0 && (
+            <button className={SOFT_BUTTON_SM} onClick={() => setExportModalOpen(true)}>
+              Export ({selectedIds.length})
+            </button>
+          )}
           {bulkActions.length > 0 && selectedIds.length > 0 && (
             <div className="dropdown dropdown-end">
               <button className={SOFT_BUTTON_SM}>Bulk</button>
@@ -2063,7 +2546,7 @@ export default function ViewModesBlock({
       )}
 
       <div className={`flex-1 min-h-0 relative z-0 ${activeMode === "calendar" ? "overflow-hidden" : "overflow-auto"}`}>
-        {activeView && (activeView.kind === "list" || activeView.type === "list") && (
+        {activeView && activeViewKind === "list" && showListMode && (
           <div className="h-full min-h-0">
             <ListViewRenderer
               view={activeView}
@@ -2109,7 +2592,7 @@ export default function ViewModesBlock({
           </div>
         )}
 
-        {activeView && (activeView.kind === "kanban" || activeView.type === "kanban") && (
+        {activeView && activeViewKind === "kanban" && showKanbanMode && (
           <div className="h-full min-h-0">
             <KanbanView
               view={activeView}
@@ -2129,7 +2612,7 @@ export default function ViewModesBlock({
           </div>
         )}
 
-        {activeView && (activeView.kind === "calendar" || activeView.type === "calendar") && (
+        {activeView && activeViewKind === "calendar" && showCalendarMode && (
           <div className="h-full min-h-0 overflow-hidden">
             <CalendarView
               view={activeView}
@@ -2157,6 +2640,148 @@ export default function ViewModesBlock({
           </div>
         )}
       </div>
+
+      {exportModalOpen && (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-lg">
+            <h3 className="font-semibold text-lg">Export Selected Records</h3>
+            <div className="text-sm opacity-70 mt-1">
+              {selectedRows.length} row(s) selected in {entityLabel}.
+            </div>
+            <div className="mt-4 space-y-4">
+              <div>
+                <div className="text-xs opacity-60 mb-2">Format</div>
+                <div className="join">
+                  <button
+                    type="button"
+                    className={`${SOFT_BUTTON_SM} join-item ${exportFormat === "csv" ? "bg-base-300" : ""}`}
+                    onClick={() => setExportFormat("csv")}
+                  >
+                    CSV
+                  </button>
+                  <button
+                    type="button"
+                    className={`${SOFT_BUTTON_SM} join-item ${exportFormat === "excel" ? "bg-base-300" : ""}`}
+                    onClick={() => setExportFormat("excel")}
+                  >
+                    Excel (.xls)
+                  </button>
+                </div>
+              </div>
+              <div>
+                <div className="text-xs opacity-60 mb-2">Columns</div>
+                <div className="join">
+                  <button
+                    type="button"
+                    className={`${SOFT_BUTTON_SM} join-item ${exportColumnScope === "visible" ? "bg-base-300" : ""}`}
+                    onClick={() => setExportColumnScope("visible")}
+                  >
+                    Visible ({visibleExportFields.length})
+                  </button>
+                  <button
+                    type="button"
+                    className={`${SOFT_BUTTON_SM} join-item ${exportColumnScope === "all" ? "bg-base-300" : ""}`}
+                    onClick={() => setExportColumnScope("all")}
+                  >
+                    All ({allExportFields.length})
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="modal-action">
+              <button className="btn" onClick={() => setExportModalOpen(false)} disabled={exportBusy}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleExportSelectedRows}
+                disabled={exportBusy || selectedRows.length === 0}
+              >
+                {exportBusy ? "Preparing..." : "Download"}
+              </button>
+            </div>
+          </div>
+          <button className="modal-backdrop" type="button" onClick={() => !exportBusy && setExportModalOpen(false)}>
+            close
+          </button>
+        </div>
+      )}
+
+      {importModalOpen && (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-2xl">
+            <h3 className="font-semibold text-lg">Import CSV</h3>
+            <p className="text-sm opacity-70 mt-1">
+              Import records into {entityLabel}. Use the template to match required field ids.
+            </p>
+            <div className="mt-4 space-y-4">
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="file-input file-input-bordered file-input-sm w-full"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    parseImportFile(file || null);
+                  }}
+                  disabled={importBusy}
+                />
+              </div>
+              {importFileName && (
+                <div className="text-xs opacity-70">File: {importFileName}</div>
+              )}
+              {importHeaders.length > 0 && (
+                <div className="rounded-md border border-base-300 p-3 text-sm space-y-1">
+                  <div>Columns: {importHeaders.length}</div>
+                  <div>Mapped fields: {importMappedFields.filter(Boolean).length}</div>
+                  <div>Rows detected: {importRows.length}</div>
+                  {importUnmappedHeaders.length > 0 && (
+                    <div className="text-warning">
+                      Unmapped columns: {importUnmappedHeaders.join(", ")}
+                    </div>
+                  )}
+                </div>
+              )}
+              {importParseError && (
+                <div className="alert alert-error py-2 text-sm">{importParseError}</div>
+              )}
+              {importResult && (
+                <div className="rounded-md border border-base-300 p-3 text-sm space-y-1">
+                  <div>Total rows processed: {importResult.total}</div>
+                  <div className="text-success">Imported: {importResult.successCount}</div>
+                  <div className={importResult.failureCount > 0 ? "text-error" : ""}>
+                    Failed: {importResult.failureCount}
+                  </div>
+                  {Array.isArray(importResult.failures) && importResult.failures.length > 0 && (
+                    <div className="mt-2 max-h-40 overflow-auto text-xs space-y-1">
+                      {importResult.failures.map((item) => (
+                        <div key={`${item.row}-${item.error}`} className="opacity-80">
+                          Row {item.row}: {item.error}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="modal-action">
+              <button className="btn" onClick={() => setImportModalOpen(false)} disabled={importBusy}>
+                Close
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleImportCsv}
+                disabled={importBusy || importRows.length === 0 || importMappedFields.filter(Boolean).length === 0}
+              >
+                {importBusy ? "Importing..." : `Import ${importRows.length || ""}`.trim()}
+              </button>
+            </div>
+          </div>
+          <button className="modal-backdrop" type="button" onClick={() => !importBusy && setImportModalOpen(false)}>
+            close
+          </button>
+        </div>
+      )}
     </div>
   );
 }

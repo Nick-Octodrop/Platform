@@ -252,6 +252,9 @@ def _split_recipients(value: object) -> list[str]:
     for item in _coerce_list(value):
         if item is None:
             continue
+        if isinstance(item, list):
+            out.extend(_split_recipients(item))
+            continue
         if isinstance(item, str):
             parts = [p.strip() for p in item.replace(";", ",").split(",")]
             out.extend([p for p in parts if p])
@@ -433,12 +436,13 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
         recipients: list[str] = []
         recipient_user_ids = inputs.get("recipient_user_ids")
         if isinstance(recipient_user_ids, list):
-            recipients.extend([str(v).strip() for v in recipient_user_ids if str(v).strip()])
+            for value in recipient_user_ids:
+                recipients.extend(_split_recipients(value))
         elif isinstance(recipient_user_ids, str):
-            recipients.extend([part.strip() for part in recipient_user_ids.split(",") if part.strip()])
+            recipients.extend(_split_recipients(recipient_user_ids))
         # Backward compatibility with legacy single-recipient payloads.
         if isinstance(inputs.get("recipient_user_id"), str) and inputs.get("recipient_user_id").strip():
-            recipients.append(inputs.get("recipient_user_id").strip())
+            recipients.extend(_split_recipients(inputs.get("recipient_user_id")))
         recipients = _dedupe(recipients)
         if not recipients:
             raise RuntimeError("Notification recipients not resolved")

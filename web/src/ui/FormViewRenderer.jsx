@@ -35,6 +35,7 @@ export default function FormViewRenderer({
   previewMode = false,
   canCreateLookup,
   onLookupCreate,
+  bottomActionsMode = "inline",
 }) {
   if (!view) return <div className="alert">Missing form view</div>;
   const sections = view.sections || [];
@@ -104,6 +105,8 @@ export default function FormViewRenderer({
   const hasTabs = tabsForUi.length > 0;
   const [activeTab, setActiveTab] = useState(() => tabsConfig?.default_tab || tabsForUi[0]?.id || null);
   const [sectionTabs, setSectionTabs] = useState({});
+  const [workspaceMembers, setWorkspaceMembers] = useState([]);
+  const [workspaceMembersLoading, setWorkspaceMembersLoading] = useState(false);
 
   const missing = sectionFieldIds.find((fieldId) => !fieldIndex[fieldId]);
   if (missing) {
@@ -117,6 +120,27 @@ export default function FormViewRenderer({
       return nextDefault;
     });
   }, [tabsConfig?.default_tab, tabsForUi]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadMembers() {
+      if (previewMode) return;
+      setWorkspaceMembersLoading(true);
+      try {
+        const res = await apiFetch("/access/members");
+        const rows = Array.isArray(res?.members) ? res.members : [];
+        if (!cancelled) setWorkspaceMembers(rows);
+      } catch {
+        if (!cancelled) setWorkspaceMembers([]);
+      } finally {
+        if (!cancelled) setWorkspaceMembersLoading(false);
+      }
+    }
+    loadMembers();
+    return () => {
+      cancelled = true;
+    };
+  }, [previewMode]);
 
   const hiddenSet = useMemo(() => {
     const set = new Set(Array.isArray(hiddenFields) ? hiddenFields : []);
@@ -141,7 +165,12 @@ export default function FormViewRenderer({
         const value = getFieldValue(record, fieldId);
         const hasDefault = Object.prototype.hasOwnProperty.call(field, "default");
         const isSystem = Boolean(field.system);
-        if ((value === "" || value === null || value === undefined) && !hasDefault && !isSystem) {
+        const isEmptyValue =
+          value === "" ||
+          value === null ||
+          value === undefined ||
+          (Array.isArray(value) && value.length === 0);
+        if (isEmptyValue && !hasDefault && !isSystem) {
           if (!isVisible && !requiredByCondition) {
             continue;
           }
@@ -165,6 +194,10 @@ export default function FormViewRenderer({
     needsExplicitSave && !readonly && onSave && showTopSave && (isDirty || isNewRecord);
   const shouldShowManualBottomSaveControls =
     needsExplicitSave && !readonly && onSave && showBottomSave && (isDirty || isNewRecord);
+  const bottomActionsClass =
+    bottomActionsMode === "sticky_right"
+      ? "shrink-0 sticky bottom-0 z-10 -mx-1 px-1 py-3 mt-2 border-t border-base-300 bg-base-100/95 backdrop-blur flex items-center justify-end gap-2"
+      : "shrink-0 flex items-center gap-2";
 
   const resolvedTitleField = header?.title_field || displayField || null;
   const resolvedTitleValue = resolvedTitleField ? getFieldValue(record, resolvedTitleField) : null;
@@ -361,28 +394,19 @@ export default function FormViewRenderer({
                 </DaisyTooltip>
               );
             })}
-            {secondaryActions.length > 0 && (
-              <div className="dropdown dropdown-end">
-                <button className={SOFT_BUTTON_SM} disabled={previewMode || readonly}>
-                  More
-                </button>
-                <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-48 z-50">
-                  {secondaryActions.map((item) => (
-                    <li key={item.label}>
-                      <button
-                        onClick={() => {
-                          if (previewMode || readonly || !item.enabled) return;
-                          onActionClick?.(item.action);
-                        }}
-                        disabled={!item.enabled || previewMode || readonly}
-                      >
-                        {item.label}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            {secondaryActions.map((item) => (
+              <button
+                key={item.label}
+                className={SOFT_BUTTON_SM}
+                onClick={() => {
+                  if (previewMode || readonly || !item.enabled) return;
+                  onActionClick?.(item.action);
+                }}
+                disabled={!item.enabled || previewMode || readonly}
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
         </div>
       )}
@@ -477,6 +501,24 @@ export default function FormViewRenderer({
                               canCreate={canCreateLookup}
                               onCreate={onLookupCreate}
                             />
+                          ) : field.type === "user" ? (
+                            <WorkspaceUserField
+                              field={field}
+                              value={value}
+                              onChange={(val) => onChange(setFieldValue(record, fieldId, val))}
+                              readonly={readonly || isDisabled}
+                              members={workspaceMembers}
+                              loadingMembers={workspaceMembersLoading}
+                            />
+                          ) : field.type === "users" ? (
+                            <WorkspaceUsersField
+                              field={field}
+                              value={value}
+                              onChange={(val) => onChange(setFieldValue(record, fieldId, val))}
+                              readonly={readonly || isDisabled}
+                              members={workspaceMembers}
+                              loadingMembers={workspaceMembersLoading}
+                            />
                           ) : (
                             renderField(
                               field,
@@ -499,7 +541,7 @@ export default function FormViewRenderer({
         ))}
       </div>
       {shouldShowManualBottomSaveControls && (
-        <div className="shrink-0 flex items-center gap-2">
+        <div className={bottomActionsClass}>
           <button
             className={PRIMARY_BUTTON_SM}
             onClick={() => onSave(validationErrors)}
@@ -755,7 +797,7 @@ function InlineLineItemsTable({
   }
 
   if (!parentRecordId) {
-    return <div className="text-sm opacity-70">Save the work order first, then add line items.</div>;
+    return <div className="text-sm opacity-70">Save this record first, then add line items.</div>;
   }
 
   return (
@@ -940,6 +982,245 @@ function buildRecordContext(domain, record) {
     }
   }
   return context;
+}
+
+function normalizeMembers(members) {
+  if (!Array.isArray(members)) return [];
+  return members
+    .map((member) => {
+      const userId = String(member?.user_id || "").trim();
+      if (!userId) return null;
+      const name = typeof member?.name === "string" ? member.name.trim() : "";
+      const email = typeof member?.email === "string" ? member.email.trim() : "";
+      const label = name || email || userId;
+      return {
+        user_id: userId,
+        name,
+        email,
+        label,
+        search: `${label} ${email} ${userId}`.toLowerCase(),
+      };
+    })
+    .filter(Boolean);
+}
+
+function normalizeUserIds(value) {
+  if (Array.isArray(value)) {
+    const ids = value
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+    return Array.from(new Set(ids));
+  }
+  if (typeof value === "string") {
+    const parts = value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    return Array.from(new Set(parts));
+  }
+  return [];
+}
+
+function WorkspaceUserField({ field, value, onChange, readonly, members, loadingMembers = false }) {
+  const [opened, setOpened] = useState(false);
+  const [search, setSearch] = useState("");
+  const containerRef = useRef(null);
+  const normalizedMembers = useMemo(() => normalizeMembers(members), [members]);
+  const selectedId = typeof value === "string" ? value.trim() : "";
+  const selected = normalizedMembers.find((member) => member.user_id === selectedId);
+  const selectedLabel = selected?.label || selectedId || "";
+  const normalizedSearch = (search || "").trim().toLowerCase();
+  const filtered = useMemo(() => {
+    if (!normalizedSearch) return normalizedMembers.slice(0, 50);
+    return normalizedMembers.filter((member) => member.search.includes(normalizedSearch)).slice(0, 50);
+  }, [normalizedMembers, normalizedSearch]);
+
+  useEffect(() => {
+    if (!opened) setSearch("");
+  }, [opened]);
+
+  useEffect(() => {
+    function handleOutsideClick(event) {
+      if (!containerRef.current) return;
+      if (containerRef.current.contains(event.target)) return;
+      setOpened(false);
+    }
+    if (!opened) return;
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [opened]);
+
+  const displayValue = opened ? search : selectedLabel;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div className="relative">
+        <input
+          className="input input-bordered w-full pr-10"
+          value={displayValue}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search workspace user..."
+          disabled={readonly || field.readonly}
+          onFocus={() => setOpened(true)}
+        />
+        {Boolean(selectedId) && !readonly && !field.readonly && (
+          <button
+            type="button"
+            className={`${SOFT_BUTTON_XS} absolute right-2 top-1/2 -translate-y-1/2`}
+            onClick={() => {
+              setSearch("");
+              setOpened(false);
+              onChange(null);
+            }}
+            aria-label="Clear selection"
+            title="Clear"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+      {opened && (
+        <div className="absolute z-30 mt-1 w-full rounded-box border border-base-400 bg-base-100 shadow">
+          <ul className="menu menu-compact max-h-64 overflow-auto">
+            {loadingMembers && <li className="menu-title"><span>Loading workspace users…</span></li>}
+            {!loadingMembers && normalizedMembers.length === 0 && (
+              <li className="menu-title"><span>No workspace users found</span></li>
+            )}
+            {!loadingMembers && normalizedMembers.length > 0 && filtered.length === 0 && (
+              <li className="menu-title"><span>No matches</span></li>
+            )}
+            {!loadingMembers &&
+              filtered.map((member) => (
+                <li key={member.user_id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChange(member.user_id);
+                      setOpened(false);
+                      setSearch("");
+                    }}
+                    className={member.user_id === selectedId ? "active" : ""}
+                  >
+                    {member.label}
+                  </button>
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WorkspaceUsersField({ field, value, onChange, readonly, members, loadingMembers = false }) {
+  const [opened, setOpened] = useState(false);
+  const [search, setSearch] = useState("");
+  const containerRef = useRef(null);
+  const normalizedMembers = useMemo(() => normalizeMembers(members), [members]);
+  const selectedIds = useMemo(() => normalizeUserIds(value), [value]);
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const normalizedSearch = (search || "").trim().toLowerCase();
+  const filtered = useMemo(() => {
+    const available = normalizedMembers.filter((member) => !selectedSet.has(member.user_id));
+    if (!normalizedSearch) return available.slice(0, 50);
+    return available.filter((member) => member.search.includes(normalizedSearch)).slice(0, 50);
+  }, [normalizedMembers, selectedSet, normalizedSearch]);
+  const selectedMembers = useMemo(
+    () =>
+      selectedIds.map((id) => {
+        const member = normalizedMembers.find((row) => row.user_id === id);
+        return { user_id: id, label: member?.label || id };
+      }),
+    [selectedIds, normalizedMembers]
+  );
+
+  useEffect(() => {
+    function handleOutsideClick(event) {
+      if (!containerRef.current) return;
+      if (containerRef.current.contains(event.target)) return;
+      setOpened(false);
+    }
+    if (!opened) return;
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [opened]);
+
+  function addUser(userId) {
+    if (!userId) return;
+    if (selectedSet.has(userId)) return;
+    onChange([...selectedIds, userId]);
+    setSearch("");
+    setOpened(true);
+  }
+
+  function removeUser(userId) {
+    onChange(selectedIds.filter((id) => id !== userId));
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div
+        className={`input input-bordered w-full min-h-[3rem] h-auto pr-2 flex flex-wrap gap-1 items-center ${
+          readonly || field.readonly ? "opacity-60 pointer-events-none" : ""
+        }`}
+        onClick={() => {
+          if (!readonly && !field.readonly) setOpened(true);
+        }}
+      >
+        {selectedMembers.map((member) => (
+          <span key={member.user_id} className="badge badge-outline gap-1">
+            {member.label}
+            {!readonly && !field.readonly && (
+              <button
+                type="button"
+                className="opacity-70 hover:opacity-100"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  removeUser(member.user_id);
+                }}
+                aria-label={`Remove ${member.label}`}
+                title={`Remove ${member.label}`}
+              >
+                ✕
+              </button>
+            )}
+          </span>
+        ))}
+        <input
+          className="flex-1 min-w-[7rem] bg-transparent outline-none"
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setOpened(true);
+          }}
+          onFocus={() => setOpened(true)}
+          placeholder={selectedMembers.length > 0 ? "Add another user..." : "Search workspace users..."}
+          disabled={readonly || field.readonly}
+        />
+      </div>
+      {opened && (
+        <div className="absolute z-30 mt-1 w-full rounded-box border border-base-400 bg-base-100 shadow">
+          <ul className="menu menu-compact max-h-64 overflow-auto">
+            {loadingMembers && <li className="menu-title"><span>Loading workspace users…</span></li>}
+            {!loadingMembers && normalizedMembers.length === 0 && (
+              <li className="menu-title"><span>No workspace users found</span></li>
+            )}
+            {!loadingMembers && normalizedMembers.length > 0 && filtered.length === 0 && (
+              <li className="menu-title"><span>No matches</span></li>
+            )}
+            {!loadingMembers &&
+              filtered.map((member) => (
+                <li key={member.user_id}>
+                  <button type="button" onClick={() => addUser(member.user_id)}>
+                    {member.label}
+                  </button>
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function LookupField({ field, value, onChange, readonly, record, previewMode = false, onCreate, canCreate }) {

@@ -79,6 +79,12 @@ export default function EntityCreatePage({ entityId }) {
               .map((t) => t.trim())
               .filter(Boolean);
           }
+          if (field?.type === "users" && typeof payload[fieldId] === "string") {
+            payload[fieldId] = payload[fieldId]
+              .split(",")
+              .map((t) => t.trim())
+              .filter(Boolean);
+          }
         }
       }
       const res = await apiFetch(endpoint, {

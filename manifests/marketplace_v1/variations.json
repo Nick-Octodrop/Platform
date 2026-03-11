@@ -1,0 +1,746 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "variations",
+    "key": "variations",
+    "name": "Variations",
+    "version": "1.1.2",
+    "description": "Change order and variation management across jobs and quotations.",
+    "category": "Commercial",
+    "icon_key": "lucide:GitCompareArrows"
+  },
+  "depends_on": {
+    "required": [
+      {
+        "module": "contacts",
+        "version": ">=1.0.0"
+      },
+      {
+        "module": "sales",
+        "version": ">=1.6.2"
+      },
+      {
+        "module": "jobs",
+        "version": ">=1.3.1"
+      }
+    ]
+  },
+  "app": {
+    "home": "page:variation.list_page",
+    "defaults": {
+      "entity_home_page": "page:variation.list_page",
+      "entity_form_page": "page:variation.form_page",
+      "entities": {
+        "entity.variation": {
+          "entity_home_page": "page:variation.list_page",
+          "entity_form_page": "page:variation.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Variations",
+        "items": [
+          {
+            "label": "Variations",
+            "to": "page:variation.list_page"
+          }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.variation",
+      "display_field": "variation.number",
+      "fields": [
+        {
+          "id": "variation.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "variation.number",
+          "type": "string",
+          "label": "Variation Number",
+          "required": true
+        },
+        {
+          "id": "variation.job_id",
+          "type": "lookup",
+          "label": "Job",
+          "entity": "entity.job",
+          "display_field": "job.number",
+          "required": true
+        },
+        {
+          "id": "variation.quote_id",
+          "type": "lookup",
+          "label": "Quote",
+          "entity": "entity.quote",
+          "display_field": "quote.number"
+        },
+        {
+          "id": "variation.contact_id",
+          "type": "lookup",
+          "label": "Contact",
+          "entity": "entity.contact",
+          "display_field": "contact.name"
+        },
+        {
+          "id": "variation.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "draft",
+          "options": [
+            {
+              "value": "draft",
+              "label": "Draft"
+            },
+            {
+              "value": "submitted",
+              "label": "Submitted"
+            },
+            {
+              "value": "approved",
+              "label": "Approved"
+            },
+            {
+              "value": "rejected",
+              "label": "Rejected"
+            },
+            {
+              "value": "cancelled",
+              "label": "Cancelled"
+            }
+          ]
+        },
+        {
+          "id": "variation.reason",
+          "type": "string",
+          "label": "Reason"
+        },
+        {
+          "id": "variation.description",
+          "type": "text",
+          "label": "Description"
+        },
+        {
+          "id": "variation.amount",
+          "type": "number",
+          "label": "Amount",
+          "default": 0
+        },
+        {
+          "id": "variation.requested_by",
+          "type": "user",
+          "label": "Requested By"
+        },
+        {
+          "id": "variation.approved_by",
+          "type": "user",
+          "label": "Approved By",
+          "visible_when": {
+            "op": "eq",
+            "field": "variation.status",
+            "value": "approved"
+          }
+        },
+        {
+          "id": "variation.request_date",
+          "type": "date",
+          "label": "Request Date"
+        },
+        {
+          "id": "variation.decision_date",
+          "type": "date",
+          "label": "Decision Date",
+          "visible_when": {
+            "op": "in",
+            "field": "variation.status",
+            "value": [
+              "approved",
+              "rejected",
+              "cancelled"
+            ]
+          }
+        },
+        {
+          "id": "variation.attachments",
+          "type": "attachments",
+          "label": "Attachments"
+        },
+        {
+          "id": "variation.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "action.variation_refresh",
+      "kind": "refresh",
+      "label": "Refresh"
+    },
+    {
+      "id": "action.variation_new",
+      "kind": "open_form",
+      "label": "+ New Variation",
+      "target": "variation.form"
+    },
+    {
+      "id": "action.variation_submit",
+      "kind": "update_record",
+      "label": "Submit",
+      "entity_id": "entity.variation",
+      "patch": {
+        "variation.status": "submitted"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "variation.status",
+        "value": "draft"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "variation.status",
+        "value": "draft"
+      }
+    },
+    {
+      "id": "action.variation_approve",
+      "kind": "update_record",
+      "label": "Approve",
+      "entity_id": "entity.variation",
+      "patch": {
+        "variation.status": "approved"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "variation.status",
+        "value": "submitted"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "variation.status",
+        "value": "submitted"
+      }
+    },
+    {
+      "id": "action.variation_reject",
+      "kind": "update_record",
+      "label": "Reject",
+      "entity_id": "entity.variation",
+      "patch": {
+        "variation.status": "rejected"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "variation.status",
+        "value": "submitted"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "variation.status",
+        "value": "submitted"
+      },
+      "confirm": {
+        "title": "Reject Variation",
+        "body": "This variation will be rejected."
+      }
+    },
+    {
+      "id": "action.variation_cancel",
+      "kind": "update_record",
+      "label": "Cancel",
+      "entity_id": "entity.variation",
+      "patch": {
+        "variation.status": "cancelled"
+      },
+      "enabled_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "variation.status",
+          "value": [
+            "approved",
+            "cancelled"
+          ]
+        }
+      },
+      "visible_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "variation.status",
+          "value": [
+            "approved",
+            "cancelled"
+          ]
+        }
+      },
+      "confirm": {
+        "title": "Cancel Variation",
+        "body": "This variation will be cancelled."
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "id": "variations.record.variation.created",
+      "event": "record.created",
+      "entity_id": "entity.variation"
+    },
+    {
+      "id": "variations.record.variation.updated",
+      "event": "record.updated",
+      "entity_id": "entity.variation"
+    },
+    {
+      "id": "variations.workflow.variation.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.variation",
+      "status_field": "variation.status"
+    },
+    {
+      "id": "variations.action.variation_refresh.clicked",
+      "event": "action.clicked",
+      "action_id": "action.variation_refresh"
+    },
+    {
+      "id": "variations.action.variation_new.clicked",
+      "event": "action.clicked",
+      "action_id": "action.variation_new"
+    },
+    {
+      "id": "variations.action.variation_submit.clicked",
+      "event": "action.clicked",
+      "action_id": "action.variation_submit"
+    },
+    {
+      "id": "variations.action.variation_approve.clicked",
+      "event": "action.clicked",
+      "action_id": "action.variation_approve"
+    },
+    {
+      "id": "variations.action.variation_reject.clicked",
+      "event": "action.clicked",
+      "action_id": "action.variation_reject"
+    },
+    {
+      "id": "variations.action.variation_cancel.clicked",
+      "event": "action.clicked",
+      "action_id": "action.variation_cancel"
+    }
+  ],
+  "views": [
+    {
+      "id": "variation.list",
+      "kind": "list",
+      "entity": "entity.variation",
+      "columns": [
+        {
+          "field_id": "variation.number"
+        },
+        {
+          "field_id": "variation.job_id"
+        },
+        {
+          "field_id": "variation.quote_id"
+        },
+        {
+          "field_id": "variation.status"
+        },
+        {
+          "field_id": "variation.amount"
+        },
+        {
+          "field_id": "variation.request_date"
+        }
+      ],
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.variation_new"
+          }
+        ],
+        "secondary_actions": [
+          {
+            "action_id": "action.variation_refresh"
+          }
+        ],
+        "open_record_target": "page:variation.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search variations...",
+          "fields": [
+            "variation.number",
+            "variation.reason",
+            "variation.description",
+            "variation.status"
+          ]
+        },
+        "filters": [
+          {
+            "id": "open",
+            "label": "Open",
+            "domain": {
+              "op": "not",
+              "condition": {
+                "op": "in",
+                "field": "variation.status",
+                "value": [
+                  "approved",
+                  "rejected",
+                  "cancelled"
+                ]
+              }
+            }
+          },
+          {
+            "id": "mine",
+            "label": "Mine",
+            "domain": {
+              "op": "eq",
+              "field": "variation.requested_by",
+              "value": {
+                "ref": "$actor.user_id"
+              }
+            }
+          },
+          {
+            "id": "submitted",
+            "label": "Submitted",
+            "domain": {
+              "op": "eq",
+              "field": "variation.status",
+              "value": "submitted"
+            }
+          },
+          {
+            "id": "approved",
+            "label": "Approved",
+            "domain": {
+              "op": "eq",
+              "field": "variation.status",
+              "value": "approved"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "variation.kanban",
+      "kind": "kanban",
+      "entity": "entity.variation",
+      "card": {
+        "title_field": "variation.number",
+        "subtitle_fields": [
+          "variation.job_id",
+          "variation.quote_id"
+        ],
+        "badge_fields": [
+          "variation.status",
+          "variation.amount"
+        ]
+      }
+    },
+    {
+      "id": "variation.form",
+      "kind": "form",
+      "entity": "entity.variation",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Variation",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "variation.number",
+            "variation.status",
+            "variation.job_id",
+            "variation.quote_id",
+            "variation.contact_id",
+            "variation.request_date",
+            "variation.decision_date",
+            "variation.amount"
+          ]
+        },
+        {
+          "id": "decision",
+          "title": "Decision",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "variation.requested_by",
+            "variation.approved_by",
+            "variation.reason"
+          ]
+        },
+        {
+          "id": "details",
+          "title": "Details",
+          "fields": [
+            "variation.description",
+            "variation.attachments"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": {
+          "field_id": "variation.status"
+        },
+        "secondary_actions": [
+          {
+            "action_id": "action.variation_submit"
+          },
+          {
+            "action_id": "action.variation_approve"
+          },
+          {
+            "action_id": "action.variation_reject"
+          },
+          {
+            "action_id": "action.variation_cancel"
+          },
+          {
+            "action_id": "action.variation_refresh"
+          }
+        ]
+      }
+    },
+    {
+      "id": "variation.graph",
+      "kind": "graph",
+      "entity": "entity.variation",
+      "default": {
+        "type": "bar",
+        "group_by": "variation.status",
+        "measure": "sum:variation.amount"
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "variation.list_page",
+      "title": "Variations",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.variation_new"
+          },
+          {
+            "action_id": "action.variation_refresh"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.variation",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:variation.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:variation.kanban",
+                  "default_group_by": "variation.status"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:variation.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:variation.list",
+                  "default_group_by": "variation.status"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "variation.form_page",
+      "title": "Variation",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.variation",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:variation.form"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.variation",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "interfaces": {
+    "documentable": [
+      {
+        "entity_id": "entity.variation",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "variation.attachments",
+        "title_field": "variation.number",
+        "owner_field": "variation.requested_by",
+        "category_field": "variation.status",
+        "date_field": "variation.created_at",
+        "record_label_field": "variation.number",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
+      }
+    ],
+    "dashboardable": [
+      {
+        "entity_id": "entity.variation",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "variation.created_at",
+        "measures": [
+          "count",
+          "sum:variation.amount"
+        ],
+        "group_bys": [
+          "variation.status",
+          "variation.requested_by"
+        ],
+        "default_widgets": [
+          {
+            "id": "variations_by_status",
+            "type": "group",
+            "title": "Variations by Status",
+            "group_by": "variation.status",
+            "measure": "count"
+          }
+        ]
+      }
+    ]
+  },
+  "relations": [],
+  "workflows": [
+    {
+      "id": "workflow.variation_status",
+      "entity": "entity.variation",
+      "status_field": "variation.status",
+      "states": [
+        {
+          "id": "draft",
+          "label": "Draft",
+          "order": 1
+        },
+        {
+          "id": "submitted",
+          "label": "Submitted",
+          "order": 2
+        },
+        {
+          "id": "approved",
+          "label": "Approved",
+          "order": 3
+        },
+        {
+          "id": "rejected",
+          "label": "Rejected",
+          "order": 4
+        },
+        {
+          "id": "cancelled",
+          "label": "Cancelled",
+          "order": 5
+        }
+      ],
+      "transitions": [
+        {
+          "from": "draft",
+          "to": "submitted",
+          "label": "Submit"
+        },
+        {
+          "from": "submitted",
+          "to": "approved",
+          "label": "Approve"
+        },
+        {
+          "from": "submitted",
+          "to": "rejected",
+          "label": "Reject"
+        },
+        {
+          "from": "draft",
+          "to": "cancelled",
+          "label": "Cancel"
+        },
+        {
+          "from": "submitted",
+          "to": "cancelled",
+          "label": "Cancel"
+        },
+        {
+          "from": "rejected",
+          "to": "cancelled",
+          "label": "Cancel"
+        }
+      ]
+    }
+  ],
+  "transformations": [],
+  "modals": [],
+  "queries": {}
+}

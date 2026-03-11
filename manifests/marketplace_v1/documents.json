@@ -1,0 +1,594 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "documents",
+    "key": "documents",
+    "name": "Documents",
+    "version": "1.2.1",
+    "description": "Document registry and attachment operations with category and lifecycle controls.",
+    "category": "Operations",
+    "icon_key": "lucide:FileText"
+  },
+  "app": {
+    "home": "page:document_record.list_page",
+    "defaults": {
+      "entity_home_page": "page:document_record.list_page",
+      "entity_form_page": "page:document_record.form_page",
+      "entities": {
+        "entity.document_record": {
+          "entity_home_page": "page:document_record.list_page",
+          "entity_form_page": "page:document_record.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Documents",
+        "items": [
+          {
+            "label": "Records",
+            "to": "page:document_record.list_page"
+          },
+          {
+            "label": "Board",
+            "to": "page:document_record.board_page"
+          }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.document_record",
+      "display_field": "document_record.title",
+      "fields": [
+        {
+          "id": "document_record.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "document_record.title",
+          "type": "string",
+          "label": "Title",
+          "required": true
+        },
+        {
+          "id": "document_record.record_label",
+          "type": "string",
+          "label": "Record Label"
+        },
+        {
+          "id": "document_record.owner_id",
+          "type": "user",
+          "label": "Owner"
+        },
+        {
+          "id": "document_record.category",
+          "type": "string",
+          "label": "Category"
+        },
+        {
+          "id": "document_record.date",
+          "type": "datetime",
+          "label": "Date"
+        },
+        {
+          "id": "document_record.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "active",
+          "options": [
+            {
+              "value": "active",
+              "label": "Active"
+            },
+            {
+              "value": "archived",
+              "label": "Archived"
+            }
+          ]
+        },
+        {
+          "id": "document_record.files",
+          "type": "attachments",
+          "label": "Files"
+        },
+        {
+          "id": "document_record.notes",
+          "type": "text",
+          "label": "Notes"
+        },
+        {
+          "id": "document_record.tags",
+          "type": "tags",
+          "label": "Tags"
+        },
+        {
+          "id": "document_record.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    }
+  ],
+  "interfaces": {
+    "documentable": [
+      {
+        "entity_id": "entity.document_record",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "document_record.files",
+        "title_field": "document_record.title",
+        "owner_field": "document_record.owner_id",
+        "category_field": "document_record.category",
+        "date_field": "document_record.date",
+        "record_label_field": "document_record.record_label",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
+      }
+    ],
+    "dashboardable": [
+      {
+        "entity_id": "entity.document_record",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "document_record.date",
+        "measures": [
+          "count"
+        ],
+        "group_bys": [
+          "document_record.category",
+          "document_record.status",
+          "document_record.owner_id"
+        ],
+        "default_widgets": [
+          {
+            "id": "docs_by_category",
+            "type": "group",
+            "title": "Documents by Category",
+            "group_by": "document_record.category",
+            "measure": "count"
+          },
+          {
+            "id": "docs_by_status",
+            "type": "group",
+            "title": "Documents by Status",
+            "group_by": "document_record.status",
+            "measure": "count"
+          }
+        ]
+      }
+    ]
+  },
+  "actions": [
+    {
+      "id": "action.documents_refresh",
+      "kind": "refresh",
+      "label": "Refresh"
+    },
+    {
+      "id": "action.document_record_new",
+      "kind": "open_form",
+      "label": "+ New Document",
+      "target": "document_record.form"
+    },
+    {
+      "id": "action.document_record_archive",
+      "kind": "update_record",
+      "label": "Archive",
+      "entity_id": "entity.document_record",
+      "patch": {
+        "document_record.status": "archived"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "document_record.status",
+        "value": "active"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "document_record.status",
+        "value": "active"
+      },
+      "confirm": {
+        "title": "Archive Document",
+        "body": "Move this document to Archived?"
+      }
+    },
+    {
+      "id": "action.document_record_reactivate",
+      "kind": "update_record",
+      "label": "Reactivate",
+      "entity_id": "entity.document_record",
+      "patch": {
+        "document_record.status": "active"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "document_record.status",
+        "value": "archived"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "document_record.status",
+        "value": "archived"
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "id": "documents.record.document_record.created",
+      "event": "record.created",
+      "entity_id": "entity.document_record"
+    },
+    {
+      "id": "documents.record.document_record.updated",
+      "event": "record.updated",
+      "entity_id": "entity.document_record"
+    },
+    {
+      "id": "documents.workflow.document_record.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.document_record",
+      "status_field": "document_record.status"
+    },
+    {
+      "id": "documents.action.documents_refresh.clicked",
+      "event": "action.clicked",
+      "action_id": "action.documents_refresh"
+    },
+    {
+      "id": "documents.action.document_record_new.clicked",
+      "event": "action.clicked",
+      "action_id": "action.document_record_new"
+    },
+    {
+      "id": "documents.action.document_record_archive.clicked",
+      "event": "action.clicked",
+      "action_id": "action.document_record_archive"
+    },
+    {
+      "id": "documents.action.document_record_reactivate.clicked",
+      "event": "action.clicked",
+      "action_id": "action.document_record_reactivate"
+    }
+  ],
+  "views": [
+    {
+      "id": "document_record.list",
+      "kind": "list",
+      "entity": "entity.document_record",
+      "columns": [
+        {
+          "field_id": "document_record.title"
+        },
+        {
+          "field_id": "document_record.category"
+        },
+        {
+          "field_id": "document_record.owner_id"
+        },
+        {
+          "field_id": "document_record.date"
+        },
+        {
+          "field_id": "document_record.status"
+        }
+      ],
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.document_record_new"
+          }
+        ],
+        "secondary_actions": [
+          {
+            "action_id": "action.documents_refresh"
+          }
+        ],
+        "open_record_target": "page:document_record.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search documents...",
+          "fields": [
+            "document_record.title",
+            "document_record.record_label",
+            "document_record.category",
+            "document_record.owner_id"
+          ]
+        },
+        "filters": [
+          {
+            "id": "active",
+            "label": "Active",
+            "domain": {
+              "op": "eq",
+              "field": "document_record.status",
+              "value": "active"
+            }
+          },
+          {
+            "id": "mine",
+            "label": "Mine",
+            "domain": {
+              "op": "eq",
+              "field": "document_record.owner_id",
+              "value": {
+                "ref": "$actor.user_id"
+              }
+            }
+          },
+          {
+            "id": "archived",
+            "label": "Archived",
+            "domain": {
+              "op": "eq",
+              "field": "document_record.status",
+              "value": "archived"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "document_record.kanban",
+      "kind": "kanban",
+      "entity": "entity.document_record",
+      "card": {
+        "title_field": "document_record.title",
+        "subtitle_fields": [
+          "document_record.record_label",
+          "document_record.category",
+          "document_record.owner_id"
+        ],
+        "badge_fields": [
+          "document_record.status",
+          "document_record.tags"
+        ]
+      }
+    },
+    {
+      "id": "document_record.form",
+      "kind": "form",
+      "entity": "entity.document_record",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Document",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "document_record.title",
+            "document_record.record_label",
+            "document_record.status",
+            "document_record.owner_id",
+            "document_record.category",
+            "document_record.date",
+            "document_record.tags"
+          ]
+        },
+        {
+          "id": "content",
+          "title": "Content",
+          "fields": [
+            "document_record.files",
+            "document_record.notes"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": {
+          "field_id": "document_record.status"
+        },
+        "secondary_actions": [
+          {
+            "action_id": "action.document_record_archive"
+          },
+          {
+            "action_id": "action.document_record_reactivate"
+          },
+          {
+            "action_id": "action.documents_refresh"
+          }
+        ]
+      }
+    },
+    {
+      "id": "document_record.graph",
+      "kind": "graph",
+      "entity": "entity.document_record",
+      "default": {
+        "type": "bar",
+        "group_by": "document_record.status",
+        "measure": "count"
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "document_record.list_page",
+      "title": "Documents",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.document_record_new"
+          },
+          {
+            "action_id": "action.documents_refresh"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.document_record",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:document_record.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:document_record.kanban",
+                  "default_group_by": "document_record.status"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:document_record.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:document_record.list",
+                  "default_group_by": "document_record.status"
+                }
+              ],
+              "default_filter_id": "active"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "document_record.form_page",
+      "title": "Document",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.document_record",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:document_record.form"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.document_record",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "document_record.board_page",
+      "title": "Document Board",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.document_record",
+              "default_mode": "kanban",
+              "modes": [
+                {
+                  "mode": "kanban",
+                  "target": "view:document_record.kanban",
+                  "default_group_by": "document_record.status"
+                },
+                {
+                  "mode": "list",
+                  "target": "view:document_record.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:document_record.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:document_record.list",
+                  "default_group_by": "document_record.status"
+                }
+              ],
+              "default_filter_id": "active"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "relations": [],
+  "workflows": [
+    {
+      "id": "workflow.document_record_status",
+      "entity": "entity.document_record",
+      "status_field": "document_record.status",
+      "states": [
+        {
+          "id": "active",
+          "label": "Active",
+          "order": 1
+        },
+        {
+          "id": "archived",
+          "label": "Archived",
+          "order": 2
+        }
+      ],
+      "transitions": [
+        {
+          "from": "active",
+          "to": "archived",
+          "label": "Archive"
+        },
+        {
+          "from": "archived",
+          "to": "active",
+          "label": "Reactivate"
+        }
+      ]
+    }
+  ],
+  "transformations": [],
+  "modals": [],
+  "queries": {}
+}

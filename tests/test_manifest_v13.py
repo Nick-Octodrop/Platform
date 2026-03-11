@@ -119,6 +119,97 @@ class TestManifestV13(unittest.TestCase):
         errors, _ = validate_manifest(manifest)
         self.assertTrue(any(e["code"] == "MANIFEST_VIEW_CREATE_BEHAVIOR_INVALID" for e in errors))
 
+    def test_transform_record_action_requires_known_transformation(self):
+        manifest = base_manifest()
+        manifest["transformations"] = [
+            {
+                "key": "work_to_work",
+                "source_entity_id": "entity.work_item",
+                "target_entity_id": "entity.work_item",
+                "field_mappings": [{"to": "work.title", "from": "work.title"}],
+            }
+        ]
+        manifest["actions"] = [
+            {
+                "id": "action.transform",
+                "kind": "transform_record",
+                "entity_id": "entity.work_item",
+                "transformation_key": "work_to_work",
+            }
+        ]
+        errors, _ = validate_manifest(manifest)
+        self.assertEqual(errors, [])
+
+        manifest["actions"][0]["transformation_key"] = "missing"
+        errors, _ = validate_manifest(manifest)
+        self.assertTrue(any(e["code"] == "MANIFEST_ACTION_INVALID" for e in errors))
+
+    def test_interfaces_schedulable_documentable_dashboardable_validation(self):
+        manifest = base_manifest()
+        manifest["entities"][0]["fields"].extend(
+            [
+                {"id": "work.start_at", "type": "datetime"},
+                {"id": "work.end_at", "type": "datetime"},
+                {"id": "work.owner_id", "type": "string"},
+                {"id": "work.attachments", "type": "attachments"},
+            ]
+        )
+        manifest["interfaces"] = {
+            "schedulable": [
+                {
+                    "entity_id": "entity.work_item",
+                    "title_field": "work.title",
+                    "date_start": "work.start_at",
+                    "date_end": "work.end_at",
+                    "owner_field": "work.owner_id",
+                    "scope": "module_and_global",
+                }
+            ],
+            "documentable": [
+                {
+                    "entity_id": "entity.work_item",
+                    "attachment_field": "work.attachments",
+                    "title_field": "work.title",
+                }
+            ],
+            "dashboardable": [
+                {
+                    "entity_id": "entity.work_item",
+                    "date_field": "work.start_at",
+                    "group_bys": ["work.status"],
+                    "measures": ["count"],
+                    "default_widgets": [
+                        {"id": "w1", "type": "group", "group_by": "work.status", "measure": "count"}
+                    ],
+                }
+            ],
+        }
+        errors, _ = validate_manifest(manifest)
+        self.assertEqual(errors, [])
+
+        manifest["interfaces"]["schedulable"][0]["date_start"] = "work.missing"
+        errors, _ = validate_manifest(manifest)
+        self.assertTrue(any(e["code"] == "MANIFEST_VIEW_FIELD_UNKNOWN" for e in errors))
+
+    def test_depends_on_validation(self):
+        manifest = base_manifest()
+        manifest["depends_on"] = {
+            "required": [{"module": "contacts", "version": ">=1.0.0"}],
+            "optional": [{"module": "crm", "version": ">=1.0.0, <2.0.0"}],
+        }
+        errors, _ = validate_manifest(manifest)
+        self.assertEqual(errors, [])
+
+        manifest["depends_on"]["required"].append({"module": "work"})
+        errors, _ = validate_manifest(manifest)
+        self.assertTrue(any(e["code"] == "MANIFEST_DEPENDS_ON_SELF" for e in errors))
+
+    def test_depends_on_invalid_version_constraint(self):
+        manifest = base_manifest()
+        manifest["depends_on"] = {"required": [{"module": "contacts", "version": "foo"}]}
+        errors, _ = validate_manifest(manifest)
+        self.assertTrue(any(e["code"] == "MANIFEST_DEPENDS_ON_INVALID_VERSION" for e in errors))
+
 
 if __name__ == "__main__":
     unittest.main()

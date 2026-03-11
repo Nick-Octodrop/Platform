@@ -38,6 +38,14 @@ def _get_by_path(data: dict, path: str) -> Any:
 def _resolve_ref(ref: str, context: dict) -> Any:
     if not isinstance(ref, str):
         return None
+    if ref == "$actor":
+        return context.get("actor", {})
+    if ref.startswith("$actor."):
+        return _get_by_path(context.get("actor", {}), ref[len("$actor.") :])
+    if ref == "$user":
+        return context.get("actor", {})
+    if ref.startswith("$user."):
+        return _get_by_path(context.get("actor", {}), ref[len("$user.") :])
     if ref.startswith("$record."):
         return _get_by_path(context.get("record", {}), ref[len("$record.") :])
     if ref.startswith("$candidate."):
@@ -76,7 +84,7 @@ def eval_condition(condition: dict | None, context: dict) -> bool:
     else:
         field = condition.get("field")
         left = _resolve_ref(field, context) if isinstance(field, str) else None
-        right = condition.get("value")
+        right = _resolve_operand(condition.get("value"), context)
 
     if op == "exists":
         return left is not None and left != ""

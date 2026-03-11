@@ -38,6 +38,12 @@ def _matches_filter(payload: dict, filt: dict) -> bool:
         return value in target
     if op == "exists":
         return value is not None
+    if op == "contains":
+        if isinstance(value, list):
+            return target in value
+        if isinstance(value, str) and isinstance(target, str):
+            return target in value
+        return False
     return False
 
 

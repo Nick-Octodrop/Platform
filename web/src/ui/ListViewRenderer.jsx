@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { FixedSizeList as VirtualList } from "react-window";
 import { getFieldValue } from "./field_renderers.jsx";
-import { evalCondition } from "../utils/conditions.js";
 import { resolveFieldLabel } from "../utils/labels.js";
 import { formatDateLike } from "../utils/dateTime.js";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM } from "../components/buttonStyles.js";
@@ -65,6 +64,7 @@ export default function ListViewRenderer({
   }
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const [lookupLabels, setLookupLabels] = useState({});
+  const [memberLabels, setMemberLabels] = useState({});
   const [internalPage, setInternalPage] = useState(0);
 
   const isExternalPagination = typeof externalPage === "number" && typeof onPageChange === "function";
@@ -122,6 +122,31 @@ export default function ListViewRenderer({
     };
   }, [columns, fieldIndex, records, lookupLabels]);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadMembers() {
+      try {
+        const res = await apiFetch("/access/members");
+        const rows = Array.isArray(res?.members) ? res.members : [];
+        const next = {};
+        for (const member of rows) {
+          const userId = String(member?.user_id || "").trim();
+          if (!userId) continue;
+          const name = typeof member?.name === "string" ? member.name.trim() : "";
+          const email = typeof member?.email === "string" ? member.email.trim() : "";
+          next[userId] = name || email || userId;
+        }
+        if (!cancelled) setMemberLabels(next);
+      } catch {
+        if (!cancelled) setMemberLabels({});
+      }
+    }
+    loadMembers();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const formatCellValue = (row, col) => {
     const field = fieldIndex[col.field_id];
     const rawValue = getFieldValue(row.record, col.field_id);
@@ -133,6 +158,18 @@ export default function ListViewRenderer({
     if (field?.type === "lookup") {
       const cacheKey = `${col.field_id}:${String(rawValue)}`;
       return String(lookupLabels[cacheKey] || rawValue);
+    }
+    if (field?.type === "user") {
+      const userId = String(rawValue || "").trim();
+      return String(memberLabels[userId] || userId);
+    }
+    if (field?.type === "users") {
+      const values = Array.isArray(rawValue)
+        ? rawValue
+        : (typeof rawValue === "string"
+            ? rawValue.split(",").map((item) => item.trim()).filter(Boolean)
+            : []);
+      return values.map((userId) => memberLabels[userId] || userId).join(", ");
     }
     return String(formatDateLike(rawValue, { fieldType: field?.type, fieldId: col.field_id }));
   };
@@ -148,9 +185,6 @@ export default function ListViewRenderer({
           return String(value).toLowerCase().includes(needle);
         });
       });
-    }
-    if (activeFilter && activeFilter.domain) {
-      next = next.filter((row) => evalCondition(activeFilter.domain, { record: row.record || {} }));
     }
     if (Array.isArray(clientFilters) && clientFilters.length > 0) {
       next = next.filter((row) => {

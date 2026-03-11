@@ -322,7 +322,7 @@ export default function TopNav({ user, onSignOut }) {
                 group.asLink === true ||
                 group.inline === true ||
                 String(group.mode || "").toLowerCase() === "link";
-              const single = items.length === 1 && (items[0]?.label === group.groupLabel || explicitLink);
+              const single = items.length === 1 || (explicitLink && items.length > 0);
               if (single) {
                 const target = buildTargetRoute(moduleId, items[0].to);
                 const active = target && currentPath.startsWith(target);

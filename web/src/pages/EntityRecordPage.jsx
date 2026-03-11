@@ -104,6 +104,12 @@ export default function EntityRecordPage() {
               .map((t) => t.trim())
               .filter(Boolean);
           }
+          if (field?.type === "users" && typeof payload[fieldId] === "string") {
+            payload[fieldId] = payload[fieldId]
+              .split(",")
+              .map((t) => t.trim())
+              .filter(Boolean);
+          }
         }
       }
       await apiFetch(`/records/${entity}/${id}`, {

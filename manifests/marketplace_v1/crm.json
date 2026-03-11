@@ -1,0 +1,942 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "crm",
+    "key": "crm",
+    "name": "CRM",
+    "version": "1.7.0",
+    "description": "Lead and opportunity pipeline for pre-sales qualification and conversion.",
+    "category": "Sales",
+    "icon_key": "lucide:Target"
+  },
+  "depends_on": {
+    "required": [
+      {
+        "module": "contacts",
+        "version": ">=1.0.0"
+      },
+      {
+        "module": "sales",
+        "version": ">=1.5.0"
+      }
+    ]
+  },
+  "app": {
+    "home": "page:opportunity.list_page",
+    "defaults": {
+      "entity_home_page": "page:opportunity.list_page",
+      "entity_form_page": "page:opportunity.form_page",
+      "entities": {
+        "entity.opportunity": {
+          "entity_home_page": "page:opportunity.list_page",
+          "entity_form_page": "page:opportunity.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "CRM",
+        "items": [
+          {
+            "label": "Opportunities",
+            "to": "page:opportunity.list_page"
+          }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.opportunity",
+      "display_field": "opportunity.title",
+      "fields": [
+        {
+          "id": "opportunity.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "opportunity.title",
+          "type": "string",
+          "label": "Opportunity",
+          "required": true
+        },
+        {
+          "id": "opportunity.contact_id",
+          "type": "lookup",
+          "label": "Contact",
+          "entity": "entity.contact",
+          "display_field": "contact.name",
+          "required": true
+        },
+        {
+          "id": "opportunity.company_name",
+          "type": "string",
+          "label": "Company Name"
+        },
+        {
+          "id": "opportunity.email_from",
+          "type": "string",
+          "label": "Email"
+        },
+        {
+          "id": "opportunity.phone",
+          "type": "string",
+          "label": "Phone"
+        },
+        {
+          "id": "opportunity.stage",
+          "type": "enum",
+          "label": "Stage",
+          "default": "new",
+          "options": [
+            {
+              "value": "new",
+              "label": "New"
+            },
+            {
+              "value": "qualified",
+              "label": "Qualified"
+            },
+            {
+              "value": "quoted",
+              "label": "Quoted"
+            },
+            {
+              "value": "won",
+              "label": "Won"
+            },
+            {
+              "value": "lost",
+              "label": "Lost"
+            }
+          ]
+        },
+        {
+          "id": "opportunity.source",
+          "type": "string",
+          "label": "Source"
+        },
+        {
+          "id": "opportunity.medium",
+          "type": "string",
+          "label": "Medium"
+        },
+        {
+          "id": "opportunity.campaign",
+          "type": "string",
+          "label": "Campaign"
+        },
+        {
+          "id": "opportunity.team",
+          "type": "string",
+          "label": "Sales Team"
+        },
+        {
+          "id": "opportunity.owner_id",
+          "type": "user",
+          "label": "Owner"
+        },
+        {
+          "id": "opportunity.estimated_value",
+          "type": "number",
+          "label": "Estimated Value"
+        },
+        {
+          "id": "opportunity.probability",
+          "type": "number",
+          "label": "Probability (%)",
+          "default": 10
+        },
+        {
+          "id": "opportunity.expected_close_date",
+          "type": "date",
+          "label": "Expected Close"
+        },
+        {
+          "id": "opportunity.quote_id",
+          "type": "lookup",
+          "label": "Quote",
+          "entity": "entity.quote",
+          "display_field": "quote.number",
+          "readonly": true
+        },
+        {
+          "id": "opportunity.next_activity_date",
+          "type": "date",
+          "label": "Next Activity Date"
+        },
+        {
+          "id": "opportunity.priority",
+          "type": "enum",
+          "label": "Priority",
+          "default": "normal",
+          "options": [
+            {
+              "value": "low",
+              "label": "Low"
+            },
+            {
+              "value": "normal",
+              "label": "Normal"
+            },
+            {
+              "value": "high",
+              "label": "High"
+            }
+          ]
+        },
+        {
+          "id": "opportunity.description",
+          "type": "text",
+          "label": "Description"
+        },
+        {
+          "id": "opportunity.lost_reason",
+          "type": "text",
+          "label": "Lost Reason",
+          "visible_when": {
+            "op": "eq",
+            "field": "opportunity.stage",
+            "value": "lost"
+          }
+        },
+        {
+          "id": "opportunity.tags",
+          "type": "tags",
+          "label": "Tags"
+        },
+        {
+          "id": "opportunity.attachments",
+          "type": "attachments",
+          "label": "Attachments"
+        },
+        {
+          "id": "opportunity.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "action.opportunity_new",
+      "kind": "open_form",
+      "label": "+ New Opportunity",
+      "target": "opportunity.form"
+    },
+    {
+      "id": "action.opportunity_qualify",
+      "kind": "update_record",
+      "label": "Qualify",
+      "entity_id": "entity.opportunity",
+      "patch": {
+        "opportunity.stage": "qualified"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "opportunity.stage",
+        "value": "new"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "opportunity.stage",
+        "value": "new"
+      }
+    },
+    {
+      "id": "action.opportunity_create_quote",
+      "kind": "transform_record",
+      "label": "Create Quote",
+      "entity_id": "entity.opportunity",
+      "transformation_key": "opportunity_to_quote",
+      "enabled_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "eq",
+            "field": "opportunity.stage",
+            "value": "qualified"
+          },
+          {
+            "op": "not",
+            "condition": {
+              "op": "exists",
+              "field": "opportunity.quote_id"
+            }
+          }
+        ]
+      },
+      "visible_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "eq",
+            "field": "opportunity.stage",
+            "value": "qualified"
+          },
+          {
+            "op": "not",
+            "condition": {
+              "op": "exists",
+              "field": "opportunity.quote_id"
+            }
+          }
+        ]
+      },
+      "confirm": {
+        "title": "Create Quote",
+        "body": "Create a Sales quote from this opportunity?"
+      }
+    },
+    {
+      "id": "action.opportunity_mark_won",
+      "kind": "update_record",
+      "label": "Mark Won",
+      "entity_id": "entity.opportunity",
+      "patch": {
+        "opportunity.stage": "won"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "opportunity.stage",
+        "value": "quoted"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "opportunity.stage",
+        "value": "quoted"
+      }
+    },
+    {
+      "id": "action.opportunity_mark_lost",
+      "kind": "update_record",
+      "label": "Mark Lost",
+      "entity_id": "entity.opportunity",
+      "patch": {
+        "opportunity.stage": "lost"
+      },
+      "enabled_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "opportunity.stage",
+          "value": [
+            "won",
+            "lost"
+          ]
+        }
+      },
+      "visible_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "opportunity.stage",
+          "value": [
+            "won",
+            "lost"
+          ]
+        }
+      },
+      "confirm": {
+        "title": "Mark Lost",
+        "body": "This opportunity will move to Lost."
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "id": "crm.record.opportunity.created",
+      "event": "record.created",
+      "entity_id": "entity.opportunity"
+    },
+    {
+      "id": "crm.record.opportunity.updated",
+      "event": "record.updated",
+      "entity_id": "entity.opportunity"
+    },
+    {
+      "id": "crm.workflow.opportunity.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.opportunity",
+      "status_field": "opportunity.stage"
+    },
+    {
+      "id": "crm.action.opportunity_new.clicked",
+      "event": "action.clicked",
+      "action_id": "action.opportunity_new"
+    },
+    {
+      "id": "crm.action.opportunity_qualify.clicked",
+      "event": "action.clicked",
+      "action_id": "action.opportunity_qualify"
+    },
+    {
+      "id": "crm.action.opportunity_create_quote.clicked",
+      "event": "action.clicked",
+      "action_id": "action.opportunity_create_quote"
+    },
+    {
+      "id": "crm.action.opportunity_mark_won.clicked",
+      "event": "action.clicked",
+      "action_id": "action.opportunity_mark_won"
+    },
+    {
+      "id": "crm.action.opportunity_mark_lost.clicked",
+      "event": "action.clicked",
+      "action_id": "action.opportunity_mark_lost"
+    }
+  ],
+  "views": [
+    {
+      "id": "opportunity.list",
+      "kind": "list",
+      "entity": "entity.opportunity",
+      "columns": [
+        {
+          "field_id": "opportunity.title"
+        },
+        {
+          "field_id": "opportunity.contact_id"
+        },
+        {
+          "field_id": "opportunity.stage"
+        },
+        {
+          "field_id": "opportunity.owner_id"
+        },
+        {
+          "field_id": "opportunity.probability"
+        },
+        {
+          "field_id": "opportunity.expected_close_date"
+        },
+        {
+          "field_id": "opportunity.estimated_value"
+        }
+      ],
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.opportunity_new"
+          }
+        ],
+        "open_record_target": "page:opportunity.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search opportunities...",
+          "fields": [
+            "opportunity.title",
+            "opportunity.company_name",
+            "opportunity.source",
+            "opportunity.medium",
+            "opportunity.campaign",
+            "opportunity.owner_id"
+          ]
+        },
+        "filters": [
+          {
+            "id": "open",
+            "label": "Open",
+            "domain": {
+              "op": "not",
+              "condition": {
+                "op": "in",
+                "field": "opportunity.stage",
+                "value": [
+                  "won",
+                  "lost"
+                ]
+              }
+            }
+          },
+          {
+            "id": "mine",
+            "label": "Mine",
+            "domain": {
+              "op": "eq",
+              "field": "opportunity.owner_id",
+              "value": {
+                "ref": "$actor.user_id"
+              }
+            }
+          },
+          {
+            "id": "new",
+            "label": "New",
+            "domain": {
+              "op": "eq",
+              "field": "opportunity.stage",
+              "value": "new"
+            }
+          },
+          {
+            "id": "qualified",
+            "label": "Qualified",
+            "domain": {
+              "op": "eq",
+              "field": "opportunity.stage",
+              "value": "qualified"
+            }
+          },
+          {
+            "id": "quoted",
+            "label": "Quoted",
+            "domain": {
+              "op": "eq",
+              "field": "opportunity.stage",
+              "value": "quoted"
+            }
+          },
+          {
+            "id": "won",
+            "label": "Won",
+            "domain": {
+              "op": "eq",
+              "field": "opportunity.stage",
+              "value": "won"
+            }
+          },
+          {
+            "id": "lost",
+            "label": "Lost",
+            "domain": {
+              "op": "eq",
+              "field": "opportunity.stage",
+              "value": "lost"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "opportunity.kanban",
+      "kind": "kanban",
+      "entity": "entity.opportunity",
+      "card": {
+        "title_field": "opportunity.title",
+        "subtitle_fields": [
+          "opportunity.contact_id",
+          "opportunity.expected_close_date"
+        ],
+        "badge_fields": [
+          "opportunity.stage",
+          "opportunity.priority",
+          "opportunity.tags"
+        ]
+      }
+    },
+    {
+      "id": "opportunity.calendar",
+      "kind": "calendar",
+      "entity": "entity.opportunity",
+      "calendar": {
+        "title_field": "opportunity.title",
+        "date_start": "opportunity.expected_close_date",
+        "color_field": "opportunity.owner_id",
+        "default_scale": "month"
+      }
+    },
+    {
+      "id": "opportunity.form",
+      "kind": "form",
+      "entity": "entity.opportunity",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Opportunity",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "opportunity.title",
+            "opportunity.contact_id",
+            "opportunity.company_name",
+            "opportunity.email_from",
+            "opportunity.phone",
+            "opportunity.stage",
+            "opportunity.owner_id",
+            "opportunity.team",
+            "opportunity.priority",
+            "opportunity.next_activity_date"
+          ]
+        },
+        {
+          "id": "extra_info",
+          "title": "Extra Info",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "opportunity.estimated_value",
+            "opportunity.probability",
+            "opportunity.expected_close_date",
+            "opportunity.quote_id",
+            "opportunity.source",
+            "opportunity.medium",
+            "opportunity.campaign",
+            "opportunity.tags"
+          ]
+        },
+        {
+          "id": "internal_notes",
+          "title": "Internal Notes",
+          "fields": [
+            "opportunity.description",
+            "opportunity.lost_reason",
+            "opportunity.attachments"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": {
+          "field_id": "opportunity.stage"
+        },
+        "secondary_actions": [
+          {
+            "action_id": "action.opportunity_qualify"
+          },
+          {
+            "action_id": "action.opportunity_create_quote"
+          },
+          {
+            "action_id": "action.opportunity_mark_won"
+          },
+          {
+            "action_id": "action.opportunity_mark_lost"
+          }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "opportunity",
+          "tabs": [
+            {
+              "id": "opportunity",
+              "label": "Opportunity",
+              "sections": [
+                "main"
+              ]
+            },
+            {
+              "id": "extra_info_tab",
+              "label": "Extra Info",
+              "sections": [
+                "extra_info"
+              ]
+            },
+            {
+              "id": "internal_notes_tab",
+              "label": "Internal Notes",
+              "sections": [
+                "internal_notes"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "opportunity.graph",
+      "kind": "graph",
+      "entity": "entity.opportunity",
+      "default": {
+        "type": "bar",
+        "group_by": "opportunity.stage",
+        "measure": "sum:opportunity.estimated_value"
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "opportunity.list_page",
+      "title": "Opportunities",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.opportunity_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.opportunity",
+              "default_mode": "kanban",
+              "modes": [
+                {
+                  "mode": "kanban",
+                  "target": "view:opportunity.kanban",
+                  "default_group_by": "opportunity.stage"
+                },
+                {
+                  "mode": "list",
+                  "target": "view:opportunity.list"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:opportunity.calendar"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:opportunity.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:opportunity.list",
+                  "default_group_by": "opportunity.stage"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "opportunity.form_page",
+      "title": "Opportunity",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.opportunity",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:opportunity.form"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.opportunity",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "interfaces": {
+    "documentable": [
+      {
+        "entity_id": "entity.opportunity",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "opportunity.attachments",
+        "title_field": "opportunity.title",
+        "owner_field": "opportunity.owner_id",
+        "category_field": "opportunity.stage",
+        "date_field": "opportunity.created_at",
+        "record_label_field": "opportunity.title",
+        "preview_enabled": true,
+        "allow_delete": false,
+        "allow_download": true
+      }
+    ],
+    "dashboardable": [
+      {
+        "entity_id": "entity.opportunity",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "opportunity.created_at",
+        "measures": [
+          "count",
+          "sum:opportunity.estimated_value"
+        ],
+        "group_bys": [
+          "opportunity.stage",
+          "opportunity.owner_id",
+          "opportunity.priority"
+        ],
+        "default_widgets": [
+          {
+            "id": "opps_by_stage",
+            "type": "group",
+            "title": "Opportunities by Stage",
+            "group_by": "opportunity.stage",
+            "measure": "count"
+          }
+        ]
+      }
+    ],
+    "schedulable": [
+      {
+        "entity_id": "entity.opportunity",
+        "enabled": true,
+        "scope": "module_only",
+        "title_field": "opportunity.title",
+        "date_start": "opportunity.expected_close_date",
+        "owner_field": "opportunity.owner_id",
+        "status_field": "opportunity.stage",
+        "color_field": "opportunity.owner_id"
+      }
+    ]
+  },
+  "relations": [],
+  "workflows": [
+    {
+      "id": "workflow.opportunity_stage",
+      "entity": "entity.opportunity",
+      "status_field": "opportunity.stage",
+      "states": [
+        {
+          "id": "new",
+          "label": "New",
+          "order": 1
+        },
+        {
+          "id": "qualified",
+          "label": "Qualified",
+          "order": 2
+        },
+        {
+          "id": "quoted",
+          "label": "Quoted",
+          "order": 3
+        },
+        {
+          "id": "won",
+          "label": "Won",
+          "order": 4
+        },
+        {
+          "id": "lost",
+          "label": "Lost",
+          "order": 5
+        }
+      ],
+      "transitions": [
+        {
+          "from": "new",
+          "to": "qualified",
+          "label": "Qualify"
+        },
+        {
+          "from": "qualified",
+          "to": "quoted",
+          "label": "Quote"
+        },
+        {
+          "from": "qualified",
+          "to": "won",
+          "label": "Mark Won"
+        },
+        {
+          "from": "quoted",
+          "to": "won",
+          "label": "Mark Won"
+        },
+        {
+          "from": "new",
+          "to": "lost",
+          "label": "Mark Lost"
+        },
+        {
+          "from": "qualified",
+          "to": "lost",
+          "label": "Mark Lost"
+        },
+        {
+          "from": "quoted",
+          "to": "lost",
+          "label": "Mark Lost"
+        }
+      ]
+    }
+  ],
+  "transformations": [
+    {
+      "key": "opportunity_to_quote",
+      "source_entity_id": "entity.opportunity",
+      "target_entity_id": "entity.quote",
+      "field_mappings": {
+        "quote.number": {
+          "from": "opportunity.title"
+        },
+        "quote.reference": {
+          "from": "opportunity.title"
+        },
+        "quote.contact_id": {
+          "from": "opportunity.contact_id"
+        },
+        "quote.owner_id": {
+          "from": "opportunity.owner_id"
+        },
+        "quote.quote_date": {
+          "from": "opportunity.created_at"
+        },
+        "quote.expiry_date": {
+          "from": "opportunity.expected_close_date"
+        },
+        "quote.notes": {
+          "from": "opportunity.description"
+        },
+        "quote.subtotal": {
+          "from": "opportunity.estimated_value"
+        },
+        "quote.total": {
+          "from": "opportunity.estimated_value"
+        },
+        "quote.status": {
+          "value": "draft"
+        }
+      },
+      "link_fields": {
+        "source_to_target": "opportunity.quote_id",
+        "target_to_source": "quote.opportunity_id"
+      },
+      "source_update": {
+        "patch": {
+          "opportunity.stage": "quoted"
+        }
+      },
+      "validation": {
+        "require_source_fields": [
+          "opportunity.title",
+          "opportunity.contact_id"
+        ],
+        "prevent_if_target_linked": true
+      }
+    }
+  ],
+  "modals": [],
+  "queries": {}
+}

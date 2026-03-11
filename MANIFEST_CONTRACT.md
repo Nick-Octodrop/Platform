@@ -9,13 +9,15 @@ Legacy manifests continue to work (defaulting to `manifest_version: "0.x"`), whi
 ```json
 {
   "manifest_version": "1.3",
-  "module": { "id": "jobs", "name": "Jobs", "version": "1.0.0" },
+  "module": { "id": "jobs", "key": "jobs", "name": "Jobs", "version": "1.0.0" },
   "app": { "home": "page:home", "nav": [ ... ] },
   "pages": [ ... ],
   "entities": [ ... ],
   "views": [ ... ],
   "relations": [ ... ],
   "workflows": [ ... ],
+  "depends_on": { ... },
+  "transformations": [ ... ],
   "actions": [ ... ],
   "modals": [ ... ],
   "queries": { ... },
@@ -28,6 +30,14 @@ Required:
 - `module.id` (string)
 - `entities` (list)
 - `views` (list)
+
+Module identity:
+- `module.id` remains the runtime module instance identifier in Studio routes/install targets.
+- `module.key` (optional, recommended) is the stable logical module key for portable dependencies and marketplace upgrades.
+- Dependency declarations (`depends_on.*[].module`) should reference stable module keys.
+
+Optional:
+- `depends_on` for module dependency declarations (`required` / `optional`).
 
 ### Manifest versioning
 
@@ -98,7 +108,8 @@ Rules:
 - v1.2: `page.content[]` also supports a `chatter` block.
 - v1.3: `page.content[]` adds structured UI composition blocks (container/toolbar/statusbar/record).
 - `page.header.variant` (optional) may be `"default"` or `"none"` (use `"none"` to suppress the page title card).
-- `page.header.actions[]` allowlisted kinds: `navigate`, `open_form`, `refresh`, `create_record`, `update_record`, `bulk_update`.
+- `page.header.actions[]` may reference top-level actions (including `create_record`, `update_record`, `bulk_update`, `transform_record`) via `action_id`.
+- Inline `page.header.actions[]` kinds are `navigate`, `open_form`, `refresh`.
 - `page.header.actions[]` may also set `modal_id` to open a top-level modal.
 - `navigate` targets are `page:<id>` or `view:<id>`.
 - `open_form` targets a **view id** (no prefix).
@@ -338,13 +349,22 @@ Top‑level actions:
   { "id": "action.refresh", "kind": "refresh", "label": "Refresh" },
   { "id": "action.new_job", "kind": "create_record", "entity_id": "entity.job", "defaults": { "job.status": "new" } },
   { "id": "action.bulk_close", "kind": "bulk_update", "entity_id": "entity.job", "patch": { "job.status": "done" },
-    "enabled_when": { "op": "exists", "field": "job.status" } }
+    "enabled_when": { "op": "exists", "field": "job.status" } },
+  {
+    "id": "action.quote_to_job",
+    "kind": "transform_record",
+    "entity_id": "entity.quote",
+    "transformation_key": "quote_to_job",
+    "confirm": { "title": "Convert quote?", "body": "Create a job and copy quote lines." }
+  }
 ]
 ```
 
 Template refs in `defaults` / `patch`:
 - Values can use `{ "ref": "$record.id" }` or `{ "ref": "$record.<field>" }` and will resolve from the current record context at runtime.
 - Actions may include `modal_id` to open a manifest-defined modal before follow-up actions run.
+- `transform_record` actions must include `transformation_key`.
+- `transform_record.entity_id` (when present) must match the transformation `source_entity_id`.
 
 Page header actions can reference actions:
 ```json
@@ -425,6 +445,207 @@ Notes:
 - `record.*` and `workflow.status_changed` require `entity_id`.
 - `action.clicked` requires `action_id`.
 - `status_field` is optional but recommended for workflow triggers.
+
+## Transformations (v1.3 extension)
+
+Top-level transformations define reusable source→target record conversion logic using stable keys only.
+
+```json
+"transformations": [
+  {
+    "key": "quote_to_job",
+    "source_entity_id": "entity.quote",
+    "target_entity_id": "entity.job",
+    "field_mappings": {
+      "job.number": { "from": "quote.number" },
+      "job.customer_id": { "from": "quote.customer_id" },
+      "job.status": { "value": "new" }
+    },
+    "child_mappings": [
+      {
+        "source_entity_id": "entity.quote_line",
+        "target_entity_id": "entity.job_line",
+        "source_link_field": "quote_line.quote_id",
+        "target_link_field": "job_line.job_id",
+        "field_mappings": {
+          "job_line.description": { "from": "quote_line.description" },
+          "job_line.qty": { "from": "quote_line.qty" },
+          "job_line.source_quote_line_id": { "ref": "$source.id" }
+        }
+      }
+    ],
+    "link_fields": {
+      "source_to_target": "quote.job_id",
+      "target_to_source": "job.source_quote_id"
+    },
+    "source_update": {
+      "patch": { "quote.status": "converted" }
+    },
+    "activity": {
+      "enabled": true,
+      "event_type": "transform",
+      "targets": ["source", "target"]
+    },
+    "feed": {
+      "enabled": true,
+      "message": "Created {target.entity_id} {target.id} from {source.entity_id} {source.id}",
+      "targets": ["source"]
+    },
+    "hooks": {
+      "emit_events": ["quote.transformed_to_job"]
+    },
+    "validation": {
+      "require_source_fields": ["quote.number"],
+      "require_child_records": true,
+      "prevent_if_target_linked": true
+    }
+  }
+]
+```
+
+Rules:
+- `key` is required and must be unique within the manifest.
+- `source_entity_id` and `target_entity_id` are required.
+- `field_mappings` supports either:
+  - object form: `{ "<target_field>": "<source_field>" | { "from" | "value" | "ref" } }`
+  - list form: `[ { "to": "<target_field>", "from" | "value" | "ref": ... } ]`
+- Each mapping must define exactly one source (`from`, `value`, or `ref`).
+- `child_mappings[]` supports parent-child conversion via current lookup conventions:
+  - `source_link_field`: child→source parent field
+  - `target_link_field`: child→target parent field
+- `link_fields.source_to_target` writes target id back to the source record.
+- `link_fields.target_to_source` writes source id to the target record.
+- `source_update.patch` applies a patch to source after target creation (for status changes, etc.).
+- `validation.require_source_fields` enforces source prerequisites.
+- `validation.require_child_records` can block transforms with zero matching source children.
+- `validation.prevent_if_target_linked` can block duplicate transforms when source already linked.
+- `hooks.emit_events[]` publishes custom events for downstream automations.
+
+Reference expressions for transformation mappings:
+- `$source.id`, `$source.<field>`
+- `$target.id`, `$target.<field>` (useful in child mapping contexts)
+- `$context.record_id`, `$context.record.<field>`
+
+## Dependencies (v1.3 extension)
+
+Top-level `depends_on` declares module dependencies using stable module keys.
+
+```json
+"depends_on": {
+  "required": [
+    { "module": "contacts", "version": ">=1.0.0" }
+  ],
+  "optional": [
+    { "module": "crm", "version": ">=1.0.0, <2.0.0" }
+  ]
+}
+```
+
+Rules:
+- `depends_on` is optional and must be an object.
+- Supported keys: `required`, `optional`.
+- Each list item requires:
+  - `module` (stable module id string)
+  - `version` (optional semver constraint string)
+- `module` cannot reference the current module (`self` dependency rejected).
+- Duplicate module entries across/within `required` and `optional` are rejected.
+- Invalid constraint strings are rejected.
+- Circular required dependency graphs are rejected at install/enable validation time.
+- `required` deps must be installed before install/upgrade and installed+enabled before enable.
+- `optional` deps may be absent.
+
+Version constraints (v1):
+- Operators: `=`, `==`, `>`, `<`, `>=`, `<=`
+- Terms can be comma-separated to form AND constraints, for example:
+  - `">=1.0.0, <2.0.0"`
+
+## Interfaces (v1.3 extension)
+
+`interfaces` is the manifest-driven opt-in surface for cross-module system capabilities.  
+Global system apps discover participating entities dynamically from enabled modules.
+
+```json
+"interfaces": {
+  "schedulable": [
+    {
+      "entity_id": "entity.job",
+      "enabled": true,
+      "scope": "module_and_global",
+      "title_field": "job.title",
+      "date_start": "job.scheduled_start",
+      "date_end": "job.scheduled_end",
+      "owner_field": "job.owner_id",
+      "location_field": "job.site_address",
+      "status_field": "job.status",
+      "all_day_field": "job.is_all_day",
+      "color_field": "job.owner_id"
+    }
+  ],
+  "documentable": [
+    {
+      "entity_id": "entity.quote",
+      "enabled": true,
+      "scope": "module_and_global",
+      "attachment_field": "quote.attachments",
+      "title_field": "quote.number",
+      "owner_field": "quote.owner_id",
+      "category_field": "quote.stage",
+      "date_field": "quote.updated_at",
+      "record_label_field": "quote.number",
+      "preview_enabled": true,
+      "allow_delete": false,
+      "allow_download": true
+    }
+  ],
+  "dashboardable": [
+    {
+      "entity_id": "entity.job",
+      "enabled": true,
+      "scope": "module_and_global",
+      "date_field": "job.created_at",
+      "measures": ["count", "sum:job.total"],
+      "group_bys": ["job.status", "job.owner_id"],
+      "default_widgets": [
+        { "id": "jobs_by_status", "type": "group", "title": "Jobs by Status", "group_by": "job.status", "measure": "count" }
+      ],
+      "default_filters": [
+        { "op": "eq", "field": "job.archived", "value": false }
+      ]
+    }
+  ]
+}
+```
+
+Rules:
+- `interfaces` is optional and must be an object when present.
+- Supported keys: `schedulable`, `documentable`, `dashboardable`.
+- Each key maps to a list of declarations.
+- Shared declaration fields:
+  - `entity_id` (required): target entity.
+  - `enabled` (optional bool, default `true`).
+  - `scope` (optional): `module_only | global_only | module_and_global` (default `module_and_global`).
+
+### `schedulable` rules
+- Required fields: `title_field`, `date_start`.
+- Optional fields: `date_end`, `owner_field`, `location_field`, `status_field`, `all_day_field`, `color_field`.
+- Used by global calendar aggregation; local/module calendar views remain unchanged.
+
+### `documentable` rules
+- Required fields: `attachment_field`.
+- Optional fields: `title_field`, `owner_field`, `category_field`, `date_field`, `record_label_field`.
+- Optional behavior flags: `preview_enabled`, `allow_delete`, `allow_download`.
+- Used by global document aggregation; local attachment rendering remains unchanged.
+
+### `dashboardable` rules
+- Optional fields: `date_field`, `measures`, `group_bys`, `default_widgets`, `default_filters`.
+- `default_widgets[].type` allowlist: `metric`, `group`, `time_series`, `table`.
+- `default_filters[]` uses the condition DSL.
+- Used by global dashboard aggregation; local analytics views remain unchanged.
+
+Discovery/runtime behavior:
+- System scans enabled installed modules and reads `interfaces.*` declarations.
+- New Studio-created modules appear automatically in global aggregate apps after install/enable if they opt in.
+- Discovery uses stable keys only (`module_id`, `entity_id`, field ids), never DB/workspace-specific IDs.
 
 ## View schema
 

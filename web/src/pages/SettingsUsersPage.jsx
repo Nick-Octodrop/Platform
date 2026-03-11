@@ -14,6 +14,16 @@ const PLATFORM_ROLE_OPTIONS = [
   { value: "superadmin", label: "Superadmin" },
 ];
 
+function SettingsSection({ title, description, children }) {
+  return (
+    <div className="rounded-box border border-base-300 bg-base-100 p-4">
+      <div className="text-sm font-semibold">{title}</div>
+      {description ? <div className="text-sm opacity-70 mt-1">{description}</div> : null}
+      <div className="mt-4">{children}</div>
+    </div>
+  );
+}
+
 export default function SettingsUsersPage() {
   const [context, setContext] = useState(null);
   const [members, setMembers] = useState([]);
@@ -203,16 +213,6 @@ export default function SettingsUsersPage() {
     }
   }
 
-  function Section({ title, description, children }) {
-    return (
-      <div className="rounded-box border border-base-300 bg-base-100 p-4">
-        <div className="text-sm font-semibold">{title}</div>
-        {description ? <div className="text-sm opacity-70 mt-1">{description}</div> : null}
-        <div className="mt-4">{children}</div>
-      </div>
-    );
-  }
-
   const tabs = useMemo(
     () => [],
     [],
@@ -234,7 +234,7 @@ export default function SettingsUsersPage() {
         {notice && <div className="alert alert-success text-sm">{notice}</div>}
 
         <div className="space-y-4">
-          <Section title="Invite user" description="Add someone to this workspace.">
+          <SettingsSection title="Invite user" description="Add someone to this workspace.">
             {canManage ? (
               <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                 <label className="form-control md:col-span-6">
@@ -277,10 +277,10 @@ export default function SettingsUsersPage() {
             ) : (
               <div className="text-sm opacity-70">Admin role is required to invite and manage users.</div>
             )}
-          </Section>
+          </SettingsSection>
 
           {actor.platform_role === "superadmin" ? (
-            <Section
+            <SettingsSection
               title="Platform invite"
               description="Invite a user without assigning them to the current workspace (workspace created on first login)."
             >
@@ -322,10 +322,10 @@ export default function SettingsUsersPage() {
                   </button>
                 </div>
               </div>
-            </Section>
+            </SettingsSection>
           ) : null}
 
-          <Section title="Workspace users" description="Everyone who can access this workspace.">
+          <SettingsSection title="Workspace users" description="Everyone who can access this workspace.">
             {loading ? (
               <div className="text-sm opacity-60">Loading users…</div>
             ) : members.length === 0 ? (
@@ -411,7 +411,7 @@ export default function SettingsUsersPage() {
                 </div>
               </div>
             )}
-          </Section>
+          </SettingsSection>
         </div>
       </div>
 

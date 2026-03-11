@@ -5,15 +5,17 @@ from __future__ import annotations
 from typing import Any, Dict, List, Tuple
 
 from app.manifest_normalize import normalize_manifest
+from app.module_dependencies import validate_depends_on_shape
 
 
 Issue = Dict[str, Any]
 
 
-ALLOWED_FIELD_TYPES = {"string", "text", "number", "bool", "date", "datetime", "enum", "uuid", "lookup", "tags", "attachments"}
+ALLOWED_FIELD_TYPES = {"string", "text", "number", "bool", "date", "datetime", "enum", "uuid", "lookup", "tags", "attachments", "user", "users"}
 ALLOWED_V1_TOP_KEYS = {
     "manifest_version",
     "module",
+    "depends_on",
     "entities",
     "views",
     "relations",
@@ -25,6 +27,7 @@ ALLOWED_V1_TOP_KEYS = {
     "app",
     "pages",
     "modals",
+    "transformations",
 }
 ALLOWED_V1_APP_KEYS = {"home", "nav", "defaults"}
 ALLOWED_V1_NAV_GROUP_KEYS = {"group", "items"}
@@ -61,7 +64,7 @@ ALLOWED_V1_BLOCK_KEYS = {
     "create_defaults",
     "create_modal",
 }
-ALLOWED_V1_ACTION_KINDS = {"navigate", "open_form", "refresh", "create_record", "update_record", "bulk_update"}
+ALLOWED_V1_ACTION_KINDS = {"navigate", "open_form", "refresh", "create_record", "update_record", "bulk_update", "transform_record"}
 ALLOWED_V1_TRIGGER_KEYS = {"id", "event", "entity_id", "action_id", "status_field"}
 ALLOWED_V1_TRIGGER_EVENTS = {"record.created", "record.updated", "action.clicked", "workflow.status_changed"}
 ALLOWED_V1_STACK_KEYS = {"kind", "gap", "content"}
@@ -85,7 +88,7 @@ ALLOWED_WORKFLOW_STATE_KEYS = {"id", "label", "order", "required_fields"}
 ALLOWED_WORKFLOW_TRANSITION_KEYS = {"from", "to", "label"}
 ALLOWED_CONDITION_OPS = {"eq", "neq", "gt", "gte", "lt", "lte", "in", "contains", "exists", "and", "or", "not"}
 ALLOWED_CONDITION_KEYS = {"op", "field", "value", "left", "right", "conditions", "condition"}
-ALLOWED_V1_ACTION_KEYS = {"id", "kind", "label", "target", "entity_id", "defaults", "patch", "enabled_when", "visible_when", "confirm", "modal_id"}
+ALLOWED_V1_ACTION_KEYS = {"id", "kind", "label", "target", "entity_id", "defaults", "patch", "transformation_key", "enabled_when", "visible_when", "confirm", "modal_id"}
 ALLOWED_V1_VIEW_HEADER_KEYS = {"title_field", "primary_actions", "secondary_actions", "search", "filters", "bulk_actions", "save_mode", "open_record_target", "auto_save", "auto_save_debounce_ms", "statusbar", "tabs"}
 ALLOWED_V1_VIEW_HEADER_ACTION_KEYS = {"action_id", "kind", "label", "target", "enabled_when", "visible_when", "confirm", "modal_id"}
 ALLOWED_V1_MODAL_KEYS = {"id", "title", "description", "entity_id", "fields", "defaults", "actions"}
@@ -109,6 +112,73 @@ ALLOWED_V1_VIEW_ACTIVITY_KEYS = {"enabled", "mode", "tab_label", "allow_comments
 ALLOWED_V1_VIEW_CARD_KEYS = {"title_field", "subtitle_fields", "badge_fields"}
 ALLOWED_V1_VIEW_GRAPH_KEYS = {"default"}
 ALLOWED_V1_GRAPH_DEFAULT_KEYS = {"type", "group_by", "measure"}
+ALLOWED_V1_INTERFACES_KEYS = {"schedulable", "documentable", "dashboardable"}
+ALLOWED_V1_INTERFACE_SCOPE_VALUES = {"module_only", "global_only", "module_and_global"}
+ALLOWED_V1_SCHEDULABLE_KEYS = {
+    "entity_id",
+    "enabled",
+    "scope",
+    "title_field",
+    "date_start",
+    "date_end",
+    "owner_field",
+    "location_field",
+    "status_field",
+    "all_day_field",
+    "color_field",
+}
+ALLOWED_V1_DOCUMENTABLE_KEYS = {
+    "entity_id",
+    "enabled",
+    "scope",
+    "attachment_field",
+    "title_field",
+    "owner_field",
+    "category_field",
+    "date_field",
+    "record_label_field",
+    "preview_enabled",
+    "allow_delete",
+    "allow_download",
+}
+ALLOWED_V1_DASHBOARDABLE_KEYS = {
+    "entity_id",
+    "enabled",
+    "scope",
+    "date_field",
+    "measures",
+    "group_bys",
+    "default_widgets",
+    "default_filters",
+}
+ALLOWED_V1_DASHBOARD_WIDGET_KEYS = {"id", "type", "title", "group_by", "measure", "date_field", "filter"}
+ALLOWED_V1_TRANSFORMATION_KEYS = {
+    "key",
+    "source_entity_id",
+    "target_entity_id",
+    "field_mappings",
+    "child_mappings",
+    "link_fields",
+    "source_update",
+    "activity",
+    "feed",
+    "hooks",
+    "validation",
+}
+ALLOWED_V1_TRANSFORMATION_MAP_KEYS = {"to", "from", "value", "ref"}
+ALLOWED_V1_TRANSFORMATION_CHILD_KEYS = {
+    "source_entity_id",
+    "target_entity_id",
+    "source_link_field",
+    "target_link_field",
+    "field_mappings",
+}
+ALLOWED_V1_TRANSFORMATION_LINK_KEYS = {"source_to_target", "target_to_source"}
+ALLOWED_V1_TRANSFORMATION_SOURCE_UPDATE_KEYS = {"patch"}
+ALLOWED_V1_TRANSFORMATION_ACTIVITY_KEYS = {"enabled", "event_type", "targets"}
+ALLOWED_V1_TRANSFORMATION_FEED_KEYS = {"enabled", "message", "targets"}
+ALLOWED_V1_TRANSFORMATION_HOOK_KEYS = {"emit_events"}
+ALLOWED_V1_TRANSFORMATION_VALIDATION_KEYS = {"require_source_fields", "require_child_records", "prevent_if_target_linked"}
 
 
 def _issue(code: str, message: str, path: str | None = None, detail: dict | None = None) -> Issue:
@@ -520,6 +590,10 @@ def _validate_blocks(
 def _default_type_valid(field_type: str, value) -> bool:
     if field_type in {"string", "text"}:
         return isinstance(value, str)
+    if field_type == "user":
+        return isinstance(value, str)
+    if field_type == "users":
+        return isinstance(value, list) and all(isinstance(item, str) for item in value)
     if field_type == "number":
         return isinstance(value, (int, float)) and not isinstance(value, bool)
     if field_type in {"bool", "boolean"}:
@@ -585,6 +659,8 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
             )
     else:
         _reject_unknown_keys(errors, manifest, ALLOWED_V1_TOP_KEYS, "$")
+
+    errors.extend(validate_depends_on_shape(manifest, module_id if isinstance(module_id, str) else None))
 
     entities = _get(manifest, "entities", [])
     if not isinstance(entities, list):
@@ -709,6 +785,304 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
         if display_field and display_field not in _field_ids(entity):
             errors.append(_issue("MANIFEST_DISPLAY_FIELD_INVALID", "display_field not found in fields", f"{path}.display_field"))
 
+    transformations = _get(manifest, "transformations", [])
+    transformation_by_key: dict[str, dict] = {}
+    if transformations is not None and not isinstance(transformations, list):
+        errors.append(_issue("MANIFEST_TRANSFORMATIONS_INVALID", "transformations must be a list", "transformations"))
+        transformations = []
+    if isinstance(transformations, list):
+        for tidx, transformation in enumerate(transformations):
+            tpath = f"transformations[{tidx}]"
+            if not isinstance(transformation, dict):
+                errors.append(_issue("MANIFEST_TRANSFORMATION_INVALID", "transformation must be an object", tpath))
+                continue
+            _reject_unknown_keys(errors, transformation, ALLOWED_V1_TRANSFORMATION_KEYS, tpath)
+            key = _get(transformation, "key")
+            if not isinstance(key, str) or not key:
+                errors.append(_issue("MANIFEST_TRANSFORMATION_KEY_INVALID", "transformation.key is required", f"{tpath}.key"))
+            elif key in transformation_by_key:
+                errors.append(_issue("MANIFEST_TRANSFORMATION_KEY_DUPLICATE", "transformation.key must be unique", f"{tpath}.key"))
+            else:
+                transformation_by_key[key] = transformation
+            source_entity_id = _get(transformation, "source_entity_id")
+            target_entity_id = _get(transformation, "target_entity_id")
+            if not isinstance(source_entity_id, str) or not source_entity_id:
+                errors.append(_issue("MANIFEST_TRANSFORMATION_ENTITY_INVALID", "source_entity_id is required", f"{tpath}.source_entity_id"))
+            elif source_entity_id not in entity_by_id and f"entity.{source_entity_id}" not in entity_by_id:
+                warnings.append(_issue("MANIFEST_TRANSFORMATION_ENTITY_EXTERNAL", "source_entity_id not found in module (external ok)", f"{tpath}.source_entity_id"))
+            if not isinstance(target_entity_id, str) or not target_entity_id:
+                errors.append(_issue("MANIFEST_TRANSFORMATION_ENTITY_INVALID", "target_entity_id is required", f"{tpath}.target_entity_id"))
+            elif target_entity_id not in entity_by_id and f"entity.{target_entity_id}" not in entity_by_id:
+                warnings.append(_issue("MANIFEST_TRANSFORMATION_ENTITY_EXTERNAL", "target_entity_id not found in module (external ok)", f"{tpath}.target_entity_id"))
+
+            field_mappings = _get(transformation, "field_mappings")
+            if field_mappings is not None:
+                if isinstance(field_mappings, list):
+                    for midx, mapping in enumerate(field_mappings):
+                        mpath = f"{tpath}.field_mappings[{midx}]"
+                        if not isinstance(mapping, dict):
+                            errors.append(_issue("MANIFEST_TRANSFORMATION_MAPPING_INVALID", "field mapping must be object", mpath))
+                            continue
+                        _reject_unknown_keys(errors, mapping, ALLOWED_V1_TRANSFORMATION_MAP_KEYS, mpath)
+                        to_field = _get(mapping, "to")
+                        if not isinstance(to_field, str) or not to_field:
+                            errors.append(_issue("MANIFEST_TRANSFORMATION_MAPPING_INVALID", "field mapping.to is required", f"{mpath}.to"))
+                        has_from = "from" in mapping
+                        has_value = "value" in mapping
+                        has_ref = "ref" in mapping
+                        source_count = int(has_from) + int(has_value) + int(has_ref)
+                        if source_count != 1:
+                            errors.append(_issue("MANIFEST_TRANSFORMATION_MAPPING_INVALID", "field mapping requires exactly one of from/value/ref", mpath))
+                elif isinstance(field_mappings, dict):
+                    for to_field, mapping in field_mappings.items():
+                        mpath = f"{tpath}.field_mappings.{to_field}"
+                        if not isinstance(to_field, str) or not to_field:
+                            errors.append(_issue("MANIFEST_TRANSFORMATION_MAPPING_INVALID", "field mapping key must be target field id", mpath))
+                            continue
+                        if isinstance(mapping, str):
+                            continue
+                        if not isinstance(mapping, dict):
+                            errors.append(_issue("MANIFEST_TRANSFORMATION_MAPPING_INVALID", "field mapping value must be string or object", mpath))
+                            continue
+                        _reject_unknown_keys(errors, mapping, {"from", "value", "ref"}, mpath)
+                        has_from = "from" in mapping
+                        has_value = "value" in mapping
+                        has_ref = "ref" in mapping
+                        source_count = int(has_from) + int(has_value) + int(has_ref)
+                        if source_count != 1:
+                            errors.append(_issue("MANIFEST_TRANSFORMATION_MAPPING_INVALID", "field mapping requires exactly one of from/value/ref", mpath))
+                else:
+                    errors.append(_issue("MANIFEST_TRANSFORMATION_MAPPING_INVALID", "field_mappings must be list or object", f"{tpath}.field_mappings"))
+
+            child_mappings = _get(transformation, "child_mappings")
+            if child_mappings is not None:
+                if not isinstance(child_mappings, list):
+                    errors.append(_issue("MANIFEST_TRANSFORMATION_CHILD_INVALID", "child_mappings must be a list", f"{tpath}.child_mappings"))
+                else:
+                    for cidx, child in enumerate(child_mappings):
+                        cpath = f"{tpath}.child_mappings[{cidx}]"
+                        if not isinstance(child, dict):
+                            errors.append(_issue("MANIFEST_TRANSFORMATION_CHILD_INVALID", "child mapping must be object", cpath))
+                            continue
+                        _reject_unknown_keys(errors, child, ALLOWED_V1_TRANSFORMATION_CHILD_KEYS, cpath)
+                        for required_key in ("source_entity_id", "target_entity_id", "source_link_field", "target_link_field"):
+                            value = _get(child, required_key)
+                            if not isinstance(value, str) or not value:
+                                errors.append(_issue("MANIFEST_TRANSFORMATION_CHILD_INVALID", f"{required_key} is required", f"{cpath}.{required_key}"))
+                        mappings = _get(child, "field_mappings")
+                        if mappings is not None and not isinstance(mappings, (list, dict)):
+                            errors.append(_issue("MANIFEST_TRANSFORMATION_MAPPING_INVALID", "child field_mappings must be list or object", f"{cpath}.field_mappings"))
+
+            link_fields = _get(transformation, "link_fields")
+            if link_fields is not None:
+                if not isinstance(link_fields, dict):
+                    errors.append(_issue("MANIFEST_TRANSFORMATION_LINK_INVALID", "link_fields must be object", f"{tpath}.link_fields"))
+                else:
+                    _reject_unknown_keys(errors, link_fields, ALLOWED_V1_TRANSFORMATION_LINK_KEYS, f"{tpath}.link_fields")
+                    for link_key in ("source_to_target", "target_to_source"):
+                        if link_key in link_fields:
+                            value = link_fields.get(link_key)
+                            if not isinstance(value, str) or not value:
+                                errors.append(_issue("MANIFEST_TRANSFORMATION_LINK_INVALID", f"{link_key} must be string", f"{tpath}.link_fields.{link_key}"))
+
+            source_update = _get(transformation, "source_update")
+            if source_update is not None:
+                if not isinstance(source_update, dict):
+                    errors.append(_issue("MANIFEST_TRANSFORMATION_SOURCE_UPDATE_INVALID", "source_update must be object", f"{tpath}.source_update"))
+                else:
+                    _reject_unknown_keys(errors, source_update, ALLOWED_V1_TRANSFORMATION_SOURCE_UPDATE_KEYS, f"{tpath}.source_update")
+                    patch = _get(source_update, "patch")
+                    if patch is not None and not isinstance(patch, dict):
+                        errors.append(_issue("MANIFEST_TRANSFORMATION_SOURCE_UPDATE_INVALID", "source_update.patch must be object", f"{tpath}.source_update.patch"))
+
+            activity = _get(transformation, "activity")
+            if activity is not None:
+                if not isinstance(activity, dict):
+                    errors.append(_issue("MANIFEST_TRANSFORMATION_ACTIVITY_INVALID", "activity must be object", f"{tpath}.activity"))
+                else:
+                    _reject_unknown_keys(errors, activity, ALLOWED_V1_TRANSFORMATION_ACTIVITY_KEYS, f"{tpath}.activity")
+
+            feed = _get(transformation, "feed")
+            if feed is not None:
+                if not isinstance(feed, dict):
+                    errors.append(_issue("MANIFEST_TRANSFORMATION_FEED_INVALID", "feed must be object", f"{tpath}.feed"))
+                else:
+                    _reject_unknown_keys(errors, feed, ALLOWED_V1_TRANSFORMATION_FEED_KEYS, f"{tpath}.feed")
+
+            hooks = _get(transformation, "hooks")
+            if hooks is not None:
+                if not isinstance(hooks, dict):
+                    errors.append(_issue("MANIFEST_TRANSFORMATION_HOOKS_INVALID", "hooks must be object", f"{tpath}.hooks"))
+                else:
+                    _reject_unknown_keys(errors, hooks, ALLOWED_V1_TRANSFORMATION_HOOK_KEYS, f"{tpath}.hooks")
+                    emit_events = _get(hooks, "emit_events")
+                    if emit_events is not None:
+                        if not isinstance(emit_events, list) or not all(isinstance(name, str) and name for name in emit_events):
+                            errors.append(_issue("MANIFEST_TRANSFORMATION_HOOKS_INVALID", "hooks.emit_events must be a list of strings", f"{tpath}.hooks.emit_events"))
+
+            validation = _get(transformation, "validation")
+            if validation is not None:
+                if not isinstance(validation, dict):
+                    errors.append(_issue("MANIFEST_TRANSFORMATION_VALIDATION_INVALID", "validation must be object", f"{tpath}.validation"))
+                else:
+                    _reject_unknown_keys(errors, validation, ALLOWED_V1_TRANSFORMATION_VALIDATION_KEYS, f"{tpath}.validation")
+                    require_source_fields = _get(validation, "require_source_fields")
+                    if require_source_fields is not None:
+                        if not isinstance(require_source_fields, list) or not all(isinstance(fid, str) and fid for fid in require_source_fields):
+                            errors.append(_issue("MANIFEST_TRANSFORMATION_VALIDATION_INVALID", "validation.require_source_fields must be list of strings", f"{tpath}.validation.require_source_fields"))
+                    require_child_records = _get(validation, "require_child_records")
+                    if require_child_records is not None and not isinstance(require_child_records, bool):
+                        errors.append(_issue("MANIFEST_TRANSFORMATION_VALIDATION_INVALID", "validation.require_child_records must be boolean", f"{tpath}.validation.require_child_records"))
+                    prevent_if_target_linked = _get(validation, "prevent_if_target_linked")
+                    if prevent_if_target_linked is not None and not isinstance(prevent_if_target_linked, bool):
+                        errors.append(_issue("MANIFEST_TRANSFORMATION_VALIDATION_INVALID", "validation.prevent_if_target_linked must be boolean", f"{tpath}.validation.prevent_if_target_linked"))
+
+    interfaces = _get(manifest, "interfaces")
+    if interfaces is not None:
+        if not isinstance(interfaces, dict):
+            errors.append(_issue("MANIFEST_INTERFACES_INVALID", "interfaces must be an object", "interfaces"))
+        else:
+            _reject_unknown_keys(errors, interfaces, ALLOWED_V1_INTERFACES_KEYS, "interfaces")
+
+            def _validate_interface_decl(
+                items: Any,
+                path: str,
+                allowed_keys: set[str],
+                kind: str,
+                required_fields: list[str],
+            ) -> None:
+                if items is None:
+                    return
+                if not isinstance(items, list):
+                    errors.append(_issue("MANIFEST_INTERFACES_INVALID", f"{kind} must be a list", path))
+                    return
+                for idx, item in enumerate(items):
+                    ipath = f"{path}[{idx}]"
+                    if not isinstance(item, dict):
+                        errors.append(_issue("MANIFEST_INTERFACES_INVALID", f"{kind} item must be object", ipath))
+                        continue
+                    _reject_unknown_keys(errors, item, allowed_keys, ipath)
+                    entity_id = _get(item, "entity_id")
+                    if not isinstance(entity_id, str) or not entity_id:
+                        errors.append(_issue("MANIFEST_INTERFACES_INVALID", "entity_id is required", f"{ipath}.entity_id"))
+                        continue
+                    full_entity_id = entity_id if entity_id.startswith("entity.") else f"entity.{entity_id}"
+                    entity_obj = entity_by_id.get(full_entity_id) or entity_by_id.get(entity_id)
+                    if not entity_obj:
+                        warnings.append(_issue("MANIFEST_INTERFACES_ENTITY_EXTERNAL", "entity_id not found in module (external not recommended)", f"{ipath}.entity_id"))
+                    enabled = _get(item, "enabled")
+                    if enabled is not None and not isinstance(enabled, bool):
+                        errors.append(_issue("MANIFEST_INTERFACES_INVALID", "enabled must be boolean", f"{ipath}.enabled"))
+                    scope = _get(item, "scope")
+                    if scope is not None and scope not in ALLOWED_V1_INTERFACE_SCOPE_VALUES:
+                        errors.append(_issue("MANIFEST_INTERFACES_INVALID", "scope must be module_only|global_only|module_and_global", f"{ipath}.scope"))
+                    for req_field in required_fields:
+                        value = _get(item, req_field)
+                        if not isinstance(value, str) or not value:
+                            errors.append(_issue("MANIFEST_INTERFACES_INVALID", f"{req_field} is required", f"{ipath}.{req_field}"))
+                    field_keys = [
+                        "title_field",
+                        "date_start",
+                        "date_end",
+                        "owner_field",
+                        "location_field",
+                        "status_field",
+                        "all_day_field",
+                        "color_field",
+                        "attachment_field",
+                        "category_field",
+                        "date_field",
+                        "record_label_field",
+                    ]
+                    for key in field_keys:
+                        if key in item:
+                            value = _get(item, key)
+                            if value is not None and not isinstance(value, str):
+                                errors.append(_issue("MANIFEST_INTERFACES_INVALID", f"{key} must be string", f"{ipath}.{key}"))
+                            elif isinstance(value, str) and entity_obj and value not in _field_ids(entity_obj):
+                                errors.append(_issue("MANIFEST_VIEW_FIELD_UNKNOWN", f"{key} field not found on entity", f"{ipath}.{key}"))
+
+            _validate_interface_decl(
+                _get(interfaces, "schedulable"),
+                "interfaces.schedulable",
+                ALLOWED_V1_SCHEDULABLE_KEYS,
+                "schedulable",
+                ["title_field", "date_start"],
+            )
+            _validate_interface_decl(
+                _get(interfaces, "documentable"),
+                "interfaces.documentable",
+                ALLOWED_V1_DOCUMENTABLE_KEYS,
+                "documentable",
+                ["attachment_field"],
+            )
+            _validate_interface_decl(
+                _get(interfaces, "dashboardable"),
+                "interfaces.dashboardable",
+                ALLOWED_V1_DASHBOARDABLE_KEYS,
+                "dashboardable",
+                [],
+            )
+
+            dashboardable = _get(interfaces, "dashboardable")
+            if isinstance(dashboardable, list):
+                for didx, item in enumerate(dashboardable):
+                    dpath = f"interfaces.dashboardable[{didx}]"
+                    if not isinstance(item, dict):
+                        continue
+                    entity_id = _get(item, "entity_id")
+                    full_entity_id = entity_id if isinstance(entity_id, str) and entity_id.startswith("entity.") else (f"entity.{entity_id}" if isinstance(entity_id, str) else None)
+                    entity_obj = entity_by_id.get(full_entity_id) or entity_by_id.get(entity_id) if isinstance(entity_id, str) else None
+                    measures = _get(item, "measures")
+                    if measures is not None:
+                        if not isinstance(measures, list) or not all(isinstance(m, str) and m for m in measures):
+                            errors.append(_issue("MANIFEST_INTERFACES_INVALID", "measures must be list of strings", f"{dpath}.measures"))
+                    group_bys = _get(item, "group_bys")
+                    if group_bys is not None:
+                        if not isinstance(group_bys, list) or not all(isinstance(g, str) and g for g in group_bys):
+                            errors.append(_issue("MANIFEST_INTERFACES_INVALID", "group_bys must be list of strings", f"{dpath}.group_bys"))
+                        elif entity_obj:
+                            for gidx, field_id in enumerate(group_bys):
+                                if field_id not in _field_ids(entity_obj):
+                                    errors.append(_issue("MANIFEST_VIEW_FIELD_UNKNOWN", "group_bys field not found on entity", f"{dpath}.group_bys[{gidx}]"))
+                    default_widgets = _get(item, "default_widgets")
+                    if default_widgets is not None:
+                        if not isinstance(default_widgets, list):
+                            errors.append(_issue("MANIFEST_INTERFACES_INVALID", "default_widgets must be a list", f"{dpath}.default_widgets"))
+                        else:
+                            for widx, widget in enumerate(default_widgets):
+                                wpath = f"{dpath}.default_widgets[{widx}]"
+                                if not isinstance(widget, dict):
+                                    errors.append(_issue("MANIFEST_INTERFACES_INVALID", "default widget must be object", wpath))
+                                    continue
+                                _reject_unknown_keys(errors, widget, ALLOWED_V1_DASHBOARD_WIDGET_KEYS, wpath)
+                                wid = _get(widget, "id")
+                                if wid is not None and not isinstance(wid, str):
+                                    errors.append(_issue("MANIFEST_INTERFACES_INVALID", "widget.id must be string", f"{wpath}.id"))
+                                wtype = _get(widget, "type")
+                                if wtype is not None and wtype not in {"metric", "group", "time_series", "table"}:
+                                    errors.append(_issue("MANIFEST_INTERFACES_INVALID", "widget.type must be metric|group|time_series|table", f"{wpath}.type"))
+                                for field_key in ("group_by", "date_field"):
+                                    value = _get(widget, field_key)
+                                    if value is not None and not isinstance(value, str):
+                                        errors.append(_issue("MANIFEST_INTERFACES_INVALID", f"{field_key} must be string", f"{wpath}.{field_key}"))
+                                    elif isinstance(value, str) and entity_obj and value not in _field_ids(entity_obj):
+                                        errors.append(_issue("MANIFEST_VIEW_FIELD_UNKNOWN", f"{field_key} field not found on entity", f"{wpath}.{field_key}"))
+                                measure = _get(widget, "measure")
+                                if measure is not None and not isinstance(measure, str):
+                                    errors.append(_issue("MANIFEST_INTERFACES_INVALID", "measure must be string", f"{wpath}.measure"))
+                    default_filters = _get(item, "default_filters")
+                    if default_filters is not None:
+                        if not isinstance(default_filters, list):
+                            errors.append(_issue("MANIFEST_INTERFACES_INVALID", "default_filters must be a list", f"{dpath}.default_filters"))
+                        else:
+                            for fidx, flt in enumerate(default_filters):
+                                fpath = f"{dpath}.default_filters[{fidx}]"
+                                if not isinstance(flt, dict):
+                                    errors.append(_issue("MANIFEST_INTERFACES_INVALID", "default filter must be object", fpath))
+                                    continue
+                                _validate_condition(flt, fpath, errors)
+
     actions = _get(manifest, "actions", [])
     action_by_id: dict[str, dict] = {}
     if actions is not None and not isinstance(actions, list):
@@ -745,6 +1119,15 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
                 entity_id = _get(action, "entity_id")
                 if not isinstance(entity_id, str) or not entity_id:
                     errors.append(_issue("MANIFEST_ACTION_INVALID", "action.entity_id is required", f"{apath}.entity_id"))
+            if kind == "transform_record":
+                transformation_key = _get(action, "transformation_key")
+                if not isinstance(transformation_key, str) or not transformation_key:
+                    errors.append(_issue("MANIFEST_ACTION_INVALID", "transform_record requires transformation_key", f"{apath}.transformation_key"))
+                elif transformation_key not in transformation_by_key:
+                    errors.append(_issue("MANIFEST_ACTION_INVALID", "transformation_key not found", f"{apath}.transformation_key"))
+                entity_id = _get(action, "entity_id")
+                if entity_id is not None and not isinstance(entity_id, str):
+                    errors.append(_issue("MANIFEST_ACTION_INVALID", "action.entity_id must be a string when provided", f"{apath}.entity_id"))
             if kind == "create_record":
                 defaults = _get(action, "defaults")
                 if defaults is not None and not isinstance(defaults, dict):

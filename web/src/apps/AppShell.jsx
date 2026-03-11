@@ -19,6 +19,19 @@ function deriveRecordEntityId(entityId) {
   return entityId;
 }
 
+function toRouteEntityId(entityId) {
+  if (!entityId || typeof entityId !== "string") return "";
+  return entityId.startsWith("entity.") ? entityId.slice("entity.".length) : entityId;
+}
+
+function entitiesMatch(a, b) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.startsWith("entity.") && a.slice("entity.".length) === b) return true;
+  if (b.startsWith("entity.") && b.slice("entity.".length) === a) return true;
+  return false;
+}
+
 function matchEntity(viewEntity, entityId, entityFullId) {
   if (!viewEntity) return false;
   if (viewEntity === entityFullId) return true;
@@ -124,7 +137,7 @@ function resolveActionLabel(action, manifest, views) {
 
 function isWriteActionKind(kind) {
   // `open_form` is the primary "New" affordance for Studio modules.
-  return kind === "create_record" || kind === "open_form" || kind === "update_record" || kind === "bulk_update";
+  return kind === "create_record" || kind === "open_form" || kind === "update_record" || kind === "bulk_update" || kind === "transform_record";
 }
 
 function collectFormPageIds(appDefaults) {
@@ -404,6 +417,8 @@ export default function AppShell({
   }
 
   const openConfirm = useCallback((options = {}) => {
+    // Guard against re-entrant confirms that can happen when an action is triggered twice quickly.
+    if (modalResolveRef.current) return Promise.resolve(false);
     return new Promise((resolve) => {
       modalResolveRef.current = resolve;
       setModal({
@@ -417,6 +432,8 @@ export default function AppShell({
   }, []);
 
   const openPrompt = useCallback((options = {}) => {
+    // Prevent stacking prompt dialogs on top of an active modal.
+    if (modalResolveRef.current) return Promise.resolve(null);
     return new Promise((resolve) => {
       modalResolveRef.current = resolve;
       setModalInput(options.defaultValue ?? "");
@@ -632,6 +649,69 @@ export default function AppShell({
     navigate(`${route}${suffix ? `?${suffix}` : ""}`);
   }
 
+  async function navigateToEntityRecord(entityRef, targetRecordId) {
+    const targetEntityFullId = resolveEntityFullId(manifest, entityRef);
+    if (!targetEntityFullId || !targetRecordId) return false;
+
+    // 1) If entity has an explicit entity-level page default in current module, use it.
+    // Do not fall back to app-wide defaults here, as that can route to the wrong entity form.
+    const localEntityDefaults = resolveEntityDefaults(appDef?.defaults, targetEntityFullId);
+    const localDefaultForm = localEntityDefaults?.entity_form_page || null;
+    if (localDefaultForm) {
+      setTarget(localDefaultForm, { recordId: targetRecordId });
+      return true;
+    }
+
+    // 2) Resolve owning module and form page from installed modules/manifests.
+    try {
+      const modulesRes = await apiFetch("/modules");
+      const modules = Array.isArray(modulesRes?.modules) ? modulesRes.modules : Array.isArray(modulesRes) ? modulesRes : [];
+      for (const mod of modules) {
+        const modId = mod?.module_id || mod?.id || mod?.moduleId;
+        if (!modId) continue;
+        let modManifestRes;
+        try {
+          modManifestRes = await getManifest(modId);
+        } catch {
+          continue;
+        }
+        const modManifest = modManifestRes?.manifest;
+        const modEntities = Array.isArray(modManifest?.entities) ? modManifest.entities : [];
+        const matchedEntity = modEntities.find((e) => entitiesMatch(e?.id, targetEntityFullId));
+        if (!matchedEntity) continue;
+
+        const modEntityFullId = matchedEntity.id;
+        const modDefaultForm = resolveEntityDefaultFormPage(modManifest?.app?.defaults || {}, modEntityFullId);
+        if (modDefaultForm) {
+          const route = buildTargetRoute(modId, modDefaultForm);
+          if (route) {
+            const params = new URLSearchParams();
+            params.set("record", targetRecordId);
+            navigate(`${route}?${params.toString()}`);
+            return true;
+          }
+        }
+
+        const modFormView = getFormViewId(modManifest, modEntityFullId);
+        if (modFormView) {
+          const route = buildTargetRoute(modId, `view:${modFormView}`);
+          if (route) {
+            const params = new URLSearchParams();
+            params.set("record", targetRecordId);
+            navigate(`${route}?${params.toString()}`);
+            return true;
+          }
+        }
+      }
+    } catch {
+      // fallback below
+    }
+
+    // 3) Final fallback: generic record page.
+    navigate(`/data/${toRouteEntityId(targetEntityFullId)}/${targetRecordId}`);
+    return false;
+  }
+
   function resolveAction(action) {
     if (!action || typeof action !== "object") return null;
     if (action.action_id) {
@@ -707,7 +787,8 @@ export default function AppShell({
     const resolvedPatch = action?.patch && typeof action.patch === "object"
       ? resolveTemplateRefs(action.patch, contextRecordDraft || {})
       : action?.patch;
-    if (action.confirm && typeof action.confirm === "object") {
+    const skipConfirm = Boolean(runtimeContext?.skipConfirm);
+    if (!skipConfirm && action.confirm && typeof action.confirm === "object") {
       const title = action.confirm.title || "Confirm";
       const body = action.confirm.body || "Are you sure?";
       const ok = await confirmDialog({ title, body });
@@ -778,16 +859,27 @@ export default function AppShell({
         return result;
       }
       if (result.record_id) {
+        if (actionKind === "transform_record") {
+          const resultEntityId = result.entity_id || action.entity_id;
+          if (resultEntityId) {
+            await navigateToEntityRecord(resultEntityId, result.record_id);
+          } else {
+            setRefreshTick((v) => v + 1);
+          }
+          pushToast("success", "Action complete");
+          return result;
+        }
         if (actionKind === "update_record" || actionKind === "bulk_update") {
           // Stay on the current page for updates to avoid losing page layout (chatter, grid, etc.)
           setRefreshTick((v) => v + 1);
         } else {
-          const entityFullId = resolveEntityFullId(manifest, result.entity_id || action.entity_id);
+          const resultEntityId = result.entity_id || action.entity_id;
+          const entityFullId = resolveEntityFullId(manifest, resultEntityId);
           const defaultForm = resolveEntityDefaultFormPage(appDef?.defaults, entityFullId);
           if (defaultForm) {
             setTarget(defaultForm, { recordId: result.record_id });
           } else {
-            const formView = getFormViewId(manifest, result.entity_id || action.entity_id);
+            const formView = getFormViewId(manifest, resultEntityId);
             if (formView) {
               setTarget(`view:${formView}`, { recordId: result.record_id });
             }
@@ -883,8 +975,8 @@ export default function AppShell({
         </button>
       );
     }
-    if (["create_record", "update_record", "bulk_update"].includes(resolvedAction.kind)) {
-      const missingRecord = resolvedAction.kind === "update_record" && !recordId;
+    if (["create_record", "update_record", "bulk_update", "transform_record"].includes(resolvedAction.kind)) {
+      const missingRecord = (resolvedAction.kind === "update_record" || resolvedAction.kind === "transform_record") && !recordId;
       const missingSelection = resolvedAction.kind === "bulk_update" && (!selectedIds || selectedIds.length === 0);
       const disabled = !enabled || missingRecord || missingSelection;
       return (
@@ -1010,6 +1102,12 @@ export default function AppShell({
         payload = { ...payload };
         for (const [fieldId, field] of Object.entries(createFieldIndex)) {
           if (field?.type === "tags" && typeof payload[fieldId] === "string") {
+            payload[fieldId] = payload[fieldId]
+              .split(",")
+              .map((t) => t.trim())
+              .filter(Boolean);
+          }
+          if (field?.type === "users" && typeof payload[fieldId] === "string") {
             payload[fieldId] = payload[fieldId]
               .split(",")
               .map((t) => t.trim())
@@ -1172,10 +1270,7 @@ export default function AppShell({
                     hasRecord={false}
                     onChange={(next) => setCreateDraft(next)}
                     onSave={handleCreateSave}
-                    onDiscard={() => {
-                      setCreateDraft(createInitialDraft);
-                      setCreateShowValidation(false);
-                    }}
+                    onDiscard={() => closeCreateModal(null)}
                     isDirty={createIsDirty}
                     header={{ ...(createView?.header || {}), save_mode: "bottom", auto_save: false }}
                     primaryActions={[]}
@@ -1188,19 +1283,11 @@ export default function AppShell({
                     hiddenFields={[]}
                     previewMode={false}
                     hideHeader
+                    bottomActionsMode="sticky_right"
                   />
                 ) : (
                   <div className="alert alert-error">Form view not found.</div>
                 )}
-              </div>
-              <div className="modal-action">
-                <button
-                  className="btn btn-ghost"
-                  onClick={() => closeCreateModal(null)}
-                  disabled={createSaving}
-                >
-                  Cancel
-                </button>
               </div>
             </div>
             <button
@@ -1291,7 +1378,7 @@ function AppView({
   const filterableFields = useMemo(() => {
     if (!entityDef || !Array.isArray(entityDef.fields)) return [];
     return entityDef.fields
-      .filter((field) => field?.id && ["string", "text", "enum", "bool", "date", "datetime", "number"].includes(field.type))
+      .filter((field) => field?.id && ["string", "text", "enum", "bool", "date", "datetime", "number", "user"].includes(field.type))
       .map((field) => ({
         id: field.id,
         label: field.label || field.id,
@@ -1363,7 +1450,7 @@ function AppView({
       if (openRecordTarget) {
         onNavigate?.(openRecordTarget, { recordId: row.record_id, recordParamName: openRecordParam, preserveParams: true });
       } else {
-        onFallback(`/data/${recordEntityId}/${row.record_id}`);
+        onFallback(`/data/${toRouteEntityId(recordEntityId)}/${row.record_id}`);
       }
     },
     [openRecordTarget, openRecordParam, onNavigate, onFallback, recordEntityId]
@@ -1476,6 +1563,7 @@ function AppView({
         recordId: effectiveRecordId,
         recordDraft: modalDraft,
         selectedIds,
+        skipConfirm: true,
       });
       Promise.resolve(run)
         .then((result) => {
@@ -1506,6 +1594,7 @@ function AppView({
       recordId: effectiveRecordId,
       recordDraft: modalDraft,
       selectedIds,
+      skipConfirm: true,
     });
     if (result && closeOnSuccess) {
       setActiveManifestModal(null);
@@ -1526,7 +1615,7 @@ function AppView({
       // Run through the action pipeline so action.clicked triggers are emitted.
       if (onRunAction) {
         try {
-          await onRunAction(action);
+          await onRunAction(action, { skipConfirm: true });
         } catch (err) {
           console.warn("action_run_failed", err);
         }
@@ -1575,6 +1664,7 @@ function AppView({
         recordId: effectiveRecordId,
         recordDraft: draft || {},
         selectedIds,
+        skipConfirm: true,
       });
       Promise.resolve(run)
         .then((result) => {
@@ -1594,7 +1684,7 @@ function AppView({
         });
       return;
     }
-    onRunAction?.(action);
+    onRunAction?.(action, { skipConfirm: true });
   }
 
   useEffect(() => {
@@ -1772,6 +1862,12 @@ function AppView({
         payload = { ...payload };
         for (const [fieldId, field] of Object.entries(fieldIndex || {})) {
           if (field?.type === "tags" && typeof payload[fieldId] === "string") {
+            payload[fieldId] = payload[fieldId]
+              .split(",")
+              .map((t) => t.trim())
+              .filter(Boolean);
+          }
+          if (field?.type === "users" && typeof payload[fieldId] === "string") {
             payload[fieldId] = payload[fieldId]
               .split(",")
               .map((t) => t.trim())
@@ -2258,14 +2354,43 @@ function AppView({
         const visible = resolved.visible_when ? evalCondition(resolved.visible_when, { record: contextRecord || {} }) : true;
         if (!visible) continue;
         let enabled = resolved.enabled_when ? evalCondition(resolved.enabled_when, { record: contextRecord || {} }) : true;
-        if (resolved.kind === "update_record" && !effectiveRecordId) enabled = false;
+        if ((resolved.kind === "update_record" || resolved.kind === "transform_record") && !effectiveRecordId) enabled = false;
         items.push({ action: resolved, label, enabled });
       }
       return items;
     }
 
     const primaryActions = decorateActions(header?.primary_actions, draft);
-    const secondaryActions = decorateActions(header?.secondary_actions, draft);
+    const secondaryRawActions = decorateActions(header?.secondary_actions, draft);
+    const secondaryActions = (() => {
+      if (!statusField) return secondaryRawActions;
+      const chosenByStatusValue = new Map();
+      for (const item of secondaryRawActions) {
+        const action = item?.action;
+        if (!action || action.kind !== "update_record" || typeof action.patch !== "object" || !action.patch) continue;
+        const target = action.patch[statusField];
+        if (target === undefined || target === null || target === "") continue;
+        const existing = chosenByStatusValue.get(target);
+        if (!existing) {
+          chosenByStatusValue.set(target, item);
+          continue;
+        }
+        const existingIsGeneric = /^set:\s/i.test(String(existing.label || ""));
+        const currentIsGeneric = /^set:\s/i.test(String(item.label || ""));
+        if (existingIsGeneric && !currentIsGeneric) {
+          chosenByStatusValue.set(target, item);
+        }
+      }
+      return secondaryRawActions.filter((item) => {
+        const action = item?.action;
+        if (!action || action.kind !== "update_record" || typeof action.patch !== "object" || !action.patch) return true;
+        const target = action.patch[statusField];
+        if (target === undefined || target === null || target === "") return true;
+        // Hide no-op status actions (e.g. "Set: Active" when status is already Active).
+        if (currentStatus !== undefined && currentStatus !== null && target === currentStatus) return false;
+        return chosenByStatusValue.get(target) === item;
+      });
+    })();
     const showFormSkeleton = state.status === "running" && Boolean(effectiveRecordId);
     return (
       <>

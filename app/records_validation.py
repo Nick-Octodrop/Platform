@@ -91,6 +91,14 @@ def _apply_defaults(field_by_id: dict, data: dict) -> dict:
     return updated
 
 
+def _is_blank_value(value: Any) -> bool:
+    if value is None or value == "":
+        return True
+    if isinstance(value, list) and len(value) == 0:
+        return True
+    return False
+
+
 def _match_entity_id_value(requested: str, declared: str) -> bool:
     if requested == declared:
         return True
@@ -169,14 +177,14 @@ def validate_record_payload(entity: dict, data: dict, for_create: bool, workflow
         for field_id, field in field_by_id.items():
             if field.get("required"):
                 val = data.get(field_id)
-                if val is None or val == "":
+                if _is_blank_value(val):
                     _add_error("REQUIRED_FIELD", f"Missing required field: {field_id}", path=field_id)
             required_when = field.get("required_when")
             if required_when:
                 try:
                     if eval_condition(required_when, {"record": data}):
                         val = data.get(field_id)
-                        if val is None or val == "":
+                        if _is_blank_value(val):
                             _add_error("REQUIRED_FIELD", f"Missing required field: {field_id}", path=field_id)
                 except Exception:
                     _add_error("REQUIRED_FIELD", f"Missing required field: {field_id}", path=field_id)
@@ -190,7 +198,7 @@ def validate_record_payload(entity: dict, data: dict, for_create: bool, workflow
         required_by_state = _workflow_required_fields(workflow, status_value)
         for field_id in required_by_state:
             val = data.get(field_id)
-            if val is None or val == "":
+            if _is_blank_value(val):
                 _add_error("REQUIRED_FIELD", f"Missing required field for status {status_value}: {field_id}", path=field_id)
 
     if not for_create:
@@ -200,7 +208,7 @@ def validate_record_payload(entity: dict, data: dict, for_create: bool, workflow
                 try:
                     if eval_condition(required_when, {"record": data}):
                         val = data.get(field_id)
-                        if val is None or val == "":
+                        if _is_blank_value(val):
                             _add_error("REQUIRED_FIELD", f"Missing required field: {field_id}", path=field_id)
                 except Exception:
                     _add_error("REQUIRED_FIELD", f"Missing required field: {field_id}", path=field_id)
@@ -249,6 +257,12 @@ def validate_record_payload(entity: dict, data: dict, for_create: bool, workflow
         elif ftype == "lookup":
             if not isinstance(val, str):
                 _add_error("TYPE_MISMATCH", f"{field_id} must be a string", path=field_id)
+        elif ftype == "user":
+            if not isinstance(val, str):
+                _add_error("TYPE_MISMATCH", f"{field_id} must be a user id string", path=field_id)
+        elif ftype == "users":
+            if not isinstance(val, list) or any(not isinstance(item, str) for item in val):
+                _add_error("TYPE_MISMATCH", f"{field_id} must be a list of user id strings", path=field_id)
         elif ftype == "tags":
             if not isinstance(val, list):
                 _add_error("TYPE_MISMATCH", f"{field_id} must be a list", path=field_id)

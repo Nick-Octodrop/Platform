@@ -194,6 +194,24 @@ export function renderField(field, value, onChange, readonly) {
           placeholder="comma separated"
         />
       );
+    case "user":
+      return (
+        <input
+          {...common}
+          value={value || ""}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="user id"
+        />
+      );
+    case "users":
+      return (
+        <input
+          {...common}
+          value={Array.isArray(value) ? value.join(", ") : value || ""}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="comma separated user ids"
+        />
+      );
     case "bool":
     case "boolean":
       return (
