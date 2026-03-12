@@ -361,17 +361,59 @@ function buildDomain(activeFilter, clientFilters, recordDomain) {
 
 function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCards = false, onMoveCard }) {
   const card = view.card || {};
-  const titleField = card.title_field;
+  const titleField = card.title_field || entityDef?.display_field || "id";
+  const subtitleFields = Array.isArray(card.subtitle_fields) ? card.subtitle_fields : [];
+  const badgeFields = Array.isArray(card.badge_fields) ? card.badge_fields : [];
   const humanize = (value) => String(value || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const emptyEntityLabel = entityDef?.label || humanizeEntityId(entityDef?.id) || "Record";
   const [dragging, setDragging] = useState(null);
   const [busyRowId, setBusyRowId] = useState("");
   const [moveError, setMoveError] = useState("");
+  const fieldMap = useMemo(() => {
+    const map = {};
+    for (const field of entityDef?.fields || []) {
+      if (field?.id) map[field.id] = field;
+    }
+    return map;
+  }, [entityDef]);
   const priorityTone = (value) => {
     const v = String(value || "").toLowerCase();
-    if (v === "urgent") return "badge-error";
+    if (v === "urgent" || v === "critical") return "badge-error";
     if (v === "high") return "badge-warning";
     if (v === "low") return "badge-ghost";
     return "badge-neutral";
+  };
+  const statusTone = (value) => {
+    const v = String(value || "").toLowerCase();
+    if (["done", "completed", "approved", "won", "resolved", "confirmed", "active"].includes(v)) return "badge-success";
+    if (["cancelled", "canceled", "rejected", "lost", "inactive", "expired"].includes(v)) return "badge-error";
+    if (["draft", "new", "planned", "pending"].includes(v)) return "badge-ghost";
+    return "badge-neutral";
+  };
+  const badgeTone = (fieldId, rawValue) => {
+    const fieldIdText = String(fieldId || "").toLowerCase();
+    if (fieldIdText.includes("priority")) return priorityTone(rawValue);
+    if (fieldIdText.includes("status") || fieldIdText.includes("stage")) return statusTone(rawValue);
+    return "badge-neutral";
+  };
+  const formatCardValue = (fieldId, rawValue) => {
+    if (rawValue === null || rawValue === undefined || rawValue === "") return "";
+    const fieldDef = fieldMap[fieldId] || null;
+    if (fieldDef?.type === "enum") {
+      const option = normalizeEnumOptions(fieldDef.options).find((opt) => String(opt.value) === String(rawValue));
+      return String(option?.label ?? rawValue);
+    }
+    if (fieldDef?.type === "bool") return rawValue ? "Yes" : "No";
+    if (fieldDef?.type === "date" || fieldDef?.type === "datetime") {
+      const parsed = toDateValue(rawValue);
+      if (parsed) {
+        return fieldDef.type === "date"
+          ? parsed.toLocaleDateString()
+          : parsed.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+      }
+    }
+    if (Array.isArray(rawValue)) return rawValue.map((item) => String(item ?? "")).filter(Boolean).join(", ");
+    return String(rawValue);
   };
 
   const grouped = useMemo(() => {
@@ -445,13 +487,17 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
                 </div>
                 <div className="p-[7px] space-y-3 overflow-y-auto min-h-0">
                   {(grouped[groupKey] || []).length === 0 ? (
-                    <div className="text-xs text-base-content/50 p-2">No work orders</div>
+                    <div className="text-xs text-base-content/50 p-2">No {emptyEntityLabel} found</div>
                   ) : (grouped[groupKey] || []).map((row) => {
                     const record = row.record || {};
                     const rowId = row.record_id || record.id;
-                    const workOrderNo = String(record[titleField] ?? "");
-                    const workTitle = String(record["workorder.title"] ?? "");
-                    const priority = String(record["workorder.priority"] ?? "");
+                    const cardTitle = formatCardValue(titleField, record[titleField]) || String(rowId || "Record");
+                    const subtitleValues = subtitleFields
+                      .map((fieldId) => ({ fieldId, value: formatCardValue(fieldId, record[fieldId]) }))
+                      .filter((item) => item.value);
+                    const badgeValues = badgeFields
+                      .map((fieldId) => ({ fieldId, raw: record[fieldId], value: formatCardValue(fieldId, record[fieldId]) }))
+                      .filter((item) => item.value);
                     return (
                       <div
                         key={rowId}
@@ -464,11 +510,23 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
                         onDragEnd={() => setDragging(null)}
                       >
                         <div className="card-body p-[7px] gap-1">
-                          <div className="text-base font-semibold truncate">{workOrderNo}</div>
-                          <div className="text-sm text-base-content/70 leading-snug line-clamp-2">{workTitle || " "}</div>
-                          {priority ? (
-                            <div className="mt-3 flex items-center gap-2">
-                              <span className={`badge badge-sm ${priorityTone(priority)}`}>{humanize(priority)}</span>
+                          <div className="text-base font-semibold truncate">{cardTitle}</div>
+                          <div className="space-y-0.5">
+                            {subtitleValues.length > 0 ? subtitleValues.map((item) => (
+                              <div key={`${rowId}-${item.fieldId}`} className="text-sm text-base-content/70 leading-snug line-clamp-1">
+                                {item.value}
+                              </div>
+                            )) : (
+                              <div className="text-sm text-base-content/30 leading-snug line-clamp-1">&nbsp;</div>
+                            )}
+                          </div>
+                          {badgeValues.length > 0 ? (
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                              {badgeValues.map((item) => (
+                                <span key={`${rowId}-${item.fieldId}`} className={`badge badge-sm ${badgeTone(item.fieldId, item.raw)}`}>
+                                  {item.value}
+                                </span>
+                              ))}
                             </div>
                           ) : null}
                         </div>
@@ -682,6 +740,7 @@ function CalendarView({ view, records, onSelectRow }) {
   const startField = calendar.date_start || view?.date_start;
   const endField = calendar.date_end || view?.date_end || startField;
   const allDayField = calendar.all_day_field || view?.all_day_field;
+  const statusField = calendar.status_field || view?.status_field;
   const allowedScales = new Set(["day", "week", "month", "year"]);
   const configuredScale = String(calendar.default_scale || view?.default_scale || "month").toLowerCase();
   const [scale, setScale] = useState(allowedScales.has(configuredScale) ? configuredScale : "month");
@@ -893,11 +952,12 @@ function CalendarView({ view, records, onSelectRow }) {
         : cursorMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
   const describeEvent = (event) => {
     const rec = event?.row?.record || {};
-    const number = rec["workorder.number"] ? `#${rec["workorder.number"]}` : "";
-    const title = event?.title || rec["workorder.title"] || "Work Order";
-    const status = rec["workorder.status"] ? `Status: ${String(rec["workorder.status"]).replace(/_/g, " ")}` : "";
+    const title = event?.title || String(rec?.[titleField] || event?.row?.record_id || "Record");
+    const status = statusField && rec?.[statusField]
+      ? `Status: ${String(rec[statusField]).replace(/_/g, " ")}`
+      : "";
     const when = event?.timeLabel ? `When: ${event.timeLabel}` : "";
-    return [number, title, when, status].filter(Boolean).join(" | ");
+    return [title, when, status].filter(Boolean).join(" | ");
   };
 
   return (
