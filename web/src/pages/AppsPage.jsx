@@ -20,6 +20,7 @@ import {
 } from "../state/heroIconCatalog.js";
 import { useAccessContext } from "../access.js";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
+import { appendOctoAiFrameParams } from "../apps/appShellUtils.js";
 
 // Kept intentionally minimal: App Manager cards shouldn't surface extra status/meta beyond actions + app version.
 
@@ -139,7 +140,7 @@ export default function AppsPage({ user }) {
   function handleOpen(moduleId) {
     recordRecentApp(moduleId);
     const route = getDefaultOpenRoute(moduleId, entityIndex);
-    navigate(route);
+    navigate(appendOctoAiFrameParams(route));
   }
 
   function handleDetails(moduleId) {

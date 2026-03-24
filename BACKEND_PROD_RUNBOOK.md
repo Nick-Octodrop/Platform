@@ -55,11 +55,24 @@ flyctl secrets set SUPABASE_DB_URL="postgresql://postgres:<ENCODED_PASSWORD>@db.
 
 ## 4) Deploy API
 
+Build or refresh the shared runtime base first when `Dockerfile.base` or `app/requirements.txt` changes:
+
+```powershell
+pwsh -File .\scripts\build_runtime_base.ps1
+```
+
+This pushes:
+- `registry.fly.io/octodrop-platform-api:runtime-base-py311-playwright`
+
+Then deploy the API:
+
 ```powershell
 flyctl deploy -a octodrop-platform-api
 ```
 
 ## 5) Deploy Worker
+
+The worker reuses the same runtime base tag.
 
 ```powershell
 flyctl deploy -c fly.worker.toml -a octodrop-platform-worker

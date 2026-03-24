@@ -629,9 +629,20 @@ def _run_automation(job: dict, org_id: str, automation_store: DbAutomationStore 
                 expr = step.get("expr") or {}
                 result = bool(eval_condition(expr, ctx))
                 goto = step.get("if_true_goto") if result else step.get("if_false_goto")
-                automation_store.update_step_run(step_run.get("id"), {"status": "succeeded", "ended_at": _now(), "output": {"result": result}})
+                stop_on_false = bool(step.get("stop_on_false"))
+                automation_store.update_step_run(
+                    step_run.get("id"),
+                    {
+                        "status": "succeeded",
+                        "ended_at": _now(),
+                        "output": {"result": result, "stop_on_false": stop_on_false},
+                    },
+                )
                 if isinstance(goto, int) and 0 <= goto < len(steps):
                     automation_store.update_run(run_id, {"current_step_index": goto})
+                    return
+                if not result and stop_on_false:
+                    automation_store.update_run(run_id, {"status": "succeeded", "ended_at": _now(), "current_step_index": idx + 1})
                     return
             elif kind == "delay":
                 seconds = step.get("seconds")

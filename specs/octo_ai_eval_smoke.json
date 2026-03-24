@@ -1,0 +1,54 @@
+[
+  {
+    "name": "create_neetones_module_smoke",
+    "session": {
+      "title": "Neetones Smoke Eval",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module for managing gym training sessions. Call it Neetones. Start with a clean modern layout.",
+        "expect": {
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "candidate_ops_include": [
+            "create_module"
+          ],
+          "affected_modules_include": [
+            "neetones"
+          ],
+          "assistant_text_contains": [
+            "Create a new module 'Neetones'.",
+            "Create module 'Neetones'."
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      },
+      {
+        "answer": "Approved.",
+        "expect": {}
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "patchset_status": "draft",
+          "ok": true
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "validation_ok": true,
+          "patchset_status": "validated",
+          "ok": true
+        }
+      }
+    ]
+  }
+]

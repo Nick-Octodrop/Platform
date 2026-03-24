@@ -1,0 +1,29 @@
+{
+  "name": "Partner Outreach - Initial",
+  "subject": "{{ ('Thought this might be relevant for ' ~ record['outreach.company_name']) if record is defined and record and record['outreach.company_name'] is defined and record['outreach.company_name'] else 'Build a working client system in one session' }}",
+  "body_html": "<div style=\"margin:0; padding:32px 20px; background-color:#f5f1eb; font-family:Arial, Helvetica, sans-serif; color:#1f2937;\"><table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" style=\"max-width:640px; margin:0 auto; background-color:#ffffff; border:1px solid #eadfce; border-radius:16px;\"><tr><td style=\"padding:32px;\"><p style=\"margin:0 0 20px 0; font-size:16px; line-height:1.6;\">Hi {{ record['outreach.prospect_name'] if record is defined and record and record['outreach.prospect_name'] is defined and record['outreach.prospect_name'] else 'there' }},</p><p style=\"margin:0 0 20px 0; font-size:16px; line-height:1.6;\">Nick here from Octodrop.</p>{% if record is defined and record and record['outreach.company_name'] is defined and record['outreach.company_name'] %}<p style=\"margin:0 0 20px 0; font-size:16px; line-height:1.6;\">Came across {{ record['outreach.company_name'] }} and thought this might be relevant.</p>{% else %}<p style=\"margin:0 0 20px 0; font-size:16px; line-height:1.6;\">Thought this might be relevant.</p>{% endif %}<p style=\"margin:0 0 20px 0; font-size:16px; line-height:1.6;\">We’ve built a business operating system that can generate a working client system from requirements in a single session. CRM, quoting, jobs, workflows, reporting. Built live and refined with the client.</p><p style=\"margin:0 0 20px 0; font-size:16px; line-height:1.6;\">Partners are using it to deliver systems in days and show something real from the first session.</p><p style=\"margin:0 0 20px 0; font-size:16px; line-height:1.6;\">We’re starting to work with a small number of NZ partners, which is why I’m reaching out.</p><p style=\"margin:0 0 24px 0; font-size:16px; line-height:1.6;\">You own the client, delivery, and billing. We provide the platform and support.</p><div style=\"margin:0 0 24px 0; padding:18px 20px; background-color:#fff7f1; border-left:4px solid #e97026; border-radius:8px;\"><p style=\"margin:0 0 8px 0; font-size:13px; line-height:1.4; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#b45309;\">Quick Overview</p><p style=\"margin:0; font-size:16px; line-height:1.6;\"><a href=\"{{ partners_link if partners_link is defined and partners_link else 'https://octodrop.com/partners' }}\" style=\"color:#c2410c; text-decoration:underline;\">{{ partners_link if partners_link is defined and partners_link else 'https://octodrop.com/partners' }}</a></p></div><p style=\"margin:0 0 28px 0; font-size:16px; line-height:1.6;\">Let me know if it looks interesting.</p><p style=\"margin:0; font-size:16px; line-height:1.6;\">Cheers,<br />Nick Sansom<br />Founder, Octodrop<br />022 343 1452<br /><a href=\"mailto:nick@octodrop.com\" style=\"color:#c2410c; text-decoration:underline;\">nick@octodrop.com</a><br /><a href=\"https://octodrop.com\" style=\"color:#c2410c; text-decoration:underline;\">octodrop.com</a></p></td></tr></table></div>",
+  "body_text": "Hi {{ record['outreach.prospect_name'] if record is defined and record and record['outreach.prospect_name'] is defined and record['outreach.prospect_name'] else 'there' }},\n\nNick here from Octodrop.\n\n{% if record is defined and record and record['outreach.company_name'] is defined and record['outreach.company_name'] %}Came across {{ record['outreach.company_name'] }} and thought this might be relevant.\n\n{% else %}Thought this might be relevant.\n\n{% endif %}We’ve built a business operating system that can generate a working client system from requirements in a single session. CRM, quoting, jobs, workflows, reporting. Built live and refined with the client.\n\nPartners are using it to deliver systems in days and show something real from the first session.\n\nWe’re starting to work with a small number of NZ partners, which is why I’m reaching out.\n\nYou own the client, delivery, and billing. We provide the platform and support.\n\nQuick overview here:\n{{ partners_link if partners_link is defined and partners_link else 'https://octodrop.com/partners' }}\n\nLet me know if it looks interesting.\n\nCheers,\nNick Sansom\nFounder, Octodrop\n022 343 1452\nnick@octodrop.com\nhttps://octodrop.com",
+  "variables_schema": {
+    "entity_id": "entity.outreach",
+    "fields": [
+      {
+        "key": "outreach.prospect_name",
+        "label": "Contact Name",
+        "required": false,
+        "fallback": "there"
+      },
+      {
+        "key": "outreach.company_name",
+        "label": "Company Name",
+        "required": false
+      },
+      {
+        "key": "partners_link",
+        "label": "Partners Link",
+        "required": true,
+        "default": "https://octodrop.com/partners"
+      }
+    ]
+  },
+  "is_active": true
+}

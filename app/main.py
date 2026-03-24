@@ -11,7 +11,7 @@ import urllib.error
 import urllib.parse
 from types import SimpleNamespace
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 from fastapi import FastAPI, Request, UploadFile, File, Form
 from fastapi.encoders import jsonable_encoder
@@ -52,6 +52,8 @@ import logging
 import copy
 import uuid
 import socket
+import difflib
+from contextlib import contextmanager
 from datetime import date, datetime
 from urllib.parse import urlparse
 from dataclasses import dataclass, field
@@ -189,15 +191,11 @@ _EXTRA_CORS_ORIGINS = {
     if origin.strip()
 }
 _CORS_ORIGINS = _LOCAL_CORS_ORIGINS | _EXTRA_CORS_ORIGINS
+_AI_DESIGN_FAMILY_CATALOG: dict[str, dict] | None = None
 
 
-@app.middleware("http")
-async def local_cors_fallback_middleware(request: Request, call_next):
+def _attach_cors_headers(request: Request, response: Response) -> Response:
     origin = request.headers.get("origin")
-    if request.method == "OPTIONS":
-        response = JSONResponse({}, status_code=200)
-    else:
-        response = await call_next(request)
     normalized_origin = origin.rstrip("/") if isinstance(origin, str) else origin
     if normalized_origin and (normalized_origin in _CORS_ORIGINS or _LOCAL_CORS_REGEX.match(normalized_origin)):
         response.headers.setdefault("Access-Control-Allow-Origin", origin)
@@ -206,6 +204,15 @@ async def local_cors_fallback_middleware(request: Request, call_next):
         response.headers.setdefault("Access-Control-Allow-Methods", "*")
         response.headers.setdefault("Vary", "Origin")
     return response
+
+
+@app.middleware("http")
+async def local_cors_fallback_middleware(request: Request, call_next):
+    if request.method == "OPTIONS":
+        response = JSONResponse({}, status_code=200)
+    else:
+        response = await call_next(request)
+    return _attach_cors_headers(request, response)
 
 
 def _log_db_rtt_once() -> None:
@@ -389,12 +396,14 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 
 USE_DB = os.getenv("USE_DB", "").strip() == "1"
-USE_AI = os.getenv("USE_AI", "").strip() == "1"
+_USE_AI_RAW = os.getenv("USE_AI", "").strip().lower()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+USE_AI = _USE_AI_RAW in ("1", "true", "yes") or (_USE_AI_RAW == "" and bool(OPENAI_API_KEY))
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "").strip() or "https://api.openai.com"
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "").strip() or "gpt-4o-mini"
 STUDIO2_PLANNER_MODEL = os.getenv("STUDIO2_PLANNER_MODEL", "").strip() or OPENAI_MODEL
 STUDIO2_BUILDER_MODEL = os.getenv("STUDIO2_BUILDER_MODEL", "").strip() or OPENAI_MODEL
+STUDIO2_MODULE_DESIGN_MODEL = os.getenv("STUDIO2_MODULE_DESIGN_MODEL", "").strip() or STUDIO2_PLANNER_MODEL
 OPENAI_TIMEOUT = float(os.getenv("OPENAI_TIMEOUT", "120"))
 STUDIO2_AGENT_DEBUG = os.getenv("STUDIO2_AGENT_DEBUG", "").strip().lower() in ("1", "true", "yes")
 STUDIO2_AGENT_LOG_PAYLOAD = os.getenv("STUDIO2_AGENT_LOG_PAYLOAD", "").strip().lower() in ("1", "true", "yes")
@@ -610,11 +619,17 @@ def _resolve_actor(request: Request) -> dict | JSONResponse:
     user = getattr(request.state, "user", None)
     if os.getenv("OCTO_DISABLE_AUTH", "").strip().lower() in ("1", "true", "yes"):
         if not user or not user.get("id"):
+            workspace_header = request.headers.get("X-Workspace-Id")
+            workspace_id = workspace_header.strip() if isinstance(workspace_header, str) and workspace_header.strip() else "default"
+            workspace_name = "Default" if workspace_id == "default" else workspace_id
             return {
                 "user_id": "test-user",
                 "email": "test@example.com",
-                "role": "owner",
-                "workspace_id": "default",
+                "role": "admin",
+                "workspace_role": "admin",
+                "platform_role": "superadmin",
+                "workspace_id": workspace_id,
+                "workspaces": [{"workspace_id": workspace_id, "role": "admin", "workspace_name": workspace_name}],
                 "claims": {},
             }
     if not user or not user.get("id"):
@@ -671,11 +686,23 @@ def _resolve_actor(request: Request) -> dict | JSONResponse:
         workspace_id = memberships[0].get("workspace_id")
         role = memberships[0].get("role") or "member"
     elif platform_role == "superadmin":
-        all_workspaces = list_all_workspaces()
-        if not all_workspaces:
-            return _error_response("WORKSPACE_NOT_FOUND", "No workspaces exist yet", status=404)
-        workspace_id = all_workspaces[0].get("workspace_id")
-        role = "admin"
+        preferred_workspace = next(
+            (
+                item
+                for item in (user_workspaces or [])
+                if isinstance(item, dict) and isinstance(item.get("workspace_id"), str) and item.get("workspace_id")
+            ),
+            None,
+        )
+        if preferred_workspace:
+            workspace_id = preferred_workspace.get("workspace_id")
+            role = preferred_workspace.get("role") or "admin"
+        else:
+            all_workspaces = list_all_workspaces()
+            if not all_workspaces:
+                return _error_response("WORKSPACE_NOT_FOUND", "No workspaces exist yet", status=404)
+            workspace_id = all_workspaces[0].get("workspace_id")
+            role = "admin"
     else:
         return _error_response("WORKSPACE_REQUIRED", "Multiple workspaces found; specify X-Workspace-Id", "X-Workspace-Id", status=400)
     return {
@@ -901,11 +928,11 @@ class ActorContextMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         actor = _resolve_actor(request)
         if isinstance(actor, JSONResponse):
-            return actor
+            return _attach_cors_headers(request, actor)
         if request.url.path.startswith("/studio2") or request.url.path.startswith("/studio/"):
             denied = _require_capability(actor, "modules.manage", "Admin role required")
             if denied:
-                return denied
+                return _attach_cors_headers(request, denied)
         request.state.actor = actor
         token = set_org_id(actor.get("workspace_id") or "default")
         try:
@@ -1991,6 +2018,26 @@ def _resp_cache_invalidate_record(entity_id: str, record_id: str) -> None:
     _resp_cache_invalidate_prefix(f"chatter:{get_org_id()}:{entity_id}:{record_id}:")
 
 
+def _resp_cache_invalidate_module_bootstrap(module_id: str) -> None:
+    if not isinstance(module_id, str) or not module_id:
+        return
+    prefix = f"bootstrap:{get_org_id()}:"
+    marker = f":{module_id}:"
+    for key in list(_response_cache.keys()):
+        if key.startswith(prefix) and marker in key:
+            _response_cache.pop(key, None)
+
+
+def _invalidate_module_runtime_caches(module_id: str, *, include_studio_modules: bool = False) -> None:
+    _cache_invalidate("modules")
+    _cache_invalidate("registry_list")
+    _cache_invalidate("manifest")
+    if include_studio_modules:
+        _cache_invalidate("studio_modules")
+    _compiled_cache_invalidate(module_id)
+    _resp_cache_invalidate_module_bootstrap(module_id)
+
+
 def _domain_hash(domain: dict | None) -> str:
     if not domain:
         return ""
@@ -2375,21 +2422,193 @@ def _build_scaffold_single_entity(
     form_page = f"{entity_slug}.form_page"
     list_view = f"{entity_slug}.list"
     form_view = f"{entity_slug}.form"
+    kanban_view = f"{entity_slug}.kanban"
+    calendar_view = f"{entity_slug}.calendar"
+    graph_view = f"{entity_slug}.graph"
     action_id = f"action.{entity_slug}_new"
     nav_label = nav_label or entity_label
 
+    custom_fields: list[dict] = []
+    for field in fields if isinstance(fields, list) else []:
+        if not isinstance(field, dict):
+            continue
+        field_id = field.get("id")
+        if field_id in {f"{entity_slug}.id", f"{entity_slug}.created_at"}:
+            continue
+        custom_fields.append(copy.deepcopy(field))
+
     base_fields = [
         {"id": f"{entity_slug}.id", "type": "uuid", "label": "ID", "readonly": True},
+        {"id": f"{entity_slug}.created_at", "type": "datetime", "label": "Created At", "readonly": True},
     ]
-    entity_fields = base_fields + fields
-    display_field = entity_fields[1]["id"] if len(entity_fields) > 1 else entity_fields[0]["id"]
+    entity_fields = base_fields + custom_fields
+    display_field = _ai_pick_scaffold_display_field(entity_slug, entity_fields)
+    if not isinstance(display_field, str):
+        display_field = entity_fields[1]["id"] if len(entity_fields) > 1 else entity_fields[0]["id"]
+    status_field = next((field for field in entity_fields if isinstance(field, dict) and field.get("id") == f"{entity_slug}.status"), None)
+    if status_field is None:
+        status_field = next((field for field in entity_fields if isinstance(field, dict) and field.get("type") == "enum"), None)
+    if isinstance(status_field, dict):
+        status_options = status_field.get("options") if isinstance(status_field.get("options"), list) else []
+        default_value = status_field.get("default") if isinstance(status_field.get("default"), str) else None
+        if status_options:
+            option_values = {
+                item.get("value")
+                for item in status_options
+                if isinstance(item, dict) and isinstance(item.get("value"), str) and item.get("value")
+            }
+            if not default_value or default_value not in option_values:
+                first_value = next(
+                    (
+                        item.get("value")
+                        for item in status_options
+                        if isinstance(item, dict) and isinstance(item.get("value"), str) and item.get("value")
+                    ),
+                    None,
+                )
+                if isinstance(first_value, str) and first_value:
+                    status_field["default"] = first_value
+    status_field_id = status_field.get("id") if isinstance(status_field, dict) and isinstance(status_field.get("id"), str) else None
+    date_fields = [
+        field for field in entity_fields
+        if isinstance(field, dict) and field.get("type") in {"date", "datetime"} and isinstance(field.get("id"), str)
+    ]
+    date_field_id = date_fields[0].get("id") if date_fields else None
+    secondary_date_field_id = date_fields[1].get("id") if len(date_fields) > 1 else date_field_id
+
+    searchable_fields: list[str] = []
+    list_columns: list[dict] = []
+    for field in entity_fields:
+        if not isinstance(field, dict):
+            continue
+        field_id = field.get("id")
+        field_type = field.get("type")
+        if not isinstance(field_id, str) or field_id.endswith(".id"):
+            continue
+        if field_id.endswith(".created_at"):
+            continue
+        if field_type in {"string", "text", "enum", "date", "datetime", "lookup", "user", "number", "int", "float"} and field_id not in searchable_fields:
+            searchable_fields.append(field_id)
+        if field_type not in {"text", "attachments"} and len(list_columns) < 6:
+            list_columns.append({"field_id": field_id})
+    if not searchable_fields:
+        searchable_fields = [display_field]
+    if not list_columns:
+        list_columns = [{"field_id": display_field}]
+    else:
+        ordered_columns = [{"field_id": display_field}]
+        for column in list_columns:
+            field_id = column.get("field_id") if isinstance(column, dict) else None
+            if not isinstance(field_id, str) or field_id == display_field:
+                continue
+            ordered_columns.append({"field_id": field_id})
+        list_columns = ordered_columns[:6]
+
+    subtitle_fields: list[str] = []
+    for field in entity_fields:
+        if not isinstance(field, dict):
+            continue
+        field_id = field.get("id")
+        if not isinstance(field_id, str) or field_id in {display_field, status_field_id} or field_id.endswith(".id"):
+            continue
+        if field.get("type") in {"date", "datetime", "lookup", "user", "string", "number", "int", "float"}:
+            subtitle_fields.append(field_id)
+        if len(subtitle_fields) >= 2:
+            break
+
+    filters: list[dict] = []
+    default_filter_id = None
+    status_options = status_field.get("options") if isinstance(status_field, dict) and isinstance(status_field.get("options"), list) else []
+    if status_field_id and status_options:
+        preferred_defaults = {"active", "open", "planned", "new", "todo", "in_progress"}
+        for option in status_options[:6]:
+            if not isinstance(option, dict):
+                continue
+            value = option.get("value")
+            label = option.get("label")
+            if not isinstance(value, str) or not isinstance(label, str):
+                continue
+            filter_id = _marketplace_slugify(value).replace("-", "_") or f"status_{len(filters) + 1}"
+            filters.append(
+                {
+                    "id": filter_id,
+                    "label": label,
+                    "domain": {"op": "eq", "field": status_field_id, "value": value},
+                }
+            )
+            if default_filter_id is None and value in preferred_defaults:
+                default_filter_id = filter_id
+        if default_filter_id is None and filters:
+            default_filter_id = filters[0].get("id")
+
+    view_modes = [{"mode": "list", "target": f"view:{list_view}"}]
+    views: list[dict] = [
+        {
+            "id": list_view,
+            "kind": "list",
+            "entity": entity_id,
+            "header": {
+                "search": {"fields": searchable_fields[:8], "enabled": True, "placeholder": f"Search {nav_label.lower()}..."},
+                "primary_actions": [{"action_id": action_id}],
+                "open_record_target": f"page:{form_page}",
+                "filters": filters,
+            },
+            "columns": list_columns,
+            "create_behavior": "open_form",
+        },
+    ]
+    if status_field_id:
+        view_modes.append({"mode": "kanban", "target": f"view:{kanban_view}", "default_group_by": status_field_id})
+        views.append(
+            {
+                "id": kanban_view,
+                "kind": "kanban",
+                "entity": entity_id,
+                "card": {
+                    "title_field": display_field,
+                    "subtitle_fields": subtitle_fields[:2],
+                    "badge_fields": [status_field_id],
+                },
+            }
+        )
+    if date_field_id:
+        view_modes.append({"mode": "calendar", "target": f"view:{calendar_view}"})
+        views.append(
+            {
+                "id": calendar_view,
+                "kind": "calendar",
+                "entity": entity_id,
+                "calendar": {
+                    "title_field": display_field,
+                    "date_start": date_field_id,
+                    "date_end": secondary_date_field_id,
+                    "default_scale": "week",
+                },
+            }
+        )
+    graph_group_by = status_field_id or date_field_id or display_field
+    view_modes.append({"mode": "graph", "target": f"view:{graph_view}"})
+    if graph_group_by != display_field:
+        view_modes.append({"mode": "pivot", "target": f"view:{list_view}", "default_group_by": graph_group_by})
+    views.append(
+        {
+            "id": graph_view,
+            "kind": "graph",
+            "entity": entity_id,
+            "default": {
+                "type": "bar",
+                "group_by": graph_group_by,
+                "measure": "count",
+            },
+        }
+    )
 
     return {
         "manifest_version": "1.3",
-        "module": {"id": module_id, "name": name, "version": "0.1.0", "description": ""},
+        "module": {"id": module_id, "name": name, "key": module_id, "version": "0.1.0", "description": ""},
         "app": {
             "home": f"page:{list_page}",
-            "nav": [{"group": "Main", "items": [{"label": nav_label, "to": f"page:{list_page}"}]}],
+            "nav": [{"group": name, "items": [{"label": nav_label, "to": f"page:{list_page}"}]}],
             "defaults": {
                 "entity_form_page": f"page:{form_page}",
                 "entity_home_page": f"page:{list_page}",
@@ -2409,18 +2628,7 @@ def _build_scaffold_single_entity(
                 "fields": entity_fields,
             }
         ],
-        "views": [
-            {
-                "id": list_view,
-                "kind": "list",
-                "entity": entity_id,
-                "header": {
-                    "search": {"fields": [display_field], "enabled": True, "placeholder": f"Search {nav_label.lower()}..."},
-                    "primary_actions": [{"action_id": action_id}],
-                },
-                "columns": [{"label": entity_label, "field_id": display_field}],
-                "open_record": {"to": f"page:{form_page}", "param": "record"},
-            },
+        "views": views + [
             {
                 "id": form_view,
                 "kind": "form",
@@ -2452,7 +2660,15 @@ def _build_scaffold_single_entity(
                     {
                         "kind": "container",
                         "variant": "card",
-                        "content": [{"kind": "view", "target": f"view:{list_view}"}],
+                        "content": [
+                            {
+                                "kind": "view_modes",
+                                "entity_id": entity_id,
+                                "default_mode": "list",
+                                "modes": view_modes,
+                                **({"default_filter_id": default_filter_id} if isinstance(default_filter_id, str) and default_filter_id else {}),
+                            }
+                        ],
                     }
                 ],
             },
@@ -2506,7 +2722,7 @@ def _build_scaffold_single_entity(
                 ],
             },
         ],
-        "actions": [{"id": action_id, "kind": "navigate", "label": f"New {entity_label}", "target": f"page:{form_page}"}],
+        "actions": [{"id": action_id, "kind": "open_form", "label": "+ New", "target": form_view}],
         "relations": [],
     }
 
@@ -2588,6 +2804,2426 @@ def _build_scaffold_template(module_id: str, module_name: str | None, pattern_ke
         ]
         return _build_scaffold_single_entity(module_id, module_name, "lead", "Lead", fields, nav_label="Leads")
     return _build_v1_empty_template(module_id, module_name)
+
+
+def _ai_clean_module_name_candidate(raw: str | None) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    label = raw.strip(" .,-\"'")
+    if not label:
+        return None
+    label = re.split(r"[.!?]\s+", label, maxsplit=1)[0].strip(" .,-\"'")
+    label = re.sub(
+        r"^(?:create|build|make|change|rename)\s+",
+        "",
+        label,
+        flags=re.IGNORECASE,
+    ).strip(" .,-\"'")
+    label = re.sub(
+        r"^(?:me|us)\s+(?:a|an|the)\s+",
+        "",
+        label,
+        flags=re.IGNORECASE,
+    ).strip(" .,-\"'")
+    label = re.sub(
+        r"^(?:me\s+|us\s+)?(?:(?:a|an|the)\s+)?(?:new\s+|simple\s+|small\s+|custom\s+)+",
+        "",
+        label,
+        flags=re.IGNORECASE,
+    ).strip(" .,-\"'")
+    label = re.sub(
+        r"\s+\b(with|for|to|that|which|including|using|where|make|keep|and add|and include)\b\s+.*$",
+        "",
+        label,
+        flags=re.IGNORECASE,
+    ).strip(" .,-\"'")
+    label = re.sub(r"\s+\bmodule\b$", "", label, flags=re.IGNORECASE).strip(" .,-\"'")
+    if label.lower() in {"simple", "new", "module", "app", "me", "me a", "me a new"}:
+        return None
+    if label and label == label.lower():
+        label = label.title()
+    return label or None
+
+
+def _ai_extract_scoped_module_name(message: str) -> str | None:
+    msg = (message or "").strip()
+    if not msg:
+        return None
+    patterns = [
+        rf"(?:^|[.!?]\s*)for\s+([a-zA-Z0-9][a-zA-Z0-9 &_.-]{{0,40}}?)(?:,|:|\s+(?:{_AI_SCOPE_ACTION_VERBS_PATTERN})\b)",
+        r"(?:^|[.!?]\s*)regarding\s+([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40}?)(?:,|:|\s)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, msg, flags=re.IGNORECASE)
+        if match and isinstance(match.group(1), str):
+            label = _ai_clean_module_name_candidate(match.group(1))
+            if _ai_is_label_confident(label):
+                return label
+    return None
+
+
+def _ai_infer_module_name_from_purpose(message: str) -> str | None:
+    msg = (message or "").strip()
+    if not msg:
+        return None
+    lower = re.sub(r"\s+", " ", msg.lower()).strip()
+    family = _ai_detect_new_module_family("", msg)
+    family_def = _ai_design_family_definition(family)
+    purpose_name_rules = family_def.get("purpose_name_rules") if isinstance(family_def.get("purpose_name_rules"), list) else []
+    for rule in purpose_name_rules:
+        if not isinstance(rule, dict):
+            continue
+        tokens = [token for token in (rule.get("match_any") or []) if isinstance(token, str) and token]
+        name = rule.get("name") if isinstance(rule.get("name"), str) else None
+        if tokens and isinstance(name, str) and name.strip() and any(token in lower for token in tokens):
+            return name.strip()
+    return _ai_design_family_default_module_name(family)
+
+
+def _ai_extract_new_module_name(message: str, answer_hints: dict | None = None) -> str | None:
+
+    if isinstance(answer_hints, dict):
+        for key in ("module_name", "module_target", "answer_text"):
+            value = answer_hints.get(key)
+            cleaned = _ai_clean_module_name_candidate(value)
+            if isinstance(cleaned, str) and _ai_is_label_confident(cleaned):
+                return cleaned
+    msg = (message or "").strip()
+    if not msg:
+        return None
+    if re.search(
+        r"\b(?:field|attribute|tab|section|view|page|button|workflow|form|list|layout)\b",
+        msg,
+        flags=re.IGNORECASE,
+    ) and re.search(
+        r"\b(?:in|into|inside|within|on|to|for)\s+(?:the\s+|my\s+|our\s+)?[a-zA-Z0-9_. -]{1,60}?\s+module\b",
+        msg,
+        flags=re.IGNORECASE,
+    ):
+        return None
+    rename_match = re.search(
+        r"(?:change|rename)\s+(?:[a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40}?)\s+to\s+[\"']?([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40})[\"']?",
+        msg,
+        flags=re.IGNORECASE,
+    )
+    if rename_match and isinstance(rename_match.group(1), str):
+        label = _ai_clean_module_name_candidate(rename_match.group(1))
+        if _ai_is_label_confident(label):
+            return label
+    patterns = [
+        r"(?:called|named)\s+[\"']?([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40})[\"']?",
+        r"let'?s\s+call\s+it\s+[\"']?([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40})[\"']?",
+        r"call\s+it\s+[\"']?([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40})[\"']?",
+        r"(?:create|build|make)\s+(?:me\s+)?(?:a\s+|an\s+|the\s+)?(?:new\s+)?(?:simple\s+)?module\s+(?:for|to manage|for managing)\s+([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40})",
+        r"(?:create|build|make)(?:\s+(?:a|an|the))?(?:\s+simple)?\s+([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40}?)\s+module\b",
+        r"(?:create|build|make)\s+(?:me\s+|us\s+|a\s+|an\s+|the\s+|new\s+|simple\s+|small\s+|custom\s+){0,6}([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40}?)\s+system\b",
+        r"(?:create|build|make)\s+(?:me\s+|us\s+|a\s+|an\s+|the\s+|new\s+|simple\s+|small\s+|custom\s+){0,6}([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40}?)\s+workspace\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, msg, flags=re.IGNORECASE)
+        if match and isinstance(match.group(1), str):
+            label = _ai_clean_module_name_candidate(match.group(1))
+            if _ai_is_label_confident(label):
+                return label
+    quoted = re.search(r"[\"']([^\"']{1,40})[\"']", msg)
+    if quoted and isinstance(quoted.group(1), str):
+        label = _ai_clean_module_name_candidate(quoted.group(1))
+        if _ai_is_label_confident(label):
+            return label
+    scoped_name = _ai_extract_scoped_module_name(msg)
+    if _ai_is_label_confident(scoped_name):
+        return scoped_name
+    lowered = msg.lower()
+    if "service operations" in lowered:
+        return "Service Operations"
+    inferred_pattern = _infer_pattern_key(msg)
+    if inferred_pattern == "jobs" and re.search(r"\b(system|workspace|platform)\b", lowered):
+        return "Job Operations"
+    inferred_name = _ai_infer_module_name_from_purpose(msg)
+    if _ai_is_label_confident(inferred_name):
+        return inferred_name
+    return None
+
+
+def _ai_new_module_id_from_name(module_name: str, module_index: dict[str, dict]) -> str:
+    base = re.sub(r"[^a-z0-9_]+", "_", _marketplace_slugify(module_name).replace("-", "_")).strip("_")
+    if not base:
+        base = "app"
+    if not base[0].isalpha():
+        base = f"app_{base}"
+    if len(base) < 3:
+        base = f"{base}_app"
+    base = base[:33].rstrip("_") or "app_mod"
+    if len(base) < 3:
+        base = "app_mod"
+    candidate = base
+    suffix = 2
+    while (
+        not _is_valid_module_id(candidate)
+        or candidate in module_index
+        or registry.get(candidate) is not None
+        or drafts.get_draft(candidate) is not None
+    ):
+        trimmed = base[: max(1, 33 - len(str(suffix)) - 1)].rstrip("_") or "app"
+        candidate = f"{trimmed}_{suffix}"
+        suffix += 1
+    return candidate
+
+
+def _ai_pick_scaffold_display_field(entity_slug: str, fields: list[dict]) -> str | None:
+    preferred_ids = (
+        f"{entity_slug}.name",
+        f"{entity_slug}.title",
+        f"{entity_slug}.full_name",
+        f"{entity_slug}.number",
+        f"{entity_slug}.code",
+        f"{entity_slug}.reference",
+    )
+    valid_fields = [field for field in fields if isinstance(field, dict)]
+    for preferred_id in preferred_ids:
+        if any(field.get("id") == preferred_id for field in valid_fields):
+            return preferred_id
+    for field in valid_fields:
+        field_id = field.get("id")
+        field_type = field.get("type")
+        if not isinstance(field_id, str) or field_id.endswith(".id") or field_id.endswith(".created_at"):
+            continue
+        if field_type in {"string", "text"}:
+            return field_id
+    for field in valid_fields:
+        field_id = field.get("id")
+        if isinstance(field_id, str) and not field_id.endswith(".id") and not field_id.endswith(".created_at"):
+            return field_id
+    return None
+
+
+def _ai_singularize_slug(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9_]+", "_", (value or "").lower()).strip("_")
+    if not slug:
+        return "record"
+    if slug.endswith("ies") and len(slug) > 3:
+        return f"{slug[:-3]}y"
+    if slug.endswith("ses") and len(slug) > 3:
+        return slug[:-2]
+    if slug.endswith("s") and not slug.endswith("ss") and len(slug) > 3:
+        return slug[:-1]
+    return slug
+
+
+def _ai_titleize_slug(value: str) -> str:
+    parts = [part for part in re.split(r"[_\s-]+", value or "") if part]
+    return " ".join(part.capitalize() for part in parts) or "Record"
+
+
+def _ai_extract_status_options(message: str) -> list[dict]:
+    msg = (message or "").strip()
+    if not msg:
+        return []
+    patterns = [
+        r"\bwith\s+(.+?)\s+(?:statuses|stages)\b",
+        r"\bwith\s+(?:status|statuses|stage|stages)\b\s+(.+?)(?:[.;]|$)",
+        r"\b(?:statuses|stages)\b\s+(.+?)(?:[.;]|$)",
+    ]
+    raw = None
+    for pattern in patterns:
+        match = re.search(pattern, msg, flags=re.IGNORECASE)
+        if match and isinstance(match.group(1), str):
+            raw = match.group(1)
+            break
+    if not raw:
+        return []
+    cleaned = re.sub(r"^\s*flow\s+", "", raw, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\band\s+actions?\b.*$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\band\s+(?:kanban|calendar|chart|graph|pivot|board|view|views)\b.*$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = cleaned.strip(" .")
+    tokens = [part.strip(" .") for part in re.split(r",|\band\b", cleaned, flags=re.IGNORECASE) if part.strip(" .")]
+    options: list[dict] = []
+    seen: set[str] = set()
+    for token in tokens[:8]:
+        value = _marketplace_slugify(token).replace("-", "_").strip("_")
+        label = _ai_titleize_slug(value)
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        options.append({"label": label, "value": value})
+    return options
+
+
+def _ai_append_unique_fields(fields: list[dict], additions: list[dict]) -> list[dict]:
+    existing = {
+        field.get("id")
+        for field in fields
+        if isinstance(field, dict) and isinstance(field.get("id"), str)
+    }
+    for field in additions:
+        if not isinstance(field, dict):
+            continue
+        field_id = field.get("id")
+        if not isinstance(field_id, str) or not field_id or field_id in existing:
+            continue
+        fields.append(field)
+        existing.add(field_id)
+    return fields
+
+
+def _ai_detect_new_module_family(module_name: str, message: str) -> str:
+    lower = f"{module_name} {message}".lower()
+    catalog = _ai_design_family_catalog()
+    for family, family_def in catalog.items():
+        if not isinstance(family_def, dict) or family == "generic":
+            continue
+        detect_any = family_def.get("detect_any") if isinstance(family_def.get("detect_any"), list) else []
+        if any(isinstance(token, str) and token and token in lower for token in detect_any):
+            return family
+        detect_all = family_def.get("detect_all") if isinstance(family_def.get("detect_all"), list) else []
+        for rule in detect_all:
+            tokens = [token for token in rule if isinstance(token, str) and token]
+            if tokens and all(token in lower for token in tokens):
+                return family
+    return "generic"
+
+
+def _ai_default_status_options(family: str) -> list[dict]:
+    family_def = _ai_design_family_definition(family)
+    raw_statuses = family_def.get("statuses") if isinstance(family_def.get("statuses"), list) else []
+    statuses = _ai_coerce_design_statuses(raw_statuses, "generic") if raw_statuses else []
+    if statuses:
+        return statuses
+    return [
+        {"value": "new", "label": "New"},
+        {"value": "in_progress", "label": "In Progress"},
+        {"value": "done", "label": "Done"},
+    ]
+
+
+def _ai_module_design_field(field_id: str, field_type: str, label: str, **extra) -> dict:
+    field = {"id": field_id, "type": field_type, "label": label}
+    for key, value in extra.items():
+        if value not in (None, "", [], {}):
+            field[key] = value
+    return field
+
+
+def _ai_family_design_fields(entity_slug: str, family: str) -> list[dict]:
+    family_def = _ai_design_family_definition(family)
+    raw_fields = family_def.get("fields") if isinstance(family_def.get("fields"), list) else []
+    normalized: list[dict] = []
+    for field in raw_fields:
+        if not isinstance(field, dict):
+            continue
+        suffix = field.get("suffix") if isinstance(field.get("suffix"), str) and field.get("suffix").strip() else None
+        field_type = field.get("type") if isinstance(field.get("type"), str) and field.get("type").strip() else None
+        label = field.get("label") if isinstance(field.get("label"), str) and field.get("label").strip() else None
+        if not suffix or not field_type or not label:
+            continue
+        extra = {key: copy.deepcopy(value) for key, value in field.items() if key not in {"suffix", "type", "label"}}
+        normalized.append(_ai_module_design_field(f"{entity_slug}.{suffix}", field_type, label, **extra))
+    return normalized
+
+
+def _ai_module_primary_label(family: str, message: str) -> str:
+    family_def = _ai_design_family_definition(family)
+    primary_label = family_def.get("primary_label") if isinstance(family_def.get("primary_label"), str) else None
+    return primary_label.strip() if isinstance(primary_label, str) and primary_label.strip() else "Title"
+
+
+def _ai_module_design_summary(module_name: str, family: str) -> str:
+    family_def = _ai_design_family_definition(family)
+    template = family_def.get("summary_template") if isinstance(family_def.get("summary_template"), str) else None
+    if isinstance(template, str) and template.strip():
+        return template.format(module_name=module_name)
+    return f"{module_name} with operational records, priorities, and notes."
+
+
+def _ai_coerce_design_statuses(statuses: Any, family: str) -> list[dict]:
+    options: list[dict] = []
+    seen: set[str] = set()
+    for item in statuses if isinstance(statuses, list) else []:
+        value = None
+        label = None
+        if isinstance(item, str):
+            label = item.strip()
+        elif isinstance(item, dict):
+            value = item.get("value") if isinstance(item.get("value"), str) else None
+            label = item.get("label") if isinstance(item.get("label"), str) else None
+        normalized_value = _marketplace_slugify(value or label or "").replace("-", "_").strip("_")
+        normalized_label = (label or _ai_titleize_slug(normalized_value)).strip() if isinstance(label or _ai_titleize_slug(normalized_value), str) else None
+        if not normalized_value or not normalized_label or normalized_value in seen:
+            continue
+        seen.add(normalized_value)
+        options.append({"value": normalized_value, "label": normalized_label})
+    return options[:8] or _ai_default_status_options(family)
+
+
+def _ai_coerce_design_fields(entity_slug: str, raw_fields: Any) -> list[dict]:
+    allowed_types = {"string", "text", "number", "bool", "date", "datetime", "enum", "uuid", "lookup", "tags", "attachments", "user"}
+    fields: list[dict] = []
+    seen: set[str] = set()
+    for item in raw_fields if isinstance(raw_fields, list) else []:
+        if not isinstance(item, dict):
+            continue
+        raw_id = item.get("id") if isinstance(item.get("id"), str) else item.get("field_id")
+        raw_label = item.get("label") if isinstance(item.get("label"), str) else None
+        raw_type = item.get("type") if isinstance(item.get("type"), str) else None
+        raw_id_text = str(raw_id or "").strip()
+        if raw_id_text.startswith(f"{entity_slug}."):
+            field_suffix = raw_id_text.split(".", 1)[1].strip()
+        else:
+            field_suffix = _marketplace_slugify(str(raw_id or raw_label or "")).replace("-", "_").strip("_")
+        if not field_suffix or field_suffix in {"id", "created_at"}:
+            continue
+        field_type = (raw_type or "string").strip().lower()
+        if field_type not in allowed_types:
+            field_type = "string"
+        field_id = f"{entity_slug}.{field_suffix}"
+        if field_id in seen:
+            continue
+        field = {
+            "id": field_id,
+            "type": field_type,
+            "label": raw_label.strip() if isinstance(raw_label, str) and raw_label.strip() else _ai_titleize_slug(field_suffix),
+        }
+        if item.get("required") is True:
+            field["required"] = True
+        if item.get("readonly") is True:
+            field["readonly"] = True
+        for extra_key in ("entity", "entity_id", "target", "target_entity", "target_entity_id", "display_field"):
+            extra_value = item.get(extra_key)
+            if isinstance(extra_value, str) and extra_value.strip():
+                field[extra_key] = extra_value.strip()
+        if field_type == "enum":
+            options = _ai_coerce_design_statuses(item.get("options"), "generic")
+            field["options"] = options
+            if isinstance(item.get("default"), str):
+                default_value = _marketplace_slugify(item.get("default")).replace("-", "_").strip("_")
+                if default_value and any(option.get("value") == default_value for option in options):
+                    field["default"] = default_value
+        fields.append(field)
+        seen.add(field_id)
+    return fields
+
+
+def _ai_design_family_catalog() -> dict[str, dict]:
+    global _AI_DESIGN_FAMILY_CATALOG
+    if isinstance(_AI_DESIGN_FAMILY_CATALOG, dict):
+        return _AI_DESIGN_FAMILY_CATALOG
+    path = ROOT / "specs" / "octo_ai_design_families.json"
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        raw = {}
+    catalog = raw if isinstance(raw, dict) else {}
+    _AI_DESIGN_FAMILY_CATALOG = catalog
+    return catalog
+
+
+def _ai_design_family_definition(family: str) -> dict:
+    catalog = _ai_design_family_catalog()
+    family_def = catalog.get(family)
+    return family_def if isinstance(family_def, dict) else {}
+
+
+def _ai_design_family_icon_key(family: str) -> str:
+    family_def = _ai_design_family_definition(family)
+    icon_key = family_def.get("icon_key") if isinstance(family_def.get("icon_key"), str) else None
+    return icon_key.strip() if isinstance(icon_key, str) and icon_key.strip() else "lucide:Package"
+
+
+def _ai_design_family_minimum_business_fields(family: str) -> int:
+    family_def = _ai_design_family_definition(family)
+    value = family_def.get("minimum_business_fields")
+    if isinstance(value, int) and value >= 0:
+        return value
+    return 6
+
+
+def _ai_design_family_default_module_name(family: str) -> str | None:
+    family_def = _ai_design_family_definition(family)
+    value = family_def.get("default_module_name") if isinstance(family_def.get("default_module_name"), str) else None
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _ai_design_family_default_list_mode(family: str) -> str | None:
+    family_def = _ai_design_family_definition(family)
+    value = family_def.get("default_list_mode") if isinstance(family_def.get("default_list_mode"), str) else None
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _ai_design_action_labels_for_statuses(statuses: list[dict]) -> list[str]:
+    state_ids = [
+        item.get("value")
+        for item in statuses
+        if isinstance(item, dict) and isinstance(item.get("value"), str) and item.get("value")
+    ]
+    labels: list[str] = []
+    for transition in _ai_workflow_transitions_for_states(state_ids):
+        label = transition.get("label") if isinstance(transition, dict) and isinstance(transition.get("label"), str) else None
+        if isinstance(label, str) and label and label not in labels:
+            labels.append(label)
+    return labels
+
+
+def _ai_design_view_modes(fields: list[dict], statuses: list[dict]) -> list[str]:
+    field_types = {
+        field.get("id"): field.get("type")
+        for field in fields
+        if isinstance(field, dict) and isinstance(field.get("id"), str)
+    }
+    modes = ["list", "form"]
+    if statuses:
+        modes.append("kanban")
+    if any(
+        field_type in {"date", "datetime"} and not str(field_id).endswith(".created_at")
+        for field_id, field_type in field_types.items()
+    ):
+        modes.append("calendar")
+    modes.append("graph")
+    return list(dict.fromkeys(modes))
+
+
+def _ai_should_include_pivot_view(message: str, family: str, fields: list[dict]) -> bool:
+    lower = re.sub(r"\s+", " ", (message or "").lower()).strip()
+    if family == "commerce":
+        return True
+    numeric_fields = [
+        field
+        for field in fields
+        if isinstance(field, dict) and field.get("type") in {"number", "int", "float"}
+    ]
+    if len(numeric_fields) < 2:
+        return False
+    return any(
+        token in lower
+        for token in (
+            "pivot",
+            "spreadsheet",
+            "report",
+            "reports",
+            "owed",
+            "owe",
+            "analytics",
+            "analysis",
+            "dashboard",
+        )
+    )
+
+
+def _ai_design_page_specs(module_name: str, entity_slug: str, entity_label: str, view_modes: list[str]) -> list[dict]:
+    pages = [
+        {"id": f"{entity_slug}.list_page", "title": module_name, "default_mode": "list"},
+        {"id": f"{entity_slug}.form_page", "title": entity_label, "default_mode": "form"},
+    ]
+    if "calendar" in view_modes:
+        pages.append(
+            {
+                "id": f"{entity_slug}.calendar_page",
+                "title": f"{entity_label} Calendar",
+                "default_mode": "calendar",
+            }
+        )
+    if "pivot" in view_modes:
+        pages.append(
+            {
+                "id": f"{entity_slug}.pivot_page",
+                "title": f"{entity_label} Analysis",
+                "default_mode": "pivot",
+            }
+        )
+    return pages
+
+
+def _ai_design_interfaces(fields: list[dict]) -> list[str]:
+    interfaces = ["dashboardable"]
+    if any(
+        isinstance(field, dict)
+        and field.get("type") in {"date", "datetime"}
+        and isinstance(field.get("id"), str)
+        and not field.get("id").endswith(".created_at")
+        for field in fields
+    ):
+        interfaces.append("schedulable")
+    if any(isinstance(field, dict) and field.get("type") == "attachments" for field in fields):
+        interfaces.append("documentable")
+    return interfaces
+
+
+def _ai_design_layout_spec(entity_slug: str, fields: list[dict]) -> dict:
+    sections, tabs_cfg = _ai_sectioned_form_for_entity(entity_slug, fields)
+    return {
+        "sections": [copy.deepcopy(section) for section in sections if isinstance(section, dict)],
+        "tabs": [copy.deepcopy(tab) for tab in (tabs_cfg.get("tabs") or [])] if isinstance(tabs_cfg, dict) else [],
+        "default_tab": tabs_cfg.get("default_tab") if isinstance(tabs_cfg, dict) and isinstance(tabs_cfg.get("default_tab"), str) else None,
+    }
+
+
+def _ai_module_design_spec_quality_report(design_spec: dict) -> dict:
+    family = design_spec.get("family") if isinstance(design_spec.get("family"), str) else "generic"
+    fields = [field for field in (design_spec.get("fields") or []) if isinstance(field, dict)]
+    statuses = [item for item in (design_spec.get("statuses") or []) if isinstance(item, dict)]
+    layout = design_spec.get("layout") if isinstance(design_spec.get("layout"), dict) else {}
+    experience = design_spec.get("experience") if isinstance(design_spec.get("experience"), dict) else {}
+    business_fields = [
+        field
+        for field in fields
+        if isinstance(field.get("id"), str)
+        and not str(field.get("id")).endswith(".id")
+        and not str(field.get("id")).endswith(".created_at")
+        and field.get("id") not in {
+            f"{design_spec.get('entity_slug')}.status",
+            f"{design_spec.get('entity_slug')}.owner_id",
+        }
+    ]
+    view_modes = [item for item in (experience.get("views") or []) if isinstance(item, str)]
+    pages = [item for item in (experience.get("pages") or []) if isinstance(item, dict)]
+    action_labels = [
+        item for item in ((design_spec.get("workflow") or {}).get("action_labels") or [])
+        if isinstance(item, str) and item.strip()
+    ]
+    section_count = len([section for section in (layout.get("sections") or []) if isinstance(section, dict)])
+    minimum_business_fields = _ai_design_family_minimum_business_fields(family)
+    issues: list[str] = []
+    strengths: list[str] = []
+    if len(business_fields) < minimum_business_fields:
+        issues.append(f"Design spec needs at least {minimum_business_fields} useful fields; found {len(business_fields)}.")
+    else:
+        strengths.append(f"Includes {len(business_fields)} useful fields.")
+    if "list" not in view_modes or "form" not in view_modes:
+        issues.append("Design spec must include both list and form views.")
+    if len(statuses) >= 3 and not action_labels:
+        issues.append("Design spec includes lifecycle states but no workflow action labels.")
+    if any(
+        isinstance(field, dict)
+        and field.get("type") in {"date", "datetime"}
+        and isinstance(field.get("id"), str)
+        and not field.get("id").endswith(".created_at")
+        for field in fields
+    ) and "calendar" not in view_modes:
+        issues.append("Design spec includes date tracking but no calendar view.")
+    if len(business_fields) >= 8 and section_count < 2:
+        issues.append("Design spec should organize richer forms into multiple sections.")
+    if pages and len(pages) >= 2:
+        strengths.append("Includes dedicated list/form page structure.")
+    if action_labels:
+        strengths.append(f"Defines workflow actions: {', '.join(action_labels[:4])}.")
+    return {
+        "ok": not issues,
+        "issues": issues,
+        "strengths": strengths,
+        "business_field_count": len(business_fields),
+        "section_count": section_count,
+        "view_modes": view_modes,
+        "action_labels": action_labels,
+    }
+
+
+def _ai_module_design_spec_score(design_spec: dict | None) -> int:
+    if not isinstance(design_spec, dict):
+        return -10_000
+    quality = design_spec.get("quality") if isinstance(design_spec.get("quality"), dict) else {}
+    score = 0
+    score += int(quality.get("business_field_count") or 0) * 5
+    score += int(quality.get("section_count") or 0) * 3
+    score += len([item for item in (quality.get("view_modes") or []) if isinstance(item, str)]) * 4
+    score += len([item for item in (quality.get("action_labels") or []) if isinstance(item, str)]) * 3
+    score += len([item for item in (quality.get("strengths") or []) if isinstance(item, str)]) * 2
+    score -= len([item for item in (quality.get("issues") or []) if isinstance(item, str)]) * 12
+    if quality.get("ok"):
+        score += 20
+    return score
+
+
+def _ai_select_best_module_design_spec(base_spec: dict, model_spec: dict | None) -> dict:
+    base_score = _ai_module_design_spec_score(base_spec)
+    if not isinstance(model_spec, dict):
+        selected = copy.deepcopy(base_spec)
+        selected["design_source"] = "deterministic_fallback"
+        return selected
+    model_score = _ai_module_design_spec_score(model_spec)
+    if model_score >= base_score:
+        selected = copy.deepcopy(model_spec)
+        selected["design_source"] = "model_primary"
+        selected["fallback_score"] = base_score
+        selected["selected_score"] = model_score
+        return selected
+    selected = copy.deepcopy(base_spec)
+    selected["design_source"] = "deterministic_fallback"
+    selected["fallback_score"] = base_score
+    selected["model_score"] = model_score
+    return selected
+
+
+def _ai_build_deterministic_module_design_spec(module_id: str, module_name: str, message: str) -> dict:
+    family = _ai_detect_new_module_family(module_name, message)
+    entity_slug = _ai_singularize_slug(module_id)
+    entity_label = module_name.strip() if isinstance(module_name, str) and module_name.strip() else _ai_titleize_slug(entity_slug)
+    primary_label = _ai_module_primary_label(family, message)
+    statuses = _ai_coerce_design_statuses(_ai_extract_status_options(message), family)
+
+    fields = [
+        _ai_module_design_field(f"{entity_slug}.name", "string", primary_label, required=True),
+        _ai_module_design_field(f"{entity_slug}.status", "enum", "Status", options=statuses, default=statuses[0].get("value") if statuses else "new"),
+        _ai_module_design_field(f"{entity_slug}.owner_id", "user", "Owner"),
+    ]
+    _ai_append_unique_fields(fields, _ai_family_design_fields(entity_slug, family))
+    _ai_append_unique_fields(fields, _ai_extra_fields_from_prompt(entity_slug, message))
+    _ai_append_unique_fields(fields, [_ai_module_design_field(f"{entity_slug}.created_at", "datetime", "Created At")])
+    view_modes = _ai_design_view_modes(fields, statuses)
+    if _ai_should_include_pivot_view(message, family, fields) and "pivot" not in view_modes:
+        view_modes.append("pivot")
+    workflow = {
+        "enabled": bool(statuses),
+        "status_field": f"{entity_slug}.status",
+        "states": copy.deepcopy(statuses),
+        "action_labels": _ai_design_action_labels_for_statuses(statuses),
+    }
+    layout = _ai_design_layout_spec(entity_slug, fields)
+    experience = {
+        "views": view_modes,
+        "pages": _ai_design_page_specs(module_name, entity_slug, entity_label, view_modes),
+        "interfaces": _ai_design_interfaces(fields),
+    }
+    design_spec = {
+        "version": "1",
+        "family": family,
+        "summary": _ai_module_design_summary(module_name, family),
+        "entity_slug": entity_slug,
+        "entity_label": entity_label,
+        "nav_label": module_name,
+        "primary_label": primary_label,
+        "statuses": statuses,
+        "fields": fields,
+        "workflow": workflow,
+        "layout": layout,
+        "experience": experience,
+    }
+    design_spec["quality"] = _ai_module_design_spec_quality_report(design_spec)
+    return design_spec
+
+
+def _ai_should_request_module_design_from_model(module_id: str, module_name: str, message: str, base_spec: dict) -> bool:
+    if not USE_AI or not _openai_configured():
+        return False
+    if not isinstance(message, str) or not message.strip():
+        return False
+    family = base_spec.get("family") if isinstance(base_spec, dict) and isinstance(base_spec.get("family"), str) else _ai_detect_new_module_family(module_name, message)
+    entity_slug = (
+        base_spec.get("entity_slug")
+        if isinstance(base_spec, dict) and isinstance(base_spec.get("entity_slug"), str) and base_spec.get("entity_slug").strip()
+        else _ai_singularize_slug(module_id)
+    )
+    explicit_prompt_fields = {
+        field.get("id")
+        for field in _ai_extra_fields_from_prompt(entity_slug, message)
+        if isinstance(field, dict) and isinstance(field.get("id"), str) and field.get("id")
+    }
+    explicit_statuses = _ai_extract_status_options(message)
+    lower = re.sub(r"\s+", " ", (message or "").lower()).strip()
+    if len(explicit_prompt_fields) >= 4:
+        return False
+    if family != "generic" and len(explicit_prompt_fields) >= 3:
+        return False
+    if len(explicit_prompt_fields) >= 2 and len(explicit_statuses) >= 3:
+        return False
+    if family == "commerce" and any(
+        token in lower for token in ("catalog", "sales", "spent", "owed", "pivot", "spreadsheet", "report", "reports", "shop")
+    ):
+        return False
+    return True
+
+
+def _ai_request_module_design_spec_from_model(module_id: str, module_name: str, message: str, base_spec: dict) -> dict | None:
+    if not _ai_should_request_module_design_from_model(module_id, module_name, message, base_spec):
+        return None
+    context_payload = {
+        "module_id": module_id,
+        "module_name": module_name,
+        "request": (message or "").strip(),
+        "base_spec": base_spec,
+    }
+    system_text = (
+        "You are the primary product designer for rich business apps that will later be compiled by a deterministic system. "
+        "Return strict JSON only. "
+        "Do not return manifests. "
+        "Use schema keys: {version,family,summary,entity_slug,entity_label,nav_label,primary_label,statuses,fields,workflow,layout,experience}. "
+        "fields must be a list of {id,label,type,required,readonly,options}. "
+        "workflow must use {enabled,status_field,states,action_labels}. "
+        "layout must use {sections,tabs,default_tab}. "
+        "experience must use {views,pages,interfaces}. "
+        "Use only field types: string,text,number,bool,date,datetime,enum,uuid,lookup,tags,attachments,user. "
+        "Keep one primary compiled entity, but capture surrounding business context through fields, financial metrics, lookups, workflow, reporting views, and pivot-friendly structure. "
+        "Prefer broad, useful business fields, not toy scaffolds. "
+        "Include enough fields to make the module genuinely usable, usually 8 to 16 business fields. "
+        "If statuses are included, make them operational and lifecycle-aware. "
+        "Design the module with realistic sections, views, pages, and workflow buttons. "
+        "The base_spec is only a fallback and guardrail, not the desired answer. Improve it when the user intent clearly suggests a better domain design. "
+        "Use the actual user request to infer the product concept. "
+        "For example, recipe and pantry requests should produce cooking-oriented fields, not generic task fields. "
+        "Commerce and spend-tracking requests should produce catalog, spend, sales, payout, and reporting fields, not pipeline scaffolds."
+    )
+    messages = [
+        {"role": "system", "content": system_text},
+        {"role": "user", "content": json.dumps(context_payload, separators=(",", ":"))},
+    ]
+    try:
+        response = _openai_chat_completion(
+            messages,
+            model=STUDIO2_MODULE_DESIGN_MODEL,
+            temperature=0.2,
+            response_format={"type": "json_object"},
+        )
+    except Exception:
+        return None
+    choices = response.get("choices") if isinstance(response, dict) else []
+    content = choices[0].get("message", {}).get("content") if choices else None
+    if isinstance(content, dict):
+        parsed = content
+    else:
+        parsed, parse_error = _extract_first_json_block(content if isinstance(content, str) else "")
+        if parse_error:
+            return None
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
+
+
+def _ai_normalize_module_design_spec(module_id: str, module_name: str, message: str, raw_spec: dict | None) -> dict:
+    base_spec = _ai_build_deterministic_module_design_spec(module_id, module_name, message)
+    if not isinstance(raw_spec, dict):
+        return base_spec
+    family = raw_spec.get("family") if isinstance(raw_spec.get("family"), str) and raw_spec.get("family").strip() else base_spec["family"]
+    valid_families = set(_ai_design_family_catalog().keys()) | {"generic"}
+    if family not in valid_families:
+        family = base_spec["family"]
+    entity_slug = raw_spec.get("entity_slug") if isinstance(raw_spec.get("entity_slug"), str) and raw_spec.get("entity_slug").strip() else base_spec["entity_slug"]
+    entity_slug = _ai_singularize_slug(entity_slug)
+    entity_label = raw_spec.get("entity_label") if isinstance(raw_spec.get("entity_label"), str) and raw_spec.get("entity_label").strip() else base_spec["entity_label"]
+    nav_label = raw_spec.get("nav_label") if isinstance(raw_spec.get("nav_label"), str) and raw_spec.get("nav_label").strip() else module_name
+    primary_label = raw_spec.get("primary_label") if isinstance(raw_spec.get("primary_label"), str) and raw_spec.get("primary_label").strip() else base_spec["primary_label"]
+    statuses = _ai_coerce_design_statuses(raw_spec.get("statuses"), family)
+    fields = _ai_coerce_design_fields(entity_slug, raw_spec.get("fields"))
+    if not fields:
+        fields = copy.deepcopy(base_spec["fields"])
+    existing_ids = {field.get("id") for field in fields if isinstance(field, dict) and isinstance(field.get("id"), str)}
+    name_field_id = f"{entity_slug}.name"
+    status_field_id = f"{entity_slug}.status"
+    owner_field_id = f"{entity_slug}.owner_id"
+    if name_field_id not in existing_ids:
+        fields.insert(0, _ai_module_design_field(name_field_id, "string", primary_label, required=True))
+    if status_field_id not in existing_ids:
+        insert_at = 1 if fields else 0
+        fields.insert(insert_at, _ai_module_design_field(status_field_id, "enum", "Status", options=statuses, default=statuses[0].get("value") if statuses else "new"))
+    if owner_field_id not in existing_ids:
+        fields.insert(2 if len(fields) >= 2 else len(fields), _ai_module_design_field(owner_field_id, "user", "Owner"))
+    if f"{entity_slug}.created_at" not in {field.get("id") for field in fields if isinstance(field, dict)}:
+        fields.append(_ai_module_design_field(f"{entity_slug}.created_at", "datetime", "Created At"))
+    fields = fields[:18]
+    summary = raw_spec.get("summary") if isinstance(raw_spec.get("summary"), str) and raw_spec.get("summary").strip() else _ai_module_design_summary(module_name, family)
+    view_modes = _ai_design_view_modes(fields, statuses)
+    workflow = {
+        "enabled": bool(statuses),
+        "status_field": f"{entity_slug}.status",
+        "states": copy.deepcopy(statuses),
+        "action_labels": _ai_design_action_labels_for_statuses(statuses),
+    }
+    raw_workflow = raw_spec.get("workflow") if isinstance(raw_spec.get("workflow"), dict) else {}
+    raw_action_labels = [
+        item.strip()
+        for item in (raw_workflow.get("action_labels") or [])
+        if isinstance(item, str) and item.strip()
+    ]
+    if raw_action_labels:
+        workflow["action_labels"] = list(dict.fromkeys(raw_action_labels))[:8]
+    raw_experience = raw_spec.get("experience") if isinstance(raw_spec.get("experience"), dict) else {}
+    raw_views = [item.strip().lower() for item in (raw_experience.get("views") or []) if isinstance(item, str) and item.strip()]
+    allowed_views = {"list", "form", "kanban", "calendar", "graph", "pivot"}
+    if raw_views:
+        normalized_views = []
+        for item in raw_views:
+            if item in allowed_views and item not in normalized_views:
+                normalized_views.append(item)
+        view_modes = normalized_views or view_modes
+        if "list" not in view_modes:
+            view_modes.insert(0, "list")
+        if "form" not in view_modes:
+            view_modes.insert(1 if view_modes else 0, "form")
+    experience = {
+        "views": view_modes,
+        "pages": _ai_design_page_specs(module_name, entity_slug, entity_label, view_modes),
+        "interfaces": _ai_design_interfaces(fields),
+    }
+    raw_interfaces = [item.strip() for item in (raw_experience.get("interfaces") or []) if isinstance(item, str) and item.strip()]
+    if raw_interfaces:
+        experience["interfaces"] = list(dict.fromkeys([item for item in raw_interfaces if item in {"schedulable", "documentable", "dashboardable"}] or experience["interfaces"]))
+    layout = _ai_design_layout_spec(entity_slug, fields)
+    raw_layout = raw_spec.get("layout") if isinstance(raw_spec.get("layout"), dict) else {}
+    raw_sections = [item for item in (raw_layout.get("sections") or []) if isinstance(item, dict)]
+    if raw_sections:
+        valid_field_ids = {field.get("id") for field in fields if isinstance(field, dict) and isinstance(field.get("id"), str)}
+        normalized_sections = []
+        for section in raw_sections:
+            section_id = section.get("id") if isinstance(section.get("id"), str) and section.get("id").strip() else None
+            title = section.get("title") if isinstance(section.get("title"), str) and section.get("title").strip() else None
+            section_fields = [
+                field_id
+                for field_id in (section.get("fields") or [])
+                if isinstance(field_id, str) and field_id in valid_field_ids
+            ]
+            if section_id and title and section_fields:
+                normalized_sections.append({"id": section_id.strip(), "title": title.strip(), "fields": section_fields, "layout": "columns", "columns": 2})
+        if normalized_sections:
+            layout["sections"] = normalized_sections
+    raw_tabs = [item for item in (raw_layout.get("tabs") or []) if isinstance(item, dict)]
+    if raw_tabs and layout.get("sections"):
+        valid_section_ids = {section.get("id") for section in layout.get("sections") if isinstance(section, dict)}
+        normalized_tabs = []
+        for tab in raw_tabs:
+            tab_id = tab.get("id") if isinstance(tab.get("id"), str) and tab.get("id").strip() else None
+            label = tab.get("label") if isinstance(tab.get("label"), str) and tab.get("label").strip() else None
+            tab_sections = [
+                section_id for section_id in (tab.get("sections") or [])
+                if isinstance(section_id, str) and section_id in valid_section_ids
+            ]
+            if tab_id and label and tab_sections:
+                normalized_tabs.append({"id": tab_id.strip(), "label": label.strip(), "sections": tab_sections})
+        if normalized_tabs:
+            layout["tabs"] = normalized_tabs
+            first_tab = normalized_tabs[0].get("id")
+            layout["default_tab"] = first_tab if isinstance(first_tab, str) else None
+    normalized = {
+        "version": "1",
+        "family": family,
+        "summary": summary.strip(),
+        "entity_slug": entity_slug,
+        "entity_label": entity_label.strip() if isinstance(entity_label, str) and entity_label.strip() else (module_name.strip() if isinstance(module_name, str) and module_name.strip() else _ai_titleize_slug(entity_slug)),
+        "nav_label": nav_label.strip() if isinstance(nav_label, str) and nav_label.strip() else module_name,
+        "primary_label": primary_label.strip() if isinstance(primary_label, str) and primary_label.strip() else "Title",
+        "statuses": statuses,
+        "fields": fields,
+        "workflow": workflow,
+        "layout": layout,
+        "experience": experience,
+    }
+    normalized["quality"] = _ai_module_design_spec_quality_report(normalized)
+    return normalized
+
+
+def _ai_generate_module_design_spec(module_id: str, module_name: str, message: str) -> dict:
+    base_spec = _ai_build_deterministic_module_design_spec(module_id, module_name, message)
+    model_spec = _ai_request_module_design_spec_from_model(module_id, module_name, message, base_spec)
+    normalized_base = _ai_normalize_module_design_spec(module_id, module_name, message, base_spec)
+    normalized_model = _ai_normalize_module_design_spec(module_id, module_name, message, model_spec) if isinstance(model_spec, dict) else None
+    return _ai_select_best_module_design_spec(normalized_base, normalized_model)
+
+
+def _ai_workflow_transitions_for_states(state_ids: list[str]) -> list[dict]:
+    ids = [state_id for state_id in state_ids if isinstance(state_id, str) and state_id]
+    if not ids:
+        return []
+    transitions: list[dict] = []
+
+    def add(frm: str, to: str, label: str) -> None:
+        if frm in ids and to in ids and not any(item.get("from") == frm and item.get("to") == to for item in transitions):
+            transitions.append({"from": frm, "to": to, "label": label})
+
+    add("draft", "submitted", "Submit")
+    add("draft", "ready_to_cook", "Plan")
+    add("new", "in_progress", "Start")
+    add("open", "in_progress", "Start")
+    add("open", "investigating", "Investigate")
+    add("planned", "booked", "Book")
+    add("planned", "confirmed", "Confirm")
+    add("planned", "completed", "Complete")
+    add("planned", "skipped", "Skip")
+    add("pending", "under_review", "Review")
+    add("submitted", "approved", "Approve")
+    add("submitted", "rejected", "Reject")
+    add("ready", "in_progress", "Start")
+    add("ready_to_cook", "cooked", "Cook")
+    add("in_progress", "done", "Complete")
+    add("in_progress", "completed", "Complete")
+    add("in_progress", "review", "Send to Review")
+    add("approved", "completed", "Complete")
+    add("approved", "implemented", "Implement")
+    add("approved", "expired", "Mark Expired")
+    add("investigating", "contained", "Contain")
+    add("under_review", "approved", "Approve")
+    add("contained", "closed", "Close")
+    add("booked", "completed", "Complete")
+    add("review", "done", "Complete")
+    add("applied", "screen", "Screen")
+    add("screen", "interview", "Schedule Interview")
+    add("interview", "offer", "Make Offer")
+    add("offer", "hired", "Hire")
+    add("active", "inactive", "Deactivate")
+    add("inactive", "active", "Activate")
+    add("inactive", "retired", "Retire")
+    add("checked_out", "returned", "Return")
+    add("available", "checked_out", "Check Out")
+    add("returned", "available", "Make Available")
+
+    minimum_transition_count = min(2, max(0, len(ids) - 1))
+    if len(transitions) < minimum_transition_count:
+        for idx in range(len(ids) - 1):
+            add(ids[idx], ids[idx + 1], _ai_titleize_slug(ids[idx + 1]))
+            if len(transitions) >= minimum_transition_count:
+                break
+    return transitions
+
+
+def _ai_build_workflow_for_status(entity_id: str, status_field_id: str, status_options: list[dict]) -> list[dict]:
+    if not isinstance(entity_id, str) or not entity_id or not isinstance(status_field_id, str) or not status_field_id:
+        return []
+    options = [item for item in status_options if isinstance(item, dict) and isinstance(item.get("value"), str)]
+    if not options:
+        return []
+    state_ids = [item.get("value") for item in options if isinstance(item.get("value"), str)]
+    return [
+        {
+            "id": f"workflow.{entity_id.split('.')[-1]}_status",
+            "entity": entity_id,
+            "status_field": status_field_id,
+            "states": [
+                {
+                    "id": item.get("value"),
+                    "label": item.get("label") if isinstance(item.get("label"), str) and item.get("label").strip() else _ai_titleize_slug(item.get("value")),
+                    "order": idx + 1,
+                }
+                for idx, item in enumerate(options)
+            ],
+            "transitions": _ai_workflow_transitions_for_states(state_ids),
+        }
+    ]
+
+
+def _ai_status_actions_for_workflow(entity_slug: str, entity_id: str, status_field_id: str, workflow: dict) -> list[dict]:
+    if not all(isinstance(item, str) and item for item in (entity_slug, entity_id, status_field_id)):
+        return []
+    transitions = workflow.get("transitions") if isinstance(workflow.get("transitions"), list) else []
+    actions: list[dict] = []
+    for transition in transitions:
+        if not isinstance(transition, dict):
+            continue
+        target = transition.get("to")
+        source = transition.get("from")
+        label = transition.get("label")
+        if not all(isinstance(item, str) and item for item in (target, source, label)):
+            continue
+        action_id = f"action.{entity_slug}_{_marketplace_slugify(label).replace('-', '_') or target}"
+        visibility_values = [source]
+        if isinstance(source, str) and source and source not in visibility_values:
+            visibility_values.append(source)
+        actions.append(
+            {
+                "id": action_id,
+                "kind": "update_record",
+                "label": label,
+                "entity_id": entity_id,
+                "patch": {status_field_id: target},
+                "enabled_when": {"op": "eq", "field": status_field_id, "value": source},
+                "visible_when": {"op": "eq", "field": status_field_id, "value": source},
+            }
+        )
+    return actions
+
+
+def _ai_find_workflow_idx(manifest: dict, entity_id: str, status_field_id: str | None = None) -> int | None:
+    workflows = manifest.get("workflows") if isinstance(manifest.get("workflows"), list) else []
+    for idx, workflow in enumerate(workflows):
+        if not isinstance(workflow, dict):
+            continue
+        if workflow.get("entity") != entity_id:
+            continue
+        if isinstance(status_field_id, str) and status_field_id and workflow.get("status_field") != status_field_id:
+            continue
+        return idx
+    return None
+
+
+def _ai_extract_status_label(text: str) -> str | None:
+    if not isinstance(text, str) or not text.strip():
+        return None
+
+    def _clean_status_label(raw: str | None) -> str | None:
+        if not isinstance(raw, str):
+            return None
+        label = raw.strip(" .,-")
+        label = re.split(r"\b(?:and|with|put|place|show|add)\b", label, maxsplit=1, flags=re.IGNORECASE)[0].strip(" .,-")
+        if re.search(r"^(?:new|another)\s+", label, flags=re.IGNORECASE):
+            trimmed = re.sub(r"^(?:new|another)\s+", "", label, count=1, flags=re.IGNORECASE).strip(" .,-")
+            if " " in label and _ai_is_label_confident(trimmed):
+                label = trimmed
+        if _ai_is_label_confident(label):
+            return label
+        return None
+
+    quoted = re.search(r"['\"]([^'\"]{1,60})['\"]\s+(?:is\s+the\s+status|status\b)", text, flags=re.IGNORECASE)
+    if quoted and isinstance(quoted.group(1), str):
+        label = _clean_status_label(quoted.group(1))
+        if label:
+            return label
+    patterns = [
+        r"(?:add|create|make|include|give|use)\s+(?:a\s+|an\s+|the\s+)?([a-zA-Z0-9 _-]{1,60}?)\s+(?:status|state|stage)\b",
+        r"(?:new|another)\s+([a-zA-Z0-9 _-]{1,60})\s+(?:status|state|stage)\b",
+        r"(?:new|another)\s+status(?:\s+(?:called|named|labelled|labeled))?\s+([a-zA-Z0-9 _-]{1,60})",
+        r"status\s+(?:called|named|labelled|labeled)\s+([a-zA-Z0-9 _-]{1,60})",
+        r"([a-zA-Z0-9 _-]{1,60})\s+is\s+the\s+status\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if not match or not isinstance(match.group(1), str):
+            continue
+        label = _clean_status_label(match.group(1))
+        if label:
+            return label
+    return None
+
+
+def _ai_is_status_creation_request(text: str) -> bool:
+    if not isinstance(text, str) or not text.strip():
+        return False
+    lower = re.sub(r"\s+", " ", text.lower()).strip()
+    if not re.search(r"\b(status|state|stage)\b", lower):
+        return False
+    if re.search(
+        r"\b(?:field|attribute|column|tab|section|page|view)\b.*\b(?:status|state|stage)\b|\b(?:status|state|stage)\b.*\b(?:field|attribute|column|tab|section|page|view)\b",
+        lower,
+    ):
+        return False
+    if re.search(
+        r"\b(?:only\s+shows?|only\s+show|required|required when|show when|visible when|when the status is|status is|in that state)\b",
+        lower,
+    ):
+        return False
+    if _ai_extract_status_label(text):
+        return True
+    return bool(
+        re.search(r"\b(?:add|create|make)\s+(?:a\s+|an\s+|the\s+)?(?:new|another)\s+(?:status|state|stage)\b", lower)
+        or re.search(r"\b(?:new|another)\s+status(?:\s+(?:called|named|labelled|labeled))?\s+[a-z0-9]", lower)
+        or re.search(r"\bstatus\s+(?:called|named|labelled|labeled)\s+[a-z0-9]", lower)
+    )
+
+
+def _ai_is_workflow_action_request(text: str) -> bool:
+    if not isinstance(text, str) or not text.strip():
+        return False
+    lower = re.sub(r"\s+", " ", text.lower()).strip()
+    if not re.search(r"\b(?:action button|action buttons|workflow buttons?|status bar|buttons?)\b", lower):
+        return False
+    return bool(
+        re.search(r"\b(?:add|create|include|put|show|wire|give|sync|refresh|update)\b", lower)
+        or re.search(r"\b(?:so we can|so staff can|change status|move .* status)\b", lower)
+    )
+
+
+def _ai_extract_workflow_comment_requirement(text: str) -> dict | None:
+    if not isinstance(text, str) or not text.strip():
+        return None
+    lower = re.sub(r"\s+", " ", text.lower()).strip()
+    if not re.search(r"\b(comment|comments|note|notes|reason|reasons)\b", lower):
+        return None
+
+    target_specs: list[dict] = []
+    indexed_targets = []
+    reject_match = re.search(r"\b(reject|rejected|rejecting|decline|declined|declining)\b", lower)
+    approve_match = re.search(r"\b(approve|approved|approving)\b", lower)
+    if reject_match:
+        indexed_targets.append(
+            (
+                reject_match.start(),
+                {
+                    "label": "Rejected",
+                    "aliases": {"rejected", "reject", "declined", "decline"},
+                },
+            )
+        )
+    if approve_match:
+        indexed_targets.append(
+            (
+                approve_match.start(),
+                {
+                    "label": "Approved",
+                    "aliases": {"approved", "approve"},
+                },
+            )
+        )
+    target_specs = [item[1] for item in sorted(indexed_targets, key=lambda item: item[0])]
+    if not target_specs:
+        return None
+
+    if re.search(r"\bmanagers?\b", lower):
+        field_label = "Manager Comments"
+    elif len(target_specs) > 1:
+        field_label = "Decision Comments"
+    elif target_specs[0]["label"] == "Rejected":
+        field_label = "Rejection Comments"
+    else:
+        field_label = "Approval Comments"
+    return {"field_label": field_label, "targets": target_specs}
+
+
+def _ai_lifecycle_status_context(manifest: dict, entity_id: str) -> dict | None:
+    if not isinstance(manifest, dict) or not isinstance(entity_id, str) or not entity_id:
+        return None
+    lifecycle_workflow = next(
+        (
+            workflow
+            for workflow in (manifest.get("workflows") or [])
+            if isinstance(workflow, dict)
+            and workflow.get("entity") == entity_id
+            and isinstance(workflow.get("status_field"), str)
+            and (
+                workflow.get("status_field").endswith(".status")
+                or workflow.get("status_field").endswith(".state")
+                or workflow.get("status_field").endswith(".stage")
+            )
+        ),
+        None,
+    )
+    status_field = None
+    status_field_id = None
+    if isinstance(lifecycle_workflow, dict):
+        status_field_id = lifecycle_workflow.get("status_field")
+    entity = _ai_find_entity_by_id(manifest, entity_id)
+    entity_fields = entity.get("fields") if isinstance(entity, dict) and isinstance(entity.get("fields"), list) else []
+    if isinstance(status_field_id, str) and status_field_id:
+        status_field = next(
+            (field for field in entity_fields if isinstance(field, dict) and field.get("id") == status_field_id),
+            None,
+        )
+    if not isinstance(status_field, dict):
+        status_field = next(
+            (
+                field
+                for field in entity_fields
+                if isinstance(field, dict)
+                and field.get("type") == "enum"
+                and isinstance(field.get("id"), str)
+                and (
+                    field.get("id").endswith(".status")
+                    or field.get("id").endswith(".state")
+                    or field.get("id").endswith(".stage")
+                )
+            ),
+            None,
+        )
+        status_field_id = status_field.get("id") if isinstance(status_field, dict) and isinstance(status_field.get("id"), str) else status_field_id
+    if not isinstance(status_field, dict) or not isinstance(status_field_id, str) or not status_field_id:
+        return None
+
+    current_options_raw = status_field.get("options") or status_field.get("values") or []
+    current_options: list[dict] = []
+    seen_status_values: set[str] = set()
+    if isinstance(current_options_raw, list):
+        for item in current_options_raw:
+            if isinstance(item, dict) and isinstance(item.get("value"), str) and item.get("value").strip():
+                value = item.get("value").strip()
+                if value in seen_status_values:
+                    continue
+                seen_status_values.add(value)
+                label = item.get("label") if isinstance(item.get("label"), str) and item.get("label").strip() else _ai_titleize_slug(value)
+                current_options.append({"value": value, "label": label})
+            elif isinstance(item, str) and item.strip():
+                value = _marketplace_slugify(item).replace("-", "_").strip("_")
+                if not value or value in seen_status_values:
+                    continue
+                seen_status_values.add(value)
+                current_options.append({"value": value, "label": item.strip()})
+    if not current_options and isinstance(lifecycle_workflow, dict):
+        for state in (lifecycle_workflow.get("states") or []):
+            if not isinstance(state, dict) or not isinstance(state.get("id"), str) or not state.get("id").strip():
+                continue
+            value = state.get("id").strip()
+            if value in seen_status_values:
+                continue
+            seen_status_values.add(value)
+            label = state.get("label") if isinstance(state.get("label"), str) and state.get("label").strip() else _ai_titleize_slug(value)
+            current_options.append({"value": value, "label": label})
+    return {
+        "workflow": lifecycle_workflow,
+        "status_field": status_field,
+        "status_field_id": status_field_id,
+        "status_options": current_options,
+    }
+
+
+def _ai_extract_email_addresses(text: str) -> list[str]:
+    if not isinstance(text, str) or not text.strip():
+        return []
+    matches = re.findall(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", text, flags=re.IGNORECASE)
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for item in matches:
+        normalized = item.strip().lower()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped
+
+
+def _ai_module_name_from_manifest(module_id: str, manifest: dict) -> str:
+    module_def = manifest.get("module") if isinstance(manifest.get("module"), dict) else {}
+    name = module_def.get("name") if isinstance(module_def.get("name"), str) and module_def.get("name").strip() else None
+    if isinstance(name, str) and name:
+        return name
+    return _ai_humanize_identifier(module_id) or module_id
+
+
+def _ai_entity_label_from_manifest(manifest: dict, entity_id: str) -> str:
+    entity = _ai_find_entity_by_id(manifest, entity_id)
+    if isinstance(entity, dict):
+        label = entity.get("label") if isinstance(entity.get("label"), str) and entity.get("label").strip() else entity.get("name")
+        if isinstance(label, str) and label.strip():
+            return label.strip()
+    entity_tail = entity_id.split(".")[-1] if isinstance(entity_id, str) and "." in entity_id else entity_id
+    return _ai_humanize_identifier(entity_tail) or entity_tail or "record"
+
+
+def _ai_match_status_option_from_message(message: str, lifecycle_context: dict | None) -> dict | None:
+    if not isinstance(message, str) or not message.strip() or not isinstance(lifecycle_context, dict):
+        return None
+    normalized_message = re.sub(r"[^a-z0-9]+", " ", message.lower()).strip()
+    lower = f" {normalized_message} "
+    options = lifecycle_context.get("status_options") if isinstance(lifecycle_context.get("status_options"), list) else []
+    for option in options:
+        if not isinstance(option, dict):
+            continue
+        value = option.get("value") if isinstance(option.get("value"), str) and option.get("value").strip() else None
+        label = option.get("label") if isinstance(option.get("label"), str) and option.get("label").strip() else None
+        aliases = [
+            value,
+            label,
+            _ai_titleize_slug(value) if isinstance(value, str) and value else None,
+        ]
+        for alias in aliases:
+            alias_norm = _ai_norm_token(alias) if isinstance(alias, str) else ""
+            if alias_norm and f" {alias_norm} " in lower:
+                return {
+                    "value": value or alias_norm,
+                    "label": label or (_ai_titleize_slug(value) if isinstance(value, str) and value else alias),
+                }
+    return None
+
+
+def _ai_build_status_notification_automation_candidate(
+    message: str,
+    module_id: str,
+    manifest: dict,
+    entity_id: str,
+) -> dict | None:
+    if not all(isinstance(item, str) and item.strip() for item in (message, module_id, entity_id)):
+        return None
+    lower = re.sub(r"\s+", " ", message.lower()).strip()
+    if not re.search(r"\b(when|if)\b", lower):
+        return None
+    if not re.search(r"\b(automation|automatically|notify|notification|email|alert|send)\b", lower):
+        return None
+    if not re.search(r"\b(mark|marked|set|sets|setting|change|changes|changed)\b", lower):
+        return None
+    lifecycle_context = _ai_lifecycle_status_context(manifest, entity_id)
+    if not isinstance(lifecycle_context, dict):
+        return None
+    status_target = _ai_match_status_option_from_message(message, lifecycle_context)
+    if not isinstance(status_target, dict):
+        return None
+    recipients = _ai_extract_email_addresses(message)
+    if not recipients:
+        return {
+            "candidate_ops": [],
+            "questions": ["Which email address should receive this notification?"],
+            "question_meta": {
+                "id": "automation_recipient",
+                "kind": "text",
+                "prompt": "Which email address should receive this notification?",
+            },
+            "assumptions": [],
+            "advisories": [],
+            "planner_state": {
+                "intent": "create_automation_record",
+                "module_id": module_id,
+                "entity_id": entity_id,
+                "status_value": status_target.get("value"),
+                "status_label": status_target.get("label"),
+            },
+        }
+    module_name = _ai_module_name_from_manifest(module_id, manifest)
+    entity_label = _ai_entity_label_from_manifest(manifest, entity_id)
+    status_label = status_target.get("label") if isinstance(status_target.get("label"), str) and status_target.get("label").strip() else _ai_titleize_slug(status_target.get("value"))
+    status_value = status_target.get("value") if isinstance(status_target.get("value"), str) and status_target.get("value").strip() else _marketplace_slugify(status_label or "").replace("-", "_")
+    action_id = "system.send_email"
+    recipient_label = recipients[0]
+    automation_key = f"ai_auto_{module_id}_{entity_id.split('.')[-1]}_{status_value}_{_marketplace_slugify(recipient_label.split('@')[0]).replace('-', '_') or 'recipient'}"
+    automation_key = automation_key[:100]
+    subject = f"{module_name}: {entity_label} marked {status_label}"
+    body_text = (
+        f"A {entity_label.lower()} in {module_name} was marked {status_label}.\n"
+        f"Record ID: {{{{ trigger.record_id }}}}\n"
+        f"Status: {{{{ trigger.to }}}}"
+    )
+    automation_payload = {
+        "name": f"{module_name} {status_label} Notification",
+        "description": f"When a {entity_label.lower()} is marked {status_label} in {module_name}, send {recipient_label} a notification email.",
+        "status": "draft",
+        "trigger": {
+            "kind": "event",
+            "event_types": ["workflow.status_changed"],
+            "filters": [
+                {"path": "entity_id", "op": "eq", "value": entity_id},
+                {"path": "to", "op": "eq", "value": status_value},
+            ],
+        },
+        "steps": [
+            {
+                "id": "step_send_email",
+                "kind": "action",
+                "action_id": action_id,
+                "inputs": {
+                    "to": recipient_label,
+                    "subject": subject,
+                    "body_text": body_text,
+                },
+            }
+        ],
+    }
+    advisories: list[str] = [
+        "Sandbox will keep this automation as a draft only; no live notification is sent until you publish.",
+    ]
+    if not connection_store or not connection_store.get_default_email():
+        advisories.append("No default email connection is configured yet, so live delivery will need an email connection before this automation can send.")
+    return {
+        "candidate_ops": [
+            {
+                "op": "create_automation_record",
+                "artifact_type": "automation",
+                "artifact_id": automation_key,
+                "automation": automation_payload,
+            }
+        ],
+        "questions": [],
+        "question_meta": None,
+        "assumptions": [],
+        "advisories": advisories,
+        "planner_state": {
+            "intent": "create_automation_record",
+            "module_id": module_id,
+            "entity_id": entity_id,
+            "status_value": status_value,
+            "status_label": status_label,
+            "automation_name": automation_payload.get("name"),
+            "recipient_email": recipient_label,
+            "action_id": action_id,
+        },
+    }
+
+
+def _ai_validate_automation_operation(operation: dict) -> tuple[dict | None, list[dict]]:
+    errors: list[dict] = []
+    if not isinstance(operation, dict):
+        return None, [{"code": "AI_PATCH_OP_INVALID", "message": "operation must be object", "path": "operation"}]
+    op_name = operation.get("op")
+    artifact_id = operation.get("artifact_id") if isinstance(operation.get("artifact_id"), str) and operation.get("artifact_id").strip() else None
+    if not isinstance(op_name, str) or op_name not in {"create_automation_record", "update_automation_record"}:
+        return None, [{"code": "AI_PATCH_OP_UNSUPPORTED", "message": "unsupported automation op", "path": "operation.op"}]
+    if not isinstance(artifact_id, str) or not artifact_id:
+        return None, [{"code": "AI_PATCH_OP_INVALID", "message": "automation operation requires artifact_id", "path": "operation.artifact_id"}]
+    payload = operation.get("automation")
+    if not isinstance(payload, dict):
+        errors.append({"code": "AI_PATCH_OP_INVALID", "message": "automation payload is required", "path": "operation.automation"})
+        return None, errors
+    normalized = copy.deepcopy(payload)
+    normalized["id"] = artifact_id
+    validation_errors = _validate_automation_payload(normalized, for_update=(op_name == "update_automation_record"))
+    if validation_errors:
+        return None, [
+            {
+                "code": "AUTOMATION_INVALID",
+                "message": item.get("message") if isinstance(item, dict) else "Invalid automation payload",
+                "path": item.get("path") if isinstance(item, dict) else "operation.automation",
+                "detail": item if isinstance(item, dict) else None,
+            }
+            for item in validation_errors
+        ]
+    return normalized, []
+
+
+def _ai_automation_summary_line(op: dict) -> str | None:
+    if not isinstance(op, dict):
+        return None
+    automation = op.get("automation") if isinstance(op.get("automation"), dict) else {}
+    name = automation.get("name") if isinstance(automation.get("name"), str) and automation.get("name").strip() else None
+    trigger = automation.get("trigger") if isinstance(automation.get("trigger"), dict) else {}
+    steps = automation.get("steps") if isinstance(automation.get("steps"), list) else []
+    event_types = [item for item in (trigger.get("event_types") or []) if isinstance(item, str) and item.strip()]
+    first_step = steps[0] if steps and isinstance(steps[0], dict) else {}
+    action_id = first_step.get("action_id") if isinstance(first_step.get("action_id"), str) else None
+    recipient = None
+    if isinstance(first_step.get("inputs"), dict):
+        to_value = first_step["inputs"].get("to")
+        if isinstance(to_value, str) and to_value.strip():
+            recipient = to_value.strip()
+    event_label = None
+    if event_types:
+        event_label = event_types[0]
+        if event_label == "workflow.status_changed":
+            event_label = "workflow status changes"
+    if op.get("op") == "create_automation_record":
+        if name and recipient and action_id == "system.send_email" and event_label:
+            return f"Create automation '{name}' to email {recipient} when {event_label}."
+        if name and event_label:
+            return f"Create automation '{name}' for {event_label}."
+        if name:
+            return f"Create automation '{name}'."
+        return "Create a new automation."
+    if op.get("op") == "update_automation_record":
+        if name:
+            return f"Update automation '{name}'."
+        return "Update the automation."
+    return None
+
+
+def _ai_apply_automation_record(operation: dict, *, publish: bool, actor_id: str | None = None) -> tuple[dict | None, list[dict]]:
+    errors: list[dict] = []
+    normalized, validation_errors = _ai_validate_automation_operation(operation)
+    if validation_errors:
+        return None, validation_errors
+    op_name = operation.get("op")
+    automation_id = normalized.get("id")
+    existing = automation_store.get(automation_id) if automation_store else None
+    if op_name == "create_automation_record":
+        if existing:
+            updated = automation_store.update(automation_id, normalized) if automation_store else None
+            item = updated
+        else:
+            item = automation_store.create(normalized) if automation_store else None
+    else:
+        if not existing:
+            return None, [{"code": "AUTOMATION_NOT_FOUND", "message": "automation not found", "path": "operation.artifact_id"}]
+        item = automation_store.update(automation_id, normalized) if automation_store else None
+    if not isinstance(item, dict):
+        return None, [{"code": "AUTOMATION_APPLY_FAILED", "message": "failed to persist automation", "path": "operation"}]
+    if publish:
+        item = automation_store.update(
+            automation_id,
+            {
+                "status": "published",
+                "published_at": _now(),
+                "published_by": actor_id,
+            },
+        ) if automation_store else None
+        if not isinstance(item, dict):
+            return None, [{"code": "AUTOMATION_PUBLISH_FAILED", "message": "failed to publish automation", "path": "operation"}]
+    return item, []
+
+
+def _ai_automation_record_version(item: dict | None) -> str | None:
+    if not isinstance(item, dict):
+        return None
+    for key in ("updated_at", "published_at", "created_at"):
+        value = item.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
+def _ai_missing_snapshot_payload() -> dict:
+    return {"__ai_missing__": True}
+
+
+def _ai_snapshot_represents_missing(snapshot_json: Any) -> bool:
+    return isinstance(snapshot_json, dict) and snapshot_json.get("__ai_missing__") is True
+
+
+def _ai_build_workflow_comment_requirement_spec(
+    manifest: dict,
+    module_id: str,
+    entity_id: str,
+    status_field_id: str,
+    status_options: list[dict],
+    message: str,
+    existing_ops: list[dict] | None = None,
+) -> dict | None:
+    requirement = _ai_extract_workflow_comment_requirement(message)
+    if not isinstance(requirement, dict):
+        return None
+    entity = _ai_find_entity_by_id(manifest, entity_id)
+    if not isinstance(entity, dict):
+        return None
+
+    target_values: list[str] = []
+    target_labels: list[str] = []
+    for target in requirement.get("targets") or []:
+        if not isinstance(target, dict):
+            continue
+        label = target.get("label") if isinstance(target.get("label"), str) and target.get("label").strip() else None
+        aliases = {
+            _ai_norm_token(alias)
+            for alias in (target.get("aliases") or set())
+            if isinstance(alias, str) and _ai_norm_token(alias)
+        }
+        if isinstance(label, str) and label:
+            target_labels.append(label)
+        matched_value = None
+        for option in status_options:
+            if not isinstance(option, dict):
+                continue
+            value = option.get("value") if isinstance(option.get("value"), str) and option.get("value").strip() else None
+            option_label = option.get("label") if isinstance(option.get("label"), str) and option.get("label").strip() else None
+            candidates = {
+                _ai_norm_token(value) if isinstance(value, str) else "",
+                _ai_norm_token(option_label) if isinstance(option_label, str) else "",
+            }
+            if any(candidate and candidate in aliases for candidate in candidates):
+                matched_value = value
+                break
+        if isinstance(matched_value, str) and matched_value and matched_value not in target_values:
+            target_values.append(matched_value)
+
+    field_label = requirement.get("field_label") if isinstance(requirement.get("field_label"), str) and requirement.get("field_label").strip() else "Decision Comments"
+    if not target_values:
+        status_phrase = _ai_join_human_list(target_labels) if target_labels else "the requested approval status"
+        return {
+            "ops": [],
+            "field_label": field_label,
+            "status_values": [],
+            "status_phrase": status_phrase,
+            "assumptions": [],
+            "advisories": [f"I couldn't match the requested comment rule to an existing lifecycle status for {status_phrase}."],
+        }
+
+    required_when = (
+        {"op": "eq", "field": status_field_id, "value": target_values[0]}
+        if len(target_values) == 1
+        else {"op": "in", "field": status_field_id, "value": target_values}
+    )
+    status_phrase = _ai_join_human_list([_ai_titleize_slug(value) for value in target_values])
+    field_candidates = [
+        field_label,
+        "Decision Comments",
+        "Manager Comments",
+        "Rejection Comments",
+        "Approval Comments",
+        "Comments",
+        "Notes",
+    ]
+    existing_field = next(
+        (
+            field
+            for candidate in field_candidates
+            for field in [_ai_match_field_in_entity(entity, candidate)]
+            if isinstance(field, dict)
+        ),
+        None,
+    )
+
+    ops: list[dict] = []
+    all_ops = [copy.deepcopy(op) for op in (existing_ops or []) if isinstance(op, dict)]
+    assumptions = ["The comments field will stay visible on the form so staff can complete it before using the workflow buttons."]
+    advisories = [f"'{field_label}' will become required when the record is {status_phrase}."]
+    if isinstance(existing_field, dict) and isinstance(existing_field.get("id"), str):
+        field_id = existing_field.get("id")
+        if existing_field.get("required_when") != required_when:
+            ops.append(
+                {
+                    "op": "update_field",
+                    "artifact_type": "module",
+                    "artifact_id": module_id,
+                    "field_id": field_id,
+                    "changes": {"required_when": required_when},
+                }
+            )
+        all_ops.extend(ops)
+        if not _ai_find_form_field_location(manifest, field_id) and not any(_ai_op_includes_form_field(op, module_id, field_id) for op in all_ops):
+            ops.extend(
+                _ai_build_placement_ops_for_field(
+                    manifest,
+                    module_id,
+                    entity_id,
+                    field_id,
+                    existing_field.get("label") if isinstance(existing_field.get("label"), str) and existing_field.get("label").strip() else field_label,
+                    include_form=True,
+                    include_list=False,
+                    existing_ops=[*all_ops, *ops],
+                )
+            )
+        return {
+            "ops": ops,
+            "field_label": existing_field.get("label") if isinstance(existing_field.get("label"), str) and existing_field.get("label").strip() else field_label,
+            "status_values": target_values,
+            "status_phrase": status_phrase,
+            "assumptions": assumptions if ops else [],
+            "advisories": advisories if ops else [],
+        }
+
+    entity_tail = entity_id.split(".")[-1]
+    field_slug = _marketplace_slugify(field_label).replace("-", "_").strip("_") or "decision_comments"
+    field_id = f"{entity_tail}.{field_slug}"
+    existing_field_ids = {
+        field.get("id")
+        for field in (entity.get("fields") or [])
+        if isinstance(field, dict) and isinstance(field.get("id"), str)
+    }
+    suffix = 2
+    while field_id in existing_field_ids:
+        field_id = f"{entity_tail}.{field_slug}_{suffix}"
+        suffix += 1
+    ops.append(
+        {
+            "op": "add_field",
+            "artifact_type": "module",
+            "artifact_id": module_id,
+            "entity_id": entity_id,
+            "field": {
+                "id": field_id,
+                "label": field_label,
+                "type": "text",
+                "required_when": required_when,
+            },
+        }
+    )
+    ops.extend(
+        _ai_build_placement_ops_for_field(
+            manifest,
+            module_id,
+            entity_id,
+            field_id,
+            field_label,
+            include_form=True,
+            include_list=False,
+            existing_ops=[*all_ops, *ops],
+        )
+    )
+    return {
+        "ops": ops,
+        "field_label": field_label,
+        "status_values": target_values,
+        "status_phrase": status_phrase,
+        "assumptions": assumptions,
+        "advisories": advisories,
+    }
+
+
+def _ai_build_workflow_action_sync_ops(manifest: dict, module_id: str, entity_id: str, workflow_override: dict | None = None) -> tuple[list[dict], list[str]]:
+    if not isinstance(manifest, dict) or not isinstance(module_id, str) or not module_id or not isinstance(entity_id, str) or not entity_id:
+        return [], ["Workflow context is incomplete."]
+    workflow = workflow_override if isinstance(workflow_override, dict) else next(
+        (
+            item
+            for item in (manifest.get("workflows") or [])
+            if isinstance(item, dict)
+            and item.get("entity") == entity_id
+            and isinstance(item.get("status_field"), str)
+        ),
+        None,
+    )
+    if not isinstance(workflow, dict):
+        return [], ["I couldn't find an existing lifecycle workflow to wire action buttons from."]
+    status_field_id = workflow.get("status_field")
+    if not isinstance(status_field_id, str) or not status_field_id:
+        return [], ["The workflow is missing its status field."]
+
+    entity_slug = entity_id.split(".")[-1]
+    target_actions = _ai_status_actions_for_workflow(entity_slug, entity_id, status_field_id, workflow)
+    if not target_actions:
+        return [], ["I couldn't derive any status transitions from the current workflow."]
+
+    ops: list[dict] = []
+    existing_actions = {
+        action.get("id"): action
+        for action in (manifest.get("actions") or [])
+        if isinstance(action, dict) and isinstance(action.get("id"), str)
+    }
+    action_ids: list[str] = []
+    for target_action in target_actions:
+        action_id = target_action.get("id")
+        if not isinstance(action_id, str) or not action_id:
+            continue
+        action_ids.append(action_id)
+        current_action = existing_actions.get(action_id)
+        if current_action is None:
+            ops.append({"op": "add_action", "artifact_type": "module", "artifact_id": module_id, "action": copy.deepcopy(target_action)})
+        elif current_action != target_action:
+            changes = copy.deepcopy(target_action)
+            changes.pop("id", None)
+            ops.append(
+                {
+                    "op": "update_action",
+                    "artifact_type": "module",
+                    "artifact_id": module_id,
+                    "action_id": action_id,
+                    "changes": changes,
+                }
+            )
+
+    form_view, _list_view = _ai_find_form_and_list_views(manifest, entity_id)
+    if isinstance(form_view, dict) and isinstance(form_view.get("id"), str):
+        header = copy.deepcopy(form_view.get("header") if isinstance(form_view.get("header"), dict) else {})
+        changed = False
+        if header.get("statusbar") != {"field_id": status_field_id}:
+            header["statusbar"] = {"field_id": status_field_id}
+            changed = True
+        secondary_actions = [item for item in (header.get("secondary_actions") or []) if isinstance(item, dict)]
+        for action_id in action_ids:
+            if not any(existing.get("action_id") == action_id for existing in secondary_actions if isinstance(existing, dict)):
+                secondary_actions.append({"action_id": action_id})
+                changed = True
+        if changed:
+            header["secondary_actions"] = secondary_actions
+            ops.append(
+                {
+                    "op": "update_view",
+                    "artifact_type": "module",
+                    "artifact_id": module_id,
+                    "view_id": form_view.get("id"),
+                    "changes": {"header": header},
+                }
+            )
+
+    if not ops:
+        return [], ["Workflow action buttons are already wired from the current lifecycle states."]
+    return ops, []
+
+
+def _ai_is_greeting_only(text: str) -> bool:
+    normalized = _ai_norm_token(text)
+    if not normalized:
+        return False
+    return normalized in {
+        "hi",
+        "hey",
+        "hello",
+        "hiya",
+        "yo",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "hey there",
+        "hello there",
+    }
+
+
+def _ai_extra_fields_from_prompt(entity_slug: str, message: str) -> list[dict]:
+    lower = (message or "").lower()
+    fields: list[dict] = []
+
+    def add(field_id: str, field_type: str, label: str, **extra) -> None:
+        field = {"id": f"{entity_slug}.{field_id}", "type": field_type, "label": label}
+        field.update(extra)
+        fields.append(field)
+
+    keyword_fields = [
+        (("customer", "client"), ("client_name", "string", "Client")),
+        (("supplier",), ("supplier_name", "string", "Supplier")),
+        (("provider",), ("provider_name", "string", "Provider")),
+        (("company",), ("company_name", "string", "Company")),
+        (("vehicle",), ("vehicle_name", "string", "Vehicle")),
+        (("driver",), ("driver_name", "string", "Driver")),
+        (("host",), ("host_name", "string", "Host")),
+        (("employee",), ("employee_name", "string", "Employee")),
+        (("requester",), ("requester_name", "string", "Requester")),
+        (("manager",), ("manager_name", "string", "Manager")),
+        (("auditor",), ("auditor_name", "string", "Auditor")),
+        (("attendees",), ("attendees", "text", "Attendees")),
+        (("people involved",), ("people_involved", "text", "People Involved")),
+        (("route",), ("route", "string", "Route")),
+        (("location",), ("location", "string", "Location")),
+        (("outcome",), ("outcome", "text", "Outcome")),
+        (("category",), ("category", "string", "Category")),
+        (("leave type",), ("leave_type", "string", "Leave Type")),
+        (("focus", "focus area"), ("focus_area", "string", "Focus Area")),
+        (("summary",), ("summary", "text", "Summary")),
+        (("finding", "finding summary"), ("finding_summary", "text", "Finding Summary")),
+        (("follow up", "follow-up"), ("follow_up", "text", "Follow Up")),
+        (("decision", "decisions"), ("decision_notes", "text", "Decision Notes")),
+    ]
+    for tokens, spec in keyword_fields:
+        if any(token in lower for token in tokens):
+            add(*spec)
+
+    numeric_fields = [
+        (("amount",), ("amount", "number", "Amount")),
+        (("cost",), ("cost", "number", "Cost")),
+        (("score",), ("score", "number", "Score")),
+        (("variance",), ("variance", "number", "Variance")),
+        (("litres", "liters"), ("litres", "number", "Litres")),
+        (("odometer",), ("odometer", "number", "Odometer")),
+        (("duration",), ("duration_minutes", "number", "Duration (Minutes)")),
+    ]
+    for tokens, spec in numeric_fields:
+        if any(token in lower for token in tokens):
+            add(*spec)
+
+    if "severity" in lower:
+        add(
+            "severity",
+            "enum",
+            "Severity",
+            options=[
+                {"label": "Low", "value": "low"},
+                {"label": "Medium", "value": "medium"},
+                {"label": "High", "value": "high"},
+                {"label": "Critical", "value": "critical"},
+            ],
+        )
+    if "priority" in lower:
+        add(
+            "priority",
+            "enum",
+            "Priority",
+            options=[
+                {"label": "Low", "value": "low"},
+                {"label": "Medium", "value": "medium"},
+                {"label": "High", "value": "high"},
+                {"label": "Urgent", "value": "urgent"},
+            ],
+        )
+    if "condition" in lower:
+        add(
+            "condition",
+            "enum",
+            "Condition",
+            options=[
+                {"label": "Good", "value": "good"},
+                {"label": "Fair", "value": "fair"},
+                {"label": "Needs Attention", "value": "needs_attention"},
+            ],
+        )
+    if any(token in lower for token in ("receipt", "certificate", "attachment", "photo", "image", "file")):
+        add("attachments", "attachments", "Attachments")
+    if any(token in lower for token in ("date", "visit date", "meeting date", "check date")):
+        add("event_date", "date", "Date")
+    if any(token in lower for token in ("start date", "from date", "date start")):
+        add("start_date", "date", "Start Date")
+    if any(token in lower for token in ("end date", "to date")):
+        add("end_date", "date", "End Date")
+    if "due date" in lower or "expiry" in lower or "expires" in lower:
+        add("due_date", "date", "Due Date")
+    if any(token in lower for token in ("completion date", "completed date")):
+        add("completed_date", "date", "Completed Date")
+    if any(token in lower for token in ("visit time", "meeting time", "sign out")):
+        add("event_time", "datetime", "Event Time")
+    return fields
+
+
+def _ai_sectioned_form_for_entity(entity_slug: str, fields: list[dict]) -> tuple[list[dict], dict | None]:
+    field_ids = [
+        field.get("id")
+        for field in fields
+        if isinstance(field, dict)
+        and isinstance(field.get("id"), str)
+        and not field.get("id").endswith(".id")
+        and not field.get("id").endswith(".created_at")
+    ]
+    overview: list[str] = []
+    planning: list[str] = []
+    people: list[str] = []
+    metrics: list[str] = []
+    notes: list[str] = []
+
+    for field_id in field_ids:
+        tail = field_id.split(".")[-1]
+        if tail in {"notes", "attachments", "summary", "finding_summary", "follow_up", "decision_notes"}:
+            notes.append(field_id)
+        elif any(token in tail for token in ("date", "time", "due", "start", "end", "expiry", "completed")):
+            planning.append(field_id)
+        elif any(token in tail for token in ("client", "customer", "supplier", "provider", "company", "vehicle", "driver", "host", "employee", "requester", "manager", "auditor", "owner", "assignee", "attendees", "people")):
+            people.append(field_id)
+        elif any(token in tail for token in ("amount", "cost", "score", "variance", "litres", "odometer", "duration", "priority", "severity", "condition")):
+            metrics.append(field_id)
+        else:
+            overview.append(field_id)
+
+    sections: list[dict] = []
+    tabs: list[dict] = []
+
+    def add_section(section_id: str, title: str, items: list[str], tab_id: str | None = None, tab_label: str | None = None) -> None:
+        unique_items = []
+        seen_items: set[str] = set()
+        for item in items:
+            if item not in seen_items:
+                unique_items.append(item)
+                seen_items.add(item)
+        if not unique_items:
+            return
+        sections.append({"id": section_id, "title": title, "fields": unique_items, "layout": "columns", "columns": 2})
+        if tab_id and tab_label:
+            for tab in tabs:
+                if tab.get("id") == tab_id:
+                    tab.setdefault("sections", []).append(section_id)
+                    return
+            tabs.append({"id": tab_id, "label": tab_label, "sections": [section_id]})
+
+    add_section("overview", "Overview", overview, "overview_tab", "Overview")
+    add_section("planning", "Planning", planning, "planning_tab", "Planning")
+    add_section("people", "People & Context", people, "planning_tab", "Planning")
+    add_section("metrics", "Tracking", metrics, "tracking_tab", "Tracking")
+    add_section("notes", "Notes & Files", notes, "notes_tab", "Notes")
+
+    tabs_cfg = None
+    if len(tabs) > 1:
+        tabs_cfg = {"tabs": tabs, "style": "lifted", "default_tab": tabs[0].get("id")}
+    return sections, tabs_cfg
+
+
+def _ai_enrich_single_entity_scaffold(manifest: dict, family: str, message: str) -> dict:
+    if not isinstance(manifest, dict):
+        return manifest
+    entities = manifest.get("entities") if isinstance(manifest.get("entities"), list) else []
+    entity = entities[0] if len(entities) == 1 and isinstance(entities[0], dict) else None
+    if not isinstance(entity, dict):
+        return manifest
+    entity_id = entity.get("id")
+    fields = entity.get("fields") if isinstance(entity.get("fields"), list) else []
+    if not isinstance(entity_id, str) or not fields:
+        return manifest
+    entity_slug = entity_id.split(".")[-1]
+    display_field = entity.get("display_field") if isinstance(entity.get("display_field"), str) else f"{entity_slug}.name"
+    status_field = next((field for field in fields if isinstance(field, dict) and field.get("id") == f"{entity_slug}.status"), None)
+    status_field_id = status_field.get("id") if isinstance(status_field, dict) and isinstance(status_field.get("id"), str) else None
+    status_options = status_field.get("options") if isinstance(status_field, dict) and isinstance(status_field.get("options"), list) else []
+    date_fields = [
+        field.get("id")
+        for field in fields
+        if isinstance(field, dict)
+        and isinstance(field.get("id"), str)
+        and field.get("type") in {"date", "datetime"}
+        and not str(field.get("id")).endswith(".created_at")
+    ]
+    owner_field_id = next(
+        (
+            field.get("id")
+            for field in fields
+            if isinstance(field, dict)
+            and isinstance(field.get("id"), str)
+            and field.get("type") == "user"
+        ),
+        None,
+    )
+    attachment_field_id = next(
+        (
+            field.get("id")
+            for field in fields
+            if isinstance(field, dict)
+            and isinstance(field.get("id"), str)
+            and field.get("type") == "attachments"
+        ),
+        None,
+    )
+    priority_like = next(
+        (
+            field.get("id")
+            for field in fields
+            if isinstance(field, dict)
+            and isinstance(field.get("id"), str)
+            and any(token in field.get("id", "") for token in ("priority", "severity", "condition"))
+        ),
+        None,
+    )
+
+    views = manifest.get("views") if isinstance(manifest.get("views"), list) else []
+    form_view = next((view for view in views if isinstance(view, dict) and view.get("kind") == "form" and view.get("entity") == entity_id), None)
+    list_view = next((view for view in views if isinstance(view, dict) and view.get("kind") == "list" and view.get("entity") == entity_id), None)
+    calendar_view = next((view for view in views if isinstance(view, dict) and view.get("kind") == "calendar" and view.get("entity") == entity_id), None)
+    if isinstance(form_view, dict):
+        header = copy.deepcopy(form_view.get("header") if isinstance(form_view.get("header"), dict) else {})
+        if status_field_id:
+            header["statusbar"] = {"field_id": status_field_id}
+        sections, tabs_cfg = _ai_sectioned_form_for_entity(entity_slug, fields)
+        if sections:
+            form_view["sections"] = sections
+        if tabs_cfg:
+            header["tabs"] = tabs_cfg
+        form_view["header"] = header
+
+    default_list_mode = _ai_design_family_default_list_mode(family)
+    if default_list_mode:
+        pages = manifest.get("pages") if isinstance(manifest.get("pages"), list) else []
+        list_page = next((page for page in pages if isinstance(page, dict) and str(page.get("id", "")).endswith(".list_page")), None)
+        if isinstance(list_page, dict):
+            content = list_page.get("content") if isinstance(list_page.get("content"), list) else []
+            if content and isinstance(content[0], dict):
+                card = content[0]
+                card_content = card.get("content") if isinstance(card.get("content"), list) else []
+                if card_content and isinstance(card_content[0], dict):
+                    card_content[0]["default_mode"] = default_list_mode
+
+    interfaces: dict[str, list[dict]] = {}
+    if date_fields:
+        interfaces["schedulable"] = [
+            {
+                "entity_id": entity_id,
+                "enabled": True,
+                "scope": "module_and_global",
+                "title_field": display_field,
+                "date_start": date_fields[0],
+                "date_end": date_fields[1] if len(date_fields) > 1 else date_fields[0],
+                **({"owner_field": owner_field_id} if isinstance(owner_field_id, str) else {}),
+                **({"status_field": status_field_id} if isinstance(status_field_id, str) else {}),
+                **({"color_field": owner_field_id} if isinstance(owner_field_id, str) else {}),
+            }
+        ]
+    if isinstance(attachment_field_id, str):
+        interfaces["documentable"] = [
+            {
+                "entity_id": entity_id,
+                "enabled": True,
+                "scope": "module_and_global",
+                "attachment_field": attachment_field_id,
+                "title_field": display_field,
+                **({"owner_field": owner_field_id} if isinstance(owner_field_id, str) else {}),
+                **({"category_field": status_field_id} if isinstance(status_field_id, str) else {}),
+                "date_field": f"{entity_slug}.created_at",
+                "record_label_field": display_field,
+                "preview_enabled": True,
+                "allow_delete": True,
+                "allow_download": True,
+            }
+        ]
+    group_bys = [item for item in (status_field_id, priority_like, owner_field_id) if isinstance(item, str)]
+    interfaces["dashboardable"] = [
+        {
+            "entity_id": entity_id,
+            "enabled": True,
+            "scope": "module_and_global",
+            "date_field": f"{entity_slug}.created_at",
+            "measures": ["count"],
+            "group_bys": group_bys or [display_field],
+            "default_widgets": [
+                {
+                    "id": f"{entity_slug}_by_status" if isinstance(status_field_id, str) else f"{entity_slug}_overview",
+                    "type": "group",
+                    "title": "By Status" if isinstance(status_field_id, str) else "Overview",
+                    "group_by": status_field_id if isinstance(status_field_id, str) else display_field,
+                    "measure": "count",
+                }
+            ],
+        }
+    ]
+    manifest["interfaces"] = interfaces
+
+    if isinstance(status_field_id, str) and status_options:
+        manifest["workflows"] = _ai_build_workflow_for_status(entity_id, status_field_id, status_options)
+    else:
+        manifest["workflows"] = []
+    manifest.setdefault("queries", {})
+    workflow = (manifest.get("workflows") or [None])[0]
+
+    actions = [copy.deepcopy(action) for action in (manifest.get("actions") or []) if isinstance(action, dict)]
+    if isinstance(workflow, dict) and isinstance(status_field_id, str):
+        for action in _ai_status_actions_for_workflow(entity_slug, entity_id, status_field_id, workflow):
+            action_id = action.get("id")
+            if isinstance(action_id, str) and not any(existing.get("id") == action_id for existing in actions if isinstance(existing, dict)):
+                actions.append(action)
+    manifest["actions"] = actions
+
+    if isinstance(form_view, dict):
+        header = form_view.get("header") if isinstance(form_view.get("header"), dict) else {}
+        secondary_actions = [item for item in (header.get("secondary_actions") or []) if isinstance(item, dict)]
+        for action in actions:
+            action_id = action.get("id") if isinstance(action, dict) else None
+            if not isinstance(action_id, str) or not action_id.startswith(f"action.{entity_slug}_") or action.get("kind") != "update_record":
+                continue
+            if not any(existing.get("action_id") == action_id for existing in secondary_actions if isinstance(existing, dict)):
+                secondary_actions.append({"action_id": action_id})
+        if secondary_actions:
+            header["secondary_actions"] = secondary_actions
+            form_view["header"] = header
+
+    if isinstance(calendar_view, dict):
+        pages = manifest.get("pages") if isinstance(manifest.get("pages"), list) else []
+        app_cfg = manifest.get("app") if isinstance(manifest.get("app"), dict) else {}
+        nav = app_cfg.get("nav") if isinstance(app_cfg.get("nav"), list) else []
+        if not any(isinstance(page, dict) and page.get("id") == f"{entity_slug}.calendar_page" for page in pages):
+            default_filter_id = None
+            if isinstance(list_view, dict):
+                header = list_view.get("header") if isinstance(list_view.get("header"), dict) else {}
+                filters = header.get("filters") if isinstance(header.get("filters"), list) else []
+                if filters and isinstance(filters[0], dict) and isinstance(filters[0].get("id"), str):
+                    default_filter_id = filters[0].get("id")
+            pages.append(
+                {
+                    "id": f"{entity_slug}.calendar_page",
+                    "title": f"{entity.get('label') or _ai_titleize_slug(entity_slug)} Calendar",
+                    "layout": "single",
+                    "header": {"variant": "none"},
+                    "content": [
+                        {
+                            "kind": "container",
+                            "variant": "card",
+                            "content": [
+                                {
+                                    "kind": "view_modes",
+                                    "entity_id": entity_id,
+                                    "default_mode": "calendar",
+                                    "modes": [
+                                        {"mode": "calendar", "target": f"view:{calendar_view.get('id')}"},
+                                        {"mode": "list", "target": f"view:{list_view.get('id')}"} if isinstance(list_view, dict) else None,
+                                        {"mode": "graph", "target": f"view:{entity_slug}.graph"},
+                                        {"mode": "pivot", "target": f"view:{list_view.get('id')}", "default_group_by": status_field_id or date_fields[0]} if isinstance(list_view, dict) else None,
+                                    ],
+                                    **({"default_filter_id": default_filter_id} if isinstance(default_filter_id, str) else {}),
+                                }
+                            ],
+                        }
+                    ],
+                }
+            )
+            pages[-1]["content"][0]["content"][0]["modes"] = [mode for mode in pages[-1]["content"][0]["content"][0]["modes"] if isinstance(mode, dict)]
+            manifest["pages"] = pages
+        if nav and isinstance(nav[0], dict):
+            items = nav[0].get("items") if isinstance(nav[0].get("items"), list) else []
+            if not any(isinstance(item, dict) and item.get("to") == f"page:{entity_slug}.calendar_page" for item in items):
+                items.append({"label": "Calendar", "to": f"page:{entity_slug}.calendar_page"})
+                nav[0]["items"] = items
+                app_cfg["nav"] = nav
+                manifest["app"] = app_cfg
+
+    return manifest
+
+
+def _ai_apply_design_spec_to_manifest(manifest: dict, design_spec: dict) -> dict:
+    if not isinstance(manifest, dict) or not isinstance(design_spec, dict):
+        return manifest
+    entity_slug = design_spec.get("entity_slug") if isinstance(design_spec.get("entity_slug"), str) else None
+    if not isinstance(entity_slug, str) or not entity_slug:
+        return manifest
+    views = manifest.get("views") if isinstance(manifest.get("views"), list) else []
+    form_view = next((view for view in views if isinstance(view, dict) and view.get("id") == f"{entity_slug}.form"), None)
+    if isinstance(form_view, dict):
+        layout = design_spec.get("layout") if isinstance(design_spec.get("layout"), dict) else {}
+        sections = [copy.deepcopy(section) for section in (layout.get("sections") or []) if isinstance(section, dict)]
+        tabs = [copy.deepcopy(tab) for tab in (layout.get("tabs") or []) if isinstance(tab, dict)]
+        if sections:
+            form_view["sections"] = sections
+        if tabs:
+            header = copy.deepcopy(form_view.get("header") if isinstance(form_view.get("header"), dict) else {})
+            header["tabs"] = {
+                "tabs": tabs,
+                "style": "lifted",
+                "default_tab": layout.get("default_tab") if isinstance(layout.get("default_tab"), str) else tabs[0].get("id"),
+            }
+            form_view["header"] = header
+    page_specs = {
+        page.get("id"): page
+        for page in ((design_spec.get("experience") or {}).get("pages") or [])
+        if isinstance(page, dict) and isinstance(page.get("id"), str)
+    }
+    for page in manifest.get("pages") if isinstance(manifest.get("pages"), list) else []:
+        if not isinstance(page, dict):
+            continue
+        spec = page_specs.get(page.get("id"))
+        if isinstance(spec, dict) and isinstance(spec.get("title"), str) and spec.get("title").strip():
+            page["title"] = spec.get("title").strip()
+    return manifest
+
+
+def _ai_build_rich_module_scaffold(module_id: str, module_name: str, message: str, design_spec: dict | None = None) -> tuple[dict, str, dict]:
+    design_spec = design_spec if isinstance(design_spec, dict) else _ai_generate_module_design_spec(module_id, module_name, message)
+    entity_slug = design_spec.get("entity_slug") if isinstance(design_spec.get("entity_slug"), str) else _ai_singularize_slug(module_id)
+    entity_label = (
+        design_spec.get("entity_label")
+        if isinstance(design_spec.get("entity_label"), str) and design_spec.get("entity_label").strip()
+        else (module_name.strip() if isinstance(module_name, str) and module_name.strip() else _ai_titleize_slug(entity_slug))
+    )
+    nav_label = design_spec.get("nav_label") if isinstance(design_spec.get("nav_label"), str) else module_name
+    family = design_spec.get("family") if isinstance(design_spec.get("family"), str) else _ai_detect_new_module_family(module_name, message)
+    fields = [copy.deepcopy(field) for field in (design_spec.get("fields") or []) if isinstance(field, dict)]
+    manifest = _build_scaffold_single_entity(module_id, module_name, entity_slug, entity_label, fields, nav_label=nav_label)
+    module_def = manifest.get("module") if isinstance(manifest.get("module"), dict) else {}
+    if isinstance(design_spec.get("summary"), str) and design_spec.get("summary").strip():
+        module_def["description"] = design_spec.get("summary").strip()
+        manifest["module"] = module_def
+    manifest = _ai_enrich_single_entity_scaffold(manifest, family, message)
+    manifest = _ai_apply_design_spec_to_manifest(manifest, design_spec)
+    return manifest, family, design_spec
+
+
+def _ai_module_manifest_quality_report(module_id: str, manifest: dict, family: str | None = None, design_spec: dict | None = None) -> dict:
+    entities = manifest.get("entities") if isinstance(manifest.get("entities"), list) else []
+    entity = entities[0] if entities and isinstance(entities[0], dict) else {}
+    entity_slug = _ai_singularize_slug(module_id)
+    fields = [field for field in (entity.get("fields") or []) if isinstance(field, dict)]
+    views = [view for view in (manifest.get("views") or []) if isinstance(view, dict)]
+    pages = [page for page in (manifest.get("pages") or []) if isinstance(page, dict)]
+    actions = [action for action in (manifest.get("actions") or []) if isinstance(action, dict) and action.get("kind") == "update_record"]
+    workflows = [workflow for workflow in (manifest.get("workflows") or []) if isinstance(workflow, dict)]
+    business_fields = [
+        field
+        for field in fields
+        if isinstance(field.get("id"), str)
+        and not field.get("id").endswith(".id")
+        and not field.get("id").endswith(".created_at")
+        and field.get("id") not in {f"{entity_slug}.status", f"{entity_slug}.owner_id"}
+    ]
+    view_kinds = sorted(
+        {
+            view.get("kind")
+            for view in views
+            if isinstance(view.get("kind"), str) and view.get("kind")
+        }
+    )
+    page_ids = [page.get("id") for page in pages if isinstance(page.get("id"), str)]
+    date_fields = [field for field in business_fields if field.get("type") in {"date", "datetime"}]
+    form_view = next((view for view in views if view.get("kind") == "form"), {})
+    sections = [section for section in (form_view.get("sections") or []) if isinstance(section, dict)]
+    issues: list[str] = []
+    strengths: list[str] = []
+    minimum_business_fields = _ai_design_family_minimum_business_fields(family)
+    if len(business_fields) < minimum_business_fields:
+        issues.append(f"Create-module draft needs at least {minimum_business_fields} useful fields; found {len(business_fields)}.")
+    else:
+        strengths.append(f"Provides {len(business_fields)} useful fields.")
+    if "list" not in view_kinds or "form" not in view_kinds:
+        issues.append("Create-module draft must include both list and form views.")
+    if workflows:
+        states = [item for item in (workflows[0].get("states") or []) if isinstance(item, dict)]
+        if len(states) >= 3 and len(actions) < 2:
+            issues.append("Create-module draft has lifecycle states but not enough workflow action buttons.")
+    if date_fields and "calendar" not in view_kinds:
+        issues.append("Create-module draft has date tracking but no calendar view.")
+    if date_fields and not any(isinstance(page_id, str) and page_id.endswith(".calendar_page") for page_id in page_ids):
+        issues.append("Create-module draft has date tracking but no calendar page.")
+    if len(business_fields) >= 8 and len(sections) < 2:
+        issues.append("Create-module draft should organize the form into multiple sections.")
+    if "kanban" in view_kinds:
+        strengths.append("Includes kanban workflow view.")
+    if any(isinstance(page_id, str) and page_id.endswith(".calendar_page") for page_id in page_ids):
+        strengths.append("Includes a dedicated calendar page.")
+    if design_spec and isinstance((design_spec.get("quality") or {}).get("strengths"), list):
+        strengths.extend([item for item in (design_spec.get("quality") or {}).get("strengths", []) if isinstance(item, str)])
+    return {
+        "ok": not issues,
+        "issues": issues,
+        "strengths": list(dict.fromkeys(strengths)),
+        "business_field_count": len(business_fields),
+        "view_kinds": view_kinds,
+        "action_count": len(actions),
+    }
+
+
+def _ai_build_new_module_package(module_id: str, module_name: str, message: str) -> dict:
+    design_spec = _ai_generate_module_design_spec(module_id, module_name, message)
+    manifest, family, design_spec = _ai_build_rich_module_scaffold(module_id, module_name, message, design_spec=design_spec)
+    quality = _ai_module_manifest_quality_report(module_id, manifest, family=family, design_spec=design_spec)
+    return {"manifest": manifest, "family": family, "design_spec": design_spec, "quality": quality}
+
+
+def _ai_build_generic_module_scaffold(module_id: str, module_name: str, message: str) -> dict:
+    entity_slug = _ai_singularize_slug(module_id)
+    entity_label = module_name.strip() if isinstance(module_name, str) and module_name.strip() else _ai_titleize_slug(entity_slug)
+    lower = (message or "").lower()
+    primary_label = "Title"
+    if any(token in lower for token in ("request", "approval", "action", "visit", "log", "register", "pipeline")):
+        primary_label = entity_label
+    status_options = _ai_extract_status_options(message)
+    fields: list[dict] = [
+        {"id": f"{entity_slug}.name", "type": "string", "label": primary_label, "required": True},
+    ]
+    if status_options:
+        fields.append(
+            {
+                "id": f"{entity_slug}.status",
+                "type": "enum",
+                "label": "Status",
+                "default": status_options[0].get("value"),
+                "options": status_options,
+            }
+        )
+    if any(token in lower for token in ("date", "schedule", "visit", "run", "event", "meeting", "training", "delivery")):
+        fields.append({"id": f"{entity_slug}.date", "type": "date", "label": "Date"})
+    fields.append({"id": f"{entity_slug}.owner", "type": "user", "label": "Owner"})
+    fields.append({"id": f"{entity_slug}.notes", "type": "text", "label": "Notes"})
+    return _build_scaffold_single_entity(module_id, module_name, entity_slug, entity_label, fields, nav_label=module_name)
+
+
+def _ai_build_new_module_scaffold(module_id: str, module_name: str, message: str) -> dict:
+    manifest = None
+    family = "generic"
+    package = _ai_build_new_module_package(module_id, module_name, message)
+    manifest = package.get("manifest")
+    family = package.get("family") if isinstance(package.get("family"), str) else family
+    if not isinstance(manifest.get("app"), dict) or not isinstance((manifest.get("app") or {}).get("home"), str):
+        manifest = _ai_build_generic_module_scaffold(module_id, module_name, message)
+    module_def = manifest.get("module") if isinstance(manifest.get("module"), dict) else {}
+    module_def = copy.deepcopy(module_def)
+    module_def["id"] = module_id
+    module_def["key"] = module_id
+    if not isinstance(module_def.get("name"), str) or not module_def.get("name"):
+        module_def["name"] = module_name
+    if not isinstance(module_def.get("category"), str) or not module_def.get("category"):
+        module_def["category"] = "Custom"
+    if not isinstance(module_def.get("icon_key"), str) or not module_def.get("icon_key"):
+        module_def["icon_key"] = _ai_design_family_icon_key(family)
+    if not isinstance(module_def.get("description"), str) or not module_def.get("description"):
+        module_def["description"] = _ai_module_design_summary(module_name, family)
+    manifest["module"] = module_def
+    return manifest
+
+
+def _ai_build_latest_style_upgrade_ops(module_id: str, manifest: dict) -> tuple[list[dict], list[str]]:
+    if not isinstance(manifest, dict):
+        return [], ["Module manifest missing."]
+    entities = [entity for entity in (manifest.get("entities") or []) if isinstance(entity, dict)]
+    if len(entities) != 1:
+        return [], ["This upgrade flow currently supports simple single-entity modules only."]
+    entity = entities[0]
+    entity_id = entity.get("id")
+    if not isinstance(entity_id, str) or not entity_id:
+        return [], ["Primary entity could not be resolved."]
+    entity_slug = entity_id.split(".")[-1]
+    entity_label = entity.get("label") if isinstance(entity.get("label"), str) and entity.get("label").strip() else entity_slug.replace("_", " ").title()
+    module_def = manifest.get("module") if isinstance(manifest.get("module"), dict) else {}
+    module_name = module_def.get("name") if isinstance(module_def.get("name"), str) and module_def.get("name").strip() else module_id
+    pages = [page for page in (manifest.get("pages") or []) if isinstance(page, dict)]
+    nav_label = None
+    for page in pages:
+        title = page.get("title")
+        if isinstance(title, str) and title.strip():
+            nav_label = title.strip()
+            break
+    current_fields = [
+        copy.deepcopy(field)
+        for field in (entity.get("fields") or [])
+        if isinstance(field, dict) and isinstance(field.get("id"), str) and not str(field.get("id")).endswith(".id")
+    ]
+    target_manifest = _build_scaffold_single_entity(module_id, module_name, entity_slug, entity_label, current_fields, nav_label=nav_label or entity_label)
+    target_module = target_manifest.get("module") if isinstance(target_manifest.get("module"), dict) else {}
+    target_module.update({k: v for k, v in module_def.items() if k not in {"id", "key", "name"} and v not in (None, "")})
+    target_module["id"] = module_id
+    target_module["key"] = module_def.get("key") if isinstance(module_def.get("key"), str) and module_def.get("key").strip() else module_id
+    target_module["name"] = module_name
+    target_manifest["module"] = target_module
+
+    ops: list[dict] = []
+    current_views = {view.get("id"): view for view in (manifest.get("views") or []) if isinstance(view, dict) and isinstance(view.get("id"), str)}
+    for target_view in [view for view in (target_manifest.get("views") or []) if isinstance(view, dict) and isinstance(view.get("id"), str)]:
+        view_id = target_view.get("id")
+        current_view = current_views.get(view_id)
+        if current_view is None:
+            ops.append({"op": "add_view", "artifact_type": "module", "artifact_id": module_id, "view": target_view})
+        elif current_view != target_view:
+            ops.append({"op": "update_view", "artifact_type": "module", "artifact_id": module_id, "view_id": view_id, "changes": target_view})
+
+    current_pages = {page.get("id"): page for page in (manifest.get("pages") or []) if isinstance(page, dict) and isinstance(page.get("id"), str)}
+    for target_page in [page for page in (target_manifest.get("pages") or []) if isinstance(page, dict) and isinstance(page.get("id"), str)]:
+        page_id = target_page.get("id")
+        current_page = current_pages.get(page_id)
+        if current_page is None:
+            ops.append({"op": "add_page", "artifact_type": "module", "artifact_id": module_id, "page": target_page})
+        elif current_page != target_page:
+            ops.append({"op": "update_page", "artifact_type": "module", "artifact_id": module_id, "page_id": page_id, "changes": target_page})
+
+    current_actions = {action.get("id"): action for action in (manifest.get("actions") or []) if isinstance(action, dict) and isinstance(action.get("id"), str)}
+    for target_action in [action for action in (target_manifest.get("actions") or []) if isinstance(action, dict) and isinstance(action.get("id"), str)]:
+        action_id = target_action.get("id")
+        current_action = current_actions.get(action_id)
+        if current_action is None:
+            ops.append({"op": "add_action", "artifact_type": "module", "artifact_id": module_id, "action": target_action})
+        elif current_action != target_action:
+            changes = copy.deepcopy(target_action)
+            changes.pop("id", None)
+            ops.append({"op": "update_action", "artifact_type": "module", "artifact_id": module_id, "action_id": action_id, "changes": changes})
+
+    return ops, []
 
 
 def _parse_manifest_body(body: dict) -> dict | None:
@@ -4838,10 +7474,7 @@ async def studio_apply_draft(module_id: str, request: Request) -> dict:
     if not result.get("ok"):
         return _error_response(result["errors"][0]["code"], result["errors"][0]["message"], result["errors"][0].get("path"), result["errors"][0].get("detail"))
     _cache_invalidate("modules")
-    _cache_invalidate("registry_list")
-    _cache_invalidate("manifest")
-    _cache_invalidate("studio_modules")
-    _compiled_cache_invalidate(module_id)
+    _invalidate_module_runtime_caches(module_id, include_studio_modules=True)
     return _ok_response({"data": {"mode": mode, "module": result["module"], "audit_id": result["audit_id"]}}, warnings=result.get("warnings"))
 
 
@@ -5364,11 +7997,7 @@ async def studio2_install_manifest(module_id: str, request: Request) -> dict:
     if not result.get("ok"):
         return _error_response(result["errors"][0]["code"], result["errors"][0]["message"], result["errors"][0].get("path"), result["errors"][0].get("detail"))
     # keep draft history; do not delete drafts on install
-    _cache_invalidate("modules")
-    _cache_invalidate("registry_list")
-    _cache_invalidate("manifest")
-    _cache_invalidate("studio_modules")
-    _compiled_cache_invalidate(module_id)
+    _invalidate_module_runtime_caches(module_id, include_studio_modules=True)
     return _ok_response(
         {
             "data": {
@@ -5661,6 +8290,8 @@ def _infer_pattern_key(message: str, module_id: str | None = None) -> str | None
         return "crm"
     if "job" in text or "work order" in text:
         return "jobs"
+    if "gym" in text or "training" in text or "workout" in text or "fitness" in text or "exercise" in text:
+        return "todo"
     if "todo" in text or "task" in text:
         return "todo"
     if "inventory" in text or "stock" in text or "warehouse" in text:
@@ -5689,12 +8320,19 @@ def _openai_url(path: str) -> str:
     return f"{base}/v1{path}"
 
 
-def _openai_chat_completion(messages: list[dict], model: str | None = None) -> dict:
+def _openai_chat_completion(
+    messages: list[dict],
+    model: str | None = None,
+    temperature: float = 0.2,
+    response_format: dict | None = None,
+) -> dict:
     payload = {
         "model": model or OPENAI_MODEL,
         "messages": messages,
-        "temperature": 0.2,
+        "temperature": temperature,
     }
+    if isinstance(response_format, dict):
+        payload["response_format"] = response_format
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         _openai_url("/chat/completions"),
@@ -10169,6 +12807,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                 "kind": kind,
                 "entity_id": entity_def.get("id"),
                 "record_id": created_id,
+                "record": created_snapshot if created_id and isinstance(created_record, dict) else None,
                 "changed_fields": sorted(created_record.keys()) if isinstance(created_record, dict) else [],
                 "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
                 "timestamp": _now(),
@@ -10286,6 +12925,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                 "kind": kind,
                 "entity_id": entity_def.get("id"),
                 "record_id": record_id,
+                "record": after_snapshot if isinstance(after_record, dict) else None,
                 "changed_fields": changed,
                 "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
                 "timestamp": _now(),
@@ -10604,6 +13244,12825 @@ async def import_automation(request: Request) -> dict:
     }
     automation = automation_store.create(record)
     return _ok_response({"automation": automation})
+
+
+_AI_ENTITY_SESSION = "entity.ai_session"
+_AI_ENTITY_MESSAGE = "entity.ai_message"
+_AI_ENTITY_PLAN = "entity.ai_plan"
+_AI_ENTITY_PATCHSET = "entity.ai_patchset"
+_AI_ENTITY_SNAPSHOT = "entity.ai_snapshot"
+_AI_ENTITY_RELEASE = "entity.ai_release"
+_AI_ENTITY_VALIDATION_RUN = "entity.ai_validation_run"
+_AI_ENTITY_SANDBOX = "entity.ai_sandbox"
+_AI_ENTITY_EVENT_LOG = "entity.ai_event_log"
+_AI_ENTITY_WORKSPACE_INDEX = "entity.ai_workspace_index"
+_AI_RECOVERABLE_ENTITY_IDS = {
+    _AI_ENTITY_SESSION,
+    _AI_ENTITY_MESSAGE,
+    _AI_ENTITY_PLAN,
+    _AI_ENTITY_PATCHSET,
+    _AI_ENTITY_SNAPSHOT,
+    _AI_ENTITY_RELEASE,
+    _AI_ENTITY_VALIDATION_RUN,
+    _AI_ENTITY_SANDBOX,
+    _AI_ENTITY_EVENT_LOG,
+}
+_AI_SESSION_STATUSES = {"draft", "planning", "waiting_input", "ready_to_apply", "applied", "failed", "archived"}
+_AI_SCOPE_MODES = {"auto", "current_item", "selected_items", "workspace"}
+_AI_ARTIFACT_TYPES = {"module", "automation", "integration", "none"}
+_AI_PATCHSET_STATUSES = {"draft", "validated", "invalid", "approved", "applied", "rolled_back", "failed"}
+_AI_FIELD_TYPES = ["string", "text", "attachments", "bool", "int", "float", "date", "datetime", "enum", "lookup", "user", "tags"]
+
+
+def _ai_now() -> str:
+    return _now()
+
+
+def _ai_actor_id(request: Request) -> str:
+    actor = getattr(request.state, "actor", None) or {}
+    user_id = actor.get("user_id") if isinstance(actor, dict) else None
+    return str(user_id) if user_id else "system"
+
+
+def _ai_sort(items: list[dict], field: str = "created_at", reverse: bool = True) -> list[dict]:
+    return sorted(items or [], key=lambda item: str((item.get("record") or {}).get(field) or ""), reverse=reverse)
+
+
+def _ai_list_records(entity_id: str, limit: int = 500, tenant_id: str | None = None) -> list[dict]:
+    effective_tenant_id = tenant_id or get_org_id()
+    try:
+        return generic_records.list(entity_id, tenant_id=effective_tenant_id, limit=limit)
+    except TypeError:
+        try:
+            items = generic_records.list(entity_id, tenant_id=effective_tenant_id)
+        except TypeError:
+            items = generic_records.list(entity_id, effective_tenant_id)
+        return items[:limit] if isinstance(items, list) else []
+
+
+def _ai_get_record(entity_id: str, record_id: str, tenant_id: str | None = None) -> dict | None:
+    if not isinstance(record_id, str):
+        return None
+    normalized_id = record_id.strip()
+    if not normalized_id:
+        return None
+    effective_tenant_id = tenant_id or get_org_id()
+    try:
+        record = generic_records.get(entity_id, normalized_id, tenant_id=effective_tenant_id)
+    except TypeError:
+        try:
+            record = generic_records.get(entity_id, normalized_id, effective_tenant_id)
+        except TypeError:
+            record = generic_records.get(entity_id, normalized_id)
+    if record:
+        return record
+    # Fall back to a linear scan for low-volume AI entities so a fresh session or
+    # plan does not become unreachable if the underlying store misses a direct get.
+    for item in _ai_list_records(entity_id, limit=5000, tenant_id=tenant_id):
+        data = _ai_record_data(item)
+        if data.get("id") == normalized_id:
+            logger.warning(
+                "octo_ai_record_lookup_fallback entity=%s record_id=%s tenant_id=%s",
+                entity_id,
+                normalized_id,
+                effective_tenant_id,
+            )
+            return item
+    return None
+
+
+def _ai_create_record(entity_id: str, payload: dict, tenant_id: str | None = None) -> dict:
+    effective_tenant_id = tenant_id or get_org_id()
+    record_payload = copy.deepcopy(payload or {})
+    if entity_id in _AI_RECOVERABLE_ENTITY_IDS and not isinstance(record_payload.get("workspace_id"), str):
+        record_payload["workspace_id"] = effective_tenant_id
+    try:
+        return generic_records.create(entity_id, record_payload, tenant_id=effective_tenant_id)
+    except TypeError:
+        try:
+            return generic_records.create(entity_id, record_payload, effective_tenant_id)
+        except TypeError:
+            return generic_records.create(entity_id, record_payload)
+
+
+def _ai_delete_record(entity_id: str, record_id: str, tenant_id: str | None = None) -> bool:
+    if not isinstance(record_id, str):
+        return False
+    normalized_id = record_id.strip()
+    if not normalized_id:
+        return False
+    effective_tenant_id = tenant_id or get_org_id()
+    existing = _ai_get_record(entity_id, normalized_id, tenant_id=effective_tenant_id)
+    if not existing:
+        return False
+    try:
+        generic_records.delete(entity_id, normalized_id, tenant_id=effective_tenant_id)
+    except TypeError:
+        try:
+            generic_records.delete(entity_id, normalized_id, effective_tenant_id)
+        except TypeError:
+            generic_records.delete(entity_id, normalized_id)
+    return True
+
+
+def _ai_update_record(entity_id: str, record_id: str, changes: dict, tenant_id: str | None = None) -> dict | None:
+    if not isinstance(record_id, str):
+        return None
+    normalized_id = record_id.strip()
+    if not normalized_id:
+        return None
+    effective_tenant_id = tenant_id or get_org_id()
+    current = _ai_get_record(entity_id, normalized_id, tenant_id=effective_tenant_id)
+    if not current:
+        return None
+    next_record = copy.deepcopy(current.get("record") or {})
+    next_record.update(copy.deepcopy(changes or {}))
+    try:
+        return generic_records.update(entity_id, normalized_id, next_record, tenant_id=effective_tenant_id)
+    except TypeError:
+        try:
+            return generic_records.update(entity_id, normalized_id, next_record, effective_tenant_id)
+        except TypeError:
+            return generic_records.update(entity_id, normalized_id, next_record)
+
+
+def _ai_record_data(item: dict | None) -> dict:
+    if not isinstance(item, dict):
+        return {}
+    if isinstance(item.get("record"), dict):
+        return item.get("record")
+    if isinstance(item.get("id"), str):
+        return item
+    return {}
+
+
+def _ai_find_record_anywhere(entity_id: str, record_id: str) -> tuple[dict | None, str | None]:
+    if not isinstance(entity_id, str) or not entity_id or not isinstance(record_id, str):
+        return None, None
+    normalized_id = record_id.strip()
+    if not normalized_id:
+        return None, None
+    if hasattr(generic_records, "_records"):
+        buckets = getattr(generic_records, "_records", {})
+        for tenant_id, entities in buckets.items():
+            if not isinstance(entities, dict):
+                continue
+            records = entities.get(entity_id)
+            if not isinstance(records, dict):
+                continue
+            record = records.get(normalized_id)
+            if not isinstance(record, dict):
+                continue
+            return {"record_id": normalized_id, "record": copy.deepcopy(record)}, str(tenant_id)
+        return None, None
+    with get_conn() as conn:
+        row = fetch_one(
+            conn,
+            """
+            select tenant_id, data
+            from records_generic
+            where entity_id=%s and id=%s
+            limit 1
+            """,
+            [entity_id, normalized_id],
+            query_name="records_generic.find_ai_anywhere",
+        )
+        if not row:
+            return None, None
+        data = row.get("data")
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except Exception:
+                data = {}
+        if not isinstance(data, dict):
+            data = {}
+        data.setdefault("id", normalized_id)
+        workspace_id = row.get("tenant_id")
+        return {"record_id": normalized_id, "record": data}, str(workspace_id) if workspace_id else None
+
+
+def _ai_actor_workspace_ids(actor: dict | None) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def _add(value: Any) -> None:
+        if not isinstance(value, str):
+            return
+        workspace_id = value.strip()
+        if not workspace_id or workspace_id in seen:
+            return
+        seen.add(workspace_id)
+        out.append(workspace_id)
+
+    if isinstance(actor, dict):
+        _add(actor.get("workspace_id"))
+        for item in actor.get("workspaces") if isinstance(actor.get("workspaces"), list) else []:
+            if isinstance(item, dict):
+                _add(item.get("workspace_id"))
+    if not out and isinstance(actor, dict) and actor.get("platform_role") == "superadmin":
+        for item in list_all_workspaces():
+            if isinstance(item, dict):
+                _add(item.get("workspace_id"))
+    return out
+
+
+def _ai_actor_for_workspace(actor: dict | None, workspace_id: str) -> dict | None:
+    if not isinstance(actor, dict) or not isinstance(workspace_id, str) or not workspace_id.strip():
+        return actor
+    next_actor = copy.deepcopy(actor)
+    resolved_workspace = workspace_id.strip()
+    next_actor["workspace_id"] = resolved_workspace
+    matched_workspace = next(
+        (
+            item
+            for item in (actor.get("workspaces") or [])
+            if isinstance(item, dict) and item.get("workspace_id") == resolved_workspace
+        ),
+        None,
+    )
+    if isinstance(matched_workspace, dict):
+        role = matched_workspace.get("role")
+        if isinstance(role, str) and role.strip():
+            next_actor["role"] = role.strip()
+            next_actor["workspace_role"] = role.strip()
+    elif actor.get("platform_role") == "superadmin":
+        next_actor["role"] = "admin"
+        next_actor["workspace_role"] = "admin"
+    return next_actor
+
+
+def _ai_resolve_record_for_actor(
+    entity_id: str,
+    record_id: str,
+    actor: dict | None = None,
+) -> tuple[dict | None, str | None, dict | None]:
+    current_workspace_id = get_org_id()
+    record = _ai_get_record(entity_id, record_id, tenant_id=current_workspace_id)
+    if record:
+        return record, current_workspace_id, actor
+    for workspace_id in _ai_actor_workspace_ids(actor):
+        if workspace_id == current_workspace_id:
+            continue
+        record = _ai_get_record(entity_id, record_id, tenant_id=workspace_id)
+        if record:
+            logger.warning(
+                "octo_ai_record_workspace_fallback entity=%s record_id=%s from_workspace=%s to_workspace=%s",
+                entity_id,
+                record_id,
+                current_workspace_id,
+                workspace_id,
+            )
+            return record, workspace_id, _ai_actor_for_workspace(actor, workspace_id)
+    if entity_id in _AI_RECOVERABLE_ENTITY_IDS:
+        record, workspace_id = _ai_find_record_anywhere(entity_id, record_id)
+        workspace_ids = _ai_actor_workspace_ids(actor)
+        actor_user_id = str(actor.get("user_id")) if isinstance(actor, dict) and actor.get("user_id") else ""
+        record_data = _ai_record_data(record)
+        record_owner = str(record_data.get("created_by")) if isinstance(record_data.get("created_by"), str) else ""
+        allow_recovery = (
+            not actor
+            or (isinstance(workspace_id, str) and workspace_id in workspace_ids)
+            or (isinstance(actor, dict) and actor.get("platform_role") == "superadmin")
+            or (entity_id == _AI_ENTITY_SESSION and actor_user_id and actor_user_id == record_owner)
+        )
+        if record and workspace_id and allow_recovery:
+            logger.warning(
+                "octo_ai_record_global_recovery entity=%s record_id=%s from_workspace=%s to_workspace=%s",
+                entity_id,
+                record_id,
+                current_workspace_id,
+                workspace_id,
+            )
+            return record, workspace_id, _ai_actor_for_workspace(actor, workspace_id)
+    return None, None, actor
+
+
+def _ai_resolve_session_record(request: Request, session_id: str, actor: dict | None = None) -> tuple[dict | None, str | None, dict | None]:
+    return _ai_resolve_record_for_actor(_AI_ENTITY_SESSION, session_id, actor=actor)
+
+
+@contextmanager
+def _ai_record_scope(request: Request, entity_id: str, record_id: str, actor: dict | None):
+    record, workspace_id, scoped_actor = _ai_resolve_record_for_actor(entity_id, record_id, actor=actor)
+    if not record or not workspace_id:
+        yield None, None
+        return
+    prior_actor = getattr(request.state, "actor", None)
+    token = None
+    if workspace_id != get_org_id():
+        token = set_org_id(workspace_id)
+    if isinstance(scoped_actor, dict):
+        request.state.actor = scoped_actor
+    try:
+        yield record, workspace_id
+    finally:
+        if prior_actor is not None:
+            request.state.actor = prior_actor
+        elif hasattr(request.state, "actor"):
+            delattr(request.state, "actor")
+        if token is not None:
+            reset_org_id(token)
+
+
+@contextmanager
+def _ai_session_scope(request: Request, session_id: str, actor: dict | None):
+    with _ai_record_scope(request, _AI_ENTITY_SESSION, session_id, actor) as bound:
+        yield bound
+
+
+def _ai_module_manifest_index(request: Request) -> dict[str, dict]:
+    if not USE_DB:
+        _octo_ai_seed_in_memory_baseline_modules()
+    index: dict[str, dict] = {}
+    for mod in _get_registry_list(request):
+        module_id = mod.get("module_id")
+        manifest_hash = mod.get("current_hash")
+        if not isinstance(module_id, str) or not module_id or not isinstance(manifest_hash, str) or not manifest_hash:
+            continue
+        try:
+            manifest = _get_snapshot(request, module_id, manifest_hash)
+        except Exception:
+            continue
+        index[module_id] = {"module": mod, "manifest": manifest}
+    return index
+
+
+def _ai_build_workspace_graph(request: Request) -> dict:
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    module_index = _ai_module_manifest_index(request)
+    module_by_key: dict[str, str] = {}
+
+    for module_id, info in module_index.items():
+        manifest = info.get("manifest") if isinstance(info, dict) else {}
+        module_meta = manifest.get("module") if isinstance(manifest, dict) else {}
+        module_key = module_meta.get("key") if isinstance(module_meta, dict) else None
+        if isinstance(module_key, str) and module_key:
+            module_by_key[module_key] = module_id
+        nodes.append(
+            {
+                "type": "module",
+                "key": module_id,
+                "label": module_meta.get("name") if isinstance(module_meta, dict) else module_id,
+                "summary": {
+                    "version": module_meta.get("version") if isinstance(module_meta, dict) else None,
+                    "module_key": module_key,
+                    "module_name": module_meta.get("name") if isinstance(module_meta, dict) else None,
+                },
+            }
+        )
+        depends_on = normalize_depends_on(manifest if isinstance(manifest, dict) else {})
+        for dep in (depends_on.get("required") or []) + (depends_on.get("optional") or []):
+            if not isinstance(dep, dict):
+                continue
+            dep_mod = dep.get("module")
+            if isinstance(dep_mod, str) and dep_mod:
+                edges.append({"from": module_id, "type": "depends_on", "to": dep_mod})
+
+        entities = manifest.get("entities") if isinstance(manifest, dict) else []
+        for entity in entities if isinstance(entities, list) else []:
+            if not isinstance(entity, dict):
+                continue
+            entity_id = entity.get("id")
+            if not isinstance(entity_id, str) or not entity_id:
+                continue
+            nodes.append({"type": "entity", "key": entity_id, "label": entity_id, "summary": {"module_id": module_id}})
+            edges.append({"from": module_id, "type": "contains", "to": entity_id})
+            fields = entity.get("fields") if isinstance(entity.get("fields"), list) else []
+            for field in fields:
+                if not isinstance(field, dict):
+                    continue
+                field_id = field.get("id")
+                if not isinstance(field_id, str) or not field_id:
+                    continue
+                field_key = f"{entity_id}:{field_id}"
+                nodes.append({"type": "field", "key": field_key, "label": field_id, "summary": {"entity_id": entity_id}})
+                edges.append({"from": entity_id, "type": "contains", "to": field_key})
+                lookup_entity = field.get("entity")
+                if isinstance(lookup_entity, str) and lookup_entity:
+                    normalized = lookup_entity if lookup_entity.startswith("entity.") else f"entity.{lookup_entity}"
+                    edges.append({"from": field_key, "type": "lookup_references", "to": normalized})
+
+        for view in manifest.get("views", []) if isinstance(manifest.get("views"), list) else []:
+            if not isinstance(view, dict):
+                continue
+            view_id = view.get("id")
+            if isinstance(view_id, str) and view_id:
+                nodes.append({"type": "view", "key": view_id, "label": view_id, "summary": {"module_id": module_id}})
+                edges.append({"from": module_id, "type": "contains", "to": view_id})
+
+        for page in manifest.get("pages", []) if isinstance(manifest.get("pages"), list) else []:
+            if not isinstance(page, dict):
+                continue
+            page_id = page.get("id")
+            if isinstance(page_id, str) and page_id:
+                nodes.append({"type": "page", "key": page_id, "label": page.get("title") or page_id, "summary": {"module_id": module_id}})
+                edges.append({"from": module_id, "type": "contains", "to": page_id})
+
+        for action in manifest.get("actions", []) if isinstance(manifest.get("actions"), list) else []:
+            if not isinstance(action, dict):
+                continue
+            action_id = action.get("id")
+            if not isinstance(action_id, str) or not action_id:
+                continue
+            nodes.append({"type": "action", "key": action_id, "label": action.get("label") or action_id, "summary": {"module_id": module_id}})
+            target_entity = action.get("entity_id")
+            if isinstance(target_entity, str) and target_entity:
+                normalized = target_entity if target_entity.startswith("entity.") else f"entity.{target_entity}"
+                edges.append({"from": action_id, "type": "targets", "to": normalized})
+
+        for trig in manifest.get("triggers", []) if isinstance(manifest.get("triggers"), list) else []:
+            if not isinstance(trig, dict):
+                continue
+            trig_id = trig.get("id")
+            if not isinstance(trig_id, str) or not trig_id:
+                continue
+            nodes.append({"type": "trigger", "key": trig_id, "label": trig_id, "summary": {"module_id": module_id}})
+            trig_entity = trig.get("entity_id")
+            trig_action = trig.get("action_id")
+            if isinstance(trig_entity, str):
+                normalized = trig_entity if trig_entity.startswith("entity.") else f"entity.{trig_entity}"
+                edges.append({"from": trig_id, "type": "references", "to": normalized})
+            if isinstance(trig_action, str):
+                edges.append({"from": trig_id, "type": "references", "to": trig_action})
+
+        for tr in manifest.get("transformations", []) if isinstance(manifest.get("transformations"), list) else []:
+            if not isinstance(tr, dict):
+                continue
+            tr_key = tr.get("key")
+            if not isinstance(tr_key, str) or not tr_key:
+                continue
+            nodes.append({"type": "transformation", "key": tr_key, "label": tr_key, "summary": {"module_id": module_id}})
+            src = tr.get("source_entity_id")
+            tgt = tr.get("target_entity_id")
+            if isinstance(src, str):
+                edges.append({"from": tr_key, "type": "source", "to": src if src.startswith("entity.") else f"entity.{src}"})
+            if isinstance(tgt, str):
+                edges.append({"from": tr_key, "type": "target", "to": tgt if tgt.startswith("entity.") else f"entity.{tgt}"})
+
+        interfaces = manifest.get("interfaces") if isinstance(manifest, dict) else None
+        if isinstance(interfaces, dict):
+            for iface_name, entries in interfaces.items():
+                for idx, entry in enumerate(entries if isinstance(entries, list) else []):
+                    if not isinstance(entry, dict):
+                        continue
+                    iface_key = f"{module_id}:{iface_name}:{idx}"
+                    nodes.append({"type": "interface", "key": iface_key, "label": iface_name, "summary": {"module_id": module_id}})
+                    entity_id = entry.get("entity_id")
+                    if isinstance(entity_id, str):
+                        normalized = entity_id if entity_id.startswith("entity.") else f"entity.{entity_id}"
+                        edges.append({"from": iface_key, "type": "participates_with", "to": normalized})
+
+    for automation in automation_store.list() if automation_store else []:
+        if not isinstance(automation, dict):
+            continue
+        aid = automation.get("id")
+        if not isinstance(aid, str) or not aid:
+            continue
+        nodes.append({"type": "automation", "key": aid, "label": automation.get("name") or aid, "summary": {"status": automation.get("status")}})
+        trigger = automation.get("trigger")
+        if isinstance(trigger, dict):
+            for evt in trigger.get("event_types") if isinstance(trigger.get("event_types"), list) else []:
+                if isinstance(evt, str):
+                    edges.append({"from": aid, "type": "references", "to": evt})
+        for step in automation.get("steps") if isinstance(automation.get("steps"), list) else []:
+            if isinstance(step, dict) and isinstance(step.get("action_id"), str):
+                edges.append({"from": aid, "type": "references", "to": step.get("action_id")})
+
+    for conn in connection_store.list() if connection_store else []:
+        if not isinstance(conn, dict):
+            continue
+        cid = conn.get("id")
+        if not isinstance(cid, str) or not cid:
+            continue
+        nodes.append({"type": "integration", "key": cid, "label": conn.get("name") or cid, "summary": {"provider": conn.get("type"), "status": conn.get("status")}})
+        cfg = conn.get("config")
+        if isinstance(cfg, dict):
+            for key in ("module_id", "entity_id", "action_id"):
+                ref = cfg.get(key)
+                if isinstance(ref, str) and ref:
+                    edges.append({"from": cid, "type": "references", "to": ref})
+
+    return {"nodes": nodes, "edges": edges, "module_by_key": module_by_key}
+
+
+def _ai_norm_token(value: str) -> str:
+    if not isinstance(value, str):
+        return ""
+    lowered = value.strip().lower()
+    lowered = re.sub(r"[^a-z0-9]+", " ", lowered)
+    lowered = re.sub(r"\s+", " ", lowered).strip()
+    return lowered
+
+
+def _ai_is_label_confident(label: str) -> bool:
+    if not isinstance(label, str):
+        return False
+    normalized = label.strip()
+    if not normalized:
+        return False
+    if len(normalized) > 40:
+        return False
+    if re.search(r"[,.!?]", normalized):
+        return False
+    words = [word for word in re.split(r"\s+", normalized) if word]
+    if len(words) == 0 or len(words) > 5:
+        return False
+    return True
+
+
+def _is_label_confident(label: str) -> bool:
+    return _ai_is_label_confident(label)
+
+
+def _ai_match_modules_from_text(text: str, graph: dict) -> list[str]:
+    masked_text = _ai_mask_probable_field_labels(_ai_mask_probable_module_creation_labels(text or ""))
+    lowered = masked_text.lower()
+    normalized_text = _ai_norm_token(masked_text)
+    out: list[str] = []
+    for node in graph.get("nodes", []):
+        if not isinstance(node, dict) or node.get("type") != "module":
+            continue
+        key = str(node.get("key") or "")
+        label = str(node.get("label") or "")
+        summary = node.get("summary") if isinstance(node.get("summary"), dict) else {}
+        module_key = str(summary.get("module_key") or "")
+        aliases = [key, label, module_key]
+        for alias in aliases:
+            if not alias:
+                continue
+            alias_norm = _ai_norm_token(alias)
+            if alias.lower() in lowered or (alias_norm and alias_norm in normalized_text):
+                out.append(key)
+                break
+    return sorted(set(out))
+
+
+def _ai_read_doc_snippet(path: Path, limit: int = 3000) -> str:
+    try:
+        return path.read_text(encoding="utf-8")[:limit]
+    except Exception:
+        return ""
+
+
+def _ai_reference_snippets() -> dict[str, str]:
+    manifest_contract = _load_prompt_pack("manifest_contract_v1_3.md")[:3000]
+    layout_rules = _ai_read_doc_snippet(ROOT / "manifests" / "marketplace_v1" / "LAYOUT_STYLE_GUIDE.md", limit=2500)
+    product_context = _ai_read_doc_snippet(ROOT / "README_PRODUCT.md", limit=2000) or _ai_read_doc_snippet(ROOT / "README.md", limit=2000)
+    operations_runbook = _ai_read_doc_snippet(ROOT / "BACKEND_PROD_RUNBOOK.md", limit=2000)
+    return {
+        "manifest_contract": manifest_contract,
+        "layout_rules": layout_rules,
+        "product_context": product_context,
+        "operations_runbook": operations_runbook,
+    }
+
+
+def _ai_search_terms(text: str) -> set[str]:
+    stopwords = {
+        "the", "and", "for", "with", "that", "this", "from", "into", "onto", "than", "then", "your", "our", "their",
+        "have", "has", "had", "would", "could", "should", "please", "make", "change", "update", "module", "field",
+        "form", "list", "view", "page", "tab", "section", "what", "when", "where", "which", "user", "users",
+    }
+    return {
+        token for token in re.findall(r"[a-z0-9_]{3,}", (text or "").lower())
+        if token not in stopwords
+    }
+
+
+def _ai_chunk_text(text: str, max_chars: int = 1200) -> list[str]:
+    chunks: list[str] = []
+    current = ""
+    for piece in [item.strip() for item in re.split(r"\n\s*\n", text or "") if item.strip()]:
+        candidate = piece if not current else f"{current}\n\n{piece}"
+        if len(candidate) <= max_chars:
+            current = candidate
+            continue
+        if current:
+            chunks.append(current)
+        if len(piece) <= max_chars:
+            current = piece
+            continue
+        start = 0
+        while start < len(piece):
+            end = start + max_chars
+            chunks.append(piece[start:end].strip())
+            start = end
+        current = ""
+    if current:
+        chunks.append(current)
+    return chunks[:12]
+
+
+def _ai_kernel_module_digest(module_id: str, manifest: dict) -> dict:
+    module_def = manifest.get("module") if isinstance(manifest, dict) else {}
+    entities = []
+    for entity in manifest.get("entities") if isinstance(manifest.get("entities"), list) else []:
+        if not isinstance(entity, dict):
+            continue
+        entity_id = entity.get("id")
+        if not isinstance(entity_id, str) or not entity_id:
+            continue
+        fields = [field for field in (entity.get("fields") or []) if isinstance(field, dict)]
+        sample_fields = []
+        for field in fields[:12]:
+            field_id = field.get("id")
+            if isinstance(field_id, str) and field_id:
+                sample_fields.append(
+                    {
+                        "id": field_id,
+                        "label": field.get("label"),
+                        "type": field.get("type"),
+                    }
+                )
+        field_counts: dict[str, int] = {}
+        for field in fields:
+            field_id = field.get("id")
+            if isinstance(field_id, str) and field_id:
+                field_counts[field_id] = field_counts.get(field_id, 0) + 1
+        duplicates = [field_id for field_id, count in field_counts.items() if count > 1]
+        entities.append(
+            {
+                "id": entity_id,
+                "display_field": entity.get("display_field"),
+                "field_count": len(fields),
+                "sample_fields": sample_fields,
+                "duplicate_field_ids": duplicates[:5],
+            }
+        )
+    views = []
+    view_kinds: set[str] = set()
+    for view in manifest.get("views") if isinstance(manifest.get("views"), list) else []:
+        if not isinstance(view, dict):
+            continue
+        view_id = view.get("id")
+        if not isinstance(view_id, str) or not view_id:
+            continue
+        kind = view.get("kind")
+        if isinstance(kind, str) and kind:
+            view_kinds.add(kind)
+        item = {"id": view_id, "kind": kind, "entity": view.get("entity")}
+        if view.get("kind") == "form":
+            item["tabs"] = _ai_form_tab_catalog(manifest, view.get("entity") if isinstance(view.get("entity"), str) else "")[:8]
+            item["sections"] = [
+                {
+                    "id": section.get("id"),
+                    "title": section.get("title"),
+                    "fields": [field for field in (section.get("fields") or []) if isinstance(field, str)][:20],
+                }
+                for section in (view.get("sections") or [])
+                if isinstance(section, dict) and isinstance(section.get("id"), str)
+            ][:10]
+        if view.get("kind") == "list":
+            item["columns"] = [
+                {
+                    "field_id": column.get("field_id"),
+                    "label": column.get("label"),
+                }
+                for column in (view.get("columns") or [])
+                if isinstance(column, dict) and isinstance(column.get("field_id"), str)
+            ][:20]
+        views.append(item)
+    pages = []
+    for page in manifest.get("pages") if isinstance(manifest.get("pages"), list) else []:
+        if not isinstance(page, dict):
+            continue
+        page_id = page.get("id")
+        if not isinstance(page_id, str) or not page_id:
+            continue
+        content = page.get("content") if isinstance(page.get("content"), list) else []
+        page_views = _studio2_extract_view_ids_from_blocks(content)
+        page_modes: list[str] = []
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            nested = block.get("content") if isinstance(block.get("content"), list) else []
+            all_blocks = [block, *[item for item in nested if isinstance(item, dict)]]
+            for candidate in all_blocks:
+                if candidate.get("kind") != "view_modes":
+                    continue
+                for mode in candidate.get("modes") if isinstance(candidate.get("modes"), list) else []:
+                    mode_name = mode.get("mode") if isinstance(mode, dict) and isinstance(mode.get("mode"), str) else None
+                    if isinstance(mode_name, str) and mode_name and mode_name not in page_modes:
+                        page_modes.append(mode_name)
+        pages.append(
+            {
+                "id": page_id,
+                "title": page.get("title"),
+                "layout": page.get("layout"),
+                "entity_id": page.get("entity_id"),
+                "view_targets": page_views[:10],
+                "view_modes": page_modes[:10],
+            }
+        )
+    workflows = []
+    for workflow in manifest.get("workflows") if isinstance(manifest.get("workflows"), list) else []:
+        if not isinstance(workflow, dict):
+            continue
+        workflow_id = workflow.get("id")
+        if not isinstance(workflow_id, str) or not workflow_id:
+            continue
+        states = [state for state in (workflow.get("states") or []) if isinstance(state, dict)]
+        transitions = [transition for transition in (workflow.get("transitions") or []) if isinstance(transition, dict)]
+        workflows.append(
+            {
+                "id": workflow_id,
+                "entity": workflow.get("entity"),
+                "status_field": workflow.get("status_field"),
+                "states": [{"id": state.get("id"), "label": state.get("label")} for state in states[:10]],
+                "transition_count": len(transitions),
+            }
+        )
+    interfaces = []
+    raw_interfaces = manifest.get("interfaces") if isinstance(manifest, dict) else None
+    if isinstance(raw_interfaces, dict):
+        for iface_name, entries in raw_interfaces.items():
+            entry_list = [entry for entry in entries if isinstance(entry, dict)] if isinstance(entries, list) else []
+            if not entry_list:
+                continue
+            interfaces.append(
+                {
+                    "name": iface_name,
+                    "count": len(entry_list),
+                    "entities": [
+                        entry.get("entity_id")
+                        for entry in entry_list
+                        if isinstance(entry.get("entity_id"), str)
+                    ][:8],
+                }
+            )
+    triggers = []
+    for trigger in manifest.get("triggers") if isinstance(manifest.get("triggers"), list) else []:
+        if not isinstance(trigger, dict):
+            continue
+        trigger_id = trigger.get("id")
+        if not isinstance(trigger_id, str) or not trigger_id:
+            continue
+        triggers.append(
+            {
+                "id": trigger_id,
+                "event": trigger.get("event"),
+                "entity_id": trigger.get("entity_id"),
+                "action_id": trigger.get("action_id"),
+            }
+        )
+    relations = [
+        {
+            "id": relation.get("id"),
+            "from_entity": relation.get("from_entity"),
+            "to_entity": relation.get("to_entity"),
+            "kind": relation.get("kind"),
+        }
+        for relation in (manifest.get("relations") or [])
+        if isinstance(relation, dict) and isinstance(relation.get("id"), str)
+    ]
+    depends_on = normalize_depends_on(manifest if isinstance(manifest, dict) else {})
+    dependency_summary = {
+        "required": [
+            item.get("module")
+            for item in (depends_on.get("required") or [])
+            if isinstance(item, dict) and isinstance(item.get("module"), str)
+        ][:8],
+        "optional": [
+            item.get("module")
+            for item in (depends_on.get("optional") or [])
+            if isinstance(item, dict) and isinstance(item.get("module"), str)
+        ][:8],
+    }
+    feature_flags = {
+        "has_form": "form" in view_kinds,
+        "has_list": "list" in view_kinds,
+        "has_kanban": "kanban" in view_kinds,
+        "has_calendar": "calendar" in view_kinds,
+        "has_graph": "graph" in view_kinds,
+        "has_workflow": bool(workflows),
+        "has_triggers": bool(triggers),
+        "has_relations": bool(relations),
+        "has_documentable": any(item.get("name") == "documentable" for item in interfaces),
+        "has_dashboardable": any(item.get("name") == "dashboardable" for item in interfaces),
+        "has_schedulable": any(item.get("name") == "schedulable" for item in interfaces),
+    }
+    return {
+        "module_id": module_id,
+        "module_key": module_def.get("key") if isinstance(module_def, dict) else None,
+        "module_name": module_def.get("name") if isinstance(module_def, dict) else None,
+        "module_category": module_def.get("category") if isinstance(module_def, dict) else None,
+        "module_description": module_def.get("description") if isinstance(module_def, dict) else None,
+        "entities": entities[:6],
+        "views": views[:10],
+        "pages": pages[:10],
+        "workflows": workflows[:6],
+        "interfaces": interfaces[:10],
+        "actions": [
+            {
+                "id": action.get("id"),
+                "kind": action.get("kind"),
+                "label": action.get("label"),
+                "entity_id": action.get("entity_id"),
+            }
+            for action in (manifest.get("actions") or [])
+            if isinstance(action, dict) and isinstance(action.get("id"), str)
+        ][:20],
+        "triggers": triggers[:20],
+        "relations": relations[:20],
+        "dependencies": dependency_summary,
+        "feature_flags": feature_flags,
+        "notable_issues": _ai_manifest_notable_issues(manifest),
+    }
+
+
+def _ai_reference_documents(module_ids: list[str], module_index: dict[str, dict], message: str) -> list[dict]:
+    documents: list[dict] = []
+    static_paths = [
+        ROOT / "README_PRODUCT.md",
+        ROOT / "README.md",
+        ROOT / "MANIFEST_CONTRACT.md",
+        ROOT / "TEMPLATE_EDITOR_GUIDE.md",
+        ROOT / "BACKEND_PROD_RUNBOOK.md",
+        ROOT / "DEPLOYMENT_CHECKLIST_AUNZ.md",
+        ROOT / "manifests" / "marketplace_v1" / "README.md",
+        ROOT / "manifests" / "marketplace_v1" / "LAYOUT_STYLE_GUIDE.md",
+        ROOT / "manifests" / "marketplace_v1" / "UAT_REGRESSION_MATRIX.md",
+        ROOT / "app" / "ai" / "prompt_packs" / "manifest_contract_v1_3.md",
+        ROOT / "app" / "ai" / "prompt_packs" / "planner.md",
+        ROOT / "app" / "ai" / "prompt_packs" / "system.md",
+        ROOT / "app" / "ai" / "prompt_packs" / "patch_protocol.md",
+    ]
+    for path in static_paths:
+        text = _ai_read_doc_snippet(path, limit=7000)
+        if text:
+            documents.append(
+                {
+                    "kind": "doc",
+                    "path": str(path.relative_to(ROOT)),
+                    "title": path.name,
+                    "text": text,
+                }
+            )
+    pattern_memory = _load_pattern_memory()
+    patterns = pattern_memory.get("patterns") if isinstance(pattern_memory, dict) else {}
+    for key, value in patterns.items() if isinstance(patterns, dict) else []:
+        documents.append(
+            {
+                "kind": "pattern",
+                "path": f"app/ai/patterns.json#{key}",
+                "title": f"Pattern {key}",
+                "text": json.dumps(value, default=str),
+            }
+        )
+    inferred_pattern = _infer_pattern_key(message, " ".join(module_ids))
+    inferred_example_paths = []
+    if inferred_pattern:
+        inferred_example_paths.extend(
+            [
+                ROOT / "manifests" / f"{inferred_pattern}.json",
+                ROOT / "manifests" / "marketplace_v1" / f"{inferred_pattern}.json",
+            ]
+        )
+    if not inferred_pattern or inferred_pattern == "todo":
+        inferred_example_paths.extend(
+            [
+                ROOT / "manifests" / "marketplace_v1" / "tasks.json",
+                ROOT / "manifests" / "marketplace_v1" / "contacts.json",
+            ]
+        )
+    if inferred_pattern == "jobs":
+        inferred_example_paths.append(ROOT / "manifests" / "marketplace_v1" / "jobs.json")
+    seen_inferred_paths: set[str] = set()
+    for path in inferred_example_paths:
+        key = str(path)
+        if key in seen_inferred_paths or not path.exists():
+            continue
+        seen_inferred_paths.add(key)
+        text = _ai_read_doc_snippet(path, limit=7000)
+        if text:
+            documents.append(
+                {
+                    "kind": "example_manifest",
+                    "path": str(path.relative_to(ROOT)),
+                    "title": path.name,
+                    "text": text,
+                }
+            )
+    for module_id in module_ids[:4]:
+        manifest = (module_index.get(module_id) or {}).get("manifest") or {}
+        digest = _ai_kernel_module_digest(module_id, manifest)
+        documents.append(
+            {
+                "kind": "workspace_module",
+                "path": f"workspace:{module_id}",
+                "title": f"Workspace module {module_id}",
+                "text": json.dumps(digest, default=str),
+            }
+        )
+        module_def = manifest.get("module") if isinstance(manifest, dict) else {}
+        module_key = module_def.get("key") if isinstance(module_def, dict) else None
+        candidate_paths = []
+        if isinstance(module_key, str) and module_key:
+            candidate_paths.extend(
+                [
+                    ROOT / "manifests" / f"{module_key}.json",
+                    ROOT / "manifests" / "marketplace_v1" / f"{module_key}.json",
+                ]
+            )
+        if inferred_pattern and isinstance(module_key, str) and module_key == inferred_pattern:
+            candidate_paths.extend(
+                [
+                    ROOT / "manifests" / f"{inferred_pattern}.json",
+                    ROOT / "manifests" / "marketplace_v1" / f"{inferred_pattern}.json",
+                ]
+            )
+        seen_paths: set[str] = set()
+        for path in candidate_paths:
+            key = str(path)
+            if key in seen_paths or not path.exists():
+                continue
+            seen_paths.add(key)
+            text = _ai_read_doc_snippet(path, limit=7000)
+            if text:
+                documents.append(
+                    {
+                        "kind": "example_manifest",
+                        "path": str(path.relative_to(ROOT)),
+                        "title": path.name,
+                        "text": text,
+                    }
+                )
+    return documents
+
+
+def _ai_relevant_references(message: str, module_ids: list[str], module_index: dict[str, dict], limit: int = 6) -> list[dict]:
+    query_terms = _ai_search_terms(message)
+    if not query_terms:
+        return []
+    docs = _ai_reference_documents(module_ids, module_index, message)
+    scored: list[dict] = []
+    for doc in docs:
+        title = doc.get("title") if isinstance(doc.get("title"), str) else ""
+        path = doc.get("path") if isinstance(doc.get("path"), str) else ""
+        kind = doc.get("kind") if isinstance(doc.get("kind"), str) else "doc"
+        text = doc.get("text") if isinstance(doc.get("text"), str) else ""
+        chunks = _ai_chunk_text(text, max_chars=1200)
+        for idx, chunk in enumerate(chunks):
+            chunk_terms = _ai_search_terms(f"{title}\n{path}\n{chunk}")
+            overlap = len(query_terms & chunk_terms)
+            if overlap == 0:
+                continue
+            score = overlap
+            if any(term in _ai_norm_token(title) for term in query_terms):
+                score += 2
+            if any(term in _ai_norm_token(path) for term in query_terms):
+                score += 2
+            if kind in {"workspace_module", "pattern"}:
+                score += 1
+            scored.append(
+                {
+                    "kind": kind,
+                    "title": title,
+                    "path": path,
+                    "snippet": chunk[:1200],
+                    "score": score,
+                    "chunk_index": idx,
+                }
+            )
+    scored.sort(key=lambda item: (int(item.get("score") or 0), str(item.get("title") or "")), reverse=True)
+    out: list[dict] = []
+    seen: set[tuple[str, int]] = set()
+    for item in scored:
+        key = (str(item.get("path") or ""), int(item.get("chunk_index") or 0))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({k: v for k, v in item.items() if k != "chunk_index"})
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _ai_semantic_session_memory(session: dict) -> dict:
+    memory: dict[str, Any] = {}
+    if not isinstance(session, dict):
+        return memory
+    if isinstance(session.get("summary"), str) and session.get("summary").strip():
+        memory["latest_session_summary"] = session.get("summary").strip()
+    if isinstance(session.get("last_error"), str) and session.get("last_error").strip():
+        memory["latest_session_error"] = session.get("last_error").strip()
+    session_id = session.get("id")
+    if isinstance(session_id, str) and session_id:
+        latest_plan = _ai_latest_plan_for_session(session_id)
+        if isinstance(latest_plan, dict):
+            questions = [item for item in (latest_plan.get("questions_json") or []) if isinstance(item, str) and item.strip()]
+            if questions:
+                memory["latest_pending_question"] = questions[0]
+            plan_json = latest_plan.get("plan_json") if isinstance(latest_plan.get("plan_json"), dict) else {}
+            plan_body = plan_json.get("plan") if isinstance(plan_json.get("plan"), dict) else {}
+            planner_state = plan_body.get("planner_state") if isinstance(plan_body.get("planner_state"), dict) else {}
+            if planner_state:
+                memory["latest_planner_state"] = planner_state
+    return memory
+
+
+def _ai_manifest_notable_issues(manifest: dict, limit: int = 4) -> list[str]:
+    issues: list[str] = []
+    if not isinstance(manifest, dict):
+        return issues
+    entities = manifest.get("entities") if isinstance(manifest.get("entities"), list) else []
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+        entity_id = entity.get("id")
+        if not isinstance(entity_id, str) or not entity_id:
+            continue
+        field_counts: dict[str, int] = {}
+        for field in entity.get("fields") if isinstance(entity.get("fields"), list) else []:
+            if not isinstance(field, dict):
+                continue
+            field_id = field.get("id")
+            if isinstance(field_id, str) and field_id:
+                field_counts[field_id] = field_counts.get(field_id, 0) + 1
+        duplicates = sorted([field_id for field_id, count in field_counts.items() if count > 1])
+        if duplicates:
+            issues.append(f"{entity_id} has duplicate field ids: {', '.join(duplicates[:3])}")
+        if len(issues) >= limit:
+            return issues[:limit]
+    for view in manifest.get("views") if isinstance(manifest.get("views"), list) else []:
+        if not isinstance(view, dict) or view.get("kind") != "form":
+            continue
+        view_id = view.get("id")
+        if not isinstance(view_id, str) or not view_id:
+            continue
+        tabs = _ai_form_tab_catalog(manifest, view.get("entity") if isinstance(view.get("entity"), str) else "")
+        sections = [section for section in (view.get("sections") or []) if isinstance(section, dict)]
+        if tabs and not sections:
+            issues.append(f"{view_id} defines tabs but has no sections.")
+        if len(issues) >= limit:
+            return issues[:limit]
+    return issues[:limit]
+
+
+def _ai_module_brief_for_semantic_planner(module_id: str, manifest: dict) -> dict:
+    module_def = manifest.get("module") if isinstance(manifest, dict) else {}
+    entities = []
+    for entity in manifest.get("entities") if isinstance(manifest.get("entities"), list) else []:
+        if not isinstance(entity, dict):
+            continue
+        entity_id = entity.get("id")
+        if not isinstance(entity_id, str) or not entity_id:
+            continue
+        fields = []
+        for field in entity.get("fields") if isinstance(entity.get("fields"), list) else []:
+            if not isinstance(field, dict):
+                continue
+            field_id = field.get("id")
+            if not isinstance(field_id, str) or not field_id:
+                continue
+            fields.append({"id": field_id, "type": field.get("type"), "label": field.get("label")})
+        entities.append({"id": entity_id, "fields": fields[:40]})
+    views = []
+    for view in manifest.get("views") if isinstance(manifest.get("views"), list) else []:
+        if not isinstance(view, dict):
+            continue
+        view_id = view.get("id")
+        if not isinstance(view_id, str) or not view_id:
+            continue
+        item = {"id": view_id, "kind": view.get("kind"), "entity": view.get("entity")}
+        if view.get("kind") == "form":
+            sections = []
+            for section in view.get("sections") if isinstance(view.get("sections"), list) else []:
+                if not isinstance(section, dict):
+                    continue
+                section_id = section.get("id")
+                if not isinstance(section_id, str) or not section_id:
+                    continue
+                section_fields = [f for f in (section.get("fields") or []) if isinstance(f, str)]
+                sections.append({"id": section_id, "fields": section_fields[:30]})
+            item["sections"] = sections[:10]
+            item["tabs"] = _ai_form_tab_catalog(manifest, view.get("entity") if isinstance(view.get("entity"), str) else "")[:8]
+        if view.get("kind") == "list":
+            columns = []
+            for col in view.get("columns") if isinstance(view.get("columns"), list) else []:
+                if not isinstance(col, dict):
+                    continue
+                field_id = col.get("field_id")
+                if isinstance(field_id, str) and field_id:
+                    columns.append({"field_id": field_id, "label": col.get("label")})
+            item["columns"] = columns[:40]
+        views.append(item)
+    actions = []
+    for action in manifest.get("actions") if isinstance(manifest.get("actions"), list) else []:
+        if not isinstance(action, dict):
+            continue
+        action_id = action.get("id")
+        if not isinstance(action_id, str) or not action_id:
+            continue
+        actions.append(
+            {
+                "id": action_id,
+                "kind": action.get("kind"),
+                "entity_id": action.get("entity_id"),
+                "label": action.get("label"),
+            }
+        )
+    return {
+        "module_id": module_id,
+        "module_key": module_def.get("key") if isinstance(module_def, dict) else None,
+        "module_name": module_def.get("name") if isinstance(module_def, dict) else None,
+        "entities": entities[:10],
+        "views": views[:20],
+        "actions": actions[:20],
+        "notable_issues": _ai_manifest_notable_issues(manifest),
+    }
+
+
+def _ai_detect_planning_mode(message: str, *, create_module_intent: bool = False, preview_only: bool = False) -> str:
+    if preview_only:
+        return "preview_only"
+    if create_module_intent or _ai_is_create_module_request(message):
+        return "create_module_design"
+    return "workspace_change"
+
+
+def _ai_workspace_change_context_modules(
+    graph: dict,
+    module_index: dict[str, dict],
+    seed_modules: list[str] | None,
+    *,
+    limit: int = 8,
+) -> list[str]:
+    ordered_seeds = [
+        module_id
+        for module_id in (seed_modules or [])
+        if isinstance(module_id, str) and module_id in module_index
+    ]
+    ordered_seeds = list(dict.fromkeys(ordered_seeds))
+    if not ordered_seeds:
+        return list(module_index.keys())[:limit]
+
+    adjacency: dict[str, set[str]] = {}
+    module_nodes = {
+        node.get("key")
+        for node in (graph.get("nodes") or [])
+        if isinstance(node, dict) and node.get("type") == "module" and isinstance(node.get("key"), str)
+    }
+    for edge in graph.get("edges") if isinstance(graph.get("edges"), list) else []:
+        if not isinstance(edge, dict):
+            continue
+        src = edge.get("from")
+        dst = edge.get("to")
+        if not isinstance(src, str) or not isinstance(dst, str) or not src or not dst:
+            continue
+        adjacency.setdefault(src, set()).add(dst)
+        adjacency.setdefault(dst, set()).add(src)
+
+    ordered_modules: list[str] = []
+    visited: set[str] = set()
+    queue: list[tuple[str, int]] = [(module_id, 0) for module_id in ordered_seeds]
+    max_depth = 3
+    while queue and len(ordered_modules) < limit:
+        node_id, depth = queue.pop(0)
+        if node_id in visited:
+            continue
+        visited.add(node_id)
+        if node_id in module_nodes and node_id in module_index and node_id not in ordered_modules:
+            ordered_modules.append(node_id)
+        if depth >= max_depth:
+            continue
+        neighbors = sorted(adjacency.get(node_id, set()))
+        for neighbor in neighbors:
+            if neighbor not in visited:
+                queue.append((neighbor, depth + 1))
+
+    for module_id in ordered_seeds:
+        if module_id not in ordered_modules and module_id in module_index:
+            ordered_modules.append(module_id)
+        if len(ordered_modules) >= limit:
+            return ordered_modules[:limit]
+
+    for module_id in module_index.keys():
+        if module_id not in ordered_modules:
+            ordered_modules.append(module_id)
+        if len(ordered_modules) >= limit:
+            break
+    return ordered_modules[:limit]
+
+
+def _ai_semantic_context_modules(
+    session: dict,
+    module_index: dict[str, dict],
+    graph: dict,
+    initial_module_ids: list[str],
+    planning_mode: str,
+) -> list[str]:
+    selected_module = None
+    if session.get("selected_artifact_type") == "module" and isinstance(session.get("selected_artifact_key"), str):
+        selected_module = session.get("selected_artifact_key")
+
+    if planning_mode == "workspace_change":
+        seed_modules: list[str] = []
+        if isinstance(selected_module, str) and selected_module in module_index:
+            seed_modules.append(selected_module)
+        for module_id in initial_module_ids:
+            if isinstance(module_id, str) and module_id in module_index and module_id not in seed_modules:
+                seed_modules.append(module_id)
+        return _ai_workspace_change_context_modules(graph, module_index, seed_modules, limit=8)
+
+    ordered_modules: list[str] = []
+    if isinstance(selected_module, str) and selected_module in module_index:
+        ordered_modules.append(selected_module)
+    for module_id in initial_module_ids:
+        if isinstance(module_id, str) and module_id in module_index and module_id not in ordered_modules:
+            ordered_modules.append(module_id)
+    for module_id in module_index.keys():
+        if module_id not in ordered_modules:
+            ordered_modules.append(module_id)
+        if len(ordered_modules) >= 8:
+            break
+    return ordered_modules[:8]
+
+
+def _ai_field_count_in_entity(entity: dict, field_id: str) -> int:
+    if not isinstance(entity, dict) or not isinstance(field_id, str) or not field_id:
+        return 0
+    fields = entity.get("fields") if isinstance(entity.get("fields"), list) else []
+    count = 0
+    for field in fields:
+        if isinstance(field, dict) and field.get("id") == field_id:
+            count += 1
+    return count
+
+
+def _ai_match_field_in_entity(entity: dict, field_ref: str) -> dict | None:
+    if not isinstance(entity, dict) or not isinstance(field_ref, str) or not field_ref.strip():
+        return None
+    needle = _ai_norm_token(field_ref)
+    candidate_needles = [needle] if needle else []
+    for suffix in (" field", " attribute"):
+        if needle.endswith(suffix):
+            trimmed = needle[: -len(suffix)].strip()
+            if trimmed and trimmed not in candidate_needles:
+                candidate_needles.append(trimmed)
+    for field in entity.get("fields") if isinstance(entity.get("fields"), list) else []:
+        if not isinstance(field, dict):
+            continue
+        field_id = field.get("id")
+        if not isinstance(field_id, str) or not field_id:
+            continue
+        field_label = field.get("label") if isinstance(field.get("label"), str) else ""
+        short_id = field_id.split(".", 1)[-1] if "." in field_id else field_id
+        candidates = {
+            _ai_norm_token(field_id),
+            _ai_norm_token(short_id),
+            _ai_norm_token(field_label),
+        }
+        normalized_candidates = {candidate for candidate in candidates if candidate}
+        if any(current and current in normalized_candidates for current in candidate_needles):
+            return field
+    return None
+
+
+def _ai_find_entity_by_id(manifest: dict, entity_id: str) -> dict | None:
+    if not isinstance(manifest, dict) or not isinstance(entity_id, str) or not entity_id:
+        return None
+    normalized = entity_id if entity_id.startswith("entity.") else f"entity.{entity_id}"
+    for entity in manifest.get("entities") if isinstance(manifest.get("entities"), list) else []:
+        if isinstance(entity, dict) and entity.get("id") == normalized:
+            return entity
+    return None
+
+
+def _ai_find_form_and_list_views(manifest: dict, entity_id: str | None) -> tuple[dict | None, dict | None]:
+    if not isinstance(manifest, dict):
+        return None, None
+    views = manifest.get("views") if isinstance(manifest.get("views"), list) else []
+    normalized_entity = None
+    if isinstance(entity_id, str) and entity_id:
+        normalized_entity = entity_id if entity_id.startswith("entity.") else f"entity.{entity_id}"
+    form_view = None
+    list_view = None
+    for view in views:
+        if not isinstance(view, dict):
+            continue
+        kind = view.get("kind")
+        entity_ref = view.get("entity")
+        normalized_entity_ref = entity_ref if isinstance(entity_ref, str) and entity_ref.startswith("entity.") else f"entity.{entity_ref}" if isinstance(entity_ref, str) else None
+        if kind == "form" and form_view is None:
+            if normalized_entity is None or normalized_entity_ref == normalized_entity:
+                form_view = view
+        if kind == "list" and list_view is None:
+            if normalized_entity is None or normalized_entity_ref == normalized_entity:
+                list_view = view
+    if form_view is None:
+        for view in views:
+            if isinstance(view, dict) and view.get("kind") == "form":
+                form_view = view
+                break
+    if list_view is None:
+        for view in views:
+            if isinstance(view, dict) and view.get("kind") == "list":
+                list_view = view
+                break
+    return form_view, list_view
+
+
+def _ai_find_form_field_location(manifest: dict, field_ref: str) -> dict | None:
+    if not isinstance(manifest, dict) or not isinstance(field_ref, str) or not field_ref.strip():
+        return None
+    needle = _ai_norm_token(field_ref)
+    if not needle:
+        return None
+    entity_by_field: dict[str, tuple[str, dict]] = {}
+    for entity in manifest.get("entities") if isinstance(manifest.get("entities"), list) else []:
+        if not isinstance(entity, dict):
+            continue
+        entity_id = entity.get("id")
+        if not isinstance(entity_id, str) or not entity_id:
+            continue
+        for field in entity.get("fields") if isinstance(entity.get("fields"), list) else []:
+            if not isinstance(field, dict):
+                continue
+            field_id = field.get("id")
+            if isinstance(field_id, str) and field_id:
+                entity_by_field[field_id] = (entity_id, field)
+    candidates: list[dict] = []
+    for view in manifest.get("views") if isinstance(manifest.get("views"), list) else []:
+        if not isinstance(view, dict) or view.get("kind") != "form":
+            continue
+        view_id = view.get("id")
+        if not isinstance(view_id, str) or not view_id:
+            continue
+        entity_ref = view.get("entity")
+        normalized_entity_ref = entity_ref if isinstance(entity_ref, str) and entity_ref.startswith("entity.") else f"entity.{entity_ref}" if isinstance(entity_ref, str) else None
+        for section in view.get("sections") if isinstance(view.get("sections"), list) else []:
+            if not isinstance(section, dict):
+                continue
+            section_id = section.get("id")
+            if not isinstance(section_id, str) or not section_id:
+                continue
+            fields = [item for item in (section.get("fields") or []) if isinstance(item, str)]
+            for idx, field_id in enumerate(fields):
+                norm_id = _ai_norm_token(field_id)
+                field_meta = entity_by_field.get(field_id)
+                label = field_meta[1].get("label") if field_meta and isinstance(field_meta[1], dict) else None
+                entity_id = field_meta[0] if field_meta else normalized_entity_ref
+                norm_label = _ai_norm_token(label) if isinstance(label, str) else ""
+                short_id = field_id.split(".", 1)[-1] if "." in field_id else field_id
+                norm_short_id = _ai_norm_token(short_id)
+                if needle in {norm_id, norm_label, norm_short_id} or needle == norm_id or needle == norm_short_id or (norm_label and needle == norm_label):
+                    candidates.append(
+                        {
+                            "view_id": view_id,
+                            "section_id": section_id,
+                            "field_id": field_id,
+                            "entity_id": entity_id,
+                            "index": idx,
+                            "count": len(fields),
+                        }
+                    )
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
+
+def _ai_find_list_field_reference(manifest: dict, field_ref: str) -> dict | None:
+    if not isinstance(manifest, dict) or not isinstance(field_ref, str) or not field_ref.strip():
+        return None
+    needle = _ai_norm_token(field_ref)
+    if not needle:
+        return None
+    candidates: list[dict] = []
+    for view in manifest.get("views") if isinstance(manifest.get("views"), list) else []:
+        if not isinstance(view, dict) or view.get("kind") != "list":
+            continue
+        view_id = view.get("id")
+        if not isinstance(view_id, str) or not view_id:
+            continue
+        for column in view.get("columns") if isinstance(view.get("columns"), list) else []:
+            if not isinstance(column, dict):
+                continue
+            field_id = column.get("field_id")
+            if not isinstance(field_id, str) or not field_id:
+                continue
+            short_id = field_id.split(".", 1)[-1] if "." in field_id else field_id
+            label = column.get("label") if isinstance(column.get("label"), str) else None
+            tokens = {_ai_norm_token(field_id), _ai_norm_token(short_id), _ai_norm_token(label or "")}
+            tokens = {token for token in tokens if token}
+            if needle in tokens:
+                candidates.append({"view_id": view_id, "field_id": field_id})
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
+
+def _ai_remove_view_mode_from_blocks(blocks: list, target_kind: str, target_view_id: str | None = None) -> tuple[list, bool]:
+    changed_any = False
+
+    def _normalize_target(value: Any) -> str | None:
+        if not isinstance(value, str) or not value:
+            return None
+        return value.split("view:", 1)[1] if value.startswith("view:") else value
+
+    def visit(block: Any) -> tuple[Any, bool]:
+        if not isinstance(block, dict):
+            return copy.deepcopy(block), False
+        changed = False
+        next_block = copy.deepcopy(block)
+        if next_block.get("kind") == "view_modes" and isinstance(next_block.get("modes"), list):
+            kept_modes = []
+            removed_default = False
+            for mode in next_block.get("modes") or []:
+                if not isinstance(mode, dict):
+                    kept_modes.append(copy.deepcopy(mode))
+                    continue
+                mode_name = mode.get("mode") if isinstance(mode.get("mode"), str) else ""
+                mode_target = _normalize_target(mode.get("target"))
+                should_remove = mode_name == target_kind or (isinstance(target_view_id, str) and target_view_id and mode_target == target_view_id)
+                if should_remove:
+                    if next_block.get("default_mode") == mode_name:
+                        removed_default = True
+                    changed = True
+                    continue
+                kept_modes.append(copy.deepcopy(mode))
+            if changed:
+                next_block["modes"] = kept_modes
+                if removed_default:
+                    next_block["default_mode"] = kept_modes[0].get("mode") if kept_modes and isinstance(kept_modes[0], dict) else None
+
+        content = next_block.get("content")
+        if isinstance(content, list):
+            next_content = []
+            for item in content:
+                updated, item_changed = visit(item)
+                changed = changed or item_changed
+                next_content.append(updated)
+            next_block["content"] = next_content
+
+        items = next_block.get("items")
+        if isinstance(items, list):
+            next_items = []
+            for item in items:
+                if not isinstance(item, dict):
+                    next_items.append(copy.deepcopy(item))
+                    continue
+                next_item = copy.deepcopy(item)
+                item_content = next_item.get("content")
+                if isinstance(item_content, list):
+                    next_item_content = []
+                    item_changed = False
+                    for child in item_content:
+                        updated, child_changed = visit(child)
+                        item_changed = item_changed or child_changed
+                        next_item_content.append(updated)
+                    next_item["content"] = next_item_content
+                    changed = changed or item_changed
+                next_items.append(next_item)
+            next_block["items"] = next_items
+
+        tabs = next_block.get("tabs")
+        if isinstance(tabs, list):
+            next_tabs = []
+            for tab in tabs:
+                if not isinstance(tab, dict):
+                    next_tabs.append(copy.deepcopy(tab))
+                    continue
+                next_tab = copy.deepcopy(tab)
+                tab_content = next_tab.get("content")
+                if isinstance(tab_content, list):
+                    next_tab_content = []
+                    tab_changed = False
+                    for child in tab_content:
+                        updated, child_changed = visit(child)
+                        tab_changed = tab_changed or child_changed
+                        next_tab_content.append(updated)
+                    next_tab["content"] = next_tab_content
+                    changed = changed or tab_changed
+                next_tabs.append(next_tab)
+            next_block["tabs"] = next_tabs
+        return next_block, changed
+
+    next_blocks = []
+    for block in blocks or []:
+        updated, changed = visit(block)
+        changed_any = changed_any or changed
+        next_blocks.append(updated)
+    return next_blocks, changed_any
+
+
+def _ai_build_remove_view_mode_ops(manifest: dict, module_id: str, entity_id: str | None, target_kind: str) -> tuple[list[dict], str | None]:
+    if not isinstance(manifest, dict):
+        return [], "Module manifest missing."
+    normalized_entity = entity_id if isinstance(entity_id, str) and entity_id.startswith("entity.") else f"entity.{entity_id}" if isinstance(entity_id, str) and entity_id else None
+    views = [view for view in (manifest.get("views") or []) if isinstance(view, dict)]
+    pages = [page for page in (manifest.get("pages") or []) if isinstance(page, dict)]
+    target_views = []
+    for view in views:
+        if view.get("kind") != target_kind or not isinstance(view.get("id"), str):
+            continue
+        entity_ref = view.get("entity")
+        normalized_entity_ref = entity_ref if isinstance(entity_ref, str) and entity_ref.startswith("entity.") else f"entity.{entity_ref}" if isinstance(entity_ref, str) else None
+        if normalized_entity and normalized_entity_ref and normalized_entity_ref != normalized_entity:
+            continue
+        target_views.append(view)
+    target_view_ids = [view.get("id") for view in target_views if isinstance(view.get("id"), str)]
+    ops: list[dict] = []
+    page_changed = False
+    for page in pages:
+        page_id = page.get("id")
+        if not isinstance(page_id, str) or not page_id:
+            continue
+        next_content, changed = _ai_remove_view_mode_from_blocks(page.get("content") if isinstance(page.get("content"), list) else [], target_kind, target_view_ids[0] if target_view_ids else None)
+        if changed:
+            page_changed = True
+            ops.append(
+                {
+                    "op": "update_page",
+                    "artifact_type": "module",
+                    "artifact_id": module_id,
+                    "page_id": page_id,
+                    "changes": {"content": next_content},
+                }
+            )
+    for view_id in target_view_ids:
+        ops.append({"op": "remove_view", "artifact_type": "module", "artifact_id": module_id, "view_id": view_id})
+    if not ops:
+        if target_views:
+            return [], f"No page-level '{target_kind}' view mode was found to remove from this module."
+        return [], f"No {target_kind} view is currently configured for this module."
+    if target_views and not page_changed:
+        return ops, f"The {target_kind} view exists but is not exposed through a page-level view switcher."
+    return ops, None
+
+
+def _ai_resolve_field_reference(manifest: dict, entity: dict, field_ref: str) -> dict | None:
+    direct = _ai_match_field_in_entity(entity, field_ref)
+    if isinstance(direct, dict):
+        field_id = direct.get("id")
+        if isinstance(field_id, str) and field_id:
+            return {"field_id": field_id, "field": direct, "source": "entity", "entity_field_exists": True}
+    form_location = _ai_find_form_field_location(manifest, field_ref)
+    if isinstance(form_location, dict) and isinstance(form_location.get("field_id"), str):
+        return {
+            "field_id": form_location.get("field_id"),
+            "field": None,
+            "source": "form",
+            "entity_field_exists": False,
+            "form_location": form_location,
+        }
+    list_ref = _ai_find_list_field_reference(manifest, field_ref)
+    if isinstance(list_ref, dict) and isinstance(list_ref.get("field_id"), str):
+        return {
+            "field_id": list_ref.get("field_id"),
+            "field": None,
+            "source": "list",
+            "entity_field_exists": False,
+            "list_reference": list_ref,
+        }
+    return None
+
+
+def _ai_mark_resolved_without_changes(
+    result: dict,
+    *,
+    intent: str,
+    module_id: str,
+    advisory: str,
+    field_ref: str | None = None,
+) -> dict:
+    module_label = _ai_humanize_identifier(module_id) or module_id
+    field_label = _ai_display_field_reference(field_ref) or field_ref
+    note_text = advisory
+    if intent == "field_missing_noop" and isinstance(field_label, str) and field_label:
+        note_text = f"Field '{field_label}' is already absent in {module_label}."
+    elif intent == "field_already_persisted" and isinstance(field_label, str) and field_label:
+        note_text = f"Field '{field_label}' in {module_label} already saves through the normal record flow."
+    elif intent == "field_already_exists_noop" and isinstance(field_label, str) and field_label:
+        note_text = f"Field '{field_label}' already exists in {module_label}."
+    advisories = [item for item in (result.get("advisories") or []) if isinstance(item, str) and item.strip()]
+    if note_text not in advisories:
+        advisories.append(note_text)
+    result["advisories"] = advisories
+    noop_notes = [item for item in (result.get("noop_notes") or []) if isinstance(item, str) and item.strip()]
+    if note_text not in noop_notes:
+        noop_notes.append(note_text)
+    result["noop_notes"] = noop_notes
+    planner_state = {"intent": intent, "module_id": module_id}
+    if isinstance(field_ref, str) and field_ref.strip():
+        planner_state["field_ref"] = field_ref.strip()
+    result["planner_state"] = planner_state
+    result["resolved_without_changes"] = True
+    return result
+
+
+def _ai_append_requested_change_line(result: dict, line: str | None) -> None:
+    if not isinstance(result, dict) or not isinstance(line, str):
+        return
+    cleaned = line.strip()
+    if not cleaned:
+        return
+    requested_lines = [item for item in (result.get("requested_change_lines") or []) if isinstance(item, str) and item.strip()]
+    if cleaned not in requested_lines:
+        requested_lines.append(cleaned)
+    result["requested_change_lines"] = requested_lines
+
+
+_OCTO_AI_LOCAL_BASELINE_MODULES = (
+    "calendar",
+    "contacts",
+    "crm",
+    "documents",
+    "field_service",
+    "jobs",
+    "maintenance",
+    "sales",
+    "tasks",
+    "variations",
+)
+
+
+def _octo_ai_seed_in_memory_baseline_modules(module_keys: list[str] | tuple[str, ...] | None = None) -> list[str]:
+    if USE_DB:
+        return []
+    seeded: list[str] = []
+    keys = module_keys or _OCTO_AI_LOCAL_BASELINE_MODULES
+    for raw_key in keys:
+        module_key = str(raw_key or "").strip()
+        if not module_key or registry.get(module_key) is not None:
+            continue
+        path = ROOT / "manifests" / "marketplace_v1" / f"{module_key}.json"
+        if not path.exists():
+            continue
+        try:
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            logger.exception("octo_ai_seed_read_failed module=%s", module_key)
+            continue
+        normalized, errors, _warnings = validate_manifest_raw(manifest, expected_module_id=module_key)
+        if errors:
+            logger.warning("octo_ai_seed_invalid module=%s errors=%s", module_key, errors)
+            continue
+        result = _apply_module_change_memory(
+            module_key,
+            normalized,
+            actor=None,
+            mode="install",
+            reason="octo_ai_local_seed",
+            patch_id=f"octo_ai_seed:{module_key}",
+        )
+        if result.get("ok"):
+            seeded.append(module_key)
+    if seeded:
+        _cache_invalidate("registry_list")
+        _cache_invalidate("modules")
+        _cache_invalidate("studio_modules")
+    return seeded
+
+
+def _ai_suggest_form_field_refs(manifest: dict, field_ref: str, limit: int = 3) -> list[str]:
+    if not isinstance(manifest, dict) or not isinstance(field_ref, str) or not field_ref.strip():
+        return []
+    needle = _ai_norm_token(field_ref)
+    if not needle:
+        return []
+    seen: dict[str, str] = {}
+
+    def add_candidate(value: str | None, display: str | None) -> None:
+        if not isinstance(value, str) or not value.strip() or not isinstance(display, str) or not display.strip():
+            return
+        norm = _ai_norm_token(value)
+        if norm:
+            seen.setdefault(norm, display.strip())
+
+    for entity in manifest.get("entities") if isinstance(manifest.get("entities"), list) else []:
+        if not isinstance(entity, dict):
+            continue
+        for field in entity.get("fields") if isinstance(entity.get("fields"), list) else []:
+            if not isinstance(field, dict):
+                continue
+            field_id = field.get("id")
+            if not isinstance(field_id, str) or not field_id:
+                continue
+            label = field.get("label") if isinstance(field.get("label"), str) else None
+            short_id = field_id.split(".", 1)[-1] if "." in field_id else field_id
+            display = label.strip() if isinstance(label, str) and label.strip() else short_id
+            add_candidate(field_id, display)
+            add_candidate(short_id, display)
+            add_candidate(display, display)
+
+    for view in manifest.get("views") if isinstance(manifest.get("views"), list) else []:
+        if not isinstance(view, dict):
+            continue
+        if view.get("kind") == "list":
+            for column in view.get("columns") if isinstance(view.get("columns"), list) else []:
+                if not isinstance(column, dict):
+                    continue
+                field_id = column.get("field_id")
+                label = column.get("label") if isinstance(column.get("label"), str) and column.get("label").strip() else field_id
+                add_candidate(field_id, label)
+                add_candidate(label, label)
+
+    needle_terms = set(needle.split())
+    ranked: list[tuple[int, int, str]] = []
+    for norm, display in seen.items():
+        overlap = len(needle_terms & set(norm.split()))
+        similarity = int(difflib.SequenceMatcher(None, needle, norm).ratio() * 100)
+        if overlap <= 0 and similarity < 70:
+            continue
+        ranked.append((overlap, similarity, display))
+    ranked.sort(key=lambda item: (-item[0], -item[1], item[2]))
+    out: list[str] = []
+    for _, _, display in ranked:
+        if display not in out:
+            out.append(display)
+        if len(out) >= limit:
+            break
+    return out[:limit]
+
+
+def _ai_module_alias_norms(module_id: str, module_index: dict[str, dict]) -> set[str]:
+    info = module_index.get(module_id) or {}
+    manifest = info.get("manifest") if isinstance(info, dict) and isinstance(info.get("manifest"), dict) else {}
+    module_def = manifest.get("module") if isinstance(manifest, dict) else {}
+    aliases = [
+        module_id,
+        module_def.get("id") if isinstance(module_def, dict) else None,
+        module_def.get("key") if isinstance(module_def, dict) else None,
+        module_def.get("name") if isinstance(module_def, dict) else None,
+    ]
+    for entity in manifest.get("entities") if isinstance(manifest.get("entities"), list) else []:
+        if not isinstance(entity, dict):
+            continue
+        entity_id = entity.get("id")
+        entity_label = entity.get("label")
+        if isinstance(entity_id, str) and entity_id.strip():
+            short_id = entity_id.split(".")[-1]
+            aliases.append(short_id)
+            aliases.append(_ai_humanize_identifier(short_id))
+            if short_id and not short_id.endswith("s"):
+                aliases.append(f"{short_id}s")
+                aliases.append(_ai_humanize_identifier(f"{short_id}s"))
+        if isinstance(entity_label, str) and entity_label.strip():
+            aliases.append(entity_label.strip())
+    app_cfg = manifest.get("app") if isinstance(manifest, dict) and isinstance(manifest.get("app"), dict) else {}
+    for group in app_cfg.get("nav") if isinstance(app_cfg.get("nav"), list) else []:
+        items = group.get("items") if isinstance(group, dict) and isinstance(group.get("items"), list) else []
+        for item in items:
+            label = item.get("label") if isinstance(item, dict) else None
+            if isinstance(label, str) and label.strip():
+                aliases.append(label.strip())
+    out = {_ai_norm_token(str(alias)) for alias in aliases if isinstance(alias, str) and alias.strip()}
+    expanded = set(out)
+    for alias in out:
+        if alias.endswith("s") and len(alias) > 1:
+            expanded.add(alias[:-1])
+        elif alias and not alias.endswith("s"):
+            expanded.add(f"{alias}s")
+        if alias.endswith("e") and len(alias) > 1:
+            expanded.add(f"{alias[:-1]}ing")
+        elif alias and not alias.endswith("ing"):
+            expanded.add(f"{alias}ing")
+    return expanded
+
+
+def _ai_module_alias_candidates(alias_text: str) -> list[str]:
+    base = _ai_norm_token(alias_text)
+    if not base:
+        return []
+    candidates = [base]
+    stripped = re.sub(r"^(?:the|my|our|this|that|current|selected|explorer)\s+", "", base).strip()
+    if stripped and stripped not in candidates:
+        candidates.append(stripped)
+    for value in list(candidates):
+        trimmed = re.sub(r"\s+module$", "", value).strip()
+        if trimmed and trimmed not in candidates:
+            candidates.append(trimmed)
+    for value in list(candidates):
+        trimmed = re.sub(
+            r"\s+(?:approvals?|approval|workflow|workflows|flow|flows|changes?|rollout|plan|plans|system|systems)$",
+            "",
+            value,
+            flags=re.IGNORECASE,
+        ).strip()
+        if trimmed and trimmed not in candidates:
+            candidates.append(trimmed)
+    for value in list(candidates):
+        if not value.endswith("ing") or len(value) <= 4:
+            continue
+        stem = value[:-3]
+        for variant in (stem, f"{stem}e", f"{stem}s", f"{stem}es"):
+            variant = variant.strip()
+            if variant and variant not in candidates:
+                candidates.append(variant)
+    return candidates
+
+
+def _ai_find_module_by_alias(alias_text: str, module_ids: list[str], module_index: dict[str, dict]) -> str | None:
+    alias_norms = _ai_module_alias_candidates(alias_text)
+    if not alias_norms:
+        return None
+    ordered_module_ids = list(dict.fromkeys([*module_ids, *module_index.keys()]))
+    scored_matches: list[tuple[tuple[int, int, int, int, int], str]] = []
+    for position, module_id in enumerate(ordered_module_ids):
+        info = module_index.get(module_id) or {}
+        manifest = info.get("manifest") if isinstance(info, dict) and isinstance(info.get("manifest"), dict) else {}
+        module_def = manifest.get("module") if isinstance(manifest, dict) and isinstance(manifest.get("module"), dict) else {}
+        module_id_norm = _ai_norm_token(module_id)
+        module_key_norm = _ai_norm_token(module_def.get("key")) if isinstance(module_def.get("key"), str) else ""
+        module_name_norm = _ai_norm_token(module_def.get("name")) if isinstance(module_def.get("name"), str) else ""
+        primary_aliases = {
+            _ai_norm_token(str(alias))
+            for alias in (
+                module_id,
+                module_def.get("id"),
+                module_def.get("key"),
+                module_def.get("name"),
+            )
+            if isinstance(alias, str) and alias.strip()
+        }
+        module_aliases = _ai_module_alias_norms(module_id, module_index)
+        baseline_rank = 0 if module_id in _OCTO_AI_LOCAL_BASELINE_MODULES or module_key_norm in _OCTO_AI_LOCAL_BASELINE_MODULES else 1
+        best_score: tuple[int, int, int, int, int] | None = None
+        for alias_norm in alias_norms:
+            if alias_norm in primary_aliases:
+                exact_rank = min(
+                    0 if alias_norm == module_id_norm else 3,
+                    1 if alias_norm == module_key_norm else 3,
+                    2 if alias_norm == module_name_norm else 3,
+                )
+                score = (0, exact_rank, baseline_rank, len(module_id), position)
+            elif alias_norm in module_aliases:
+                score = (1, 9, baseline_rank, len(module_id), position)
+            else:
+                continue
+            if best_score is None or score < best_score:
+                best_score = score
+        if best_score is not None:
+            scored_matches.append((best_score, module_id))
+    if scored_matches:
+        scored_matches.sort(key=lambda item: item[0])
+        return scored_matches[0][1]
+    return None
+
+
+def _ai_resolve_field_reference_from_hint_ops(answer_hints: dict | None, module_id: str, field_ref: str) -> dict | None:
+    if not isinstance(answer_hints, dict) or not isinstance(module_id, str) or not module_id or not isinstance(field_ref, str) or not field_ref.strip():
+        return None
+    normalized_ref = _ai_norm_token(field_ref)
+    if not normalized_ref:
+        return None
+    candidate_ops = []
+    for key in ("applied_candidate_ops", "pending_candidate_ops"):
+        items = answer_hints.get(key)
+        if isinstance(items, list):
+            candidate_ops.extend([op for op in items if isinstance(op, dict)])
+    for op in reversed(candidate_ops):
+        if op.get("artifact_id") != module_id:
+            continue
+        if op.get("op") != "add_field":
+            continue
+        field = op.get("field") if isinstance(op.get("field"), dict) else {}
+        field_id = field.get("id") if isinstance(field.get("id"), str) and field.get("id").strip() else None
+        field_label = field.get("label") if isinstance(field.get("label"), str) and field.get("label").strip() else None
+        if not isinstance(field_id, str):
+            continue
+        candidate_tokens = {
+            _ai_norm_token(field_id),
+            _ai_norm_token(field_id.split(".")[-1]),
+        }
+        if isinstance(field_label, str):
+            candidate_tokens.add(_ai_norm_token(field_label))
+        if normalized_ref in candidate_tokens:
+            return {
+                "field_id": field_id,
+                "field": field,
+                "source": "hint_ops",
+                "entity_field_exists": True,
+            }
+    return None
+
+
+def _ai_latest_module_alias_in_text(text: str, module_ids: list[str], module_index: dict[str, dict]) -> str | None:
+    normalized_text = _ai_norm_token(text)
+    if not normalized_text:
+        return None
+    ordered_module_ids = list(dict.fromkeys([*module_ids, *module_index.keys()]))
+    latest_alias: tuple[int, str] | None = None
+    for module_id in ordered_module_ids:
+        aliases = _ai_module_alias_norms(module_id, module_index)
+        for alias in aliases:
+            if not alias:
+                continue
+            for match in re.finditer(rf"\b{re.escape(alias)}\b", normalized_text):
+                if latest_alias is None or match.start() >= latest_alias[0]:
+                    latest_alias = (match.start(), module_id)
+    return latest_alias[1] if latest_alias is not None else None
+
+
+def _ai_module_display_name(module_id: str, module_index: dict[str, dict]) -> str:
+    if not isinstance(module_id, str) or not module_id:
+        return "selected module"
+    info = module_index.get(module_id) if isinstance(module_index, dict) else None
+    manifest = info.get("manifest") if isinstance(info, dict) else {}
+    module_def = manifest.get("module") if isinstance(manifest, dict) else {}
+    for key in ("name", "key", "id"):
+        value = module_def.get(key) if isinstance(module_def, dict) else None
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return module_id
+
+
+def _ai_module_stable_key(module_id: str, module_index: dict[str, dict]) -> str:
+    if not isinstance(module_id, str) or not module_id:
+        return ""
+    info = module_index.get(module_id) if isinstance(module_index, dict) else None
+    manifest = info.get("manifest") if isinstance(info, dict) else {}
+    stable_key = module_key_from_manifest(manifest) if isinstance(manifest, dict) else None
+    if isinstance(stable_key, str) and stable_key.strip():
+        return stable_key.strip()
+    return module_id
+
+
+def _ai_join_human_list(values: list[str]) -> str:
+    items = [value.strip() for value in values if isinstance(value, str) and value.strip()]
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return f"{', '.join(items[:-1])}, and {items[-1]}"
+
+
+def _ai_mask_probable_field_labels(text: str) -> str:
+    if not isinstance(text, str) or not text.strip():
+        return ""
+    masked = re.sub(r"(['\"]).{1,80}?\1", " ", text)
+    patterns = [
+        (
+            r"\b((?:add|create|make|put|include|keep|use|show|track|roll(?:\s+|-)?out)\s+"
+            r"(?:a|an|the|new|same\s+)?)"
+            r"([a-zA-Z][a-zA-Z0-9/&' _-]{1,80}?)"
+            r"(\s+(?:field|attribute|checkbox|toggle|flag)\b)",
+            r"\1maskedlabel\3",
+        ),
+        (
+            r"\b((?:field|attribute|checkbox|toggle|flag)\s+(?:called|named|labelled|labeled)\s+)"
+            r"((?!maskedlabel\b)[a-zA-Z][a-zA-Z0-9/&' _-]{1,80}?)"
+            r"(\s+(?:to|in|into|on|for|from|within|inside|under|at|and|but)\b|[.,!?;]|$)",
+            r"\1maskedlabel\3",
+        ),
+        (
+            r"\b((?:tab|section|page|view)\s+(?:called|named|labelled|labeled)\s+)"
+            r"((?!maskedlabel\b)[a-zA-Z][a-zA-Z0-9/&' _-]{1,80}?)"
+            r"(\s+(?:to|in|into|on|for|from|within|inside|under|at|and|but)\b|[.,!?;]|$)",
+            r"\1maskedlabel\3",
+        ),
+        (
+            r"\b((?:in|into|under|within|inside|on)\s+(?:the\s+|a\s+|an\s+)?)((?!maskedlabel\b)[a-zA-Z][a-zA-Z0-9/&' _-]{1,80}?)(\s+tab\b)",
+            r"\1maskedlabel\3",
+        ),
+        (
+            r"\b((?:add|create|make)\s+(?:(?:a|an|the)\s+)?(?:(?:new|another)\s+)?(?:form\s+)?(?:tab|section|page|view)\s+"
+            r"(?:in\s+[a-zA-Z0-9_. -]{1,60}?\s+)?(?:called|named)\s+)"
+            r"((?!maskedlabel\b)[a-zA-Z][a-zA-Z0-9/&' _-]{1,80}?)"
+            r"(\s+(?:to|in|into|on|for|from|within|inside|under|at|and|but)\b|[.,!?;]|$)",
+            r"\1maskedlabel\3",
+        ),
+    ]
+    for pattern, replacement in patterns:
+        masked = re.sub(pattern, replacement, masked, flags=re.IGNORECASE)
+    return masked
+
+
+def _ai_mask_probable_module_creation_labels(text: str) -> str:
+    if not isinstance(text, str) or not text.strip():
+        return ""
+    masked = text
+    patterns = [
+        (
+            r"\b((?:called|named)\s+[\"']?)([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40})([\"']?)",
+            r"\1newmodulelabel\3",
+        ),
+        (
+            r"\b((?:let'?s\s+call\s+it|call\s+it)\s+[\"']?)([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40})([\"']?)",
+            r"\1newmodulelabel\3",
+        ),
+        (
+            r"\b((?:create|build|make)\s+(?:me\s+)?(?:a\s+|an\s+|the\s+)?(?:new\s+)?(?:simple\s+)?module\s+(?:for|to manage|for managing)\s+)"
+            r"([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40})",
+            r"\1newmodulelabel",
+        ),
+        (
+            r"\b((?:create|build|make)(?:\s+(?:a|an|the))?(?:\s+simple)?\s+)"
+            r"([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40}?)(\s+module\b)",
+            r"\1newmodulelabel\3",
+        ),
+        (
+            r"\b((?:create|build|make)\s+(?:me\s+|us\s+|a\s+|an\s+|the\s+|new\s+|simple\s+|small\s+|custom\s+){0,6})"
+            r"([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40}?)(\s+(?:system|workspace|platform)\b)",
+            r"\1newmodulelabel\3",
+        ),
+    ]
+    for pattern, replacement in patterns:
+        masked = re.sub(pattern, replacement, masked, flags=re.IGNORECASE)
+    return masked
+
+
+_AI_SCOPE_ACTION_VERBS_PATTERN = (
+    r"add|create|make|update|upgrade|remove|delete|show|hide|keep|move|put|build|"
+    r"modernize|refresh|rename|reorder|require|attach|upload|sync|connect|wire|trigger|"
+    r"send|email|notify|approve|reject|enable|disable|include|use|roll(?:\s+|-)?out"
+)
+
+
+def _ai_extract_module_target_from_text(text: str, module_ids: list[str], module_index: dict[str, dict]) -> str | None:
+    if not isinstance(text, str) or not text.strip():
+        return None
+    scan_text = _ai_mask_probable_module_creation_labels(text) if _ai_is_create_module_request(text) else text
+    masked_text = _ai_mask_probable_field_labels(scan_text)
+    latest_explicit: tuple[int, str] | None = None
+
+    def _remember_latest(candidate_text: str, start: int) -> None:
+        nonlocal latest_explicit
+        candidate = candidate_text.strip(" .,-\"'")
+        candidate = re.sub(r"\s+(?:called|named|labelled|labeled)\b.*$", "", candidate, flags=re.IGNORECASE).strip(" .,-\"'")
+        resolved = _ai_find_module_by_alias(candidate, module_ids, module_index)
+        if (not isinstance(resolved, str) or not resolved) and re.search(r"[.!?]|\bworkspace\b", candidate_text, flags=re.IGNORECASE):
+            resolved = _ai_latest_module_alias_in_text(candidate, module_ids, module_index)
+        if not isinstance(resolved, str) or not resolved:
+            return
+        if latest_explicit is None or start >= latest_explicit[0]:
+            latest_explicit = (start, resolved)
+
+    scoped_patterns = [
+        rf"(?:^|[.!?]\s*)for\s+([a-zA-Z0-9_. -]{{1,60}}?)(?:,|:|\s+(?:{_AI_SCOPE_ACTION_VERBS_PATTERN})\b)",
+        r"(?:^|[.!?]\s*)regarding\s+([a-zA-Z0-9_. -]{1,60}?)(?:,|:|\s)",
+    ]
+    for pattern in scoped_patterns:
+        for match in re.finditer(pattern, scan_text, flags=re.IGNORECASE):
+            if isinstance(match.group(1), str):
+                _remember_latest(match.group(1), match.start(1))
+    patterns = [
+        r"\b(?:from|in|into|on|to|for)\s+([a-zA-Z0-9_. -]{1,60}?)\s+module\b",
+        r"\bmodule\s+([a-zA-Z0-9_. -]{1,60})\b",
+        r"\b([a-zA-Z0-9_. -]{1,60}?)\s+module\b",
+        rf"\b(?:from|in|into|on|to|for|within|inside)\s+(?:the\s+|my\s+|our\s+)?([a-zA-Z0-9_. -]{{1,60}}?)(?:,|:|\s+(?:{_AI_SCOPE_ACTION_VERBS_PATTERN})\b)",
+        r"\b(?:from|in|into|on|to|for|within|inside)\s+(?:the\s+|my\s+|our\s+)?([a-zA-Z0-9_. -]{1,60}?)(?:\s+(?:called|named)\b)",
+        r"\b(?:from|in|into|on|to|for)\s+(?:the\s+|my\s+|our\s+)?([a-zA-Z0-9_. -]{1,60})(?:[.!?,]|$)",
+    ]
+    for pattern in patterns:
+        for match in re.finditer(pattern, scan_text, flags=re.IGNORECASE):
+            if isinstance(match.group(1), str):
+                _remember_latest(match.group(1), match.start(1))
+    if latest_explicit is not None:
+        return latest_explicit[1]
+    requested_labels = _ai_extract_requested_module_labels(text)
+    if requested_labels:
+        resolved_requested = [
+            _ai_find_module_by_alias(label, module_ids, module_index)
+            for label in requested_labels
+            if isinstance(label, str) and label.strip()
+        ]
+        resolved_requested = [module_id for module_id in resolved_requested if isinstance(module_id, str) and module_id]
+        if resolved_requested:
+            return resolved_requested[-1]
+        return None
+    normalized_text = _ai_norm_token(masked_text)
+    if normalized_text:
+        ordered_module_ids = list(dict.fromkeys([*module_ids, *module_index.keys()]))
+        latest_alias: tuple[int, str] | None = None
+        for module_id in ordered_module_ids:
+            aliases = _ai_module_alias_norms(module_id, module_index)
+            for alias in aliases:
+                if not alias:
+                    continue
+                for match in re.finditer(rf"\b{re.escape(alias)}\b", normalized_text):
+                    if latest_alias is None or match.start() >= latest_alias[0]:
+                        latest_alias = (match.start(), module_id)
+    if latest_alias is not None:
+        return latest_alias[1]
+    return None
+
+
+def _ai_extract_explicit_module_targets_from_text(text: str, module_ids: list[str], module_index: dict[str, dict]) -> list[str]:
+    if not isinstance(text, str) or not text.strip():
+        return []
+    scan_text = _ai_mask_probable_module_creation_labels(text) if _ai_is_create_module_request(text) else text
+    masked_text = _ai_mask_probable_field_labels(scan_text)
+    matches: list[tuple[int, str]] = []
+    matched_module_ids: set[str] = set()
+
+    def _record(candidate: str | None, start: int) -> None:
+        if not isinstance(candidate, str):
+            return
+        cleaned_candidate = re.sub(r"\s+(?:called|named|labelled|labeled)\b.*$", "", candidate, flags=re.IGNORECASE).strip(" .,-\"'")
+        resolved = _ai_find_module_by_alias(cleaned_candidate, module_ids, module_index)
+        if (not isinstance(resolved, str) or not resolved) and re.search(r"[.!?]|\bworkspace\b", candidate, flags=re.IGNORECASE):
+            resolved = _ai_latest_module_alias_in_text(cleaned_candidate, module_ids, module_index)
+        if isinstance(resolved, str) and resolved:
+            matches.append((start, resolved))
+            matched_module_ids.add(resolved)
+
+    for match in re.finditer(r"\b(?:across|between)\s+(.+?)(?:[.!?]|$)", scan_text, flags=re.IGNORECASE):
+        captured = match.group(1) if isinstance(match.group(1), str) else None
+        if not isinstance(captured, str):
+            continue
+        for part in re.split(r",|\band\b|\bor\b", captured, flags=re.IGNORECASE):
+            candidate = part.strip(" .,-\"'")
+            if not candidate:
+                continue
+            start = scan_text.find(candidate, match.start(1))
+            _record(candidate, start if start >= 0 else match.start(1))
+
+    scoped_patterns = [
+        rf"(?:^|[.!?]\s*)for\s+([a-zA-Z0-9_. -]{{1,60}}?)(?:,|:|\s+(?:{_AI_SCOPE_ACTION_VERBS_PATTERN})\b)",
+        r"(?:^|[.!?]\s*)regarding\s+([a-zA-Z0-9_. -]{1,60}?)(?:,|:|\s)",
+        r"\b([a-zA-Z0-9_. -]{1,60}?)\s+workspace\s+(?:flow|plan|changes?|rollout|brief)\b",
+        r"\b(?:from|in|into|on|to|for|within|inside)\s+([a-zA-Z0-9_. -]{1,60}?)\s+module\b",
+        r"\bmodule\s+([a-zA-Z0-9_. -]{1,60})\b",
+        r"\b([a-zA-Z0-9_. -]{1,60}?)\s+module\b",
+        rf"\b(?:from|in|into|on|to|for|within|inside)\s+(?:the\s+|my\s+|our\s+)?([a-zA-Z0-9_. -]{{1,60}}?)(?:,|:|\s+(?:{_AI_SCOPE_ACTION_VERBS_PATTERN})\b)",
+        r"\b(?:from|in|into|on|to|for|within|inside)\s+(?:the\s+|my\s+|our\s+)?([a-zA-Z0-9_. -]{1,60}?)(?:\s+(?:called|named)\b)",
+        r"\b(?:from|in|into|on|to|for|within|inside)\s+(?:the\s+|my\s+|our\s+)?([a-zA-Z0-9_. -]{1,60})(?:[.!?,]|$)",
+    ]
+    for pattern in scoped_patterns:
+        for match in re.finditer(pattern, scan_text, flags=re.IGNORECASE):
+            candidate = match.group(1) if isinstance(match.group(1), str) else None
+            _record(candidate, match.start(1))
+    requested_labels = _ai_extract_requested_module_labels(text)
+    if requested_labels:
+        for order, label in enumerate(requested_labels):
+            if not isinstance(label, str) or not label.strip():
+                continue
+            resolved = _ai_find_module_by_alias(label, module_ids, module_index)
+            if isinstance(resolved, str) and resolved:
+                matches.append((10_000 + order, resolved))
+                matched_module_ids.add(resolved)
+        if matches:
+            matches.sort(key=lambda item: item[0])
+            ordered: list[str] = []
+            for _, module_id in matches:
+                if module_id not in ordered and module_id in matched_module_ids:
+                    ordered.append(module_id)
+            return ordered
+        return []
+
+    normalized_text = _ai_norm_token(masked_text)
+    if normalized_text and not matches:
+        ordered_module_ids = list(dict.fromkeys([*module_ids, *module_index.keys()]))
+        for module_id in ordered_module_ids:
+            alias_positions: list[int] = []
+            for alias in _ai_module_alias_norms(module_id, module_index):
+                if not alias:
+                    continue
+                match = re.search(rf"\b{re.escape(alias)}\b", normalized_text)
+                if match:
+                    alias_positions.append(match.start())
+            if alias_positions:
+                matches.append((min(alias_positions), module_id))
+                matched_module_ids.add(module_id)
+
+    matches.sort(key=lambda item: item[0])
+    ordered: list[str] = []
+    for _, module_id in matches:
+        if module_id not in ordered and module_id in matched_module_ids:
+            ordered.append(module_id)
+    return ordered
+
+
+def _ai_hint_scope_switch_module(answer_hints: dict | None, module_ids: list[str], module_index: dict[str, dict]) -> str | None:
+    if not isinstance(answer_hints, dict):
+        return None
+    hint_module_target = answer_hints.get("module_target") if isinstance(answer_hints.get("module_target"), str) else None
+    if not isinstance(hint_module_target, str) or not hint_module_target.strip():
+        return None
+    resolved = _ai_find_module_by_alias(hint_module_target, module_ids, module_index)
+    if not isinstance(resolved, str) or not resolved:
+        return None
+    answer_text = answer_hints.get("answer_text") if isinstance(answer_hints.get("answer_text"), str) else ""
+    normalized_answer = _ai_norm_token(answer_text)
+    if not normalized_answer:
+        return None
+    explicit_answer_target = _ai_extract_module_target_from_text(answer_text, module_ids, module_index)
+    if explicit_answer_target != resolved:
+        return None
+    if re.search(r"\b(?:actually|instead|switch|now|use|apply)\b", normalized_answer):
+        return resolved
+    return None
+
+
+def _ai_extract_requested_module_labels(text: str) -> list[str]:
+    if not isinstance(text, str) or not text.strip():
+        return []
+    labels: list[str] = []
+    seen: set[str] = set()
+    split_pattern = rf"\b(?:{_AI_SCOPE_ACTION_VERBS_PATTERN})\b"
+
+    def _push(candidate: str | None) -> None:
+        if not isinstance(candidate, str):
+            return
+        label = candidate.strip(" .,-\"'")
+        if not label:
+            return
+        label = re.sub(r"^(?:the|my|our|this|that)\s+", "", label, flags=re.IGNORECASE)
+        label = re.sub(
+            r"\s+\b(?:so|that|which|where|when|because|before|after|while|until)\b\s+.*$",
+            "",
+            label,
+            flags=re.IGNORECASE,
+        ).strip(" .,-\"'")
+        label = re.sub(r"\s+module$", "", label, flags=re.IGNORECASE).strip(" .,-\"'")
+        if not _is_label_confident(label):
+            return
+        normalized = _ai_norm_token(label)
+        if not normalized or normalized in seen:
+            return
+        seen.add(normalized)
+        labels.append(label if any(ch.isupper() for ch in label) else (_ai_humanize_identifier(label) or label))
+
+    def _push_captured_scope(captured: str | None) -> None:
+        if not isinstance(captured, str):
+            return
+        captured = re.split(split_pattern, captured, maxsplit=1, flags=re.IGNORECASE)[0].strip(" .,-")
+        if re.search(r",|\band\b|\bor\b", captured, flags=re.IGNORECASE):
+            for part in re.split(r",|\band\b|\bor\b", captured, flags=re.IGNORECASE):
+                _push(part)
+            return
+        _push(captured)
+
+    for match in re.finditer(r"\b(?:across|between)\s+(.+?)(?:[.!?]|$)", text, flags=re.IGNORECASE):
+        _push_captured_scope(match.group(1) if isinstance(match.group(1), str) else None)
+    for match in re.finditer(
+        rf"(?:^|[.!?]\s*|\b(?:and|then|plus|also)\b\s+)(?:in|for|within)\s+(.+?)(?:,|\s+{split_pattern})",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        _push_captured_scope(match.group(1) if isinstance(match.group(1), str) else None)
+    for match in re.finditer(
+        r"\b(?:links?|linking|connects?|connecting|ties?\s+together|tying\s+together|brings?\s+together|bringing\s+together|combines?|combining)\s+(.+?)(?:\s+\b(?:so|that|which|where|when|before|after|while|until)\b|[.?!]|$)",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        _push_captured_scope(match.group(1) if isinstance(match.group(1), str) else None)
+    for match in re.finditer(
+        r"\b(?:create|build|make)\s+(?:me\s+|us\s+)?(?:a\s+|an\s+|the\s+)?([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40}?)\s+dashboard\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        _push(match.group(1) if isinstance(match.group(1), str) else None)
+    for match in re.finditer(
+        r"\bdashboard\s+for\s+([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40}?)(?:\s+(?:that|showing|with|including)\b|[.?!,]|$)",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        _push(match.group(1) if isinstance(match.group(1), str) else None)
+    inferred_business_areas = (
+        (r"\binvoic(?:e|es|ing)\b", "Invoices"),
+        (r"\bquot(?:e|es|ation|ations|ing)\b", "Quotes"),
+        (r"\bdispatch\b|\bfield\s+service\b|\bfield\s+work\b|\bfieldwork\b|\bservice\s+desk\b", "Field Service"),
+    )
+    for pattern, label in inferred_business_areas:
+        if re.search(pattern, text, flags=re.IGNORECASE):
+            _push(label)
+    return labels
+
+
+def _ai_preview_contract_flags(text: str) -> dict[str, bool]:
+    lower = re.sub(r"\s+", " ", (text or "").lower()).strip()
+    return {
+        "sandbox": any(token in lower for token in ("sandbox", "draft patchset", "live workspace")),
+        "preview": any(
+            token in lower
+            for token in (
+                "preview",
+                "show me",
+                "before you build",
+                "before building it",
+                "before anything is applied",
+                "before applying anything",
+                "before anything is built",
+                "before you apply",
+                "deliver first",
+            )
+        ),
+        "validation": "validation" in lower or "validate" in lower,
+        "rollback": "rollback" in lower or "roll back" in lower,
+        "rollout": "rollout" in lower or "roll out" in lower,
+    }
+
+
+def _ai_preview_contract_requested(text: str) -> bool:
+    flags = _ai_preview_contract_flags(text)
+    return any(flags.values())
+
+
+def _ai_preview_contract_advisories(text: str) -> list[str]:
+    flags = _ai_preview_contract_flags(text)
+    advisories: list[str] = []
+    if flags.get("sandbox"):
+        advisories.append("sandbox first: keep this as a draft plan so nothing touches the live workspace yet.")
+    if flags.get("preview"):
+        advisories.append("preview first: review the draft change scope before any build or apply step.")
+    if flags.get("validation"):
+        advisories.append("validation: check the change in the sandbox before you approve it.")
+    if flags.get("rollout"):
+        advisories.append("rollout: stage the validated changes so the release can be introduced safely.")
+    if flags.get("rollback"):
+        advisories.append("rollback: keep the current module snapshots so the rollout can be reversed safely if staff struggle with the new flow.")
+    return advisories
+
+
+def _ai_build_preview_only_plan(
+    message: str,
+    affected_modules: list[str],
+    requested_module_labels: list[str],
+    missing_requested_module_labels: list[str],
+    *,
+    confirm_plan: bool | None = None,
+    force: bool = False,
+) -> dict | None:
+    if not force and not _ai_preview_contract_requested(message):
+        return None
+    resolved_modules = [module_id for module_id in affected_modules if isinstance(module_id, str) and module_id]
+    preview_requested_module_labels = [
+        label.strip()
+        for label in requested_module_labels
+        if isinstance(label, str) and label.strip()
+    ]
+    new_module_name = None
+    preview_specific_lines = _ai_preview_specific_change_lines(message)
+    if not preview_requested_module_labels and _ai_is_create_module_request(message):
+        extracted_name = _ai_extract_new_module_name(message)
+        if isinstance(extracted_name, str) and extracted_name.strip():
+            new_module_name = extracted_name.strip()
+            preview_requested_module_labels = [new_module_name]
+    if not resolved_modules and not preview_requested_module_labels and not preview_specific_lines:
+        return None
+    planner_state: dict[str, Any] = {
+        "intent": "preview_only_noop" if confirm_plan is True else "preview_only_plan",
+    }
+    if preview_requested_module_labels:
+        planner_state["requested_module_labels"] = preview_requested_module_labels
+    if isinstance(new_module_name, str) and new_module_name:
+        planner_state["module_name"] = new_module_name
+    if missing_requested_module_labels:
+        planner_state["missing_module_labels"] = missing_requested_module_labels
+    assumptions = [
+        "This request is clear enough for a preview-first rollout plan, even though the detailed build operations still need to be pinned down."
+    ]
+    advisories = _ai_preview_contract_advisories(message)
+    if confirm_plan is True:
+        advisories.append("This approved draft stays planning-only until the detailed build changes are defined.")
+    preview_style = _ai_preview_plan_style(message)
+    roadmap_tracks = _ai_preview_roadmap_tracks(message)
+    return {
+        "candidate_ops": [],
+        "questions": [] if confirm_plan is True else ["Confirm this plan?"],
+        "question_meta": None
+        if confirm_plan is True
+        else {
+            "id": "confirm_plan",
+            "kind": "confirm_plan",
+            "prompt": "Confirm this plan or tell me what to change.",
+        },
+        "assumptions": assumptions,
+        "advisories": advisories,
+        "risk_flags": [],
+        "affected_modules": resolved_modules,
+        "planner_state": {
+            **planner_state,
+            "request_summary": message.strip(),
+            "system_brief": bool(preview_style.get("system_brief")),
+            "roadmap_requested": bool(preview_style.get("roadmap")),
+            "phased_requested": bool(preview_style.get("phased")),
+            "deliver_first_requested": bool(preview_style.get("deliver_first")),
+            "roadmap_tracks": roadmap_tracks,
+        },
+        "resolved_without_changes": bool(confirm_plan is True),
+    }
+
+
+def _ai_preview_plan_style(text: str) -> dict[str, bool]:
+    lower = re.sub(r"\s+", " ", (text or "").lower()).strip()
+    if not lower:
+        return {"system_brief": False, "roadmap": False, "phased": False, "deliver_first": False}
+    system_brief = any(
+        cue in lower
+        for cue in (
+            "guide to design the workspace",
+            "design the workspace",
+            "workspace from this brief",
+            "plan a manufacturing workspace",
+            "build roadmap",
+            "plain-english build roadmap",
+            "phased system",
+            "which modules are involved",
+            "what you would deliver first",
+            "rollout order",
+            "explain everything you plan to add",
+            "before anything is built",
+            "before applying anything",
+        )
+    )
+    if not system_brief and any(token in lower for token in ("workspace", "system", "platform")):
+        system_brief = any(
+            token in lower
+            for token in (
+                "guide",
+                "brief",
+                "design",
+                "roadmap",
+                "phased",
+                "deliver first",
+                "modules are involved",
+                "rollout order",
+            )
+        )
+    return {
+        "system_brief": system_brief,
+        "roadmap": "roadmap" in lower,
+        "phased": "phased" in lower or "phase " in lower or lower.endswith("phase"),
+        "deliver_first": any(
+            cue in lower
+            for cue in (
+                "deliver first",
+                "what you would deliver first",
+                "first before applying anything",
+                "rollout order",
+            )
+        ),
+    }
+
+
+def _ai_preview_roadmap_tracks(text: str) -> list[str]:
+    lower = re.sub(r"\s+", " ", (text or "").lower()).strip()
+    if not lower:
+        return []
+    track_patterns = [
+        ("Sales Orders", (r"\bsales orders?\b",)),
+        ("Production", (r"\bproduction\b", r"\bmanufactur(?:e|ing|ing workspace)\b")),
+        ("Purchasing", (r"\bpurchas(?:e|ing)\b", r"\breplenish(?:es|ing)?\b", r"\bparts?\b")),
+        ("Quality Checks", (r"\bquality checks?\b", r"\bquality\b")),
+        ("Dispatch", (r"\bdispatch\b", r"\bdelivery\b")),
+        ("Leads", (r"\bleads?\b", r"\bintake\b")),
+        ("Site Visits", (r"\bsite visits?\b", r"\bcustomer visits?\b", r"\bonsite inspections?\b")),
+        ("Quotes", (r"\bquotes?\b",)),
+        ("Jobs", (r"\bjobs?\b", r"\bwork orders?\b", r"\bjob notes?\b")),
+        ("Job Notes", (r"\bjob notes?\b", r"\bservice notes?\b")),
+        ("Technician Scheduling", (r"\btechnician schedules?\b", r"\btechnicians?\b", r"\bschedul(?:e|ing)\b")),
+        ("Supplier Tracking", (r"\bsupplier tracking\b", r"\bsuppliers?\b")),
+        ("Invoices", (r"\binvoices?\b", r"\binvoicing\b")),
+        ("Follow-Up Care", (r"\bfollow-?up care\b", r"\baftercare service\b", r"\baftercare\b")),
+        ("Customer History", (r"\bcustomer history\b",)),
+        ("Completion Status", (r"\bcompletion status\b",)),
+        ("Operational Reporting", (r"\boperational reporting\b", r"\breporting\b")),
+    ]
+    tracks: list[str] = []
+    for label, patterns in track_patterns:
+        if any(re.search(pattern, lower, flags=re.IGNORECASE) for pattern in patterns):
+            tracks.append(label)
+    return tracks[:8]
+
+
+def _ai_preview_track_modules(message: str, module_index: dict[str, dict]) -> list[str]:
+    if not isinstance(message, str) or not message.strip():
+        return []
+    track_module_map = {
+        "Leads": ["crm", "contacts", "sales"],
+        "Site Visits": ["field_service", "jobs"],
+        "Quotes": ["sales", "quotes"],
+        "Jobs": ["jobs"],
+        "Technician Scheduling": ["field_service", "jobs"],
+        "Supplier Tracking": ["jobs", "contacts"],
+        "Invoices": ["sales"],
+        "Follow-Up Care": ["field_service", "jobs"],
+        "Customer History": ["contacts"],
+        "Operational Reporting": ["jobs", "sales", "field_service"],
+    }
+    resolved: list[str] = []
+    for track in _ai_preview_roadmap_tracks(message):
+        direct_match = _ai_find_module_by_alias(track, list(module_index.keys()), module_index)
+        if isinstance(direct_match, str) and direct_match in module_index:
+            if direct_match not in resolved:
+                resolved.append(direct_match)
+            continue
+        for module_id in track_module_map.get(track, []):
+            if module_id in module_index and module_id not in resolved:
+                resolved.append(module_id)
+    return resolved
+
+
+def _ai_infer_preview_modules(message: str, module_index: dict[str, dict], current_modules: list[str] | None = None) -> list[str]:
+    resolved: list[str] = []
+
+    def add(module_id: str | None) -> None:
+        if isinstance(module_id, str) and module_id in module_index and module_id not in resolved:
+            resolved.append(module_id)
+
+    explicit_targets = _ai_extract_explicit_module_targets_from_text(message, list(module_index.keys()), module_index)
+    for module_id in explicit_targets:
+        add(module_id)
+
+    requested_labels = _ai_extract_requested_module_labels(message)
+    resolved_requested = [
+        _ai_find_module_by_alias(label, list(module_index.keys()), module_index)
+        for label in requested_labels
+        if isinstance(label, str) and label.strip()
+    ]
+    resolved_requested = [module_id for module_id in resolved_requested if isinstance(module_id, str) and module_id]
+    for module_id in resolved_requested:
+        add(module_id)
+    add(_ai_extract_module_target_from_text(message, list(module_index.keys()), module_index))
+    locked_named_scope = bool(explicit_targets or resolved_requested)
+    if not locked_named_scope:
+        for module_id in _ai_preview_track_modules(message, module_index):
+            add(module_id)
+    if not explicit_targets and not resolved_requested:
+        for module_id in current_modules or []:
+            add(module_id)
+    masked_message = _ai_mask_probable_field_labels(_ai_mask_probable_module_creation_labels(message or ""))
+    lower = re.sub(r"\s+", " ", masked_message.lower()).strip()
+    if (
+        not explicit_targets
+        and not current_modules
+        and re.search(r"\b(sync|integration|integrations|webhook|zapier|automation|workflow|notify|notification|reminder|sms|text message|twilio|downstream)\b", lower)
+    ):
+        for tokens, module_candidates in (
+            (("contact", "contacts", "customer", "customers", "client", "clients", "supplier", "suppliers"), ("contacts",)),
+            (("lead", "leads", "opportunity", "opportunities"), ("crm",)),
+            (("task", "tasks", "checklist", "onboarding"), ("tasks",)),
+        ):
+            if any(token in lower for token in tokens):
+                for module_id in module_candidates:
+                    add(module_id)
+    allow_keyword_fallback = not explicit_targets and not requested_labels and not current_modules
+    keyword_map = [
+        (("template", "email", "pdf", "certificate", "itinerary", "document", "documents", "attachment", "attachments"), ("documents",)),
+        (("invoice", "invoices", "quote", "quotes", "payment"), ("sales",)),
+        (("dispatch", "site visit", "site visits", "service report", "induction", "field service", "technician"), ("field_service",)),
+        (("job", "jobs", "callout", "work order", "work orders"), ("jobs",)),
+        (("contact", "contacts", "client", "customer", "supplier", "leave request", "leave requests"), ("contacts",)),
+        (("task", "tasks", "checklist", "onboarding"), ("tasks",)),
+    ]
+    if allow_keyword_fallback:
+        for tokens, module_candidates in keyword_map:
+            if any(token in lower for token in tokens):
+                for module_id in module_candidates:
+                    add(module_id)
+    return resolved[:4]
+
+
+def _ai_should_force_preview_fallback(
+    message: str,
+    inferred_modules: list[str],
+    requested_module_labels: list[str],
+    questions: list[str],
+    question_meta: dict | None = None,
+) -> bool:
+    if not isinstance(message, str) or not message.strip():
+        return False
+    if not inferred_modules and not requested_module_labels and not _ai_preview_specific_change_lines(message):
+        return False
+    lower = re.sub(r"\s+", " ", message.lower()).strip()
+    question_id = question_meta.get("id") if isinstance(question_meta, dict) and isinstance(question_meta.get("id"), str) else ""
+    question_kind = question_meta.get("kind") if isinstance(question_meta, dict) and isinstance(question_meta.get("kind"), str) else ""
+    first_question = next((item for item in questions if isinstance(item, str) and item.strip()), "")
+    low_signal_question = bool(questions) and (
+        question_kind in {"placement", "field_spec", "status_label", "target_resolution", "module_target", "entity_target"}
+        or question_id in {"placement", "field_spec", "status_label", "target_resolution", "module_target", "entity_target"}
+        or bool(
+            first_question
+            and re.search(
+                r"\bwhat\s+specific\s+field\s+should\s+be\s+used\b|\bwhich\s+field\s+should\b|\bwhat\s+field\s+should\b|\bwhere\s+should\b",
+                first_question,
+                flags=re.IGNORECASE,
+            )
+        )
+    )
+    style_revision_question = bool(questions) and bool(
+        first_question
+        and (
+            question_id == "plan_revision"
+            or question_kind in {"text", "plan_revision"}
+        )
+        and re.search(
+            r"\b(?:specific\s+layout\s+or\s+view\s+change|safe\s+full\s+style\s+upgrade)\b",
+            first_question,
+            flags=re.IGNORECASE,
+        )
+    )
+    untyped_freeform_question = bool(questions) and not question_id and not question_kind
+    unresolved_requested_scope = bool(questions) and bool(requested_module_labels) and (
+        not inferred_modules
+        or any(
+            isinstance(question, str)
+            and re.search(r"\bwhich\s+module\b|\bconcrete\s+module\b", question, flags=re.IGNORECASE)
+            for question in questions
+        )
+    )
+    previewable_request = bool(
+        len(_ai_split_request_clauses(message)) > 1
+        or len(inferred_modules) > 1
+        or requested_module_labels
+        or re.search(
+            r"\b(template|email|pdf|certificate|itinerary|automation|automatically|notify|notification|reminder|sms|text message|twilio|sync|integration|integrations|webhook|zapier|dashboard|report(?:ing)?|rollout|workflow|attachments?|condition|conditional|downstream)\b",
+            lower,
+        )
+        or re.search(
+            r"\b(review|modern|refresh|improv(?:e|ement|ements)|recommended|latest)\b",
+            lower,
+        )
+        and re.search(r"\b(layout|design|style|views?|pages?|structure)\b", lower)
+        or " if " in f" {lower} "
+    )
+    return previewable_request and (
+        low_signal_question or style_revision_question or unresolved_requested_scope or untyped_freeform_question or not questions
+    )
+
+
+def _ai_preview_plan_metadata(plan: dict, context: dict) -> dict[str, Any]:
+    planner_state = plan.get("planner_state") if isinstance(plan.get("planner_state"), dict) else {}
+    request_summary = (
+        planner_state.get("request_summary")
+        if isinstance(planner_state.get("request_summary"), str) and planner_state.get("request_summary").strip()
+        else context.get("request_summary")
+        if isinstance(context, dict) and isinstance(context.get("request_summary"), str) and context.get("request_summary").strip()
+        else ""
+    )
+    tracks = [
+        item.strip()
+        for item in (planner_state.get("roadmap_tracks") or [])
+        if isinstance(item, str) and item.strip()
+    ]
+    if not tracks and request_summary:
+        tracks = _ai_preview_roadmap_tracks(request_summary)
+    style = _ai_preview_plan_style(request_summary)
+    return {
+        "request_summary": request_summary,
+        "tracks": tracks,
+        "system_brief": bool(planner_state.get("system_brief")) or bool(style.get("system_brief")),
+        "roadmap_requested": bool(planner_state.get("roadmap_requested")) or bool(style.get("roadmap")),
+        "phased_requested": bool(planner_state.get("phased_requested")) or bool(style.get("phased")),
+        "deliver_first_requested": bool(planner_state.get("deliver_first_requested")) or bool(style.get("deliver_first")),
+    }
+
+
+def _ai_preview_rollout_groups(tracks: list[str]) -> list[list[str]]:
+    if len(tracks) <= 2:
+        return [tracks] if tracks else []
+    if len(tracks) <= 4:
+        return [tracks[:2], tracks[2:]]
+    if len(tracks) <= 6:
+        return [tracks[:2], tracks[2:4], tracks[4:]]
+    return [tracks[:2], tracks[2:4], tracks[4:6], tracks[6:]]
+
+
+def _ai_form_tab_catalog(manifest: dict, entity_id: str) -> list[dict]:
+    form_view, _ = _ai_find_form_and_list_views(manifest, entity_id)
+    if not isinstance(form_view, dict):
+        return []
+    sections_by_id = {}
+    for section in form_view.get("sections") if isinstance(form_view.get("sections"), list) else []:
+        if isinstance(section, dict) and isinstance(section.get("id"), str):
+            sections_by_id[section.get("id")] = section
+    tabs_cfg = form_view.get("header") if isinstance(form_view.get("header"), dict) else {}
+    tabs_cfg = tabs_cfg.get("tabs") if isinstance(tabs_cfg.get("tabs"), dict) else {}
+    tabs = []
+    for tab in tabs_cfg.get("tabs") if isinstance(tabs_cfg.get("tabs"), list) else []:
+        if not isinstance(tab, dict):
+            continue
+        tab_id = tab.get("id")
+        tab_label = tab.get("label")
+        section_ids = [sec for sec in (tab.get("sections") or []) if isinstance(sec, str)]
+        if not isinstance(tab_id, str) or not isinstance(tab_label, str):
+            continue
+        tabs.append(
+            {
+                "id": tab_id,
+                "label": tab_label,
+                "sections": section_ids,
+                "section_titles": [
+                    sections_by_id.get(sec_id, {}).get("title") or sec_id
+                    for sec_id in section_ids
+                ],
+            }
+        )
+    return tabs
+
+
+def _ai_match_form_tab_by_text(manifest: dict, entity_id: str, text: str) -> dict | None:
+    needle = _ai_norm_token(text or "")
+    if not needle:
+        return None
+    candidates = []
+    for tab in _ai_form_tab_catalog(manifest, entity_id):
+        tab_tokens = {
+            _ai_norm_token(tab.get("label") or ""),
+            _ai_norm_token(tab.get("id") or ""),
+        }
+        for section_id in tab.get("sections") or []:
+            tab_tokens.add(_ai_norm_token(section_id))
+        for section_title in tab.get("section_titles") or []:
+            tab_tokens.add(_ai_norm_token(section_title))
+        tab_tokens = {token for token in tab_tokens if token}
+        if any(token and token in needle for token in tab_tokens):
+            candidates.append(tab)
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
+
+def _ai_extract_requested_tab_label(text: str) -> str | None:
+    if not isinstance(text, str) or not text.strip():
+        return None
+    if re.search(r"\b(?:field|attribute)\b.*\bthat tab\b.*\bcalled\b", text, flags=re.IGNORECASE):
+        return None
+    blocked = {
+        "tab",
+        "tabs",
+        "first",
+        "second",
+        "third",
+        "fourth",
+        "last",
+        "next",
+        "previous",
+        "current",
+        "new",
+        "same",
+        "this",
+        "that",
+        "form",
+    }
+    blocked_phrases = re.compile(r"\b(?:add|create|make|move|put|remove|delete|field|module|it|them|those|these)\b", flags=re.IGNORECASE)
+    patterns = [
+        r"['\"]([^'\"]{1,80})['\"]\s+tab\b",
+        r"\btab\s+(?:in|for|on)\s+[a-zA-Z0-9_. -]{1,60}?\s+(?:called|named)\s+([a-zA-Z0-9][a-zA-Z0-9 _-]{0,78})\b",
+        r"\b(?:in|into|under|within|inside|on)\s+(?:the\s+|a\s+|an\s+)?([a-zA-Z0-9]+(?:[ _-][a-zA-Z0-9]+){0,4})\s+tab\b",
+        r"\btab\s+(?:called|named)\s+([a-zA-Z0-9][a-zA-Z0-9 _-]{0,78})\b",
+    ]
+    for pattern in patterns:
+        for match in reversed(list(re.finditer(pattern, text, flags=re.IGNORECASE))):
+            candidate = match.group(1) if isinstance(match.group(1), str) else None
+            if not isinstance(candidate, str):
+                continue
+            candidate = candidate.strip(" .,-\"'")
+            candidate = re.split(r"\s+\b(?:on|in|for|to)\b\s+", candidate, maxsplit=1, flags=re.IGNORECASE)[0].strip(" .,-\"'")
+            if not _is_label_confident(candidate):
+                continue
+            if _ai_norm_token(candidate) in blocked:
+                continue
+            if blocked_phrases.search(candidate):
+                continue
+            return candidate
+    return None
+
+
+def _ai_is_explicit_add_tab_request(text: str) -> bool:
+    if not isinstance(text, str) or not text.strip():
+        return False
+    if re.search(r"\b(?:field|attribute)\b.*\bthat tab\b.*\bcalled\b", text, flags=re.IGNORECASE):
+        return False
+    if re.search(
+        r"\b(?:field|attribute)\b.*\b(?:in|into|inside|within|on)\s+(?:the\s+)?[a-zA-Z0-9 _-]{1,80}\s+tab\s+(?:called|named)\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return False
+    if re.search(
+        r"\b(?:add|create|make)\s+(?:a\s+|an\s+)?(?:new\s+|another\s+)?(?:field|attribute)\b.*\btab\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return False
+    patterns = [
+        r"\b(?:add|create|make)\s+(?:a\s+)?(?:new\s+)?(?:form\s+)?tab\b",
+        r"\b(?:new|another)\s+(?:form\s+)?tab\b",
+        r"\btab\s+(?:called|named)\b",
+    ]
+    return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in patterns)
+
+
+def _ai_prepare_add_form_tab_change(manifest: dict, module_id: str, entity_id: str, tab_label: str) -> dict:
+    form_view, _ = _ai_find_form_and_list_views(manifest, entity_id)
+    if not isinstance(form_view, dict) or not isinstance(form_view.get("id"), str):
+        return {"error": "No form view found for the selected module."}
+    next_view = copy.deepcopy(form_view)
+    header = next_view.get("header") if isinstance(next_view.get("header"), dict) else {}
+    header = copy.deepcopy(header)
+    tabs_cfg = header.get("tabs") if isinstance(header.get("tabs"), dict) else {}
+    tabs_cfg = copy.deepcopy(tabs_cfg)
+    tabs_list = [tab for tab in (tabs_cfg.get("tabs") or []) if isinstance(tab, dict)]
+    existing_tab = next(
+        (
+            tab
+            for tab in tabs_list
+            if _ai_norm_token(str(tab.get("label") or "")) == _ai_norm_token(tab_label)
+        ),
+        None,
+    )
+    if isinstance(existing_tab, dict):
+        return {
+            "existing": True,
+            "tab": existing_tab,
+            "section_id": next(
+                (section_id for section_id in (existing_tab.get("sections") or []) if isinstance(section_id, str)),
+                None,
+            ),
+            "view_id": form_view.get("id"),
+        }
+
+    section_slug = _marketplace_slugify(tab_label).replace("-", "_") or "new_tab"
+    section_id = section_slug
+    existing_section_ids = {
+        sec.get("id")
+        for sec in (next_view.get("sections") or [])
+        if isinstance(sec, dict) and isinstance(sec.get("id"), str)
+    }
+    suffix = 2
+    while section_id in existing_section_ids:
+        section_id = f"{section_slug}_{suffix}"
+        suffix += 1
+    tab_slug = f"{section_slug}_tab"
+    existing_tab_ids = {tab.get("id") for tab in tabs_list if isinstance(tab.get("id"), str)}
+    while tab_slug in existing_tab_ids:
+        tab_slug = f"{section_slug}_tab_{suffix}"
+        suffix += 1
+    tabs_list.append({"id": tab_slug, "label": tab_label, "sections": [section_id]})
+    tabs_cfg["tabs"] = tabs_list
+    header["tabs"] = tabs_cfg
+    sections = [sec for sec in (next_view.get("sections") or []) if isinstance(sec, dict)]
+    sections.append({"id": section_id, "title": tab_label, "fields": [], "layout": "columns", "columns": 2})
+    return {
+        "existing": False,
+        "section_id": section_id,
+        "view_id": form_view.get("id"),
+        "tab": {"id": tab_slug, "label": tab_label, "sections": [section_id]},
+        "op": {
+            "op": "update_view",
+            "artifact_type": "module",
+            "artifact_id": module_id,
+            "view_id": form_view.get("id"),
+            "tab_label": tab_label,
+            "changes": {"header": header, "sections": sections},
+        },
+    }
+
+
+def _ai_extract_field_label(text: str, answer_hints: dict | None = None) -> str | None:
+    def _clean_candidate(raw: str | None) -> str | None:
+        if not isinstance(raw, str):
+            return None
+        label = raw.strip()
+        label = re.split(r"\b(?:this should|it should|but|and)\b", label, maxsplit=1, flags=re.IGNORECASE)[0].strip(" .,-")
+        label = re.sub(r"^(?:the\s+)?(?:a|an|new)\s+", "", label, flags=re.IGNORECASE)
+        label = re.sub(r"\s+\b(?:to|into|in|inside|under|on|from|within)\b\s+.+$", "", label, flags=re.IGNORECASE).strip(" .,-")
+        label = re.sub(r"\s+\b(?:checkbox|toggle|flag|field|attribute)\b$", "", label, flags=re.IGNORECASE).strip(" .,-")
+        label = re.sub(r"\s+\b(?:required|visible|shown|showing|displayed)\b$", "", label, flags=re.IGNORECASE).strip(" .,-")
+        norm = _ai_norm_token(label)
+        if not norm or len(norm) < 2 or norm in {"a", "an", "field", "attribute", "tab", "section", "module", "view", "it", "this", "that", "these", "those", "them"}:
+            return None
+        return label or None
+    msg = text or ""
+    quoted = re.search(r"['\"]([^'\"]{1,80})['\"]", msg)
+    if quoted and isinstance(quoted.group(1), str):
+        label = _clean_candidate(quoted.group(1))
+        if label:
+            return label
+    suppress_generic_called = bool(
+        _ai_is_explicit_add_tab_request(msg)
+        and not re.search(r"\b(field|attribute|checkbox|toggle|flag)\b", msg, flags=re.IGNORECASE)
+    )
+    patterns = [
+        r"(?:field|attribute|attachment|attachments|upload|file).*?\b(?:should\s+be\s+)?(?:labelled|labeled|called|named|call)\s+([a-zA-Z0-9 _-]{1,80})",
+        r"(?:field|attribute).*?\b(?:called|named|call)\s+([a-zA-Z0-9 _-]{1,80})",
+        r"(?:field|attribute)\s+(?:called|named|call)\s+([a-zA-Z0-9 _-]{1,80})",
+        r"(?:add|create|make)\s+(?:a\s+)?(?:new\s+)?(?:contact\s+)?(?:field|attribute)\s+(?:called|named|call)\s+([a-zA-Z0-9 _-]{1,80})",
+        r"(?:the\s+)?new\s+([a-zA-Z0-9_-]{1,40})\s+(?:field|attribute)\b",
+        r"(?:make|keep)\s+(?:the\s+)?([a-zA-Z0-9 _-]{1,80}?)\s+required\b",
+        r"(?:add|create|make)\s+(?:a\s+)?(?:checkbox|toggle|flag)\s+(?:called|named)?\s*([a-zA-Z0-9 _-]{1,80})",
+        r"(?:move|reposition|remove|delete|update)\s+(?:the\s+)?([a-zA-Z0-9 _-]{1,80}?)\s+(?:field|attribute)\b",
+        r"(?:add|create|make|put)\s+(?:a\s+|an\s+)?([a-zA-Z0-9 _-]{1,80}?)\s+(?:field|attribute)\b",
+        r"(?:add|create|make|put)\s+(?:a\s+)?([a-zA-Z0-9 _-]{1,80}?)\s+(?:to|into|in|under|on)\s+",
+        r"(?:add|create|make|remove|delete|update)\s+(?:a\s+|an\s+|the\s+)?([a-zA-Z0-9 _-]{1,80}?)(?:[.!?]|$)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, msg, flags=re.IGNORECASE)
+        if match and isinstance(match.group(1), str):
+            label = _clean_candidate(match.group(1))
+            if label:
+                return label
+    if not suppress_generic_called:
+        generic_match = re.search(r"(?:called|named|call)\s+([a-zA-Z0-9 _-]{1,80})", msg, flags=re.IGNORECASE)
+        if generic_match and isinstance(generic_match.group(1), str):
+            label = _clean_candidate(generic_match.group(1))
+            if label:
+                return label
+    if isinstance(answer_hints, dict):
+        hinted_label = answer_hints.get("field_label") if isinstance(answer_hints.get("field_label"), str) else None
+        answer_text = answer_hints.get("answer_text") if isinstance(answer_hints.get("answer_text"), str) else None
+        label = _clean_candidate(hinted_label)
+        if label and not (
+            isinstance(answer_text, str)
+            and answer_text.strip()
+            and _ai_norm_token(answer_text) == _ai_norm_token(label)
+            and re.search(r"\bmodule\b", answer_text, flags=re.IGNORECASE)
+        ):
+            return label
+    return None
+
+
+def _ai_extract_field_labels(text: str) -> list[str]:
+    if not isinstance(text, str) or not text.strip():
+        return []
+    labels: list[str] = []
+    seen: set[str] = set()
+
+    def _push(value: str | None) -> None:
+        if not isinstance(value, str):
+            return
+        label = value.strip(" .,-\"'")
+        label = re.sub(r"^(?:the\s+)?", "", label, flags=re.IGNORECASE)
+        label = re.sub(r"\s+\b(?:field|fields|attribute|attributes)\b$", "", label, flags=re.IGNORECASE).strip(" .,-\"'")
+        if not label:
+            return
+        norm = _ai_norm_token(label)
+        if not norm or norm in seen:
+            return
+        seen.add(norm)
+        labels.append(label)
+
+    for match in re.finditer(r"['\"]([^'\"]{1,120})['\"]", text):
+        if isinstance(match.group(1), str):
+            _push(match.group(1))
+
+    patterns = [
+        r"(?:remove|delete)\s+(?:the\s+)?fields?\s+(.+?)(?:\s+\bfrom\b|\s+\bin\b|$)",
+        r"(?:remove|delete)\s+(.+?)\s+fields?(?:\s+\bfrom\b|\s+\bin\b|$)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if not match or not isinstance(match.group(1), str):
+            continue
+        body = re.sub(r"['\"][^'\"]{1,120}['\"]", "", match.group(1))
+        body = re.sub(r"\bfrom\s+[a-zA-Z0-9_. -]+\b.*$", "", body, flags=re.IGNORECASE).strip(" .,-")
+        for part in re.split(r",|\band\b", body, flags=re.IGNORECASE):
+            _push(part)
+        break
+
+    if not labels:
+        _push(_ai_extract_field_label(text, answer_hints=None))
+    return labels
+
+
+def _ai_is_create_module_request(text: str) -> bool:
+    if not isinstance(text, str) or not text.strip():
+        return False
+    lowered = re.sub(r"\s+", " ", text.lower()).strip()
+    if re.search(
+        r"\b(?:change|edit|update|modify)\b.*\b(?:module)\b.*\b(?:field|attribute|tab|section|view|page|button|workflow|form|list|layout)\b",
+        lowered,
+    ):
+        return False
+    if re.search(
+        r"\b(?:add|create|make|place|put|move)\s+(?:a\s+|an\s+|the\s+)?(?:new\s+)?"
+        r"(?:field|column|property|tab|section|view|page|button|workflow|form|list|layout)\b"
+        r".*\b(?:from|in|into|on|to|for|within|inside)\s+(?:the\s+|my\s+|our\s+)?[a-z0-9_. -]{1,60}?\s+module\b",
+        lowered,
+    ):
+        return False
+    if re.search(
+        r"\b(?:create|build|make)\s+(?:a\s+|an\s+|the\s+)?(?:new\s+)?(?:tab|section|view|page|button|workflow|form|list|layout)\b.*\bmodule\b",
+        lowered,
+    ):
+        return False
+    patterns = [
+        r"\b(?:create|build|make)\s+(?:me\s+|us\s+)?(?:a\s+|an\s+|the\s+)?(?:new\s+|simple\s+|small\s+|custom\s+)?(?:module|app)\b",
+        r"\b(?:create|build|make)\s+(?:me\s+|us\s+)?(?:a\s+|an\s+|the\s+)?(?:new\s+|simple\s+|small\s+|custom\s+)?(?:[a-z0-9][a-z0-9&_.-]{1,24}\s+){1,4}(?:module|app)\b",
+        r"\b(?:create|build)\s+(?:me\s+|us\s+)?(?:a\s+|an\s+|the\s+)?(?:new\s+|simple\s+|small\s+|custom\s+)?(?!new\b|simple\b|small\b|custom\b|field\b|tab\b|section\b|view\b|page\b|button\b|workflow\b|form\b|list\b|layout\b|module\b)(?:[a-z0-9][a-z0-9&_.-]{1,20}\s+){1,4}(?:module|app)\b",
+        r"\b(?:new|simple|custom)\s+(?:module|app)\b",
+        r"\b(?:create|build|make)\s+(?:me\s+|us\s+)?(?:a\s+|an\s+|the\s+)?(?:new\s+|simple\s+|small\s+|custom\s+)?(?!new\b|simple\b|small\b|custom\b|field\b|tab\b|section\b|view\b|page\b|button\b|workflow\b|form\b|list\b|layout\b|module\b)(?:[a-z0-9][a-z0-9&_.-]{1,20}\s+){0,4}(?:system|workspace|platform)\b",
+    ]
+    return any(re.search(pattern, lowered) for pattern in patterns)
+
+
+def _ai_infer_field_type(text: str, answer_hints: dict | None = None) -> str:
+    explicit_label = _ai_extract_field_label(text, answer_hints=None)
+    label_matches_hint = False
+    if isinstance(answer_hints, dict) and isinstance(answer_hints.get("field_type"), str) and answer_hints.get("field_type") in _AI_FIELD_TYPES:
+        hinted_label = answer_hints.get("field_label") if isinstance(answer_hints.get("field_label"), str) else None
+        hinted_field_id = answer_hints.get("field_id") if isinstance(answer_hints.get("field_id"), str) else None
+        if isinstance(explicit_label, str) and explicit_label.strip():
+            explicit_norm = _ai_norm_token(explicit_label)
+            if isinstance(hinted_label, str) and _ai_norm_token(hinted_label) == explicit_norm:
+                label_matches_hint = True
+            elif isinstance(hinted_field_id, str) and _ai_norm_token(hinted_field_id.split(".")[-1]) == explicit_norm:
+                label_matches_hint = True
+        if not explicit_label or label_matches_hint:
+            return answer_hints.get("field_type")
+    hint_parts: list[str] = []
+    if isinstance(answer_hints, dict):
+        if not explicit_label or label_matches_hint:
+            for key in ("field_label", "field_id"):
+                value = answer_hints.get(key)
+                if isinstance(value, str) and value.strip():
+                    hint_parts.append(value.strip())
+    lowered = " ".join([*hint_parts, text or ""]).lower()
+    if any(token in lowered for token in ["checkbox", "check box", "boolean", "bool", "toggle", "yes/no", "yes no"]):
+        return "bool"
+    if any(token in lowered for token in ["datetime", "date time", "date-time", "timestamp", "scheduled at", "starts at", "ends at"]):
+        return "datetime"
+    if any(token in lowered for token in ["birthday", "birth date", "birthdate", "date of birth", "dob", "anniversary date"]):
+        return "date"
+    if any(token in lowered for token in ["due date", "visit date", "start date", "end date"]):
+        return "date"
+    if re.search(r"\bdate\b", lowered):
+        return "date"
+    if any(token in lowered for token in ["attachment", "upload", "headshot", "photo", "image", "file"]):
+        return "attachments"
+    if any(token in lowered for token in ["notes", "note", "description", "comments", "comment", "details", "summary", "message"]):
+        return "text"
+    if any(token in lowered for token in ["text area", "textarea", "multi line", "multiline", "long text"]):
+        return "text"
+    return "string"
+
+
+def _ai_clean_rollout_field_label(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    label = value.strip(" .,-\"'")
+    if not label:
+        return None
+    label = re.sub(
+        r"^(?:i want|we want|want|need|show me|show|add|create|make|keep|put|include|with|and|also|plus|then)\s+",
+        "",
+        label,
+        flags=re.IGNORECASE,
+    )
+    label = re.sub(r"\b(?:visible|shown|available|included|tracked)\b$", "", label, flags=re.IGNORECASE).strip(" .,-\"'")
+    label = re.sub(r"\s+", " ", label).strip()
+    if not _ai_is_label_confident(label):
+        return None
+    return label if any(ch.isupper() for ch in label) else label.title()
+
+
+def _ai_extract_module_scoped_field_label(segment: str, module_id: str, module_index: dict[str, dict]) -> str | None:
+    if not isinstance(segment, str) or not segment.strip():
+        return None
+    info = module_index.get(module_id) or {}
+    manifest = info.get("manifest") if isinstance(info, dict) else {}
+    module_def = manifest.get("module") if isinstance(manifest, dict) else {}
+    alias_values = [
+        module_id,
+        module_def.get("id") if isinstance(module_def, dict) else None,
+        module_def.get("key") if isinstance(module_def, dict) else None,
+        module_def.get("name") if isinstance(module_def, dict) else None,
+    ]
+    for entity in manifest.get("entities") if isinstance(manifest.get("entities"), list) else []:
+        if not isinstance(entity, dict):
+            continue
+        entity_id = entity.get("id")
+        entity_label = entity.get("label")
+        if isinstance(entity_id, str) and entity_id.strip():
+            short_id = entity_id.split(".")[-1]
+            alias_values.extend([short_id, _ai_humanize_identifier(short_id)])
+            if short_id and not short_id.endswith("s"):
+                alias_values.extend([f"{short_id}s", _ai_humanize_identifier(f"{short_id}s")])
+        if isinstance(entity_label, str) and entity_label.strip():
+            alias_values.append(entity_label.strip())
+    app_cfg = manifest.get("app") if isinstance(manifest, dict) and isinstance(manifest.get("app"), dict) else {}
+    for group in app_cfg.get("nav") if isinstance(app_cfg.get("nav"), list) else []:
+        items = group.get("items") if isinstance(group, dict) and isinstance(group.get("items"), list) else []
+        for item in items:
+            label = item.get("label") if isinstance(item, dict) else None
+            if isinstance(label, str) and label.strip():
+                alias_values.append(label.strip())
+    alias_patterns: list[str] = []
+    for alias in alias_values:
+        if not isinstance(alias, str) or not alias.strip():
+            continue
+        escaped = re.escape(alias.strip())
+        alias_patterns.append(escaped.replace(r"\ ", r"\s+"))
+    if not alias_patterns:
+        return None
+    alias_pattern = "|".join(sorted(set(alias_patterns), key=len, reverse=True))
+    patterns = [
+        rf"([a-zA-Z0-9][a-zA-Z0-9/&' _-]{{1,80}}?)\s+(?:in|for|on)\s+(?:the\s+|our\s+|my\s+)?(?:{alias_pattern})\b",
+        rf"([a-zA-Z0-9][a-zA-Z0-9/&' _-]{{1,80}}?)\s+visible\s+in\s+(?:the\s+|our\s+|my\s+)?(?:{alias_pattern})\b",
+    ]
+    for pattern in patterns:
+        matches = list(re.finditer(pattern, segment, flags=re.IGNORECASE))
+        for match in reversed(matches):
+            candidate = match.group(1) if isinstance(match.group(1), str) else None
+            cleaned = _ai_clean_rollout_field_label(candidate)
+            if cleaned:
+                return cleaned
+    return None
+
+
+def _ai_shared_field_rollout_map(message: str, module_ids: list[str], module_index: dict[str, dict], answer_hints: dict | None = None) -> list[tuple[str, str]]:
+    explicit_modules = _ai_extract_explicit_module_targets_from_text(message, module_ids, module_index)
+    if len(explicit_modules) < 2:
+        return []
+    lower = (message or "").lower()
+    rollout_markers = (
+        "across" in lower
+        or "everywhere" in lower
+        or "keep it consistent" in lower
+        or "keep them consistent" in lower
+        or "module-by-module rollout" in lower
+        or "rollout" in lower
+    )
+    if not rollout_markers:
+        return []
+    field_label = _ai_extract_field_label(message, answer_hints=answer_hints)
+    cleaned_label = _ai_clean_rollout_field_label(field_label)
+    if not cleaned_label:
+        return []
+    return [(module_id, cleaned_label) for module_id in explicit_modules]
+
+
+def _ai_module_scoped_field_rollout_map(message: str, module_ids: list[str], module_index: dict[str, dict]) -> list[tuple[str, str]]:
+    explicit_modules = _ai_extract_explicit_module_targets_from_text(message, module_ids, module_index)
+    if len(explicit_modules) < 2:
+        return []
+    segments = [
+        segment.strip(" .")
+        for segment in re.split(r"(?<=[.!?;])\s+|,|\band\b", message or "", flags=re.IGNORECASE)
+        if isinstance(segment, str) and segment.strip(" .")
+    ]
+    field_map: list[tuple[str, str]] = []
+    seen_modules: set[str] = set()
+    for segment in segments:
+        module_id = _ai_extract_module_target_from_text(segment, explicit_modules, module_index)
+        if not isinstance(module_id, str) or not module_id or module_id in seen_modules:
+            continue
+        label = _ai_extract_module_scoped_field_label(segment, module_id, module_index)
+        if not isinstance(label, str) or not label:
+            continue
+        field_map.append((module_id, label))
+        seen_modules.add(module_id)
+    return field_map if len(field_map) >= 2 else []
+
+
+def _ai_split_request_clauses(message: str) -> list[str]:
+    text = re.sub(r"\s+", " ", (message or "").strip())
+    if not text:
+        return []
+    trim_chars = " .,;"
+    clauses: list[str] = []
+    sentence_parts = re.split(r"(?<=[.!?;])\s+", text)
+    module_clause_pattern = re.compile(
+        rf"(?:^|\b(?:and|then|plus|also)\b\s+)(?:in|for|on)\s+[a-zA-Z][a-zA-Z0-9 _-]{{1,40}}(?:,|:|\s+(?:{_AI_SCOPE_ACTION_VERBS_PATTERN})\b)",
+        flags=re.IGNORECASE,
+    )
+    chained_action_pattern = re.compile(
+        r"\s+\b(?:and|then|plus|also)\b\s+(?=(?:add|create|update|upgrade|remove|delete|move)\b|put\s+(?:a|an|the|another|new)\b|make\s+(?:a|an|the|another|new)\b)",
+        flags=re.IGNORECASE,
+    )
+    for sentence in sentence_parts:
+        cleaned_sentence = sentence.strip(trim_chars)
+        if not cleaned_sentence:
+            continue
+        starts = [match.start() for match in module_clause_pattern.finditer(cleaned_sentence) if match.start() > 0]
+        sentence_clauses = [cleaned_sentence]
+        if starts:
+            starts.append(len(cleaned_sentence))
+            sentence_clauses = []
+            last = 0
+            for idx in range(len(starts) - 1):
+                start = starts[idx]
+                clause = cleaned_sentence[last:start].strip(trim_chars)
+                if clause:
+                    sentence_clauses.append(clause)
+                last = start
+            tail = cleaned_sentence[last:].strip(trim_chars)
+            if tail:
+                sentence_clauses.append(re.sub(r"^(?:and|then|plus|also)\s+", "", tail, flags=re.IGNORECASE))
+        for sentence_clause in sentence_clauses:
+            parts = re.split(chained_action_pattern, sentence_clause)
+            for part in parts:
+                clause = part.strip(trim_chars)
+                if clause:
+                    clauses.append(clause)
+    deduped: list[str] = []
+    for clause in clauses:
+        normalized = clause.strip()
+        if normalized and normalized not in deduped:
+            deduped.append(normalized)
+    return deduped
+
+
+def _ai_clauses_indicate_revision(clauses: list[str]) -> bool:
+    if len(clauses) < 2:
+        return False
+    corrective_start = re.compile(
+        r"^(?:actually|instead|rather|scratch that|forget that|ignore that|ignore the previous|on second thought|wait|no)\b",
+        flags=re.IGNORECASE,
+    )
+    corrective_anywhere = re.compile(r"\b(?:instead|rather than)\b", flags=re.IGNORECASE)
+    additive_marker = re.compile(r"\b(?:also|plus|too|as well)\b", flags=re.IGNORECASE)
+    for clause in clauses[1:]:
+        text = clause.strip()
+        if not text:
+            continue
+        if corrective_start.search(text) and not additive_marker.search(text):
+            return True
+        if corrective_anywhere.search(text) and not additive_marker.search(text):
+            return True
+    return False
+
+
+def _ai_clause_is_acknowledgement_only(text: str) -> bool:
+    if not isinstance(text, str) or not text.strip():
+        return False
+    cleaned = re.sub(r"^(?:clarification|answer|response|note)\s*:\s*", "", text.strip(), flags=re.IGNORECASE)
+    normalized = _ai_norm_token(cleaned)
+    if not normalized:
+        return False
+    return _ai_text_is_approval_response(cleaned) or _ai_text_is_decline_response(cleaned)
+
+
+def _ai_prune_generic_multi_request_field_ops(ops: list[dict]) -> list[dict]:
+    if not isinstance(ops, list):
+        return []
+    grouped: dict[str, list[tuple[int, dict, str]]] = {}
+    for idx, op in enumerate(ops):
+        if not isinstance(op, dict) or op.get("op") != "add_field":
+            continue
+        module_id = op.get("artifact_id") if isinstance(op.get("artifact_id"), str) else None
+        field = op.get("field") if isinstance(op.get("field"), dict) else {}
+        label = field.get("label") if isinstance(field.get("label"), str) and field.get("label").strip() else None
+        if not isinstance(module_id, str) or not module_id or not isinstance(label, str):
+            continue
+        grouped.setdefault(module_id, []).append((idx, op, label.strip()))
+
+    drop_indexes: set[int] = set()
+    for items in grouped.values():
+        normalized_labels = [(_ai_norm_token(label), idx) for idx, _op, label in items]
+        for idx, _op, label in items:
+            label_norm = _ai_norm_token(label)
+            if not label_norm or " " in label_norm:
+                continue
+            singular = label_norm[:-1] if label_norm.endswith("s") and len(label_norm) > 3 else label_norm
+            if singular == label_norm and not label_norm.endswith("s"):
+                continue
+            if any(
+                other_idx != idx
+                and other_label != label_norm
+                and (other_label.startswith(f"{singular} ") or other_label.endswith(f" {singular}") or f" {singular} " in f" {other_label} ")
+                for other_label, other_idx in normalized_labels
+            ):
+                drop_indexes.add(idx)
+
+    return [copy.deepcopy(op) for idx, op in enumerate(ops) if idx not in drop_indexes]
+
+
+def _ai_multi_clause_plan(
+    message: str,
+    module_ids: list[str],
+    module_index: dict[str, dict],
+    answer_hints: dict | None = None,
+) -> dict | None:
+    clauses = _ai_split_request_clauses(message)
+    if len(clauses) < 2:
+        return None
+
+    aggregate = {
+        "candidate_ops": [],
+        "questions": [],
+        "question_meta": None,
+        "assumptions": [],
+        "advisories": [],
+        "noop_notes": [],
+        "requested_change_lines": [],
+        "risk_flags": [],
+        "affected_modules": [],
+        "planner_state": {"intent": "multi_request"},
+        "resolved_without_changes": False,
+    }
+    working_module_index: dict[str, dict] = {module_id: copy.deepcopy(info) for module_id, info in module_index.items()}
+    carry_module = answer_hints.get("module_target") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("module_target"), str) else None
+    carry_tab = answer_hints.get("tab_target") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("tab_target"), str) else None
+    carry_tab_section_id = answer_hints.get("planned_section_id") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("planned_section_id"), str) else None
+    carry_view_id = answer_hints.get("planned_view_id") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("planned_view_id"), str) else None
+    any_actionable = False
+    any_noop = False
+
+    for clause in clauses:
+        clause_text = clause.strip()
+        if not clause_text:
+            continue
+        if _ai_clause_is_acknowledgement_only(clause_text):
+            continue
+        clause_hints = copy.deepcopy(answer_hints) if isinstance(answer_hints, dict) else {}
+        explicit_targets = _ai_extract_explicit_module_targets_from_text(clause_text, list(module_index.keys()), module_index)
+        explicit_module = explicit_targets[-1] if len(explicit_targets) == 1 else None
+        if isinstance(explicit_module, str) and explicit_module:
+            carry_module = explicit_module
+        elif isinstance(carry_module, str) and carry_module and not clause_hints.get("module_target"):
+            clause_hints["module_target"] = carry_module
+        if isinstance(carry_tab, str) and carry_tab and "that tab" in clause_text.lower() and not clause_hints.get("tab_target"):
+            clause_hints["tab_target"] = carry_tab
+        if isinstance(carry_tab_section_id, str) and carry_tab_section_id and not clause_hints.get("planned_section_id"):
+            clause_hints["planned_section_id"] = carry_tab_section_id
+        if isinstance(carry_view_id, str) and carry_view_id and not clause_hints.get("planned_view_id"):
+            clause_hints["planned_view_id"] = carry_view_id
+
+        scoped_module_ids = [carry_module] if isinstance(carry_module, str) and carry_module else module_ids
+        clause_plan = None
+        if len(explicit_targets) > 1:
+            clause_plan = _ai_cross_module_field_rollout_plan(
+                clause_text,
+                list(working_module_index.keys()),
+                working_module_index,
+                answer_hints=clause_hints,
+            )
+        if not isinstance(clause_plan, dict):
+            clause_plan = _ai_slot_based_plan(
+                clause_text,
+                scoped_module_ids,
+                working_module_index,
+                answer_hints=clause_hints,
+                allow_multi=False,
+            )
+        if clause_plan is None:
+            continue
+        clause_ops = [op for op in (clause_plan.get("candidate_ops") or []) if isinstance(op, dict)]
+        clause_questions = [question for question in (clause_plan.get("questions") or []) if isinstance(question, str) and question.strip()]
+        clause_affected = [module_id for module_id in (clause_plan.get("affected_modules") or []) if isinstance(module_id, str)]
+        clause_state = clause_plan.get("planner_state") if isinstance(clause_plan.get("planner_state"), dict) else {}
+        for op in clause_ops:
+            if not isinstance(op, dict) or op.get("op") != "create_module":
+                continue
+            module_id = op.get("artifact_id")
+            manifest = op.get("manifest")
+            if not isinstance(module_id, str) or not module_id or not isinstance(manifest, dict):
+                continue
+            working_module_index[module_id] = {
+                "manifest": copy.deepcopy(manifest),
+                "module": {
+                    "module_id": module_id,
+                    "name": _module_name_from_manifest(manifest) or module_id,
+                    "current_hash": None,
+                },
+            }
+            carry_module = module_id
+        if clause_questions:
+            if aggregate["candidate_ops"] or any_noop:
+                aggregate["questions"] = [clause_questions[0]]
+                aggregate["question_meta"] = clause_plan.get("question_meta") if isinstance(clause_plan.get("question_meta"), dict) else None
+                break
+            return clause_plan
+        if clause_ops or clause_plan.get("resolved_without_changes"):
+            any_actionable = True
+        if clause_plan.get("resolved_without_changes"):
+            any_noop = True
+        aggregate["candidate_ops"].extend(clause_ops)
+        aggregate["assumptions"].extend([item for item in (clause_plan.get("assumptions") or []) if isinstance(item, str)])
+        aggregate["advisories"].extend([item for item in (clause_plan.get("advisories") or []) if isinstance(item, str)])
+        aggregate["noop_notes"].extend([item for item in (clause_plan.get("noop_notes") or []) if isinstance(item, str)])
+        aggregate["requested_change_lines"].extend([item for item in (clause_plan.get("requested_change_lines") or []) if isinstance(item, str)])
+        aggregate["risk_flags"].extend([item for item in (clause_plan.get("risk_flags") or []) if isinstance(item, str)])
+        aggregate["affected_modules"].extend(clause_affected)
+        if len(clause_affected) == 1:
+            carry_module = clause_affected[0]
+        if clause_state.get("intent") in {"add_form_tab", "tab_already_exists_noop"} and isinstance(clause_state.get("tab_label"), str):
+            carry_tab = clause_state.get("tab_label")
+            carry_view_id = clause_state.get("view_id") if isinstance(clause_state.get("view_id"), str) else carry_view_id
+            clause_section_id = clause_state.get("section_id") if isinstance(clause_state.get("section_id"), str) else None
+            if isinstance(clause_section_id, str) and clause_section_id:
+                carry_tab_section_id = clause_section_id
+            for op in clause_ops:
+                if not isinstance(op, dict) or op.get("op") != "update_view":
+                    continue
+                changes = op.get("changes") if isinstance(op.get("changes"), dict) else {}
+                sections = [section for section in (changes.get("sections") or []) if isinstance(section, dict)]
+                if not sections:
+                    continue
+                latest_section_id = sections[-1].get("id")
+                if isinstance(latest_section_id, str) and latest_section_id:
+                    carry_tab_section_id = latest_section_id
+                    break
+
+    if not any_actionable:
+        return None
+    aggregate["candidate_ops"] = _ai_prune_generic_multi_request_field_ops(aggregate["candidate_ops"])
+    aggregate["affected_modules"] = list(dict.fromkeys([module_id for module_id in aggregate["affected_modules"] if module_id in working_module_index]))
+    aggregate["assumptions"] = list(dict.fromkeys(aggregate["assumptions"]))
+    aggregate["advisories"] = list(dict.fromkeys(aggregate["advisories"]))
+    aggregate["noop_notes"] = list(dict.fromkeys(aggregate["noop_notes"]))
+    aggregate["requested_change_lines"] = list(dict.fromkeys(aggregate["requested_change_lines"]))
+    aggregate["risk_flags"] = list(dict.fromkeys(aggregate["risk_flags"]))
+    aggregate["resolved_without_changes"] = bool(any_noop and not aggregate["candidate_ops"])
+    aggregate["planner_state"] = {
+        "intent": "multi_request",
+        "module_count": len(aggregate["affected_modules"]),
+        "change_count": len(aggregate["candidate_ops"]),
+    }
+    if len(aggregate["affected_modules"]) == 1:
+        aggregate["planner_state"]["module_id"] = aggregate["affected_modules"][0]
+    if isinstance(carry_tab, str) and carry_tab:
+        aggregate["planner_state"]["tab_label"] = carry_tab
+    if isinstance(carry_tab_section_id, str) and carry_tab_section_id:
+        aggregate["planner_state"]["planned_section_id"] = carry_tab_section_id
+    if isinstance(carry_view_id, str) and carry_view_id:
+        aggregate["planner_state"]["planned_view_id"] = carry_view_id
+    return aggregate
+
+
+def _ai_cross_module_field_rollout_plan(
+    message: str,
+    module_ids: list[str],
+    module_index: dict[str, dict],
+    answer_hints: dict | None = None,
+) -> dict | None:
+    field_map = _ai_shared_field_rollout_map(message, module_ids, module_index, answer_hints=answer_hints)
+    shared_rollout = bool(field_map)
+    if not field_map:
+        field_map = _ai_module_scoped_field_rollout_map(message, module_ids, module_index)
+    if len(field_map) < 2:
+        return None
+    aggregate = {
+        "candidate_ops": [],
+        "questions": [],
+        "question_meta": None,
+        "assumptions": [],
+        "advisories": [],
+        "noop_notes": [],
+        "risk_flags": [],
+        "affected_modules": [],
+        "planner_state": {"intent": "multi_request"},
+        "resolved_without_changes": False,
+    }
+    if shared_rollout:
+        aggregate["assumptions"].append(f"Planned the same '{field_map[0][1]}' field across the named modules.")
+    else:
+        aggregate["assumptions"].append("Mapped each requested workspace change to the named module before patch drafting.")
+    if any("approval" in str(field_label).lower() for _, field_label in field_map):
+        aggregate["advisories"].append("Keep the approval flow aligned across the named modules.")
+    for module_id, field_label in field_map:
+        module_label = _ai_module_display_name(module_id, module_index)
+        clause_hints = {
+            "module_target": module_id,
+            "field_type": _ai_infer_field_type(field_label, answer_hints=answer_hints),
+        }
+        clause_plan = _ai_slot_based_plan(
+            f"For {module_label}, add a field called '{field_label}'.",
+            [module_id],
+            module_index,
+            answer_hints=clause_hints,
+            allow_multi=False,
+        )
+        if not isinstance(clause_plan, dict):
+            return None
+        clause_questions = [question for question in (clause_plan.get("questions") or []) if isinstance(question, str) and question.strip()]
+        if clause_questions:
+            return None
+        aggregate["candidate_ops"].extend([op for op in (clause_plan.get("candidate_ops") or []) if isinstance(op, dict)])
+        aggregate["assumptions"].extend([item for item in (clause_plan.get("assumptions") or []) if isinstance(item, str)])
+        aggregate["advisories"].extend([item for item in (clause_plan.get("advisories") or []) if isinstance(item, str)])
+        aggregate["risk_flags"].extend([item for item in (clause_plan.get("risk_flags") or []) if isinstance(item, str)])
+        aggregate["affected_modules"].extend(
+            [item for item in (clause_plan.get("affected_modules") or []) if isinstance(item, str)]
+        )
+    aggregate["candidate_ops"] = _ai_merge_candidate_ops([], aggregate["candidate_ops"])
+    aggregate["affected_modules"] = list(dict.fromkeys(aggregate["affected_modules"]))
+    aggregate["assumptions"] = list(dict.fromkeys(aggregate["assumptions"]))
+    aggregate["advisories"] = list(dict.fromkeys(aggregate["advisories"]))
+    aggregate["risk_flags"] = list(dict.fromkeys(aggregate["risk_flags"]))
+    aggregate["planner_state"] = {
+        "intent": "multi_request",
+        "module_count": len(aggregate["affected_modules"]),
+        "change_count": len(aggregate["candidate_ops"]),
+    }
+    return aggregate if aggregate["candidate_ops"] else None
+
+
+def _ai_candidate_op_signature(op: dict) -> str:
+    try:
+        return json.dumps(op, sort_keys=True, separators=(",", ":"))
+    except Exception:
+        return repr(op)
+
+
+def _ai_merge_candidate_ops(existing_ops: list[dict], new_ops: list[dict]) -> list[dict]:
+    merged: list[dict] = []
+    seen: set[str] = set()
+    for op in [*existing_ops, *new_ops]:
+        if not isinstance(op, dict):
+            continue
+        signature = _ai_candidate_op_signature(op)
+        if signature in seen:
+            continue
+        seen.add(signature)
+        merged.append(copy.deepcopy(op))
+    return merged
+
+
+def _ai_pending_create_module_ids(answer_hints: dict | None) -> set[str]:
+    pending_ids: set[str] = set()
+    if not isinstance(answer_hints, dict):
+        return pending_ids
+    for op in (answer_hints.get("pending_candidate_ops") or []):
+        if not isinstance(op, dict) or op.get("op") != "create_module":
+            continue
+        module_id = op.get("artifact_id")
+        if isinstance(module_id, str) and module_id:
+            pending_ids.add(module_id)
+    return pending_ids
+
+
+def _ai_find_pending_create_module(answer_hints: dict | None, module_name: str | None) -> tuple[str | None, dict | None]:
+    if not isinstance(answer_hints, dict):
+        return None, None
+    pending_create_ops = [
+        op
+        for op in (answer_hints.get("pending_candidate_ops") or [])
+        if isinstance(op, dict) and op.get("op") == "create_module"
+    ]
+    if (not isinstance(module_name, str) or not module_name.strip()) and len(pending_create_ops) == 1:
+        sole_op = pending_create_ops[0]
+        module_id = sole_op.get("artifact_id") if isinstance(sole_op.get("artifact_id"), str) and sole_op.get("artifact_id") else None
+        manifest = sole_op.get("manifest") if isinstance(sole_op.get("manifest"), dict) else None
+        return module_id, copy.deepcopy(manifest) if isinstance(manifest, dict) else None
+    if not isinstance(module_name, str) or not module_name.strip():
+        return None, None
+    name_norm = _ai_norm_token(module_name)
+    if not name_norm:
+        return None, None
+    for op in pending_create_ops:
+        module_id = op.get("artifact_id") if isinstance(op.get("artifact_id"), str) and op.get("artifact_id") else None
+        manifest = op.get("manifest") if isinstance(op.get("manifest"), dict) else None
+        manifest_name = _module_name_from_manifest(manifest) if isinstance(manifest, dict) else None
+        candidate_norms = {
+            _ai_norm_token(candidate)
+            for candidate in (module_id, manifest_name)
+            if isinstance(candidate, str) and candidate.strip()
+        }
+        if name_norm in candidate_norms:
+            return module_id, copy.deepcopy(manifest) if isinstance(manifest, dict) else None
+    return None, None
+
+
+def _ai_module_index_with_pending_modules(module_index: dict[str, dict], answer_hints: dict | None) -> dict[str, dict]:
+    extended = {
+        module_id: copy.deepcopy(info)
+        for module_id, info in module_index.items()
+        if isinstance(module_id, str) and module_id and isinstance(info, dict)
+    }
+    for op in (answer_hints.get("pending_candidate_ops") or []) if isinstance(answer_hints, dict) else []:
+        if not isinstance(op, dict) or op.get("op") != "create_module":
+            continue
+        module_id = op.get("artifact_id")
+        manifest = op.get("manifest")
+        if not isinstance(module_id, str) or not module_id or not isinstance(manifest, dict):
+            continue
+        if module_id in extended:
+            existing = extended.get(module_id) or {}
+            if not isinstance(existing.get("manifest"), dict):
+                existing["manifest"] = copy.deepcopy(manifest)
+                extended[module_id] = existing
+            continue
+        extended[module_id] = {
+            "manifest": copy.deepcopy(manifest),
+            "module": {
+                "module_id": module_id,
+                "name": _module_name_from_manifest(manifest) or module_id,
+                "current_hash": None,
+            },
+        }
+    return extended
+
+
+def _ai_module_entry_is_pending_only(info: dict | None) -> bool:
+    if not isinstance(info, dict):
+        return False
+    manifest = info.get("manifest")
+    module_meta = info.get("module") if isinstance(info.get("module"), dict) else {}
+    return isinstance(manifest, dict) and module_meta.get("current_hash") is None
+
+
+def _ai_should_extend_existing_plan(
+    message: str,
+    session: dict,
+    answer_hints: dict | None,
+    module_index: dict[str, dict],
+) -> bool:
+    if not isinstance(answer_hints, dict):
+        return False
+    pending_ops = answer_hints.get("pending_candidate_ops")
+    if not isinstance(pending_ops, list) or not pending_ops:
+        return False
+    session_status = session.get("status") if isinstance(session.get("status"), str) else ""
+    if session_status not in {"planning", "waiting_input", "ready_to_apply", "applied"}:
+        return False
+    text = (message or "").strip()
+    if not text:
+        return False
+    if _ai_is_create_module_request(text):
+        return False
+    lower = text.lower()
+    if re.search(r"\b(actually|instead|scratch that|forget (?:that|it)|ignore (?:that|it|the previous plan)|cancel)\b", lower):
+        return False
+    pending_modules = [
+        module_id
+        for module_id in (answer_hints.get("pending_affected_modules") or [])
+        if isinstance(module_id, str) and module_id
+    ]
+    strong_additive_markers = (
+        lower.startswith("also ")
+        or lower.startswith("and ")
+        or lower.startswith("plus ")
+        or bool(re.search(r"\b(?:also|plus)\b", lower))
+        or bool(re.search(r"\b(?:too|as well)\b", lower))
+    )
+    additive_scope_switch_markers = (
+        strong_additive_markers
+        or bool(re.match(r"^(?:then|next)\b", lower))
+        or bool(re.search(r"\b(?:after that|after this|next up|follow that with)\b", lower))
+    )
+    explicit_module = _ai_extract_module_target_from_text(text, list(module_index.keys()), module_index)
+    continuation_markers = (
+        lower.startswith("also ")
+        or lower.startswith("and ")
+        or lower.startswith("plus ")
+        or lower.startswith("then ")
+        or lower.startswith("next ")
+        or "that tab" in lower
+        or "same tab" in lower
+        or "same section" in lower
+        or "same module" in lower
+        or "same form" in lower
+        or "same view" in lower
+        or "that field" in lower
+        or "those fields" in lower
+        or bool(re.search(r"\b(?:put|move|place|show)\s+(?:it|them)\b", lower))
+        or bool(re.search(r"\banother\s+(?:field|tab|section|button|view|column|checkbox|toggle)\b", lower))
+        or bool(re.search(r"^(?:add|create|update|upgrade|remove|delete|move|put|place|show)\s+(?:another|one more|a new|new)\b", lower))
+        or bool(re.search(r"^(?:add|create|update|upgrade|remove|delete|move|put|place|show)\b.*\b(?:too|as well)\b", lower))
+    )
+    pending_create_module_ids = _ai_pending_create_module_ids(answer_hints)
+    if (
+        len(pending_create_module_ids) == 1
+        and not isinstance(explicit_module, str)
+        and re.search(r"\b(?:tab|section|field|fields|form|list|view|workflow|status|action|button|attachment|attachments|notes?)\b", lower)
+    ):
+        return True
+    if isinstance(explicit_module, str) and pending_modules and explicit_module not in pending_modules:
+        return additive_scope_switch_markers
+    return continuation_markers or strong_additive_markers
+
+
+def _ai_merge_followup_candidate_ops(
+    message: str,
+    session: dict,
+    answer_hints: dict | None,
+    module_index: dict[str, dict],
+    candidate_ops: list[dict],
+    affected_modules: list[str],
+    assumptions: list[str],
+) -> tuple[list[dict], list[str], list[str]]:
+    if not _ai_should_extend_existing_plan(message, session, answer_hints, module_index):
+        return candidate_ops, affected_modules, assumptions
+    session_status = session.get("status") if isinstance(session, dict) and isinstance(session.get("status"), str) else ""
+    if session_status == "applied":
+        merged_modules = [
+            module_id
+            for module_id in (answer_hints.get("pending_affected_modules") or [])
+            if isinstance(module_id, str) and module_id
+        ]
+        for module_id in affected_modules:
+            if isinstance(module_id, str) and module_id and module_id not in merged_modules:
+                merged_modules.append(module_id)
+        for op in candidate_ops:
+            module_id = op.get("artifact_id") if isinstance(op.get("artifact_id"), str) else None
+            if isinstance(module_id, str) and module_id and module_id not in merged_modules:
+                merged_modules.append(module_id)
+        merged_assumptions = list(assumptions)
+        note = "Planned this as a follow-up to the current sandbox revision."
+        if note not in merged_assumptions:
+            merged_assumptions.append(note)
+        return candidate_ops, merged_modules, merged_assumptions
+    prior_ops = [
+        {
+            **copy.deepcopy(op),
+            **(
+                {"artifact_type": "module"}
+                if op.get("op") == "create_module" and not isinstance(op.get("artifact_type"), str)
+                else {}
+            ),
+        }
+        for op in (answer_hints.get("pending_candidate_ops") or [])
+        if isinstance(op, dict)
+    ]
+    if not prior_ops:
+        return candidate_ops, affected_modules, assumptions
+    merged_ops = _ai_merge_candidate_ops(prior_ops, candidate_ops)
+    merged_modules = [
+        module_id
+        for module_id in (answer_hints.get("pending_affected_modules") or [])
+        if isinstance(module_id, str) and module_id
+    ]
+    for module_id in affected_modules:
+        if isinstance(module_id, str) and module_id and module_id not in merged_modules:
+            merged_modules.append(module_id)
+    for op in merged_ops:
+        module_id = op.get("artifact_id") if isinstance(op.get("artifact_id"), str) else None
+        if isinstance(module_id, str) and module_id and module_id not in merged_modules:
+            merged_modules.append(module_id)
+    merged_assumptions = list(assumptions)
+    note = "Kept the earlier draft plan and added this follow-up request to it."
+    if note not in merged_assumptions:
+        merged_assumptions.append(note)
+    return merged_ops, merged_modules, merged_assumptions
+
+
+def _ai_slot_based_plan(
+    message: str,
+    module_ids: list[str],
+    module_index: dict[str, dict],
+    answer_hints: dict | None = None,
+    allow_multi: bool = True,
+) -> dict | None:
+    msg = (message or "").strip()
+    if not msg:
+        return None
+    extend_existing_plan = bool(isinstance(answer_hints, dict) and answer_hints.get("_extend_existing_plan"))
+    extra = answer_hints.get("answer_text") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("answer_text"), str) else ""
+    hint_scope_switch_module = _ai_hint_scope_switch_module(answer_hints, module_ids, module_index)
+    hint_module_target = answer_hints.get("module_target") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("module_target"), str) and answer_hints.get("module_target").strip() else None
+    explicit_targets = _ai_extract_explicit_module_targets_from_text(msg, module_ids, module_index)
+    explicit_module_target_is_scoped = bool(explicit_targets)
+    explicit_module_target = explicit_targets[-1] if explicit_targets else None
+    if not explicit_module_target and not isinstance(hint_module_target, str):
+        explicit_module_target = _ai_extract_module_target_from_text(msg, module_ids, module_index)
+    extra_starts_new_request = bool(extra and _ai_text_starts_new_request(extra, module_index))
+    extra_explicit_targets = _ai_extract_explicit_module_targets_from_text(extra, module_ids, module_index) if extra else []
+    extra_module_target = (
+        extra_explicit_targets[-1]
+        if extra_explicit_targets
+        else _ai_extract_module_target_from_text(extra, module_ids, module_index) if extra else None
+    )
+    combined = msg
+    if extra_starts_new_request and not extend_existing_plan:
+        combined = extra.strip()
+        explicit_module_target = extra_module_target
+        explicit_module_target_is_scoped = bool(extra_explicit_targets)
+    elif extra and not explicit_module_target and not extend_existing_plan:
+        combined = f"{msg}\n{extra}".strip()
+        combined_explicit_targets = _ai_extract_explicit_module_targets_from_text(combined, module_ids, module_index)
+        explicit_module_target = combined_explicit_targets[-1] if combined_explicit_targets else None
+        explicit_module_target_is_scoped = bool(combined_explicit_targets)
+        if not explicit_module_target and not isinstance(hint_module_target, str):
+            explicit_module_target = _ai_extract_module_target_from_text(combined, module_ids, module_index)
+    if isinstance(hint_scope_switch_module, str) and hint_scope_switch_module:
+        explicit_module_target = hint_scope_switch_module
+        explicit_module_target_is_scoped = True
+    lower = combined.lower()
+    if _ai_is_greeting_only(combined):
+        return {
+            "candidate_ops": [],
+            "questions": ["What would you like me to build or change in this sandbox?"],
+            "question_meta": {
+                "id": "open_request",
+                "kind": "text",
+                "prompt": "What would you like me to build or change in this sandbox?",
+            },
+            "assumptions": [],
+            "advisories": [],
+            "risk_flags": [],
+            "affected_modules": [],
+            "planner_state": {"intent": "greeting_only"},
+        }
+    status_creation_intent = _ai_is_status_creation_request(combined)
+    create_module_intent = _ai_is_create_module_request(combined)
+    pending_create_module_ids = _ai_pending_create_module_ids(answer_hints)
+    if create_module_intent and _ai_preview_contract_requested(combined):
+        inferred_preview_modules = _ai_infer_preview_modules(combined, module_index, module_ids)
+        requested_module_name = _ai_extract_new_module_name(combined, answer_hints=answer_hints)
+        matched_existing_module = (
+            _ai_find_module_by_alias(requested_module_name, inferred_preview_modules or list(module_index.keys()), module_index)
+            if isinstance(requested_module_name, str) and requested_module_name.strip()
+            else None
+        )
+        if inferred_preview_modules and (
+            not isinstance(requested_module_name, str)
+            or not requested_module_name.strip()
+            or matched_existing_module in inferred_preview_modules
+        ):
+            create_module_intent = False
+
+    if allow_multi:
+        clauses = [clause.strip() for clause in _ai_split_request_clauses(combined) if isinstance(clause, str) and clause.strip()]
+        should_try_multi = len(clauses) > 1 and not status_creation_intent
+        if should_try_multi and _ai_clauses_indicate_revision(clauses):
+            should_try_multi = False
+        if should_try_multi and create_module_intent:
+            followup_clauses = clauses[1:]
+            create_followup_only = all(
+                bool(
+                    re.search(
+                        r"^(?:call|name|label)\s+(?:it|this|the module)\b|^(?:it(?:'s| is)\s+called)\b|^(?:called|named)\s+[\"']?.+[\"']?$",
+                        clause,
+                        flags=re.IGNORECASE,
+                    )
+                    or (
+                        re.search(r"\b(start|make|keep|give|use|include|add)\b", clause, flags=re.IGNORECASE)
+                        and not re.search(r"\bfield\b", clause, flags=re.IGNORECASE)
+                        and re.search(
+                            r"\b(layout|view|views|workflow|workflows|kanban|calendar|graph|pivot|dashboard|home|tabs|modern|clean|simple|starter|structure)\b",
+                            clause,
+                            flags=re.IGNORECASE,
+                        )
+                    )
+                )
+                for clause in followup_clauses
+            )
+            should_try_multi = not create_followup_only
+        if should_try_multi:
+            multi_plan = _ai_multi_clause_plan(combined, module_ids, module_index, answer_hints=answer_hints)
+            if isinstance(multi_plan, dict):
+                return multi_plan
+
+    if allow_multi and len(module_ids) > 1 and not create_module_intent:
+        rollout_plan = _ai_cross_module_field_rollout_plan(combined, module_ids, module_index, answer_hints=answer_hints)
+        if isinstance(rollout_plan, dict):
+            return rollout_plan
+
+    new_module_name = _ai_extract_new_module_name(combined, answer_hints=answer_hints) if create_module_intent else None
+    scoped_module_name = _ai_extract_scoped_module_name(combined) if not explicit_module_target else None
+    if (
+        create_module_intent
+        and isinstance(explicit_module_target, str)
+        and explicit_module_target_is_scoped
+        and explicit_module_target in module_index
+        and explicit_module_target not in pending_create_module_ids
+        and (
+            not _ai_is_label_confident(new_module_name or "")
+            or _ai_find_module_by_alias(new_module_name, list(module_index.keys()), module_index) == explicit_module_target
+        )
+    ):
+        create_module_intent = False
+    if not create_module_intent and isinstance(scoped_module_name, str) and scoped_module_name:
+        if (
+            re.search(r"\b(make|keep|set up|setup|give)\b", lower)
+            and re.search(r"\bit\b", lower)
+            and re.search(
+                r"\b(list[\s-]?first|kanban[\s-]?first|useful views?|starter views?|better views?|modern views?|workflow|workflows|page structure|dashboard|home)\b",
+                lower,
+            )
+        ):
+            create_module_intent = True
+    if create_module_intent:
+        module_name = new_module_name or _ai_extract_new_module_name(combined, answer_hints=answer_hints)
+        if not _ai_is_label_confident(module_name or ""):
+            return {
+                "candidate_ops": [],
+                "questions": ["What should the new module be called?"],
+                "question_meta": {"id": "module_target", "kind": "text", "prompt": "What should the new module be called?"},
+                "assumptions": [],
+                "advisories": [],
+                "risk_flags": [],
+                "affected_modules": [],
+                "planner_state": {"intent": "create_module"},
+            }
+        pending_module_id, pending_manifest = _ai_find_pending_create_module(answer_hints, module_name)
+        module_id = pending_module_id or _ai_new_module_id_from_name(module_name, module_index)
+        if isinstance(pending_manifest, dict):
+            manifest = pending_manifest
+            design_spec = None
+            quality = _ai_module_manifest_quality_report(module_id, manifest)
+        else:
+            package = _ai_build_new_module_package(module_id, module_name, combined)
+            manifest = package.get("manifest")
+            design_spec = package.get("design_spec") if isinstance(package.get("design_spec"), dict) else None
+            quality = package.get("quality") if isinstance(package.get("quality"), dict) else {}
+        scaffold_views = [view.get("kind") for view in (manifest.get("views") or []) if isinstance(view, dict) and isinstance(view.get("kind"), str)]
+        included_modes = [mode for mode in ("list", "kanban", "calendar", "graph") if mode in scaffold_views]
+        interfaces = manifest.get("interfaces") if isinstance(manifest.get("interfaces"), dict) else {}
+        included_interfaces = [key for key in ("schedulable", "documentable", "dashboardable") if isinstance(interfaces.get(key), list) and interfaces.get(key)]
+        workflow_count = len([item for item in (manifest.get("workflows") or []) if isinstance(item, dict)])
+        stage_action_count = len(
+            [
+                action
+                for action in (manifest.get("actions") or [])
+                if isinstance(action, dict)
+                and action.get("kind") == "update_record"
+                and isinstance(action.get("entity_id"), str)
+            ]
+        )
+        advisories = [
+            f"Starter views included: {', '.join(included_modes)}." if included_modes else "Starter list and form scaffolding were included.",
+            "Review the starter fields, statuses, page labels, and view modes before apply.",
+        ]
+        if workflow_count:
+            advisories.append("A starter workflow/status flow was included.")
+        if stage_action_count:
+            advisories.append("Stage/status actions were included on the form.")
+        if included_interfaces:
+            advisories.append(f"Interfaces enabled: {', '.join(included_interfaces)}.")
+        if isinstance(design_spec, dict):
+            design_source = design_spec.get("design_source")
+            if design_source == "model_primary":
+                advisories.append("Design was generated from the model-first module designer, then normalized and validated by OCTO.")
+            elif design_source == "deterministic_fallback":
+                advisories.append("Model design was unavailable or weaker than fallback, so OCTO used the deterministic starter design.")
+        for strength in quality.get("strengths") if isinstance(quality.get("strengths"), list) else []:
+            if isinstance(strength, str) and strength not in advisories:
+                advisories.append(strength)
+        return {
+            "candidate_ops": [
+                {
+                    "op": "create_module",
+                    "artifact_type": "module",
+                    "artifact_id": module_id,
+                    "manifest": manifest,
+                    **({"design_spec": design_spec} if isinstance(design_spec, dict) else {}),
+                    **({"quality_report": quality} if isinstance(quality, dict) else {}),
+                }
+            ],
+            "questions": [],
+            "question_meta": None,
+            "assumptions": ["Built a richer starter scaffold based on the module type inferred from the request."],
+            "advisories": advisories,
+            "risk_flags": [],
+            "affected_modules": [module_id],
+            "planner_state": {"intent": "create_module", "module_name": module_name, "module_id": module_id},
+        }
+
+    prefer_latest_hint_module = bool(
+        not explicit_module_target
+        and
+        isinstance(answer_hints, dict)
+        and isinstance(answer_hints.get("answer_text"), str)
+        and answer_hints.get("answer_text").strip()
+        and isinstance(hint_module_target, str)
+        and hint_module_target.strip()
+    )
+    matched_module = None
+    pending_module_id = None
+    pending_manifest = None
+    if not explicit_module_target:
+        pending_module_id, pending_manifest = _ai_find_pending_create_module(answer_hints, None)
+    if isinstance(pending_module_id, str) and pending_module_id:
+        matched_module = pending_module_id
+    if prefer_latest_hint_module:
+        matched_module = _ai_find_module_by_alias(hint_module_target, module_ids, module_index)
+    if not matched_module:
+        matched_module = explicit_module_target
+    if not matched_module:
+        matched_module = _ai_find_module_by_alias(hint_module_target, module_ids, module_index) if isinstance(hint_module_target, str) and hint_module_target.strip() else None
+    if not matched_module and len(module_ids) == 1:
+        matched_module = module_ids[0] if module_ids else None
+    if not matched_module:
+        module_match = re.search(r"(?:module|app)\s+([a-zA-Z0-9_. -]+)", combined, flags=re.IGNORECASE)
+        if module_match:
+            matched_module = _ai_find_module_by_alias(module_match.group(1).strip(), module_ids, module_index)
+    if not matched_module:
+        return None
+
+    manifest = pending_manifest if isinstance(pending_manifest, dict) and matched_module == pending_module_id else (module_index.get(matched_module) or {}).get("manifest")
+    entities = manifest.get("entities") if isinstance(manifest, dict) and isinstance(manifest.get("entities"), list) else []
+    target_entity = entities[0] if entities and isinstance(entities[0], dict) else None
+    entity_id = target_entity.get("id") if isinstance(target_entity, dict) and isinstance(target_entity.get("id"), str) else None
+    if not isinstance(entity_id, str):
+        return None
+
+    result = {
+        "candidate_ops": [],
+        "questions": [],
+        "question_meta": None,
+        "assumptions": [],
+        "advisories": [],
+        "risk_flags": [],
+        "affected_modules": [matched_module],
+        "planner_state": {},
+    }
+    module_label = _ai_module_display_name(matched_module, module_index)
+    workflow_action_intent = _ai_is_workflow_action_request(combined)
+    workflow_comment_requirement = _ai_extract_workflow_comment_requirement(combined)
+
+    def ask(prompt: str, meta: dict) -> dict:
+        result["questions"] = [prompt]
+        result["question_meta"] = meta
+        return result
+
+    if workflow_action_intent and not status_creation_intent:
+        workflow_ops, workflow_errors = _ai_build_workflow_action_sync_ops(manifest, matched_module, entity_id)
+        lifecycle_context = _ai_lifecycle_status_context(manifest, entity_id) if isinstance(workflow_comment_requirement, dict) else None
+        comment_spec = (
+            _ai_build_workflow_comment_requirement_spec(
+                manifest,
+                matched_module,
+                entity_id,
+                lifecycle_context.get("status_field_id"),
+                lifecycle_context.get("status_options") or [],
+                combined,
+                existing_ops=workflow_ops,
+            )
+            if isinstance(lifecycle_context, dict)
+            and isinstance(lifecycle_context.get("status_field_id"), str)
+            else None
+        )
+        merged_ops = _ai_merge_candidate_ops(workflow_ops, comment_spec.get("ops") or []) if isinstance(comment_spec, dict) else list(workflow_ops)
+        if merged_ops:
+            result["candidate_ops"] = merged_ops
+            assumptions = ["The existing lifecycle workflow will drive the status action buttons instead of creating separate manual actions."] if workflow_ops else []
+            assumptions.extend([item for item in (comment_spec.get("assumptions") or []) if isinstance(item, str)] if isinstance(comment_spec, dict) else [])
+            advisories = ["Status action buttons and status bar wiring will be synced from the current workflow transitions."] if workflow_ops else []
+            advisories.extend([item for item in (comment_spec.get("advisories") or []) if isinstance(item, str)] if isinstance(comment_spec, dict) else [])
+            result["assumptions"] = list(dict.fromkeys(assumptions))
+            result["advisories"] = list(dict.fromkeys(advisories))
+            if workflow_errors and not workflow_ops:
+                result["risk_flags"] = [workflow_errors[0]]
+            result["planner_state"] = {"intent": "workflow_action_sync", "module_id": matched_module}
+            return result
+        if workflow_errors:
+            result["risk_flags"] = [workflow_errors[0]]
+            result["planner_state"] = {"intent": "workflow_action_sync", "module_id": matched_module}
+            return result
+
+    if status_creation_intent:
+        status_label = _ai_extract_status_label(combined)
+        if not _ai_is_label_confident(status_label or ""):
+            return ask(
+                "What should the new status be called?",
+                {"id": "status_label", "kind": "text", "prompt": "What should the new status be called?"},
+            )
+        lifecycle_workflow = next(
+            (
+                workflow
+                for workflow in (manifest.get("workflows") or [])
+                if isinstance(workflow, dict)
+                and workflow.get("entity") == entity_id
+                and isinstance(workflow.get("status_field"), str)
+                and (
+                    workflow.get("status_field").endswith(".status")
+                    or workflow.get("status_field").endswith(".state")
+                    or workflow.get("status_field").endswith(".stage")
+                )
+            ),
+            None,
+        )
+        status_field_id = lifecycle_workflow.get("status_field") if isinstance(lifecycle_workflow, dict) and isinstance(lifecycle_workflow.get("status_field"), str) else None
+        status_field = None
+        if isinstance(status_field_id, str) and status_field_id:
+            status_field = next(
+                (
+                    field
+                    for field in (target_entity.get("fields") or [])
+                    if isinstance(field, dict) and field.get("id") == status_field_id
+                ),
+                None,
+            )
+        if not isinstance(status_field, dict):
+            status_field = next(
+                (
+                    field
+                    for field in (target_entity.get("fields") or [])
+                    if isinstance(field, dict)
+                    and field.get("type") == "enum"
+                    and isinstance(field.get("id"), str)
+                    and (
+                        field.get("id").endswith(".status")
+                        or field.get("id").endswith(".state")
+                        or field.get("id").endswith(".stage")
+                    )
+                ),
+                None,
+            )
+            status_field_id = status_field.get("id") if isinstance(status_field, dict) and isinstance(status_field.get("id"), str) else status_field_id
+        if not isinstance(status_field, dict) or not isinstance(status_field_id, str) or not status_field_id:
+            result["risk_flags"] = ["I couldn't find an existing lifecycle status field to update in this module."]
+            return result
+        current_options_raw = status_field.get("options") or status_field.get("values") or []
+        current_options: list[dict] = []
+        seen_status_values: set[str] = set()
+        if isinstance(current_options_raw, list):
+            for item in current_options_raw:
+                if isinstance(item, dict) and isinstance(item.get("value"), str) and item.get("value").strip():
+                    value = item.get("value").strip()
+                    if value in seen_status_values:
+                        continue
+                    seen_status_values.add(value)
+                    label = item.get("label") if isinstance(item.get("label"), str) and item.get("label").strip() else _ai_titleize_slug(value)
+                    current_options.append({"value": value, "label": label})
+                elif isinstance(item, str) and item.strip():
+                    value = _marketplace_slugify(item).replace("-", "_").strip("_")
+                    if not value or value in seen_status_values:
+                        continue
+                    seen_status_values.add(value)
+                    current_options.append({"value": value, "label": item.strip()})
+        if not current_options and isinstance(lifecycle_workflow, dict):
+            for state in (lifecycle_workflow.get("states") or []):
+                if not isinstance(state, dict) or not isinstance(state.get("id"), str) or not state.get("id").strip():
+                    continue
+                value = state.get("id").strip()
+                if value in seen_status_values:
+                    continue
+                seen_status_values.add(value)
+                label = state.get("label") if isinstance(state.get("label"), str) and state.get("label").strip() else _ai_titleize_slug(value)
+                current_options.append({"value": value, "label": label})
+        new_status_value = _marketplace_slugify(status_label).replace("-", "_").strip("_")
+        if any(item.get("value") == new_status_value for item in current_options if isinstance(item, dict)):
+            noop_result = _ai_mark_resolved_without_changes(
+                result,
+                intent="status_already_exists_noop",
+                module_id=matched_module,
+                field_ref=status_label,
+                advisory=f"Status '{status_label}' already exists in {module_label}.",
+            )
+            _ai_append_requested_change_line(noop_result, f"Add status '{status_label}' to {module_label}.")
+            planner_state = noop_result.get("planner_state") if isinstance(noop_result.get("planner_state"), dict) else {}
+            planner_state["status_label"] = status_label
+            planner_state["status_field_id"] = status_field_id
+            noop_result["planner_state"] = planner_state
+            combined_ops = [op for op in (noop_result.get("candidate_ops") or []) if isinstance(op, dict)]
+            if workflow_action_intent:
+                workflow_state_ids = {
+                    state.get("id")
+                    for state in (lifecycle_workflow.get("states") or [])
+                    if isinstance(state, dict) and isinstance(state.get("id"), str) and state.get("id").strip()
+                } if isinstance(lifecycle_workflow, dict) else set()
+                workflow_transition_targets = {
+                    transition.get("to")
+                    for transition in (lifecycle_workflow.get("transitions") or [])
+                    if isinstance(transition, dict) and isinstance(transition.get("to"), str) and transition.get("to").strip()
+                } if isinstance(lifecycle_workflow, dict) else set()
+                workflow_needs_refresh = bool(
+                    isinstance(lifecycle_workflow, dict)
+                    and (
+                        new_status_value not in workflow_state_ids
+                        or new_status_value not in workflow_transition_targets
+                    )
+                )
+                workflow_override = lifecycle_workflow if isinstance(lifecycle_workflow, dict) else None
+                if workflow_needs_refresh:
+                    rebuilt_workflows = _ai_build_workflow_for_status(entity_id, status_field_id, current_options)
+                    if rebuilt_workflows:
+                        rebuilt_workflow = copy.deepcopy(rebuilt_workflows[0])
+                        workflow_id = lifecycle_workflow.get("id") if isinstance(lifecycle_workflow, dict) and isinstance(lifecycle_workflow.get("id"), str) else rebuilt_workflow.get("id")
+                        if isinstance(workflow_id, str) and workflow_id:
+                            rebuilt_workflow["id"] = workflow_id
+                        workflow_override = rebuilt_workflow
+                        combined_ops.append(
+                            {
+                                "op": "update_workflow",
+                                "artifact_type": "module",
+                                "artifact_id": matched_module,
+                                "workflow_id": workflow_id,
+                                "entity_id": entity_id,
+                                "status_field_id": status_field_id,
+                                "changes": rebuilt_workflow,
+                            }
+                        )
+                workflow_ops, workflow_errors = _ai_build_workflow_action_sync_ops(
+                    manifest,
+                    matched_module,
+                    entity_id,
+                    workflow_override=workflow_override,
+                )
+                for workflow_op in workflow_ops:
+                    if workflow_op not in combined_ops:
+                        combined_ops.append(workflow_op)
+                if workflow_errors:
+                    workflow_message = workflow_errors[0]
+                    if isinstance(workflow_message, str) and workflow_message == "Workflow action buttons are already wired from the current lifecycle states.":
+                        advisories = [item for item in (noop_result.get("advisories") or []) if isinstance(item, str) and item.strip()]
+                        noop_notes = [item for item in (noop_result.get("noop_notes") or []) if isinstance(item, str) and item.strip()]
+                        if workflow_message not in advisories:
+                            advisories.append(workflow_message)
+                        if workflow_message not in noop_notes:
+                            noop_notes.append(workflow_message)
+                        noop_result["advisories"] = advisories
+                        noop_result["noop_notes"] = noop_notes
+                    else:
+                        noop_result["risk_flags"] = [workflow_message]
+            comment_spec = _ai_build_workflow_comment_requirement_spec(
+                manifest,
+                matched_module,
+                entity_id,
+                status_field_id,
+                current_options,
+                combined,
+                existing_ops=combined_ops,
+            )
+            if isinstance(comment_spec, dict):
+                for comment_op in comment_spec.get("ops") or []:
+                    if isinstance(comment_op, dict) and comment_op not in combined_ops:
+                        combined_ops.append(comment_op)
+            if combined_ops:
+                noop_result["candidate_ops"] = combined_ops
+                noop_result["resolved_without_changes"] = False
+                assumptions = []
+                if workflow_action_intent:
+                    assumptions.append("The requested status already exists, so only the workflow buttons and status bar need to be synced.")
+                    _ai_append_requested_change_line(noop_result, f"Update the status workflow and action buttons in {module_label}.")
+                assumptions.extend(
+                    [item for item in (comment_spec.get("assumptions") or []) if isinstance(item, str)]
+                    if isinstance(comment_spec, dict)
+                    else []
+                )
+                if assumptions:
+                    noop_result["assumptions"] = list(dict.fromkeys(assumptions))
+                advisories = [item for item in (noop_result.get("advisories") or []) if isinstance(item, str) and item.strip()]
+                advisories.extend(
+                    [item for item in (comment_spec.get("advisories") or []) if isinstance(item, str)]
+                    if isinstance(comment_spec, dict)
+                    else []
+                )
+                noop_result["advisories"] = list(dict.fromkeys(advisories))
+                noop_result["planner_state"] = {
+                    "intent": "status_update",
+                    "module_id": matched_module,
+                    "status_field_id": status_field_id,
+                    "status_label": status_label,
+                    "status_already_exists": True,
+                }
+                return noop_result
+            return noop_result
+        updated_options = current_options + [{"value": new_status_value, "label": status_label}]
+        result["candidate_ops"] = [
+            {
+                "op": "update_field",
+                "artifact_type": "module",
+                "artifact_id": matched_module,
+                "entity_id": entity_id,
+                "field_id": status_field_id,
+                "changes": {"options": updated_options},
+            }
+        ]
+        rebuilt_workflows = _ai_build_workflow_for_status(entity_id, status_field_id, updated_options)
+        if rebuilt_workflows:
+            workflow_id = lifecycle_workflow.get("id") if isinstance(lifecycle_workflow, dict) and isinstance(lifecycle_workflow.get("id"), str) else rebuilt_workflows[0].get("id")
+            result["candidate_ops"].append(
+                {
+                    "op": "update_workflow",
+                    "artifact_type": "module",
+                    "artifact_id": matched_module,
+                    "workflow_id": workflow_id,
+                    "entity_id": entity_id,
+                    "status_field_id": status_field_id,
+                    "changes": rebuilt_workflows[0],
+                }
+            )
+            result["advisories"].append("Status action buttons will be refreshed from the workflow states on the form and list views.")
+        else:
+            result["advisories"].append("I updated the lifecycle status options, but I couldn't rebuild the workflow buttons automatically.")
+        comment_spec = _ai_build_workflow_comment_requirement_spec(
+            manifest,
+            matched_module,
+            entity_id,
+            status_field_id,
+            updated_options,
+            combined,
+            existing_ops=result["candidate_ops"],
+        )
+        if isinstance(comment_spec, dict):
+            result["candidate_ops"] = _ai_merge_candidate_ops(result["candidate_ops"], comment_spec.get("ops") or [])
+            result["assumptions"].extend([item for item in (comment_spec.get("assumptions") or []) if isinstance(item, str)])
+            result["advisories"].extend([item for item in (comment_spec.get("advisories") or []) if isinstance(item, str)])
+            result["assumptions"] = list(dict.fromkeys(result["assumptions"]))
+            result["advisories"] = list(dict.fromkeys(result["advisories"]))
+        result["assumptions"] = list(
+            dict.fromkeys(
+                ["The existing lifecycle status field and workflow will be updated instead of adding a separate field.", *result["assumptions"]]
+            )
+        )
+        result["planner_state"] = {
+            "intent": "status_update",
+            "module_id": matched_module,
+            "status_field_id": status_field_id,
+            "status_label": status_label,
+        }
+        return result
+
+    if isinstance(workflow_comment_requirement, dict):
+        lifecycle_context = _ai_lifecycle_status_context(manifest, entity_id)
+        if not isinstance(lifecycle_context, dict) or not isinstance(lifecycle_context.get("status_field_id"), str):
+            result["risk_flags"] = ["I couldn't find an existing lifecycle status field to tie the comment requirement to in this module."]
+            result["planner_state"] = {"intent": "workflow_comment_requirement", "module_id": matched_module}
+            return result
+        comment_spec = _ai_build_workflow_comment_requirement_spec(
+            manifest,
+            matched_module,
+            entity_id,
+            lifecycle_context.get("status_field_id"),
+            lifecycle_context.get("status_options") or [],
+            combined,
+            existing_ops=[],
+        )
+        if isinstance(comment_spec, dict):
+            comment_ops = [op for op in (comment_spec.get("ops") or []) if isinstance(op, dict)]
+            if comment_ops:
+                result["candidate_ops"] = comment_ops
+                result["assumptions"] = [item for item in (comment_spec.get("assumptions") or []) if isinstance(item, str)]
+                result["advisories"] = [item for item in (comment_spec.get("advisories") or []) if isinstance(item, str)]
+                result["planner_state"] = {
+                    "intent": "workflow_comment_requirement",
+                    "module_id": matched_module,
+                    "status_field_id": lifecycle_context.get("status_field_id"),
+                    "field_label": comment_spec.get("field_label"),
+                }
+                return result
+            advisories = [item for item in (comment_spec.get("advisories") or []) if isinstance(item, str)]
+            if advisories:
+                result["risk_flags"] = advisories
+                result["planner_state"] = {"intent": "workflow_comment_requirement", "module_id": matched_module}
+                return result
+        result = _ai_mark_resolved_without_changes(
+            result,
+            intent="workflow_comment_requirement",
+            module_id=matched_module,
+            advisory=f"'{workflow_comment_requirement.get('field_label')}' is already required for the relevant approval status in {module_label}.",
+        )
+        result["planner_state"]["status_field_id"] = lifecycle_context.get("status_field_id")
+        return result
+
+    persistence_intent = bool(re.search(r"\b(save|store|persist)\b", lower) and re.search(r"\b(db|database)\b", lower))
+    if persistence_intent:
+        field_ref = None
+        if isinstance(answer_hints, dict):
+            if isinstance(answer_hints.get("field_id"), str) and answer_hints.get("field_id").strip():
+                field_ref = answer_hints.get("field_id").strip()
+            elif isinstance(answer_hints.get("field_label"), str) and answer_hints.get("field_label").strip():
+                field_ref = answer_hints.get("field_label").strip()
+        if not field_ref:
+            field_ref = _ai_extract_field_label(combined, answer_hints=answer_hints)
+        if not field_ref:
+            return ask("Which field should persist to the database?", {"id": "field_target", "kind": "text", "prompt": "Which field should persist to the database?"})
+        target_field = _ai_match_field_in_entity(target_entity, field_ref)
+        if not isinstance(target_field, dict):
+            suggestions = _ai_suggest_form_field_refs(manifest, field_ref)
+            suggestion_text = f" Did you mean {', '.join([repr(item) for item in suggestions])}?" if suggestions else ""
+            return ask(
+                f"I couldn't find a field matching '{field_ref}' in module '{matched_module}'. Which field should persist to the database?{suggestion_text}",
+                {"id": "field_target", "kind": "text", "prompt": f"I couldn't find a field matching '{field_ref}' in module '{matched_module}'. Which field should persist to the database?"},
+            )
+        field_id = target_field.get("id")
+        if not isinstance(field_id, str) or not field_id:
+            return ask("Which field should persist to the database?", {"id": "field_target", "kind": "text", "prompt": "Which field should persist to the database?"})
+        location = _ai_find_form_field_location(manifest, field_id)
+        if isinstance(location, dict):
+            result["assumptions"] = [f"Field '{field_id}' already uses the standard record save path for entity data."]
+            result["advisories"] = [f"No configuration change is required for '{field_id}' to persist. Values entered on the contact form already save through the normal database-backed record flow."]
+            result["planner_state"] = {"intent": "field_already_persisted", "field_ref": field_ref, "field_id": field_id}
+            result["resolved_without_changes"] = True
+            return result
+
+    duplicate_cleanup_intent = bool(
+        re.search(r"\b(clean up|cleanup|deduplicate|remove duplicates?|fix duplicates?)\b", lower)
+        and re.search(r"\b(field|fields)\b", lower)
+    )
+    if duplicate_cleanup_intent:
+        field_ref = _ai_extract_field_label(combined, answer_hints=answer_hints)
+        if not field_ref and "supplier rating" in lower:
+            field_ref = "supplier rating"
+        if not field_ref:
+            duplicates = []
+            for field in target_entity.get("fields") if isinstance(target_entity, dict) and isinstance(target_entity.get("fields"), list) else []:
+                if not isinstance(field, dict) or not isinstance(field.get("id"), str):
+                    continue
+                duplicates.append(field.get("id"))
+            counts: dict[str, int] = {}
+            for field_id in duplicates:
+                counts[field_id] = counts.get(field_id, 0) + 1
+            dup_ids = [field_id for field_id, count in counts.items() if count > 1]
+            if len(dup_ids) == 1:
+                field_ref = dup_ids[0]
+        if not field_ref:
+            return ask("Which duplicated field should I clean up?", {"id": "field_target", "kind": "text", "prompt": "Which duplicated field should I clean up?"})
+        target_field = _ai_match_field_in_entity(target_entity, field_ref)
+        if not isinstance(target_field, dict):
+            suggestions = _ai_suggest_form_field_refs(manifest, field_ref)
+            suggestion_text = f" Did you mean {', '.join([repr(item) for item in suggestions])}?" if suggestions else ""
+            repeated_missing = bool(
+                isinstance(answer_hints, dict)
+                and isinstance(answer_hints.get("field_target"), str)
+                and _ai_norm_token(answer_hints.get("field_target")) == _ai_norm_token(field_ref)
+            )
+            if repeated_missing or not suggestions:
+                return _ai_mark_resolved_without_changes(
+                    result,
+                    intent="cleanup_duplicates",
+                    module_id=matched_module,
+                    field_ref=field_ref,
+                    advisory=f"I couldn't find duplicated field '{field_ref}' in {matched_module}, so there is nothing safe to clean up right now.",
+                )
+            return ask(
+                f"I couldn't find a duplicated field matching '{field_ref}' in module '{matched_module}'. Which field should I clean up?{suggestion_text}",
+                {"id": "field_target", "kind": "text", "prompt": f"I couldn't find a duplicated field matching '{field_ref}' in module '{matched_module}'. Which field should I clean up?"},
+            )
+        field_id = target_field.get("id")
+        existing_fields = target_entity.get("fields") if isinstance(target_entity, dict) and isinstance(target_entity.get("fields"), list) else []
+        dup_count = sum(1 for field in existing_fields if isinstance(field, dict) and field.get("id") == field_id)
+        if dup_count <= 1:
+            result = _ai_mark_resolved_without_changes(
+                result,
+                intent="cleanup_duplicates",
+                module_id=matched_module,
+                field_ref=field_id,
+                advisory=f"Field '{_ai_display_field_reference(field_id) or field_id}' is not currently duplicated in {matched_module}.",
+            )
+            result["assumptions"] = [f"Field '{field_id}' is not currently duplicated."]
+            planner_state = result.get("planner_state") if isinstance(result.get("planner_state"), dict) else {}
+            planner_state["field_id"] = field_id
+            result["planner_state"] = planner_state
+            return result
+        result["candidate_ops"] = [
+            {
+                "op": "remove_field",
+                "artifact_type": "module",
+                "artifact_id": matched_module,
+                "entity_id": entity_id,
+                "field_id": field_id,
+            }
+            for _ in range(dup_count - 1)
+        ]
+        result["planner_state"] = {"intent": "cleanup_duplicates", "field_id": field_id}
+        result["assumptions"] = [f"Will keep one instance of '{field_id}' and remove the duplicates."]
+        return result
+
+    remove_view_intent = bool(
+        re.search(r"\b(remove|delete|hide)\b", lower)
+        and re.search(r"\b(kanban|calendar|chart|graph|pivot)\b", lower)
+        and (
+            re.search(r"\b(view|views|mode|record/list view|list view|module|experience|page)\b", lower)
+            or re.search(r"\bfrom\b", lower)
+        )
+    )
+    if remove_view_intent:
+        target_kind = "graph" if "chart" in lower else next(
+            (kind for kind in ("calendar", "kanban", "graph", "pivot") if kind in lower),
+            None,
+        )
+        if isinstance(target_kind, str):
+            ops, advisory = _ai_build_remove_view_mode_ops(manifest, matched_module, entity_id, target_kind)
+            if ops:
+                result["candidate_ops"] = ops
+                if isinstance(advisory, str) and advisory.strip():
+                    result["advisories"] = [advisory.strip()]
+                result["planner_state"] = {"intent": "remove_view_mode", "module_id": matched_module, "view_kind": target_kind}
+                return result
+            return _ai_mark_resolved_without_changes(
+                result,
+                intent="view_missing_noop",
+                module_id=matched_module,
+                advisory=(advisory or f"No {target_kind} view is currently configured for this module."),
+            )
+
+    design_upgrade_intent = bool(
+        (
+            re.search(r"\b(upgrade|moderni[sz]e|refresh|align|improve)\b", lower)
+            and re.search(r"\b(design|layout|style|docs|recommended|marketplace|structure)\b", lower)
+        )
+        or (
+            re.search(r"\b(review|audit)\b", lower)
+            and re.search(r"\b(modern|refresh|improv(?:e|ement|ements)|recommended|latest|current)\b", lower)
+            and re.search(r"\b(layout|design|style|views?|pages?|structure)\b", lower)
+        )
+        or (
+            re.search(r"\b(include|add)\b", lower)
+            and re.search(r"\b(kanban|calendar|chart|graph|pivot|list-first)\b", lower)
+        )
+        or (
+            re.search(r"\b(make|keep)\b", lower)
+            and re.search(r"\b(list[\s-]?first|kanban[\s-]?first)\b", lower)
+        )
+        or (
+            re.search(r"\b(useful|better|modern)\b", lower)
+            and re.search(r"\bviews?\b", lower)
+        )
+        or (
+            re.search(r"\b(make sure|update)\b", lower)
+            and re.search(r"\b(tabs|chatter|nav|home|filters|bulk actions?|page structure|actions?|create action)\b", lower)
+            and re.search(r"\b(latest|current|recommended|marketplace)\b", lower)
+        )
+    )
+    if design_upgrade_intent:
+        ops, op_errors = _ai_build_latest_style_upgrade_ops(matched_module, manifest)
+        if op_errors:
+            result["risk_flags"] = op_errors
+            prompt = op_errors[0]
+            return ask(
+                f"{prompt} What specific layout or view change should I make instead?",
+                {
+                    "id": "plan_revision",
+                    "kind": "text",
+                    "prompt": "What specific layout or view change should I make instead?",
+                },
+            )
+        requested_modes = [mode for mode in ("kanban", "calendar", "graph", "pivot") if mode in lower or ("chart" in lower and mode == "graph")]
+        resulting_modes = []
+        for op in ops:
+            if not isinstance(op, dict):
+                continue
+            if op.get("op") not in {"add_view", "update_view"}:
+                continue
+            view = op.get("view") if isinstance(op.get("view"), dict) else op.get("changes") if isinstance(op.get("changes"), dict) else {}
+            kind = view.get("kind") if isinstance(view.get("kind"), str) else None
+            if kind in {"kanban", "calendar", "graph"} and kind not in resulting_modes:
+                resulting_modes.append(kind)
+        if any(op.get("op") in {"add_page", "update_page"} for op in ops if isinstance(op, dict)):
+            result["assumptions"].append("Updated list/form pages to the current recommended page structure.")
+        if requested_modes:
+            missing_modes = [mode for mode in requested_modes if mode not in resulting_modes and not (mode == "pivot")]
+            if missing_modes:
+                result["advisories"].append(f"Some requested views were not added because the current schema does not clearly support them: {', '.join(missing_modes)}.")
+        result["candidate_ops"] = ops
+        result["planner_state"] = {"intent": "upgrade_module_style", "module_id": matched_module}
+        return result
+
+    add_tab_intent = _ai_is_explicit_add_tab_request(combined)
+    if add_tab_intent:
+        tab_label = _ai_extract_requested_tab_label(combined)
+        quoted = re.search(r"['\"]([^'\"]{1,80})['\"]", combined)
+        if tab_label is None and quoted and isinstance(quoted.group(1), str) and quoted.group(1).strip():
+            tab_label = quoted.group(1).strip()
+        if tab_label is None:
+            match = re.search(
+                r"(?:tab)(?:\s+in\s+(?:that|the)\s+module)?(?:\s+called|\s+named)?\s+([a-zA-Z0-9 _-]{1,80})",
+                combined,
+                flags=re.IGNORECASE,
+            )
+            if match and isinstance(match.group(1), str):
+                tab_label = match.group(1).strip(" .,-")
+        if not _is_label_confident(tab_label or ""):
+            return ask("What should the new form tab be called?", {"id": "tab_label", "kind": "text", "prompt": "What should the new form tab be called?"})
+        tab_change = _ai_prepare_add_form_tab_change(manifest, matched_module, entity_id, tab_label)
+        if isinstance(tab_change.get("error"), str):
+            result["risk_flags"] = [tab_change.get("error")]
+            return result
+        if tab_change.get("existing") is True:
+            existing_result = _ai_mark_resolved_without_changes(
+                result,
+                intent="tab_already_exists_noop",
+                module_id=matched_module,
+                advisory=f"Tab '{tab_label}' already exists in {module_label}.",
+            )
+            _ai_append_requested_change_line(existing_result, f"Create tab '{tab_label}' in {module_label}.")
+            planner_state = existing_result.get("planner_state") if isinstance(existing_result.get("planner_state"), dict) else {}
+            planner_state["tab_label"] = tab_label
+            planner_state["view_id"] = tab_change.get("view_id") if isinstance(tab_change.get("view_id"), str) else None
+            planner_state["section_id"] = tab_change.get("section_id") if isinstance(tab_change.get("section_id"), str) else None
+            existing_result["planner_state"] = planner_state
+            return existing_result
+        result["candidate_ops"] = [tab_change.get("op")]
+        result["planner_state"] = {
+            "intent": "add_form_tab",
+            "module_id": matched_module,
+            "tab_label": tab_label,
+            "planned_section_id": tab_change.get("section_id"),
+            "view_id": tab_change.get("view_id"),
+        }
+        return result
+
+    rename_field_match = re.search(
+        r"\b(?:rename|change)\s+(?:the\s+)?(?:field\s+)?([a-zA-Z0-9_. -]{1,120}?)\s+to\s+['\"]?([a-zA-Z0-9][a-zA-Z0-9 _-]{1,120})['\"]?",
+        combined,
+        flags=re.IGNORECASE,
+    )
+    if rename_field_match:
+        old_field_ref = rename_field_match.group(1).strip(" .,-\"'") if isinstance(rename_field_match.group(1), str) else None
+        new_field_label = _ai_clean_rollout_field_label(rename_field_match.group(2)) if isinstance(rename_field_match.group(2), str) else None
+        if not _is_label_confident(new_field_label or ""):
+            return ask(
+                "What should the field be renamed to?",
+                {"id": "field_spec", "kind": "field_spec", "prompt": "What should the field be renamed to?", "defaults": {"field_label": new_field_label or ""}},
+            )
+        if not isinstance(old_field_ref, str) or not old_field_ref:
+            return ask("Which field should I rename?", {"id": "field_target", "kind": "text", "prompt": "Which field should I rename?"})
+        resolved = _ai_resolve_field_reference(manifest, target_entity, old_field_ref)
+        if not isinstance(resolved, dict):
+            resolved = _ai_resolve_field_reference_from_hint_ops(answer_hints, matched_module, old_field_ref)
+        if not isinstance(resolved, dict):
+            suggestions = _ai_suggest_form_field_refs(manifest, old_field_ref)
+            suggestion_text = f" Did you mean {', '.join([repr(item) for item in suggestions])}?" if suggestions else ""
+            return ask(
+                f"I couldn't find a field matching '{old_field_ref}' in module '{matched_module}'. Which field should I rename?{suggestion_text}",
+                {"id": "field_target", "kind": "text", "prompt": f"I couldn't find a field matching '{old_field_ref}' in module '{matched_module}'. Which field should I rename?"},
+            )
+        field_id = resolved.get("field_id") if isinstance(resolved.get("field_id"), str) and resolved.get("field_id").strip() else None
+        if not isinstance(field_id, str) or not field_id:
+            return ask("Which field should I rename?", {"id": "field_target", "kind": "text", "prompt": "Which field should I rename?"})
+        target_field = _ai_match_field_in_entity(target_entity, field_id)
+        current_label = (
+            target_field.get("label")
+            if isinstance(target_field, dict) and isinstance(target_field.get("label"), str) and target_field.get("label").strip()
+            else _ai_display_field_reference(field_id) or old_field_ref
+        )
+        result["candidate_ops"] = [
+            {
+                "op": "update_field",
+                "artifact_type": "module",
+                "artifact_id": matched_module,
+                "entity_id": entity_id,
+                "field_id": field_id,
+                "changes": {"label": new_field_label},
+            }
+        ]
+        views = manifest.get("views") if isinstance(manifest, dict) and isinstance(manifest.get("views"), list) else []
+        for view in views:
+            if not isinstance(view, dict) or view.get("kind") != "list" or not isinstance(view.get("id"), str):
+                continue
+            columns = [col for col in (view.get("columns") or []) if isinstance(col, dict)]
+            next_columns = []
+            changed = False
+            for col in columns:
+                next_col = copy.deepcopy(col)
+                if next_col.get("field_id") == field_id:
+                    next_col["label"] = new_field_label
+                    changed = True
+                next_columns.append(next_col)
+            if changed:
+                result["candidate_ops"].append(
+                    {
+                        "op": "update_view_columns",
+                        "artifact_type": "module",
+                        "artifact_id": matched_module,
+                        "view_id": view.get("id"),
+                        "columns": next_columns,
+                    }
+                )
+        result["assumptions"] = ["This keeps the same field and updates the label shown in the workspace."]
+        result["planner_state"] = {
+            "intent": "rename_field",
+            "module_id": matched_module,
+            "field_id": field_id,
+            "field_label": current_label,
+            "new_field_label": new_field_label,
+        }
+        return result
+
+    if re.search(r"\b(mov(?:e|ed|ing)?|more)\b", lower) and re.search(r"\b(bottom|end|last)\b", lower):
+        field_match = re.search(r"(?:mov(?:e|ed|ing)?|more)\s+(?:the\s+)?field\s+([a-zA-Z0-9_. -]+?)\s+(?:to|at)\s+(?:the\s+)?(?:bottom|end|last)", combined, flags=re.IGNORECASE)
+        if not field_match:
+            field_match = re.search(r"(?:mov(?:e|ed|ing)?|more)\s+(?:the\s+)?([a-zA-Z0-9_. -]+?)\s+field\s+(?:to|at)\s+(?:the\s+)?(?:bottom|end|last)", combined, flags=re.IGNORECASE)
+        field_ref = field_match.group(1).strip() if field_match and isinstance(field_match.group(1), str) else None
+        if isinstance(field_ref, str):
+            normalized_field_ref = _ai_norm_token(field_ref)
+            if normalized_field_ref in {"it", "this", "that", "these", "those", "them", "field"} or normalized_field_ref.endswith(" field"):
+                field_ref = None
+        if not field_ref and isinstance(answer_hints, dict) and isinstance(answer_hints.get("field_id"), str):
+            field_ref = answer_hints.get("field_id").strip()
+        if not field_ref:
+            return ask("Which field should I move?", {"id": "field_target", "kind": "text", "prompt": "Which field should I move?"})
+        location = _ai_find_form_field_location(manifest, field_ref)
+        if not isinstance(location, dict):
+            suggestions = _ai_suggest_form_field_refs(manifest, field_ref)
+            suggestion_text = f" Did you mean {', '.join([repr(item) for item in suggestions])}?" if suggestions else ""
+            if not suggestions:
+                return _ai_mark_resolved_without_changes(
+                    result,
+                    intent="field_missing_noop",
+                    module_id=matched_module,
+                    field_ref=field_ref,
+                    advisory=f"I couldn't find '{field_ref}' in the current module setup. It may already be removed or renamed, so no safe change is needed right now.",
+                )
+            if (
+                isinstance(answer_hints, dict)
+                and isinstance(answer_hints.get("field_target"), str)
+                and _ai_norm_token(answer_hints.get("field_target")) == _ai_norm_token(field_ref)
+            ):
+                return _ai_mark_resolved_without_changes(
+                    result,
+                    intent="field_missing_noop",
+                    module_id=matched_module,
+                    field_ref=field_ref,
+                    advisory=f"I still can't find '{field_ref}' in the current module setup. It may already be removed or renamed, so no safe change is needed right now.",
+                )
+            return ask(
+                f"I couldn't find a field matching '{field_ref}' in module '{matched_module}'. Which field should I move?{suggestion_text}",
+                {"id": "field_target", "kind": "text", "prompt": f"I couldn't find a field matching '{field_ref}' in module '{matched_module}'. Which field should I move?"},
+            )
+        target_index = max(int(location.get("count") or 0) - 1, 0)
+        current_index = int(location.get("index") or 0)
+        if current_index != target_index:
+            result["candidate_ops"] = [
+                {
+                    "op": "move_section_field",
+                    "artifact_type": "module",
+                    "artifact_id": matched_module,
+                    "view_id": location.get("view_id"),
+                    "section_id": location.get("section_id"),
+                    "field_id": location.get("field_id"),
+                    "index": target_index,
+                }
+            ]
+        result["planner_state"] = {"intent": "move_form_field", "field_ref": field_ref}
+        return result
+
+    possible_new_field_on_tab = False
+    if re.search(r"\bput\b", lower) and "tab" in lower:
+        prospective_label = _ai_extract_field_label(combined, answer_hints=answer_hints)
+        if isinstance(prospective_label, str) and prospective_label.strip():
+            possible_new_field_on_tab = not isinstance(_ai_resolve_field_reference(manifest, target_entity, prospective_label), dict)
+        if not possible_new_field_on_tab and isinstance(answer_hints, dict):
+            planned_section_id = answer_hints.get("planned_section_id") if isinstance(answer_hints.get("planned_section_id"), str) else None
+            if isinstance(planned_section_id, str) and planned_section_id and isinstance(prospective_label, str) and prospective_label.strip():
+                possible_new_field_on_tab = True
+    if re.search(r"\b(move|put)\b", lower) and "tab" in lower and not re.search(r"\b(add|create|make)\b", lower) and not possible_new_field_on_tab:
+        field_ref = None
+        field_patterns = [
+            r"(?:move|put)\s+(?:that\s+|the\s+|this\s+)?([a-zA-Z0-9_. -]+?)\s+field\s+(?:into|in|to)\s+(?:the\s+)?[a-zA-Z0-9 _-]+\s+tab",
+            r"(?:move|put)\s+field\s+([a-zA-Z0-9_. -]+?)\s+(?:into|in|to)\s+(?:the\s+)?[a-zA-Z0-9 _-]+\s+tab",
+            r"(?:move|put)\s+(?:that\s+|the\s+|this\s+)?([a-zA-Z0-9_. -]+?)\s+(?:into|in|to)\s+(?:the\s+)?[a-zA-Z0-9 _-]+\s+tab",
+        ]
+        for pattern in field_patterns:
+            match = re.search(pattern, combined, flags=re.IGNORECASE)
+            if match and isinstance(match.group(1), str) and match.group(1).strip():
+                field_ref = match.group(1).strip(" .,-")
+                break
+        if isinstance(field_ref, str):
+            normalized_field_ref = _ai_norm_token(field_ref)
+            if normalized_field_ref in {"it", "this", "that", "these", "those", "them", "field"} or normalized_field_ref.endswith(" field"):
+                field_ref = None
+        if not field_ref and isinstance(answer_hints, dict) and isinstance(answer_hints.get("field_id"), str):
+            field_ref = answer_hints.get("field_id").strip()
+        hint_tab_target = answer_hints.get("tab_target") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("tab_target"), str) else None
+        planned_section_id = answer_hints.get("planned_section_id") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("planned_section_id"), str) else None
+        requested_tab_label = hint_tab_target or _ai_extract_requested_tab_label(combined)
+        matched_tab = _ai_match_form_tab_by_text(manifest, entity_id, requested_tab_label or combined)
+        display_tab_label = requested_tab_label or (matched_tab.get("label") if isinstance(matched_tab, dict) else None) or "that tab"
+        if (
+            not isinstance(matched_tab, dict)
+            and not (isinstance(planned_section_id, str) and planned_section_id)
+            and isinstance(requested_tab_label, str)
+            and _ai_is_label_confident(requested_tab_label)
+        ):
+            tab_change = _ai_prepare_add_form_tab_change(manifest, matched_module, entity_id, requested_tab_label)
+            if isinstance(tab_change.get("op"), dict):
+                result["candidate_ops"] = _ai_merge_candidate_ops(result.get("candidate_ops") or [], [tab_change.get("op")])
+                planned_section_id = tab_change.get("section_id") if isinstance(tab_change.get("section_id"), str) else planned_section_id
+                if isinstance(planned_section_id, str) and planned_section_id:
+                    matched_tab = {"label": requested_tab_label, "sections": [planned_section_id]}
+            elif tab_change.get("existing") is True and isinstance(tab_change.get("tab"), dict):
+                matched_tab = tab_change.get("tab")
+        if not isinstance(matched_tab, dict) and isinstance(planned_section_id, str) and planned_section_id:
+            matched_tab = {"label": display_tab_label, "sections": [planned_section_id]}
+        if not isinstance(matched_tab, dict):
+            return ask("Which tab should contain this field?", {"id": "tab_target", "kind": "text", "prompt": "Which tab should contain this field?"})
+        if not field_ref:
+            return ask(
+                f"Which field should move into the '{display_tab_label}' tab?",
+                {"id": "field_target", "kind": "text", "prompt": f"Which field should move into the '{display_tab_label}' tab?"},
+            )
+        location = _ai_find_form_field_location(manifest, field_ref)
+        if not isinstance(location, dict):
+            suggestions = _ai_suggest_form_field_refs(manifest, field_ref)
+            suggestion_text = f" Did you mean {', '.join([repr(item) for item in suggestions])}?" if suggestions else ""
+            if not suggestions:
+                return _ai_mark_resolved_without_changes(
+                    result,
+                    intent="field_missing_noop",
+                    module_id=matched_module,
+                    field_ref=field_ref,
+                    advisory=f"I couldn't find '{field_ref}' in the current module setup. It may already be removed or renamed, so there is nothing safe to move into the '{display_tab_label}' tab right now.",
+                )
+            if (
+                isinstance(answer_hints, dict)
+                and isinstance(answer_hints.get("field_target"), str)
+                and _ai_norm_token(answer_hints.get("field_target")) == _ai_norm_token(field_ref)
+            ):
+                return _ai_mark_resolved_without_changes(
+                    result,
+                    intent="field_missing_noop",
+                    module_id=matched_module,
+                    field_ref=field_ref,
+                    advisory=f"I still can't find '{field_ref}' in the current module setup. It may already be removed or renamed, so there is nothing safe to move into the '{display_tab_label}' tab right now.",
+                )
+            return ask(
+                f"I couldn't find a field matching '{field_ref}' in module '{matched_module}'. Which field should move into the '{display_tab_label}' tab?{suggestion_text}",
+                {
+                    "id": "field_target",
+                    "kind": "text",
+                    "prompt": f"I couldn't find a field matching '{field_ref}' in module '{matched_module}'. Which field should move into the '{display_tab_label}' tab?",
+                },
+            )
+        target_sections = [sec for sec in (matched_tab.get("sections") or []) if isinstance(sec, str)]
+        if not target_sections:
+            result["risk_flags"] = [f"Tab '{display_tab_label}' has no sections configured."]
+            return result
+        target_section_id = target_sections[0]
+        form_view, _ = _ai_find_form_and_list_views(manifest, entity_id)
+        if not isinstance(form_view, dict) or not isinstance(form_view.get("id"), str):
+            result["risk_flags"] = ["No form view found for the selected module."]
+            return result
+        sections = [copy.deepcopy(sec) for sec in (form_view.get("sections") or []) if isinstance(sec, dict)]
+        current_section = None
+        target_section = None
+        for section in sections:
+            if section.get("id") == location.get("section_id"):
+                current_section = section
+            if section.get("id") == target_section_id:
+                target_section = section
+        if not isinstance(current_section, dict) or not isinstance(target_section, dict):
+            result["risk_flags"] = ["Unable to resolve source or target form section for this move."]
+            return result
+        current_fields = [item for item in (current_section.get("fields") or []) if isinstance(item, str)]
+        target_fields = [item for item in (target_section.get("fields") or []) if isinstance(item, str)]
+        field_id = location.get("field_id")
+        if not isinstance(field_id, str) or field_id not in current_fields:
+            result["risk_flags"] = ["Requested field is not present in the current form section."]
+            return result
+        if current_section.get("id") == target_section.get("id"):
+            result["planner_state"] = {
+                "intent": "move_form_field_to_tab",
+                "field_ref": field_ref,
+                "tab_label": display_tab_label,
+                "resolved_tab_label": matched_tab.get("label") if isinstance(matched_tab, dict) else None,
+            }
+            return result
+        current_section["fields"] = [item for item in current_fields if item != field_id]
+        if field_id not in target_fields:
+            target_fields.append(field_id)
+        target_section["fields"] = target_fields
+        result["candidate_ops"] = _ai_merge_candidate_ops(
+            result.get("candidate_ops") or [],
+            [
+                {
+                    "op": "update_view",
+                    "artifact_type": "module",
+                    "artifact_id": matched_module,
+                    "view_id": form_view.get("id"),
+                    "field_id": field_id,
+                    "target_tab_label": display_tab_label,
+                    "changes": {"sections": sections},
+                }
+            ],
+        )
+        result["planner_state"] = {
+            "intent": "move_form_field_to_tab",
+            "field_ref": field_ref,
+            "tab_label": display_tab_label,
+            "resolved_tab_label": matched_tab.get("label") if isinstance(matched_tab, dict) else None,
+        }
+        return result
+
+    remove_field_intent = bool(re.search(r"\b(remove|delete)\b", lower) and re.search(r"\b(field|attribute)\b", lower))
+    if remove_field_intent:
+        field_refs = _ai_extract_field_labels(combined)
+        if not field_refs:
+            field_ref = None
+            remove_patterns = [
+                r"(?:remove|delete)\s+([a-zA-Z0-9_. -]{1,120}?)\s+(?:from|in)\s+",
+                r"(?:remove|delete)\s+(?:the\s+)?field\s+([a-zA-Z0-9_. -]{1,120})",
+            ]
+            for pattern in remove_patterns:
+                match = re.search(pattern, combined, flags=re.IGNORECASE)
+                if match and isinstance(match.group(1), str) and match.group(1).strip():
+                    field_ref = match.group(1).strip(" .,-")
+                    break
+            if field_ref:
+                field_refs = [field_ref]
+        if not field_refs and isinstance(answer_hints, dict):
+            hinted = answer_hints.get("field_target") or answer_hints.get("field_id") or answer_hints.get("field_label")
+            if isinstance(hinted, str) and hinted.strip():
+                field_refs = [hinted.strip()]
+        if not field_refs:
+            return ask("Which field should I remove?", {"id": "field_target", "kind": "text", "prompt": "Which field should I remove?"})
+        resolved_fields: list[dict] = []
+        missing_refs: list[tuple[str, list[str]]] = []
+        for field_ref in field_refs:
+            resolved = _ai_resolve_field_reference(manifest, target_entity, field_ref)
+            if not isinstance(resolved, dict):
+                resolved = _ai_resolve_field_reference_from_hint_ops(answer_hints, matched_module, field_ref)
+            if not isinstance(resolved, dict):
+                suggestions = _ai_suggest_form_field_refs(manifest, field_ref)
+                missing_refs.append((field_ref, suggestions))
+                continue
+            resolved_fields.append(resolved)
+        if missing_refs:
+            hinted_field_target = answer_hints.get("field_target") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("field_target"), str) else None
+            repeated_missing = next(
+                (
+                    field_ref
+                    for field_ref, _ in missing_refs
+                    if isinstance(hinted_field_target, str) and _ai_norm_token(hinted_field_target) == _ai_norm_token(field_ref)
+                ),
+                None,
+            )
+            if not resolved_fields and isinstance(repeated_missing, str):
+                return _ai_mark_resolved_without_changes(
+                    result,
+                    intent="field_missing_noop",
+                    module_id=matched_module,
+                    field_ref=repeated_missing,
+                    advisory=f"I still can't find '{repeated_missing}' in the current module setup. It may already be removed or renamed, so no safe change is needed right now.",
+                )
+            if not resolved_fields:
+                field_ref, suggestions = missing_refs[0]
+                if not suggestions:
+                    return _ai_mark_resolved_without_changes(
+                        result,
+                        intent="field_missing_noop",
+                        module_id=matched_module,
+                        field_ref=field_ref,
+                        advisory=f"I couldn't find '{field_ref}' in the current module setup. It may already be removed or renamed, so no safe change is needed right now.",
+                    )
+                suggestion_text = f" Did you mean {', '.join([repr(item) for item in suggestions])}?" if suggestions else ""
+                return ask(
+                    f"I couldn't find a field matching '{field_ref}' in module '{matched_module}'. Which field should I remove?{suggestion_text}",
+                    {"id": "field_target", "kind": "text", "prompt": f"I couldn't find a field matching '{field_ref}' in module '{matched_module}'. Which field should I remove?"},
+                )
+            advisories = [item for item in (result.get("advisories") or []) if isinstance(item, str) and item.strip()]
+            advisories.append(
+                "I couldn't find some requested fields in the current module setup, so I only planned removals for the fields I could resolve: "
+                + ", ".join(field_ref for field_ref, _ in missing_refs)
+                + "."
+            )
+            result["advisories"] = advisories
+        ops: list[dict] = []
+        views = manifest.get("views") if isinstance(manifest.get("views"), list) else []
+        seen_field_ids: set[str] = set()
+        for resolved in resolved_fields:
+            field_id = resolved.get("field_id")
+            if not isinstance(field_id, str) or not field_id or field_id in seen_field_ids:
+                continue
+            seen_field_ids.add(field_id)
+            for view in views:
+                if not isinstance(view, dict) or not isinstance(view.get("id"), str):
+                    continue
+                view_entity = view.get("entity")
+                normalized_view_entity = view_entity if isinstance(view_entity, str) and view_entity.startswith("entity.") else f"entity.{view_entity}" if isinstance(view_entity, str) else None
+                if normalized_view_entity != entity_id:
+                    continue
+                if view.get("kind") == "form":
+                    sections = []
+                    changed = False
+                    for section in view.get("sections") if isinstance(view.get("sections"), list) else []:
+                        if not isinstance(section, dict):
+                            continue
+                        next_section = copy.deepcopy(section)
+                        section_fields = [item for item in (section.get("fields") or []) if isinstance(item, str)]
+                        filtered_fields = [item for item in section_fields if item != field_id]
+                        if filtered_fields != section_fields:
+                            next_section["fields"] = filtered_fields
+                            changed = True
+                        sections.append(next_section)
+                    if changed:
+                        ops.append(
+                            {
+                                "op": "update_view",
+                                "artifact_type": "module",
+                                "artifact_id": matched_module,
+                                "view_id": view.get("id"),
+                                "changes": {"sections": sections},
+                            }
+                        )
+                if view.get("kind") == "list":
+                    columns = [col for col in (view.get("columns") or []) if isinstance(col, dict)]
+                    filtered_columns = [copy.deepcopy(col) for col in columns if col.get("field_id") != field_id]
+                    if filtered_columns != columns:
+                        ops.append(
+                            {
+                                "op": "update_view_columns",
+                                "artifact_type": "module",
+                                "artifact_id": matched_module,
+                                "view_id": view.get("id"),
+                                "columns": filtered_columns,
+                            }
+                        )
+            if resolved.get("entity_field_exists") is True:
+                ops.append(
+                    {
+                        "op": "remove_field",
+                        "artifact_type": "module",
+                        "artifact_id": matched_module,
+                        "entity_id": entity_id,
+                        "field_id": field_id,
+                    }
+                )
+        result["candidate_ops"] = ops
+        result["planner_state"] = {
+            "intent": "remove_field",
+            "field_ref": field_refs[0] if len(field_refs) == 1 else ", ".join(field_refs),
+            "field_ids": sorted(seen_field_ids),
+        }
+        return result
+
+    field_intent = bool(
+        (
+            re.search(r"\b(field|attribute|checkbox|toggle|flag)\b", lower)
+            and re.search(r"\b(add|create|make|new|put)\b", lower)
+        )
+        or (
+            re.search(r"\b(add|create|make|put)\b", lower)
+            and not create_module_intent
+            and bool(_ai_extract_field_label(combined, answer_hints=answer_hints))
+        )
+    )
+    if not field_intent:
+        return None
+    explicit_field_label = _ai_extract_field_label(combined, answer_hints=None)
+    field_label = explicit_field_label or _ai_extract_field_label(combined, answer_hints=answer_hints)
+    if not _is_label_confident(field_label or ""):
+        return ask(
+            "What should the new field be called?",
+            {"id": "field_spec", "kind": "field_spec", "prompt": "What should the new field be called?", "defaults": {"field_label": field_label or "", "field_type": _ai_infer_field_type(combined, answer_hints=answer_hints)}},
+        )
+    entity_tail = entity_id.split(".")[-1]
+    hinted_field_id = answer_hints.get("field_id") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("field_id"), str) and answer_hints.get("field_id").strip() else None
+    hinted_field_label = answer_hints.get("field_label") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("field_label"), str) and answer_hints.get("field_label").strip() else None
+    explicit_field_norm = _ai_norm_token(explicit_field_label) if isinstance(explicit_field_label, str) and explicit_field_label.strip() else ""
+    field_slug = re.sub(r"[^a-zA-Z0-9_]+", "_", field_label.strip().lower()).strip("_") or "new_field"
+    hinted_slug_matches = False
+    if explicit_field_norm and isinstance(hinted_field_id, str) and hinted_field_id:
+        hinted_slug_matches = _ai_norm_token(hinted_field_id.split(".")[-1]) == explicit_field_norm
+    elif isinstance(hinted_field_id, str) and hinted_field_id:
+        hinted_slug_matches = _ai_norm_token(hinted_field_id.split(".")[-1]) == _ai_norm_token(field_slug)
+    if not hinted_slug_matches and explicit_field_norm and isinstance(hinted_field_label, str) and hinted_field_label:
+        hinted_slug_matches = _ai_norm_token(hinted_field_label) == explicit_field_norm
+    elif not hinted_slug_matches and isinstance(hinted_field_label, str) and hinted_field_label:
+        hinted_slug_matches = _ai_norm_token(hinted_field_label) == _ai_norm_token(field_label)
+    field_id = hinted_field_id if (hinted_slug_matches and isinstance(hinted_field_id, str) and hinted_field_id) else f"{entity_tail}.{field_slug}"
+    field_type = _ai_infer_field_type(combined, answer_hints=answer_hints)
+    existing_fields = target_entity.get("fields") if isinstance(target_entity, dict) and isinstance(target_entity.get("fields"), list) else []
+    field_exists = any(isinstance(field, dict) and field.get("id") == field_id for field in existing_fields)
+    include_form = answer_hints.get("include_form") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("include_form"), bool) else None
+    include_list = answer_hints.get("include_list") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("include_list"), bool) else None
+    if include_form is None and (
+        "form only" in lower
+        or "on the form" in lower
+        or "into the form" in lower
+        or "to the form" in lower
+    ):
+        include_form = True
+    if include_list is None and (
+        "list only" in lower
+        or "on the list" in lower
+        or "into the list" in lower
+        or "to the list" in lower
+    ):
+        include_list = True
+    hint_tab_target = answer_hints.get("tab_target") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("tab_target"), str) else None
+    planned_section_id = answer_hints.get("planned_section_id") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("planned_section_id"), str) else None
+    requested_tab_label = hint_tab_target or _ai_extract_requested_tab_label(combined)
+    matched_tab = _ai_match_form_tab_by_text(manifest, entity_id, requested_tab_label or combined)
+    display_tab_label = requested_tab_label or (matched_tab.get("label") if isinstance(matched_tab, dict) else None)
+    ops: list[dict] = []
+    if (
+        not isinstance(matched_tab, dict)
+        and not (isinstance(planned_section_id, str) and planned_section_id)
+        and isinstance(requested_tab_label, str)
+        and _ai_is_label_confident(requested_tab_label)
+    ):
+        tab_change = _ai_prepare_add_form_tab_change(manifest, matched_module, entity_id, requested_tab_label)
+        if isinstance(tab_change.get("op"), dict):
+            ops.append(tab_change.get("op"))
+            planned_section_id = tab_change.get("section_id") if isinstance(tab_change.get("section_id"), str) else planned_section_id
+            if isinstance(planned_section_id, str) and planned_section_id:
+                matched_tab = {"label": requested_tab_label, "sections": [planned_section_id]}
+        elif tab_change.get("existing") is True and isinstance(tab_change.get("tab"), dict):
+            matched_tab = tab_change.get("tab")
+    if not field_exists:
+        ops.append(
+            {
+                "op": "add_field",
+                "artifact_type": "module",
+                "artifact_id": matched_module,
+                "entity_id": entity_id,
+                "field": {"id": field_id, "type": field_type, "label": field_label},
+            }
+        )
+    if "not in the first tab" in lower or "not in first tab" in lower:
+        tabs = _ai_form_tab_catalog(manifest, entity_id)
+        non_first = [tab.get("label") for tab in tabs[1:] if isinstance(tab.get("label"), str)]
+        prompt = "Which tab should contain this field?"
+        if non_first:
+            prompt = f"Which tab should contain this field? Available tabs: {', '.join(non_first)}"
+        result["candidate_ops"] = ops
+        result["planner_state"] = {"intent": "add_field", "field_label": field_label, "field_id": field_id}
+        return ask(prompt, {"id": "tab_target", "kind": "text", "prompt": "Which tab should contain this field?"})
+    if matched_tab:
+        include_form = True
+    elif isinstance(planned_section_id, str) and planned_section_id:
+        include_form = True
+    if include_form is None and include_list is None and matched_tab is None:
+        include_form = False
+        include_list = False
+        result["assumptions"].append("No explicit form or list placement was requested, so this starts as a field-only change.")
+    if matched_tab and isinstance(matched_tab.get("sections"), list) and matched_tab.get("sections"):
+        section_id = matched_tab.get("sections")[0]
+        form_view, _ = _ai_find_form_and_list_views(manifest, entity_id)
+        if isinstance(form_view, dict) and isinstance(form_view.get("id"), str):
+            sections = form_view.get("sections") if isinstance(form_view.get("sections"), list) else []
+            target_section = None
+            for section in sections:
+                if isinstance(section, dict) and section.get("id") == section_id:
+                    target_section = section
+                    break
+            section_fields = target_section.get("fields") if isinstance(target_section, dict) and isinstance(target_section.get("fields"), list) else []
+            if field_id not in section_fields:
+                placement_op = {
+                    "op": "insert_section_field",
+                    "artifact_type": "module",
+                    "artifact_id": matched_module,
+                    "view_id": form_view.get("id"),
+                    "section_id": section_id,
+                    "field_id": field_id,
+                    "index": len(section_fields),
+                }
+                if display_tab_label:
+                    placement_op["placement_label"] = display_tab_label
+                    placement_op["placement_kind"] = "tab"
+                ops.append(placement_op)
+    elif isinstance(planned_section_id, str) and planned_section_id:
+        form_view, _ = _ai_find_form_and_list_views(manifest, entity_id)
+        if isinstance(form_view, dict) and isinstance(form_view.get("id"), str):
+            placement_op = {
+                "op": "insert_section_field",
+                "artifact_type": "module",
+                "artifact_id": matched_module,
+                "view_id": form_view.get("id"),
+                "section_id": planned_section_id,
+                "field_id": field_id,
+                "index": 0,
+            }
+            if display_tab_label:
+                placement_op["placement_label"] = display_tab_label
+                placement_op["placement_kind"] = "tab"
+            ops.append(placement_op)
+    else:
+        placement_ops = _ai_build_placement_ops_for_field(
+            manifest,
+            matched_module,
+            entity_id,
+            field_id,
+            field_label,
+            include_form=include_form is True,
+            include_list=include_list is True,
+            existing_ops=ops,
+        )
+        ops.extend(placement_ops)
+    if not ops:
+        if field_exists:
+            module_def = manifest.get("module") if isinstance(manifest.get("module"), dict) else {}
+            module_label = module_def.get("name") if isinstance(module_def.get("name"), str) and module_def.get("name").strip() else matched_module
+            form_location = _ai_find_form_field_location(manifest, field_id)
+            list_location = _ai_find_list_field_reference(manifest, field_id)
+            target_sections: list[str] = []
+            if isinstance(matched_tab, dict):
+                target_sections = [sec for sec in (matched_tab.get("sections") or []) if isinstance(sec, str)]
+            elif isinstance(planned_section_id, str) and planned_section_id:
+                target_sections = [planned_section_id]
+            already_in_requested_tab = bool(
+                target_sections
+                and isinstance(form_location, dict)
+                and isinstance(form_location.get("section_id"), str)
+                and form_location.get("section_id") in target_sections
+            )
+            advisory = None
+            if already_in_requested_tab and isinstance(display_tab_label, str) and display_tab_label:
+                advisory = f"Field '{field_label}' already exists in {module_label} and is already in the '{display_tab_label}' tab."
+            elif include_form is True and include_list is True and isinstance(form_location, dict) and isinstance(list_location, dict):
+                advisory = f"Field '{field_label}' already exists in {module_label} and is already shown on the form and in the list."
+            elif include_form is True and isinstance(form_location, dict):
+                advisory = f"Field '{field_label}' already exists in {module_label} and is already shown on the form."
+            elif include_list is True and isinstance(list_location, dict):
+                advisory = f"Field '{field_label}' already exists in {module_label} and is already shown in the list."
+            elif include_form is not True and include_list is not True and not target_sections:
+                advisory = f"Field '{field_label}' already exists in {module_label}, so no new field needs to be added."
+            if isinstance(advisory, str) and advisory.strip():
+                result["advisories"] = []
+                result["planner_state"] = {
+                    "intent": "field_already_exists_noop",
+                    "module_id": matched_module,
+                    "field_label": field_label,
+                    "field_id": field_id,
+                    "tab_label": display_tab_label,
+                    "include_form": include_form,
+                    "include_list": include_list,
+                }
+                result["resolved_without_changes"] = True
+                return result
+        result["risk_flags"] = ["No concrete operation generated; user clarification required."]
+    result["candidate_ops"] = ops
+    result["planner_state"] = {
+        "intent": "add_field",
+        "field_label": field_label,
+        "field_id": field_id,
+        "matched_tab": display_tab_label,
+        "resolved_tab_label": matched_tab.get("label") if isinstance(matched_tab, dict) else None,
+    }
+    if field_type == "string" and not isinstance(answer_hints, dict):
+        result["assumptions"] = ["Defaulted new field type to string."]
+    return result
+
+
+def _ai_op_includes_form_field(op: dict, module_id: str, field_id: str) -> bool:
+    if not isinstance(op, dict):
+        return False
+    if op.get("artifact_type") != "module" or op.get("artifact_id") != module_id:
+        return False
+    if op.get("op") == "insert_section_field" and op.get("field_id") == field_id:
+        return True
+    if op.get("op") == "move_section_field" and op.get("field_id") == field_id:
+        return True
+    return False
+
+
+def _ai_op_includes_list_field(op: dict, module_id: str, field_id: str) -> bool:
+    if not isinstance(op, dict):
+        return False
+    if op.get("artifact_type") != "module" or op.get("artifact_id") != module_id:
+        return False
+    if op.get("op") != "update_view_columns":
+        return False
+    columns = op.get("columns") if isinstance(op.get("columns"), list) else []
+    return any(isinstance(col, dict) and col.get("field_id") == field_id for col in columns)
+
+
+def _ai_preflight_candidate_ops(module_index: dict[str, dict], candidate_ops: list[dict], answer_hints: dict | None = None) -> tuple[list[dict], list[dict]]:
+    valid_ops: list[dict] = []
+    errors: list[dict] = []
+    grouped: dict[str, list[dict]] = {}
+    for op in candidate_ops:
+        if not isinstance(op, dict):
+            errors.append({"code": "AI_PATCH_OP_INVALID", "message": "operation must be object", "path": "operations"})
+            continue
+        if op.get("artifact_type") != "module":
+            errors.append({"code": "AI_PATCH_OP_INVALID", "message": "only module operations are supported in v1", "path": "artifact_type"})
+            continue
+        module_id = op.get("artifact_id")
+        if not isinstance(module_id, str) or not module_id:
+            errors.append({"code": "AI_PATCH_OP_INVALID", "message": "module operation missing artifact_id", "path": "artifact_id"})
+            continue
+        grouped.setdefault(module_id, []).append(copy.deepcopy(op))
+
+    for module_id, ops in grouped.items():
+        info = module_index.get(module_id)
+        create_ops = [op for op in ops if op.get("op") == "create_module"]
+        if create_ops:
+            if info and not _ai_module_entry_is_pending_only(info):
+                errors.append({"code": "MODULE_ALREADY_EXISTS", "message": f"Module '{module_id}' already exists", "path": "artifact_id"})
+                continue
+            if len(create_ops) != 1:
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "only one create_module operation is allowed per new module", "path": "operations"})
+                continue
+            manifest = create_ops[0].get("manifest")
+            if not isinstance(manifest, dict):
+                errors.append({"code": "MANIFEST_INVALID", "message": "create_module requires a manifest", "path": "manifest"})
+                continue
+            manifest_input = copy.deepcopy(manifest)
+            for workflow in manifest_input.get("workflows") if isinstance(manifest_input.get("workflows"), list) else []:
+                if not isinstance(workflow, dict):
+                    continue
+                if not isinstance(workflow.get("entity"), str) and isinstance(workflow.get("entity_id"), str):
+                    workflow["entity"] = workflow.pop("entity_id")
+                if not isinstance(workflow.get("status_field"), str) and isinstance(workflow.get("field_id"), str):
+                    workflow["status_field"] = workflow.pop("field_id")
+            normalized, val_errors, _ = validate_manifest_raw(manifest_input, expected_module_id=module_id)
+            if val_errors:
+                errors.extend(val_errors)
+                continue
+            manifest = copy.deepcopy(normalized)
+            design_spec = create_ops[0].get("design_spec") if isinstance(create_ops[0].get("design_spec"), dict) else None
+            quality = _ai_module_manifest_quality_report(
+                module_id,
+                manifest,
+                family=design_spec.get("family") if isinstance(design_spec, dict) and isinstance(design_spec.get("family"), str) else None,
+                design_spec=design_spec,
+            )
+            if not quality.get("ok"):
+                if not (info and _ai_module_entry_is_pending_only(info)):
+                    for issue in quality.get("issues") if isinstance(quality.get("issues"), list) else []:
+                        if isinstance(issue, str) and issue.strip():
+                            errors.append({"code": "CREATE_MODULE_QUALITY", "message": issue.strip(), "path": "manifest"})
+                    continue
+            valid_ops.append(
+                {
+                    "op": "create_module",
+                    "artifact_type": "module",
+                    "artifact_id": module_id,
+                    "manifest": normalized,
+                    **({"design_spec": design_spec} if isinstance(design_spec, dict) else {}),
+                    "quality_report": quality,
+                }
+            )
+            remaining_ops = [copy.deepcopy(op) for op in ops if op.get("op") != "create_module"]
+        else:
+            if not info:
+                errors.append({"code": "MODULE_NOT_FOUND", "message": f"Module '{module_id}' not found", "path": "artifact_id"})
+                continue
+            manifest = copy.deepcopy(info.get("manifest") or {})
+            manifest = _ai_manifest_with_applied_hint_ops(manifest, module_id, answer_hints)
+            remaining_ops = [copy.deepcopy(op) for op in ops]
+        for op in remaining_ops:
+            compiled, compile_errors = _ai_compile_module_ops(manifest, [op])
+            if compile_errors:
+                errors.extend(compile_errors)
+                continue
+            patchset = {"patches": [{"module_id": module_id, "ops": compiled}]}
+            applied = _studio2_apply_patchset(manifest, patchset)
+            if not applied.get("ok"):
+                apply_errors = applied.get("errors") if isinstance(applied.get("errors"), list) else []
+                if apply_errors:
+                    errors.extend(apply_errors)
+                else:
+                    errors.append({"code": "AI_PATCH_OP_INVALID", "message": "operation failed to apply in preflight"})
+                continue
+            manifest = applied.get("manifest") if isinstance(applied.get("manifest"), dict) else manifest
+            valid_ops.append(op)
+    return valid_ops, errors
+
+
+def _ai_manifest_with_applied_hint_ops(manifest: dict, module_id: str, answer_hints: dict | None) -> dict:
+    if not isinstance(manifest, dict) or not isinstance(module_id, str) or not module_id:
+        return manifest
+    if not isinstance(answer_hints, dict):
+        return manifest
+    applied_ops = [
+        copy.deepcopy(op)
+        for op in (answer_hints.get("applied_candidate_ops") or [])
+        if isinstance(op, dict) and op.get("artifact_type") == "module" and op.get("artifact_id") == module_id
+    ]
+    if not applied_ops:
+        return manifest
+    working_manifest = copy.deepcopy(manifest)
+    for op in applied_ops:
+        compiled, compile_errors = _ai_compile_module_ops(working_manifest, [op])
+        if compile_errors:
+            continue
+        patchset = {"patches": [{"module_id": module_id, "ops": compiled}]}
+        applied = _studio2_apply_patchset(working_manifest, patchset)
+        if not isinstance(applied, dict) or not applied.get("ok") or not isinstance(applied.get("manifest"), dict):
+            continue
+        working_manifest = applied.get("manifest")
+    return working_manifest
+
+
+def _ai_build_placement_ops_for_field(
+    manifest: dict,
+    module_id: str,
+    entity_id: str,
+    field_id: str,
+    field_label: str,
+    include_form: bool,
+    include_list: bool,
+    existing_ops: list[dict],
+) -> list[dict]:
+    ops: list[dict] = []
+    form_view, list_view = _ai_find_form_and_list_views(manifest, entity_id)
+    if include_form and isinstance(form_view, dict) and isinstance(form_view.get("id"), str):
+        already = any(_ai_op_includes_form_field(op, module_id, field_id) for op in existing_ops)
+        if not already:
+            sections = form_view.get("sections") if isinstance(form_view.get("sections"), list) else []
+            target_section = None
+            for section in sections:
+                if isinstance(section, dict) and section.get("id") == "primary":
+                    target_section = section
+                    break
+            if target_section is None and sections:
+                first = sections[0]
+                if isinstance(first, dict):
+                    target_section = first
+            if isinstance(target_section, dict) and isinstance(target_section.get("id"), str):
+                section_fields = target_section.get("fields") if isinstance(target_section.get("fields"), list) else []
+                if field_id not in section_fields:
+                    ops.append(
+                        {
+                            "op": "insert_section_field",
+                            "artifact_type": "module",
+                            "artifact_id": module_id,
+                            "view_id": form_view.get("id"),
+                            "section_id": target_section.get("id"),
+                            "field_id": field_id,
+                            "index": len(section_fields),
+                        }
+                    )
+    if include_list and isinstance(list_view, dict) and isinstance(list_view.get("id"), str):
+        already = any(_ai_op_includes_list_field(op, module_id, field_id) for op in existing_ops)
+        if not already:
+            columns = [col for col in (list_view.get("columns") or []) if isinstance(col, dict)]
+            if not any(col.get("field_id") == field_id for col in columns):
+                next_columns = copy.deepcopy(columns)
+                next_columns.append({"field_id": field_id, "label": field_label})
+                ops.append(
+                    {
+                        "op": "update_view_columns",
+                        "artifact_type": "module",
+                        "artifact_id": module_id,
+                        "view_id": list_view.get("id"),
+                        "columns": next_columns,
+                    }
+                )
+    return ops
+
+
+def _ai_reconcile_add_field_intent(
+    module_index: dict[str, dict],
+    candidate_ops: list[dict],
+    message: str | None = None,
+    answer_hints: dict | None = None,
+) -> tuple[list[dict], list[str], dict | None]:
+    questions: list[str] = []
+    question_meta: dict | None = None
+    include_form = answer_hints.get("include_form") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("include_form"), bool) else None
+    include_list = answer_hints.get("include_list") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("include_list"), bool) else None
+    out_ops = [copy.deepcopy(op) for op in candidate_ops if isinstance(op, dict)]
+    normalized_message = re.sub(r"\s+", " ", (message or "").lower()).strip()
+    total_add_field_ops = sum(
+        1 for item in out_ops if isinstance(item, dict) and item.get("op") == "add_field" and item.get("artifact_type") == "module"
+    )
+    defer_placement_question = bool(
+        normalized_message
+        and (
+            total_add_field_ops > 1
+            or len(_ai_split_request_clauses(message or "")) > 1
+            or _ai_preview_contract_requested(message or "")
+            or re.search(
+                r"\b(sync|integration|workflow|automation|notify|reminder|dashboard|report(?:ing)?|rollout|condition|conditional|approved|complete|consent|newsletter|opt[- ]?in)\b",
+                normalized_message,
+            )
+            or " if " in f" {normalized_message} "
+            or " only " in f" {normalized_message} "
+        )
+    )
+
+    for op in [item for item in out_ops if item.get("op") == "add_field" and item.get("artifact_type") == "module"]:
+        module_id = op.get("artifact_id")
+        entity_id = op.get("entity_id")
+        field = op.get("field") if isinstance(op.get("field"), dict) else {}
+        field_id = field.get("id")
+        field_label = field.get("label") if isinstance(field.get("label"), str) and field.get("label").strip() else str(field_id or "").split(".")[-1].replace("_", " ").strip().title()
+        if not isinstance(module_id, str) or not isinstance(entity_id, str) or not isinstance(field_id, str) or not field_id:
+            continue
+        manifest = (module_index.get(module_id) or {}).get("manifest")
+        if not isinstance(manifest, dict):
+            continue
+        entity = _ai_find_entity_by_id(manifest, entity_id)
+        existing_count = _ai_field_count_in_entity(entity or {}, field_id)
+        if existing_count > 0:
+            out_ops = [item for item in out_ops if item is not op]
+            if existing_count > 1:
+                prompt = f"Field '{field_id}' already exists multiple times in '{entity_id}'. Should I deduplicate it before continuing?"
+                questions.append(prompt)
+                question_meta = {
+                    "id": "dedupe_existing",
+                    "kind": "dedupe",
+                    "prompt": prompt,
+                    "defaults": {"deduplicate_existing": True},
+                }
+            else:
+                prompt = f"Field '{field_id}' already exists in '{entity_id}'. Should I update that existing field or only place it in form/list views?"
+                questions.append(prompt)
+                question_meta = {
+                    "id": "field_exists_resolution",
+                    "kind": "text",
+                    "prompt": prompt,
+                }
+            break
+
+        has_form = any(_ai_op_includes_form_field(existing_op, module_id, field_id) for existing_op in out_ops)
+        has_list = any(_ai_op_includes_list_field(existing_op, module_id, field_id) for existing_op in out_ops)
+        if include_form is True or include_list is True:
+            placement_ops = _ai_build_placement_ops_for_field(
+                manifest,
+                module_id,
+                entity_id,
+                field_id,
+                field_label,
+                include_form=include_form is True,
+                include_list=include_list is True,
+                existing_ops=out_ops,
+            )
+            out_ops.extend(placement_ops)
+            has_form = has_form or any(_ai_op_includes_form_field(existing_op, module_id, field_id) for existing_op in out_ops)
+            has_list = has_list or any(_ai_op_includes_list_field(existing_op, module_id, field_id) for existing_op in out_ops)
+
+        if include_form is None and include_list is None and not has_form and not has_list:
+            form_view, list_view = _ai_find_form_and_list_views(manifest, entity_id)
+            if defer_placement_question:
+                continue
+            followups = []
+            if isinstance(form_view, dict) and isinstance(form_view.get("id"), str):
+                followups.append(f"add to `{form_view.get('id')}` fields")
+            if isinstance(list_view, dict) and isinstance(list_view.get("id"), str):
+                followups.append(f"add to `{list_view.get('id')}` columns")
+            if followups:
+                prompt = f"Field '{field_id}' can be schema-only. Should I also {', and '.join(followups)}?"
+                questions.append(prompt)
+                question_meta = {
+                    "id": "placement",
+                    "kind": "placement",
+                    "prompt": f"Field '{field_id}' can be schema-only. Should I also place it in views?",
+                    "defaults": {
+                        "include_form": False,
+                        "include_list": False,
+                        "form_view_id": form_view.get("id") if isinstance(form_view, dict) else None,
+                        "list_view_id": list_view.get("id") if isinstance(list_view, dict) else None,
+                    },
+                }
+                break
+    return out_ops, questions, question_meta
+
+
+def _ai_semantic_plan_from_model(
+    request: Request,
+    session: dict,
+    message: str,
+    module_index: dict[str, dict],
+    graph: dict,
+    initial_module_ids: list[str],
+    planning_mode: str = "workspace_change",
+    answer_hints: dict | None = None,
+) -> dict | None:
+    if not USE_AI or not _openai_configured():
+        return None
+    if not isinstance(message, str) or not message.strip():
+        return None
+
+    ordered_modules = _ai_semantic_context_modules(
+        session,
+        module_index,
+        graph,
+        initial_module_ids,
+        planning_mode,
+    )
+    if not ordered_modules:
+        return None
+
+    actor = getattr(request.state, "actor", None) or {}
+    reference_snippets = _ai_reference_snippets()
+    retrieved_references = _ai_relevant_references(message, ordered_modules, module_index)
+    kernel_digest = {
+        "modules": [_ai_kernel_module_digest(module_id, (module_index.get(module_id) or {}).get("manifest") or {}) for module_id in ordered_modules[:3]],
+        "pattern_hint": (_load_pattern_memory().get("patterns") or {}).get(_infer_pattern_key(message, " ".join(ordered_modules)) or ""),
+    }
+    planner_context = {
+        "request": message.strip(),
+        "planning_mode": planning_mode,
+        "workspace_id": actor.get("workspace_id") if isinstance(actor, dict) else None,
+        "scope_mode": session.get("scope_mode") or "auto",
+        "selected_artifact_type": session.get("selected_artifact_type") or "none",
+        "selected_artifact_key": session.get("selected_artifact_key"),
+        "answer_hints": answer_hints if isinstance(answer_hints, dict) else {},
+        "session_memory": _ai_semantic_session_memory(session),
+        "reference_snippets": {key: value for key, value in reference_snippets.items() if isinstance(value, str) and value.strip()},
+        "workspace_kernel_digest": kernel_digest,
+        "retrieved_references": retrieved_references,
+        "workspace_modules": [_ai_module_brief_for_semantic_planner(module_id, (module_index.get(module_id) or {}).get("manifest") or {}) for module_id in ordered_modules],
+        "workspace_context_scope": {
+            "seed_modules": [module_id for module_id in initial_module_ids if isinstance(module_id, str) and module_id in module_index],
+            "context_modules": ordered_modules,
+        },
+        "workspace_graph_summary": {
+            "module_count": len([node for node in graph.get("nodes", []) if isinstance(node, dict) and node.get("type") == "module"]),
+            "edge_count": len([edge for edge in graph.get("edges", []) if isinstance(edge, dict)]),
+        },
+    }
+    context_text = json.dumps(planner_context, separators=(",", ":"))
+    system_text = (
+        "You are a planning agent for manifest edits. "
+        "The planning_mode controls scope. "
+        "For create_module_design, design the requested new module and do not anchor on existing selected modules unless the user explicitly says to extend them. "
+        "For workspace_change, use only the provided workspace_context_scope modules plus their retrieved references, and coordinate cross-module changes carefully. "
+        "For preview_only, explain scope truthfully without inventing patch operations. "
+        "Understand natural language intent semantically and avoid literal copy of long phrases into ids. "
+        "Infer clean human module names from purpose phrases; for example, if the user says 'create me a cooking module', the module name should be 'Cooking', not 'Me A Cooking'. "
+        "Use the provided reference_snippets, workspace_kernel_digest, retrieved_references, and session_memory when resolving follow-up requests like 'move that field' or 'remove that field'. "
+        "Preserve the previously established module, entity, field, and tab context unless the user clearly changes scope. "
+        "When the workspace already shows quality issues or likely downstream impacts, return them as advisories instead of silently ignoring them. "
+        "Prefer concise snake_case ids and sensible labels. "
+        "When intent is ambiguous, ask exactly one clarification question instead of guessing. "
+        "Never emit operations that target unknown ids; ask a question instead. "
+        "If a field already exists, do not add it again. "
+        "Return strict JSON with this schema keys: "
+        "{module_id,affected_modules,proposed_changes,required_questions,required_question_meta,assumptions,risk_flags,advisories,plan_v1}. "
+        "plan_v1 is required and must use keys: "
+        "{version,intent,summary,requested_scope,modules,changes,sections,clarifications,assumptions,risks,noop_notes}. "
+        "requested_scope must use {requested_modules,missing_modules}. "
+        "clarifications must use {items,meta}. "
+        "Each module item should use {module_id,module_label,status}. "
+        "Each change item should use {op,module_id,module_label,summary}. "
+        "Each section should use {key,title,items}, and include only sections relevant to the planned changes. "
+        "summary must be a concrete plain-English plan summary, not a generic fallback like 'Update the workspace based on this request'. "
+        "proposed_changes must use v1 ops only: create_module, add_field, update_field, remove_field, add_view, remove_view, update_view, add_page, update_page, insert_section_field, "
+        "move_section_field, update_view_columns, add_action, update_action, add_trigger, add_page_block, update_dependency."
+    )
+    messages = [
+        {"role": "system", "content": system_text},
+        {"role": "user", "content": f"context.json\n```json\n{context_text}\n```"},
+    ]
+    try:
+        response = _openai_chat_completion(
+            messages,
+            model=STUDIO2_PLANNER_MODEL,
+            temperature=0.05,
+            response_format={"type": "json_object"},
+        )
+    except Exception:
+        return None
+    choices = response.get("choices") if isinstance(response, dict) else []
+    content = choices[0].get("message", {}).get("content") if choices else None
+    if isinstance(content, dict):
+        parsed = content
+    else:
+        parsed, parse_error = _extract_first_json_block(content if isinstance(content, str) else "")
+        if parse_error:
+            return None
+    if not isinstance(parsed, dict):
+        return None
+
+    questions: list[str] = []
+    question_meta: dict | None = None
+    for item in parsed.get("required_questions") if isinstance(parsed.get("required_questions"), list) else []:
+        if isinstance(item, str) and item.strip():
+            questions.append(item.strip())
+        elif isinstance(item, dict):
+            prompt = item.get("prompt") if isinstance(item.get("prompt"), str) else item.get("question")
+            if isinstance(prompt, str) and prompt.strip():
+                questions.append(prompt.strip())
+                if question_meta is None:
+                    question_meta = {
+                        "id": item.get("id") if isinstance(item.get("id"), str) and item.get("id").strip() else "clarification",
+                        "kind": item.get("kind") if isinstance(item.get("kind"), str) and item.get("kind").strip() else "text",
+                        "prompt": prompt.strip(),
+                    }
+                    if isinstance(item.get("defaults"), dict):
+                        question_meta["defaults"] = item.get("defaults")
+                    if isinstance(item.get("options"), dict):
+                        question_meta["options"] = item.get("options")
+    if question_meta is None and isinstance(parsed.get("required_question_meta"), dict):
+        question_meta = parsed.get("required_question_meta")
+
+    model_module = parsed.get("module_id") if isinstance(parsed.get("module_id"), str) else None
+    affected_modules: list[str] = []
+    for module_id in parsed.get("affected_modules") if isinstance(parsed.get("affected_modules"), list) else []:
+        if isinstance(module_id, str) and module_id in module_index and module_id not in affected_modules:
+            affected_modules.append(module_id)
+    if isinstance(model_module, str) and model_module in module_index and model_module not in affected_modules:
+        affected_modules.append(model_module)
+
+    raw_ops = parsed.get("proposed_changes")
+    if not isinstance(raw_ops, list):
+        raw_ops = parsed.get("candidate_operations")
+    if not isinstance(raw_ops, list):
+        raw_ops = parsed.get("operations")
+    candidate_ops: list[dict] = []
+    for raw in raw_ops if isinstance(raw_ops, list) else []:
+        if not isinstance(raw, dict):
+            continue
+        op_name = raw.get("op")
+        if not isinstance(op_name, str) or not op_name:
+            continue
+        op = copy.deepcopy(raw)
+        if not isinstance(op.get("artifact_type"), str):
+            op["artifact_type"] = "module"
+        if op.get("artifact_type") != "module":
+            continue
+        if op_name == "create_module":
+            module_id = op.get("artifact_id")
+            manifest = op.get("manifest")
+            if not isinstance(module_id, str) or not module_id.strip() or not isinstance(manifest, dict):
+                continue
+            if module_id not in affected_modules:
+                affected_modules.append(module_id)
+            candidate_ops.append(op)
+            continue
+        if not isinstance(op.get("artifact_id"), str) or op.get("artifact_id") not in module_index:
+            if isinstance(model_module, str) and model_module in module_index:
+                op["artifact_id"] = model_module
+            elif len(affected_modules) == 1:
+                op["artifact_id"] = affected_modules[0]
+            elif len(initial_module_ids) == 1 and initial_module_ids[0] in module_index:
+                op["artifact_id"] = initial_module_ids[0]
+            else:
+                continue
+        module_id = op.get("artifact_id")
+        if isinstance(module_id, str) and module_id in module_index and module_id not in affected_modules:
+            affected_modules.append(module_id)
+        candidate_ops.append(op)
+
+    assumptions = [item for item in (parsed.get("assumptions") or []) if isinstance(item, str)]
+    risks = [item for item in (parsed.get("risk_flags") or []) if isinstance(item, str)]
+    advisories = [item for item in (parsed.get("advisories") or []) if isinstance(item, str)]
+    plan_v1 = parsed.get("plan_v1") if isinstance(parsed.get("plan_v1"), dict) else None
+    return {
+        "candidate_ops": candidate_ops,
+        "questions": questions,
+        "question_meta": question_meta,
+        "assumptions": assumptions,
+        "risk_flags": risks,
+        "advisories": advisories,
+        "affected_modules": affected_modules,
+        "plan_v1": copy.deepcopy(plan_v1) if isinstance(plan_v1, dict) else None,
+    }
+
+
+def _ai_extract_candidate_ops(
+    message: str,
+    module_ids: list[str],
+    module_index: dict[str, dict],
+    answer_hints: dict | None = None,
+) -> tuple[list[dict], list[str], dict | None]:
+    candidate_ops: list[dict] = []
+    questions: list[str] = []
+    question_meta: dict | None = None
+    msg = (message or "").strip()
+    lower = msg.lower()
+    create_module_intent = _ai_is_create_module_request(msg)
+
+    def _push_question(prompt: str, meta: dict | None = None) -> None:
+        nonlocal question_meta
+        questions.append(prompt)
+        if question_meta is None and isinstance(meta, dict):
+            question_meta = meta
+
+    def _is_label_confident(label: str) -> bool:
+        if not isinstance(label, str):
+            return False
+        normalized = label.strip()
+        if not normalized:
+            return False
+        if len(normalized) > 40:
+            return False
+        if re.search(r"[,.!?]", normalized):
+            return False
+        words = [word for word in re.split(r"\s+", normalized) if word]
+        if len(words) == 0 or len(words) > 5:
+            return False
+        return True
+
+    def _module_alias_norms(module_id: str) -> set[str]:
+        info = module_index.get(module_id) or {}
+        manifest = info.get("manifest") if isinstance(info, dict) else {}
+        module_def = manifest.get("module") if isinstance(manifest, dict) else {}
+        aliases = [
+            module_id,
+            module_def.get("id") if isinstance(module_def, dict) else None,
+            module_def.get("key") if isinstance(module_def, dict) else None,
+            module_def.get("name") if isinstance(module_def, dict) else None,
+        ]
+        out = {_ai_norm_token(str(alias)) for alias in aliases if isinstance(alias, str) and alias.strip()}
+        expanded = set(out)
+        for alias in out:
+            if alias.endswith("s") and len(alias) > 1:
+                expanded.add(alias[:-1])
+        return expanded
+
+    def _find_module_by_alias(alias_text: str) -> str | None:
+        alias_norm = _ai_norm_token(alias_text)
+        if not alias_norm:
+            return None
+        for module_id in module_ids:
+            if alias_norm in _module_alias_norms(module_id):
+                return module_id
+        for module_id in module_index.keys():
+            if alias_norm in _module_alias_norms(module_id):
+                return module_id
+        return None
+
+    if create_module_intent and _ai_preview_contract_requested(msg):
+        inferred_preview_modules = _ai_infer_preview_modules(msg, module_index, module_ids)
+        requested_module_name = _ai_extract_new_module_name(msg, answer_hints=answer_hints)
+        matched_existing_module = (
+            _ai_find_module_by_alias(requested_module_name, inferred_preview_modules or list(module_index.keys()), module_index)
+            if isinstance(requested_module_name, str) and requested_module_name.strip()
+            else None
+        )
+        if inferred_preview_modules and (
+            not isinstance(requested_module_name, str)
+            or not requested_module_name.strip()
+            or matched_existing_module in inferred_preview_modules
+        ):
+            create_module_intent = False
+
+    if create_module_intent:
+        module_name = _ai_extract_new_module_name(msg, answer_hints=answer_hints)
+        if not _is_label_confident(module_name or ""):
+            _push_question(
+                "What should the new module be called?",
+                {"id": "module_target", "kind": "text", "prompt": "What should the new module be called?"},
+            )
+            return candidate_ops, questions, question_meta
+        pending_module_id, pending_manifest = _ai_find_pending_create_module(answer_hints, module_name)
+        module_id = pending_module_id or _ai_new_module_id_from_name(module_name, module_index)
+        if isinstance(pending_manifest, dict):
+            manifest = pending_manifest
+            design_spec = None
+            quality = _ai_module_manifest_quality_report(module_id, manifest)
+        else:
+            package = _ai_build_new_module_package(module_id, module_name, msg)
+            manifest = package.get("manifest")
+            design_spec = package.get("design_spec") if isinstance(package.get("design_spec"), dict) else None
+            quality = package.get("quality") if isinstance(package.get("quality"), dict) else {}
+        candidate_ops.append(
+            {
+                "op": "create_module",
+                "artifact_type": "module",
+                "artifact_id": module_id,
+                "manifest": manifest,
+                **({"design_spec": design_spec} if isinstance(design_spec, dict) else {}),
+                **({"quality_report": quality} if isinstance(quality, dict) else {}),
+            }
+        )
+        return candidate_ops, questions, question_meta
+
+    hint_module_target = answer_hints.get("module_target") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("module_target"), str) else None
+    explicit_module_target = _ai_extract_module_target_from_text(msg, list(module_index.keys()), module_index)
+    matched_module: str | None = None
+    if isinstance(explicit_module_target, str) and explicit_module_target:
+        matched_module = explicit_module_target
+    if not matched_module and isinstance(hint_module_target, str) and hint_module_target.strip():
+        matched_module = _find_module_by_alias(hint_module_target.strip())
+    if not matched_module and len(module_ids) == 1:
+        matched_module = module_ids[0] if module_ids else None
+    module_match = None if explicit_module_target else re.search(r"(?:to|in|on)\s+([a-zA-Z0-9_. -]+)$", msg, flags=re.IGNORECASE)
+    if module_match:
+        explicit_mod = _find_module_by_alias(module_match.group(1).strip())
+        if explicit_mod:
+            matched_module = explicit_mod
+
+    if not matched_module:
+        # Last attempt: infer by any module alias mention in the message.
+        for module_id in module_index.keys():
+            for alias in _module_alias_norms(module_id):
+                if alias and alias in _ai_norm_token(msg):
+                    matched_module = module_id
+                    break
+            if matched_module:
+                break
+
+    if not matched_module:
+        _push_question(
+            "Which module should receive this change?",
+            {"id": "module_target", "kind": "text", "prompt": "Which module should receive this change?"},
+        )
+        return candidate_ops, questions, question_meta
+
+    manifest = (module_index.get(matched_module) or {}).get("manifest")
+    entities = manifest.get("entities") if isinstance(manifest, dict) and isinstance(manifest.get("entities"), list) else []
+    if not entities:
+        _push_question(
+            f"Module '{matched_module}' has no entities. Which entity should be targeted?",
+            {"id": "entity_target", "kind": "text", "prompt": f"Module '{matched_module}' has no entities. Which entity should be targeted?"},
+        )
+        return candidate_ops, questions, question_meta
+
+    # Prefer explicit field-id syntax (e.g., contact.supplier_rating).
+    explicit_field_id = None
+    for token in re.findall(r"\b([a-zA-Z][a-zA-Z0-9_]*\.[a-zA-Z][a-zA-Z0-9_]*)\b", msg):
+        if token.startswith("entity."):
+            continue
+        explicit_field_id = token
+        break
+
+    field_name = None
+    add_match = re.search(r"(?:add|create|make)\s+([a-zA-Z0-9 _-]+?)\s+(?:field\s+)?(?:to|in|on)\s+([a-zA-Z0-9_. -]+)", msg, flags=re.IGNORECASE)
+    if add_match:
+        field_name = add_match.group(1).strip()
+        explicit_mod = _find_module_by_alias(add_match.group(2).strip())
+        if explicit_mod:
+            matched_module = explicit_mod
+            manifest = (module_index.get(matched_module) or {}).get("manifest")
+            entities = manifest.get("entities") if isinstance(manifest, dict) and isinstance(manifest.get("entities"), list) else entities
+    field_named_match = re.search(r"(?:field|attribute)\s+(?:called|named|call)\s+([a-zA-Z0-9 _-]{1,80})", msg, flags=re.IGNORECASE)
+    if field_name is None and field_named_match and isinstance(field_named_match.group(1), str):
+        field_name = field_named_match.group(1).strip()
+
+    target_entity = None
+    if isinstance(explicit_field_id, str) and "." in explicit_field_id:
+        prefix = explicit_field_id.split(".", 1)[0]
+        for entity in entities:
+            if not isinstance(entity, dict):
+                continue
+            entity_id = entity.get("id")
+            if not isinstance(entity_id, str):
+                continue
+            entity_tail = entity_id.split(".")[-1]
+            if entity_tail == prefix:
+                target_entity = entity
+                break
+    if target_entity is None:
+        target_entity = entities[0] if entities and isinstance(entities[0], dict) else None
+    entity_id = target_entity.get("id") if isinstance(target_entity, dict) else None
+    if not isinstance(entity_id, str):
+        _push_question(
+            f"Could not infer an entity in module '{matched_module}'.",
+            {"id": "entity_target", "kind": "text", "prompt": f"Could not infer an entity in module '{matched_module}'."},
+        )
+        return candidate_ops, questions, question_meta
+
+    automation_candidate = _ai_build_status_notification_automation_candidate(
+        msg,
+        matched_module,
+        manifest,
+        entity_id,
+    )
+    if isinstance(automation_candidate, dict):
+        candidate_ops.extend(
+            [op for op in (automation_candidate.get("candidate_ops") or []) if isinstance(op, dict)]
+        )
+        questions.extend(
+            [item for item in (automation_candidate.get("questions") or []) if isinstance(item, str) and item.strip()]
+        )
+        if isinstance(automation_candidate.get("question_meta"), dict):
+            question_meta = automation_candidate.get("question_meta")
+        if candidate_ops or questions:
+            return candidate_ops, questions, question_meta
+
+    add_tab_match = re.search(
+        r"(?:add|create|make)\s+(?:a\s+)?(?:new\s+)?tab(?:\s+in\s+(?:that|the)\s+module)?(?:\s+in\s+the\s+tabs\s+on\s+the\s+form)?(?:\s+called|\s+named)?\s+([a-zA-Z0-9 _-]{1,80})",
+        msg,
+        flags=re.IGNORECASE,
+    )
+    if _ai_is_explicit_add_tab_request(msg):
+        tab_label = None
+        if quote_match := re.search(r"['\"]([^'\"]{1,80})['\"]", msg):
+            if isinstance(quote_match.group(1), str) and quote_match.group(1).strip():
+                tab_label = quote_match.group(1).strip()
+        if tab_label is None and add_tab_match and isinstance(add_tab_match.group(1), str):
+            tab_label = add_tab_match.group(1).strip()
+        if not _is_label_confident(tab_label or ""):
+            _push_question(
+                "What should the new form tab be called?",
+                {"id": "tab_label", "kind": "text", "prompt": "What should the new form tab be called?"},
+            )
+            return candidate_ops, questions, question_meta
+        tab_change = _ai_prepare_add_form_tab_change(manifest, matched_module, entity_id, tab_label)
+        if isinstance(tab_change.get("error"), str):
+            candidate_ops = []
+            questions = []
+            question_meta = None
+            _push_question(tab_change.get("error"), {"id": "tab_label", "kind": "text", "prompt": tab_change.get("error")})
+            return candidate_ops, questions, question_meta
+        if tab_change.get("existing") is True:
+            _push_question(
+                f"A form tab named '{tab_label}' already exists. Should I update that tab instead?",
+                {
+                    "id": "tab_exists_resolution",
+                    "kind": "text",
+                    "prompt": f"A form tab named '{tab_label}' already exists. Should I update that tab instead?",
+                    "defaults": {"tab_target": tab_label},
+                },
+            )
+            return candidate_ops, questions, question_meta
+        if isinstance(tab_change.get("op"), dict):
+            candidate_ops.append(
+                tab_change.get("op")
+            )
+            return candidate_ops, questions, question_meta
+
+    move_match = re.search(r"\b(mov(?:e|ed|ing)?|more)\b", lower)
+    bottom_match = re.search(r"\bbottom|last\b", lower)
+    if move_match and bottom_match:
+        field_ref = None
+        move_field_match = re.search(r"(?:mov(?:e|ed|ing)?|more)\s+(?:the\s+)?field\s+([a-zA-Z0-9_. -]+?)\s+(?:to|at)\s+(?:the\s+)?(?:bottom|end|last)", msg, flags=re.IGNORECASE)
+        if move_field_match and isinstance(move_field_match.group(1), str):
+            field_ref = move_field_match.group(1).strip()
+        elif isinstance(answer_hints, dict) and isinstance(answer_hints.get("field_id"), str):
+            field_ref = answer_hints.get("field_id").strip()
+        if field_ref:
+            location = _ai_find_form_field_location(manifest, field_ref)
+            if isinstance(location, dict):
+                target_index = max(int(location.get("count") or 0) - 1, 0)
+                current_index = int(location.get("index") or 0)
+                if current_index != target_index:
+                    candidate_ops.append(
+                        {
+                            "op": "move_section_field",
+                            "artifact_type": "module",
+                            "artifact_id": matched_module,
+                            "view_id": location.get("view_id"),
+                            "section_id": location.get("section_id"),
+                            "field_id": location.get("field_id"),
+                            "index": target_index,
+                        }
+                    )
+                return candidate_ops, questions, question_meta
+            suggestions = _ai_suggest_form_field_refs(manifest, field_ref)
+            suggestion_text = f" Did you mean {', '.join([repr(item) for item in suggestions])}?" if suggestions else ""
+            _push_question(
+                f"I couldn't find a field matching '{field_ref}' in module '{matched_module}'. Which field should I move?{suggestion_text}",
+                {
+                    "id": "field_target",
+                    "kind": "text",
+                    "prompt": f"I couldn't find a field matching '{field_ref}' in module '{matched_module}'. Which field should I move?",
+                },
+            )
+            return candidate_ops, questions, question_meta
+
+    entity_tail = entity_id.split(".")[-1]
+    hint_field_label = answer_hints.get("field_label") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("field_label"), str) else None
+    hint_field_type = answer_hints.get("field_type") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("field_type"), str) else None
+    hint_field_id = answer_hints.get("field_id") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("field_id"), str) else None
+
+    quoted_label = None
+    quote_match = re.search(r"['\"]([^'\"]{1,80})['\"]", msg)
+    if quote_match and isinstance(quote_match.group(1), str):
+        quoted_label = quote_match.group(1).strip()
+
+    field_label = None
+    if explicit_field_id:
+        field_id = explicit_field_id
+        field_label = explicit_field_id.split(".", 1)[1].replace("_", " ").strip().title()
+    elif hint_field_id:
+        field_id = hint_field_id
+        field_label = hint_field_label or hint_field_id.split(".", 1)[-1].replace("_", " ").strip().title()
+    else:
+        label_seed = hint_field_label or quoted_label or (field_name.strip() if isinstance(field_name, str) else "")
+        if not label_seed:
+            _push_question(
+                "What should the new field be called?",
+                {
+                    "id": "field_spec",
+                    "kind": "field_spec",
+                    "prompt": "What should the new field be called?",
+                    "defaults": {"field_type": _ai_infer_field_type(msg, answer_hints=answer_hints)},
+                    "options": {"field_types": _AI_FIELD_TYPES},
+                },
+            )
+            return candidate_ops, questions, question_meta
+        safe_name = re.sub(r"[^a-zA-Z0-9_]+", "_", label_seed.strip().lower()).strip("_")
+        field_id = f"{entity_tail}.{safe_name}"
+        field_label = (label_seed or safe_name).replace("_", " ").strip().title()
+    field_type = _ai_infer_field_type(msg, answer_hints=answer_hints)
+
+    existing_fields = target_entity.get("fields") if isinstance(target_entity, dict) and isinstance(target_entity.get("fields"), list) else []
+    existing_matching = [field for field in existing_fields if isinstance(field, dict) and field.get("id") == field_id]
+    field_exists = len(existing_matching) > 0
+    dedupe_existing = answer_hints.get("deduplicate_existing") if isinstance(answer_hints, dict) else None
+    if len(existing_matching) > 1:
+        if dedupe_existing is True:
+            for _ in range(len(existing_matching) - 1):
+                candidate_ops.append(
+                    {
+                        "op": "remove_field",
+                        "artifact_type": "module",
+                        "artifact_id": matched_module,
+                        "entity_id": entity_id,
+                        "field_id": field_id,
+                    }
+                )
+        elif dedupe_existing is None:
+            _push_question(
+                f"Field '{field_id}' already exists multiple times in '{entity_id}'. Should I deduplicate it before making further changes?",
+                {
+                    "id": "dedupe_existing",
+                    "kind": "dedupe",
+                    "prompt": f"Field '{field_id}' already exists multiple times in '{entity_id}'. Should I deduplicate it?",
+                    "defaults": {"deduplicate_existing": True},
+                },
+            )
+
+    needs_field_spec = False
+    if not field_exists and not explicit_field_id:
+        if not _is_label_confident(field_label):
+            needs_field_spec = True
+    if needs_field_spec:
+        _push_question(
+            "Confirm the new field details before patching.",
+            {
+                "id": "field_spec",
+                "kind": "field_spec",
+                "prompt": "Confirm the new field details before patching.",
+                "defaults": {"field_label": field_label or "", "field_type": field_type, "field_id": field_id},
+                "options": {"field_types": _AI_FIELD_TYPES},
+            },
+        )
+        return candidate_ops, questions, question_meta
+
+    if not field_exists:
+        candidate_ops.append(
+            {
+                "op": "add_field",
+                "artifact_type": "module",
+                "artifact_id": matched_module,
+                "entity_id": entity_id,
+                "field": {"id": field_id, "type": field_type, "label": field_label},
+                }
+            )
+
+    wants_form = ("form" in lower and "field" in lower) or "section" in lower
+    wants_list = "list" in lower and "column" in lower
+    if isinstance(answer_hints, dict):
+        if isinstance(answer_hints.get("include_form"), bool):
+            wants_form = wants_form or answer_hints.get("include_form")
+        if isinstance(answer_hints.get("include_list"), bool):
+            wants_list = wants_list or answer_hints.get("include_list")
+    wants_add = bool(re.search(r"\b(add|create|make)\b", lower)) or bool(explicit_field_id)
+
+    views = manifest.get("views") if isinstance(manifest, dict) and isinstance(manifest.get("views"), list) else []
+    form_view_id = None
+    list_view_id = None
+    for view in views:
+        if not isinstance(view, dict):
+            continue
+        kind = view.get("kind")
+        entity_ref = view.get("entity")
+        normalized_entity_ref = entity_ref if isinstance(entity_ref, str) and entity_ref.startswith("entity.") else f"entity.{entity_ref}" if isinstance(entity_ref, str) else None
+        if kind == "form" and normalized_entity_ref == entity_id and not form_view_id and isinstance(view.get("id"), str):
+            form_view_id = view.get("id")
+        if kind == "list" and normalized_entity_ref == entity_id and not list_view_id and isinstance(view.get("id"), str):
+            list_view_id = view.get("id")
+    if not form_view_id:
+        for view in views:
+            if isinstance(view, dict) and view.get("kind") == "form" and isinstance(view.get("id"), str):
+                form_view_id = view.get("id")
+                break
+    if not list_view_id:
+        for view in views:
+            if isinstance(view, dict) and view.get("kind") == "list" and isinstance(view.get("id"), str):
+                list_view_id = view.get("id")
+                break
+
+    if wants_add and not wants_form and not wants_list:
+        wants_form = False
+        wants_list = False
+
+    if wants_form:
+        form_view = None
+        for view in views:
+            if not isinstance(view, dict):
+                continue
+            kind = view.get("kind")
+            entity_ref = view.get("entity")
+            normalized_entity_ref = entity_ref if isinstance(entity_ref, str) and entity_ref.startswith("entity.") else f"entity.{entity_ref}" if isinstance(entity_ref, str) else None
+            if kind == "form" and normalized_entity_ref == entity_id:
+                form_view = view
+                break
+        if form_view is None:
+            for view in views:
+                if isinstance(view, dict) and view.get("kind") == "form":
+                    form_view = view
+                    break
+        if isinstance(form_view, dict) and isinstance(form_view.get("id"), str):
+            sections = form_view.get("sections") if isinstance(form_view.get("sections"), list) else []
+            section = sections[0] if sections and isinstance(sections[0], dict) else None
+            if isinstance(section, dict) and isinstance(section.get("id"), str):
+                sec_fields = section.get("fields") if isinstance(section.get("fields"), list) else []
+                if field_id not in sec_fields:
+                    candidate_ops.append(
+                        {
+                            "op": "insert_section_field",
+                            "artifact_type": "module",
+                            "artifact_id": matched_module,
+                            "view_id": form_view.get("id"),
+                            "section_id": section.get("id"),
+                            "field_id": field_id,
+                        }
+                    )
+
+    if wants_list:
+        list_view = None
+        for view in views:
+            if not isinstance(view, dict):
+                continue
+            kind = view.get("kind")
+            entity_ref = view.get("entity")
+            normalized_entity_ref = entity_ref if isinstance(entity_ref, str) and entity_ref.startswith("entity.") else f"entity.{entity_ref}" if isinstance(entity_ref, str) else None
+            if kind == "list" and normalized_entity_ref == entity_id:
+                list_view = view
+                break
+        if list_view is None:
+            for view in views:
+                if isinstance(view, dict) and view.get("kind") == "list":
+                    list_view = view
+                    break
+        if isinstance(list_view, dict) and isinstance(list_view.get("id"), str):
+            columns = list_view.get("columns") if isinstance(list_view.get("columns"), list) else []
+            if not any(isinstance(col, dict) and col.get("field_id") == field_id for col in columns):
+                next_columns = [col for col in columns if isinstance(col, dict)]
+                next_columns.append({"field_id": field_id, "label": field_label})
+                candidate_ops.append(
+                    {
+                        "op": "update_view_columns",
+                        "artifact_type": "module",
+                        "artifact_id": matched_module,
+                        "view_id": list_view.get("id"),
+                        "columns": next_columns,
+                    }
+                )
+
+    if field_exists and wants_add and not wants_form and not wants_list:
+        _push_question(
+            f"Field '{field_id}' already exists in '{entity_id}'. Do you want me to update its definition or place it in form/list views instead?",
+            {
+                "id": "field_exists_resolution",
+                "kind": "text",
+                "prompt": f"Field '{field_id}' already exists in '{entity_id}'. Clarify whether to update field definition or only place it in views.",
+            },
+        )
+
+    intent_words = ("add" in lower or "update" in lower or "remove" in lower or bool(explicit_field_id))
+    if not candidate_ops and intent_words:
+        if not questions:
+            _push_question(
+                "I parsed your request, but I still need a concrete module/entity/view target to generate operations.",
+                {"id": "target_resolution", "kind": "text", "prompt": "I need a concrete module/entity/view target to generate operations."},
+            )
+    return candidate_ops, questions, question_meta
+
+
+def _ai_plan_from_message(
+    request: Request,
+    session: dict,
+    message: str,
+    explicit_scope: str | None = None,
+    answer_hints: dict | None = None,
+) -> tuple[dict, dict]:
+    graph = _ai_build_workspace_graph(request)
+    planner_hints = copy.deepcopy(answer_hints) if isinstance(answer_hints, dict) else {}
+    module_index = _ai_module_index_with_pending_modules(_ai_module_manifest_index(request), planner_hints)
+    scope_mode = explicit_scope if isinstance(explicit_scope, str) and explicit_scope in _AI_SCOPE_MODES else (session.get("scope_mode") or "auto")
+    affected_modules: list[str] = []
+    selected_type = session.get("selected_artifact_type")
+    selected_key = session.get("selected_artifact_key")
+    if selected_type == "module" and isinstance(selected_key, str) and selected_key in module_index:
+        if scope_mode in {"auto", "current_item", "selected_items"}:
+            affected_modules.append(selected_key)
+    hint_module_target = planner_hints.get("module_target") if isinstance(planner_hints.get("module_target"), str) else None
+    hint_scope_switch_module = _ai_hint_scope_switch_module(planner_hints, list(module_index.keys()), module_index)
+    inherited_followup_modules = [
+        module_id
+        for module_id in (planner_hints.get("pending_affected_modules") or [])
+        if isinstance(module_id, str) and module_id in module_index
+    ]
+    if isinstance(hint_scope_switch_module, str) and hint_scope_switch_module:
+        planner_hints["module_target"] = hint_scope_switch_module
+        planner_hints["pending_affected_modules"] = [hint_scope_switch_module]
+        pending_ops = planner_hints.get("pending_candidate_ops") if isinstance(planner_hints.get("pending_candidate_ops"), list) else []
+        planner_hints["pending_candidate_ops"] = [
+            copy.deepcopy(op)
+            for op in pending_ops
+            if isinstance(op, dict)
+            and (
+                op.get("op") == "create_module"
+                or (op.get("artifact_type") == "module" and op.get("artifact_id") == hint_scope_switch_module)
+            )
+        ]
+    explicit_module_target = _ai_extract_module_target_from_text(message, list(module_index.keys()), module_index)
+    explicit_module_targets = _ai_extract_explicit_module_targets_from_text(message, list(module_index.keys()), module_index)
+    requested_module_labels = _ai_extract_requested_module_labels(message)
+    create_module_intent = _ai_is_create_module_request(message or "")
+    hint_module_match = _ai_find_module_by_alias(hint_module_target, list(module_index.keys()), module_index) if isinstance(hint_module_target, str) and hint_module_target.strip() else None
+    additive_followup_inherits_scope = bool(
+        not create_module_intent
+        and not explicit_module_target
+        and not explicit_module_targets
+        and not requested_module_labels
+        and len(inherited_followup_modules) == 1
+        and _ai_should_extend_existing_plan(message, session, planner_hints, module_index)
+    )
+    if additive_followup_inherits_scope:
+        planner_hints["_extend_existing_plan"] = True
+        explicit_followup_field_label = _ai_extract_field_label(message, answer_hints=None)
+        if _is_label_confident(explicit_followup_field_label or ""):
+            planner_hints["field_label"] = explicit_followup_field_label
+            planner_hints.pop("field_id", None)
+            planner_hints.pop("field_target", None)
+    prefer_latest_hint_module = bool(
+        (isinstance(hint_scope_switch_module, str) and hint_scope_switch_module)
+        or (
+            not explicit_module_target
+            and
+            isinstance(planner_hints.get("answer_text"), str)
+            and planner_hints.get("answer_text").strip()
+            and isinstance(hint_module_match, str)
+            and hint_module_match
+        )
+    )
+    if isinstance(hint_scope_switch_module, str) and hint_scope_switch_module:
+        affected_modules = [hint_scope_switch_module]
+    elif additive_followup_inherits_scope:
+        affected_modules = [inherited_followup_modules[0]]
+    elif prefer_latest_hint_module:
+        affected_modules = [hint_module_match]
+    elif explicit_module_targets:
+        if re.search(r"\b(?:actually|instead|rather than|scratch that|forget that|ignore that|ignore the previous|on second thought|wait|no)\b", message or "", flags=re.IGNORECASE):
+            affected_modules = [explicit_module_targets[-1]]
+        else:
+            affected_modules = explicit_module_targets
+    elif isinstance(explicit_module_target, str) and explicit_module_target:
+        affected_modules = [explicit_module_target]
+    elif isinstance(hint_module_match, str) and hint_module_match:
+        affected_modules = [hint_module_match]
+    else:
+        if isinstance(hint_module_target, str) and hint_module_target.strip():
+            affected_modules.extend(_ai_match_modules_from_text(hint_module_target, graph))
+        affected_modules.extend(_ai_match_modules_from_text(message, graph))
+    affected_modules = list(dict.fromkeys([mid for mid in affected_modules if mid in module_index]))
+    if not affected_modules and _ai_preview_contract_requested(message):
+        affected_modules = _ai_infer_preview_modules(message, module_index, affected_modules)
+    resolved_requested_module_ids = [
+        module_id
+        for module_id in explicit_module_targets
+        if isinstance(module_id, str) and module_id in module_index
+    ]
+    resolved_requested_module_ids.extend(
+        module_id
+        for module_id in (
+            _ai_find_module_by_alias(label, list(module_index.keys()), module_index)
+            for label in requested_module_labels
+            if isinstance(label, str) and label.strip()
+        )
+        if isinstance(module_id, str) and module_id in module_index
+    )
+    resolved_requested_module_ids = list(dict.fromkeys(resolved_requested_module_ids))
+    resolved_requested_module_labels = [
+        _ai_module_display_name(module_id, module_index)
+        for module_id in resolved_requested_module_ids
+    ]
+    missing_requested_module_labels: list[str] = []
+    if requested_module_labels:
+        resolved_label_norms = {
+            _ai_norm_token(label)
+            for label in resolved_requested_module_labels
+            if isinstance(label, str) and label.strip()
+        }
+        resolved_label_norms.update(
+            _ai_norm_token(module_id)
+            for module_id in resolved_requested_module_ids
+            if isinstance(module_id, str) and module_id
+        )
+        for module_id in resolved_requested_module_ids:
+            if isinstance(module_id, str) and module_id:
+                resolved_label_norms.update(_ai_module_alias_norms(module_id, module_index))
+        for label in requested_module_labels:
+            normalized = _ai_norm_token(label)
+            if normalized and normalized not in resolved_label_norms and label not in missing_requested_module_labels:
+                missing_requested_module_labels.append(label)
+    unresolved_requested_scope_only = bool(requested_module_labels) and not resolved_requested_module_ids and not create_module_intent
+    if unresolved_requested_scope_only:
+        # Keep explicit missing module scope truthful instead of drifting onto a stale or semantically similar module.
+        affected_modules = []
+        for key in ("module_target", "pending_affected_modules", "pending_candidate_ops"):
+            planner_hints.pop(key, None)
+
+    assumptions = []
+    if scope_mode == "auto" and not affected_modules and not create_module_intent:
+        assumptions.append("No explicit module match found; planner remained workspace-aware but conservative.")
+    if (
+        selected_type == "module"
+        and isinstance(selected_key, str)
+        and selected_key in module_index
+        and (not affected_modules or selected_key in affected_modules)
+        and not explicit_module_target
+        and not hint_module_match
+        and not unresolved_requested_scope_only
+    ):
+        assumptions.append(f"Selected explorer module '{selected_key}' was used as primary scope.")
+
+    candidate_ops: list[dict] = []
+    questions: list[str] = []
+    question_meta: dict | None = None
+    risks: list[str] = []
+    advisories: list[str] = []
+    planner_state: dict | None = None
+    plan_v1: dict | None = None
+    requested_change_lines: list[str] = []
+    resolved_without_changes = False
+    confirm_plan = answer_hints.get("confirm_plan") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("confirm_plan"), bool) else None
+    preview_style = _ai_preview_plan_style(message)
+    force_preview_only = _ai_preview_contract_requested(message) and bool(preview_style.get("system_brief"))
+    planning_mode = _ai_detect_planning_mode(
+        message,
+        create_module_intent=create_module_intent,
+        preview_only=force_preview_only,
+    )
+    if (force_preview_only or bool(preview_style.get("system_brief"))) and not unresolved_requested_scope_only:
+        for module_id in _ai_preview_track_modules(message, module_index):
+            if module_id not in affected_modules:
+                affected_modules.append(module_id)
+
+    slot_plan = None
+    if not force_preview_only:
+        slot_plan = _ai_slot_based_plan(
+            message,
+            affected_modules,
+            module_index,
+            answer_hints=planner_hints,
+        )
+    if isinstance(slot_plan, dict):
+        candidate_ops = [op for op in (slot_plan.get("candidate_ops") or []) if isinstance(op, dict)]
+        questions = [q for q in (slot_plan.get("questions") or []) if isinstance(q, str) and q.strip()]
+        question_meta = slot_plan.get("question_meta") if isinstance(slot_plan.get("question_meta"), dict) else None
+        assumptions.extend([a for a in (slot_plan.get("assumptions") or []) if isinstance(a, str)])
+        risks.extend([r for r in (slot_plan.get("risk_flags") or []) if isinstance(r, str)])
+        advisories.extend([a for a in (slot_plan.get("advisories") or []) if isinstance(a, str)])
+        requested_change_lines.extend([line for line in (slot_plan.get("requested_change_lines") or []) if isinstance(line, str) and line.strip()])
+        affected_modules.extend([mid for mid in (slot_plan.get("affected_modules") or []) if isinstance(mid, str)])
+        affected_modules = list(dict.fromkeys([mid for mid in affected_modules if mid in module_index]))
+        planner_state = slot_plan.get("planner_state") if isinstance(slot_plan.get("planner_state"), dict) else None
+        resolved_without_changes = bool(slot_plan.get("resolved_without_changes"))
+        if isinstance(planner_state, dict) and planner_state.get("intent") == "create_module":
+            created_module_ids = [
+                op.get("artifact_id")
+                for op in candidate_ops
+                if isinstance(op, dict) and op.get("op") == "create_module" and isinstance(op.get("artifact_id"), str)
+            ]
+            if created_module_ids:
+                affected_modules = list(dict.fromkeys(created_module_ids))
+        if isinstance(planner_state, dict) and planner_state.get("intent") == "greeting_only":
+            assumptions = [
+                item
+                for item in assumptions
+                if item != "No explicit module match found; planner remained workspace-aware but conservative."
+            ]
+
+    if slot_plan is None and not force_preview_only and not unresolved_requested_scope_only:
+        semantic = _ai_semantic_plan_from_model(
+            request,
+            session,
+            message,
+            module_index,
+            graph,
+            affected_modules,
+            planning_mode=planning_mode,
+            answer_hints=planner_hints,
+        )
+        if isinstance(semantic, dict):
+            candidate_ops = [op for op in (semantic.get("candidate_ops") or []) if isinstance(op, dict)]
+            questions = [q for q in (semantic.get("questions") or []) if isinstance(q, str) and q.strip()]
+            question_meta = semantic.get("question_meta") if isinstance(semantic.get("question_meta"), dict) else None
+            assumptions.extend([a for a in (semantic.get("assumptions") or []) if isinstance(a, str)])
+            risks.extend([r for r in (semantic.get("risk_flags") or []) if isinstance(r, str)])
+            advisories.extend([a for a in (semantic.get("advisories") or []) if isinstance(a, str)])
+            affected_modules.extend([mid for mid in (semantic.get("affected_modules") or []) if isinstance(mid, str)])
+            plan_v1 = semantic.get("plan_v1") if isinstance(semantic.get("plan_v1"), dict) else None
+            semantic_new_modules = {
+                op.get("artifact_id")
+                for op in candidate_ops
+                if isinstance(op, dict) and op.get("op") == "create_module" and isinstance(op.get("artifact_id"), str)
+            }
+            affected_modules = list(dict.fromkeys([mid for mid in affected_modules if mid in module_index or mid in semantic_new_modules]))
+
+    if slot_plan is None and not force_preview_only and not candidate_ops:
+        heuristic_ops, heuristic_questions, heuristic_meta = _ai_extract_candidate_ops(
+            message,
+            affected_modules,
+            module_index,
+            answer_hints=planner_hints,
+        )
+        if heuristic_ops or (not questions and heuristic_questions):
+            candidate_ops = heuristic_ops
+            questions = heuristic_questions
+            question_meta = heuristic_meta if isinstance(heuristic_meta, dict) else question_meta
+
+    if slot_plan is None and not force_preview_only:
+        candidate_ops, placement_questions, placement_question_meta = _ai_reconcile_add_field_intent(
+            module_index,
+            candidate_ops,
+            message=message,
+            answer_hints=planner_hints,
+        )
+        if placement_questions and not questions:
+            questions = placement_questions
+            question_meta = placement_question_meta if isinstance(placement_question_meta, dict) else question_meta
+
+    if candidate_ops and not questions:
+        candidate_ops, affected_modules, assumptions = _ai_merge_followup_candidate_ops(
+            message,
+            session,
+            planner_hints,
+            module_index,
+            candidate_ops,
+            affected_modules,
+            assumptions,
+        )
+
+    if candidate_ops:
+        preflight_ops, preflight_errors = _ai_preflight_candidate_ops(module_index, candidate_ops, planner_hints)
+        if preflight_errors:
+            risks.append("Some detailed build steps did not line up cleanly with the current workspace, so they were left out of this draft plan.")
+            if not preflight_ops and not questions:
+                first = preflight_errors[0] if isinstance(preflight_errors[0], dict) else {}
+                detail = first.get("message") if isinstance(first.get("message"), str) else "invalid operation details"
+                if isinstance(planner_state, dict) and planner_state.get("intent") == "upgrade_module_style":
+                    questions = [f"I couldn't prepare a safe full style upgrade for this module yet: {detail}. What specific layout or view change should I make instead?"]
+                    question_meta = {
+                        "id": "plan_revision",
+                        "kind": "text",
+                        "prompt": "What specific layout or view change should I make instead?",
+                    }
+                else:
+                    questions = [f"I need clarification before patching: {detail}"]
+                    question_meta = {
+                        "id": "target_resolution",
+                        "kind": "text",
+                        "prompt": "I need a concrete module/entity/view target to generate valid operations.",
+                    }
+        candidate_ops = preflight_ops
+
+    affected_from_ops = []
+    for op in candidate_ops:
+        if isinstance(op, dict) and op.get("artifact_type") == "module" and isinstance(op.get("artifact_id"), str):
+            affected_from_ops.append(op.get("artifact_id"))
+    if affected_from_ops:
+        affected_modules.extend(affected_from_ops)
+        allowed_modules = set(module_index.keys()) | {mid for mid in affected_from_ops if isinstance(mid, str)}
+        affected_modules = list(dict.fromkeys([mid for mid in affected_modules if mid in allowed_modules]))
+
+    if len(questions) > 1:
+        # One question at a time keeps the loop deterministic.
+        questions = [questions[0]]
+
+    create_only = bool(candidate_ops) and all(isinstance(op, dict) and op.get("op") == "create_module" for op in candidate_ops)
+    if create_only:
+        affected_modules = [
+            op.get("artifact_id")
+            for op in candidate_ops
+            if isinstance(op, dict) and isinstance(op.get("artifact_id"), str) and op.get("artifact_id")
+        ]
+        assumptions = [
+            item
+            for item in assumptions
+            if not (isinstance(item, str) and item == "No explicit module match found; planner remained workspace-aware but conservative.")
+        ]
+    if missing_requested_module_labels:
+        missing_text = _ai_join_human_list(missing_requested_module_labels)
+        resolved_scope_labels = [
+            _ai_module_display_name(module_id, module_index)
+            for module_id in affected_modules
+            if isinstance(module_id, str) and module_id in module_index
+        ]
+        if not resolved_scope_labels:
+            risks.append(
+                f"{missing_text} {'is' if len(missing_requested_module_labels) == 1 else 'are'} named in the request but not currently in this workspace."
+            )
+    if len(affected_modules) > 1 and not create_only:
+        risks.append("Cross-module impact detected; review dependencies before apply.")
+        risks.append("Workspace impact spans multiple modules and shared flows.")
+        advisories.append("dependency review: check shared module links before apply.")
+        advisories.append("Review the workspace impact: this reaches multiple modules and shared flows.")
+    preview_only_plan = _ai_build_preview_only_plan(
+        message,
+        affected_modules,
+        requested_module_labels,
+        missing_requested_module_labels,
+        confirm_plan=confirm_plan,
+    )
+    if (
+        isinstance(preview_only_plan, dict)
+        and not candidate_ops
+        and not resolved_without_changes
+        and (affected_modules or requested_module_labels or create_module_intent)
+    ):
+        questions = [q for q in (preview_only_plan.get("questions") or []) if isinstance(q, str) and q.strip()]
+        question_meta = preview_only_plan.get("question_meta") if isinstance(preview_only_plan.get("question_meta"), dict) else None
+        assumptions = [
+            item
+            for item in assumptions
+            if item != "No explicit module match found; planner remained workspace-aware but conservative."
+        ]
+        assumptions.extend([item for item in (preview_only_plan.get("assumptions") or []) if isinstance(item, str)])
+        advisories = [item for item in (preview_only_plan.get("advisories") or []) if isinstance(item, str)]
+        risks.extend([item for item in (preview_only_plan.get("risk_flags") or []) if isinstance(item, str)])
+        preview_modules = [item for item in (preview_only_plan.get("affected_modules") or []) if isinstance(item, str)]
+        if preview_modules:
+            affected_modules = list(dict.fromkeys([*affected_modules, *preview_modules]))
+        planner_state = preview_only_plan.get("planner_state") if isinstance(preview_only_plan.get("planner_state"), dict) else planner_state
+        resolved_without_changes = bool(preview_only_plan.get("resolved_without_changes"))
+    if not candidate_ops and not resolved_without_changes:
+        inferred_preview_modules = _ai_infer_preview_modules(message, module_index, affected_modules)
+        if _ai_should_force_preview_fallback(
+            message,
+            inferred_preview_modules,
+            requested_module_labels,
+            questions,
+            question_meta,
+        ):
+            forced_preview_plan = _ai_build_preview_only_plan(
+                message,
+                inferred_preview_modules,
+                requested_module_labels,
+                missing_requested_module_labels,
+                confirm_plan=confirm_plan,
+                force=True,
+            )
+            if isinstance(forced_preview_plan, dict):
+                questions = [q for q in (forced_preview_plan.get("questions") or []) if isinstance(q, str) and q.strip()]
+                question_meta = forced_preview_plan.get("question_meta") if isinstance(forced_preview_plan.get("question_meta"), dict) else None
+                assumptions = [
+                    item
+                    for item in assumptions
+                    if item != "No explicit module match found; planner remained workspace-aware but conservative."
+                ]
+                assumptions.extend([item for item in (forced_preview_plan.get("assumptions") or []) if isinstance(item, str)])
+                advisories = [item for item in (forced_preview_plan.get("advisories") or []) if isinstance(item, str)]
+                risks.extend([item for item in (forced_preview_plan.get("risk_flags") or []) if isinstance(item, str)])
+                preview_modules = [item for item in (forced_preview_plan.get("affected_modules") or []) if isinstance(item, str)]
+                if preview_modules:
+                    affected_modules = list(dict.fromkeys([*affected_modules, *preview_modules]))
+                planner_state = forced_preview_plan.get("planner_state") if isinstance(forced_preview_plan.get("planner_state"), dict) else planner_state
+                resolved_without_changes = bool(forced_preview_plan.get("resolved_without_changes"))
+    if not candidate_ops and not questions and not resolved_without_changes:
+        risks.append("No concrete operation generated; user clarification required.")
+    if not candidate_ops and not questions and not resolved_without_changes:
+        if any(isinstance(risk, str) and "supports simple single-entity modules only" in risk for risk in risks):
+            questions = ["This upgrade flow currently supports simple single-entity modules only. What specific layout or view change should I make instead?"]
+            question_meta = {
+                "id": "plan_revision",
+                "kind": "text",
+                "prompt": "What specific layout or view change should I make instead?",
+            }
+        else:
+            questions = ["I parsed your request, but I still need a concrete module/entity/view target to generate operations."]
+            question_meta = {
+                "id": "target_resolution",
+                "kind": "text",
+                "prompt": "I need a concrete module/entity/view target to generate operations.",
+            }
+
+    if candidate_ops and questions:
+        question_id = question_meta.get("id") if isinstance(question_meta, dict) and isinstance(question_meta.get("id"), str) else ""
+        question_kind = question_meta.get("kind") if isinstance(question_meta, dict) and isinstance(question_meta.get("kind"), str) else ""
+        planner_intent = planner_state.get("intent") if isinstance(planner_state, dict) and isinstance(planner_state.get("intent"), str) else ""
+        generic_resolution_question = (
+            question_id in {"target_resolution", "module_target", "entity_target"}
+            or question_kind in {"target_resolution", "module_target", "entity_target"}
+            or any(
+                isinstance(question, str)
+                and re.search(r"\bI need clarification before patching\b|\bI need a concrete module/entity/view target\b|\bentity not found\b", question, flags=re.IGNORECASE)
+                for question in questions
+            )
+        )
+        if generic_resolution_question and planner_intent in {"add_field", "remove_field", "rename_field", "move_form_field", "move_form_field_to_tab"}:
+            questions = []
+            question_meta = None
+
+    answer_text = planner_hints.get("answer_text") if isinstance(planner_hints.get("answer_text"), str) else ""
+    skip_confirm_plan = _ai_should_skip_confirm_plan_for_terminal_noop(
+        candidate_ops,
+        resolved_without_changes,
+        planner_state,
+    )
+    if (candidate_ops or resolved_without_changes) and not questions:
+        if confirm_plan is False and not _ai_answer_looks_like_fresh_request(answer_text):
+            questions = ["What should I change about this plan?"]
+            question_meta = {
+                "id": "plan_revision",
+                "kind": "text",
+                "prompt": "What should I change about this plan?",
+            }
+        elif confirm_plan is not True and not skip_confirm_plan:
+            questions = ["Confirm this plan?"]
+            question_meta = {
+                "id": "confirm_plan",
+                "kind": "confirm_plan",
+                "prompt": "Confirm this plan or tell me what to change.",
+            }
+
+    assumptions = list(dict.fromkeys([item for item in assumptions if isinstance(item, str) and item.strip()]))
+    advisories = list(dict.fromkeys([item for item in advisories if isinstance(item, str) and item.strip()]))
+    risks = list(dict.fromkeys([item for item in risks if isinstance(item, str) and item.strip()]))
+    if requested_module_labels or missing_requested_module_labels:
+        if not isinstance(planner_state, dict):
+            planner_state = {}
+        if requested_module_labels:
+            planner_state["requested_module_labels"] = requested_module_labels
+        if missing_requested_module_labels:
+            planner_state["missing_module_labels"] = missing_requested_module_labels
+
+    artifacts = [
+        {
+            "artifact_type": "module",
+            "artifact_id": mid,
+            "artifact_key": _ai_module_stable_key(mid, module_index),
+        }
+        for mid in affected_modules
+    ]
+    plan = {
+        "scope": {"mode": scope_mode, "detected_scope": "workspace" if not affected_modules else "selected_modules"},
+        "affected_artifacts": artifacts,
+        "proposed_changes": candidate_ops,
+        "assumptions": assumptions,
+        "advisories": list(dict.fromkeys([item for item in advisories if isinstance(item, str) and item.strip()])),
+        "required_questions": questions,
+        "required_question_meta": question_meta if isinstance(question_meta, dict) else None,
+        "risk_flags": risks,
+        "candidate_operations": candidate_ops,
+        "planner_state": planner_state,
+        "plan_v1": copy.deepcopy(plan_v1) if isinstance(plan_v1, dict) else None,
+        "requested_change_lines": list(dict.fromkeys([line for line in requested_change_lines if isinstance(line, str) and line.strip()])),
+        "resolved_without_changes": resolved_without_changes,
+    }
+    if questions:
+        session_status = "waiting_input"
+    elif candidate_ops or resolved_without_changes:
+        session_status = "ready_to_apply"
+    else:
+        session_status = "planning"
+    return plan, {"status": session_status, "affected_modules": affected_modules}
+
+
+def _ai_context_package(request: Request, session: dict, message: str, answer_hints: dict | None = None) -> dict:
+    module_index = _ai_module_manifest_index(request)
+    selected_key = session.get("selected_artifact_key")
+    selected_type = session.get("selected_artifact_type") or "none"
+    graph = _ai_build_workspace_graph(request)
+    relevant_modules = []
+    if isinstance(selected_key, str) and selected_type == "module" and selected_key in module_index:
+        relevant_modules.append(selected_key)
+    hint_module_target = answer_hints.get("module_target") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("module_target"), str) else None
+    hinted_module = _ai_find_module_by_alias(hint_module_target, list(module_index.keys()), module_index) if isinstance(hint_module_target, str) and hint_module_target.strip() else None
+    if isinstance(hinted_module, str) and hinted_module in module_index:
+        relevant_modules.append(hinted_module)
+    relevant_modules.extend(_ai_extract_explicit_module_targets_from_text(message, list(module_index.keys()), module_index))
+    relevant_modules.extend(_ai_match_modules_from_text(message, graph))
+    relevant_modules = list(dict.fromkeys([mid for mid in relevant_modules if mid in module_index]))[:3]
+
+    artifacts = []
+    for module_id in relevant_modules:
+        manifest = module_index[module_id]["manifest"]
+        artifacts.append(
+            {
+                "artifact_type": "module",
+                "artifact_id": module_id,
+                "artifact_key": _ai_module_stable_key(module_id, module_index),
+                "summary": {
+                    "entities": len(manifest.get("entities") or []),
+                    "views": len(manifest.get("views") or []),
+                    "pages": len(manifest.get("pages") or []),
+                    "actions": len(manifest.get("actions") or []),
+                    "notable_issues": _ai_manifest_notable_issues(manifest),
+                },
+                "manifest": manifest,
+            }
+        )
+
+    reference_snippets = _ai_reference_snippets()
+    contract = reference_snippets.get("manifest_contract") or ""
+    layout_rules = reference_snippets.get("layout_rules") or ""
+
+    plans = _ai_sort(_ai_list_records(_AI_ENTITY_PLAN, limit=200))
+    unresolved = []
+    sid = session.get("id")
+    for plan_item in plans:
+        data = _ai_record_data(plan_item)
+        if data.get("session_id") != sid:
+            continue
+        questions = data.get("questions_json")
+        if isinstance(questions, list) and questions and data.get("status") != "approved":
+            unresolved.extend([q for q in questions if isinstance(q, str)])
+            break
+    kernel_digest = {
+        "modules": [_ai_kernel_module_digest(module_id, module_index[module_id]["manifest"]) for module_id in relevant_modules[:3]],
+        "retrieved_references": _ai_relevant_references(message, relevant_modules, module_index),
+        "pattern_hint": (_load_pattern_memory().get("patterns") or {}).get(_infer_pattern_key(message, " ".join(relevant_modules)) or ""),
+    }
+
+    return {
+        "request_summary": (message or "").strip(),
+        "selected_scope": {
+            "scope_mode": session.get("scope_mode") or "auto",
+            "selected_artifact_type": selected_type,
+            "selected_artifact_key": selected_key,
+        },
+        "relevant_artifact_summaries": [a.get("summary") for a in artifacts],
+        "full_selected_artifacts": artifacts,
+        "contract_snippets": contract,
+        "layout_rules": layout_rules,
+        "planner_reference_snippets": reference_snippets,
+        "workspace_kernel_digest": kernel_digest,
+        "dependency_facts": graph,
+        "prior_unresolved_questions": unresolved,
+    }
+
+
+def _ai_latest_session_record(
+    entity_id: str,
+    session_id: str,
+    *,
+    limit: int = 3000,
+    predicate: Callable[[dict], bool] | None = None,
+) -> dict | None:
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    latest = None
+    latest_created = ""
+    latest_position = -1
+    for position, item in enumerate(_ai_list_records(entity_id, limit=limit)):
+        data = _ai_record_data(item)
+        if data.get("session_id") != session_id:
+            continue
+        if callable(predicate) and not predicate(data):
+            continue
+        created_at = str(data.get("created_at") or "")
+        if latest is None or (created_at, position) >= (latest_created, latest_position):
+            latest = data
+            latest_created = created_at
+            latest_position = position
+    return latest
+
+
+def _ai_latest_plan_for_session(session_id: str) -> dict | None:
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    session = _ai_get_record(_AI_ENTITY_SESSION, session_id)
+    session_data = _ai_record_data(session) if isinstance(session, dict) else {}
+    latest_plan_id = session_data.get("latest_plan_id") if isinstance(session_data.get("latest_plan_id"), str) else None
+    if isinstance(latest_plan_id, str) and latest_plan_id:
+        latest_plan = _ai_get_record(_AI_ENTITY_PLAN, latest_plan_id)
+        latest_plan_data = _ai_record_data(latest_plan) if isinstance(latest_plan, dict) else None
+        if isinstance(latest_plan_data, dict) and latest_plan_data.get("session_id") == session_id:
+            return latest_plan_data
+    return _ai_latest_session_record(_AI_ENTITY_PLAN, session_id, limit=500)
+
+
+def _ai_latest_chat_prompt_for_session(session_id: str) -> str | None:
+    latest = _ai_latest_session_record(
+        _AI_ENTITY_MESSAGE,
+        session_id,
+        predicate=lambda data: data.get("role") == "user" and data.get("message_type") == "chat" and isinstance(data.get("body"), str),
+    )
+    if not isinstance(latest, dict):
+        return None
+    body = latest.get("body")
+    if isinstance(body, str) and body.strip():
+        return body.strip()
+    return None
+
+
+def _ai_collect_answer_hints(session_id: str) -> dict:
+    hints: dict[str, Any] = {
+        "include_form": None,
+        "include_list": None,
+        "deduplicate_existing": None,
+        "confirm_plan": None,
+        "planner_intent": None,
+        "field_label": None,
+        "field_type": None,
+        "field_id": None,
+        "field_target": None,
+        "module_target": None,
+        "entity_target": None,
+        "tab_target": None,
+        "planned_section_id": None,
+        "planned_view_id": None,
+        "answer_text": None,
+        "pending_candidate_ops": [],
+        "applied_candidate_ops": [],
+        "pending_affected_modules": [],
+    }
+    if not isinstance(session_id, str) or not session_id:
+        return hints
+    latest_chat = _ai_latest_session_record(
+        _AI_ENTITY_MESSAGE,
+        session_id,
+        predicate=lambda data: data.get("role") == "user" and data.get("message_type") == "chat" and isinstance(data.get("created_at"), str),
+    )
+    latest_chat_at = latest_chat.get("created_at") if isinstance(latest_chat, dict) and isinstance(latest_chat.get("created_at"), str) else None
+    latest_plan = _ai_latest_plan_for_session(session_id)
+    if isinstance(latest_plan, dict):
+        affected_artifacts = latest_plan.get("affected_artifacts_json") if isinstance(latest_plan.get("affected_artifacts_json"), list) else []
+        plan_modules = []
+        for artifact in affected_artifacts:
+            if not isinstance(artifact, dict) or artifact.get("artifact_type") != "module":
+                continue
+            artifact_id = artifact.get("artifact_id")
+            if isinstance(artifact_id, str) and artifact_id.strip() and artifact_id.strip() not in plan_modules:
+                plan_modules.append(artifact_id.strip())
+        plan_json = latest_plan.get("plan_json") if isinstance(latest_plan.get("plan_json"), dict) else {}
+        plan_body = plan_json.get("plan") if isinstance(plan_json.get("plan"), dict) else {}
+        pending_ops = [op for op in (plan_body.get("candidate_operations") or []) if isinstance(op, dict)]
+        hints["pending_candidate_ops"] = copy.deepcopy(pending_ops)
+        hints["pending_affected_modules"] = list(plan_modules)
+        planner_state = plan_body.get("planner_state") if isinstance(plan_body.get("planner_state"), dict) else {}
+        if not plan_modules:
+            planner_module_id = planner_state.get("module_id") if isinstance(planner_state.get("module_id"), str) else None
+            if isinstance(planner_module_id, str) and planner_module_id.strip():
+                plan_modules.append(planner_module_id.strip())
+                hints["pending_affected_modules"] = list(plan_modules)
+        if len(plan_modules) == 1:
+            hints["module_target"] = plan_modules[0]
+        if planner_state:
+            intent = planner_state.get("intent")
+            if isinstance(intent, str) and intent.strip():
+                hints["planner_intent"] = intent.strip()
+            if isinstance(planner_state.get("module_name"), str) and planner_state.get("module_name").strip():
+                hints["module_name"] = planner_state.get("module_name").strip()
+            if isinstance(planner_state.get("field_label"), str) and planner_state.get("field_label").strip():
+                hints["field_label"] = planner_state.get("field_label").strip()
+            if isinstance(planner_state.get("field_id"), str) and planner_state.get("field_id").strip():
+                hints["field_id"] = planner_state.get("field_id").strip()
+            if isinstance(planner_state.get("field_ref"), str) and planner_state.get("field_ref").strip():
+                field_ref = planner_state.get("field_ref").strip()
+                if "." in field_ref and not hints.get("field_id"):
+                    hints["field_id"] = field_ref
+                if not hints.get("field_label"):
+                    hints["field_label"] = _ai_display_field_reference(field_ref) or field_ref
+            if isinstance(planner_state.get("tab_label"), str) and planner_state.get("tab_label").strip():
+                hints["tab_target"] = planner_state.get("tab_label").strip()
+            if isinstance(planner_state.get("matched_tab"), str) and planner_state.get("matched_tab").strip() and not hints.get("tab_target"):
+                hints["tab_target"] = planner_state.get("matched_tab").strip()
+            if isinstance(planner_state.get("planned_section_id"), str) and planner_state.get("planned_section_id").strip():
+                hints["planned_section_id"] = planner_state.get("planned_section_id").strip()
+            if isinstance(planner_state.get("planned_view_id"), str) and planner_state.get("planned_view_id").strip():
+                hints["planned_view_id"] = planner_state.get("planned_view_id").strip()
+            elif isinstance(planner_state.get("view_id"), str) and planner_state.get("view_id").strip():
+                hints["planned_view_id"] = planner_state.get("view_id").strip()
+    applied_patchset = _ai_latest_session_record(
+        _AI_ENTITY_PATCHSET,
+        session_id,
+        limit=500,
+        predicate=lambda data: data.get("status") == "applied",
+    )
+    if isinstance(applied_patchset, dict):
+        patch_json = applied_patchset.get("patch_json") if isinstance(applied_patchset.get("patch_json"), dict) else {}
+        applied_ops = [op for op in (patch_json.get("operations") or []) if isinstance(op, dict)]
+        hints["applied_candidate_ops"] = copy.deepcopy(applied_ops)
+        if not hints.get("pending_affected_modules"):
+            applied_modules: list[str] = []
+            for op in applied_ops:
+                artifact_id = op.get("artifact_id") if isinstance(op.get("artifact_id"), str) else None
+                if isinstance(artifact_id, str) and artifact_id and artifact_id not in applied_modules:
+                    applied_modules.append(artifact_id)
+            hints["pending_affected_modules"] = applied_modules
+            if len(applied_modules) == 1 and not isinstance(hints.get("module_target"), str):
+                hints["module_target"] = applied_modules[0]
+    answers = _ai_sort(_ai_list_records(_AI_ENTITY_MESSAGE, limit=3000), field="created_at", reverse=False)
+    for item in answers:
+        data = _ai_record_data(item)
+        if data.get("session_id") != session_id or data.get("message_type") != "answer":
+            continue
+        if isinstance(latest_chat_at, str) and isinstance(data.get("created_at"), str) and str(data.get("created_at")) < latest_chat_at:
+            continue
+        parsed = data.get("answer_json") if isinstance(data.get("answer_json"), dict) else None
+        marker = "ANSWER_JSON:"
+        if parsed is None:
+            body = data.get("body")
+            if isinstance(body, str) and marker in body:
+                payload = body.split(marker, 1)[1].strip().split("\n", 1)[0].strip()
+                try:
+                    parsed = json.loads(payload)
+                except Exception:
+                    parsed = None
+        if isinstance(parsed, dict):
+            if isinstance(parsed.get("include_form"), bool):
+                hints["include_form"] = parsed.get("include_form")
+            if isinstance(parsed.get("include_list"), bool):
+                hints["include_list"] = parsed.get("include_list")
+            if isinstance(parsed.get("deduplicate_existing"), bool):
+                hints["deduplicate_existing"] = parsed.get("deduplicate_existing")
+            if isinstance(parsed.get("confirm_plan"), bool):
+                hints["confirm_plan"] = parsed.get("confirm_plan")
+            if isinstance(parsed.get("field_label"), str) and parsed.get("field_label").strip():
+                hints["field_label"] = parsed.get("field_label").strip()
+            if isinstance(parsed.get("field_type"), str) and parsed.get("field_type") in _AI_FIELD_TYPES:
+                hints["field_type"] = parsed.get("field_type")
+            if isinstance(parsed.get("field_id"), str) and parsed.get("field_id").strip():
+                hints["field_id"] = parsed.get("field_id").strip()
+            if isinstance(parsed.get("field_target"), str) and parsed.get("field_target").strip():
+                hints["field_target"] = parsed.get("field_target").strip()
+                if not hints.get("field_label"):
+                    hints["field_label"] = parsed.get("field_target").strip()
+            if isinstance(parsed.get("module_target"), str) and parsed.get("module_target").strip():
+                hints["module_target"] = parsed.get("module_target").strip()
+            if isinstance(parsed.get("entity_target"), str) and parsed.get("entity_target").strip():
+                hints["entity_target"] = parsed.get("entity_target").strip()
+            if isinstance(parsed.get("tab_target"), str) and parsed.get("tab_target").strip():
+                hints["tab_target"] = parsed.get("tab_target").strip()
+            if isinstance(parsed.get("answer_text"), str) and parsed.get("answer_text").strip():
+                hints["answer_text"] = parsed.get("answer_text").strip()
+        question_id = data.get("question_id") if isinstance(data.get("question_id"), str) else None
+        body = data.get("body")
+        if isinstance(body, str) and body.strip():
+            text_value = body.strip()
+            if text_value not in {"Approved.", "Declined.", "Answered."} and not text_value.startswith("Answered:"):
+                hints["answer_text"] = text_value
+            if question_id == "module_target":
+                hints["module_target"] = text_value
+            if question_id == "entity_target":
+                hints["entity_target"] = text_value
+            if question_id == "tab_target":
+                hints["tab_target"] = text_value
+            if question_id == "field_target":
+                hints["field_target"] = text_value
+                hints["field_label"] = text_value
+    return hints
+
+
+def _ai_requested_module_label_from_context(module_id: str, manifest: dict, context: dict) -> str | None:
+    request_summary = context.get("request_summary") if isinstance(context, dict) and isinstance(context.get("request_summary"), str) else ""
+    if not request_summary:
+        return None
+    normalized_request = _ai_norm_token(request_summary)
+    if not normalized_request:
+        return None
+    module_def = manifest.get("module") if isinstance(manifest, dict) else {}
+    candidates: list[str] = []
+    module_name = module_def.get("name") if isinstance(module_def, dict) else None
+    if isinstance(module_name, str) and module_name.strip():
+        candidates.append(module_name.strip())
+    for entity in manifest.get("entities") if isinstance(manifest.get("entities"), list) else []:
+        if not isinstance(entity, dict):
+            continue
+        entity_id = entity.get("id")
+        if isinstance(entity_id, str) and entity_id.strip():
+            short_id = entity_id.split(".")[-1]
+            humanized = _ai_humanize_identifier(short_id)
+            for candidate in (short_id, humanized, f"{short_id}s", _ai_humanize_identifier(f"{short_id}s")):
+                if isinstance(candidate, str) and candidate.strip():
+                    candidates.append(candidate.strip())
+        label = entity.get("label")
+        if isinstance(label, str) and label.strip():
+            candidates.append(label.strip())
+    app_cfg = manifest.get("app") if isinstance(manifest, dict) and isinstance(manifest.get("app"), dict) else {}
+    for group in app_cfg.get("nav") if isinstance(app_cfg.get("nav"), list) else []:
+        items = group.get("items") if isinstance(group, dict) and isinstance(group.get("items"), list) else []
+        for item in items:
+            label = item.get("label") if isinstance(item, dict) else None
+            if isinstance(label, str) and label.strip():
+                candidates.append(label.strip())
+    ordered: list[str] = []
+    for candidate in candidates:
+        if candidate not in ordered:
+            ordered.append(candidate)
+    requested_labels = _ai_extract_requested_module_labels(request_summary)
+    if requested_labels:
+        module_info = {module_id: {"manifest": manifest}}
+        resolved_requested: list[tuple[int, str]] = []
+        for label in requested_labels:
+            resolved = _ai_find_module_by_alias(label, [module_id], module_info)
+            if resolved != module_id:
+                continue
+            for match in re.finditer(rf"\b{re.escape(_ai_norm_token(label))}\b", normalized_request):
+                resolved_requested.append((match.start(), label))
+        if resolved_requested:
+            resolved_requested.sort(key=lambda item: (item[0], len(item[1])))
+            return resolved_requested[-1][1]
+    latest_match: tuple[int, str] | None = None
+    for candidate in ordered:
+        alias_norm = _ai_norm_token(candidate)
+        if not alias_norm:
+            continue
+        for match in re.finditer(rf"\b{re.escape(alias_norm)}\b", normalized_request):
+            if latest_match is None or match.start() > latest_match[0]:
+                latest_match = (match.start(), candidate)
+    if latest_match is not None:
+        label = latest_match[1]
+        if isinstance(label, str) and label == label.lower():
+            return _ai_humanize_identifier(label) or label
+        return label
+    return None
+
+
+def _ai_context_module_name_map(context: dict) -> dict[str, str]:
+    out: dict[str, str] = {}
+    artifacts = context.get("full_selected_artifacts") if isinstance(context, dict) else None
+    for artifact in artifacts if isinstance(artifacts, list) else []:
+        if not isinstance(artifact, dict) or artifact.get("artifact_type") != "module":
+            continue
+        artifact_id = artifact.get("artifact_id")
+        manifest = artifact.get("manifest") if isinstance(artifact.get("manifest"), dict) else {}
+        module_def = manifest.get("module") if isinstance(manifest, dict) else {}
+        if isinstance(artifact_id, str) and artifact_id:
+            label = _ai_requested_module_label_from_context(artifact_id, manifest, context)
+            if not (isinstance(label, str) and label.strip()):
+                label = module_def.get("name") if isinstance(module_def.get("name"), str) and module_def.get("name").strip() else module_def.get("key")
+            if isinstance(label, str) and label.strip():
+                out[artifact_id] = label.strip()
+    return out
+
+
+def _ai_context_manifest_map(context: dict) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    artifacts = context.get("full_selected_artifacts") if isinstance(context, dict) else None
+    for artifact in artifacts if isinstance(artifacts, list) else []:
+        if not isinstance(artifact, dict) or artifact.get("artifact_type") != "module":
+            continue
+        artifact_id = artifact.get("artifact_id")
+        manifest = artifact.get("manifest")
+        if isinstance(artifact_id, str) and artifact_id and isinstance(manifest, dict):
+            out[artifact_id] = manifest
+    return out
+
+
+def _ai_context_with_planned_modules(plan: dict, context: dict) -> dict:
+    base_context = copy.deepcopy(context) if isinstance(context, dict) else {}
+    artifacts = [item for item in (base_context.get("full_selected_artifacts") or []) if isinstance(item, dict)]
+    artifact_ids = {
+        artifact.get("artifact_id")
+        for artifact in artifacts
+        if artifact.get("artifact_type") == "module" and isinstance(artifact.get("artifact_id"), str)
+    }
+    for op in plan.get("proposed_changes") if isinstance(plan.get("proposed_changes"), list) else []:
+        if not isinstance(op, dict) or op.get("op") != "create_module":
+            continue
+        module_id = op.get("artifact_id")
+        manifest = op.get("manifest")
+        if not isinstance(module_id, str) or not module_id or not isinstance(manifest, dict) or module_id in artifact_ids:
+            continue
+        artifacts.append(
+            {
+                "artifact_type": "module",
+                "artifact_id": module_id,
+                "manifest": copy.deepcopy(manifest),
+            }
+        )
+        artifact_ids.add(module_id)
+    base_context["full_selected_artifacts"] = artifacts
+    return base_context
+
+
+def _ai_plan_module_label(module_id: str, context: dict) -> str:
+    if not isinstance(module_id, str) or not module_id:
+        return "selected module"
+    mapped = _ai_context_module_name_map(context).get(module_id)
+    label = mapped or module_id
+    if isinstance(label, str) and label and label == label.lower():
+        return _ai_humanize_identifier(label) or label
+    return label
+
+
+def _ai_humanize_identifier(value: str | None) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    token = value.strip().split(".")[-1]
+    token = re.sub(r"[_-]+", " ", token).strip()
+    token = re.sub(r"\s+", " ", token)
+    if not token:
+        return None
+    return token if any(ch.isupper() for ch in token) else token.title()
+
+
+def _ai_display_field_reference(value: str | None) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    if re.fullmatch(r"[A-Za-z0-9 ]+", text):
+        return text
+    return _ai_humanize_identifier(text) or text
+
+
+def _ai_manifest_for_context_module(context: dict, module_id: str) -> dict:
+    return _ai_context_manifest_map(context).get(module_id) or {}
+
+
+def _ai_manifest_field_label(manifest: dict, field_id: str | None) -> str | None:
+    if not isinstance(manifest, dict) or not isinstance(field_id, str) or not field_id:
+        return _ai_display_field_reference(field_id)
+    short_id = field_id.split(".")[-1]
+    for entity in manifest.get("entities") if isinstance(manifest.get("entities"), list) else []:
+        if not isinstance(entity, dict):
+            continue
+        for field in entity.get("fields") if isinstance(entity.get("fields"), list) else []:
+            if not isinstance(field, dict):
+                continue
+            candidate_id = field.get("id")
+            if candidate_id not in {field_id, short_id}:
+                continue
+            label = field.get("label")
+            if isinstance(label, str) and label.strip():
+                return label.strip()
+            return _ai_humanize_identifier(candidate_id)
+    for view in manifest.get("views") if isinstance(manifest.get("views"), list) else []:
+        if not isinstance(view, dict) or view.get("kind") != "list":
+            continue
+        for column in view.get("columns") if isinstance(view.get("columns"), list) else []:
+            if not isinstance(column, dict) or column.get("field_id") != field_id:
+                continue
+            label = column.get("label")
+            if isinstance(label, str) and label.strip():
+                return label.strip()
+    return _ai_display_field_reference(field_id)
+
+
+def _ai_plan_field_label(context: dict, module_id: str, planner_state: dict) -> str | None:
+    manifest = _ai_manifest_for_context_module(context, module_id)
+    field_id = planner_state.get("field_id") if isinstance(planner_state.get("field_id"), str) else None
+    if isinstance(field_id, str) and field_id.strip():
+        return _ai_manifest_field_label(manifest, field_id.strip())
+    for key in ("field_label", "field_ref"):
+        value = planner_state.get(key) if isinstance(planner_state.get(key), str) else None
+        if not isinstance(value, str) or not value.strip():
+            continue
+        label = _ai_manifest_field_label(manifest, value.strip())
+        if isinstance(label, str) and label.strip():
+            return label.strip()
+    return None
+
+
+def _ai_manifest_view_by_id(manifest: dict, view_id: str | None) -> dict | None:
+    if not isinstance(manifest, dict) or not isinstance(view_id, str) or not view_id:
+        return None
+    for view in manifest.get("views") if isinstance(manifest.get("views"), list) else []:
+        if isinstance(view, dict) and view.get("id") == view_id:
+            return view
+    return None
+
+
+def _ai_manifest_section_label(manifest: dict, view_id: str | None, section_id: str | None) -> str | None:
+    view = _ai_manifest_view_by_id(manifest, view_id)
+    if isinstance(view, dict):
+        sections = [section for section in (view.get("sections") or []) if isinstance(section, dict)]
+        for section in sections:
+            if section.get("id") != section_id:
+                continue
+            title = section.get("title")
+            label = section.get("label")
+            for candidate in (title, label):
+                if isinstance(candidate, str) and candidate.strip():
+                    return candidate.strip()
+        header = view.get("header") if isinstance(view.get("header"), dict) else {}
+        tabs_cfg = header.get("tabs") if isinstance(header.get("tabs"), dict) else {}
+        for tab in tabs_cfg.get("tabs") if isinstance(tabs_cfg.get("tabs"), list) else []:
+            if not isinstance(tab, dict):
+                continue
+            sections_for_tab = [item for item in (tab.get("sections") or []) if isinstance(item, str)]
+            if isinstance(section_id, str) and section_id in sections_for_tab:
+                label = tab.get("label")
+                if isinstance(label, str) and label.strip():
+                    return label.strip()
+    return _ai_humanize_identifier(section_id)
+
+
+def _ai_manifest_view_label(manifest: dict, view_id: str | None) -> str | None:
+    view = _ai_manifest_view_by_id(manifest, view_id)
+    if not isinstance(view, dict):
+        return None
+    kind = view.get("kind") if isinstance(view.get("kind"), str) and view.get("kind").strip() else None
+    if isinstance(kind, str):
+        return f"{kind} view"
+    return "view"
+
+
+def _ai_view_label_from_definition(view: dict | None) -> str | None:
+    if not isinstance(view, dict):
+        return None
+    kind = view.get("kind") if isinstance(view.get("kind"), str) and view.get("kind").strip() else None
+    if isinstance(kind, str):
+        return f"{kind} view"
+    return "view"
+
+
+def _ai_manifest_page_label(manifest: dict, page_id: str | None) -> str | None:
+    if not isinstance(manifest, dict) or not isinstance(page_id, str) or not page_id.strip():
+        return None
+    pages = manifest.get("pages") if isinstance(manifest.get("pages"), list) else []
+    for page in pages:
+        if not isinstance(page, dict) or page.get("id") != page_id:
+            continue
+        title = page.get("title")
+        if isinstance(title, str) and title.strip():
+            return title.strip()
+        break
+    return _ai_humanize_identifier(page_id)
+
+
+def _ai_page_label_for_plan(manifest: dict, op: dict) -> str | None:
+    if not isinstance(op, dict):
+        return None
+    page = op.get("page") if isinstance(op.get("page"), dict) else None
+    if isinstance(page, dict):
+        title = page.get("title")
+        if isinstance(title, str) and title.strip():
+            return title.strip()
+        page_id = page.get("id") if isinstance(page.get("id"), str) and page.get("id").strip() else None
+        if isinstance(page_id, str):
+            existing = _ai_manifest_page_label(manifest, page_id)
+            if isinstance(existing, str) and existing.strip():
+                return existing.strip()
+            return _ai_humanize_identifier(page_id)
+    changes = op.get("changes") if isinstance(op.get("changes"), dict) else {}
+    title = changes.get("title") if isinstance(changes.get("title"), str) and changes.get("title").strip() else None
+    if isinstance(title, str):
+        return title.strip()
+    page_id = op.get("page_id") if isinstance(op.get("page_id"), str) and op.get("page_id").strip() else None
+    if isinstance(page_id, str):
+        return _ai_manifest_page_label(manifest, page_id)
+    return None
+
+
+def _ai_manifest_action_label(manifest: dict, action_id: str | None) -> str | None:
+    if not isinstance(manifest, dict) or not isinstance(action_id, str) or not action_id.strip():
+        return None
+    for action in manifest.get("actions") if isinstance(manifest.get("actions"), list) else []:
+        if not isinstance(action, dict) or action.get("id") != action_id:
+            continue
+        label = action.get("label")
+        if isinstance(label, str) and label.strip():
+            return label.strip()
+        return None
+    return None
+
+
+def _ai_action_label_for_plan(manifest: dict, op: dict) -> str | None:
+    action = op.get("action") if isinstance(op.get("action"), dict) else {}
+    changes = op.get("changes") if isinstance(op.get("changes"), dict) else {}
+    for source in (action, changes):
+        label = source.get("label")
+        if isinstance(label, str) and label.strip():
+            return label.strip()
+    action_id = op.get("action_id") if isinstance(op.get("action_id"), str) and op.get("action_id").strip() else None
+    if not action_id:
+        action_id = action.get("id") if isinstance(action.get("id"), str) and action.get("id").strip() else None
+    return _ai_manifest_action_label(manifest, action_id)
+
+
+def _ai_plan_scope_lines(plan: dict, context: dict) -> list[str]:
+    artifacts = [item for item in (plan.get("affected_artifacts") or []) if isinstance(item, dict)]
+    module_ids: list[str] = []
+    for artifact in artifacts:
+        if artifact.get("artifact_type") != "module":
+            continue
+        artifact_id = artifact.get("artifact_id")
+        if isinstance(artifact_id, str) and artifact_id and artifact_id not in module_ids:
+            module_ids.append(artifact_id)
+    if len(module_ids) <= 1:
+        return []
+    labels = [_ai_plan_module_label(module_id, context) for module_id in module_ids]
+    if len(labels) == 2:
+        return [f"This affects 2 modules: {labels[0]} and {labels[1]}."]
+    return [f"This affects {len(labels)} modules: {_ai_join_human_list(labels)}."]
+
+
+def _ai_plan_requested_scope_lines(plan: dict, context: dict) -> list[str]:
+    planner_state = plan.get("planner_state") if isinstance(plan.get("planner_state"), dict) else {}
+    requested_labels = [
+        item.strip()
+        for item in (planner_state.get("requested_module_labels") or [])
+        if isinstance(item, str) and item.strip()
+    ]
+    missing_labels = [
+        item.strip()
+        for item in (planner_state.get("missing_module_labels") or [])
+        if isinstance(item, str) and item.strip()
+    ]
+    if not missing_labels:
+        return []
+    lines: list[str] = []
+    if len(requested_labels) > 1:
+        lines.append(f"You named {len(requested_labels)} modules: {_ai_join_human_list(requested_labels)}.")
+    artifacts = [item for item in (plan.get("affected_artifacts") or []) if isinstance(item, dict)]
+    resolved_labels: list[str] = []
+    for artifact in artifacts:
+        if artifact.get("artifact_type") != "module":
+            continue
+        artifact_id = artifact.get("artifact_id")
+        if isinstance(artifact_id, str) and artifact_id and artifact_id not in resolved_labels:
+            resolved_labels.append(_ai_plan_module_label(artifact_id, context))
+    missing_text = _ai_join_human_list(missing_labels)
+    if resolved_labels:
+        lines.append(
+            f"{missing_text} {'is' if len(missing_labels) == 1 else 'are'} not currently in this workspace, so this draft only changes {_ai_join_human_list(resolved_labels)}."
+        )
+    else:
+        lines.append(
+            f"{missing_text} {'does' if len(missing_labels) == 1 else 'do'} not currently exist in this workspace, so there are no draft changes for {'it' if len(missing_labels) == 1 else 'them'} yet."
+        )
+    return lines
+
+
+def _ai_plan_requested_scope_labels(plan: dict) -> tuple[list[str], list[str]]:
+    planner_state = plan.get("planner_state") if isinstance(plan.get("planner_state"), dict) else {}
+    requested_labels = [
+        item.strip()
+        for item in (planner_state.get("requested_module_labels") or [])
+        if isinstance(item, str) and item.strip()
+    ]
+    missing_labels = [
+        item.strip()
+        for item in (planner_state.get("missing_module_labels") or [])
+        if isinstance(item, str) and item.strip()
+    ]
+    return requested_labels, missing_labels
+
+
+def _ai_summary_mentions_scope_label(summary: str, label: str) -> bool:
+    summary_norm = _ai_norm_token(summary)
+    label_norm = _ai_norm_token(label)
+    if not summary_norm or not label_norm:
+        return False
+    variants = {label_norm}
+    if len(label_norm) > 3:
+        if label_norm.endswith("s"):
+            variants.add(label_norm[:-1])
+        else:
+            variants.add(f"{label_norm}s")
+    for variant in variants:
+        if variant and re.search(rf"\b{re.escape(variant)}\b", summary_norm):
+            return True
+    return False
+
+
+def _ai_dedupe_scope_labels(labels: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen_keys: dict[str, int] = {}
+    for label in labels:
+        if not isinstance(label, str) or not label.strip():
+            continue
+        cleaned = label.strip()
+        norm = _ai_norm_token(cleaned)
+        if not norm:
+            continue
+        key = norm[:-1] if len(norm) > 3 and norm.endswith("s") else norm
+        existing_idx = seen_keys.get(key)
+        if existing_idx is None:
+            seen_keys[key] = len(deduped)
+            deduped.append(cleaned)
+            continue
+        existing = deduped[existing_idx]
+        if len(cleaned) > len(existing):
+            deduped[existing_idx] = cleaned
+    return deduped
+
+
+def _ai_summary_matches_plan_scope(summary: str | None, plan_v1: dict) -> bool:
+    text = summary.strip() if isinstance(summary, str) else ""
+    if _ai_is_low_signal_plan_summary(text):
+        return False
+    requested_scope = plan_v1.get("requested_scope") if isinstance(plan_v1.get("requested_scope"), dict) else {}
+    requested_labels = [
+        item.strip()
+        for item in (requested_scope.get("requested_modules") or [])
+        if isinstance(item, str) and item.strip()
+    ]
+    planned_modules = [
+        item
+        for item in (plan_v1.get("modules") or [])
+        if isinstance(item, dict) and item.get("status") == "planned"
+    ]
+    planned_labels = [
+        item.get("module_label").strip()
+        for item in planned_modules
+        if isinstance(item.get("module_label"), str) and item.get("module_label").strip()
+    ]
+    target_labels = requested_labels or planned_labels
+    if target_labels:
+        mention_count = sum(1 for label in target_labels if _ai_summary_mentions_scope_label(text, label))
+        required_mentions = 1 if len(target_labels) == 1 else min(2, len(target_labels))
+        if mention_count < required_mentions:
+            return False
+    for item in planned_modules:
+        module_id = item.get("module_id")
+        module_label = item.get("module_label")
+        if not isinstance(module_id, str) or not module_id.strip():
+            continue
+        if not isinstance(module_label, str) or not module_label.strip():
+            continue
+        if _ai_norm_token(module_id) == _ai_norm_token(module_label):
+            continue
+        if _ai_summary_mentions_scope_label(text, module_id) and not _ai_summary_mentions_scope_label(text, module_label):
+            return False
+    return True
+
+
+def _ai_plan_added_field_details(plan: dict, context: dict, module_id: str, planner_state: dict) -> tuple[str | None, str | None]:
+    field_label = _ai_plan_field_label(context, module_id, planner_state)
+    tab_label = planner_state.get("matched_tab") if isinstance(planner_state.get("matched_tab"), str) else None
+    field_ids: set[str] = set()
+    if isinstance(planner_state.get("field_id"), str) and planner_state.get("field_id").strip():
+        field_ids.add(planner_state.get("field_id").strip())
+
+    ops = [item for item in (plan.get("proposed_changes") or []) if isinstance(item, dict)]
+    for op in ops:
+        if op.get("op") != "add_field":
+            continue
+        op_module_id = op.get("artifact_id") if isinstance(op.get("artifact_id"), str) else ""
+        if module_id and op_module_id and op_module_id != module_id:
+            continue
+        field = op.get("field") if isinstance(op.get("field"), dict) else {}
+        candidate_id = field.get("id") if isinstance(field.get("id"), str) and field.get("id").strip() else None
+        candidate_label = field.get("label") if isinstance(field.get("label"), str) and field.get("label").strip() else None
+        if candidate_id:
+            field_ids.add(candidate_id)
+        if not field_label and candidate_label:
+            field_label = candidate_label
+
+    if not tab_label and field_ids:
+        for op in ops:
+            if op.get("op") not in {"insert_section_field", "move_section_field"}:
+                continue
+            op_module_id = op.get("artifact_id") if isinstance(op.get("artifact_id"), str) else ""
+            if module_id and op_module_id and op_module_id != module_id:
+                continue
+            field_id = op.get("field_id") if isinstance(op.get("field_id"), str) and op.get("field_id").strip() else None
+            if field_id and field_id not in field_ids:
+                continue
+            placement_label = op.get("placement_label") if isinstance(op.get("placement_label"), str) and op.get("placement_label").strip() else None
+            if placement_label:
+                tab_label = placement_label
+                break
+
+    return field_label, tab_label
+
+
+def _ai_plan_single_field_addition_summary(plan: dict, context: dict, module_id: str, planner_state: dict) -> str | None:
+    ops = [item for item in (plan.get("proposed_changes") or []) if isinstance(item, dict)]
+    if not ops:
+        return None
+    add_ops = [op for op in ops if op.get("op") == "add_field"]
+    if len(add_ops) != 1:
+        return None
+    add_op = add_ops[0]
+    add_module_id = add_op.get("artifact_id") if isinstance(add_op.get("artifact_id"), str) else module_id
+    if module_id and add_module_id and add_module_id != module_id:
+        return None
+    field = add_op.get("field") if isinstance(add_op.get("field"), dict) else {}
+    field_id = field.get("id") if isinstance(field.get("id"), str) and field.get("id").strip() else None
+    field_label = field.get("label") if isinstance(field.get("label"), str) and field.get("label").strip() else None
+    if not field_id:
+        return None
+    for op in ops:
+        op_name = op.get("op")
+        op_module_id = op.get("artifact_id") if isinstance(op.get("artifact_id"), str) else add_module_id
+        if add_module_id and op_module_id and op_module_id != add_module_id:
+            return None
+        if op_name == "add_field":
+            current_field = op.get("field") if isinstance(op.get("field"), dict) else {}
+            current_field_id = current_field.get("id") if isinstance(current_field.get("id"), str) else None
+            if current_field_id != field_id:
+                return None
+            continue
+        if op_name in {"insert_section_field", "move_section_field"}:
+            if op.get("field_id") != field_id:
+                return None
+            continue
+        if op_name == "update_view_columns":
+            if not _ai_op_includes_list_field(op, add_module_id or module_id, field_id):
+                return None
+            continue
+        return None
+    matched_tab = _ai_plan_added_field_details(plan, context, add_module_id or module_id, planner_state)[1]
+    module_label = _ai_plan_module_label(add_module_id or module_id, context)
+    resolved_field_label = field_label or _ai_plan_field_label(context, add_module_id or module_id, planner_state)
+    if resolved_field_label and matched_tab:
+        return f"Add a new field '{resolved_field_label}' to {module_label} and place it in the '{matched_tab}' tab."
+    if resolved_field_label:
+        return f"Add a new field '{resolved_field_label}' to {module_label}."
+    return None
+
+
+def _ai_missing_requested_modules_noop_text(missing_labels: list[str]) -> str | None:
+    if not missing_labels:
+        return None
+    missing_text = _ai_join_human_list(missing_labels)
+    if len(missing_labels) == 1:
+        return f"{missing_text} is not currently in this workspace, so there are no draft changes for it yet."
+    return f"{missing_text} are not currently in this workspace, so there are no draft changes for them yet."
+
+
+def _ai_preview_extract_list_items(text: str, *, max_items: int = 6) -> list[str]:
+    if not isinstance(text, str) or not text.strip():
+        return []
+    normalized = re.sub(r"\s+", " ", text.strip(" .,:;"))
+    if not normalized:
+        return []
+    normalized = re.sub(r"\s+(?:and|plus)\s+", ", ", normalized, flags=re.IGNORECASE)
+    items: list[str] = []
+    for raw_part in re.split(r",|;", normalized):
+        cleaned = re.sub(r"\s+", " ", raw_part.strip(" .,:;"))
+        if not cleaned:
+            continue
+        lowered = cleaned.lower()
+        if lowered in {"it", "them", "that", "this"}:
+            continue
+        if cleaned not in items:
+            items.append(cleaned)
+        if len(items) >= max_items:
+            break
+    return items
+
+
+def _ai_preview_automation_lines(request_summary: str) -> list[str]:
+    if not isinstance(request_summary, str) or not request_summary.strip():
+        return []
+    lower = request_summary.lower()
+    if re.search(r"\b(sync|integration|integrations|zapier|mailchimp|xero|quickbooks)\b", lower):
+        return []
+    if not re.search(r"\b(when|if)\b", lower) and not re.search(r"\b(automatically|notify|email|alert|reminder|webhook)\b", lower):
+        return []
+    lines: list[str] = []
+    condition_match = re.search(
+        r"\b(?:when|if)\s+(?P<condition>.+?)(?:\s+(?:with|including)\b|,| then\b|$)",
+        request_summary,
+        flags=re.IGNORECASE,
+    )
+    condition = condition_match.group("condition").strip(" .,:;") if condition_match else ""
+    if condition:
+        lines.append(f"Add an automatic workflow that runs when {condition}.")
+    create_match = re.search(
+        r"\bcreate\s+(?:a|an|the)\s+(?P<target>.+?)(?:\s+automatically|\s+when\b|,| and\b|\.|$)",
+        request_summary,
+        flags=re.IGNORECASE,
+    )
+    if create_match:
+        target = create_match.group("target").strip(" .,:;")
+        if target:
+            article = "an" if target[:1].lower() in {"a", "e", "i", "o", "u"} else "a"
+            lines.append(f"Create {article} {target} automatically when that rule is met.")
+    copy_match = re.search(
+        r"\b(?:copy|carry across|carry|fill in)\s+(?P<details>.+?)(?:\s+across|\s+into\b|\s+to\b|\.|$)",
+        request_summary,
+        flags=re.IGNORECASE,
+    )
+    if copy_match:
+        details = copy_match.group("details").strip(" .,:;")
+        if details:
+            lines.append(f"Carry across {details}.")
+    notification_match = re.search(
+        r"\b(?:notify|email|alert)\s+(?P<audience>.+?)(?:\s+automatically|,| and\b|\.|$)",
+        request_summary,
+        flags=re.IGNORECASE,
+    )
+    if notification_match:
+        audience = notification_match.group("audience").strip(" .,:;")
+        if audience:
+            lines.append(f"Notify {audience} automatically.")
+    elif re.search(r"\bsend\b", lower) and re.search(r"\b(email|reminder|request|notification)\b", lower):
+        lines.append("Send the requested follow-up message automatically.")
+    return list(dict.fromkeys(lines))
+
+
+def _ai_preview_notification_lines(request_summary: str) -> list[str]:
+    if not isinstance(request_summary, str) or not request_summary.strip():
+        return []
+    lower = request_summary.lower()
+    if not re.search(r"\b(sms|text message|twilio)\b", lower):
+        return []
+    lines: list[str] = []
+    audience: str | None = None
+    for pattern in (
+        r"\bto\s+(?P<audience>.+?)(?:\s+when|\s+if|,|\.|$)",
+        r"\bso\s+(?P<audience>.+?)\s+(?:get|gets|receive|receives)\s+(?:an?\s+)?(?:sms|text message|message)\b",
+    ):
+        match = re.search(pattern, request_summary, flags=re.IGNORECASE)
+        if not match:
+            continue
+        candidate = match.group("audience").strip(" .,:;")
+        if candidate:
+            audience = candidate
+            break
+    condition_match = re.search(
+        r"\b(?:when|if)\s+(?P<condition>.+?)(?:\s+(?:with|including)\b|[.?!]|$)",
+        request_summary,
+        flags=re.IGNORECASE,
+    )
+    condition = condition_match.group("condition").strip(" .,:;") if condition_match else ""
+    if audience and condition:
+        lines.append(f"Send an SMS to {audience} when {condition}.")
+    elif audience:
+        lines.append(f"Send an SMS to {audience}.")
+    elif condition:
+        lines.append(f"Send an SMS when {condition}.")
+    else:
+        lines.append("Send the requested SMS notification automatically.")
+    if "twilio" in lower:
+        lines.append("Route the SMS notification through Twilio.")
+    details_match = re.search(
+        r"\b(?:with|including)\s+(?P<details>.+?)(?:[.?!]|$)",
+        request_summary,
+        flags=re.IGNORECASE,
+    )
+    details = details_match.group("details") if details_match else ""
+    detail_items = _ai_preview_extract_list_items(details)
+    if detail_items:
+        lines.append(f"Include {_ai_join_human_list(detail_items)} in the message.")
+    return list(dict.fromkeys(lines))
+
+
+def _ai_preview_template_lines(request_summary: str) -> list[str]:
+    if not isinstance(request_summary, str) or not request_summary.strip():
+        return []
+    if not re.search(r"\b(template|pdf|certificate|itinerary|email template)\b", request_summary, flags=re.IGNORECASE):
+        return []
+    lines: list[str] = []
+    template_match = re.search(
+        r"\b(?:create|build|draft)\s+(?:a|an|the)\s+(?P<label>.+?(?:template|pdf|certificate|itinerary))(?:\s+that\b|\s+with\b|\s+including\b|[.?!]|$)",
+        request_summary,
+        flags=re.IGNORECASE,
+    )
+    if template_match:
+        label = template_match.group("label").strip(" .,:;")
+        if label:
+            lines.append(f"Create the {label}.")
+    detail_match = re.search(
+        r"\b(?:includes?|including|with|showing)\s+(?P<details>.+?)(?:[.?!]|$)",
+        request_summary,
+        flags=re.IGNORECASE,
+    )
+    if detail_match:
+        detail_items = _ai_preview_extract_list_items(detail_match.group("details"))
+        if detail_items:
+            lines.append(f"Include {_ai_join_human_list(detail_items)}.")
+    else:
+        wording_match = re.search(r"\bthat\s+(?P<details>.+?)(?:[.?!]|$)", request_summary, flags=re.IGNORECASE)
+        if wording_match:
+            wording = wording_match.group("details").strip(" .,:;")
+            if wording:
+                lines.append(f"Use wording that {wording}.")
+    return list(dict.fromkeys(lines))
+
+
+def _ai_preview_dashboard_lines(request_summary: str) -> list[str]:
+    if not isinstance(request_summary, str) or not request_summary.strip():
+        return []
+    if not re.search(r"\b(dashboard|report(?:ing)?)\b", request_summary, flags=re.IGNORECASE):
+        return []
+    lines: list[str] = []
+    dashboard_match = re.search(
+        r"\b(?:build|create)\s+(?:a|an|the)\s+(?P<label>.+?\bdashboard)(?:\s+that\b|\s+showing\b|\s+with\b|[.?!]|$)",
+        request_summary,
+        flags=re.IGNORECASE,
+    )
+    if dashboard_match:
+        label = dashboard_match.group("label").strip(" .,:;")
+        if label:
+            lines.append(f"Build the {label}.")
+    metrics_match = re.search(
+        r"\b(?:showing|with|that highlights?|highlighting)\s+(?P<details>.+?)(?:[.?!]|$)",
+        request_summary,
+        flags=re.IGNORECASE,
+    )
+    if metrics_match:
+        detail_items = _ai_preview_extract_list_items(metrics_match.group("details"))
+        if detail_items:
+            lines.append(f"Show {_ai_join_human_list(detail_items)}.")
+    return list(dict.fromkeys(lines))
+
+
+def _ai_preview_specific_change_lines(request_summary: str) -> list[str]:
+    lines: list[str] = []
+    for builder in (_ai_preview_template_lines, _ai_preview_dashboard_lines, _ai_preview_automation_lines, _ai_preview_notification_lines):
+        lines.extend(builder(request_summary))
+    return list(dict.fromkeys([item for item in lines if isinstance(item, str) and item.strip()]))
+
+
+def _ai_plan_change_lines(plan: dict, context: dict) -> list[str]:
+    ops = [op for op in (plan.get("proposed_changes") or []) if isinstance(op, dict)]
+    planner_state = plan.get("planner_state") if isinstance(plan.get("planner_state"), dict) else {}
+    preview_meta = _ai_preview_plan_metadata(plan, context)
+    if not ops and isinstance(planner_state.get("intent"), str) and planner_state.get("intent") in {"preview_only_plan", "preview_only_noop"}:
+        tracks = [item for item in preview_meta.get("tracks", []) if isinstance(item, str) and item.strip()]
+        requested_labels, _missing_labels = _ai_plan_requested_scope_labels(plan)
+        lines: list[str] = []
+        request_summary = preview_meta.get("request_summary") if isinstance(preview_meta.get("request_summary"), str) else ""
+        request_lower = re.sub(r"\s+", " ", request_summary.lower()).strip()
+        lines.extend(_ai_preview_specific_change_lines(request_summary))
+        record_transfer_request = bool(
+            "sync" in request_lower
+            or re.search(r"\b(send|push|mirror|export|import)\b", request_lower)
+            or (
+                "copy" in request_lower
+                and (
+                    bool(re.search(r"\b(zapier|mailchimp|xero|quickbooks|webhook|integration|integrations)\b", request_lower))
+                    or "sync" in request_lower
+                )
+            )
+        )
+        artifacts = [item for item in (plan.get("affected_artifacts") or []) if isinstance(item, dict)]
+        module_labels = [
+            _ai_plan_module_label(item.get("artifact_id"), context)
+            for item in artifacts
+            if isinstance(item.get("artifact_id"), str)
+        ]
+        module_labels = [label for label in module_labels if isinstance(label, str) and label.strip()]
+        scope_label = _ai_join_human_list(module_labels[:6]) if module_labels else _ai_join_human_list(requested_labels[:6])
+        if re.search(r"\bapproval|approve|approved|reject|rejected\b", request_lower):
+            if scope_label:
+                lines.append(f"Add the requested approval steps and action buttons across {scope_label}.")
+            else:
+                lines.append("Add the requested approval steps and action buttons in the draft plan.")
+        if re.search(r"\bconditional\b|\bonly\s+(?:appear|show)\b|\brequired\s+in\s+that\s+state\b", request_lower):
+            lines.append("Show the conditional fields and form sections only at the matching workflow stage.")
+        preview_module_name = (
+            planner_state.get("module_name")
+            if isinstance(planner_state.get("module_name"), str) and planner_state.get("module_name").strip()
+            else None
+        )
+        integration_target = next(
+            (
+                label
+                for label, pattern in (
+                    ("Zapier", r"\bzapier\b"),
+                    ("Mailchimp", r"\bmailchimp\b"),
+                    ("Xero", r"\bxero\b"),
+                    ("QuickBooks", r"\bquickbooks\b"),
+                )
+                if re.search(pattern, request_lower, flags=re.IGNORECASE)
+            ),
+            None,
+        )
+        webhook_requested = bool(re.search(r"\bwebhook\b", request_lower))
+        if webhook_requested:
+            if integration_target and re.search(r"\bcomplete(?:d)?\b", request_lower) and re.search(r"\bonboarding\b", request_lower):
+                lines.append(f"Trigger a webhook to {integration_target} when customer onboarding is marked complete.")
+            elif integration_target:
+                lines.append(f"Plan the webhook handoff to {integration_target} in the draft flow.")
+            else:
+                lines.append("Plan the webhook handoff in the draft flow.")
+        if "sync" in request_lower:
+            if integration_target and scope_label:
+                lines.append(f"Map out how {scope_label} will sync with {integration_target}.")
+            elif scope_label:
+                lines.append(f"Map out how {scope_label} will sync in the draft plan.")
+        if record_transfer_request and re.search(r"\bcustomer(s)?\b", request_lower) and re.search(r"\bcontact(s)?\b", request_lower):
+            lines.append("Limit the draft flow to customer contacts.")
+        if record_transfer_request and re.search(r"\bconsent\b|\bnewsletter\b|\bopt[- ]?in\b", request_lower):
+            lines.append("Use newsletter consent as the rule for who can be sent across.")
+        if record_transfer_request and re.search(r"\bapproved\b", request_lower):
+            lines.append("Only send approved records across.")
+        if record_transfer_request and re.search(r"\baccounting\b", request_lower) and re.search(r"\bcomplete\b", request_lower):
+            lines.append("Only send records across when the accounting fields are complete.")
+        lines = list(dict.fromkeys([item for item in lines if isinstance(item, str) and item.strip()]))
+        if len(tracks) >= 3:
+            if preview_meta.get("system_brief") and not (preview_meta.get("roadmap_requested") or preview_meta.get("phased_requested")):
+                lines.append(f"Outline the modules and handoffs needed for {_ai_join_human_list(tracks[:6])} in the draft plan.")
+            else:
+                lines.append(f"Shape the end-to-end workflow around {_ai_join_human_list(tracks[:6])}.")
+            if preview_meta.get("deliver_first_requested"):
+                first_group = _ai_preview_rollout_groups(tracks)
+                if first_group and first_group[0]:
+                    lines.append(f"Define the first delivery around {_ai_join_human_list(first_group[0])} before any build work starts.")
+            elif preview_meta.get("roadmap_requested") or preview_meta.get("phased_requested"):
+                lines.append("Keep this as a plain-English draft plan first, then turn the approved phases into detailed build changes.")
+            elif preview_meta.get("system_brief"):
+                lines.append("Keep this as a plain-English draft plan first, then turn the approved scope into detailed build changes.")
+        if not lines:
+            if isinstance(preview_module_name, str) and preview_module_name and not module_labels:
+                lines.append(f"Outline the new module structure for {preview_module_name} in a draft plan before any build work starts.")
+            if module_labels:
+                lines.append(f"Map the first draft plan across {_ai_join_human_list(module_labels[:6])}.")
+            elif len(requested_labels) > 1:
+                lines.append(f"Map the first draft plan across {_ai_join_human_list(requested_labels[:6])}.")
+            elif len(requested_labels) == 1 and not lines:
+                lines.append(f"Outline the requested changes for {requested_labels[0]} in a draft plan before any build work starts.")
+            if preview_meta.get("roadmap_requested") or preview_meta.get("phased_requested") or preview_meta.get("system_brief"):
+                lines.append("Keep this as a plain-English draft plan first, then turn the approved scope into detailed build changes.")
+        return lines
+    if not ops and plan.get("resolved_without_changes"):
+        reason = _ai_noop_reason_text(plan, context)
+        if isinstance(reason, str) and reason.strip():
+            return [reason.strip()]
+    lines: list[str] = []
+    for op in ops[:6]:
+        op_name = op.get("op")
+        module_id = str(op.get("artifact_id") or "")
+        if op_name in {"create_automation_record", "update_automation_record"}:
+            automation_summary = _ai_automation_summary_line(op)
+            if isinstance(automation_summary, str) and automation_summary.strip():
+                lines.append(automation_summary.strip())
+            continue
+        module_label = _ai_plan_module_label(module_id, context)
+        manifest = _ai_manifest_for_context_module(context, module_id)
+        if op_name == "create_module":
+            manifest = op.get("manifest") if isinstance(op.get("manifest"), dict) else {}
+            design_spec = op.get("design_spec") if isinstance(op.get("design_spec"), dict) else {}
+            quality_report = op.get("quality_report") if isinstance(op.get("quality_report"), dict) else {}
+            module_def = manifest.get("module") if isinstance(manifest.get("module"), dict) else {}
+            module_name = module_def.get("name") if isinstance(module_def.get("name"), str) and module_def.get("name").strip() else module_label
+            lines.append(f"Create module '{module_name}'.")
+            entities = [entity for entity in (manifest.get("entities") or []) if isinstance(entity, dict)]
+            if entities:
+                entity_label = entities[0].get("label") if isinstance(entities[0].get("label"), str) and entities[0].get("label").strip() else entities[0].get("id")
+                if isinstance(entity_label, str) and entity_label:
+                    lines.append(f"Add the main '{entity_label}' records and core workflow fields.")
+                business_fields = []
+                for field in entities[0].get("fields") if isinstance(entities[0].get("fields"), list) else []:
+                    if not isinstance(field, dict):
+                        continue
+                    field_id = field.get("id")
+                    if not isinstance(field_id, str) or field_id.endswith(".id") or field_id.endswith(".created_at") or field_id.endswith(".status"):
+                        continue
+                    label = field.get("label") if isinstance(field.get("label"), str) and field.get("label").strip() else field_id.split(".")[-1]
+                    if isinstance(label, str) and label and label not in business_fields:
+                        business_fields.append(label)
+                if business_fields:
+                    lines.append(f"Start with fields for {', '.join(business_fields[:8])}.")
+            workflows = [workflow for workflow in (manifest.get("workflows") or []) if isinstance(workflow, dict)]
+            if workflows:
+                states = []
+                for state in workflows[0].get("states") if isinstance(workflows[0].get("states"), list) else []:
+                    if not isinstance(state, dict):
+                        continue
+                    state_label = state.get("label") if isinstance(state.get("label"), str) and state.get("label").strip() else state.get("id")
+                    if isinstance(state_label, str) and state_label:
+                        states.append(state_label)
+                if states:
+                    lines.append(f"Set up the stage workflow: {', '.join(states[:6])}.")
+            action_labels = []
+            for action in manifest.get("actions") if isinstance(manifest.get("actions"), list) else []:
+                if not isinstance(action, dict):
+                    continue
+                if action.get("kind") != "update_record":
+                    continue
+                label = action.get("label") if isinstance(action.get("label"), str) and action.get("label").strip() else None
+                if isinstance(label, str) and label not in action_labels:
+                    action_labels.append(label)
+            if action_labels:
+                lines.append(f"Add workflow buttons: {', '.join(action_labels[:6])}.")
+            view_kinds = []
+            for view in manifest.get("views") if isinstance(manifest.get("views"), list) else []:
+                if not isinstance(view, dict):
+                    continue
+                kind = view.get("kind")
+                if isinstance(kind, str) and kind not in view_kinds:
+                    view_kinds.append(kind)
+            if view_kinds:
+                lines.append(f"Include starter views: {', '.join(view_kinds[:5])}.")
+            page_titles = []
+            for page in manifest.get("pages") if isinstance(manifest.get("pages"), list) else []:
+                if not isinstance(page, dict):
+                    continue
+                title = page.get("title") if isinstance(page.get("title"), str) and page.get("title").strip() else None
+                if isinstance(title, str) and title not in page_titles:
+                    page_titles.append(title)
+            if len(page_titles) > 1:
+                lines.append(f"Create pages for {', '.join(page_titles[:4])}.")
+            tab_labels = [
+                tab.get("label")
+                for tab in ((design_spec.get("layout") or {}).get("tabs") or [])
+                if isinstance(tab, dict) and isinstance(tab.get("label"), str) and tab.get("label").strip()
+            ]
+            if tab_labels:
+                lines.append(f"Organize the form with tabs for {', '.join(tab_labels[:4])}.")
+            interfaces = [
+                item for item in ((design_spec.get("experience") or {}).get("interfaces") or [])
+                if isinstance(item, str) and item.strip()
+            ]
+            if interfaces:
+                lines.append(f"Enable interfaces for {', '.join(interfaces[:4])}.")
+            strengths = [item for item in (quality_report.get("strengths") or []) if isinstance(item, str) and item.strip()]
+            if strengths:
+                lines.append(strengths[0])
+        elif op_name == "add_field":
+            field = op.get("field") if isinstance(op.get("field"), dict) else {}
+            label = field.get("label") if isinstance(field.get("label"), str) and field.get("label").strip() else field.get("id")
+            field_type = field.get("type") if isinstance(field.get("type"), str) and field.get("type").strip() else "string"
+            lines.append(f"Add field '{label}' ({field_type}) in {module_label}.")
+            if isinstance(label, str) and label.strip():
+                lines.extend(_ai_condition_change_lines(module_label, f"field '{label.strip()}'", field))
+        elif op_name == "insert_section_field":
+            field_label = _ai_manifest_field_label(manifest, op.get("field_id"))
+            placement_label = op.get("placement_label") if isinstance(op.get("placement_label"), str) and op.get("placement_label").strip() else None
+            placement_kind = op.get("placement_kind") if isinstance(op.get("placement_kind"), str) and op.get("placement_kind").strip() else None
+            section_label = _ai_manifest_section_label(manifest, op.get("view_id"), op.get("section_id"))
+            if field_label and placement_label:
+                noun = "tab" if placement_kind == "tab" else "section"
+                lines.append(f"Place field '{field_label}' in the '{placement_label}' {noun} in {module_label}.")
+            elif field_label and section_label:
+                lines.append(f"Place field '{field_label}' in the '{section_label}' section in {module_label}.")
+            elif field_label:
+                lines.append(f"Place field '{field_label}' in the form layout in {module_label}.")
+            else:
+                lines.append(f"Update the form layout in {module_label}.")
+        elif op_name == "move_section_field":
+            field_label = _ai_manifest_field_label(manifest, op.get("field_id"))
+            placement_label = op.get("placement_label") if isinstance(op.get("placement_label"), str) and op.get("placement_label").strip() else None
+            placement_kind = op.get("placement_kind") if isinstance(op.get("placement_kind"), str) and op.get("placement_kind").strip() else None
+            section_label = _ai_manifest_section_label(manifest, op.get("view_id"), op.get("section_id"))
+            if field_label and placement_label:
+                noun = "tab" if placement_kind == "tab" else "section"
+                lines.append(f"Move field '{field_label}' into the '{placement_label}' {noun} in {module_label}.")
+            elif field_label and section_label:
+                lines.append(f"Move field '{field_label}' into the '{section_label}' section in {module_label}.")
+            elif field_label:
+                lines.append(f"Move field '{field_label}' within the form layout in {module_label}.")
+            else:
+                lines.append(f"Update the form layout in {module_label}.")
+        elif op_name == "update_view_columns":
+            view_label = _ai_manifest_view_label(manifest, op.get("view_id")) or "list view"
+            lines.append(f"Update the columns in the {view_label} in {module_label}.")
+        elif op_name == "update_view":
+            target_tab_label = op.get("target_tab_label") if isinstance(op.get("target_tab_label"), str) and op.get("target_tab_label").strip() else None
+            field_label = _ai_manifest_field_label(manifest, op.get("field_id")) if target_tab_label else None
+            tab_label = op.get("tab_label") if isinstance(op.get("tab_label"), str) and op.get("tab_label").strip() else None
+            if field_label and target_tab_label:
+                lines.append(f"Move field '{field_label}' into the '{target_tab_label}' tab in {module_label}.")
+            elif tab_label:
+                lines.append(f"Create tab '{tab_label}' in {module_label}.")
+            else:
+                view_label = _ai_manifest_view_label(manifest, op.get("view_id"))
+                if view_label == "form view":
+                    lines.append(f"Update the form layout in {module_label}.")
+                elif isinstance(view_label, str) and view_label:
+                    lines.append(f"Update the {view_label} in {module_label}.")
+                else:
+                    lines.append(f"Update the layout in {module_label}.")
+        elif op_name == "add_view":
+            view_label = _ai_view_label_from_definition(op.get("view") if isinstance(op.get("view"), dict) else None)
+            if isinstance(view_label, str) and view_label:
+                lines.append(f"Add the {view_label} in {module_label}.")
+            else:
+                lines.append(f"Add a view in {module_label}.")
+        elif op_name == "remove_view":
+            view_label = _ai_manifest_view_label(manifest, op.get("view_id"))
+            if isinstance(view_label, str) and view_label:
+                lines.append(f"Remove the {view_label} from {module_label}.")
+            else:
+                lines.append(f"Remove a view from {module_label}.")
+        elif op_name == "add_page":
+            page_label = _ai_page_label_for_plan(manifest, op)
+            if isinstance(page_label, str) and page_label:
+                lines.append(f"Add page '{page_label}' in {module_label}.")
+            else:
+                lines.append(f"Add a page in {module_label}.")
+        elif op_name == "update_page":
+            page_label = _ai_page_label_for_plan(manifest, op)
+            if isinstance(page_label, str) and page_label:
+                lines.append(f"Update page '{page_label}' in {module_label}.")
+            else:
+                lines.append(f"Update a page in {module_label}.")
+        elif op_name == "remove_field":
+            field_label = _ai_manifest_field_label(manifest, op.get("field_id"))
+            if isinstance(field_label, str) and field_label:
+                lines.append(f"Remove field '{field_label}' from {module_label}.")
+            else:
+                lines.append(f"Remove a field from {module_label}.")
+        elif op_name == "update_field":
+            field_label = _ai_manifest_field_label(manifest, op.get("field_id"))
+            field_id = op.get("field_id") if isinstance(op.get("field_id"), str) else None
+            changes = op.get("changes") if isinstance(op.get("changes"), dict) else {}
+            changed_options = changes.get("options") if isinstance(changes.get("options"), list) else []
+            condition_keys = {"visible_when", "required_when", "enabled_when", "disabled_when"}
+            non_condition_change_keys = {key for key in changes.keys() if key not in condition_keys}
+            condition_lines = (
+                _ai_condition_change_lines(module_label, f"field '{field_label}'", changes)
+                if isinstance(field_label, str) and field_label.strip()
+                else []
+            )
+            is_lifecycle_field = isinstance(field_id, str) and (
+                field_id.endswith(".status") or field_id.endswith(".state") or field_id.endswith(".stage")
+            )
+            if is_lifecycle_field and changed_options:
+                latest_option = changed_options[-1] if isinstance(changed_options[-1], dict) else None
+                latest_label = latest_option.get("label") if isinstance(latest_option, dict) and isinstance(latest_option.get("label"), str) and latest_option.get("label").strip() else None
+                latest_value = latest_option.get("value") if isinstance(latest_option, dict) and isinstance(latest_option.get("value"), str) and latest_option.get("value").strip() else None
+                status_label = latest_label or (_ai_titleize_slug(latest_value) if isinstance(latest_value, str) and latest_value else None)
+                if isinstance(status_label, str) and status_label:
+                    lines.append(f"Add status '{status_label}' to {module_label}.")
+                else:
+                    lines.append(f"Update the status options in {module_label}.")
+            elif condition_lines and not non_condition_change_keys:
+                lines.extend(condition_lines)
+            elif isinstance(field_label, str) and field_label:
+                lines.append(f"Update field '{field_label}' in {module_label}.")
+                lines.extend(condition_lines)
+            else:
+                lines.append(f"Update a field in {module_label}.")
+        elif op_name == "update_workflow":
+            lines.append(f"Update the status workflow and action buttons in {module_label}.")
+        elif op_name == "add_action":
+            action_label = _ai_action_label_for_plan(manifest, op)
+            if isinstance(action_label, str) and action_label:
+                lines.append(f"Add action '{action_label}' in {module_label}.")
+                action = op.get("action") if isinstance(op.get("action"), dict) else {}
+                lines.extend(_ai_condition_change_lines(module_label, f"action '{action_label}'", action))
+            else:
+                lines.append(f"Add a new action in {module_label}.")
+        elif op_name == "update_action":
+            action_label = _ai_action_label_for_plan(manifest, op)
+            changes = op.get("changes") if isinstance(op.get("changes"), dict) else {}
+            condition_keys = {"visible_when", "enabled_when"}
+            non_condition_change_keys = {key for key in changes.keys() if key not in condition_keys}
+            condition_lines = (
+                _ai_condition_change_lines(module_label, f"action '{action_label}'", changes)
+                if isinstance(action_label, str) and action_label.strip()
+                else []
+            )
+            if condition_lines and not non_condition_change_keys:
+                lines.extend(condition_lines)
+            if isinstance(action_label, str) and action_label:
+                if not condition_lines or non_condition_change_keys:
+                    lines.append(f"Update action '{action_label}' in {module_label}.")
+                if condition_lines and non_condition_change_keys:
+                    lines.extend(condition_lines)
+            else:
+                lines.append(f"Update an existing action in {module_label}.")
+        elif op_name == "add_trigger":
+            lines.append(f"Add a workflow trigger in {module_label}.")
+        elif op_name == "add_page_block":
+            page_label = _ai_page_label_for_plan(manifest, op)
+            if isinstance(page_label, str) and page_label:
+                lines.append(f"Add a new block to page '{page_label}' in {module_label}.")
+            else:
+                lines.append(f"Add a new block to a page in {module_label}.")
+        elif op_name == "update_dependency":
+            lines.append(f"Update the module dependency settings for {module_label}.")
+        else:
+            friendly_name = _ai_humanize_identifier(op_name)
+            if isinstance(friendly_name, str) and friendly_name:
+                lines.append(f"Apply the {friendly_name.lower()} change in {module_label}.")
+            else:
+                lines.append(f"Apply the planned change in {module_label}.")
+    remaining = len(ops) - 6
+    if remaining > 0:
+        lines.append(f"Plus {remaining} more planned change{'s' if remaining != 1 else ''}.")
+    return lines
+
+
+def _ai_plan_rollout_summary(op: dict, context: dict) -> str:
+    if not isinstance(op, dict):
+        return "apply the planned change"
+    module_id = op.get("artifact_id") if isinstance(op.get("artifact_id"), str) else ""
+    manifest = _ai_manifest_for_context_module(context, module_id)
+    op_name = op.get("op")
+    if op_name == "create_module":
+        manifest = op.get("manifest") if isinstance(op.get("manifest"), dict) else {}
+        module_def = manifest.get("module") if isinstance(manifest.get("module"), dict) else {}
+        module_name = module_def.get("name") if isinstance(module_def.get("name"), str) and module_def.get("name").strip() else module_id
+        return f"create module '{module_name}'"
+    if op_name == "add_field":
+        field = op.get("field") if isinstance(op.get("field"), dict) else {}
+        label = field.get("label") if isinstance(field.get("label"), str) and field.get("label").strip() else field.get("id")
+        if isinstance(label, str) and label:
+            return f"add '{label}'"
+        return "add a field"
+    if op_name == "insert_section_field":
+        field_label = _ai_manifest_field_label(manifest, op.get("field_id"))
+        placement_label = op.get("placement_label") if isinstance(op.get("placement_label"), str) and op.get("placement_label").strip() else None
+        placement_kind = op.get("placement_kind") if isinstance(op.get("placement_kind"), str) and op.get("placement_kind").strip() else None
+        section_label = _ai_manifest_section_label(manifest, op.get("view_id"), op.get("section_id"))
+        if field_label and placement_label:
+            noun = "tab" if placement_kind == "tab" else "section"
+            return f"place '{field_label}' in the '{placement_label}' {noun}"
+        if field_label and section_label:
+            return f"place '{field_label}' in the '{section_label}' section"
+        if field_label:
+            return f"place '{field_label}' in the form layout"
+        return "update the form layout"
+    if op_name == "move_section_field":
+        field_label = _ai_manifest_field_label(manifest, op.get("field_id"))
+        placement_label = op.get("placement_label") if isinstance(op.get("placement_label"), str) and op.get("placement_label").strip() else None
+        placement_kind = op.get("placement_kind") if isinstance(op.get("placement_kind"), str) and op.get("placement_kind").strip() else None
+        section_label = _ai_manifest_section_label(manifest, op.get("view_id"), op.get("section_id"))
+        if field_label and placement_label:
+            noun = "tab" if placement_kind == "tab" else "section"
+            return f"move '{field_label}' into the '{placement_label}' {noun}"
+        if field_label and section_label:
+            return f"move '{field_label}' into the '{section_label}' section"
+        if field_label:
+            return f"move '{field_label}' within the form layout"
+        return "update the form layout"
+    if op_name == "update_view_columns":
+        view_label = _ai_manifest_view_label(manifest, op.get("view_id")) or "list view"
+        return f"update the columns in the {view_label}"
+    if op_name == "update_view":
+        target_tab_label = op.get("target_tab_label") if isinstance(op.get("target_tab_label"), str) and op.get("target_tab_label").strip() else None
+        field_label = _ai_manifest_field_label(manifest, op.get("field_id")) if target_tab_label else None
+        tab_label = op.get("tab_label") if isinstance(op.get("tab_label"), str) and op.get("tab_label").strip() else None
+        if field_label and target_tab_label:
+            return f"move '{field_label}' into the '{target_tab_label}' tab"
+        if tab_label:
+            return f"create tab '{tab_label}'"
+        view_label = _ai_manifest_view_label(manifest, op.get("view_id"))
+        if view_label == "form view":
+            return "update the form layout"
+        if isinstance(view_label, str) and view_label:
+            return f"update the {view_label}"
+        return "update the layout"
+    if op_name == "add_view":
+        view_label = _ai_view_label_from_definition(op.get("view") if isinstance(op.get("view"), dict) else None)
+        if isinstance(view_label, str) and view_label:
+            return f"add the {view_label}"
+        return "add a view"
+    if op_name == "remove_view":
+        view_label = _ai_manifest_view_label(manifest, op.get("view_id"))
+        if isinstance(view_label, str) and view_label:
+            return f"remove the {view_label}"
+        return "remove a view"
+    if op_name == "add_page":
+        page_label = _ai_page_label_for_plan(manifest, op)
+        if isinstance(page_label, str) and page_label:
+            return f"add page '{page_label}'"
+        return "add a page"
+    if op_name == "update_page":
+        page_label = _ai_page_label_for_plan(manifest, op)
+        if isinstance(page_label, str) and page_label:
+            return f"update page '{page_label}'"
+        return "update a page"
+    if op_name == "remove_field":
+        field_label = _ai_manifest_field_label(manifest, op.get("field_id"))
+        if isinstance(field_label, str) and field_label:
+            return f"remove '{field_label}'"
+        return "remove a field"
+    if op_name == "update_field":
+        field_label = _ai_manifest_field_label(manifest, op.get("field_id"))
+        field_id = op.get("field_id") if isinstance(op.get("field_id"), str) else None
+        changes = op.get("changes") if isinstance(op.get("changes"), dict) else {}
+        changed_options = changes.get("options") if isinstance(changes.get("options"), list) else []
+        is_lifecycle_field = isinstance(field_id, str) and (
+            field_id.endswith(".status") or field_id.endswith(".state") or field_id.endswith(".stage")
+        )
+        if is_lifecycle_field and changed_options:
+            latest_option = changed_options[-1] if isinstance(changed_options[-1], dict) else None
+            latest_label = latest_option.get("label") if isinstance(latest_option, dict) and isinstance(latest_option.get("label"), str) and latest_option.get("label").strip() else None
+            latest_value = latest_option.get("value") if isinstance(latest_option, dict) and isinstance(latest_option.get("value"), str) and latest_option.get("value").strip() else None
+            status_label = latest_label or (_ai_titleize_slug(latest_value) if isinstance(latest_value, str) and latest_value else None)
+            if isinstance(status_label, str) and status_label:
+                return f"add status '{status_label}'"
+            return "update the status options"
+        if isinstance(field_label, str) and field_label:
+            return f"update field '{field_label}'"
+        return "update a field"
+    if op_name == "update_workflow":
+        return "update the status workflow and action buttons"
+    if op_name == "add_action":
+        action_label = _ai_action_label_for_plan(manifest, op)
+        if isinstance(action_label, str) and action_label:
+            return f"add action '{action_label}'"
+        return "add a new action"
+    if op_name == "update_action":
+        action_label = _ai_action_label_for_plan(manifest, op)
+        if isinstance(action_label, str) and action_label:
+            return f"update action '{action_label}'"
+        return "update an existing action"
+    if op_name == "add_trigger":
+        trigger = op.get("trigger") if isinstance(op.get("trigger"), dict) else {}
+        trigger_label = trigger.get("label") if isinstance(trigger.get("label"), str) and trigger.get("label").strip() else _ai_humanize_identifier(trigger.get("id"))
+        if isinstance(trigger_label, str) and trigger_label:
+            return f"add workflow trigger '{trigger_label}'"
+        return "add a workflow trigger"
+    if op_name == "add_page_block":
+        page_label = _ai_page_label_for_plan(manifest, op)
+        if isinstance(page_label, str) and page_label:
+            return f"add a new block to page '{page_label}'"
+        return "add a new block to a page"
+    if op_name == "update_dependency":
+        dependency = op.get("dependency") if isinstance(op.get("dependency"), dict) else {}
+        dependency_module = dependency.get("module") if isinstance(dependency.get("module"), str) and dependency.get("module").strip() else None
+        if isinstance(dependency_module, str) and dependency_module:
+            dependency_label = _ai_plan_module_label(dependency_module, context)
+            return f"update dependency settings for {dependency_label}"
+        return "update the module dependency settings"
+    friendly_name = _ai_humanize_identifier(op_name)
+    if isinstance(friendly_name, str) and friendly_name:
+        return f"apply the {friendly_name.lower()} change"
+    return "apply the planned change"
+
+
+def _ai_plan_rollout_lines(plan: dict, context: dict) -> list[str]:
+    planner_state = plan.get("planner_state") if isinstance(plan.get("planner_state"), dict) else {}
+    preview_meta = _ai_preview_plan_metadata(plan, context)
+    if isinstance(planner_state.get("intent"), str) and planner_state.get("intent") in {"preview_only_plan", "preview_only_noop"}:
+        tracks = [item for item in preview_meta.get("tracks", []) if isinstance(item, str) and item.strip()]
+        groups = _ai_preview_rollout_groups(tracks)
+        if len(groups) >= 2:
+            lines: list[str] = []
+            for index, group in enumerate(groups, start=1):
+                label = _ai_join_human_list(group)
+                prefix = "Phase 1 to deliver first" if index == 1 and preview_meta.get("deliver_first_requested") else f"Phase {index}"
+                lines.append(f"{prefix}: {label}.")
+            return lines
+    artifacts = [item for item in (plan.get("affected_artifacts") or []) if isinstance(item, dict)]
+    module_ids: list[str] = []
+    for artifact in artifacts:
+        if artifact.get("artifact_type") != "module":
+            continue
+        artifact_id = artifact.get("artifact_id")
+        if isinstance(artifact_id, str) and artifact_id and artifact_id not in module_ids:
+            module_ids.append(artifact_id)
+    if len(module_ids) <= 1:
+        return []
+
+    ops_by_module: dict[str, list[dict]] = {}
+    for op in plan.get("proposed_changes") if isinstance(plan.get("proposed_changes"), list) else []:
+        if not isinstance(op, dict):
+            continue
+        module_id = op.get("artifact_id")
+        if isinstance(module_id, str) and module_id:
+            ops_by_module.setdefault(module_id, []).append(op)
+
+    lines: list[str] = []
+    for module_id in module_ids[:6]:
+        module_label = _ai_plan_module_label(module_id, context)
+        module_ops = ops_by_module.get(module_id) or []
+        if not module_ops:
+            lines.append(f"{module_label}: no draft change is planned yet.")
+            continue
+        summaries = [_ai_plan_rollout_summary(op, context) for op in module_ops[:2]]
+        line = f"{module_label}: {_ai_join_human_list(summaries)}."
+        extra_count = len(module_ops) - len(summaries)
+        if extra_count > 0:
+            line = line[:-1] + f", plus {extra_count} more change{'s' if extra_count != 1 else ''}."
+        lines.append(line)
+    return lines
+
+
+def _ai_plan_dependency_lines(plan: dict, context: dict) -> list[str]:
+    artifacts = [item for item in (plan.get("affected_artifacts") or []) if isinstance(item, dict)]
+    module_ids: list[str] = []
+    for artifact in artifacts:
+        if artifact.get("artifact_type") != "module":
+            continue
+        artifact_id = artifact.get("artifact_id")
+        if isinstance(artifact_id, str) and artifact_id and artifact_id not in module_ids:
+            module_ids.append(artifact_id)
+    requested_labels, missing_labels = _ai_plan_requested_scope_labels(plan)
+    review_labels = [_ai_plan_module_label(module_id, context) for module_id in module_ids]
+    if len(requested_labels) > len(review_labels):
+        review_labels = requested_labels
+
+    missing_dependency_line: str | None = None
+    if len(requested_labels) > 1 and missing_labels:
+        missing_text = _ai_join_human_list(missing_labels)
+        if module_ids:
+            missing_dependency_line = (
+                f"This rollout still depends on bringing {missing_text} into this workspace before "
+                "those cross-module dependency checks can be validated."
+            )
+        else:
+            missing_dependency_line = (
+                f"{missing_text} {'is' if len(missing_labels) == 1 else 'are'} not currently in this "
+                "workspace, so the dependency checks stay in draft form for now."
+            )
+    if len(module_ids) <= 1:
+        if len(review_labels) <= 1:
+            return []
+        lines = [f"Review dependency links across {_ai_join_human_list(review_labels)} before apply."]
+        if missing_dependency_line:
+            lines.append(missing_dependency_line)
+        return lines[:3]
+
+    graph = context.get("dependency_facts") if isinstance(context, dict) and isinstance(context.get("dependency_facts"), dict) else {}
+    edges = [edge for edge in (graph.get("edges") or []) if isinstance(edge, dict)]
+    dependency_map: dict[str, list[str]] = {}
+    for edge in edges:
+        if edge.get("type") != "depends_on":
+            continue
+        source = edge.get("from")
+        target = edge.get("to")
+        if not isinstance(source, str) or not isinstance(target, str):
+            continue
+        if source not in module_ids or target not in module_ids:
+            continue
+        dependency_map.setdefault(source, [])
+        if target not in dependency_map[source]:
+            dependency_map[source].append(target)
+
+    labels = review_labels or [_ai_plan_module_label(module_id, context) for module_id in module_ids]
+    lines: list[str] = [f"Review dependency links across {_ai_join_human_list(labels)} before apply."]
+    for module_id in module_ids[:6]:
+        dependencies = dependency_map.get(module_id) or []
+        if not dependencies:
+            continue
+        module_label = _ai_plan_module_label(module_id, context)
+        dependency_labels = [_ai_plan_module_label(dep_id, context) for dep_id in dependencies]
+        lines.append(f"{module_label} depends on {_ai_join_human_list(dependency_labels)}.")
+    if missing_dependency_line and missing_dependency_line not in lines:
+        lines.append(missing_dependency_line)
+    if len(lines) > 1:
+        return lines[:4]
+    return [f"Review dependency links and shared flows across {_ai_join_human_list(labels)} before apply."]
+
+
+def _ai_plan_suggestion_lines(plan: dict, context: dict) -> list[str]:
+    suggestions: list[str] = [item for item in (plan.get("advisories") or []) if isinstance(item, str) and item.strip()]
+    ops = [op for op in (plan.get("proposed_changes") or []) if isinstance(op, dict)]
+    planner_state = plan.get("planner_state") if isinstance(plan.get("planner_state"), dict) else {}
+    planner_intent = planner_state.get("intent") if isinstance(planner_state.get("intent"), str) else ""
+    artifacts = [item for item in (context.get("full_selected_artifacts") or []) if isinstance(item, dict)]
+    include_artifact_issues = not ops or planner_intent in {"preview_only_plan", "preview_only_noop"}
+    if include_artifact_issues:
+        for artifact in artifacts:
+            summary = artifact.get("summary") if isinstance(artifact.get("summary"), dict) else {}
+            for issue in summary.get("notable_issues") if isinstance(summary.get("notable_issues"), list) else []:
+                if isinstance(issue, str) and issue and issue not in suggestions:
+                    suggestions.append(f"Clean up existing setup issue: {issue}.")
+    for op in ops:
+        op_name = op.get("op")
+        module_id = op.get("artifact_id") if isinstance(op.get("artifact_id"), str) else ""
+        manifest = _ai_manifest_for_context_module(context, module_id)
+        field_id = op.get("field_id") if isinstance(op.get("field_id"), str) else None
+        if op_name == "remove_field" and field_id:
+            field_label = _ai_manifest_field_label(manifest, field_id) or _ai_humanize_identifier(field_id) or field_id
+            suggestions.append(f"Check filters, documents, automations, and dashboards for references to '{field_label}'.")
+        elif op_name == "add_field":
+            field = op.get("field") if isinstance(op.get("field"), dict) else {}
+            field_label = field.get("label") if isinstance(field.get("label"), str) and field.get("label").strip() else field.get("id")
+            field_id = field.get("id") if isinstance(field.get("id"), str) and field.get("id").strip() else None
+            has_explicit_form_placement = bool(
+                field_id
+                and any(
+                    isinstance(other, dict)
+                    and other.get("artifact_type") == "module"
+                    and other.get("artifact_id") == module_id
+                    and other.get("op") in {"insert_section_field", "move_section_field"}
+                    and other.get("field_id") == field_id
+                    for other in ops
+                )
+            )
+            if isinstance(field_label, str) and field_label:
+                if has_explicit_form_placement:
+                    continue
+                suggestions.append(f"Consider whether '{field_label}' belongs in a specific tab or section instead of the default placement.")
+    deduped: list[str] = []
+    for suggestion in suggestions:
+        if suggestion not in deduped:
+            deduped.append(suggestion)
+    return deduped[:4]
+
+
+def _ai_plan_understanding_text(plan: dict, context: dict) -> str:
+    planner_state = plan.get("planner_state") if isinstance(plan.get("planner_state"), dict) else {}
+    intent = planner_state.get("intent") if isinstance(planner_state.get("intent"), str) else None
+    ops = [item for item in (plan.get("proposed_changes") or []) if isinstance(item, dict)]
+    artifacts = [item for item in (plan.get("affected_artifacts") or []) if isinstance(item, dict)]
+    requested_labels, _missing_labels = _ai_plan_requested_scope_labels(plan)
+    preview_meta = _ai_preview_plan_metadata(plan, context)
+    module_id = artifacts[0].get("artifact_id") if artifacts and isinstance(artifacts[0].get("artifact_id"), str) else ""
+    module_label = _ai_plan_module_label(module_id, context)
+    unique_modules = []
+    for artifact in artifacts:
+        artifact_id = artifact.get("artifact_id")
+        if isinstance(artifact_id, str) and artifact_id not in unique_modules:
+            unique_modules.append(artifact_id)
+    if intent == "create_module":
+        module_name = planner_state.get("module_name") if isinstance(planner_state.get("module_name"), str) else None
+        if module_name:
+            return f"Create a new module '{module_name}'."
+    automation_op = next(
+        (
+            op
+            for op in ops
+            if isinstance(op, dict) and op.get("op") in {"create_automation_record", "update_automation_record"}
+        ),
+        None,
+    )
+    if isinstance(automation_op, dict):
+        automation_summary = _ai_automation_summary_line(automation_op)
+        if isinstance(automation_summary, str) and automation_summary.strip():
+            return automation_summary.strip()
+    if ops:
+        create_module_op = next((op for op in ops if isinstance(op, dict) and op.get("op") == "create_module"), None)
+        if isinstance(create_module_op, dict):
+            manifest = create_module_op.get("manifest") if isinstance(create_module_op.get("manifest"), dict) else {}
+            module_def = manifest.get("module") if isinstance(manifest.get("module"), dict) else {}
+            module_name = module_def.get("name") if isinstance(module_def.get("name"), str) and module_def.get("name").strip() else create_module_op.get("artifact_id")
+            if isinstance(module_name, str) and module_name:
+                return f"Create a new module '{module_name}'."
+    if intent in {"preview_only_plan", "preview_only_noop"}:
+        tracks = [item for item in preview_meta.get("tracks", []) if isinstance(item, str) and item.strip()]
+        module_name = planner_state.get("module_name") if isinstance(planner_state.get("module_name"), str) and planner_state.get("module_name").strip() else None
+        if len(tracks) >= 3:
+            if preview_meta.get("roadmap_requested") and preview_meta.get("phased_requested"):
+                return f"Plan a phased build roadmap covering {_ai_join_human_list(tracks[:6])}."
+            if preview_meta.get("phased_requested"):
+                return f"Plan a phased system rollout covering {_ai_join_human_list(tracks[:6])}."
+            if preview_meta.get("roadmap_requested"):
+                return f"Plan a plain-English build roadmap covering {_ai_join_human_list(tracks[:6])}."
+            if preview_meta.get("system_brief"):
+                return f"Plan a plain-English system build covering {_ai_join_human_list(tracks[:6])}."
+        if isinstance(module_name, str) and module_name and not unique_modules:
+            return f"Plan a preview-first rollout for new module '{module_name}'."
+        if len(unique_modules) > 1:
+            labels = [_ai_plan_module_label(current_module_id, context) for current_module_id in unique_modules]
+            labels = _ai_dedupe_scope_labels([*labels, *requested_labels])
+            return f"Plan a preview-first rollout across {_ai_join_human_list(labels)}."
+        if len(requested_labels) > 1:
+            return f"Plan a preview-first rollout across {_ai_join_human_list(_ai_dedupe_scope_labels(requested_labels))}."
+        if len(requested_labels) == 1:
+            return f"Plan a preview-first rollout in {requested_labels[0]}."
+        if isinstance(module_id, str) and module_id:
+            return f"Plan a preview-first rollout in {module_label}."
+        request_summary = context.get("request_summary") if isinstance(context, dict) and isinstance(context.get("request_summary"), str) else ""
+        if request_summary:
+            return f"Plan a preview-first rollout for this request: {request_summary}"
+    if intent == "upgrade_module_style":
+        return f"Upgrade {module_label} to the latest recommended module design style."
+    if intent == "add_field":
+        field_label, matched_tab = _ai_plan_added_field_details(plan, context, module_id, planner_state)
+        if field_label and matched_tab:
+            return f"Add a new field '{field_label}' to {module_label} and place it in the '{matched_tab}' tab."
+        if field_label:
+            return f"Add a new field '{field_label}' to {module_label}."
+    field_addition_summary = _ai_plan_single_field_addition_summary(plan, context, module_id, planner_state)
+    if field_addition_summary:
+        return field_addition_summary
+    if intent == "add_form_tab":
+        tab_label = planner_state.get("tab_label") if isinstance(planner_state.get("tab_label"), str) else None
+        if tab_label:
+            return f"Add a new form tab '{tab_label}' to {module_label}."
+    if intent == "move_form_field":
+        field_label = _ai_plan_field_label(context, module_id, planner_state)
+        if field_label:
+            return f"Move field '{field_label}' to the bottom of its current form section in {module_label}."
+    if intent == "move_form_field_to_tab":
+        field_label = _ai_plan_field_label(context, module_id, planner_state)
+        tab_label = planner_state.get("tab_label") if isinstance(planner_state.get("tab_label"), str) else None
+        if field_label and tab_label:
+            return f"Move field '{field_label}' into the '{tab_label}' tab in {module_label}."
+    if intent == "rename_field":
+        current_label = planner_state.get("field_label") if isinstance(planner_state.get("field_label"), str) else _ai_plan_field_label(context, module_id, planner_state)
+        new_label = planner_state.get("new_field_label") if isinstance(planner_state.get("new_field_label"), str) else None
+        if current_label and new_label:
+            return f"Rename field '{current_label}' to '{new_label}' in {module_label}."
+    if intent == "status_update":
+        status_label = planner_state.get("status_label") if isinstance(planner_state.get("status_label"), str) else None
+        workflow_refresh_planned = any(isinstance(op, dict) and op.get("op") == "update_workflow" for op in ops)
+        if status_label and workflow_refresh_planned and planner_state.get("status_already_exists") is True:
+            return f"Keep the existing status '{status_label}' in {module_label} and update the status workflow and action buttons."
+        if status_label and workflow_refresh_planned:
+            return f"Add status '{status_label}' to {module_label} and update the status workflow and action buttons."
+        if status_label:
+            return f"Add status '{status_label}' to {module_label} and update the status workflow."
+        return f"Update the lifecycle status workflow in {module_label}."
+    if intent == "status_already_exists_noop":
+        status_label = planner_state.get("status_label") if isinstance(planner_state.get("status_label"), str) else None
+        if status_label:
+            return f"Add status '{status_label}' to {module_label}."
+        return f"Update the lifecycle status setup in {module_label}."
+    if intent == "remove_field":
+        field_label = _ai_plan_field_label(context, module_id, planner_state)
+        if field_label:
+            return f"Remove field '{field_label}' from {module_label}."
+    if intent == "tab_already_exists_noop":
+        tab_label = planner_state.get("tab_label") if isinstance(planner_state.get("tab_label"), str) else None
+        if tab_label:
+            return f"Create tab '{tab_label}' in {module_label}."
+        return f"Update the form tabs in {module_label}."
+    if intent == "remove_view_mode":
+        view_kind = planner_state.get("view_kind") if isinstance(planner_state.get("view_kind"), str) else None
+        if view_kind:
+            return f"Remove the {view_kind} view from {module_label}."
+    if intent == "field_already_exists_noop":
+        field_label = _ai_plan_field_label(context, module_id, planner_state)
+        tab_label = planner_state.get("tab_label") if isinstance(planner_state.get("tab_label"), str) else None
+        include_form = planner_state.get("include_form") is True
+        include_list = planner_state.get("include_list") is True
+        if field_label and tab_label:
+            return f"Field '{field_label}' already exists in {module_label} and is already in the '{tab_label}' tab."
+        if field_label and include_form and include_list:
+            return f"Field '{field_label}' already exists in {module_label} and is already shown on the form and in the list."
+        if field_label and include_form:
+            return f"Field '{field_label}' already exists in {module_label} and is already shown on the form."
+        if field_label and include_list:
+            return f"Field '{field_label}' already exists in {module_label} and is already shown in the list."
+        if field_label:
+            return f"Field '{field_label}' already exists in {module_label}."
+    if intent == "field_already_persisted":
+        field_label = _ai_plan_field_label(context, module_id, planner_state)
+        if field_label:
+            return f"'{field_label}' in {module_label} already persists through the normal record save flow."
+    if intent == "field_missing_noop":
+        field_label = _ai_plan_field_label(context, module_id, planner_state)
+        if field_label:
+            return f"Field '{field_label}' does not appear in {module_label}."
+        return f"The requested field does not appear in {module_label}."
+    if len(unique_modules) > 1:
+        labels = [_ai_plan_module_label(module_id, context) for module_id in unique_modules]
+        if len(labels) == 2:
+            return f"Make coordinated changes across {labels[0]} and {labels[1]}."
+        return f"Make coordinated changes across {', '.join(labels[:-1])}, and {labels[-1]}."
+    if intent == "multi_request" and module_label:
+        return f"Make several changes in {module_label}."
+    if len(ops) > 1 and module_label:
+        return f"Make several changes in {module_label}."
+    request_summary = context.get("request_summary") if isinstance(context, dict) and isinstance(context.get("request_summary"), str) else ""
+    if request_summary:
+        return f"Update the workspace based on this request: {request_summary}"
+    return "Update the selected artifacts."
+
+
+def _ai_noop_reason_text(plan: dict, context: dict | None = None) -> str:
+    ctx = context if isinstance(context, dict) else {}
+    planner_state = plan.get("planner_state") if isinstance(plan.get("planner_state"), dict) else {}
+    intent = planner_state.get("intent") if isinstance(planner_state.get("intent"), str) else ""
+    artifacts = [item for item in (plan.get("affected_artifacts") or []) if isinstance(item, dict)]
+    requested_labels, missing_labels = _ai_plan_requested_scope_labels(plan)
+    missing_scope_text = _ai_missing_requested_modules_noop_text(missing_labels)
+    module_id = artifacts[0].get("artifact_id") if artifacts and isinstance(artifacts[0].get("artifact_id"), str) else ""
+    module_label = _ai_plan_module_label(module_id, ctx)
+
+    if intent == "field_missing_noop":
+        field_label = _ai_plan_field_label(ctx, module_id, planner_state)
+        if isinstance(field_label, str) and field_label:
+            return f"Field '{field_label}' is already absent in {module_label}."
+        if isinstance(module_label, str) and module_label:
+            return f"The requested field is already absent in {module_label}."
+    if intent == "field_already_persisted":
+        field_label = _ai_plan_field_label(ctx, module_id, planner_state)
+        if isinstance(field_label, str) and field_label:
+            return f"Field '{field_label}' in {module_label} already saves through the normal record flow."
+        if isinstance(module_label, str) and module_label:
+            return f"The requested data in {module_label} already saves through the normal record flow."
+    if intent == "status_already_exists_noop":
+        status_label = planner_state.get("status_label") if isinstance(planner_state.get("status_label"), str) else None
+        if isinstance(status_label, str) and status_label:
+            return f"Status '{status_label}' already exists in {module_label}."
+        if isinstance(module_label, str) and module_label:
+            return f"The requested status already exists in {module_label}."
+    if intent == "tab_already_exists_noop":
+        tab_label = planner_state.get("tab_label") if isinstance(planner_state.get("tab_label"), str) else None
+        if isinstance(tab_label, str) and tab_label:
+            return f"Tab '{tab_label}' already exists in {module_label}."
+        if isinstance(module_label, str) and module_label:
+            return f"The requested tab already exists in {module_label}."
+    if intent == "field_already_exists_noop":
+        field_label = _ai_plan_field_label(ctx, module_id, planner_state)
+        tab_label = planner_state.get("tab_label") if isinstance(planner_state.get("tab_label"), str) else None
+        include_form = planner_state.get("include_form") is True
+        include_list = planner_state.get("include_list") is True
+        if isinstance(field_label, str) and field_label and isinstance(tab_label, str) and tab_label:
+            return f"Field '{field_label}' already exists in {module_label} and is already in the '{tab_label}' tab."
+        if isinstance(field_label, str) and field_label and include_form and include_list:
+            return f"Field '{field_label}' already exists in {module_label} and is already shown on the form and in the list."
+        if isinstance(field_label, str) and field_label and include_form:
+            return f"Field '{field_label}' already exists in {module_label} and is already shown on the form."
+        if isinstance(field_label, str) and field_label and include_list:
+            return f"Field '{field_label}' already exists in {module_label} and is already shown in the list."
+        if isinstance(field_label, str) and field_label:
+            return f"Field '{field_label}' already exists in {module_label}."
+        if isinstance(module_label, str) and module_label:
+            return f"The requested field already exists in {module_label}."
+    if intent == "cleanup_duplicates":
+        field_label = _ai_plan_field_label(ctx, module_id, planner_state)
+        if isinstance(field_label, str) and field_label and isinstance(module_label, str) and module_label:
+            return f"Field '{field_label}' is not currently duplicated in {module_label}."
+        if isinstance(field_label, str) and field_label:
+            return f"Field '{field_label}' is not currently duplicated."
+    if intent == "preview_only_noop":
+        if len(artifacts) > 1:
+            labels = [_ai_plan_module_label(item.get("artifact_id"), ctx) for item in artifacts if isinstance(item.get("artifact_id"), str)]
+            labels = [label for label in labels if isinstance(label, str) and label.strip()]
+            if labels:
+                reason = f"The approved preview remains a planning-only draft across {_ai_join_human_list(labels)} until the detailed build changes are defined."
+                if isinstance(missing_scope_text, str):
+                    return f"{reason} {missing_scope_text}"
+                return reason
+        if isinstance(module_id, str) and module_id:
+            reason = f"The approved preview remains a planning-only draft in {module_label} until the detailed build changes are defined."
+            if isinstance(missing_scope_text, str):
+                return f"{reason} {missing_scope_text}"
+            return reason
+        if len(requested_labels) > 1:
+            reason = f"The approved preview remains a planning-only draft across {_ai_join_human_list(requested_labels)} until the detailed build changes are defined."
+            if isinstance(missing_scope_text, str):
+                return f"{reason} {missing_scope_text}"
+            return reason
+        if len(requested_labels) == 1:
+            reason = f"The approved preview remains a planning-only draft in {requested_labels[0]} until the detailed build changes are defined."
+            if isinstance(missing_scope_text, str):
+                return f"{reason} {missing_scope_text}"
+            return reason
+        return "The approved preview remains a planning-only draft until the detailed build changes are defined."
+
+    advisories = [item for item in (plan.get("advisories") or []) if isinstance(item, str) and item.strip()]
+    if advisories:
+        advisory = advisories[0].strip()
+        return advisory if advisory.endswith(".") else f"{advisory}."
+
+    understanding = _ai_plan_understanding_text(plan, ctx).strip()
+    if understanding:
+        return understanding if understanding.endswith(".") else f"{understanding}."
+    return "No changes were required."
+
+
+def _ai_format_noop_warning(reason: str | None) -> str:
+    text = (reason or "").strip()
+    if not text:
+        return "No changes were required."
+    legacy_map = {
+        "field_missing_noop": "The requested field is already absent.",
+        "field_already_persisted": "The requested data already saves through the normal record flow.",
+    }
+    text = legacy_map.get(text, text)
+    if "planning-only draft" in text.lower():
+        return text if text.endswith(".") else f"{text}."
+    if text.lower().startswith("no changes were required"):
+        return text if text.endswith(".") else f"{text}."
+    normalized = text[:-1] if text.endswith(".") else text
+    return f"No changes were required. {normalized}."
+
+
+def _ai_normalize_required_question_meta(question_meta: dict | None, questions: list[str] | None) -> dict | None:
+    meta = copy.deepcopy(question_meta) if isinstance(question_meta, dict) else {}
+    question_text = next(
+        (item.strip() for item in (questions or []) if isinstance(item, str) and item.strip()),
+        None,
+    )
+    question_id = meta.get("id") if isinstance(meta.get("id"), str) and meta.get("id").strip() else None
+    question_kind = meta.get("kind") if isinstance(meta.get("kind"), str) and meta.get("kind").strip() else None
+    prompt = meta.get("prompt") if isinstance(meta.get("prompt"), str) and meta.get("prompt").strip() else question_text
+    prompt_norm = _ai_norm_token(prompt) if isinstance(prompt, str) and prompt.strip() else ""
+    looks_like_confirm_plan = bool(
+        question_id == "confirm_plan"
+        or question_kind == "confirm_plan"
+        or "confirm this plan" in prompt_norm
+        or ("confirm" in prompt_norm and "plan" in prompt_norm and "change" in prompt_norm)
+    )
+    if looks_like_confirm_plan:
+        if not question_id:
+            meta["id"] = "confirm_plan"
+        if not question_kind:
+            meta["kind"] = "confirm_plan"
+        if isinstance(prompt, str) and prompt and not meta.get("prompt"):
+            meta["prompt"] = prompt
+    return meta or None
+
+
+def _ai_should_skip_confirm_plan_for_terminal_noop(
+    candidate_ops: list[dict],
+    resolved_without_changes: bool,
+    planner_state: dict | None,
+) -> bool:
+    if candidate_ops or not resolved_without_changes:
+        return False
+    intent = planner_state.get("intent") if isinstance(planner_state, dict) and isinstance(planner_state.get("intent"), str) else ""
+    if not intent:
+        return False
+    return intent in {
+        "cleanup_duplicates",
+        "field_already_exists_noop",
+        "field_already_persisted",
+        "field_missing_noop",
+        "view_missing_noop",
+    }
+
+
+def _ai_field_type_detail_phrase(field_type: str | None) -> str:
+    normalized = field_type.strip().lower() if isinstance(field_type, str) and field_type.strip() else "string"
+    friendly = {
+        "attachments": "attachment",
+        "bool": "checkbox",
+        "datetime": "date and time",
+        "enum": "dropdown",
+        "float": "number",
+        "int": "number",
+        "lookup": "lookup",
+        "tags": "tag list",
+        "user": "user picker",
+    }.get(normalized, normalized)
+    article = "an" if friendly[:1].lower() in {"a", "e", "i", "o", "u"} else "a"
+    return f"{article} {friendly} field"
+
+
+def _ai_condition_summary(condition: dict | None) -> str | None:
+    if not isinstance(condition, dict):
+        return None
+    op = condition.get("op") if isinstance(condition.get("op"), str) else ""
+    field_id = condition.get("field") if isinstance(condition.get("field"), str) else ""
+    value = condition.get("value")
+    field_label = _ai_humanize_identifier(field_id.split(".")[-1] if field_id else field_id)
+    value_label: str | None = None
+    if isinstance(value, str) and value.strip():
+        value_label = value.strip()
+    elif isinstance(value, bool):
+        value_label = "Yes" if value else "No"
+    elif isinstance(value, (int, float)):
+        value_label = str(value)
+    if op == "eq" and field_label and value_label:
+        return f"{field_label} is '{value_label}'"
+    if op == "ne" and field_label and value_label:
+        return f"{field_label} is not '{value_label}'"
+    if op == "in" and field_label and isinstance(value, list) and value:
+        return f"{field_label} is one of {', '.join(str(item) for item in value[:4])}"
+    if field_label and value_label and op:
+        return f"{field_label} {op} {value_label}"
+    if field_label:
+        return field_label
+    return None
+
+
+def _ai_condition_change_lines(module_label: str, subject_text: str, condition_source: dict | None) -> list[str]:
+    if not isinstance(module_label, str) or not module_label.strip():
+        return []
+    if not isinstance(subject_text, str) or not subject_text.strip():
+        return []
+    if not isinstance(condition_source, dict):
+        return []
+    templates = (
+        ("visible_when", "Show {subject} only when {condition} in {module}."),
+        ("required_when", "Make {subject} required when {condition} in {module}."),
+        ("enabled_when", "Enable {subject} when {condition} in {module}."),
+        ("disabled_when", "Disable {subject} when {condition} in {module}."),
+    )
+    lines: list[str] = []
+    for key, template in templates:
+        summary = _ai_condition_summary(condition_source.get(key) if isinstance(condition_source.get(key), dict) else None)
+        if not summary:
+            continue
+        line = template.format(subject=subject_text.strip(), condition=summary, module=module_label.strip())
+        if line not in lines:
+            lines.append(line)
+    return lines
+
+
+def _ai_plan_detail_sections(plan: dict, context: dict) -> list[dict]:
+    render_context = _ai_context_with_planned_modules(plan, context)
+    ops = [item for item in (plan.get("proposed_changes") or []) if isinstance(item, dict)]
+    fields: list[str] = []
+    placement: list[str] = []
+    workflow_actions: list[str] = []
+    conditions: list[str] = []
+    dependencies: list[str] = []
+    views: list[str] = []
+    sandbox_checks: list[str] = []
+
+    for op in ops:
+        op_name = op.get("op")
+        module_id = op.get("artifact_id") if isinstance(op.get("artifact_id"), str) else ""
+        module_label = _ai_plan_module_label(module_id, render_context)
+        manifest = _ai_manifest_for_context_module(render_context, module_id)
+
+        if op_name == "create_module":
+            manifest = op.get("manifest") if isinstance(op.get("manifest"), dict) else {}
+            design_spec = op.get("design_spec") if isinstance(op.get("design_spec"), dict) else {}
+            module_def = manifest.get("module") if isinstance(manifest.get("module"), dict) else {}
+            module_name = module_def.get("name") if isinstance(module_def.get("name"), str) and module_def.get("name").strip() else module_label
+            if isinstance(module_name, str) and module_name:
+                sandbox_checks.append(f"Open {module_name} from the app launcher and review the starter views, form, and workflow.")
+            entities = [entity for entity in (manifest.get("entities") or []) if isinstance(entity, dict)]
+            if entities:
+                field_labels = []
+                for field in entities[0].get("fields") if isinstance(entities[0].get("fields"), list) else []:
+                    if not isinstance(field, dict):
+                        continue
+                    field_id = field.get("id")
+                    if not isinstance(field_id, str) or field_id.endswith(".id") or field_id.endswith(".created_at"):
+                        continue
+                    label = field.get("label") if isinstance(field.get("label"), str) and field.get("label").strip() else field_id.split(".")[-1]
+                    if isinstance(label, str) and label and label not in field_labels:
+                        field_labels.append(label)
+                if field_labels:
+                    fields.append(f"{module_name}: include fields for {', '.join(field_labels[:10])}.")
+            actions = []
+            for action in manifest.get("actions") if isinstance(manifest.get("actions"), list) else []:
+                if not isinstance(action, dict) or action.get("kind") != "update_record":
+                    continue
+                label = action.get("label") if isinstance(action.get("label"), str) and action.get("label").strip() else None
+                if isinstance(label, str) and label not in actions:
+                    actions.append(label)
+            if actions:
+                workflow_actions.append(f"{module_name}: add workflow buttons {', '.join(actions[:6])}.")
+            view_kinds = []
+            for view in manifest.get("views") if isinstance(manifest.get("views"), list) else []:
+                if not isinstance(view, dict):
+                    continue
+                kind = view.get("kind")
+                if isinstance(kind, str) and kind and kind not in view_kinds:
+                    view_kinds.append(kind)
+            if view_kinds:
+                views.append(f"{module_name}: starter views include {', '.join(view_kinds[:5])}.")
+            page_titles = []
+            for page in manifest.get("pages") if isinstance(manifest.get("pages"), list) else []:
+                if not isinstance(page, dict):
+                    continue
+                title = page.get("title") if isinstance(page.get("title"), str) and page.get("title").strip() else None
+                if isinstance(title, str) and title not in page_titles:
+                    page_titles.append(title)
+            if page_titles:
+                views.append(f"{module_name}: pages include {', '.join(page_titles[:4])}.")
+            layout = design_spec.get("layout") if isinstance(design_spec.get("layout"), dict) else {}
+            tab_labels = [
+                tab.get("label")
+                for tab in (layout.get("tabs") or [])
+                if isinstance(tab, dict) and isinstance(tab.get("label"), str) and tab.get("label").strip()
+            ]
+            if tab_labels:
+                placement.append(f"{module_name}: form tabs include {', '.join(tab_labels[:5])}.")
+            interfaces = [
+                item
+                for item in ((design_spec.get("experience") or {}).get("interfaces") or [])
+                if isinstance(item, str) and item.strip()
+            ]
+            if interfaces:
+                dependencies.append(f"{module_name}: interfaces enabled for {', '.join(interfaces[:4])}.")
+            continue
+
+        if op_name == "add_field":
+            field = op.get("field") if isinstance(op.get("field"), dict) else {}
+            label = field.get("label") if isinstance(field.get("label"), str) and field.get("label").strip() else field.get("id")
+            field_type = field.get("type") if isinstance(field.get("type"), str) and field.get("type").strip() else "string"
+            if isinstance(label, str) and label:
+                fields.append(f"{module_label}: add '{label}' as {_ai_field_type_detail_phrase(field_type)}.")
+                for condition_key, title in (
+                    ("visible_when", "Visible when"),
+                    ("required_when", "Required when"),
+                    ("enabled_when", "Enabled when"),
+                    ("disabled_when", "Disabled when"),
+                ):
+                    summary = _ai_condition_summary(field.get(condition_key) if isinstance(field.get(condition_key), dict) else None)
+                    if summary:
+                        conditions.append(f"{module_label}: '{label}' {title.lower()} {summary}.")
+                if field_type == "attachments":
+                    sandbox_checks.append(f"Open {module_label}, upload a sample file through '{label}', and confirm it appears in sandbox.")
+                else:
+                    sandbox_checks.append(f"Open {module_label} and look for the '{label}' field on the affected form or view.")
+            continue
+
+        if op_name == "remove_field":
+            field_label = _ai_manifest_field_label(manifest, op.get("field_id"))
+            if isinstance(field_label, str) and field_label:
+                fields.append(f"{module_label}: remove '{field_label}'.")
+                sandbox_checks.append(f"Open {module_label} and confirm '{field_label}' no longer appears where staff used it.")
+            continue
+
+        if op_name in {"insert_section_field", "move_section_field"}:
+            field_label = _ai_manifest_field_label(manifest, op.get("field_id"))
+            placement_label = op.get("placement_label") if isinstance(op.get("placement_label"), str) and op.get("placement_label").strip() else None
+            placement_kind = op.get("placement_kind") if isinstance(op.get("placement_kind"), str) and op.get("placement_kind").strip() else None
+            section_label = _ai_manifest_section_label(manifest, op.get("view_id"), op.get("section_id"))
+            if field_label and placement_label:
+                noun = "tab" if placement_kind == "tab" else "section"
+                placement.append(f"{module_label}: put '{field_label}' in the '{placement_label}' {noun}.")
+                sandbox_checks.append(f"Open {module_label}, open a record, then check the {placement_label} {noun} for '{field_label}'.")
+            elif field_label and section_label:
+                placement.append(f"{module_label}: put '{field_label}' in the '{section_label}' section.")
+                sandbox_checks.append(f"Open {module_label}, open a record, then check the {section_label} section for '{field_label}'.")
+            elif field_label:
+                placement.append(f"{module_label}: place '{field_label}' in the form layout.")
+            continue
+
+        if op_name == "update_view":
+            tab_label = op.get("tab_label") if isinstance(op.get("tab_label"), str) and op.get("tab_label").strip() else None
+            target_tab_label = op.get("target_tab_label") if isinstance(op.get("target_tab_label"), str) and op.get("target_tab_label").strip() else None
+            field_label = _ai_manifest_field_label(manifest, op.get("field_id"))
+            if tab_label:
+                placement.append(f"{module_label}: create a '{tab_label}' tab on the form.")
+                sandbox_checks.append(f"Open {module_label}, open a record, and check the new '{tab_label}' tab.")
+            elif field_label and target_tab_label:
+                placement.append(f"{module_label}: move '{field_label}' into the '{target_tab_label}' tab.")
+                sandbox_checks.append(f"Open {module_label}, open a record, then check the '{target_tab_label}' tab for '{field_label}'.")
+            else:
+                view_label = _ai_manifest_view_label(manifest, op.get("view_id"))
+                if isinstance(view_label, str) and view_label:
+                    views.append(f"{module_label}: update the {view_label}.")
+            continue
+
+        if op_name == "add_view":
+            view_label = _ai_view_label_from_definition(op.get("view") if isinstance(op.get("view"), dict) else None) or "view"
+            views.append(f"{module_label}: add the {view_label}.")
+            sandbox_checks.append(f"Open {module_label} and confirm the {view_label} is available in sandbox.")
+            continue
+
+        if op_name == "update_view_columns":
+            view_label = _ai_manifest_view_label(manifest, op.get("view_id")) or "list view"
+            views.append(f"{module_label}: update the columns in the {view_label}.")
+            sandbox_checks.append(f"Open {module_label} and confirm the {view_label} shows the updated columns in sandbox.")
+            continue
+
+        if op_name == "remove_view":
+            view_label = _ai_manifest_view_label(manifest, op.get("view_id")) or "view"
+            views.append(f"{module_label}: remove the {view_label}.")
+            sandbox_checks.append(f"Open {module_label} and confirm the {view_label} is no longer available.")
+            continue
+
+        if op_name == "add_page":
+            page_label = _ai_page_label_for_plan(manifest, op)
+            if isinstance(page_label, str) and page_label:
+                views.append(f"{module_label}: add page '{page_label}'.")
+                sandbox_checks.append(f"Open page '{page_label}' in {module_label} and confirm it is available in sandbox.")
+            continue
+
+        if op_name == "update_page":
+            page_label = _ai_page_label_for_plan(manifest, op)
+            if isinstance(page_label, str) and page_label:
+                views.append(f"{module_label}: update page '{page_label}'.")
+                sandbox_checks.append(f"Open page '{page_label}' in {module_label} and confirm the updated layout renders in sandbox.")
+            continue
+
+        if op_name == "add_page_block":
+            page_label = _ai_page_label_for_plan(manifest, op)
+            if isinstance(page_label, str) and page_label:
+                views.append(f"{module_label}: add a new block to page '{page_label}'.")
+                sandbox_checks.append(f"Open page '{page_label}' in {module_label} and confirm the new block renders in sandbox.")
+            continue
+
+        if op_name == "update_field":
+            field_label = _ai_manifest_field_label(manifest, op.get("field_id"))
+            field_id = op.get("field_id") if isinstance(op.get("field_id"), str) else None
+            changes = op.get("changes") if isinstance(op.get("changes"), dict) else {}
+            changed_options = changes.get("options") if isinstance(changes.get("options"), list) else []
+            is_lifecycle_field = isinstance(field_id, str) and (
+                field_id.endswith(".status") or field_id.endswith(".state") or field_id.endswith(".stage")
+            )
+            if is_lifecycle_field and changed_options:
+                latest_option = changed_options[-1] if isinstance(changed_options[-1], dict) else None
+                latest_label = latest_option.get("label") if isinstance(latest_option, dict) and isinstance(latest_option.get("label"), str) and latest_option.get("label").strip() else None
+                latest_value = latest_option.get("value") if isinstance(latest_option, dict) and isinstance(latest_option.get("value"), str) and latest_option.get("value").strip() else None
+                status_label = latest_label or (_ai_titleize_slug(latest_value) if isinstance(latest_value, str) and latest_value else None)
+                if isinstance(status_label, str) and status_label:
+                    workflow_actions.append(f"{module_label}: add status '{status_label}'.")
+                    sandbox_checks.append(f"Open {module_label} and check the status bar for '{status_label}'.")
+            elif isinstance(field_label, str) and field_label:
+                fields.append(f"{module_label}: update '{field_label}'.")
+            for condition_key, title in (
+                ("visible_when", "Visible when"),
+                ("required_when", "Required when"),
+                ("enabled_when", "Enabled when"),
+                ("disabled_when", "Disabled when"),
+            ):
+                summary = _ai_condition_summary(changes.get(condition_key) if isinstance(changes.get(condition_key), dict) else None)
+                if summary and isinstance(field_label, str) and field_label:
+                    conditions.append(f"{module_label}: '{field_label}' {title.lower()} {summary}.")
+            continue
+
+        if op_name == "update_workflow":
+            changes = op.get("changes") if isinstance(op.get("changes"), dict) else {}
+            states = changes.get("states") if isinstance(changes.get("states"), list) else []
+            state_labels = []
+            for state in states:
+                if not isinstance(state, dict):
+                    continue
+                state_label = state.get("label") if isinstance(state.get("label"), str) and state.get("label").strip() else state.get("id")
+                if isinstance(state_label, str) and state_label and state_label not in state_labels:
+                    state_labels.append(state_label)
+            if state_labels:
+                workflow_actions.append(f"{module_label}: workflow states will include {', '.join(state_labels[:6])}.")
+                workflow_actions.append(f"{module_label}: refresh the status workflow and action buttons.")
+            sandbox_checks.append(f"Open {module_label} and check the status bar and action buttons on the form.")
+            continue
+
+        if op_name == "add_trigger":
+            trigger = op.get("trigger") if isinstance(op.get("trigger"), dict) else {}
+            trigger_label = trigger.get("label") if isinstance(trigger.get("label"), str) and trigger.get("label").strip() else _ai_humanize_identifier(trigger.get("id"))
+            if isinstance(trigger_label, str) and trigger_label:
+                workflow_actions.append(f"{module_label}: add workflow trigger '{trigger_label}'.")
+                sandbox_checks.append(f"Run the trigger conditions in {module_label} and confirm '{trigger_label}' fires in sandbox.")
+            continue
+
+        if op_name == "update_dependency":
+            dependency = op.get("dependency") if isinstance(op.get("dependency"), dict) else {}
+            dependency_module = dependency.get("module") if isinstance(dependency.get("module"), str) and dependency.get("module").strip() else None
+            dependency_label = _ai_plan_module_label(dependency_module, render_context) if isinstance(dependency_module, str) else None
+            if isinstance(dependency_label, str) and dependency_label:
+                dependencies.append(f"{module_label}: update dependency settings for {dependency_label}.")
+                sandbox_checks.append(f"Open the module setup for {module_label} and confirm the dependency on {dependency_label} is reflected in sandbox.")
+            continue
+
+        if op_name in {"add_action", "update_action"}:
+            action = op.get("action") if isinstance(op.get("action"), dict) else {}
+            changes = op.get("changes") if isinstance(op.get("changes"), dict) else {}
+            action_label = _ai_action_label_for_plan(manifest, op)
+            if isinstance(action_label, str) and action_label:
+                verb = "add" if op_name == "add_action" else "update"
+                workflow_actions.append(f"{module_label}: {verb} action '{action_label}'.")
+                sandbox_checks.append(f"Open {module_label}, open a record, and confirm action '{action_label}' is available in sandbox.")
+            for condition_key, title in (("visible_when", "Visible when"), ("enabled_when", "Enabled when")):
+                condition_source = action if isinstance(action.get(condition_key), dict) else changes
+                summary = _ai_condition_summary(condition_source.get(condition_key) if isinstance(condition_source.get(condition_key), dict) else None)
+                if summary and isinstance(action_label, str) and action_label:
+                    conditions.append(f"{module_label}: action '{action_label}' {title.lower()} {summary}.")
+            continue
+
+    sections: list[dict] = []
+    for key, title, items in (
+        ("fields", "Fields", fields),
+        ("placement", "Placement", placement),
+        ("workflow_actions", "Workflow & actions", workflow_actions),
+        ("conditions", "Conditions", conditions),
+        ("dependencies", "Dependencies", dependencies),
+        ("views", "Views & pages", views),
+        ("sandbox_checks", "What to check in sandbox", sandbox_checks),
+    ):
+        deduped: list[str] = []
+        for item in items:
+            if isinstance(item, str) and item.strip() and item not in deduped:
+                deduped.append(item)
+        if deduped:
+            sections.append({"key": key, "title": title, "items": deduped[:6]})
+    return sections
+
+
+def _ai_plan_design_spec(plan: dict) -> dict | None:
+    for op in (plan.get("proposed_changes") or []):
+        if not isinstance(op, dict) or op.get("op") != "create_module":
+            continue
+        design_spec = op.get("design_spec")
+        if isinstance(design_spec, dict):
+            return copy.deepcopy(design_spec)
+    return None
+
+
+def _ai_design_spec_blueprint_items(design_spec: dict | None) -> list[str]:
+    if not isinstance(design_spec, dict):
+        return []
+    items: list[str] = []
+    family = design_spec.get("family") if isinstance(design_spec.get("family"), str) and design_spec.get("family").strip() else None
+    if isinstance(family, str):
+        items.append(f"Design family: {family}.")
+    fields = _ai_dedupe_text_list([
+        field.get("label")
+        for field in (design_spec.get("fields") or [])
+        if isinstance(field, dict)
+        and isinstance(field.get("label"), str)
+        and field.get("label").strip()
+        and isinstance(field.get("id"), str)
+        and not field.get("id").endswith(".id")
+        and not field.get("id").endswith(".created_at")
+    ])
+    if fields:
+        items.append(f"Core fields: {', '.join(fields[:10])}.")
+    workflow = design_spec.get("workflow") if isinstance(design_spec.get("workflow"), dict) else {}
+    states = _ai_dedupe_text_list([
+        state.get("label")
+        for state in (workflow.get("states") or [])
+        if isinstance(state, dict) and isinstance(state.get("label"), str) and state.get("label").strip()
+    ])
+    if states:
+        items.append(f"Workflow states: {', '.join(states[:6])}.")
+    action_labels = _ai_dedupe_text_list([item for item in (workflow.get("action_labels") or []) if isinstance(item, str) and item.strip()])
+    if action_labels:
+        items.append(f"Workflow buttons: {', '.join(action_labels[:6])}.")
+    experience = design_spec.get("experience") if isinstance(design_spec.get("experience"), dict) else {}
+    views = _ai_dedupe_text_list([item for item in (experience.get("views") or []) if isinstance(item, str) and item.strip()])
+    if views:
+        items.append(f"Views: {', '.join(views[:6])}.")
+    pages = _ai_dedupe_text_list([
+        page.get("title")
+        for page in (experience.get("pages") or [])
+        if isinstance(page, dict) and isinstance(page.get("title"), str) and page.get("title").strip()
+    ])
+    if pages:
+        items.append(f"Pages: {', '.join(pages[:5])}.")
+    layout = design_spec.get("layout") if isinstance(design_spec.get("layout"), dict) else {}
+    tab_labels = _ai_dedupe_text_list([
+        tab.get("label")
+        for tab in (layout.get("tabs") or [])
+        if isinstance(tab, dict) and isinstance(tab.get("label"), str) and tab.get("label").strip()
+    ])
+    if tab_labels:
+        items.append(f"Form tabs: {', '.join(tab_labels[:5])}.")
+    interfaces = _ai_dedupe_text_list([item for item in (experience.get("interfaces") or []) if isinstance(item, str) and item.strip()])
+    if interfaces:
+        items.append(f"Interfaces: {', '.join(interfaces[:4])}.")
+    return items[:8]
+
+
+def _ai_plan_v1_base(plan: dict, context: dict) -> dict:
+    render_context = _ai_context_with_planned_modules(plan, context)
+    planner_state = plan.get("planner_state") if isinstance(plan.get("planner_state"), dict) else {}
+    planner_intent = planner_state.get("intent") if isinstance(planner_state.get("intent"), str) else "unknown"
+    artifacts = [item for item in (plan.get("affected_artifacts") or []) if isinstance(item, dict)]
+    modules: list[dict] = []
+    seen_module_ids: set[str] = set()
+    module_ids: list[str] = []
+    for artifact in artifacts:
+        if artifact.get("artifact_type") != "module":
+            continue
+        module_id = artifact.get("artifact_id")
+        if isinstance(module_id, str) and module_id and module_id not in module_ids:
+            module_ids.append(module_id)
+    for op in [item for item in (plan.get("proposed_changes") or []) if isinstance(item, dict)]:
+        module_id = op.get("artifact_id")
+        if isinstance(module_id, str) and module_id and module_id not in module_ids:
+            module_ids.append(module_id)
+    for module_id in module_ids:
+        if module_id in seen_module_ids:
+            continue
+        seen_module_ids.add(module_id)
+        modules.append(
+            {
+                "module_id": module_id,
+                "module_label": _ai_plan_module_label(module_id, render_context),
+                "status": _ai_structured_module_status(plan, module_id),
+            }
+        )
+    for missing_label in [
+        item.strip()
+        for item in (planner_state.get("missing_module_labels") or [])
+        if isinstance(item, str) and item.strip()
+    ]:
+        modules.append({"module_id": None, "module_label": missing_label, "status": "missing_from_workspace"})
+
+    changes: list[dict] = []
+    for op in [item for item in (plan.get("proposed_changes") or []) if isinstance(item, dict)]:
+        module_id = op.get("artifact_id") if isinstance(op.get("artifact_id"), str) else None
+        op_plan = {
+            "affected_artifacts": [{"artifact_type": "module", "artifact_id": module_id}] if isinstance(module_id, str) and module_id else [],
+            "proposed_changes": [op],
+        }
+        summary_lines = _ai_plan_change_lines(op_plan, render_context)
+        changes.append(
+            {
+                "op": op.get("op"),
+                "module_id": module_id,
+                "module_label": _ai_plan_module_label(module_id, render_context) if isinstance(module_id, str) else None,
+                "summary": summary_lines[0] if summary_lines else "Apply the planned change.",
+            }
+        )
+
+    questions = [item for item in (plan.get("required_questions") or []) if isinstance(item, str) and item.strip()]
+    question_meta = _ai_normalize_required_question_meta(
+        plan.get("required_question_meta") if isinstance(plan.get("required_question_meta"), dict) else None,
+        questions,
+    ) or {}
+    summary = _ai_plan_understanding_text(plan, render_context).strip()
+    design_spec = _ai_plan_design_spec(plan)
+    planning_mode = "workspace_change"
+    if planner_intent == "create_module":
+        planning_mode = "create_module_design"
+    elif planner_intent in {"preview_only_plan", "preview_only_noop"}:
+        planning_mode = "preview_only"
+    if summary == "Update the selected artifacts.":
+        planned_labels = [item["module_label"] for item in modules if isinstance(item.get("module_label"), str) and item.get("status") == "planned"]
+        if len(planned_labels) == 1:
+            summary = f"Make several changes in {planned_labels[0]}."
+        elif len(planned_labels) > 1:
+            summary = f"Make coordinated changes across {_ai_join_human_list(planned_labels)}."
+    sections = _ai_plan_detail_sections(plan, render_context)
+    blueprint_items = _ai_design_spec_blueprint_items(design_spec)
+    if blueprint_items:
+        sections.insert(0, {"key": "module_blueprint", "title": "Module Blueprint", "items": blueprint_items})
+    requested_labels, missing_labels = _ai_plan_requested_scope_labels(plan)
+    return {
+        "version": "1",
+        "source": "normalized_plan",
+        "intent": planner_intent,
+        "planning_mode": planning_mode,
+        "scope_mode": ((plan.get("scope") or {}).get("mode") if isinstance(plan.get("scope"), dict) else None),
+        "requested_scope": {
+            "requested_modules": requested_labels,
+            "missing_modules": missing_labels,
+        },
+        "summary": summary,
+        "modules": modules,
+        "changes": changes,
+        "sections": sections,
+        "clarifications": {
+            "items": questions,
+            "meta": question_meta if isinstance(question_meta, dict) else {},
+        },
+        "questions": {
+            "items": questions,
+            "meta": question_meta if isinstance(question_meta, dict) else {},
+        },
+        "design_spec": design_spec,
+        "assumptions": [item for item in (plan.get("assumptions") or []) if isinstance(item, str) and item.strip()],
+        "risks": [item for item in (plan.get("risk_flags") or []) if isinstance(item, str) and item.strip()],
+        "noop_notes": [item for item in (plan.get("noop_notes") or []) if isinstance(item, str) and item.strip()],
+    }
+
+
+def _ai_merge_plan_v1(raw_plan_v1: dict | None, fallback: dict) -> dict:
+    merged = copy.deepcopy(fallback)
+    if not isinstance(raw_plan_v1, dict):
+        return merged
+
+    version = raw_plan_v1.get("version")
+    if isinstance(version, str) and version.strip():
+        merged["version"] = version.strip()
+    merged["source"] = "semantic_plan_v1"
+
+    for key in ("intent", "scope_mode", "planning_mode"):
+        value = raw_plan_v1.get(key)
+        if isinstance(value, str) and value.strip():
+            merged[key] = value.strip()
+
+    requested_scope = raw_plan_v1.get("requested_scope")
+    if isinstance(requested_scope, dict):
+        requested_modules = [item for item in (requested_scope.get("requested_modules") or []) if isinstance(item, str) and item.strip()]
+        missing_modules = [item for item in (requested_scope.get("missing_modules") or []) if isinstance(item, str) and item.strip()]
+        merged["requested_scope"] = {
+            "requested_modules": requested_modules or merged.get("requested_scope", {}).get("requested_modules", []),
+            "missing_modules": missing_modules or merged.get("requested_scope", {}).get("missing_modules", []),
+        }
+
+    for key in ("modules", "changes"):
+        value = raw_plan_v1.get(key)
+        if isinstance(value, list):
+            cleaned = [item for item in value if isinstance(item, dict)]
+            if cleaned:
+                merged[key] = cleaned
+    if isinstance(raw_plan_v1.get("design_spec"), dict):
+        merged["design_spec"] = copy.deepcopy(raw_plan_v1.get("design_spec"))
+
+    sections = raw_plan_v1.get("sections")
+    if isinstance(sections, list):
+        semantic_sections = []
+        for item in sections:
+            if not isinstance(item, dict):
+                continue
+            key = item.get("key") if isinstance(item.get("key"), str) and item.get("key").strip() else None
+            title = item.get("title") if isinstance(item.get("title"), str) and item.get("title").strip() else None
+            items = [entry.strip() for entry in (item.get("items") or []) if isinstance(entry, str) and entry.strip()]
+            if key and title and items:
+                semantic_sections.append({"key": key.strip(), "title": title.strip(), "items": items})
+        if semantic_sections:
+            fallback_sections = [
+                item for item in (merged.get("sections") or []) if isinstance(item, dict) and isinstance(item.get("key"), str)
+            ]
+            fallback_by_key = {item["key"]: item for item in fallback_sections}
+            merged_sections = []
+            used_keys: set[str] = set()
+            for item in semantic_sections:
+                merged_sections.append(item)
+                used_keys.add(item["key"])
+            for item in fallback_sections:
+                key = item["key"]
+                if key in used_keys:
+                    semantic = next((section for section in merged_sections if section.get("key") == key), None)
+                    fallback_items = [entry for entry in (fallback_by_key.get(key, {}).get("items") or []) if isinstance(entry, str) and entry.strip()]
+                    if semantic is not None and fallback_items:
+                        existing = set(semantic.get("items") or [])
+                        semantic["items"] = [*semantic.get("items", []), *[entry for entry in fallback_items if entry not in existing]]
+                    continue
+                merged_sections.append(item)
+            merged["sections"] = merged_sections
+
+    for key in ("assumptions", "risks", "noop_notes"):
+        value = raw_plan_v1.get(key)
+        if isinstance(value, list):
+            cleaned = [item.strip() for item in value if isinstance(item, str) and item.strip()]
+            if cleaned:
+                merged[key] = cleaned
+
+    clarifications = raw_plan_v1.get("clarifications")
+    if isinstance(clarifications, dict):
+        items = [item for item in (clarifications.get("items") or []) if isinstance(item, str) and item.strip()]
+        meta = clarifications.get("meta") if isinstance(clarifications.get("meta"), dict) else {}
+        merged["clarifications"] = {"items": items, "meta": meta}
+        merged["questions"] = {"items": items, "meta": meta}
+    summary = raw_plan_v1.get("summary")
+    if isinstance(summary, str) and summary.strip() and _ai_summary_matches_plan_scope(summary, merged):
+        merged["summary"] = summary.strip()
+    return merged
+
+
+def _ai_is_low_signal_plan_summary(summary: str | None) -> bool:
+    text = summary.strip() if isinstance(summary, str) else ""
+    if not text:
+        return True
+    normalized = _ai_norm_token(text)
+    if not normalized:
+        return True
+    if normalized in {
+        "update the selected artifacts",
+        "update the workspace based on this request",
+    }:
+        return True
+    return normalized.startswith("update the workspace based on this request")
+
+
+def _ai_sanitize_plan_text_line(text: str) -> str:
+    if not isinstance(text, str):
+        return ""
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    replacements = (
+        (r"\bcandidate_operations\b", "planned changes"),
+        (r"\bartifact_id\b", "module"),
+        (r"\bmanifests\b", "module setups"),
+        (r"\bmanifest\b", "module setup"),
+    )
+    for pattern, replacement in replacements:
+        cleaned = re.sub(pattern, replacement, cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\boutside of this module setup\b", "outside this workspace setup", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\bhandled outside this workspace setup\b", "handled outside this workspace setup", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+def _ai_sanitize_plan_text_lines(items: list[str]) -> list[str]:
+    sanitized: list[str] = []
+    for item in items:
+        cleaned = _ai_sanitize_plan_text_line(item)
+        if cleaned:
+            sanitized.append(cleaned)
+    return sanitized
+
+
+def _ai_dedupe_text_list(items: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, str):
+            continue
+        cleaned = item.strip()
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        deduped.append(cleaned)
+    return deduped
+
+
+def _ai_should_compact_create_module_sections(plan: dict, structured_plan: dict) -> bool:
+    ops = [item for item in (plan.get("proposed_changes") or []) if isinstance(item, dict)]
+    if len(ops) != 1 or ops[0].get("op") != "create_module":
+        return False
+    sections = structured_plan.get("sections") if isinstance(structured_plan.get("sections"), list) else []
+    return any(
+        isinstance(section, dict)
+        and section.get("key") == "module_blueprint"
+        and isinstance(section.get("items"), list)
+        and section.get("items")
+        for section in sections
+    )
+
+
+def _ai_plan_assistant_text(plan: dict, context: dict) -> str:
+    render_context = _ai_context_with_planned_modules(plan, context)
+    structured_plan = plan.get("structured_plan") if isinstance(plan.get("structured_plan"), dict) else _ai_build_structured_plan(plan, context)
+    semantic_summary = structured_plan.get("summary") if isinstance(structured_plan.get("summary"), str) else ""
+    planner_state = plan.get("planner_state") if isinstance(plan.get("planner_state"), dict) else {}
+    planner_intent = planner_state.get("intent") if isinstance(planner_state.get("intent"), str) else ""
+    understanding = (
+        semantic_summary.strip()
+        if planner_intent not in {"preview_only_plan", "preview_only_noop"}
+        and semantic_summary.strip()
+        and _ai_summary_matches_plan_scope(semantic_summary, structured_plan)
+        else _ai_plan_understanding_text(plan, render_context)
+    )
+    scope_lines = _ai_sanitize_plan_text_lines(_ai_plan_scope_lines(plan, render_context))
+    requested_scope_lines = _ai_sanitize_plan_text_lines(_ai_plan_requested_scope_lines(plan, render_context))
+    requested_change_lines = _ai_sanitize_plan_text_lines([item for item in (plan.get("requested_change_lines") or []) if isinstance(item, str) and item.strip()])
+    changes = _ai_sanitize_plan_text_lines(_ai_plan_change_lines(plan, render_context))
+    combined_change_lines: list[str] = []
+    for line in [*requested_change_lines, *changes]:
+        if line not in combined_change_lines:
+            combined_change_lines.append(line)
+    rollout_lines = _ai_sanitize_plan_text_lines(_ai_plan_rollout_lines(plan, render_context))
+    dependency_lines = _ai_sanitize_plan_text_lines(_ai_plan_dependency_lines(plan, render_context))
+    noop_notes = _ai_sanitize_plan_text_lines([item for item in (plan.get("noop_notes") or []) if isinstance(item, str) and item.strip()])
+    request_summary = render_context.get("request_summary") if isinstance(render_context.get("request_summary"), str) else ""
+    preview_contract_lines = _ai_sanitize_plan_text_lines(_ai_preview_contract_advisories(request_summary))
+    suggestions = [item for item in _ai_sanitize_plan_text_lines(_ai_plan_suggestion_lines(plan, render_context)) if item not in noop_notes]
+    for item in preview_contract_lines:
+        if item not in suggestions and item not in noop_notes:
+            suggestions.append(item)
+    assumptions = _ai_sanitize_plan_text_lines([item for item in (plan.get("assumptions") or []) if isinstance(item, str)])
+    questions_list = _ai_sanitize_plan_text_lines([item for item in (plan.get("required_questions") or []) if isinstance(item, str) and item.strip()])
+    risks_list = _ai_sanitize_plan_text_lines([item for item in (plan.get("risk_flags") or []) if isinstance(item, str)])
+    question_meta = _ai_normalize_required_question_meta(
+        plan.get("required_question_meta") if isinstance(plan.get("required_question_meta"), dict) else None,
+        questions_list,
+    ) or {}
+    question_kind = question_meta.get("kind") if isinstance(question_meta.get("kind"), str) else ""
+    compact_create_module_sections = _ai_should_compact_create_module_sections(plan, structured_plan)
+
+    lines = ["I understand this as:", f"- {_ai_sanitize_plan_text_line(understanding)}"]
+    lines.extend([f"- {line}" for line in scope_lines])
+    lines.extend([f"- {line}" for line in requested_scope_lines])
+    pending_change_lines: list[str] = []
+    if not changes and questions_list:
+        affected_labels: list[str] = []
+        for artifact in (plan.get("affected_artifacts") or []):
+            if not isinstance(artifact, dict) or artifact.get("artifact_type") != "module":
+                continue
+            artifact_id = artifact.get("artifact_id")
+            if not isinstance(artifact_id, str) or not artifact_id:
+                continue
+            label = _ai_plan_module_label(artifact_id, render_context)
+            if label not in affected_labels:
+                affected_labels.append(label)
+        requested_labels, missing_labels = _ai_plan_requested_scope_labels(plan)
+        scoped_labels = affected_labels or requested_labels or missing_labels
+        pending_module_name = (
+            planner_state.get("module_name")
+            if planner_intent == "create_module" and isinstance(planner_state.get("module_name"), str)
+            else None
+        )
+        if isinstance(pending_module_name, str) and pending_module_name.strip():
+            scoped_labels = [pending_module_name.strip()]
+        if len(scoped_labels) > 1:
+            pending_change_lines.append(f"Draft the requested updates across {_ai_join_human_list(scoped_labels[:6])} once the remaining detail is confirmed.")
+        elif len(scoped_labels) == 1:
+            pending_change_lines.append(f"Draft the requested updates in {scoped_labels[0]} once the remaining detail is confirmed.")
+    if combined_change_lines or pending_change_lines:
+        lines.append("Planned changes:")
+        lines.extend([f"- {line}" for line in (combined_change_lines or _ai_sanitize_plan_text_lines(pending_change_lines))])
+    if rollout_lines:
+        lines.append("Rollout:")
+        lines.extend([f"- {line}" for line in rollout_lines])
+    for section in structured_plan.get("sections") if isinstance(structured_plan, dict) and isinstance(structured_plan.get("sections"), list) else []:
+        title = section.get("title") if isinstance(section, dict) and isinstance(section.get("title"), str) else ""
+        section_key = section.get("key") if isinstance(section, dict) and isinstance(section.get("key"), str) else ""
+        if compact_create_module_sections and section_key in {"fields", "placement", "workflow_actions", "dependencies", "views"}:
+            continue
+        items = section.get("items") if isinstance(section, dict) and isinstance(section.get("items"), list) else []
+        cleaned_items = _ai_sanitize_plan_text_lines([item for item in items if isinstance(item, str) and item.strip()])
+        if title and cleaned_items:
+            lines.append(f"{title}:")
+            lines.extend([f"- {item}" for item in cleaned_items[:6]])
+    if dependency_lines:
+        lines.append("Dependency notes:")
+        lines.extend([f"- {line}" for line in dependency_lines])
+    if noop_notes:
+        lines.append("No-change notes:")
+        lines.extend([f"- {item}" for item in noop_notes[:4]])
+    if assumptions:
+        lines.append("Assumptions:")
+        lines.extend([f"- {item}" for item in assumptions[:4]])
+    if risks_list:
+        lines.append("Risks:")
+        lines.extend([f"- {item}" for item in risks_list[:4]])
+    if suggestions:
+        lines.append("Suggestions:")
+        lines.extend([f"- {item}" for item in suggestions])
+    if questions_list:
+        if question_kind == "confirm_plan":
+            if plan.get("resolved_without_changes") and planner_intent != "preview_only_noop":
+                lines.append("No changes are needed right now.")
+            lines.append("If this looks right, confirm the plan and I will turn it into a draft patchset for sandbox validation. If not, tell me what to revise.")
+        else:
+            lines.append("I need one clarification before I finalize the plan:")
+            lines.append(f"- {questions_list[0]}")
+    else:
+        if planner_intent == "preview_only_noop":
+            lines.append("The preview is approved and stays planning-only for now. This remains a draft patchset preview, and no sandbox changes will be applied yet.")
+        elif plan.get("resolved_without_changes"):
+            lines.append("No changes are needed right now.")
+            lines.append("The sandbox can stay as it is.")
+        else:
+            lines.append("Plan confirmed. I will turn this into a draft patchset for sandbox validation now.")
+    return "\n".join(lines)
+
+
+def _ai_structured_module_status(plan: dict, module_id: str) -> str:
+    if not isinstance(module_id, str) or not module_id:
+        return "planned"
+    planner_state = plan.get("planner_state") if isinstance(plan.get("planner_state"), dict) else {}
+    planner_intent = planner_state.get("intent") if isinstance(planner_state.get("intent"), str) else ""
+    if planner_intent in {"preview_only_plan", "preview_only_noop"}:
+        return "preview_only"
+    proposed_changes = [item for item in (plan.get("proposed_changes") or []) if isinstance(item, dict)]
+    if any(op.get("artifact_id") == module_id for op in proposed_changes):
+        return "planned"
+    if plan.get("resolved_without_changes"):
+        return "no_change"
+    return "planned"
+
+
+def _ai_build_structured_plan(plan: dict, context: dict) -> dict:
+    fallback = _ai_plan_v1_base(plan, context)
+    raw_plan_v1 = plan.get("plan_v1") if isinstance(plan.get("plan_v1"), dict) else None
+    return _ai_merge_plan_v1(raw_plan_v1, fallback)
+
+
+def _ai_ready_revision_status_text(plan: dict, context: dict) -> str:
+    render_context = _ai_context_with_planned_modules(plan, context)
+    structured_plan = plan.get("structured_plan") if isinstance(plan.get("structured_plan"), dict) else _ai_build_structured_plan(plan, context)
+    understanding = _ai_plan_understanding_text(plan, render_context)
+    changes = _ai_sanitize_plan_text_lines(_ai_plan_change_lines(plan, render_context))
+    checks: list[str] = []
+    if isinstance(structured_plan, dict) and isinstance(structured_plan.get("sections"), list):
+        for section in structured_plan.get("sections") or []:
+            if not isinstance(section, dict):
+                continue
+            if str(section.get("key") or "") != "validation":
+                continue
+            checks = _ai_sanitize_plan_text_lines([item for item in (section.get("items") or []) if isinstance(item, str)])
+            break
+    lines = ["Plan approved."]
+    if understanding:
+        lines.append(f"Ready for sandbox: {_ai_sanitize_plan_text_line(understanding)}")
+    if changes:
+        lines.append("Prepared revision:")
+        lines.extend([f"- {line}" for line in changes[:3]])
+    if checks:
+        lines.append("Check in sandbox:")
+        lines.extend([f"- {line}" for line in checks[:2]])
+    lines.append("Next step: Apply to Sandbox.")
+    return "\n".join(lines)
+
+
+def _ai_sandbox_applied_status_text(session_data: dict | None, patch_data: dict | None) -> str:
+    session_title = session_data.get("title") if isinstance(session_data, dict) and isinstance(session_data.get("title"), str) else ""
+    patch_json = patch_data.get("patch_json") if isinstance(patch_data, dict) and isinstance(patch_data.get("patch_json"), dict) else {}
+    validation_json = patch_data.get("validation_json") if isinstance(patch_data, dict) and isinstance(patch_data.get("validation_json"), dict) else {}
+    ops = [op for op in (patch_json.get("operations") or []) if isinstance(op, dict)]
+    validated_module_labels: dict[str, str] = {}
+    for result in validation_json.get("results") if isinstance(validation_json.get("results"), list) else []:
+        if not isinstance(result, dict):
+            continue
+        module_id = result.get("module_id") if isinstance(result.get("module_id"), str) and result.get("module_id").strip() else None
+        manifest = result.get("manifest") if isinstance(result.get("manifest"), dict) else {}
+        module_def = manifest.get("module") if isinstance(manifest.get("module"), dict) else {}
+        module_name = module_def.get("name") if isinstance(module_def.get("name"), str) and module_def.get("name").strip() else None
+        module_key = module_def.get("key") if isinstance(module_def.get("key"), str) and module_def.get("key").strip() else None
+        if isinstance(module_id, str) and module_id:
+            if isinstance(module_name, str) and module_name:
+                validated_module_labels[module_id] = module_name
+            elif isinstance(module_key, str) and module_key:
+                validated_module_labels[module_id] = _ai_humanize_identifier(module_key) or module_key
+    change_lines: list[str] = []
+    for op in ops:
+        summary = None
+        artifact_id = op.get("artifact_id") if isinstance(op.get("artifact_id"), str) and op.get("artifact_id").strip() else "the module"
+        artifact_label = validated_module_labels.get(artifact_id) or artifact_id
+        if re.match(r"^module_[a-z0-9]+$", artifact_label, flags=re.IGNORECASE):
+            artifact_label = _ai_humanize_identifier(artifact_label) or artifact_label.replace("module_", "module ").strip()
+        if op.get("op") == "add_field":
+            field = op.get("field") if isinstance(op.get("field"), dict) else {}
+            field_label = field.get("label") if isinstance(field.get("label"), str) and field.get("label").strip() else None
+            if field_label:
+                summary = f"Add field '{field_label}' in {artifact_label}."
+        elif op.get("op") == "insert_section_field":
+            placement_label = op.get("placement_label") if isinstance(op.get("placement_label"), str) and op.get("placement_label").strip() else None
+            field_id = op.get("field_id") if isinstance(op.get("field_id"), str) and op.get("field_id").strip() else None
+            field_label = field_id.split(".")[-1].replace("_", " ").title() if isinstance(field_id, str) else "field"
+            if placement_label:
+                summary = f"Place field '{field_label}' in the '{placement_label}' tab in {artifact_label}."
+        elif op.get("op") == "create_module":
+            summary = f"Create module '{artifact_label}'."
+        elif op.get("op") in {"create_automation_record", "update_automation_record"}:
+            summary = _ai_automation_summary_line(op)
+        if isinstance(summary, str) and summary.strip():
+            change_lines.append(f"- {summary.strip()}")
+    lines = ["Sandbox updated."]
+    if isinstance(session_title, str) and session_title.strip():
+        lines.append(f"Request: {session_title.strip()}")
+    if change_lines:
+        lines.append("Applied changes:")
+        lines.extend(change_lines[:4])
+    lines.append("Next step: Test the sandbox result, then publish to live when you're satisfied or ask for another revision.")
+    return "\n".join(lines)
+
+
+def _ai_live_published_status_text(session_data: dict | None, patch_data: dict | None, release_data: dict | None) -> str:
+    session_title = session_data.get("title") if isinstance(session_data, dict) and isinstance(session_data.get("title"), str) else ""
+    release_title = release_data.get("title") if isinstance(release_data, dict) and isinstance(release_data.get("title"), str) else ""
+    patch_json = patch_data.get("patch_json") if isinstance(patch_data, dict) and isinstance(patch_data.get("patch_json"), dict) else {}
+    validation_json = patch_data.get("validation_json") if isinstance(patch_data, dict) and isinstance(patch_data.get("validation_json"), dict) else {}
+    ops = [op for op in (patch_json.get("operations") or []) if isinstance(op, dict)]
+    validated_module_labels: dict[str, str] = {}
+    for result in validation_json.get("results") if isinstance(validation_json.get("results"), list) else []:
+        if not isinstance(result, dict):
+            continue
+        module_id = result.get("module_id") if isinstance(result.get("module_id"), str) and result.get("module_id").strip() else None
+        manifest = result.get("manifest") if isinstance(result.get("manifest"), dict) else {}
+        module_def = manifest.get("module") if isinstance(manifest.get("module"), dict) else {}
+        module_name = module_def.get("name") if isinstance(module_def.get("name"), str) and module_def.get("name").strip() else None
+        module_key = module_def.get("key") if isinstance(module_def.get("key"), str) and module_def.get("key").strip() else None
+        if isinstance(module_id, str) and module_id:
+            if isinstance(module_name, str) and module_name:
+                validated_module_labels[module_id] = module_name
+            elif isinstance(module_key, str) and module_key:
+                validated_module_labels[module_id] = _ai_humanize_identifier(module_key) or module_key
+    change_lines: list[str] = []
+    for op in ops:
+        summary = None
+        artifact_id = op.get("artifact_id") if isinstance(op.get("artifact_id"), str) and op.get("artifact_id").strip() else "the module"
+        artifact_label = validated_module_labels.get(artifact_id) or artifact_id
+        if re.match(r"^module_[a-z0-9]+$", artifact_label, flags=re.IGNORECASE):
+            artifact_label = _ai_humanize_identifier(artifact_label) or artifact_label.replace("module_", "module ").strip()
+        if op.get("op") == "add_field":
+            field = op.get("field") if isinstance(op.get("field"), dict) else {}
+            field_label = field.get("label") if isinstance(field.get("label"), str) and field.get("label").strip() else None
+            if field_label:
+                summary = f"Add field '{field_label}' in {artifact_label}."
+        elif op.get("op") == "insert_section_field":
+            placement_label = op.get("placement_label") if isinstance(op.get("placement_label"), str) and op.get("placement_label").strip() else None
+            field_id = op.get("field_id") if isinstance(op.get("field_id"), str) and op.get("field_id").strip() else None
+            field_label = field_id.split(".")[-1].replace("_", " ").title() if isinstance(field_id, str) else "field"
+            if placement_label:
+                summary = f"Place field '{field_label}' in the '{placement_label}' tab in {artifact_label}."
+        elif op.get("op") == "create_module":
+            summary = f"Create module '{artifact_label}'."
+        elif op.get("op") in {"create_automation_record", "update_automation_record"}:
+            summary = _ai_automation_summary_line(op)
+        if isinstance(summary, str) and summary.strip():
+            change_lines.append(f"- {summary.strip()}")
+    lines = ["Published to live."]
+    if isinstance(session_title, str) and session_title.strip():
+        lines.append(f"Request: {session_title.strip()}")
+    if isinstance(release_title, str) and release_title.strip():
+        lines.append(f"Release: {release_title.strip()}")
+    if change_lines:
+        lines.append("Published changes:")
+        lines.extend(change_lines[:4])
+    lines.append("Next step: Review the live workspace or continue iterating in this session.")
+    return "\n".join(lines)
+
+
+def _ai_persist_plan_result(session_id: str, plan: dict, context: dict, derived: dict, *, message_style: str = "default") -> tuple[dict, str]:
+    persisted_plan = copy.deepcopy(plan)
+    normalized_question_meta = _ai_normalize_required_question_meta(
+        persisted_plan.get("required_question_meta") if isinstance(persisted_plan.get("required_question_meta"), dict) else None,
+        [item for item in (persisted_plan.get("required_questions") or []) if isinstance(item, str) and item.strip()],
+    )
+    persisted_plan["required_question_meta"] = normalized_question_meta
+    normalized_plan_v1 = _ai_build_structured_plan(plan, context)
+    persisted_plan["plan_v1"] = normalized_plan_v1
+    persisted_plan["structured_plan"] = normalized_plan_v1
+    plan_record = _ai_create_record(
+        _AI_ENTITY_PLAN,
+        {
+            "session_id": session_id,
+            "status": "draft",
+            "scope_summary": persisted_plan.get("scope"),
+            "affected_artifacts_json": persisted_plan.get("affected_artifacts"),
+            "questions_json": persisted_plan.get("required_questions"),
+            "required_question_meta": normalized_question_meta,
+            "assumptions_json": persisted_plan.get("assumptions"),
+            "risks_json": persisted_plan.get("risk_flags"),
+            "plan_json": {"plan": persisted_plan, "context": context},
+            "created_at": _ai_now(),
+        },
+    )
+    plan_data = _ai_record_data(plan_record)
+    if message_style == "ready_revision":
+        assistant_text = _ai_ready_revision_status_text(persisted_plan, context)
+    else:
+        assistant_text = _ai_plan_assistant_text(persisted_plan, context)
+    _ai_create_record(
+        _AI_ENTITY_MESSAGE,
+        {
+            "session_id": session_id,
+            "role": "assistant",
+            "body": assistant_text,
+            "message_type": "question" if (plan.get("required_questions") or []) else "plan",
+            "created_at": _ai_now(),
+        },
+    )
+    _ai_update_record(
+        _AI_ENTITY_SESSION,
+        session_id,
+        {
+            "status": derived.get("status") or "planning",
+            "summary": assistant_text,
+            "latest_plan_id": plan_data.get("id"),
+            "last_activity_at": _ai_now(),
+            "last_error": None,
+        },
+    )
+    return plan_data, assistant_text
+
+
+def _ai_operations_signature(operations: Any) -> str:
+    encoded = jsonable_encoder(operations)
+    payload = json.dumps(encoded, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _ai_latest_applied_patchset_for_session(session_id: str) -> dict | None:
+    return _ai_latest_session_record(
+        _AI_ENTITY_PATCHSET,
+        session_id,
+        limit=500,
+        predicate=lambda data: data.get("status") == "applied",
+    )
+
+
+def _ai_plan_question_superseded_by_apply(session_id: str, latest_plan: dict | None) -> bool:
+    if not isinstance(latest_plan, dict):
+        return False
+    plan_created_at = latest_plan.get("created_at") if isinstance(latest_plan.get("created_at"), str) else ""
+    if not plan_created_at:
+        return False
+    latest_applied = _ai_latest_applied_patchset_for_session(session_id)
+    if not isinstance(latest_applied, dict):
+        return False
+    applied_at = latest_applied.get("applied_at") if isinstance(latest_applied.get("applied_at"), str) else None
+    patchset_created_at = latest_applied.get("created_at") if isinstance(latest_applied.get("created_at"), str) else None
+    latest_apply_marker = applied_at or patchset_created_at or ""
+    return bool(latest_apply_marker and latest_apply_marker >= plan_created_at)
+
+
+def _ai_active_question_for_session(session_id: str) -> str | None:
+    latest = _ai_latest_plan_for_session(session_id)
+    if not isinstance(latest, dict):
+        return None
+    if _ai_plan_question_superseded_by_apply(session_id, latest):
+        return None
+    questions = latest.get("questions_json")
+    if isinstance(questions, list):
+        for q in questions:
+            if isinstance(q, str) and q.strip():
+                return q.strip()
+    plan_json = latest.get("plan_json")
+    if isinstance(plan_json, dict):
+        plan_body = plan_json.get("plan")
+        if isinstance(plan_body, dict) and isinstance(plan_body.get("required_questions"), list):
+            for q in plan_body.get("required_questions"):
+                if isinstance(q, str) and q.strip():
+                    return q.strip()
+    return None
+
+
+def _ai_active_question_meta_for_session(session_id: str) -> dict | None:
+    latest = _ai_latest_plan_for_session(session_id)
+    if not isinstance(latest, dict):
+        return None
+    if _ai_plan_question_superseded_by_apply(session_id, latest):
+        return None
+    questions = latest.get("questions_json") if isinstance(latest.get("questions_json"), list) else []
+    direct = latest.get("required_question_meta")
+    inferred_direct = _ai_normalize_required_question_meta(direct if isinstance(direct, dict) else None, questions)
+    if isinstance(inferred_direct, dict):
+        return inferred_direct
+    plan_json = latest.get("plan_json")
+    if isinstance(plan_json, dict):
+        plan_body = plan_json.get("plan")
+        if isinstance(plan_body, dict):
+            inferred_nested = _ai_normalize_required_question_meta(
+                plan_body.get("required_question_meta") if isinstance(plan_body.get("required_question_meta"), dict) else None,
+                plan_body.get("required_questions") if isinstance(plan_body.get("required_questions"), list) else [],
+            )
+            if isinstance(inferred_nested, dict):
+                return inferred_nested
+    return None
+
+
+def _ai_session_release_records(session_id: str) -> list[dict]:
+    releases = []
+    for item in _ai_sort(_ai_list_records(_AI_ENTITY_RELEASE, limit=500), field="created_at", reverse=True):
+        data = _ai_record_data(item)
+        if data.get("session_id") == session_id:
+            releases.append(data)
+    return releases
+
+
+def _ai_session_validation_records(session_id: str) -> list[dict]:
+    runs = []
+    for item in _ai_sort(_ai_list_records(_AI_ENTITY_VALIDATION_RUN, limit=1000), field="created_at", reverse=True):
+        data = _ai_record_data(item)
+        if data.get("session_id") == session_id:
+            runs.append(data)
+    return runs
+
+
+def _ai_session_sandbox_records(session_id: str) -> list[dict]:
+    sandboxes = []
+    for item in _ai_sort(_ai_list_records(_AI_ENTITY_SANDBOX, limit=200), field="created_at", reverse=True):
+        data = _ai_record_data(item)
+        if data.get("session_id") == session_id:
+            sandboxes.append(data)
+    return sandboxes
+
+
+def _ai_latest_sandbox_record(session_id: str) -> dict | None:
+    items = _ai_session_sandbox_records(session_id)
+    return items[0] if items else None
+
+
+def _ai_session_event_records(session_id: str) -> list[dict]:
+    events = []
+    for item in _ai_sort(_ai_list_records(_AI_ENTITY_EVENT_LOG, limit=2000), field="created_at", reverse=True):
+        data = _ai_record_data(item)
+        if data.get("session_id") == session_id:
+            events.append(data)
+    return events
+
+
+def _ai_is_virtual_sandbox_workspace_id(workspace_id: Any) -> bool:
+    return isinstance(workspace_id, str) and workspace_id.startswith("sandbox_")
+
+
+def _ai_unwrap_record_payload(item: dict | None) -> dict | None:
+    if not isinstance(item, dict):
+        return None
+    if isinstance(item.get("record"), dict):
+        return item.get("record")
+    return item
+
+
+def _ai_ops_workspace_id_for_session(session_data: dict | None, fallback_workspace_id: str | None = None) -> str | None:
+    payload = _ai_unwrap_record_payload(session_data)
+    if isinstance(payload, dict):
+        sandbox_workspace_id = payload.get("sandbox_workspace_id") if isinstance(payload.get("sandbox_workspace_id"), str) else ""
+        sandbox_status = payload.get("sandbox_status") if isinstance(payload.get("sandbox_status"), str) else ""
+        if (
+            isinstance(sandbox_workspace_id, str)
+            and sandbox_workspace_id.strip()
+            and not _ai_is_virtual_sandbox_workspace_id(sandbox_workspace_id)
+            and sandbox_status != "discarded"
+        ):
+            return sandbox_workspace_id.strip()
+        session_workspace_id = payload.get("workspace_id") if isinstance(payload.get("workspace_id"), str) else ""
+        if isinstance(session_workspace_id, str) and session_workspace_id.strip():
+            return session_workspace_id.strip()
+    if isinstance(fallback_workspace_id, str) and fallback_workspace_id.strip():
+        return fallback_workspace_id.strip()
+    return None
+
+
+def _ai_live_workspace_id_for_session(session_data: dict | None, fallback_workspace_id: str | None = None) -> str | None:
+    payload = _ai_unwrap_record_payload(session_data)
+    if isinstance(payload, dict):
+        session_workspace_id = payload.get("workspace_id") if isinstance(payload.get("workspace_id"), str) else ""
+        if isinstance(session_workspace_id, str) and session_workspace_id.strip():
+            return session_workspace_id.strip()
+    if isinstance(fallback_workspace_id, str) and fallback_workspace_id.strip():
+        return fallback_workspace_id.strip()
+    return None
+
+
+def _ai_strict_sandbox_workspace_id_for_session(session_data: dict | None) -> str | None:
+    payload = _ai_unwrap_record_payload(session_data)
+    if not isinstance(payload, dict):
+        return None
+    sandbox_workspace_id = payload.get("sandbox_workspace_id") if isinstance(payload.get("sandbox_workspace_id"), str) else ""
+    sandbox_status = payload.get("sandbox_status") if isinstance(payload.get("sandbox_status"), str) else ""
+    if (
+        isinstance(sandbox_workspace_id, str)
+        and sandbox_workspace_id.strip()
+        and not _ai_is_virtual_sandbox_workspace_id(sandbox_workspace_id)
+        and sandbox_status != "discarded"
+    ):
+        return sandbox_workspace_id.strip()
+    return None
+
+
+def _ai_release_admin_denied(actor: dict | None) -> JSONResponse | None:
+    workspace_role = actor.get("workspace_role") if isinstance(actor, dict) else None
+    platform_role = actor.get("platform_role") if isinstance(actor, dict) else None
+    if workspace_role == "admin" or platform_role == "superadmin":
+        return None
+    return _error_response("FORBIDDEN", "Admin role required", status=403)
+
+
+@contextmanager
+def _ai_ops_workspace_scope(request: Request, workspace_id: str | None, actor: dict | None):
+    target_workspace_id = workspace_id.strip() if isinstance(workspace_id, str) and workspace_id.strip() else None
+    if not target_workspace_id:
+        yield None
+        return
+    prior_actor = getattr(request.state, "actor", None)
+    token = None
+    if target_workspace_id != get_org_id():
+        token = set_org_id(target_workspace_id)
+    scoped_actor = _ai_actor_for_workspace(actor, target_workspace_id)
+    if isinstance(scoped_actor, dict):
+        request.state.actor = scoped_actor
+    try:
+        yield target_workspace_id
+    finally:
+        if prior_actor is not None:
+            request.state.actor = prior_actor
+        elif hasattr(request.state, "actor"):
+            delattr(request.state, "actor")
+        if token is not None:
+            reset_org_id(token)
+
+
+def _ai_ensure_session_sandbox(session_data: dict) -> dict:
+    session_id = session_data.get("id") if isinstance(session_data.get("id"), str) else ""
+    title = session_data.get("title") if isinstance(session_data.get("title"), str) else "AI Sandbox"
+    sandbox_workspace_id = session_data.get("sandbox_workspace_id") if isinstance(session_data.get("sandbox_workspace_id"), str) else ""
+    sandbox_name = session_data.get("sandbox_name") if isinstance(session_data.get("sandbox_name"), str) else ""
+    sandbox_status = session_data.get("sandbox_status") if isinstance(session_data.get("sandbox_status"), str) else ""
+    if not sandbox_workspace_id:
+        normalized = re.sub(r"[^a-z0-9]", "", session_id.lower())[:12] or "sandbox"
+        sandbox_workspace_id = f"sandbox_{normalized}"
+    if not sandbox_name.strip():
+        sandbox_name = f"{title.strip() or 'AI Build'} Sandbox"
+    if not sandbox_status:
+        sandbox_status = "active"
+    now = _ai_now()
+    return {
+        "sandbox_workspace_id": sandbox_workspace_id,
+        "sandbox_name": sandbox_name,
+        "sandbox_status": sandbox_status,
+        "sandbox_url": f"/home?octo_ai_sandbox=1&octo_ai_session={session_id}&octo_ai_workspace={sandbox_workspace_id}",
+        "seed_mode": session_data.get("seed_mode") if isinstance(session_data.get("seed_mode"), str) else "structure_only",
+        "simulation_mode": session_data.get("simulation_mode") if isinstance(session_data.get("simulation_mode"), str) else "simulate_side_effects",
+        "created_at": session_data.get("sandbox_created_at") if isinstance(session_data.get("sandbox_created_at"), str) else now,
+        "expires_at": session_data.get("sandbox_expires_at") if isinstance(session_data.get("sandbox_expires_at"), str) else "",
+        "side_effect_policy": "simulate_only",
+    }
+
+
+def _ai_upsert_session_sandbox_record(session_data: dict, *, status: str | None = None, snapshot_ref: str | None = None, last_patchset_applied_id: str | None = None) -> dict:
+    session_id = session_data.get("id") if isinstance(session_data.get("id"), str) else ""
+    if not session_id:
+        return {}
+    sandbox_meta = _ai_ensure_session_sandbox(session_data)
+    existing_id = session_data.get("active_sandbox_id") if isinstance(session_data.get("active_sandbox_id"), str) else ""
+    existing = _ai_get_record(_AI_ENTITY_SANDBOX, existing_id) if existing_id else None
+    if not existing:
+        existing = _ai_latest_sandbox_record(session_id)
+    now = _ai_now()
+    payload = {
+        "session_id": session_id,
+        "workspace_id": session_data.get("workspace_id") if isinstance(session_data.get("workspace_id"), str) else get_org_id(),
+        "sandbox_workspace_id": sandbox_meta.get("sandbox_workspace_id"),
+        "sandbox_name": sandbox_meta.get("sandbox_name"),
+        "status": status or sandbox_meta.get("sandbox_status") or "active",
+        "snapshot_ref": snapshot_ref if isinstance(snapshot_ref, str) else (existing.get("snapshot_ref") if isinstance(existing, dict) else ""),
+        "workspace_base_version": session_data.get("workspace_base_version") if isinstance(session_data.get("workspace_base_version"), str) else "",
+        "last_patchset_applied_id": last_patchset_applied_id if isinstance(last_patchset_applied_id, str) else (existing.get("last_patchset_applied_id") if isinstance(existing, dict) else ""),
+        "seed_mode": sandbox_meta.get("seed_mode"),
+        "simulation_mode": sandbox_meta.get("simulation_mode"),
+        "updated_at": now,
+    }
+    if isinstance(existing, dict) and isinstance(existing.get("id"), str):
+        updated = _ai_update_record(_AI_ENTITY_SANDBOX, existing.get("id"), payload)
+        return _ai_record_data(updated)
+    payload["created_at"] = now
+    created = _ai_create_record(_AI_ENTITY_SANDBOX, payload)
+    return _ai_record_data(created)
+
+
+def _ai_create_validation_run_record(session_id: str, patchset_id: str | None, result: dict) -> dict:
+    status = "passed" if result.get("ok") else "failed"
+    created = _ai_create_record(
+        _AI_ENTITY_VALIDATION_RUN,
+        {
+            "session_id": session_id,
+            "patchset_id": patchset_id or "",
+            "status": status,
+            "warnings_json": result.get("warnings") if isinstance(result.get("warnings"), list) else [],
+            "errors_json": result.get("errors") if isinstance(result.get("errors"), list) else [],
+            "result_json": result,
+            "created_at": _ai_now(),
+        },
+    )
+    return _ai_record_data(created)
+
+
+def _ai_log_session_event(session_id: str, event_type: str, message: str, *, severity: str = "info", sandbox_id: str | None = None, payload: Any = None) -> dict:
+    created = _ai_create_record(
+        _AI_ENTITY_EVENT_LOG,
+        {
+            "session_id": session_id,
+            "sandbox_id": sandbox_id or "",
+            "event_type": event_type,
+            "severity": severity,
+            "message": message,
+            "payload_json": payload if isinstance(payload, (dict, list)) else {"value": payload} if payload is not None else {},
+            "created_at": _ai_now(),
+        },
+    )
+    return _ai_record_data(created)
+
+
+def _ai_create_db_sandbox_workspace(actor: dict | None, sandbox_name: str) -> str:
+    actor_user_id = actor.get("user_id") if isinstance(actor, dict) else None
+    actor_email = actor.get("email") if isinstance(actor, dict) else None
+    if not isinstance(actor_user_id, str) or not actor_user_id.strip():
+        raise RuntimeError("sandbox_workspace_actor_required")
+    return create_workspace_for_user({"id": actor_user_id, "email": actor_email}, name=sandbox_name)
+
+
+def _ai_json_clone_payload(value: Any) -> Any:
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except Exception:
+            return value
+    return copy.deepcopy(value)
+
+
+def _ai_clone_workspace_structure_to_sandbox(source_workspace_id: str, sandbox_workspace_id: str) -> None:
+    if not USE_DB or not source_workspace_id or not sandbox_workspace_id or source_workspace_id == sandbox_workspace_id:
+        return
+    with get_conn() as conn:
+        module_rows = fetch_all(
+            conn,
+            """
+            select module_id, enabled, current_hash, name, installed_at, updated_at, tags,
+                   status, active_version, last_error, archived, display_order, icon_key
+            from modules_installed
+            where org_id=%s
+            """,
+            [source_workspace_id],
+            query_name="octo_ai.sandbox.modules_source",
+        )
+        module_ids = [row.get("module_id") for row in module_rows if isinstance(row.get("module_id"), str) and row.get("module_id")]
+        if module_ids:
+            snapshot_rows = fetch_all(
+                conn,
+                """
+                select module_id, manifest_hash, manifest, created_at, actor, reason
+                from manifest_snapshots
+                where org_id=%s and module_id = any(%s)
+                """,
+                [source_workspace_id, module_ids],
+                query_name="octo_ai.sandbox.snapshots_source",
+            )
+            for row in snapshot_rows:
+                execute(
+                    conn,
+                    """
+                    insert into manifest_snapshots (org_id, module_id, manifest_hash, manifest, created_at, actor, reason)
+                    values (%s,%s,%s,%s,%s,%s,%s)
+                    on conflict do nothing
+                    """,
+                    [
+                        sandbox_workspace_id,
+                        row.get("module_id"),
+                        row.get("manifest_hash"),
+                        json.dumps(_ai_json_clone_payload(row.get("manifest")), default=str),
+                        row.get("created_at") or _now(),
+                        json.dumps(_ai_json_clone_payload(row.get("actor")), default=str) if row.get("actor") is not None else None,
+                        row.get("reason"),
+                    ],
+                    query_name="octo_ai.sandbox.snapshots_clone",
+                )
+            version_rows = fetch_all(
+                conn,
+                """
+                select module_id, version_id, version_num, manifest_hash, manifest, created_at, created_by, notes
+                from module_versions
+                where org_id=%s and module_id = any(%s)
+                """,
+                [source_workspace_id, module_ids],
+                query_name="octo_ai.sandbox.versions_source",
+            )
+            for row in version_rows:
+                execute(
+                    conn,
+                    """
+                    insert into module_versions (org_id, module_id, version_id, version_num, manifest_hash, manifest, created_at, created_by, notes)
+                    values (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    on conflict do nothing
+                    """,
+                    [
+                        sandbox_workspace_id,
+                        row.get("module_id"),
+                        row.get("version_id"),
+                        row.get("version_num"),
+                        row.get("manifest_hash"),
+                        json.dumps(_ai_json_clone_payload(row.get("manifest")), default=str),
+                        row.get("created_at") or _now(),
+                        json.dumps(_ai_json_clone_payload(row.get("created_by")), default=str) if row.get("created_by") is not None else None,
+                        row.get("notes"),
+                    ],
+                    query_name="octo_ai.sandbox.versions_clone",
+                )
+            audit_rows = fetch_all(
+                conn,
+                """
+                select module_id, audit_id, audit, created_at
+                from module_audit
+                where org_id=%s and module_id = any(%s)
+                """,
+                [source_workspace_id, module_ids],
+                query_name="octo_ai.sandbox.audit_source",
+            )
+            for row in audit_rows:
+                execute(
+                    conn,
+                    """
+                    insert into module_audit (org_id, module_id, audit_id, audit, created_at)
+                    values (%s,%s,%s,%s,%s)
+                    on conflict do nothing
+                    """,
+                    [
+                        sandbox_workspace_id,
+                        row.get("module_id"),
+                        row.get("audit_id"),
+                        json.dumps(_ai_json_clone_payload(row.get("audit")), default=str),
+                        row.get("created_at") or _now(),
+                    ],
+                    query_name="octo_ai.sandbox.audit_clone",
+                )
+            for row in module_rows:
+                execute(
+                    conn,
+                    """
+                    insert into modules_installed (
+                      org_id, module_id, enabled, current_hash, name, installed_at, updated_at, tags,
+                      status, active_version, last_error, archived, display_order, icon_key
+                    )
+                    values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    on conflict (org_id, module_id) do update
+                    set enabled=excluded.enabled,
+                        current_hash=excluded.current_hash,
+                        name=excluded.name,
+                        updated_at=excluded.updated_at,
+                        tags=excluded.tags,
+                        status=excluded.status,
+                        active_version=excluded.active_version,
+                        last_error=excluded.last_error,
+                        archived=excluded.archived,
+                        display_order=excluded.display_order,
+                        icon_key=excluded.icon_key
+                    """,
+                    [
+                        sandbox_workspace_id,
+                        row.get("module_id"),
+                        bool(row.get("enabled")),
+                        row.get("current_hash"),
+                        row.get("name"),
+                        row.get("installed_at") or _now(),
+                        row.get("updated_at") or _now(),
+                        json.dumps(_ai_json_clone_payload(row.get("tags")), default=str) if row.get("tags") is not None else None,
+                        row.get("status") or "installed",
+                        row.get("active_version"),
+                        row.get("last_error"),
+                        bool(row.get("archived")),
+                        row.get("display_order"),
+                        row.get("icon_key"),
+                    ],
+                    query_name="octo_ai.sandbox.modules_clone",
+                )
+        workspace_prefs = fetch_one(
+            conn,
+            """
+            select theme, colors, logo_url, ui_density
+            from workspace_ui_prefs
+            where org_id=%s
+            """,
+            [source_workspace_id],
+            query_name="octo_ai.sandbox.prefs_source",
+        )
+        if workspace_prefs:
+            execute(
+                conn,
+                """
+                insert into workspace_ui_prefs (org_id, theme, colors, logo_url, ui_density, updated_at)
+                values (%s,%s,%s,%s,%s,%s)
+                on conflict (org_id) do update
+                set theme=excluded.theme,
+                    colors=excluded.colors,
+                    logo_url=excluded.logo_url,
+                    ui_density=excluded.ui_density,
+                    updated_at=excluded.updated_at
+                """,
+                [
+                    sandbox_workspace_id,
+                    workspace_prefs.get("theme"),
+                    json.dumps(_ai_json_clone_payload(workspace_prefs.get("colors")), default=str) if workspace_prefs.get("colors") is not None else None,
+                    workspace_prefs.get("logo_url"),
+                    workspace_prefs.get("ui_density"),
+                    _now(),
+                ],
+                query_name="octo_ai.sandbox.prefs_clone",
+            )
+
+
+def _ai_create_release_record(session_data: dict, patch_data: dict, actor_id: str, result: Any = None, status: str = "live") -> dict:
+    session_id = session_data.get("id") if isinstance(session_data.get("id"), str) else ""
+    patchset_id = patch_data.get("id") if isinstance(patch_data.get("id"), str) else ""
+    sandbox = _ai_ensure_session_sandbox(session_data)
+    title = session_data.get("title") if isinstance(session_data.get("title"), str) and session_data.get("title").strip() else "Octo AI Release"
+    summary = session_data.get("summary") if isinstance(session_data.get("summary"), str) and session_data.get("summary").strip() else title
+    record = {
+        "session_id": session_id,
+        "patchset_id": patchset_id,
+        "title": title,
+        "summary": summary,
+        "status": status,
+        "sandbox_workspace_id": sandbox.get("sandbox_workspace_id"),
+        "sandbox_name": sandbox.get("sandbox_name"),
+        "result_json": result if isinstance(result, (dict, list)) else {"result": result},
+        "promoted_by": actor_id,
+        "created_at": _ai_now(),
+    }
+    created = _ai_create_record(_AI_ENTITY_RELEASE, record)
+    return _ai_record_data(created)
+
+
+def _ai_session_patchset_records(session_id: str, *, reverse: bool = True) -> list[dict]:
+    if not isinstance(session_id, str) or not session_id:
+        return []
+    rows = []
+    for item in _ai_sort(_ai_list_records(_AI_ENTITY_PATCHSET, limit=2000), field="created_at", reverse=reverse):
+        data = _ai_record_data(item)
+        if data.get("session_id") == session_id:
+            rows.append(data)
+    return rows
+
+
+def _ai_latest_applied_patchset_for_session(session_id: str) -> dict | None:
+    for patchset in _ai_session_patchset_records(session_id, reverse=True):
+        if patchset.get("status") == "applied":
+            return patchset
+    return None
+
+
+def _ai_build_release_patch_bundle(session_id: str, selected_patchset_id: str | None = None) -> dict | None:
+    patchsets = _ai_session_patchset_records(session_id, reverse=False)
+    if not patchsets:
+        return None
+    selected_index = len(patchsets) - 1
+    if isinstance(selected_patchset_id, str) and selected_patchset_id:
+        for idx, patchset in enumerate(patchsets):
+            if patchset.get("id") == selected_patchset_id:
+                selected_index = idx
+                break
+        else:
+            return None
+    included_patchsets: list[dict] = []
+    base_by_artifact: dict[tuple[str, str], str | None] = {}
+    operations: list[dict] = []
+    noop_reason = ""
+    for patchset in patchsets[: selected_index + 1]:
+        if patchset.get("status") != "applied":
+            continue
+        included_patchsets.append(patchset)
+        patch_json = patchset.get("patch_json") if isinstance(patchset.get("patch_json"), dict) else {}
+        if patch_json.get("noop") is True:
+            if not noop_reason and isinstance(patch_json.get("reason"), str) and patch_json.get("reason").strip():
+                noop_reason = patch_json.get("reason").strip()
+        for op in patch_json.get("operations") if isinstance(patch_json.get("operations"), list) else []:
+            if isinstance(op, dict):
+                operations.append(copy.deepcopy(op))
+        for ref in patchset.get("base_snapshot_refs_json") if isinstance(patchset.get("base_snapshot_refs_json"), list) else []:
+            if not isinstance(ref, dict):
+                continue
+            artifact_type = ref.get("artifact_type") if isinstance(ref.get("artifact_type"), str) else ""
+            artifact_key = ref.get("artifact_key") if isinstance(ref.get("artifact_key"), str) else ""
+            artifact_version = ref.get("artifact_version") if isinstance(ref.get("artifact_version"), str) else None
+            if artifact_type and artifact_key and (artifact_type, artifact_key) not in base_by_artifact:
+                base_by_artifact[(artifact_type, artifact_key)] = artifact_version
+    if not included_patchsets:
+        return None
+    base_refs = [
+        {
+            "artifact_type": artifact_type,
+            "artifact_key": artifact_key,
+            "artifact_version": artifact_version,
+        }
+        for (artifact_type, artifact_key), artifact_version in base_by_artifact.items()
+    ]
+    patch_json: dict[str, Any]
+    if operations:
+        patch_json = {"operations": operations, "noop": False}
+    else:
+        patch_json = {
+            "operations": [],
+            "noop": True,
+            "reason": noop_reason or "No changes required.",
+        }
+    return {
+        "patch_json": patch_json,
+        "base_snapshot_refs_json": base_refs,
+        "included_patchset_ids": [
+            patchset.get("id")
+            for patchset in included_patchsets
+            if isinstance(patchset.get("id"), str) and patchset.get("id")
+        ],
+    }
+
+
+def _ai_release_snapshot_records(release_id: str, patchset_id: str | None = None) -> list[dict]:
+    rows = []
+    for item in _ai_sort(_ai_list_records(_AI_ENTITY_SNAPSHOT, limit=5000), field="created_at", reverse=True):
+        data = _ai_record_data(item)
+        if isinstance(release_id, str) and release_id and data.get("release_id") == release_id:
+            rows.append(data)
+            continue
+        if (
+            isinstance(patchset_id, str)
+            and patchset_id
+            and data.get("patchset_id") == patchset_id
+            and data.get("snapshot_scope") == "live_release"
+        ):
+            rows.append(data)
+    return rows
+
+
+def _ai_answer_payload(question: str, action: str, custom_text: str | None) -> tuple[str, dict]:
+    _ = question
+    action_norm = _ai_norm_token(action)
+    custom = (custom_text or "").strip()
+    if custom:
+        return custom, {}
+    if action_norm in {"approve", "yes"}:
+        return "Approved.", {}
+    if action_norm in {"disapprove", "decline", "no"}:
+        return "Declined.", {}
+    if action_norm:
+        return f"Answered: {action}.", {}
+    return "Answered.", {}
+
+
+def _ai_text_is_decline_response(text: str | None) -> bool:
+    normalized = _ai_norm_token(text or "")
+    if not normalized:
+        return False
+    if normalized in {
+        "decline",
+        "declined",
+        "disapprove",
+        "disapproved",
+        "no",
+        "n",
+        "nope",
+        "not yet",
+        "change it",
+        "revise",
+        "needs changes",
+    }:
+        return True
+    return bool(
+        re.search(r"\b(?:change|revise|rework|adjust) (?:it|this|that|the plan)\b", normalized)
+        or re.search(r"\bneeds? changes?\b", normalized)
+        or re.search(r"\bnot (?:right|quite right|yet)\b", normalized)
+        or re.search(r"\bdon t\b.*\b(?:apply|proceed|use)\b", normalized)
+    )
+
+
+def _ai_text_is_approval_response(text: str | None) -> bool:
+    normalized = _ai_norm_token(text or "")
+    if not normalized or _ai_text_is_decline_response(text):
+        return False
+    if normalized in {
+        "approve",
+        "approved",
+        "yes",
+        "y",
+        "ok",
+        "okay",
+        "confirm",
+        "confirmed",
+        "looks good",
+        "go ahead",
+        "all good",
+        "all set",
+        "works for me",
+        "ship it",
+        "ready to go",
+    }:
+        return True
+    return bool(
+        re.search(r"\b(?:looks|sounds) (?:good|right|fine)\b", normalized)
+        or re.search(r"\bthat (?:looks|sounds|works) (?:good|right|fine)\b", normalized)
+        or re.search(r"\b(?:all good|all set)\b", normalized)
+        or re.search(r"\bworks? for me\b", normalized)
+        or re.search(r"\bship it\b", normalized)
+        or re.search(r"\bgo ahead\b", normalized)
+        or re.search(r"\blet s (?:do it|go ahead)\b", normalized)
+        or re.search(r"\bready to go\b", normalized)
+        or re.search(r"\bproceed\b", normalized)
+        or re.search(r"\b(?:prepare|generate|create)\b.*\b(?:draft|patchset)\b", normalized)
+    )
+
+
+def _ai_answer_looks_like_fresh_request(text: str) -> bool:
+    if not isinstance(text, str):
+        return False
+    normalized = text.strip()
+    if not normalized:
+        return False
+    lower = normalized.lower()
+    if len(lower.split()) < 4:
+        return False
+    has_request_verb = bool(re.search(r"\b(add|create|make|update|change|remove|delete|build|upgrade)\b", lower))
+    has_request_frame = bool(re.search(r"\b(?:can|could|would|will)\s+you\b", lower) or re.search(r"\bi want(?: you)? to\b", lower))
+    has_restart_marker = bool(re.search(r"\b(actually|instead|switch|now|use|apply)\b", lower))
+    return has_request_verb and (has_request_frame or has_restart_marker or len(lower.split()) >= 4)
+
+
+def _ai_text_includes_revision_request(text: str, module_index: dict[str, dict]) -> bool:
+    if not isinstance(text, str) or not text.strip():
+        return False
+    if _ai_text_starts_new_request(text, module_index):
+        return True
+    lower = text.strip().lower()
+    has_edit_verb = bool(re.search(r"\b(add|create|make|update|change|remove|delete|build|upgrade|move|put)\b", lower))
+    if not has_edit_verb:
+        return False
+    has_revision_marker = bool(
+        re.search(
+            r"\b(but|also|plus|instead|change|revise|adjust|tweak|another|too|as well|small change|minor change|one change|one tweak)\b",
+            lower,
+        )
+    )
+    if has_revision_marker:
+        return True
+    return bool(re.search(r"\b(?:and|then)\b.*\b(add|update|change|remove|delete|move|put)\b", lower))
+
+
+def _ai_text_starts_new_request(text: str, module_index: dict[str, dict]) -> bool:
+    if not isinstance(text, str) or not text.strip():
+        return False
+    lower = text.strip().lower()
+    explicit_module_target = _ai_extract_module_target_from_text(text, list(module_index.keys()), module_index)
+    if _ai_answer_looks_like_fresh_request(text):
+        if len(lower.split()) >= 5:
+            return True
+        if isinstance(explicit_module_target, str) and explicit_module_target and re.search(r"\b(actually|instead|switch|now|use|apply)\b", lower):
+            return True
+    return False
+
+
+def _ai_answer_restarts_request(question_id: str | None, text: str, module_index: dict[str, dict]) -> bool:
+    restartable_questions = {
+        "plan_revision",
+        "confirm_plan",
+        "target_resolution",
+        "module_target",
+        "entity_target",
+        "field_target",
+        "field_spec",
+        "tab_label",
+        "tab_target",
+        "field_exists_resolution",
+        "tab_exists_resolution",
+    }
+    if question_id not in restartable_questions:
+        return False
+    if not isinstance(text, str) or not text.strip():
+        return False
+    lower = text.strip().lower()
+    explicit_module_target = _ai_extract_module_target_from_text(text, list(module_index.keys()), module_index)
+    if _ai_text_starts_new_request(text, module_index):
+        return True
+    if question_id not in restartable_questions:
+        return False
+    if not isinstance(explicit_module_target, str) or not explicit_module_target:
+        return False
+    return bool(re.search(r"\b(actually|instead|switch|now|use|apply)\b", lower))
+
+
+def _ai_parse_placement_answer(action: str | None, text: str | None, defaults: dict | None = None) -> dict[str, bool] | None:
+    normalized = _ai_norm_token(text or "")
+    _ = defaults if isinstance(defaults, dict) else {}
+
+    if normalized:
+        if (
+            normalized in {"both", "both please", "all", "all please", "everywhere", "everywhere please"}
+            or
+            "form and list" in normalized
+            or "list and form" in normalized
+            or "both form and list" in normalized
+            or "both list and form" in normalized
+            or "both views" in normalized
+            or "all views" in normalized
+        ):
+            return {"include_form": True, "include_list": True}
+        if (
+            re.fullmatch(r"(?:the )?form(?: please)?", normalized)
+            or
+            "form only" in normalized
+            or "only form" in normalized
+            or "just form" in normalized
+            or "just the form" in normalized
+            or "in form only" in normalized
+            or "on form only" in normalized
+        ):
+            return {"include_form": True, "include_list": False}
+        if (
+            re.fullmatch(r"(?:the )?list(?: please)?", normalized)
+            or
+            "list only" in normalized
+            or "only list" in normalized
+            or "just list" in normalized
+            or "just the list" in normalized
+            or "in list only" in normalized
+            or "on list only" in normalized
+        ):
+            return {"include_form": False, "include_list": True}
+        if (
+            normalized in {"schema", "schema please", "none", "none please"}
+            or
+            "schema only" in normalized
+            or "no views" in normalized
+            or "not in views" in normalized
+            or "do not place it in views" in normalized
+            or "dont place it in views" in normalized
+            or "leave it schema only" in normalized
+            or "neither" in normalized
+            or "leave it out of both" in normalized
+        ):
+            return {"include_form": False, "include_list": False}
+
+    return None
+
+
+def _ai_find_entity_idx(manifest: dict, entity_id: str) -> int | None:
+    entities = manifest.get("entities") if isinstance(manifest, dict) else None
+    if not isinstance(entities, list):
+        return None
+    normalized = entity_id if entity_id.startswith("entity.") else f"entity.{entity_id}"
+    for idx, entity in enumerate(entities):
+        if isinstance(entity, dict) and entity.get("id") == normalized:
+            return idx
+    return None
+
+
+def _ai_find_field_idx(entity: dict, field_id: str) -> int | None:
+    fields = entity.get("fields") if isinstance(entity, dict) and isinstance(entity.get("fields"), list) else []
+    for idx, field in enumerate(fields):
+        if isinstance(field, dict) and field.get("id") == field_id:
+            return idx
+    return None
+
+
+def _ai_find_view_idx(manifest: dict, view_id: str) -> int | None:
+    views = manifest.get("views") if isinstance(manifest, dict) else None
+    if not isinstance(views, list):
+        return None
+    for idx, view in enumerate(views):
+        if isinstance(view, dict) and view.get("id") == view_id:
+            return idx
+    return None
+
+
+def _ai_find_page_idx(manifest: dict, page_id: str) -> int | None:
+    pages = manifest.get("pages") if isinstance(manifest, dict) else None
+    if not isinstance(pages, list):
+        return None
+    for idx, page in enumerate(pages):
+        if isinstance(page, dict) and page.get("id") == page_id:
+            return idx
+    return None
+
+
+def _ai_compile_module_ops(manifest: dict, operations: list[dict]) -> tuple[list[dict], list[dict]]:
+    ops: list[dict] = []
+    errors: list[dict] = []
+    for idx, operation in enumerate(operations):
+        if not isinstance(operation, dict):
+            errors.append({"code": "AI_PATCH_OP_INVALID", "message": "operation must be object", "path": f"operations[{idx}]"})
+            continue
+        op_name = operation.get("op")
+        if not isinstance(op_name, str):
+            errors.append({"code": "AI_PATCH_OP_INVALID", "message": "op is required", "path": f"operations[{idx}].op"})
+            continue
+
+        if op_name == "add_field":
+            entity_idx = _ai_find_entity_idx(manifest, str(operation.get("entity_id") or ""))
+            field = operation.get("field")
+            if entity_idx is None or not isinstance(field, dict) or not isinstance(field.get("id"), str):
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "add_field requires entity_id and field", "path": f"operations[{idx}]"})
+                continue
+            ops.append({"op": "add", "path": f"/entities/{entity_idx}/fields/-", "value": field})
+            continue
+
+        if op_name == "update_field":
+            entity_idx = _ai_find_entity_idx(manifest, str(operation.get("entity_id") or ""))
+            if entity_idx is None:
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "entity not found", "path": f"operations[{idx}].entity_id"})
+                continue
+            entity = (manifest.get("entities") or [])[entity_idx]
+            field_idx = _ai_find_field_idx(entity, str(operation.get("field_id") or ""))
+            changes = operation.get("changes")
+            if field_idx is None or not isinstance(changes, dict):
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "update_field requires field_id and changes", "path": f"operations[{idx}]"})
+                continue
+            current = copy.deepcopy((entity.get("fields") or [])[field_idx])
+            current.update(changes)
+            ops.append({"op": "set", "path": f"/entities/{entity_idx}/fields/{field_idx}", "value": current})
+            continue
+
+        if op_name == "remove_field":
+            entity_idx = _ai_find_entity_idx(manifest, str(operation.get("entity_id") or ""))
+            if entity_idx is None:
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "entity not found", "path": f"operations[{idx}].entity_id"})
+                continue
+            entity = (manifest.get("entities") or [])[entity_idx]
+            field_idx = _ai_find_field_idx(entity, str(operation.get("field_id") or ""))
+            if field_idx is None:
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "field not found", "path": f"operations[{idx}].field_id"})
+                continue
+            ops.append({"op": "remove", "path": f"/entities/{entity_idx}/fields/{field_idx}"})
+            continue
+
+        if op_name == "add_view":
+            view = operation.get("view")
+            if not isinstance(view, dict) or not isinstance(view.get("id"), str):
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "add_view requires view object", "path": f"operations[{idx}]"})
+                continue
+            ops.append({"op": "add", "path": "/views/-", "value": view})
+            continue
+
+        if op_name == "add_page":
+            page = operation.get("page")
+            if not isinstance(page, dict) or not isinstance(page.get("id"), str):
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "add_page requires page object", "path": f"operations[{idx}]"})
+                continue
+            ops.append({"op": "add", "path": "/pages/-", "value": page})
+            continue
+
+        if op_name == "remove_view":
+            view_idx = _ai_find_view_idx(manifest, str(operation.get("view_id") or ""))
+            if view_idx is None:
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "view not found", "path": f"operations[{idx}].view_id"})
+                continue
+            ops.append({"op": "remove", "path": f"/views/{view_idx}"})
+            continue
+
+        if op_name == "update_page":
+            page_idx = _ai_find_page_idx(manifest, str(operation.get("page_id") or ""))
+            changes = operation.get("changes")
+            if page_idx is None or not isinstance(changes, dict):
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "update_page requires page_id and changes", "path": f"operations[{idx}]"})
+                continue
+            page = copy.deepcopy((manifest.get("pages") or [])[page_idx])
+            page.update(changes)
+            ops.append({"op": "set", "path": f"/pages/{page_idx}", "value": page})
+            continue
+
+        if op_name in {"update_view", "update_view_columns"}:
+            view_idx = _ai_find_view_idx(manifest, str(operation.get("view_id") or ""))
+            if view_idx is None:
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "view not found", "path": f"operations[{idx}].view_id"})
+                continue
+            view = copy.deepcopy((manifest.get("views") or [])[view_idx])
+            if op_name == "update_view_columns":
+                columns = operation.get("columns")
+                if not isinstance(columns, list):
+                    errors.append({"code": "AI_PATCH_OP_INVALID", "message": "columns must be list", "path": f"operations[{idx}].columns"})
+                    continue
+                view["columns"] = columns
+            else:
+                changes = operation.get("changes")
+                if not isinstance(changes, dict):
+                    errors.append({"code": "AI_PATCH_OP_INVALID", "message": "changes must be object", "path": f"operations[{idx}].changes"})
+                    continue
+                view.update(changes)
+            ops.append({"op": "set", "path": f"/views/{view_idx}", "value": view})
+            continue
+
+        if op_name == "insert_section_field":
+            view_idx = _ai_find_view_idx(manifest, str(operation.get("view_id") or ""))
+            field_id = operation.get("field_id")
+            section_id = operation.get("section_id")
+            if view_idx is None or not isinstance(field_id, str) or not isinstance(section_id, str):
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "insert_section_field requires view_id/section_id/field_id", "path": f"operations[{idx}]"})
+                continue
+            view = (manifest.get("views") or [])[view_idx]
+            sections = view.get("sections") if isinstance(view, dict) and isinstance(view.get("sections"), list) else []
+            sec_idx = None
+            for j, sec in enumerate(sections):
+                if isinstance(sec, dict) and sec.get("id") == section_id:
+                    sec_idx = j
+                    break
+            if sec_idx is None:
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "section not found", "path": f"operations[{idx}].section_id"})
+                continue
+            fields = sections[sec_idx].get("fields") if isinstance(sections[sec_idx].get("fields"), list) else []
+            index = operation.get("index")
+            insert_idx = len(fields) if not isinstance(index, int) else max(0, min(index, len(fields)))
+            ops.append({"op": "add", "path": f"/views/{view_idx}/sections/{sec_idx}/fields/{insert_idx}", "value": field_id})
+            continue
+
+        if op_name == "move_section_field":
+            view_idx = _ai_find_view_idx(manifest, str(operation.get("view_id") or ""))
+            field_id = operation.get("field_id")
+            section_id = operation.get("section_id")
+            if view_idx is None or not isinstance(field_id, str) or not isinstance(section_id, str):
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "move_section_field requires view_id/section_id/field_id", "path": f"operations[{idx}]"})
+                continue
+            view = (manifest.get("views") or [])[view_idx]
+            sections = view.get("sections") if isinstance(view, dict) and isinstance(view.get("sections"), list) else []
+            sec_idx = None
+            for j, sec in enumerate(sections):
+                if isinstance(sec, dict) and sec.get("id") == section_id:
+                    sec_idx = j
+                    break
+            if sec_idx is None:
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "section not found", "path": f"operations[{idx}].section_id"})
+                continue
+            fields = [item for item in (sections[sec_idx].get("fields") or []) if isinstance(item, str)]
+            if field_id not in fields:
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "field not found in section", "path": f"operations[{idx}].field_id"})
+                continue
+            updated_fields = [item for item in fields if item != field_id]
+            index = operation.get("index")
+            insert_idx = len(updated_fields) if not isinstance(index, int) else max(0, min(index, len(updated_fields)))
+            updated_fields.insert(insert_idx, field_id)
+            ops.append({"op": "set", "path": f"/views/{view_idx}/sections/{sec_idx}/fields", "value": updated_fields})
+            continue
+
+        if op_name == "add_action":
+            action = operation.get("action")
+            if not isinstance(action, dict) or not isinstance(action.get("id"), str):
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "add_action requires action object", "path": f"operations[{idx}]"})
+                continue
+            ops.append({"op": "add", "path": "/actions/-", "value": action})
+            continue
+
+        if op_name == "update_action":
+            action_id = operation.get("action_id")
+            changes = operation.get("changes")
+            actions = manifest.get("actions") if isinstance(manifest.get("actions"), list) else []
+            action_idx = None
+            for j, action in enumerate(actions):
+                if isinstance(action, dict) and action.get("id") == action_id:
+                    action_idx = j
+                    break
+            if action_idx is None or not isinstance(changes, dict):
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "update_action requires action_id and changes", "path": f"operations[{idx}]"})
+                continue
+            updated = copy.deepcopy(actions[action_idx])
+            updated.update(changes)
+            ops.append({"op": "set", "path": f"/actions/{action_idx}", "value": updated})
+            continue
+
+        if op_name == "update_workflow":
+            workflow_id = operation.get("workflow_id")
+            entity_id = operation.get("entity_id")
+            status_field_id = operation.get("status_field_id")
+            changes = operation.get("changes")
+            if not isinstance(changes, dict):
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "update_workflow requires changes", "path": f"operations[{idx}].changes"})
+                continue
+            workflows = manifest.get("workflows") if isinstance(manifest.get("workflows"), list) else []
+            workflow_idx = None
+            if isinstance(workflow_id, str) and workflow_id:
+                for j, workflow in enumerate(workflows):
+                    if isinstance(workflow, dict) and workflow.get("id") == workflow_id:
+                        workflow_idx = j
+                        break
+            if workflow_idx is None and isinstance(entity_id, str) and entity_id:
+                workflow_idx = _ai_find_workflow_idx(manifest, entity_id, status_field_id if isinstance(status_field_id, str) else None)
+            if workflow_idx is None:
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "workflow not found", "path": f"operations[{idx}].workflow_id"})
+                continue
+            updated = copy.deepcopy(workflows[workflow_idx])
+            updated.update(changes)
+            ops.append({"op": "set", "path": f"/workflows/{workflow_idx}", "value": updated})
+            continue
+
+        if op_name == "add_trigger":
+            trigger = operation.get("trigger")
+            if not isinstance(trigger, dict) or not isinstance(trigger.get("id"), str):
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "add_trigger requires trigger object", "path": f"operations[{idx}]"})
+                continue
+            ops.append({"op": "add", "path": "/triggers/-", "value": trigger})
+            continue
+
+        if op_name == "add_page_block":
+            page_idx = _ai_find_page_idx(manifest, str(operation.get("page_id") or ""))
+            block = operation.get("block")
+            if page_idx is None or not isinstance(block, dict):
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "add_page_block requires page_id and block", "path": f"operations[{idx}]"})
+                continue
+            ops.append({"op": "add", "path": f"/pages/{page_idx}/content/-", "value": block})
+            continue
+
+        if op_name == "update_dependency":
+            dep = operation.get("dependency")
+            if not isinstance(dep, dict) or not isinstance(dep.get("module"), str):
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "dependency object required", "path": f"operations[{idx}]"})
+                continue
+            deps_kind = operation.get("kind")
+            deps_kind = deps_kind if deps_kind in {"required", "optional"} else "required"
+            current = normalize_depends_on(manifest)
+            updated = current.get(deps_kind) or []
+            if not any(isinstance(item, dict) and item.get("module") == dep.get("module") for item in updated):
+                updated = [*updated, dep]
+            ops.append({"op": "set", "path": f"/depends_on/{deps_kind}", "value": updated})
+            continue
+
+        if op_name in {"create_automation_record", "update_automation_record", "create_integration_record", "update_integration_record"}:
+            errors.append(
+                {
+                    "code": "AI_PATCH_OP_UNSUPPORTED_V1",
+                    "message": f"{op_name} is read-only in v1; automations/integrations writes are delayed scope",
+                    "path": f"operations[{idx}].op",
+                }
+            )
+            continue
+
+        errors.append({"code": "AI_PATCH_OP_UNSUPPORTED", "message": f"unsupported op '{op_name}'", "path": f"operations[{idx}].op"})
+
+    return ops, errors
+
+
+def _ai_apply_candidate_ops_to_manifest(manifest: dict, module_id: str, operations: list[dict]) -> tuple[dict, list[dict], list[dict]]:
+    working_manifest = copy.deepcopy(manifest) if isinstance(manifest, dict) else {}
+    resolved_ops: list[dict] = []
+    errors: list[dict] = []
+    for op in operations:
+        if not isinstance(op, dict):
+            errors.append({"code": "AI_PATCH_OP_INVALID", "message": "operation must be object", "path": "operations"})
+            continue
+        compiled, compile_errors = _ai_compile_module_ops(working_manifest, [op])
+        if compile_errors:
+            errors.extend(compile_errors)
+            continue
+        patchset = {"patches": [{"module_id": module_id, "ops": compiled}]}
+        applied = _studio2_apply_patchset(working_manifest, patchset)
+        if not applied.get("ok"):
+            apply_errors = applied.get("errors") if isinstance(applied.get("errors"), list) else []
+            if apply_errors:
+                errors.extend(apply_errors)
+            else:
+                errors.append({"code": "AI_PATCH_OP_INVALID", "message": "operation failed to apply", "path": "operations"})
+            continue
+        working_manifest = applied.get("manifest") if isinstance(applied.get("manifest"), dict) else working_manifest
+        resolved_ops.extend(applied.get("resolved_ops") or [])
+    return working_manifest, resolved_ops, errors
+
+
+def _ai_issue_signature(issue: dict) -> str:
+    if not isinstance(issue, dict):
+        return json.dumps({"value": issue}, sort_keys=True, separators=(",", ":"), default=str)
+    payload = {
+        "code": issue.get("code"),
+        "message": issue.get("message"),
+        "path": issue.get("path"),
+        "detail": issue.get("detail"),
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _ai_filter_known_issues(issues: list[dict], baseline: list[dict]) -> list[dict]:
+    baseline_signatures = {
+        _ai_issue_signature(issue)
+        for issue in baseline
+        if isinstance(issue, dict)
+    }
+    return [
+        issue
+        for issue in issues
+        if isinstance(issue, dict) and _ai_issue_signature(issue) not in baseline_signatures
+    ]
+
+
+def _ai_validate_patchset_against_workspace(request: Request, patchset_record: dict) -> dict:
+    patch_data = patchset_record.get("patch_json")
+    if not isinstance(patch_data, dict):
+        return {"ok": False, "errors": [{"code": "AI_PATCHSET_INVALID", "message": "patch_json missing"}], "warnings": [], "results": []}
+    if patch_data.get("noop") is True:
+        reason = patch_data.get("reason") if isinstance(patch_data.get("reason"), str) and patch_data.get("reason").strip() else "no changes needed"
+        return {
+            "ok": True,
+            "errors": [],
+            "warnings": [{"code": "AI_PATCHSET_NOOP", "message": _ai_format_noop_warning(reason), "path": "operations"}],
+            "results": [],
+        }
+    operations = patch_data.get("operations")
+    if not isinstance(operations, list) or not operations:
+        return {"ok": False, "errors": [{"code": "AI_PATCHSET_INVALID", "message": "operations required"}], "warnings": [], "results": []}
+    errors: list[dict] = []
+    grouped_modules: dict[str, list[dict]] = {}
+    grouped_automations: dict[str, list[dict]] = {}
+    for idx, op in enumerate(operations):
+        if not isinstance(op, dict):
+            errors.append(
+                {
+                    "code": "AI_PATCHSET_INVALID",
+                    "message": "operation must be an object",
+                    "path": f"operations[{idx}]",
+                }
+            )
+            continue
+        artifact_type = op.get("artifact_type")
+        artifact_id = op.get("artifact_id")
+        if artifact_type == "module":
+            if isinstance(artifact_id, str) and artifact_id:
+                grouped_modules.setdefault(artifact_id, []).append(op)
+            else:
+                errors.append(
+                    {
+                        "code": "AI_PATCHSET_INVALID",
+                        "message": "module operation requires artifact_id",
+                        "path": f"operations[{idx}].artifact_id",
+                    }
+                )
+            continue
+        if artifact_type == "automation":
+            if isinstance(artifact_id, str) and artifact_id:
+                grouped_automations.setdefault(artifact_id, []).append(op)
+            else:
+                errors.append(
+                    {
+                        "code": "AI_PATCHSET_INVALID",
+                        "message": "automation operation requires artifact_id",
+                        "path": f"operations[{idx}].artifact_id",
+                    }
+                )
+            continue
+        errors.append(
+            {
+                "code": "AI_PATCHSET_UNSUPPORTED_ARTIFACT",
+                "message": "unsupported artifact type in patchset",
+                "path": f"operations[{idx}].artifact_type",
+            }
+        )
+
+    if not grouped_modules and not grouped_automations:
+        if not errors:
+            errors.append({"code": "AI_PATCHSET_EMPTY", "message": "no supported operations found"})
+        return {"ok": False, "errors": errors, "warnings": [], "results": []}
+
+    module_index = _ai_module_manifest_index(request)
+    base_refs = patchset_record.get("base_snapshot_refs_json") if isinstance(patchset_record.get("base_snapshot_refs_json"), list) else []
+    base_by_artifact: dict[tuple[str, str], str] = {}
+    for ref in base_refs:
+        if (
+            isinstance(ref, dict)
+            and isinstance(ref.get("artifact_type"), str)
+            and isinstance(ref.get("artifact_key"), str)
+            and isinstance(ref.get("artifact_version"), str)
+        ):
+            base_by_artifact[(ref.get("artifact_type"), ref.get("artifact_key"))] = ref.get("artifact_version")
+
+    warnings: list[dict] = []
+    results: list[dict] = []
+    for module_id, module_ops in grouped_modules.items():
+        info = module_index.get(module_id)
+        create_ops = [op for op in module_ops if isinstance(op, dict) and op.get("op") == "create_module"]
+        if create_ops:
+            if info:
+                errors.append({"code": "MODULE_ALREADY_EXISTS", "message": f"Module '{module_id}' already exists", "path": "artifact_id"})
+                continue
+            if len(create_ops) != 1:
+                errors.append({"code": "AI_PATCHSET_INVALID", "message": "only one create_module operation is allowed per new module", "path": "operations"})
+                continue
+            manifest = create_ops[0].get("manifest")
+            if not isinstance(manifest, dict):
+                errors.append({"code": "MANIFEST_INVALID", "message": "create_module requires a manifest", "path": "manifest"})
+                continue
+            normalized, val_errors, val_warnings = validate_manifest_raw(copy.deepcopy(manifest), expected_module_id=module_id)
+            final_manifest = copy.deepcopy(normalized)
+            resolved_ops: list[dict] = []
+            extra_ops = [op for op in module_ops if isinstance(op, dict) and op.get("op") != "create_module"]
+            op_errors: list[dict] = []
+            if extra_ops:
+                final_manifest, resolved_ops, op_errors = _ai_apply_candidate_ops_to_manifest(normalized, module_id, extra_ops)
+            if op_errors:
+                errors.extend(op_errors)
+                continue
+            final_manifest, final_errors, final_warnings = validate_manifest_raw(copy.deepcopy(final_manifest), expected_module_id=module_id)
+            dep_errors, dep_warnings = _validate_dependency_state(request, module_id, final_manifest, "install")
+            results.append(
+                {
+                    "module_id": module_id,
+                    "base_hash": None,
+                    "resolved_ops": [{"op": "create_module", "artifact_id": module_id}, *resolved_ops],
+                    "manifest": final_manifest,
+                    "errors": (val_errors or []) + (final_errors or []) + (dep_errors or []),
+                    "warnings": (val_warnings or []) + (final_warnings or []) + (dep_warnings or []),
+                    "apply_mode": "install",
+                }
+            )
+            if val_errors or final_errors or dep_errors:
+                errors.extend((val_errors or []) + (final_errors or []) + (dep_errors or []))
+            warnings.extend((val_warnings or []) + (final_warnings or []) + (dep_warnings or []))
+            continue
+        if not info:
+            errors.append({"code": "MODULE_NOT_FOUND", "message": f"Module '{module_id}' not found", "path": "artifact_id"})
+            continue
+        manifest = info.get("manifest")
+        module_meta = info.get("module") or {}
+        current_hash = module_meta.get("current_hash")
+        expected_hash = base_by_artifact.get(("module", module_id))
+        if isinstance(expected_hash, str) and expected_hash and expected_hash != current_hash:
+            errors.append(
+                {
+                    "code": "AI_PATCHSET_CONFLICT",
+                    "message": f"Module '{module_id}' changed since patch generation",
+                    "path": "base_snapshot_refs_json",
+                    "detail": {"expected": expected_hash, "actual": current_hash},
+                }
+            )
+            continue
+        baseline_dep_errors, baseline_dep_warnings = _validate_dependency_state(request, module_id, manifest, "upgrade")
+        normalized, resolved_ops, op_errors = _ai_apply_candidate_ops_to_manifest(manifest, module_id, module_ops)
+        if op_errors:
+            errors.extend(op_errors)
+            continue
+        normalized, val_errors, val_warnings = validate_manifest_raw(normalized, expected_module_id=module_id)
+        dep_errors, dep_warnings = _validate_dependency_state(request, module_id, normalized, "upgrade")
+        dep_errors = _ai_filter_known_issues(dep_errors, baseline_dep_errors)
+        dep_warnings = _ai_filter_known_issues(dep_warnings, baseline_dep_warnings)
+        results.append(
+            {
+                "module_id": module_id,
+                "base_hash": current_hash,
+                "resolved_ops": resolved_ops,
+                "manifest": normalized,
+                "errors": (val_errors or []) + (dep_errors or []),
+                "warnings": (val_warnings or []) + (dep_warnings or []),
+                "apply_mode": "upgrade",
+            }
+        )
+        if val_errors or dep_errors:
+            errors.extend((val_errors or []) + (dep_errors or []))
+        warnings.extend((val_warnings or []) + (dep_warnings or []))
+    for automation_id, automation_ops in grouped_automations.items():
+        if len(automation_ops) != 1:
+            errors.append(
+                {
+                    "code": "AI_PATCHSET_INVALID",
+                    "message": "only one automation operation is allowed per automation record",
+                    "path": "operations",
+                }
+            )
+            continue
+        operation = automation_ops[0]
+        normalized, validation_errors = _ai_validate_automation_operation(operation)
+        if validation_errors:
+            errors.extend(validation_errors)
+            continue
+        existing = automation_store.get(automation_id) if automation_store else None
+        current_version = _ai_automation_record_version(existing)
+        expected_version = base_by_artifact.get(("automation", automation_id))
+        if isinstance(expected_version, str) and expected_version and expected_version != current_version:
+            errors.append(
+                {
+                    "code": "AI_PATCHSET_CONFLICT",
+                    "message": f"Automation '{automation_id}' changed since patch generation",
+                    "path": "base_snapshot_refs_json",
+                    "detail": {"expected": expected_version, "actual": current_version},
+                }
+            )
+            continue
+        op_name = operation.get("op")
+        if op_name == "create_automation_record" and isinstance(existing, dict):
+            errors.append(
+                {
+                    "code": "AUTOMATION_ALREADY_EXISTS",
+                    "message": f"Automation '{automation_id}' already exists",
+                    "path": "artifact_id",
+                }
+            )
+            continue
+        if op_name == "update_automation_record" and not isinstance(existing, dict):
+            errors.append(
+                {
+                    "code": "AUTOMATION_NOT_FOUND",
+                    "message": f"Automation '{automation_id}' not found",
+                    "path": "artifact_id",
+                }
+            )
+            continue
+        results.append(
+            {
+                "artifact_type": "automation",
+                "artifact_key": automation_id,
+                "base_version": current_version,
+                "resolved_ops": [copy.deepcopy(operation)],
+                "operation": copy.deepcopy(operation),
+                "automation": normalized,
+                "errors": [],
+                "warnings": [],
+                "apply_mode": "create" if op_name == "create_automation_record" else "update",
+            }
+        )
+    return {"ok": len(errors) == 0, "errors": errors, "warnings": warnings, "results": results}
+
+
+@app.get("/octo-ai/workspace/graph")
+async def octo_ai_workspace_graph(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    graph = _ai_build_workspace_graph(request)
+    return _ok_response({"graph": graph})
+
+
+@app.get("/octo-ai/explorer")
+async def octo_ai_explorer(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    modules = [
+        {
+            "module_id": m.get("module_id"),
+            "name": m.get("name") or m.get("module_id"),
+            "enabled": bool(m.get("enabled")),
+            "current_hash": m.get("current_hash"),
+        }
+        for m in _get_registry_list(request)
+    ]
+    automations = [
+        {"id": a.get("id"), "name": a.get("name"), "status": a.get("status")}
+        for a in (automation_store.list() if automation_store else [])
+        if isinstance(a, dict)
+    ]
+    integrations = [
+        {"id": c.get("id"), "name": c.get("name"), "type": c.get("type"), "status": c.get("status")}
+        for c in (connection_store.list() if connection_store else [])
+        if isinstance(c, dict) and _is_integration_type(c.get("type"))
+    ]
+    return _ok_response({"modules": modules, "automations": automations, "integrations": integrations})
+
+
+@app.get("/octo-ai/sessions")
+async def list_octo_ai_sessions(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    items = _ai_sort(_ai_list_records(_AI_ENTITY_SESSION, limit=1000), field="last_activity_at")
+    sessions = [_ai_record_data(item) for item in items]
+    return _ok_response({"sessions": sessions})
+
+
+@app.post("/octo-ai/sessions")
+async def create_octo_ai_session(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        body = {}
+    summary = ""
+    if isinstance(body.get("summary"), str) and body.get("summary").strip():
+        summary = body.get("summary").strip()
+    elif isinstance(body.get("description"), str) and body.get("description").strip():
+        summary = body.get("description").strip()
+    status = body.get("status") if isinstance(body.get("status"), str) else "draft"
+    scope_mode = body.get("scope_mode") if isinstance(body.get("scope_mode"), str) else "auto"
+    artifact_type = body.get("selected_artifact_type") if isinstance(body.get("selected_artifact_type"), str) else "none"
+    if status not in _AI_SESSION_STATUSES:
+        return _error_response("AI_SESSION_INVALID", "invalid status", "status", status=400)
+    if scope_mode not in _AI_SCOPE_MODES:
+        return _error_response("AI_SESSION_INVALID", "invalid scope_mode", "scope_mode", status=400)
+    if artifact_type not in _AI_ARTIFACT_TYPES:
+        return _error_response("AI_SESSION_INVALID", "invalid selected_artifact_type", "selected_artifact_type", status=400)
+
+    now = _ai_now()
+    payload = {
+        "title": body.get("title") if isinstance(body.get("title"), str) and body.get("title").strip() else "New AI Session",
+        "status": status,
+        "scope_mode": scope_mode,
+        "selected_artifact_type": artifact_type,
+        "selected_artifact_key": body.get("selected_artifact_key") if isinstance(body.get("selected_artifact_key"), str) else "",
+        "sandbox_name": body.get("sandbox_name") if isinstance(body.get("sandbox_name"), str) else "",
+        "seed_mode": body.get("seed_mode") if isinstance(body.get("seed_mode"), str) else "structure_only",
+        "simulation_mode": body.get("simulation_mode") if isinstance(body.get("simulation_mode"), str) else "simulate_side_effects",
+        "release_status": body.get("release_status") if isinstance(body.get("release_status"), str) else "draft",
+        "validation_status": body.get("validation_status") if isinstance(body.get("validation_status"), str) else "pending",
+        "sandbox_status": body.get("sandbox_status") if isinstance(body.get("sandbox_status"), str) else "not_created",
+        "active_sandbox_id": body.get("active_sandbox_id") if isinstance(body.get("active_sandbox_id"), str) else "",
+        "latest_plan_id": body.get("latest_plan_id") if isinstance(body.get("latest_plan_id"), str) else "",
+        "latest_patchset_id": body.get("latest_patchset_id") if isinstance(body.get("latest_patchset_id"), str) else "",
+        "latest_validation_run_id": body.get("latest_validation_run_id") if isinstance(body.get("latest_validation_run_id"), str) else "",
+        "latest_release_id": body.get("latest_release_id") if isinstance(body.get("latest_release_id"), str) else "",
+        "created_by": _ai_actor_id(request),
+        "last_activity_at": now,
+        "last_error": None,
+        "summary": summary,
+        "created_at": now,
+    }
+    created = _ai_create_record(_AI_ENTITY_SESSION, payload)
+    return _ok_response({"session": _ai_record_data(created)})
+
+
+@app.get("/octo-ai/sessions/{session_id}")
+async def get_octo_ai_session(request: Request, session_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    with _ai_session_scope(request, session_id, actor) as bound:
+        if not bound or not bound[0]:
+            return _error_response("AI_SESSION_NOT_FOUND", "Session not found", "session_id", status=404)
+        session, _workspace_id = bound
+        session_data = _ai_record_data(session)
+        messages = []
+        for item in _ai_sort(_ai_list_records(_AI_ENTITY_MESSAGE, limit=2000), field="created_at", reverse=False):
+            data = _ai_record_data(item)
+            if data.get("session_id") == session_id:
+                messages.append(data)
+        plans = []
+        for item in _ai_sort(_ai_list_records(_AI_ENTITY_PLAN, limit=500), field="created_at", reverse=True):
+            data = _ai_record_data(item)
+            if data.get("session_id") == session_id:
+                plans.append(data)
+        patchsets = []
+        for item in _ai_sort(_ai_list_records(_AI_ENTITY_PATCHSET, limit=500), field="created_at", reverse=True):
+            data = _ai_record_data(item)
+            if data.get("session_id") == session_id:
+                patchsets.append(data)
+        releases = _ai_session_release_records(session_id)
+        validation_runs = _ai_session_validation_records(session_id)
+        sandboxes = _ai_session_sandbox_records(session_id)
+        event_logs = _ai_session_event_records(session_id)
+        return _ok_response(
+            {
+                "session": session_data,
+                "messages": messages,
+                "plans": plans,
+                "patchsets": patchsets,
+                "releases": releases,
+                "validation_runs": validation_runs,
+                "sandboxes": sandboxes,
+                "event_logs": event_logs,
+            }
+        )
+
+
+@app.put("/octo-ai/sessions/{session_id}")
+async def update_octo_ai_session(request: Request, session_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("AI_SESSION_INVALID", "Expected JSON object", "body", status=400)
+    if "status" in body and body.get("status") not in _AI_SESSION_STATUSES:
+        return _error_response("AI_SESSION_INVALID", "invalid status", "status", status=400)
+    if "scope_mode" in body and body.get("scope_mode") not in _AI_SCOPE_MODES:
+        return _error_response("AI_SESSION_INVALID", "invalid scope_mode", "scope_mode", status=400)
+    if "selected_artifact_type" in body and body.get("selected_artifact_type") not in _AI_ARTIFACT_TYPES:
+        return _error_response("AI_SESSION_INVALID", "invalid selected_artifact_type", "selected_artifact_type", status=400)
+    updates = {
+        k: v
+        for k, v in body.items()
+        if k
+        in {
+            "title",
+            "status",
+            "scope_mode",
+            "selected_artifact_type",
+            "selected_artifact_key",
+            "summary",
+            "last_error",
+            "sandbox_name",
+            "seed_mode",
+            "simulation_mode",
+            "release_status",
+            "validation_status",
+            "active_sandbox_id",
+            "latest_plan_id",
+            "latest_patchset_id",
+            "latest_validation_run_id",
+            "latest_release_id",
+        }
+    }
+    updates["last_activity_at"] = _ai_now()
+    with _ai_session_scope(request, session_id, actor) as bound:
+        if not bound or not bound[0]:
+            return _error_response("AI_SESSION_NOT_FOUND", "Session not found", "session_id", status=404)
+        updated = _ai_update_record(_AI_ENTITY_SESSION, session_id, updates)
+        if not updated:
+            return _error_response("AI_SESSION_NOT_FOUND", "Session not found", "session_id", status=404)
+        return _ok_response({"session": _ai_record_data(updated)})
+
+
+@app.post("/octo-ai/sessions/{session_id}/sandbox")
+async def ensure_octo_ai_session_sandbox(request: Request, session_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    with _ai_session_scope(request, session_id, actor) as bound:
+        if not bound or not bound[0]:
+            return _error_response("AI_SESSION_NOT_FOUND", "Session not found", "session_id", status=404)
+        session, workspace_id = bound
+        if not USE_DB:
+            return _error_response(
+                "AI_SANDBOX_REQUIRES_DB",
+                "Sandbox replicas require USE_DB=1 so Octo AI can create a real workspace clone.",
+                "sandbox",
+                status=409,
+            )
+        session_data = _ai_record_data(session)
+        sandbox = _ai_ensure_session_sandbox(session_data)
+        sandbox_workspace_id = sandbox["sandbox_workspace_id"]
+        sandbox_exists = (
+            isinstance(sandbox_workspace_id, str)
+            and sandbox_workspace_id.strip()
+            and not _ai_is_virtual_sandbox_workspace_id(sandbox_workspace_id)
+            and workspace_exists(sandbox_workspace_id)
+        )
+        if not sandbox_exists:
+            sandbox_workspace_id = _ai_create_db_sandbox_workspace(actor, sandbox["sandbox_name"])
+            _ai_clone_workspace_structure_to_sandbox(workspace_id, sandbox_workspace_id)
+            sandbox["sandbox_workspace_id"] = sandbox_workspace_id
+            sandbox["sandbox_url"] = f"/home?octo_ai_sandbox=1&octo_ai_session={session_id}&octo_ai_workspace={sandbox_workspace_id}"
+        updated = _ai_update_record(
+            _AI_ENTITY_SESSION,
+            session_id,
+            {
+                "sandbox_workspace_id": sandbox_workspace_id,
+                "sandbox_name": sandbox["sandbox_name"],
+                "sandbox_status": "active",
+                "sandbox_created_at": sandbox["created_at"],
+                "last_activity_at": _ai_now(),
+                "last_error": None,
+            },
+        )
+        sandbox_record = _ai_upsert_session_sandbox_record(_ai_record_data(updated), status="ready")
+        if isinstance(sandbox_record.get("id"), str):
+            updated = _ai_update_record(_AI_ENTITY_SESSION, session_id, {"active_sandbox_id": sandbox_record.get("id"), "last_activity_at": _ai_now()})
+        _ai_log_session_event(
+            session_id,
+            "sandbox_ready",
+            "Session sandbox is ready.",
+            sandbox_id=sandbox_record.get("id") if isinstance(sandbox_record, dict) else None,
+            payload={"sandbox_workspace_id": sandbox_workspace_id},
+        )
+        return _ok_response({"session": _ai_record_data(updated), "sandbox": sandbox})
+
+
+@app.post("/octo-ai/sessions/{session_id}/sandbox/discard")
+async def discard_octo_ai_session_sandbox(request: Request, session_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    with _ai_session_scope(request, session_id, actor) as bound:
+        if not bound or not bound[0]:
+            return _error_response("AI_SESSION_NOT_FOUND", "Session not found", "session_id", status=404)
+        session, _workspace_id = bound
+        session_data = _ai_record_data(session)
+        sandbox_workspace_id = session_data.get("sandbox_workspace_id")
+        if not isinstance(sandbox_workspace_id, str) or not sandbox_workspace_id.strip():
+            return _error_response("AI_SANDBOX_NOT_FOUND", "No sandbox is attached to this session", "session_id", status=404)
+        updated = _ai_update_record(
+            _AI_ENTITY_SESSION,
+            session_id,
+            {
+                "sandbox_status": "discarded",
+                "status": "archived",
+                "last_activity_at": _ai_now(),
+            },
+        )
+        active_sandbox_id = session_data.get("active_sandbox_id") if isinstance(session_data.get("active_sandbox_id"), str) else ""
+        if active_sandbox_id:
+            _ai_update_record(_AI_ENTITY_SANDBOX, active_sandbox_id, {"status": "discarded", "updated_at": _ai_now()})
+        _ai_log_session_event(
+            session_id,
+            "sandbox_discarded",
+            "Sandbox was discarded for this session.",
+            sandbox_id=active_sandbox_id or None,
+            severity="warning",
+            payload={"sandbox_workspace_id": sandbox_workspace_id},
+        )
+        return _ok_response(
+            {
+                "session": _ai_record_data(updated),
+                "sandbox": {
+                    "sandbox_workspace_id": sandbox_workspace_id,
+                    "sandbox_name": session_data.get("sandbox_name") or "",
+                    "sandbox_status": "discarded",
+                },
+            }
+        )
+
+
+@app.delete("/octo-ai/sessions/{session_id}")
+async def delete_octo_ai_session(request: Request, session_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    with _ai_session_scope(request, session_id, actor) as bound:
+        if not bound or not bound[0]:
+            return _error_response("AI_SESSION_NOT_FOUND", "Session not found", "session_id", status=404)
+
+        message_ids: list[str] = []
+        plan_ids: list[str] = []
+        patchset_ids: list[str] = []
+        snapshot_ids: list[str] = []
+        release_ids: list[str] = []
+        validation_run_ids: list[str] = []
+        sandbox_ids: list[str] = []
+        event_log_ids: list[str] = []
+
+        for item in _ai_sort(_ai_list_records(_AI_ENTITY_MESSAGE, limit=5000), field="created_at", reverse=False):
+            data = _ai_record_data(item)
+            if data.get("session_id") == session_id and isinstance(data.get("id"), str):
+                message_ids.append(data.get("id"))
+
+        for item in _ai_sort(_ai_list_records(_AI_ENTITY_PLAN, limit=2000), field="created_at", reverse=False):
+            data = _ai_record_data(item)
+            if data.get("session_id") == session_id and isinstance(data.get("id"), str):
+                plan_ids.append(data.get("id"))
+
+        for item in _ai_sort(_ai_list_records(_AI_ENTITY_PATCHSET, limit=2000), field="created_at", reverse=False):
+            data = _ai_record_data(item)
+            if data.get("session_id") == session_id and isinstance(data.get("id"), str):
+                patchset_ids.append(data.get("id"))
+
+        patchset_id_set = set(patchset_ids)
+        if patchset_id_set:
+            for item in _ai_sort(_ai_list_records(_AI_ENTITY_SNAPSHOT, limit=5000), field="created_at", reverse=False):
+                data = _ai_record_data(item)
+                if data.get("patchset_id") in patchset_id_set and isinstance(data.get("id"), str):
+                    snapshot_ids.append(data.get("id"))
+        for item in _ai_sort(_ai_list_records(_AI_ENTITY_RELEASE, limit=2000), field="created_at", reverse=False):
+            data = _ai_record_data(item)
+            if data.get("session_id") == session_id and isinstance(data.get("id"), str):
+                release_ids.append(data.get("id"))
+        for item in _ai_sort(_ai_list_records(_AI_ENTITY_VALIDATION_RUN, limit=2000), field="created_at", reverse=False):
+            data = _ai_record_data(item)
+            if data.get("session_id") == session_id and isinstance(data.get("id"), str):
+                validation_run_ids.append(data.get("id"))
+        for item in _ai_sort(_ai_list_records(_AI_ENTITY_SANDBOX, limit=2000), field="created_at", reverse=False):
+            data = _ai_record_data(item)
+            if data.get("session_id") == session_id and isinstance(data.get("id"), str):
+                sandbox_ids.append(data.get("id"))
+        for item in _ai_sort(_ai_list_records(_AI_ENTITY_EVENT_LOG, limit=5000), field="created_at", reverse=False):
+            data = _ai_record_data(item)
+            if data.get("session_id") == session_id and isinstance(data.get("id"), str):
+                event_log_ids.append(data.get("id"))
+
+        for snapshot_id in snapshot_ids:
+            _ai_delete_record(_AI_ENTITY_SNAPSHOT, snapshot_id)
+        for release_id in release_ids:
+            _ai_delete_record(_AI_ENTITY_RELEASE, release_id)
+        for validation_run_id in validation_run_ids:
+            _ai_delete_record(_AI_ENTITY_VALIDATION_RUN, validation_run_id)
+        for sandbox_id in sandbox_ids:
+            _ai_delete_record(_AI_ENTITY_SANDBOX, sandbox_id)
+        for event_log_id in event_log_ids:
+            _ai_delete_record(_AI_ENTITY_EVENT_LOG, event_log_id)
+        for patchset_id in patchset_ids:
+            _ai_delete_record(_AI_ENTITY_PATCHSET, patchset_id)
+        for plan_id in plan_ids:
+            _ai_delete_record(_AI_ENTITY_PLAN, plan_id)
+        for message_id in message_ids:
+            _ai_delete_record(_AI_ENTITY_MESSAGE, message_id)
+        _ai_delete_record(_AI_ENTITY_SESSION, session_id)
+
+        return _ok_response(
+            {
+                "deleted": {
+                    "session_id": session_id,
+                    "messages": len(message_ids),
+                    "plans": len(plan_ids),
+                    "patchsets": len(patchset_ids),
+                    "snapshots": len(snapshot_ids),
+                    "releases": len(release_ids),
+                    "validation_runs": len(validation_run_ids),
+                    "sandboxes": len(sandbox_ids),
+                    "event_logs": len(event_log_ids),
+                }
+            }
+        )
+
+
+def _octo_ai_chat_plan_payload(request: Request, session_id: str, session_data: dict[str, Any], message_text: str, explicit_scope: Any = None) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], str]:
+    answer_hints = _ai_collect_answer_hints(session_id)
+    context = _ai_context_package(request, session_data, message_text, answer_hints=answer_hints)
+    plan, derived = _ai_plan_from_message(
+        request,
+        session_data,
+        message_text,
+        explicit_scope=explicit_scope,
+        answer_hints=answer_hints,
+    )
+    session_workspace_id = session_data.get("workspace_id") if isinstance(session_data.get("workspace_id"), str) else None
+    token = None
+    if session_workspace_id and session_workspace_id != get_org_id():
+        token = set_org_id(session_workspace_id)
+    try:
+        plan_data, assistant_text = _ai_persist_plan_result(session_id, plan, context, derived)
+    finally:
+        if token is not None:
+            reset_org_id(token)
+    return context, plan, plan_data, assistant_text
+
+
+@app.post("/octo-ai/sessions/{session_id}/chat")
+async def octo_ai_chat(request: Request, session_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    request_actor = actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    with _ai_session_scope(request, session_id, actor) as bound:
+        if not bound or not bound[0]:
+            return _error_response("AI_SESSION_NOT_FOUND", "Session not found", "session_id", status=404)
+        session, _workspace_id = bound
+        body = await _safe_json(request)
+        message = body.get("message") if isinstance(body, dict) else None
+        if not isinstance(message, str) or not message.strip():
+            return _error_response("AI_MESSAGE_REQUIRED", "Message is required", "message", status=400)
+        session_data = _ai_record_data(session)
+        now = _ai_now()
+        _ai_create_record(
+            _AI_ENTITY_MESSAGE,
+            {
+                "session_id": session_id,
+                "role": "user",
+                "body": message.strip(),
+                "message_type": "chat",
+                "created_at": now,
+            },
+        )
+        try:
+            ops_workspace_id = _ai_ops_workspace_id_for_session(session_data, actor.get("workspace_id") if isinstance(actor, dict) else None)
+            with _ai_ops_workspace_scope(request, ops_workspace_id, request_actor):
+                context, plan, plan_data, assistant_text = _octo_ai_chat_plan_payload(
+                    request,
+                    session_id,
+                    session_data,
+                    message.strip(),
+                    explicit_scope=body.get("scope_mode") if isinstance(body, dict) else None,
+                )
+        except Exception as exc:
+            logger.exception("octo_ai_chat_failed session_id=%s", session_id)
+            _ai_update_record(
+                _AI_ENTITY_SESSION,
+                session_id,
+                {
+                    "status": "failed",
+                    "last_error": str(exc),
+                    "last_activity_at": _ai_now(),
+                },
+            )
+            return _error_response(
+                "AI_CHAT_FAILED",
+                f"Octo AI chat failed: {exc}",
+                "message",
+                detail={"error": str(exc)},
+                status=500,
+            )
+        return _ok_response(
+            {
+                "assistant_text": assistant_text,
+                "plan": plan,
+                "plan_record": plan_data,
+                "context": context,
+            }
+        )
+
+
+@app.post("/octo-ai/sessions/{session_id}/chat/stream")
+async def octo_ai_chat_stream(request: Request, session_id: str) -> StreamingResponse:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    request_actor = actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        async def denied_stream():
+            payload = denied.body.decode("utf-8") if hasattr(denied.body, "decode") else "{}"
+            yield f"event: error\ndata: {json.dumps({'data': payload})}\n\n"
+        return StreamingResponse(denied_stream(), media_type="text/event-stream")
+    session, workspace_id, scoped_actor = _ai_resolve_session_record(request, session_id, actor=actor)
+    if not session or not workspace_id:
+        async def missing_stream():
+            yield f"event: error\ndata: {json.dumps({'data': {'code': 'AI_SESSION_NOT_FOUND'}})}\n\n"
+        return StreamingResponse(missing_stream(), media_type="text/event-stream")
+    body = await _safe_json(request)
+    message = body.get("message") if isinstance(body, dict) else None
+    if not isinstance(message, str) or not message.strip():
+        async def invalid_stream():
+            yield f"event: error\ndata: {json.dumps({'data': {'code': 'AI_MESSAGE_REQUIRED'}})}\n\n"
+        return StreamingResponse(invalid_stream(), media_type="text/event-stream")
+    session_data = _ai_record_data(session)
+    now = _ai_now()
+    _ai_create_record(
+        _AI_ENTITY_MESSAGE,
+        {
+            "session_id": session_id,
+            "role": "user",
+            "body": message.strip(),
+            "message_type": "chat",
+            "created_at": now,
+        },
+    )
+    try:
+        ops_workspace_id = _ai_ops_workspace_id_for_session(session_data, actor.get("workspace_id") if isinstance(actor, dict) else None)
+        with _ai_ops_workspace_scope(request, ops_workspace_id, request_actor):
+            context, plan, plan_data, assistant_text = _octo_ai_chat_plan_payload(
+                request,
+                session_id,
+                session_data,
+                message.strip(),
+                explicit_scope=body.get("scope_mode") if isinstance(body, dict) else None,
+            )
+    except Exception as exc:
+        logger.exception("octo_ai_chat_stream_failed session_id=%s", session_id)
+        _ai_update_record(
+            _AI_ENTITY_SESSION,
+            session_id,
+            {
+                "status": "failed",
+                "last_error": str(exc),
+                "last_activity_at": _ai_now(),
+            },
+        )
+        async def failed_stream():
+            payload = {"message": str(exc), "code": "AI_STREAM_PLAN_FAILED"}
+            yield f"event: error\ndata: {json.dumps({'data': payload}, default=str)}\n\n"
+        return StreamingResponse(failed_stream(), media_type="text/event-stream")
+
+    async def event_stream():
+        prior_actor = getattr(request.state, "actor", None)
+        token = None
+        if workspace_id != get_org_id():
+            token = set_org_id(workspace_id)
+        if isinstance(scoped_actor, dict):
+            request.state.actor = scoped_actor
+        try:
+            for line in assistant_text.split("\n"):
+                await asyncio.sleep(0.02)
+                yield f"event: delta\ndata: {json.dumps({'text': line + chr(10)}, default=str)}\n\n"
+            payload = {"assistant_text": assistant_text, "plan": plan, "plan_record": plan_data, "context": context}
+            yield f"event: done\ndata: {json.dumps({'data': payload}, default=str)}\n\n"
+        except Exception as exc:
+            payload = {"message": str(exc), "code": "AI_STREAM_WRITE_FAILED"}
+            yield f"event: error\ndata: {json.dumps({'data': payload}, default=str)}\n\n"
+        finally:
+            if prior_actor is not None:
+                request.state.actor = prior_actor
+            elif hasattr(request.state, "actor"):
+                delattr(request.state, "actor")
+            if token is not None:
+                reset_org_id(token)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.post("/octo-ai/sessions/{session_id}/questions/answer")
+async def octo_ai_answer_question(request: Request, session_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    request_actor = actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    with _ai_session_scope(request, session_id, actor) as bound:
+        if not bound or not bound[0]:
+            return _error_response("AI_SESSION_NOT_FOUND", "Session not found", "session_id", status=404)
+        session, _workspace_id = bound
+        active_question = _ai_active_question_for_session(session_id)
+        active_question_meta = _ai_active_question_meta_for_session(session_id)
+        if not isinstance(active_question, str) or not active_question.strip():
+            return _error_response("AI_NO_ACTIVE_QUESTION", "No pending planner question for this session", "session_id", status=400)
+        body = await _safe_json(request)
+        if not isinstance(body, dict):
+            body = {}
+        action = str(body.get("action") or "custom")
+        custom_text = body.get("text")
+        submitted_hints = body.get("hints") if isinstance(body.get("hints"), dict) else {}
+        hint_payload: dict[str, Any] = {}
+        if isinstance(submitted_hints.get("include_form"), bool):
+            hint_payload["include_form"] = submitted_hints.get("include_form")
+        if isinstance(submitted_hints.get("include_list"), bool):
+            hint_payload["include_list"] = submitted_hints.get("include_list")
+        if isinstance(submitted_hints.get("deduplicate_existing"), bool):
+            hint_payload["deduplicate_existing"] = submitted_hints.get("deduplicate_existing")
+        if isinstance(submitted_hints.get("confirm_plan"), bool):
+            hint_payload["confirm_plan"] = submitted_hints.get("confirm_plan")
+        if isinstance(submitted_hints.get("field_label"), str) and submitted_hints.get("field_label").strip():
+            hint_payload["field_label"] = submitted_hints.get("field_label").strip()
+        if isinstance(submitted_hints.get("field_type"), str) and submitted_hints.get("field_type") in _AI_FIELD_TYPES:
+            hint_payload["field_type"] = submitted_hints.get("field_type")
+        if isinstance(submitted_hints.get("field_id"), str) and submitted_hints.get("field_id").strip():
+            hint_payload["field_id"] = submitted_hints.get("field_id").strip()
+        if isinstance(submitted_hints.get("field_target"), str) and submitted_hints.get("field_target").strip():
+            hint_payload["field_target"] = submitted_hints.get("field_target").strip()
+            if not isinstance(hint_payload.get("field_label"), str) or not hint_payload.get("field_label"):
+                hint_payload["field_label"] = submitted_hints.get("field_target").strip()
+        if isinstance(submitted_hints.get("module_target"), str) and submitted_hints.get("module_target").strip():
+            hint_payload["module_target"] = submitted_hints.get("module_target").strip()
+        if isinstance(submitted_hints.get("entity_target"), str) and submitted_hints.get("entity_target").strip():
+            hint_payload["entity_target"] = submitted_hints.get("entity_target").strip()
+        if isinstance(submitted_hints.get("tab_target"), str) and submitted_hints.get("tab_target").strip():
+            hint_payload["tab_target"] = submitted_hints.get("tab_target").strip()
+        if not hint_payload and isinstance(custom_text, str) and custom_text.strip().startswith("{"):
+            try:
+                parsed_custom = json.loads(custom_text.strip())
+            except Exception:
+                parsed_custom = None
+            if isinstance(parsed_custom, dict):
+                if isinstance(parsed_custom.get("include_form"), bool):
+                    hint_payload["include_form"] = parsed_custom.get("include_form")
+                if isinstance(parsed_custom.get("include_list"), bool):
+                    hint_payload["include_list"] = parsed_custom.get("include_list")
+                if isinstance(parsed_custom.get("deduplicate_existing"), bool):
+                    hint_payload["deduplicate_existing"] = parsed_custom.get("deduplicate_existing")
+                if isinstance(parsed_custom.get("confirm_plan"), bool):
+                    hint_payload["confirm_plan"] = parsed_custom.get("confirm_plan")
+                if isinstance(parsed_custom.get("field_label"), str) and parsed_custom.get("field_label").strip():
+                    hint_payload["field_label"] = parsed_custom.get("field_label").strip()
+                if isinstance(parsed_custom.get("field_type"), str) and parsed_custom.get("field_type") in _AI_FIELD_TYPES:
+                    hint_payload["field_type"] = parsed_custom.get("field_type")
+                if isinstance(parsed_custom.get("field_id"), str) and parsed_custom.get("field_id").strip():
+                    hint_payload["field_id"] = parsed_custom.get("field_id").strip()
+                if isinstance(parsed_custom.get("field_target"), str) and parsed_custom.get("field_target").strip():
+                    hint_payload["field_target"] = parsed_custom.get("field_target").strip()
+                    if not isinstance(hint_payload.get("field_label"), str) or not hint_payload.get("field_label"):
+                        hint_payload["field_label"] = parsed_custom.get("field_target").strip()
+                if isinstance(parsed_custom.get("module_target"), str) and parsed_custom.get("module_target").strip():
+                    hint_payload["module_target"] = parsed_custom.get("module_target").strip()
+                if isinstance(parsed_custom.get("entity_target"), str) and parsed_custom.get("entity_target").strip():
+                    hint_payload["entity_target"] = parsed_custom.get("entity_target").strip()
+                if isinstance(parsed_custom.get("tab_target"), str) and parsed_custom.get("tab_target").strip():
+                    hint_payload["tab_target"] = parsed_custom.get("tab_target").strip()
+        question_kind = active_question_meta.get("kind") if isinstance(active_question_meta, dict) else None
+        question_id = active_question_meta.get("id") if isinstance(active_question_meta, dict) and isinstance(active_question_meta.get("id"), str) else None
+        module_index = _ai_module_manifest_index(request)
+        restart_request = bool(isinstance(custom_text, str) and custom_text.strip() and _ai_answer_restarts_request(question_id, custom_text, module_index))
+        action_norm = _ai_norm_token(action)
+        custom_norm = _ai_norm_token(custom_text) if isinstance(custom_text, str) else ""
+        custom_is_decline = _ai_text_is_decline_response(custom_text if isinstance(custom_text, str) else None)
+        custom_is_approve = _ai_text_is_approval_response(custom_text if isinstance(custom_text, str) else None)
+        custom_requests_revision = _ai_text_includes_revision_request(custom_text, module_index) if isinstance(custom_text, str) else False
+        if question_kind == "placement" and not hint_payload:
+            placement_answer = _ai_parse_placement_answer(
+                action,
+                custom_text if isinstance(custom_text, str) else None,
+                active_question_meta.get("defaults") if isinstance(active_question_meta, dict) else None,
+            )
+            if isinstance(placement_answer, dict):
+                hint_payload.update(placement_answer)
+            elif action_norm in {"approve", "yes"} or custom_is_approve:
+                hint_payload["include_form"] = True
+                hint_payload["include_list"] = True
+            elif action_norm in {"disapprove", "decline", "no"} or custom_is_decline:
+                hint_payload["include_form"] = False
+                hint_payload["include_list"] = False
+        if question_kind == "dedupe" and not hint_payload:
+            if action_norm in {"approve", "yes"} or custom_is_approve:
+                hint_payload["deduplicate_existing"] = True
+            elif action_norm in {"disapprove", "decline", "no"} or custom_is_decline:
+                hint_payload["deduplicate_existing"] = False
+        if question_kind == "confirm_plan" and not hint_payload:
+            if (action_norm in {"approve", "yes"} or custom_is_approve) and not custom_requests_revision:
+                hint_payload["confirm_plan"] = True
+            elif action_norm in {"disapprove", "decline", "no"} or custom_is_decline:
+                hint_payload["confirm_plan"] = False
+        if question_id == "plan_revision" and not hint_payload:
+            if custom_is_approve and not custom_requests_revision:
+                hint_payload["confirm_plan"] = True
+            elif custom_is_decline:
+                hint_payload["confirm_plan"] = False
+        if question_id == "tab_exists_resolution" and not hint_payload.get("tab_target"):
+            active_defaults = active_question_meta.get("defaults") if isinstance(active_question_meta, dict) and isinstance(active_question_meta.get("defaults"), dict) else {}
+            default_tab_target = active_defaults.get("tab_target") if isinstance(active_defaults.get("tab_target"), str) and active_defaults.get("tab_target").strip() else None
+            if isinstance(default_tab_target, str) and default_tab_target:
+                if action_norm in {"approve", "yes"} or custom_is_approve:
+                    hint_payload["tab_target"] = default_tab_target
+                elif isinstance(custom_text, str) and re.search(r"\b(that tab|that existing tab|use that tab|use the existing tab)\b", custom_text, flags=re.IGNORECASE):
+                    hint_payload["tab_target"] = default_tab_target
+        if question_kind == "field_spec" and not restart_request:
+            if not isinstance(hint_payload.get("field_label"), str) or not hint_payload.get("field_label"):
+                return _error_response("AI_ANSWER_REQUIRED", "Field label is required for this question", "hints.field_label", status=400)
+            if not isinstance(hint_payload.get("field_type"), str) or hint_payload.get("field_type") not in _AI_FIELD_TYPES:
+                return _error_response("AI_ANSWER_REQUIRED", "Field type is required for this question", "hints.field_type", status=400)
+        if isinstance(custom_text, str) and custom_text.strip():
+            module_target_from_text = _ai_extract_module_target_from_text(custom_text.strip(), [], module_index)
+            if isinstance(module_target_from_text, str) and module_target_from_text and not hint_payload.get("module_target"):
+                hint_payload["module_target"] = module_target_from_text
+            if question_id == "module_target" and not hint_payload.get("module_target"):
+                hint_payload["module_target"] = custom_text.strip()
+            if question_id == "entity_target" and not hint_payload.get("entity_target"):
+                hint_payload["entity_target"] = custom_text.strip()
+            if question_id == "tab_target" and not hint_payload.get("tab_target"):
+                hint_payload["tab_target"] = custom_text.strip()
+            if question_id == "field_target" and not hint_payload.get("field_target") and not hint_payload.get("module_target"):
+                hint_payload["field_target"] = custom_text.strip()
+                if not hint_payload.get("field_label"):
+                    hint_payload["field_label"] = custom_text.strip()
+            if not hint_payload.get("answer_text"):
+                hint_payload["answer_text"] = custom_text.strip()
+        if action_norm == "custom" and (not isinstance(custom_text, str) or not custom_text.strip()) and not hint_payload:
+            return _error_response("AI_ANSWER_REQUIRED", "Custom answer text is required", "text", status=400)
+        response_text, _ = _ai_answer_payload(active_question, action, custom_text if isinstance(custom_text, str) else None)
+        answer_body = response_text
+        _ai_create_record(
+            _AI_ENTITY_MESSAGE,
+            {
+                "session_id": session_id,
+                "role": "user",
+                "body": answer_body,
+                "message_type": "answer",
+                "question_id": question_id,
+                "answer_json": hint_payload if hint_payload else None,
+                "created_at": _ai_now(),
+            },
+        )
+        session_data = _ai_record_data(session)
+        prompt = _ai_latest_chat_prompt_for_session(session_id)
+        if not isinstance(prompt, str) or not prompt.strip():
+            return _error_response("AI_PLAN_REQUIRED", "No prior chat prompt found for replanning", "session_id", status=400)
+        replan_prompt = prompt
+        if isinstance(custom_text, str) and custom_text.strip():
+            scope_switch_target = _ai_extract_module_target_from_text(custom_text.strip(), list(module_index.keys()), module_index)
+            short_scope_switch = bool(
+                isinstance(scope_switch_target, str)
+                and scope_switch_target
+                and re.search(r"\b(actually|instead|switch|now|use|apply)\b", custom_text, flags=re.IGNORECASE)
+            )
+            if restart_request:
+                if short_scope_switch and question_kind == "field_spec":
+                    module_label = _ai_module_display_name(scope_switch_target, module_index)
+                    replan_prompt = f"Add a field to the {module_label} module."
+                elif _ai_answer_looks_like_fresh_request(custom_text) or short_scope_switch:
+                    replan_prompt = custom_text.strip()
+                else:
+                    replan_prompt = f"{prompt}\nClarification: {custom_text.strip()}"
+            elif question_id in {"plan_revision", "confirm_plan"}:
+                replan_prompt = f"{prompt}\nClarification: {custom_text.strip()}"
+            elif question_id in {"target_resolution", "module_target", "entity_target"} and _ai_answer_looks_like_fresh_request(custom_text):
+                replan_prompt = custom_text.strip()
+            elif question_id in {"target_resolution", "module_target", "entity_target", "field_target", "tab_label", "tab_target", "field_exists_resolution", "tab_exists_resolution", "plan_revision", "confirm_plan"}:
+                replan_prompt = f"{prompt}\nClarification: {custom_text.strip()}"
+        answer_hints = _ai_collect_answer_hints(session_id)
+        ops_workspace_id = _ai_ops_workspace_id_for_session(session_data, actor.get("workspace_id") if isinstance(actor, dict) else None)
+        with _ai_ops_workspace_scope(request, ops_workspace_id, request_actor):
+            context = _ai_context_package(request, session_data, replan_prompt, answer_hints=answer_hints)
+            plan, derived = _ai_plan_from_message(
+                request,
+                session_data,
+                replan_prompt,
+                explicit_scope=session_data.get("scope_mode") if isinstance(session_data.get("scope_mode"), str) else None,
+                answer_hints=answer_hints,
+            )
+        message_style = "default"
+        if (
+            question_kind == "confirm_plan"
+            and hint_payload.get("confirm_plan") is True
+            and not (plan.get("required_questions") or [])
+            and not plan.get("resolved_without_changes")
+        ):
+            message_style = "ready_revision"
+        plan_data, assistant_text = _ai_persist_plan_result(session_id, plan, context, derived, message_style=message_style)
+        next_question = None
+        next_question_meta = plan.get("required_question_meta") if isinstance(plan.get("required_question_meta"), dict) else None
+        questions = plan.get("required_questions")
+        if isinstance(questions, list):
+            for question in questions:
+                if isinstance(question, str) and question.strip():
+                    next_question = question.strip()
+                    break
+        return _ok_response(
+            {
+                "resolved_question": active_question,
+                "next_question": next_question,
+                "next_question_meta": next_question_meta,
+                "assistant_text": assistant_text,
+                "plan": plan,
+                "plan_record": plan_data,
+                "context": context,
+            }
+        )
+
+
+@app.post("/octo-ai/sessions/{session_id}/patchsets/generate")
+async def octo_ai_generate_patchset(request: Request, session_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    request_actor = actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    with _ai_session_scope(request, session_id, actor) as bound:
+        if not bound or not bound[0]:
+            return _error_response("AI_SESSION_NOT_FOUND", "Session not found", "session_id", status=404)
+        body = await _safe_json(request)
+        if not isinstance(body, dict):
+            body = {}
+        latest = _ai_latest_plan_for_session(session_id)
+        if not latest:
+            return _error_response("AI_PLAN_REQUIRED", "No plan found for session", "plan_id", status=400)
+        latest_plan_id = latest.get("id") if isinstance(latest.get("id"), str) and latest.get("id") else None
+        requested_plan_id = body.get("plan_id") if isinstance(body.get("plan_id"), str) and body.get("plan_id") else None
+        if latest_plan_id and requested_plan_id and requested_plan_id != latest_plan_id:
+            return _error_response(
+                "AI_PLAN_OUT_OF_SYNC",
+                "The plan changed. Refresh it before applying anything to the sandbox.",
+                "plan_id",
+                detail={"latest_plan_id": latest_plan_id},
+                status=409,
+            )
+        plan_json = latest.get("plan_json") if isinstance(latest.get("plan_json"), dict) else {}
+        plan_body = plan_json.get("plan") if isinstance(plan_json.get("plan"), dict) else {}
+        planned_operations = [op for op in (plan_body.get("candidate_operations") or []) if isinstance(op, dict)]
+        questions = plan_body.get("required_questions") if isinstance(plan_body.get("required_questions"), list) else []
+        resolved_without_changes = bool(plan_body.get("resolved_without_changes"))
+        noop_reason = _ai_noop_reason_text(plan_body, plan_json.get("context"))
+        if isinstance(questions, list) and questions:
+            return _error_response(
+                "AI_PLAN_QUESTIONS_REQUIRED",
+                "Planner requires clarification before generating patchset",
+                "required_questions",
+                detail={"questions": questions},
+                status=400,
+            )
+        operations = body.get("operations")
+        if isinstance(operations, list) and operations:
+            if _ai_operations_signature(operations) != _ai_operations_signature(planned_operations):
+                if requested_plan_id:
+                    return _error_response(
+                        "AI_PLAN_OUT_OF_SYNC",
+                        "The planned change no longer matches the latest preview. Refresh the plan before applying it to the sandbox.",
+                        "operations",
+                        detail={"latest_plan_id": latest_plan_id},
+                        status=409,
+                    )
+                operations = planned_operations
+        else:
+            operations = planned_operations
+        if (not isinstance(operations, list) or not operations) and not resolved_without_changes:
+            return _error_response("AI_PATCHSET_INVALID", "No operations available to generate patchset", "operations", status=400)
+
+        session_data = _ai_record_data(bound[0])
+        ops_workspace_id = _ai_ops_workspace_id_for_session(session_data, actor.get("workspace_id") if isinstance(actor, dict) else None)
+        with _ai_ops_workspace_scope(request, ops_workspace_id, request_actor):
+            module_index = _ai_module_manifest_index(request)
+        base_refs: list[dict] = []
+        seen_artifacts: set[tuple[str, str]] = set()
+        for op in operations:
+            if not isinstance(op, dict):
+                continue
+            artifact_type = op.get("artifact_type")
+            artifact_id = op.get("artifact_id") if isinstance(op.get("artifact_id"), str) else ""
+            if not isinstance(artifact_type, str) or not artifact_id:
+                continue
+            artifact_key = (artifact_type, artifact_id)
+            if artifact_key in seen_artifacts:
+                continue
+            if artifact_type == "module":
+                info = module_index.get(artifact_id) or {}
+                base_refs.append(
+                    {
+                        "artifact_type": "module",
+                        "artifact_key": artifact_id,
+                        "artifact_version": (info.get("module") or {}).get("current_hash"),
+                    }
+                )
+                seen_artifacts.add(artifact_key)
+                continue
+            if artifact_type == "automation":
+                existing_automation = automation_store.get(artifact_id) if automation_store else None
+                base_refs.append(
+                    {
+                        "artifact_type": "automation",
+                        "artifact_key": artifact_id,
+                        "artifact_version": _ai_automation_record_version(existing_automation),
+                    }
+                )
+                seen_artifacts.add(artifact_key)
+
+        created = _ai_create_record(
+            _AI_ENTITY_PATCHSET,
+            {
+                "session_id": session_id,
+                "plan_id": latest_plan_id,
+                "status": "draft",
+                "base_snapshot_refs_json": base_refs,
+                "patch_json": {"operations": operations or [], "noop": bool(resolved_without_changes and not operations), "reason": noop_reason},
+                "validation_json": None,
+                "apply_log_json": [],
+                "created_at": _ai_now(),
+                "applied_at": None,
+            },
+        )
+        _ai_update_record(_AI_ENTITY_SESSION, session_id, {"status": "ready_to_apply", "last_activity_at": _ai_now()})
+        _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_patchset_id": _ai_record_data(created).get("id") or "", "last_activity_at": _ai_now()})
+        return _ok_response({"patchset": _ai_record_data(created)})
+
+
+@app.post("/octo-ai/patchsets/{patchset_id}/validate")
+async def octo_ai_validate_patchset(request: Request, patchset_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    request_actor = actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    with _ai_record_scope(request, _AI_ENTITY_PATCHSET, patchset_id, actor) as bound:
+        if not bound or not bound[0]:
+            return _error_response("AI_PATCHSET_NOT_FOUND", "Patchset not found", "patchset_id", status=404)
+        patchset, _workspace_id = bound
+        patch_data = _ai_record_data(patchset)
+        session_data = _ai_get_record(_AI_ENTITY_SESSION, patch_data.get("session_id")) if isinstance(patch_data.get("session_id"), str) else None
+        ops_workspace_id = _ai_strict_sandbox_workspace_id_for_session(session_data)
+        if not isinstance(ops_workspace_id, str) or not ops_workspace_id:
+            return _error_response("AI_SANDBOX_NOT_READY", "Patchset validation requires an active sandbox workspace", "session_id", status=409)
+        with _ai_ops_workspace_scope(request, ops_workspace_id, request_actor):
+            result = _ai_validate_patchset_against_workspace(request, patch_data)
+        next_status = "validated" if result.get("ok") else "invalid"
+        validation_run = None
+        session_id = patch_data.get("session_id")
+        if isinstance(session_id, str):
+            validation_run = _ai_create_validation_run_record(session_id, patchset_id, result)
+        updated = _ai_update_record(
+            _AI_ENTITY_PATCHSET,
+            patchset_id,
+            {
+                "status": next_status,
+                "validation_json": result,
+            },
+        )
+        if isinstance(session_id, str):
+            _ai_update_record(
+                _AI_ENTITY_SESSION,
+                session_id,
+                {
+                    "status": "ready_to_apply" if result.get("ok") else "failed",
+                    "validation_status": "passed" if result.get("ok") else "failed",
+                    "latest_validation_run_id": validation_run.get("id") if isinstance(validation_run, dict) and isinstance(validation_run.get("id"), str) else "",
+                    "last_error": None if result.get("ok") else "Patchset validation failed",
+                    "last_activity_at": _ai_now(),
+                },
+            )
+            _ai_log_session_event(
+                session_id,
+                "validation_run",
+                "Patchset validation passed." if result.get("ok") else "Patchset validation failed.",
+                severity="info" if result.get("ok") else "warning",
+                payload={"patchset_id": patchset_id, "ok": bool(result.get("ok"))},
+            )
+        return _ok_response({"patchset": _ai_record_data(updated), "validation": result}, warnings=result.get("warnings") or [])
+
+
+@app.post("/octo-ai/patchsets/{patchset_id}/apply")
+async def octo_ai_apply_patchset(request: Request, patchset_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    request_actor = actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    with _ai_record_scope(request, _AI_ENTITY_PATCHSET, patchset_id, actor) as bound:
+        if not bound or not bound[0]:
+            return _error_response("AI_PATCHSET_NOT_FOUND", "Patchset not found", "patchset_id", status=404)
+        patchset, _workspace_id = bound
+        patch_data = _ai_record_data(patchset)
+        if patch_data.get("status") not in {"validated", "approved"}:
+            return _error_response("AI_PATCHSET_NOT_VALIDATED", "Patchset must be validated before apply", "status", status=400)
+        body = await _safe_json(request)
+        approved = bool(body.get("approved")) if isinstance(body, dict) else False
+        if not approved:
+            return _error_response("AI_APPROVAL_REQUIRED", "Apply requires explicit approval", "approved", status=400)
+        session_id = patch_data.get("session_id")
+        if isinstance(session_id, str):
+            _ai_create_record(
+                _AI_ENTITY_MESSAGE,
+                {
+                    "session_id": session_id,
+                    "role": "user",
+                    "body": "Apply to Sandbox.",
+                    "message_type": "action",
+                    "created_at": _ai_now(),
+                },
+            )
+        session_data = _ai_get_record(_AI_ENTITY_SESSION, session_id) if isinstance(session_id, str) else None
+        ops_workspace_id = _ai_strict_sandbox_workspace_id_for_session(session_data)
+        if not isinstance(ops_workspace_id, str) or not ops_workspace_id:
+            return _error_response("AI_SANDBOX_NOT_READY", "Patchset apply requires an active sandbox workspace", "session_id", status=409)
+        with _ai_ops_workspace_scope(request, ops_workspace_id, request_actor):
+            validation = _ai_validate_patchset_against_workspace(request, patch_data)
+        if not validation.get("ok"):
+            _ai_update_record(_AI_ENTITY_PATCHSET, patchset_id, {"status": "invalid", "validation_json": validation})
+            return _error_response("AI_PATCHSET_INVALID", "Patchset failed validation", "patchset_id", detail={"validation": validation}, status=400)
+        if isinstance(patch_data.get("patch_json"), dict) and patch_data.get("patch_json", {}).get("noop") is True:
+            apply_log = patch_data.get("apply_log_json") if isinstance(patch_data.get("apply_log_json"), list) else []
+            apply_log = [{"at": _ai_now(), "actor": _ai_actor_id(request), "result": [{"noop": True}]}, *apply_log]
+            updated = _ai_update_record(
+                _AI_ENTITY_PATCHSET,
+                patchset_id,
+                {"status": "applied", "apply_log_json": apply_log, "applied_at": _ai_now(), "validation_json": validation},
+            )
+            if isinstance(session_id, str):
+                session_record = _ai_get_record(_AI_ENTITY_SESSION, session_id) or {}
+                sandbox_record = _ai_upsert_session_sandbox_record(_ai_record_data(session_record), status="ready", last_patchset_applied_id=patchset_id, snapshot_ref=f"patchset:{patchset_id}")
+                _ai_update_record(
+                    _AI_ENTITY_SESSION,
+                    session_id,
+                    {
+                        "status": "applied",
+                        "release_status": "draft",
+                        "sandbox_status": "ready",
+                        "validation_status": "passed",
+                        "active_sandbox_id": sandbox_record.get("id") if isinstance(sandbox_record, dict) and isinstance(sandbox_record.get("id"), str) else "",
+                        "latest_patchset_id": patchset_id,
+                        "last_error": None,
+                        "last_activity_at": _ai_now(),
+                    },
+                )
+                _ai_create_record(
+                    _AI_ENTITY_MESSAGE,
+                    {
+                        "session_id": session_id,
+                        "role": "assistant",
+                        "body": _ai_sandbox_applied_status_text(_ai_record_data(session_record), patch_data),
+                        "message_type": "chat",
+                        "created_at": _ai_now(),
+                    },
+                )
+                _ai_log_session_event(session_id, "sandbox_apply", "Validated patchset applied to sandbox.", payload={"patchset_id": patchset_id, "noop": True})
+            return _ok_response({"patchset": _ai_record_data(updated), "apply": {"ok": True, "noop": True, "scope": "sandbox"}}, warnings=validation.get("warnings") or [])
+
+        apply_log = patch_data.get("apply_log_json") if isinstance(patch_data.get("apply_log_json"), list) else []
+        apply_results = []
+        with _ai_ops_workspace_scope(request, ops_workspace_id, request_actor):
+            for artifact_result in validation.get("results") or []:
+                if not isinstance(artifact_result, dict):
+                    continue
+                artifact_type = artifact_result.get("artifact_type") if isinstance(artifact_result.get("artifact_type"), str) else "module"
+                if artifact_type == "automation":
+                    automation_id = artifact_result.get("artifact_key")
+                    operation = artifact_result.get("operation") if isinstance(artifact_result.get("operation"), dict) else None
+                    if not isinstance(automation_id, str) or not isinstance(operation, dict):
+                        continue
+                    existing_automation = automation_store.get(automation_id) if automation_store else None
+                    _ai_create_record(
+                        _AI_ENTITY_SNAPSHOT,
+                        {
+                            "patchset_id": patchset_id,
+                            "release_id": "",
+                            "snapshot_scope": "sandbox",
+                            "artifact_type": "automation",
+                            "artifact_key": automation_id,
+                            "artifact_version": _ai_automation_record_version(existing_automation) or "",
+                            "snapshot_json": copy.deepcopy(existing_automation) if isinstance(existing_automation, dict) else _ai_missing_snapshot_payload(),
+                            "created_at": _ai_now(),
+                        },
+                    )
+                    item, automation_errors = _ai_apply_automation_record(operation, publish=False, actor_id=_ai_actor_id(request))
+                    if automation_errors:
+                        _ai_update_record(_AI_ENTITY_PATCHSET, patchset_id, {"status": "failed", "apply_log_json": apply_log})
+                        return _error_response(
+                            "AI_APPLY_FAILED",
+                            "Failed to apply patchset",
+                            "patchset_id",
+                            detail={"automation_id": automation_id, "errors": automation_errors},
+                            status=400,
+                        )
+                    apply_results.append(
+                        {
+                            "artifact_type": "automation",
+                            "automation_id": automation_id,
+                            "ok": True,
+                            "status": item.get("status") if isinstance(item, dict) else "draft",
+                            "updated_at": item.get("updated_at") if isinstance(item, dict) else None,
+                        }
+                    )
+                    continue
+                module_id = artifact_result.get("module_id")
+                base_hash = artifact_result.get("base_hash")
+                next_manifest = artifact_result.get("manifest")
+                apply_mode = artifact_result.get("apply_mode") if artifact_result.get("apply_mode") in {"install", "upgrade"} else "upgrade"
+                if not isinstance(module_id, str) or not isinstance(next_manifest, dict):
+                    continue
+                if apply_mode == "upgrade" and not isinstance(base_hash, str):
+                    continue
+                if isinstance(base_hash, str):
+                    before_manifest = _get_snapshot(request, module_id, base_hash)
+                    _ai_create_record(
+                        _AI_ENTITY_SNAPSHOT,
+                        {
+                            "patchset_id": patchset_id,
+                            "release_id": "",
+                            "snapshot_scope": "sandbox",
+                            "artifact_type": "module",
+                            "artifact_key": module_id,
+                            "artifact_version": base_hash,
+                            "snapshot_json": before_manifest,
+                            "created_at": _ai_now(),
+                        },
+                    )
+                result = _apply_module_change(
+                    request,
+                    module_id,
+                    next_manifest,
+                    mode=apply_mode,
+                    reason=f"octo_ai_patchset:{patchset_id}",
+                    patch_id=f"octo_ai:{patchset_id}",
+                )
+                if not result.get("ok"):
+                    _ai_update_record(_AI_ENTITY_PATCHSET, patchset_id, {"status": "failed", "apply_log_json": apply_log})
+                    return _error_response("AI_APPLY_FAILED", "Failed to apply patchset", "patchset_id", detail={"module_id": module_id, "errors": result.get("errors")}, status=400)
+                _invalidate_module_runtime_caches(module_id)
+                module_row = registry.get(module_id) or {}
+                new_hash = module_row.get("current_hash")
+                after_manifest = _get_snapshot(request, module_id, new_hash) if isinstance(new_hash, str) else next_manifest
+                _, post_errors, post_warnings = validate_manifest_raw(after_manifest, expected_module_id=module_id)
+                apply_results.append(
+                    {
+                        "artifact_type": "module",
+                        "module_id": module_id,
+                        "base_hash": base_hash,
+                        "new_hash": new_hash,
+                        "errors": post_errors,
+                        "warnings": post_warnings,
+                    }
+                )
+        log_entry = {"at": _ai_now(), "actor": _ai_actor_id(request), "result": apply_results}
+        apply_log = [log_entry, *apply_log]
+        updated = _ai_update_record(
+            _AI_ENTITY_PATCHSET,
+            patchset_id,
+            {
+                "status": "applied",
+                "applied_at": _ai_now(),
+                "apply_log_json": apply_log,
+                "validation_json": validation,
+            },
+        )
+        if isinstance(session_id, str):
+            session_record = _ai_get_record(_AI_ENTITY_SESSION, session_id) or {}
+            sandbox_record = _ai_upsert_session_sandbox_record(_ai_record_data(session_record), status="ready", last_patchset_applied_id=patchset_id, snapshot_ref=f"patchset:{patchset_id}")
+            _ai_update_record(
+                _AI_ENTITY_SESSION,
+                session_id,
+                {
+                    "status": "applied",
+                    "release_status": "draft",
+                    "sandbox_status": "ready",
+                    "validation_status": "passed",
+                    "active_sandbox_id": sandbox_record.get("id") if isinstance(sandbox_record, dict) and isinstance(sandbox_record.get("id"), str) else "",
+                    "latest_patchset_id": patchset_id,
+                    "last_activity_at": _ai_now(),
+                    "last_error": None,
+                },
+            )
+            _ai_create_record(
+                _AI_ENTITY_MESSAGE,
+                {
+                    "session_id": session_id,
+                    "role": "assistant",
+                    "body": _ai_sandbox_applied_status_text(_ai_record_data(session_record), patch_data),
+                    "message_type": "chat",
+                    "created_at": _ai_now(),
+                },
+            )
+            _ai_log_session_event(session_id, "sandbox_apply", "Validated patchset applied to sandbox.", payload={"patchset_id": patchset_id, "results": apply_results})
+        return _ok_response({"patchset": _ai_record_data(updated), "apply_result": apply_results, "scope": "sandbox"})
+
+
+@app.post("/octo-ai/patchsets/{patchset_id}/rollback")
+async def octo_ai_rollback_patchset(request: Request, patchset_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    request_actor = actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    with _ai_record_scope(request, _AI_ENTITY_PATCHSET, patchset_id, actor) as bound:
+        if not bound or not bound[0]:
+            return _error_response("AI_PATCHSET_NOT_FOUND", "Patchset not found", "patchset_id", status=404)
+        patchset, _workspace_id = bound
+        patch_data = _ai_record_data(patchset)
+        snapshots = []
+        for item in _ai_sort(_ai_list_records(_AI_ENTITY_SNAPSHOT, limit=2000), field="created_at", reverse=True):
+            data = _ai_record_data(item)
+            if data.get("patchset_id") == patchset_id and data.get("snapshot_scope") != "live_release":
+                snapshots.append(data)
+        if not snapshots:
+            return _error_response("AI_ROLLBACK_NOT_FOUND", "No rollback snapshots found", "patchset_id", status=404)
+        rollback_results = []
+        session_data = _ai_get_record(_AI_ENTITY_SESSION, patch_data.get("session_id")) if isinstance(patch_data.get("session_id"), str) else None
+        ops_workspace_id = _ai_strict_sandbox_workspace_id_for_session(session_data)
+        if not isinstance(ops_workspace_id, str) or not ops_workspace_id:
+            return _error_response("AI_SANDBOX_NOT_READY", "Sandbox rollback requires an active sandbox workspace", "session_id", status=409)
+        with _ai_ops_workspace_scope(request, ops_workspace_id, request_actor):
+            for snap in snapshots:
+                artifact_type = snap.get("artifact_type") if isinstance(snap.get("artifact_type"), str) else "module"
+                artifact_key = snap.get("artifact_key")
+                if artifact_type == "automation":
+                    if not isinstance(artifact_key, str) or not artifact_key:
+                        continue
+                    snapshot_json = snap.get("snapshot_json")
+                    current = automation_store.get(artifact_key) if automation_store else None
+                    if _ai_snapshot_represents_missing(snapshot_json):
+                        if isinstance(current, dict) and automation_store:
+                            automation_store.delete(artifact_key)
+                        rollback_results.append({"artifact_type": "automation", "automation_id": artifact_key, "ok": True, "errors": []})
+                        continue
+                    if not isinstance(snapshot_json, dict):
+                        rollback_results.append({"artifact_type": "automation", "automation_id": artifact_key, "ok": False, "errors": [{"code": "AUTOMATION_SNAPSHOT_INVALID"}]})
+                        continue
+                    restored_payload = copy.deepcopy(snapshot_json)
+                    if isinstance(current, dict):
+                        restored = automation_store.update(artifact_key, restored_payload) if automation_store else None
+                    else:
+                        restored = automation_store.create(restored_payload) if automation_store else None
+                    rollback_results.append(
+                        {
+                            "artifact_type": "automation",
+                            "automation_id": artifact_key,
+                            "ok": isinstance(restored, dict),
+                            "errors": [] if isinstance(restored, dict) else [{"code": "AUTOMATION_ROLLBACK_FAILED"}],
+                        }
+                    )
+                    continue
+                module_id = artifact_key
+                to_hash = snap.get("artifact_version")
+                if not isinstance(module_id, str) or not isinstance(to_hash, str):
+                    continue
+                result = registry.rollback(module_id, to_hash, actor=actor, reason=f"octo_ai_rollback:{patchset_id}")
+                if result.get("ok"):
+                    _invalidate_module_runtime_caches(module_id)
+                rollback_results.append({"artifact_type": "module", "module_id": module_id, "ok": bool(result.get("ok")), "errors": result.get("errors") or []})
+        apply_log = patch_data.get("apply_log_json") if isinstance(patch_data.get("apply_log_json"), list) else []
+        apply_log = [{"at": _ai_now(), "actor": _ai_actor_id(request), "rollback": rollback_results}, *apply_log]
+        updated = _ai_update_record(_AI_ENTITY_PATCHSET, patchset_id, {"status": "rolled_back", "apply_log_json": apply_log})
+        for release in _ai_session_release_records(patch_data.get("session_id")) if isinstance(patch_data.get("session_id"), str) else []:
+            if release.get("patchset_id") != patchset_id or not isinstance(release.get("id"), str):
+                continue
+            if release.get("status") in {"promoted", "live"}:
+                continue
+            _ai_update_record(_AI_ENTITY_RELEASE, release.get("id"), {"status": "rolled_back", "rolled_back_at": _ai_now()})
+        session_id = patch_data.get("session_id")
+        if isinstance(session_id, str):
+            remaining_promoted_release = next(
+                (
+                    release
+                    for release in _ai_session_release_records(session_id)
+                    if release.get("status") in {"promoted", "live"}
+                ),
+                None,
+            )
+            remaining_applied_patchset = _ai_latest_applied_patchset_for_session(session_id)
+            sandbox_record = _ai_upsert_session_sandbox_record(
+                _ai_record_data(_ai_get_record(_AI_ENTITY_SESSION, session_id) or {}),
+                status="active",
+                last_patchset_applied_id=remaining_applied_patchset.get("id") if isinstance(remaining_applied_patchset, dict) and isinstance(remaining_applied_patchset.get("id"), str) else "",
+                snapshot_ref=(
+                    f"patchset:{remaining_applied_patchset.get('id')}"
+                    if isinstance(remaining_applied_patchset, dict) and isinstance(remaining_applied_patchset.get("id"), str) and remaining_applied_patchset.get("id")
+                    else ""
+                ),
+            )
+            _ai_update_record(
+                _AI_ENTITY_SESSION,
+                session_id,
+                {
+                    "status": "ready_to_apply",
+                    "release_status": "promoted" if remaining_promoted_release else "draft",
+                    "sandbox_status": "active",
+                    "active_sandbox_id": sandbox_record.get("id") if isinstance(sandbox_record, dict) and isinstance(sandbox_record.get("id"), str) else "",
+                    "latest_patchset_id": remaining_applied_patchset.get("id") if isinstance(remaining_applied_patchset, dict) and isinstance(remaining_applied_patchset.get("id"), str) else "",
+                    "latest_release_id": remaining_promoted_release.get("id") if isinstance(remaining_promoted_release, dict) and isinstance(remaining_promoted_release.get("id"), str) else "",
+                    "last_activity_at": _ai_now(),
+                },
+            )
+            _ai_log_session_event(session_id, "sandbox_rollback", "Sandbox patchset rollback completed.", payload={"patchset_id": patchset_id, "results": rollback_results})
+        return _ok_response({"patchset": _ai_record_data(updated), "rollback_result": rollback_results})
+
+
+@app.post("/octo-ai/sessions/{session_id}/releases")
+async def octo_ai_create_release(request: Request, session_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    denied = _ai_release_admin_denied(actor)
+    if denied:
+        return denied
+    with _ai_session_scope(request, session_id, actor) as bound:
+        if not bound or not bound[0]:
+            return _error_response("AI_SESSION_NOT_FOUND", "Session not found", "session_id", status=404)
+        session, _workspace_id = bound
+        session_data = _ai_record_data(session)
+        body = await _safe_json(request)
+        if not isinstance(body, dict):
+            body = {}
+        sandbox_record = _ai_upsert_session_sandbox_record(session_data)
+        patchset_id = (
+            body.get("patchset_id")
+            if isinstance(body.get("patchset_id"), str) and body.get("patchset_id")
+            else (
+                sandbox_record.get("last_patchset_applied_id")
+                if isinstance(sandbox_record.get("last_patchset_applied_id"), str) and sandbox_record.get("last_patchset_applied_id")
+                else session_data.get("latest_patchset_id")
+            )
+        )
+        if not isinstance(patchset_id, str) or not patchset_id:
+            return _error_response("AI_PATCHSET_REQUIRED", "No sandbox patchset is available to release", "patchset_id", status=400)
+        patch_data = _ai_get_record(_AI_ENTITY_PATCHSET, patchset_id)
+        if not isinstance(patch_data, dict):
+            return _error_response("AI_PATCHSET_NOT_FOUND", "Patchset not found", "patchset_id", status=404)
+        if patch_data.get("status") != "applied":
+            if not (isinstance(body.get("patchset_id"), str) and body.get("patchset_id")):
+                current_applied_patchset = _ai_latest_applied_patchset_for_session(session_id)
+                if isinstance(current_applied_patchset, dict) and isinstance(current_applied_patchset.get("id"), str) and current_applied_patchset.get("id"):
+                    patchset_id = current_applied_patchset.get("id")
+                    patch_data = current_applied_patchset
+            if patch_data.get("status") != "applied":
+                return _error_response("AI_PATCHSET_NOT_APPLIED", "Patchset must be applied to sandbox before creating a release", "patchset_id", status=400)
+        release_patch_bundle = _ai_build_release_patch_bundle(session_id, patchset_id)
+        if not isinstance(release_patch_bundle, dict):
+            return _error_response("AI_PATCHSET_NOT_APPLIED", "Patchset must be applied to sandbox before creating a release", "patchset_id", status=400)
+        sandbox_record = _ai_upsert_session_sandbox_record(session_data, status="ready", last_patchset_applied_id=patchset_id, snapshot_ref=f"patchset:{patchset_id}")
+        existing = next((row for row in _ai_session_release_records(session_id) if row.get("patchset_id") == patchset_id and row.get("status") != "rolled_back"), None)
+        if existing:
+            release_data = existing
+        else:
+            release_data = _ai_create_release_record(
+                session_data,
+                _ai_record_data(patch_data),
+                _ai_actor_id(request),
+                result={
+                    "scope": "sandbox",
+                    "snapshot_ref": sandbox_record.get("snapshot_ref"),
+                    "sandbox_status": sandbox_record.get("status"),
+                    "release_patch_json": release_patch_bundle.get("patch_json"),
+                    "release_base_snapshot_refs_json": release_patch_bundle.get("base_snapshot_refs_json") or [],
+                    "included_patchset_ids": release_patch_bundle.get("included_patchset_ids") or [],
+                },
+                status="draft",
+            )
+        if existing:
+            merged_result = existing.get("result_json") if isinstance(existing.get("result_json"), dict) else {}
+            merged_result.update(
+                {
+                    "scope": "sandbox",
+                    "snapshot_ref": sandbox_record.get("snapshot_ref"),
+                    "sandbox_status": sandbox_record.get("status"),
+                    "release_patch_json": release_patch_bundle.get("patch_json"),
+                    "release_base_snapshot_refs_json": release_patch_bundle.get("base_snapshot_refs_json") or [],
+                    "included_patchset_ids": release_patch_bundle.get("included_patchset_ids") or [],
+                }
+            )
+            release_data = _ai_record_data(_ai_update_record(_AI_ENTITY_RELEASE, existing.get("id"), {"result_json": merged_result}))
+        _ai_update_record(
+            _AI_ENTITY_SESSION,
+            session_id,
+            {
+                "latest_release_id": release_data.get("id") if isinstance(release_data.get("id"), str) else "",
+                "release_status": "draft",
+                "sandbox_status": "ready",
+                "active_sandbox_id": sandbox_record.get("id") if isinstance(sandbox_record.get("id"), str) else session_data.get("active_sandbox_id") or "",
+                "last_activity_at": _ai_now(),
+            },
+        )
+        _ai_log_session_event(session_id, "release_created", "Release candidate created from sandbox state.", sandbox_id=sandbox_record.get("id") if isinstance(sandbox_record, dict) else None, payload={"patchset_id": patchset_id, "release_id": release_data.get("id")})
+        return _ok_response({"release": release_data, "sandbox": sandbox_record})
+
+
+@app.post("/octo-ai/releases/{release_id}/promote")
+async def octo_ai_promote_release(request: Request, release_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    denied = _ai_release_admin_denied(actor)
+    if denied:
+        return denied
+    with _ai_record_scope(request, _AI_ENTITY_RELEASE, release_id, actor) as bound:
+        if not bound or not bound[0]:
+            return _error_response("AI_RELEASE_NOT_FOUND", "Release not found", "release_id", status=404)
+        release_record, _workspace_id = bound
+        release_data = _ai_record_data(release_record)
+        session_id = release_data.get("session_id")
+        if not isinstance(session_id, str) or not session_id:
+            return _error_response("AI_SESSION_NOT_FOUND", "Session not found", "session_id", status=404)
+        session_data = _ai_get_record(_AI_ENTITY_SESSION, session_id)
+        if not isinstance(session_data, dict):
+            return _error_response("AI_SESSION_NOT_FOUND", "Session not found", "session_id", status=404)
+        _ai_create_record(
+            _AI_ENTITY_MESSAGE,
+            {
+                "session_id": session_id,
+                "role": "user",
+                "body": "Publish to Live.",
+                "message_type": "action",
+                "created_at": _ai_now(),
+            },
+        )
+        patchset_id = release_data.get("patchset_id") if isinstance(release_data.get("patchset_id"), str) else ""
+        if not patchset_id:
+            return _error_response("AI_PATCHSET_REQUIRED", "Release does not reference a patchset", "patchset_id", status=400)
+        patch_data = _ai_get_record(_AI_ENTITY_PATCHSET, patchset_id)
+        if not isinstance(patch_data, dict):
+            return _error_response("AI_PATCHSET_NOT_FOUND", "Patchset not found", "patchset_id", status=404)
+        release_result = release_data.get("result_json") if isinstance(release_data.get("result_json"), dict) else {}
+        release_patch_record = patch_data
+        if isinstance(release_result.get("release_patch_json"), dict):
+            release_patch_record = {
+                "id": patchset_id,
+                "patch_json": copy.deepcopy(release_result.get("release_patch_json")),
+                "base_snapshot_refs_json": copy.deepcopy(release_result.get("release_base_snapshot_refs_json")) if isinstance(release_result.get("release_base_snapshot_refs_json"), list) else [],
+                "validation_json": patch_data.get("validation_json") if isinstance(patch_data.get("validation_json"), dict) else None,
+            }
+        live_workspace_id = _ai_live_workspace_id_for_session(session_data, actor.get("workspace_id") if isinstance(actor, dict) else None)
+        with _ai_ops_workspace_scope(request, live_workspace_id, actor):
+            validation = _ai_validate_patchset_against_workspace(request, release_patch_record)
+        if not validation.get("ok"):
+            return _error_response("AI_RELEASE_INVALID", "Release failed validation against the live workspace", "release_id", detail={"validation": validation}, status=400)
+        apply_results = []
+        if isinstance(release_patch_record.get("patch_json"), dict) and release_patch_record.get("patch_json", {}).get("noop") is True:
+            apply_results = [{"noop": True}]
+        else:
+            with _ai_ops_workspace_scope(request, live_workspace_id, actor):
+                for artifact_result in validation.get("results") or []:
+                    if not isinstance(artifact_result, dict):
+                        continue
+                    artifact_type = artifact_result.get("artifact_type") if isinstance(artifact_result.get("artifact_type"), str) else "module"
+                    if artifact_type == "automation":
+                        automation_id = artifact_result.get("artifact_key")
+                        operation = artifact_result.get("operation") if isinstance(artifact_result.get("operation"), dict) else None
+                        if not isinstance(automation_id, str) or not isinstance(operation, dict):
+                            continue
+                        existing_automation = automation_store.get(automation_id) if automation_store else None
+                        _ai_create_record(
+                            _AI_ENTITY_SNAPSHOT,
+                            {
+                                "patchset_id": patchset_id,
+                                "release_id": release_id,
+                                "snapshot_scope": "live_release",
+                                "artifact_type": "automation",
+                                "artifact_key": automation_id,
+                                "artifact_version": _ai_automation_record_version(existing_automation) or "",
+                                "snapshot_json": copy.deepcopy(existing_automation) if isinstance(existing_automation, dict) else _ai_missing_snapshot_payload(),
+                                "created_at": _ai_now(),
+                            },
+                        )
+                        item, automation_errors = _ai_apply_automation_record(operation, publish=True, actor_id=_ai_actor_id(request))
+                        if automation_errors:
+                            return _error_response(
+                                "AI_RELEASE_PROMOTE_FAILED",
+                                "Failed to promote release",
+                                "release_id",
+                                detail={"automation_id": automation_id, "errors": automation_errors},
+                                status=400,
+                            )
+                        apply_results.append(
+                            {
+                                "artifact_type": "automation",
+                                "automation_id": automation_id,
+                                "ok": True,
+                                "status": item.get("status") if isinstance(item, dict) else "published",
+                            }
+                        )
+                        continue
+                    module_id = artifact_result.get("module_id")
+                    base_hash = artifact_result.get("base_hash")
+                    next_manifest = artifact_result.get("manifest")
+                    apply_mode = artifact_result.get("apply_mode") if artifact_result.get("apply_mode") in {"install", "upgrade"} else "upgrade"
+                    if not isinstance(module_id, str) or not isinstance(next_manifest, dict):
+                        continue
+                    if apply_mode == "upgrade" and not isinstance(base_hash, str):
+                        continue
+                    if isinstance(base_hash, str):
+                        before_manifest = _get_snapshot(request, module_id, base_hash)
+                        _ai_create_record(
+                            _AI_ENTITY_SNAPSHOT,
+                            {
+                                "patchset_id": patchset_id,
+                                "release_id": release_id,
+                                "snapshot_scope": "live_release",
+                                "artifact_type": "module",
+                                "artifact_key": module_id,
+                                "artifact_version": base_hash,
+                                "snapshot_json": before_manifest,
+                                "created_at": _ai_now(),
+                            },
+                        )
+                    result = _apply_module_change(
+                        request,
+                        module_id,
+                        next_manifest,
+                        mode=apply_mode,
+                        reason=f"octo_ai_release:{release_id}",
+                        patch_id=f"octo_ai_release:{release_id}",
+                    )
+                    if not result.get("ok"):
+                        return _error_response("AI_RELEASE_PROMOTE_FAILED", "Failed to promote release", "release_id", detail={"module_id": module_id, "errors": result.get("errors")}, status=400)
+                    _invalidate_module_runtime_caches(module_id)
+                    apply_results.append({"artifact_type": "module", "module_id": module_id, "ok": True, "new_hash": (registry.get(module_id) or {}).get("current_hash")})
+        updated_release = _ai_update_record(
+            _AI_ENTITY_RELEASE,
+            release_id,
+            {
+                "status": "promoted",
+                "promoted_by": _ai_actor_id(request),
+                "promoted_at": _ai_now(),
+                "result_json": {
+                    **(release_result if isinstance(release_result, dict) else {}),
+                    "validation": validation,
+                    "apply_result": apply_results,
+                    "scope": "live",
+                },
+            },
+        )
+        _ai_update_record(
+            _AI_ENTITY_SESSION,
+            session_id,
+            {
+                "release_status": "promoted",
+                "latest_release_id": release_id,
+                "status": "applied",
+                "validation_status": "passed",
+                "last_error": None,
+                "last_activity_at": _ai_now(),
+            },
+        )
+        _ai_create_record(
+            _AI_ENTITY_MESSAGE,
+            {
+                "session_id": session_id,
+                "role": "assistant",
+                "body": _ai_live_published_status_text(session_data, release_patch_record, _ai_record_data(updated_release)),
+                "message_type": "chat",
+                "created_at": _ai_now(),
+            },
+        )
+        _ai_log_session_event(session_id, "release_promoted", "Release promoted to live.", payload={"release_id": release_id, "patchset_id": patchset_id, "results": apply_results})
+        return _ok_response({"release": _ai_record_data(updated_release), "promotion": {"ok": True, "apply_result": apply_results, "validation": validation}})
+
+
+@app.post("/octo-ai/releases/{release_id}/rollback")
+async def octo_ai_rollback_release(request: Request, release_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    denied = _ai_release_admin_denied(actor)
+    if denied:
+        return denied
+    with _ai_record_scope(request, _AI_ENTITY_RELEASE, release_id, actor) as bound:
+        if not bound or not bound[0]:
+            return _error_response("AI_RELEASE_NOT_FOUND", "Release not found", "release_id", status=404)
+        release_record, _workspace_id = bound
+        release_data = _ai_record_data(release_record)
+        session_id = release_data.get("session_id")
+        if not isinstance(session_id, str) or not session_id:
+            return _error_response("AI_SESSION_NOT_FOUND", "Session not found", "session_id", status=404)
+        session_data = _ai_get_record(_AI_ENTITY_SESSION, session_id)
+        if not isinstance(session_data, dict):
+            return _error_response("AI_SESSION_NOT_FOUND", "Session not found", "session_id", status=404)
+        patchset_id = release_data.get("patchset_id") if isinstance(release_data.get("patchset_id"), str) else ""
+        snapshots = _ai_release_snapshot_records(release_id, patchset_id)
+        rollback_results = []
+        if snapshots:
+            live_workspace_id = _ai_live_workspace_id_for_session(session_data, actor.get("workspace_id") if isinstance(actor, dict) else None)
+            with _ai_ops_workspace_scope(request, live_workspace_id, actor):
+                for snap in snapshots:
+                    artifact_type = snap.get("artifact_type") if isinstance(snap.get("artifact_type"), str) else "module"
+                    artifact_key = snap.get("artifact_key")
+                    if artifact_type == "automation":
+                        if not isinstance(artifact_key, str) or not artifact_key:
+                            continue
+                        snapshot_json = snap.get("snapshot_json")
+                        current = automation_store.get(artifact_key) if automation_store else None
+                        if _ai_snapshot_represents_missing(snapshot_json):
+                            if isinstance(current, dict) and automation_store:
+                                automation_store.delete(artifact_key)
+                            rollback_results.append({"artifact_type": "automation", "automation_id": artifact_key, "ok": True, "errors": []})
+                            continue
+                        if not isinstance(snapshot_json, dict):
+                            rollback_results.append({"artifact_type": "automation", "automation_id": artifact_key, "ok": False, "errors": [{"code": "AUTOMATION_SNAPSHOT_INVALID"}]})
+                            continue
+                        restored_payload = copy.deepcopy(snapshot_json)
+                        if isinstance(current, dict):
+                            restored = automation_store.update(artifact_key, restored_payload) if automation_store else None
+                        else:
+                            restored = automation_store.create(restored_payload) if automation_store else None
+                        rollback_results.append(
+                            {
+                                "artifact_type": "automation",
+                                "automation_id": artifact_key,
+                                "ok": isinstance(restored, dict),
+                                "errors": [] if isinstance(restored, dict) else [{"code": "AUTOMATION_ROLLBACK_FAILED"}],
+                            }
+                        )
+                        continue
+                    module_id = artifact_key
+                    to_hash = snap.get("artifact_version")
+                    if not isinstance(module_id, str) or not isinstance(to_hash, str):
+                        continue
+                    result = registry.rollback(module_id, to_hash, actor=actor, reason=f"octo_ai_release_rollback:{release_id}")
+                    if result.get("ok"):
+                        _invalidate_module_runtime_caches(module_id)
+                    rollback_results.append({"artifact_type": "module", "module_id": module_id, "ok": bool(result.get("ok")), "errors": result.get("errors") or []})
+        elif not (isinstance(release_data.get("result_json"), dict) and (release_data.get("result_json") or {}).get("apply_result") == [{"noop": True}]):
+            return _error_response("AI_RELEASE_ROLLBACK_NOT_FOUND", "No live rollback snapshots found for this release", "release_id", status=404)
+        updated_release = _ai_update_record(_AI_ENTITY_RELEASE, release_id, {"status": "rolled_back", "rolled_back_at": _ai_now()})
+        _ai_update_record(
+            _AI_ENTITY_SESSION,
+            session_id,
+            {
+                "release_status": "rolled_back",
+                "last_activity_at": _ai_now(),
+            },
+        )
+        _ai_log_session_event(session_id, "release_rollback", "Release rolled back from live.", payload={"release_id": release_id, "results": rollback_results})
+        return _ok_response({"release": _ai_record_data(updated_release), "rollback_result": rollback_results})
+
+
+@app.get("/octo-ai/artifacts/{artifact_type}/{artifact_key}")
+async def octo_ai_get_artifact(request: Request, artifact_type: str, artifact_key: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    if denied:
+        return denied
+    if artifact_type == "module":
+        module = _get_module(request, artifact_key)
+        if not module:
+            return _error_response("MODULE_NOT_FOUND", "Module not found", "artifact_key", status=404)
+        manifest_hash = module.get("current_hash")
+        manifest = _get_snapshot(request, artifact_key, manifest_hash) if isinstance(manifest_hash, str) else {}
+        history = []
+        try:
+            history = store.list_snapshots(artifact_key)
+        except Exception:
+            history = []
+        return _ok_response(
+            {
+                "artifact_type": artifact_type,
+                "artifact_key": artifact_key,
+                "preview": {
+                    "module": module,
+                    "summary": {
+                        "entities": len(manifest.get("entities") or []),
+                        "views": len(manifest.get("views") or []),
+                        "pages": len(manifest.get("pages") or []),
+                        "actions": len(manifest.get("actions") or []),
+                    },
+                },
+                "manifest": manifest,
+                "history": history,
+            }
+        )
+    if artifact_type == "automation":
+        item = automation_store.get(artifact_key) if automation_store else None
+        if not item:
+            return _error_response("AUTOMATION_NOT_FOUND", "Automation not found", "artifact_key", status=404)
+        return _ok_response({"artifact_type": artifact_type, "artifact_key": artifact_key, "preview": item, "manifest": item, "history": []})
+    if artifact_type == "integration":
+        item = connection_store.get(artifact_key) if connection_store else None
+        if not item or not _is_integration_type(item.get("type")):
+            return _error_response("INTEGRATION_NOT_FOUND", "Integration not found", "artifact_key", status=404)
+        return _ok_response({"artifact_type": artifact_type, "artifact_key": artifact_key, "preview": item, "manifest": item, "history": []})
+    return _error_response("AI_ARTIFACT_TYPE_INVALID", "Unsupported artifact type", "artifact_type", status=400)
 
 
 @app.post("/lookup/{entity_id}/options")
@@ -13734,6 +29193,8 @@ def _validate_automation_payload(data: dict, for_update: bool = False) -> list[d
                     errors.append(_issue("AUTOMATION_STEP_INVALID", "action_id required", f"steps[{idx}].action_id"))
                 if kind == "condition" and not isinstance(step.get("expr"), dict):
                     errors.append(_issue("AUTOMATION_STEP_INVALID", "expr required", f"steps[{idx}].expr"))
+                if kind == "condition" and "stop_on_false" in step and not isinstance(step.get("stop_on_false"), bool):
+                    errors.append(_issue("AUTOMATION_STEP_INVALID", "stop_on_false must be boolean", f"steps[{idx}].stop_on_false"))
                 if kind == "delay":
                     if "seconds" not in step and "until" not in step:
                         errors.append(_issue("AUTOMATION_STEP_INVALID", "seconds or until required", f"steps[{idx}]"))

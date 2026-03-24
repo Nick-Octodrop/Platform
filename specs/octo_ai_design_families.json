@@ -1,0 +1,364 @@
+{
+  "training": {
+    "icon_key": "lucide:Dumbbell",
+    "minimum_business_fields": 8,
+    "default_module_name": "Training Tracker",
+    "purpose_name_rules": [
+      {"match_any": ["gym", "workout", "exercise", "fitness"], "name": "Gym Training"}
+    ],
+    "detect_any": ["gym", "training", "workout", "fitness", "exercise"],
+    "primary_label": "Session Name",
+    "summary_template": "{module_name} with scheduling, tracking, and completion flow.",
+    "statuses": [
+      {"value": "planned", "label": "Planned"},
+      {"value": "completed", "label": "Completed"},
+      {"value": "skipped", "label": "Skipped"}
+    ],
+    "fields": [
+      {"suffix": "session_type", "type": "string", "label": "Session Type"},
+      {"suffix": "training_goal", "type": "string", "label": "Training Goal"},
+      {"suffix": "training_date", "type": "date", "label": "Training Date"},
+      {"suffix": "coach_name", "type": "string", "label": "Coach"},
+      {"suffix": "location", "type": "string", "label": "Location"},
+      {"suffix": "duration_minutes", "type": "number", "label": "Duration (Minutes)"},
+      {"suffix": "intensity", "type": "enum", "label": "Intensity", "options": [
+        {"label": "Low", "value": "low"},
+        {"label": "Moderate", "value": "moderate"},
+        {"label": "High", "value": "high"}
+      ]},
+      {"suffix": "calories_burned", "type": "number", "label": "Calories Burned"},
+      {"suffix": "notes", "type": "text", "label": "Notes"},
+      {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
+    ]
+  },
+  "recipe": {
+    "icon_key": "lucide:ChefHat",
+    "minimum_business_fields": 8,
+    "default_module_name": "Recipe Book",
+    "purpose_name_rules": [
+      {"match_any": ["ingredient", "ingredients", "pantry"], "name": "Kitchen Recipes"}
+    ],
+    "detect_any": ["recipe", "recipes", "cooking", "cookbook", "ingredient", "ingredients", "pantry", "kitchen", "meal plan", "meal prep"],
+    "primary_label": "Recipe Name",
+    "summary_template": "{module_name} with recipes, pantry awareness, and cooking workflow tracking.",
+    "statuses": [
+      {"value": "draft", "label": "Draft"},
+      {"value": "ready_to_cook", "label": "Ready To Cook"},
+      {"value": "cooked", "label": "Cooked"},
+      {"value": "favorite", "label": "Favorite"}
+    ],
+    "fields": [
+      {"suffix": "cuisine", "type": "string", "label": "Cuisine"},
+      {"suffix": "meal_type", "type": "string", "label": "Meal Type"},
+      {"suffix": "prep_minutes", "type": "number", "label": "Prep Time (Minutes)"},
+      {"suffix": "cook_minutes", "type": "number", "label": "Cook Time (Minutes)"},
+      {"suffix": "servings", "type": "number", "label": "Servings"},
+      {"suffix": "ingredients_on_hand", "type": "bool", "label": "Ingredients On Hand"},
+      {"suffix": "ingredient_list", "type": "text", "label": "Ingredients"},
+      {"suffix": "method", "type": "text", "label": "Method"},
+      {"suffix": "last_cooked_on", "type": "date", "label": "Last Cooked On"},
+      {"suffix": "notes", "type": "text", "label": "Notes"},
+      {"suffix": "attachments", "type": "attachments", "label": "Photos"}
+    ]
+  },
+  "commerce": {
+    "icon_key": "lucide:BadgeDollarSign",
+    "minimum_business_fields": 10,
+    "default_module_name": "Spend & Sales Tracker",
+    "default_list_mode": "list",
+    "purpose_name_rules": [
+      {"match_any": ["catalog", "owed", "profit", "margin", "online shop", "shop"], "name": "Spend & Sales Tracker"}
+    ],
+    "detect_any": ["ecommerce", "online store", "online shop", "shop profit", "profitability", "amount owed", "owed", "reconcile payouts"],
+    "detect_all": [
+      ["purchase", "sales"],
+      ["spent", "sales"],
+      ["catalog", "sales"],
+      ["catalog", "purchase"],
+      ["shop", "sales"]
+    ],
+    "primary_label": "Entry",
+    "summary_template": "{module_name} with purchase spend, sales performance, payout tracking, and reporting-ready records.",
+    "statuses": [
+      {"value": "draft", "label": "Draft"},
+      {"value": "purchased", "label": "Purchased"},
+      {"value": "sold", "label": "Sold"},
+      {"value": "reconciled", "label": "Reconciled"},
+      {"value": "paid_out", "label": "Paid Out"}
+    ],
+    "fields": [
+      {"suffix": "catalog_item", "type": "string", "label": "Catalog Item"},
+      {"suffix": "sku", "type": "string", "label": "SKU"},
+      {"suffix": "spent_by", "type": "string", "label": "Spent By"},
+      {"suffix": "purchase_amount", "type": "number", "label": "Purchase Amount"},
+      {"suffix": "sales_amount", "type": "number", "label": "Sales Amount"},
+      {"suffix": "amount_owed", "type": "number", "label": "Amount Owed"},
+      {"suffix": "margin_amount", "type": "number", "label": "Margin"},
+      {"suffix": "owed_to", "type": "string", "label": "Owed To"},
+      {"suffix": "sales_channel", "type": "string", "label": "Sales Channel"},
+      {"suffix": "quantity", "type": "number", "label": "Quantity"},
+      {"suffix": "supplier_name", "type": "string", "label": "Supplier"},
+      {"suffix": "fees_amount", "type": "number", "label": "Fees"},
+      {"suffix": "purchase_date", "type": "date", "label": "Purchase Date"},
+      {"suffix": "sale_date", "type": "date", "label": "Sale Date"},
+      {"suffix": "report_period", "type": "string", "label": "Report Period"},
+      {"suffix": "notes", "type": "text", "label": "Notes"},
+      {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
+    ]
+  },
+  "pipeline": {
+    "icon_key": "lucide:Workflow",
+    "minimum_business_fields": 8,
+    "default_module_name": "Sales Pipeline",
+    "default_list_mode": "kanban",
+    "purpose_name_rules": [
+      {"match_any": ["candidate", "recruit", "hiring", "interview"], "name": "Candidate Pipeline"}
+    ],
+    "detect_any": ["pipeline", "recruit", "candidate", "lead", "opportunity", "sales"],
+    "primary_label": "Opportunity",
+    "summary_template": "{module_name} with stage progression, next steps, and value tracking.",
+    "statuses": [
+      {"value": "applied", "label": "Applied"},
+      {"value": "screen", "label": "Screen"},
+      {"value": "interview", "label": "Interview"},
+      {"value": "offer", "label": "Offer"},
+      {"value": "hired", "label": "Hired"}
+    ],
+    "fields": [
+      {"suffix": "company_name", "type": "string", "label": "Company"},
+      {"suffix": "contact_name", "type": "string", "label": "Contact"},
+      {"suffix": "value", "type": "number", "label": "Value"},
+      {"suffix": "source", "type": "string", "label": "Source"},
+      {"suffix": "next_step", "type": "string", "label": "Next Step"},
+      {"suffix": "target_date", "type": "date", "label": "Target Date"},
+      {"suffix": "notes", "type": "text", "label": "Notes"},
+      {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
+    ]
+  },
+  "planning": {
+    "icon_key": "lucide:CalendarDays",
+    "minimum_business_fields": 8,
+    "default_module_name": "Planning Hub",
+    "purpose_name_rules": [
+      {"match_any": ["holiday", "trip", "travel", "itinerary"], "name": "Holiday Planning"}
+    ],
+    "detect_any": ["leave", "holiday", "meeting", "visit", "schedule", "calendar", "delivery run", "shift", "visitor"],
+    "primary_label": "Title",
+    "summary_template": "{module_name} with scheduling, participants, and calendar-ready records.",
+    "statuses": [
+      {"value": "planned", "label": "Planned"},
+      {"value": "confirmed", "label": "Confirmed"},
+      {"value": "completed", "label": "Completed"},
+      {"value": "cancelled", "label": "Cancelled"}
+    ],
+    "fields": [
+      {"suffix": "start_date", "type": "date", "label": "Start Date"},
+      {"suffix": "end_date", "type": "date", "label": "End Date"},
+      {"suffix": "location", "type": "string", "label": "Location"},
+      {"suffix": "coordinator_name", "type": "string", "label": "Coordinator"},
+      {"suffix": "participants", "type": "text", "label": "Participants"},
+      {"suffix": "notes", "type": "text", "label": "Notes"},
+      {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
+    ]
+  },
+  "request": {
+    "icon_key": "lucide:ClipboardList",
+    "minimum_business_fields": 8,
+    "default_module_name": "Request Management",
+    "purpose_name_rules": [
+      {"match_any": ["purchase", "procurement", "vendor"], "name": "Purchase Requests"}
+    ],
+    "detect_any": ["request", "approval", "expense", "purchase", "change", "maintenance", "onboarding task"],
+    "primary_label": "Request",
+    "summary_template": "{module_name} with request intake, approval flow, and due dates.",
+    "statuses": [
+      {"value": "draft", "label": "Draft"},
+      {"value": "submitted", "label": "Submitted"},
+      {"value": "approved", "label": "Approved"},
+      {"value": "completed", "label": "Completed"}
+    ],
+    "fields": [
+      {"suffix": "request_type", "type": "string", "label": "Request Type"},
+      {"suffix": "priority", "type": "enum", "label": "Priority", "options": [
+        {"label": "Low", "value": "low"},
+        {"label": "Medium", "value": "medium"},
+        {"label": "High", "value": "high"},
+        {"label": "Urgent", "value": "urgent"}
+      ]},
+      {"suffix": "requested_date", "type": "date", "label": "Requested Date"},
+      {"suffix": "due_date", "type": "date", "label": "Due Date"},
+      {"suffix": "requester_name", "type": "string", "label": "Requester"},
+      {"suffix": "approver_name", "type": "string", "label": "Approver"},
+      {"suffix": "amount", "type": "number", "label": "Amount"},
+      {"suffix": "notes", "type": "text", "label": "Notes"},
+      {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
+    ]
+  },
+  "compliance": {
+    "icon_key": "lucide:ShieldCheck",
+    "minimum_business_fields": 8,
+    "default_module_name": "Compliance Tracker",
+    "detect_any": ["vendor compliance", "supplier compliance", "insurance expiry", "insurance renewal", "safety docs", "safety documents", "approved categories", "review notes"],
+    "detect_all": [["compliance", "vendor"], ["compliance", "supplier"], ["compliance", "insurance"], ["compliance", "certificate"], ["compliance", "onboarding"]],
+    "primary_label": "Compliance Item",
+    "summary_template": "{module_name} with document expiry, onboarding checks, approvals, and review tracking.",
+    "statuses": [
+      {"value": "pending", "label": "Pending"},
+      {"value": "under_review", "label": "Under Review"},
+      {"value": "approved", "label": "Approved"},
+      {"value": "expired", "label": "Expired"}
+    ],
+    "fields": [
+      {"suffix": "insurance_expiry", "type": "date", "label": "Insurance Expiry"},
+      {"suffix": "safety_docs", "type": "attachments", "label": "Safety Docs"},
+      {"suffix": "onboarding_status", "type": "enum", "label": "Onboarding Status", "options": [
+        {"label": "Pending Documents", "value": "pending_documents"},
+        {"label": "Under Review", "value": "under_review"},
+        {"label": "Approved", "value": "approved"},
+        {"label": "Blocked", "value": "blocked"}
+      ]},
+      {"suffix": "approved_categories", "type": "tags", "label": "Approved Categories"},
+      {"suffix": "review_notes", "type": "text", "label": "Review Notes"},
+      {"suffix": "approval_date", "type": "date", "label": "Approval Date"},
+      {"suffix": "next_review_date", "type": "date", "label": "Next Review Date"},
+      {"suffix": "certificate_reference", "type": "string", "label": "Certificate Reference"}
+    ]
+  },
+  "incident": {
+    "icon_key": "lucide:ShieldAlert",
+    "minimum_business_fields": 8,
+    "default_module_name": "Incident Tracking",
+    "detect_any": ["incident", "safety", "audit finding", "finding", "quality audit", "audit action"],
+    "primary_label": "Title",
+    "summary_template": "{module_name} with incident lifecycle, severity, and follow-up tracking.",
+    "statuses": [
+      {"value": "open", "label": "Open"},
+      {"value": "investigating", "label": "Investigating"},
+      {"value": "contained", "label": "Contained"},
+      {"value": "closed", "label": "Closed"}
+    ],
+    "fields": [
+      {"suffix": "reported_on", "type": "date", "label": "Reported On"},
+      {"suffix": "severity", "type": "enum", "label": "Severity", "options": [
+        {"label": "Low", "value": "low"},
+        {"label": "Medium", "value": "medium"},
+        {"label": "High", "value": "high"},
+        {"label": "Critical", "value": "critical"}
+      ]},
+      {"suffix": "location", "type": "string", "label": "Location"},
+      {"suffix": "reported_by", "type": "string", "label": "Reported By"},
+      {"suffix": "root_cause", "type": "text", "label": "Root Cause"},
+      {"suffix": "follow_up", "type": "text", "label": "Follow Up"},
+      {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
+    ]
+  },
+  "register": {
+    "icon_key": "lucide:Archive",
+    "minimum_business_fields": 8,
+    "default_module_name": "Operations Register",
+    "detect_any": ["register", "logbook", "vehicle", "fleet", "tool", "asset", "stocktake", "checkout", "fuel"],
+    "primary_label": "Name",
+    "summary_template": "{module_name} with register-style records, condition tracking, and service history.",
+    "statuses": [
+      {"value": "active", "label": "Active"},
+      {"value": "inactive", "label": "Inactive"},
+      {"value": "retired", "label": "Retired"}
+    ],
+    "fields": [
+      {"suffix": "reference_code", "type": "string", "label": "Reference"},
+      {"suffix": "category", "type": "string", "label": "Category"},
+      {"suffix": "service_date", "type": "date", "label": "Service Date"},
+      {"suffix": "assigned_to", "type": "string", "label": "Assigned To"},
+      {"suffix": "location", "type": "string", "label": "Location"},
+      {"suffix": "condition", "type": "enum", "label": "Condition", "options": [
+        {"label": "Good", "value": "good"},
+        {"label": "Fair", "value": "fair"},
+        {"label": "Needs Attention", "value": "needs_attention"}
+      ]},
+      {"suffix": "notes", "type": "text", "label": "Notes"},
+      {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
+    ]
+  },
+  "delivery": {
+    "icon_key": "lucide:Briefcase",
+    "minimum_business_fields": 8,
+    "default_module_name": "Delivery Work",
+    "purpose_name_rules": [
+      {"match_any": ["contracting", "contract work", "freelance", "client work"], "name": "Software Delivery"},
+      {"match_any": ["software", "engineering", "development", "sprint", "release", "repository", "repo"], "name": "Delivery Work"}
+    ],
+    "detect_any": ["software", "engineering", "development", "project", "sprint", "release", "bug", "feature", "repository", "repo", "contracting"],
+    "primary_label": "Work Item",
+    "summary_template": "{module_name} with client, project, effort, and delivery workflow tracking.",
+    "statuses": [
+      {"value": "scoped", "label": "Scoped"},
+      {"value": "ready", "label": "Ready"},
+      {"value": "in_progress", "label": "In Progress"},
+      {"value": "review", "label": "In Review"},
+      {"value": "done", "label": "Done"}
+    ],
+    "fields": [
+      {"suffix": "client_name", "type": "string", "label": "Client"},
+      {"suffix": "project_name", "type": "string", "label": "Project"},
+      {"suffix": "work_type", "type": "string", "label": "Work Type"},
+      {"suffix": "priority", "type": "enum", "label": "Priority", "options": [
+        {"label": "Low", "value": "low"},
+        {"label": "Medium", "value": "medium"},
+        {"label": "High", "value": "high"},
+        {"label": "Urgent", "value": "urgent"}
+      ]},
+      {"suffix": "estimate_hours", "type": "number", "label": "Estimate Hours"},
+      {"suffix": "billable_hours", "type": "number", "label": "Billable Hours"},
+      {"suffix": "start_date", "type": "date", "label": "Start Date"},
+      {"suffix": "due_date", "type": "date", "label": "Due Date"},
+      {"suffix": "repository_name", "type": "string", "label": "Repository"},
+      {"suffix": "sprint_name", "type": "string", "label": "Sprint"},
+      {"suffix": "notes", "type": "text", "label": "Notes"},
+      {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
+    ]
+  },
+  "workflow": {
+    "icon_key": "lucide:ListChecks",
+    "minimum_business_fields": 6,
+    "default_module_name": "Work Tracker",
+    "detect_any": ["onboarding", "compliance"],
+    "primary_label": "Title",
+    "summary_template": "{module_name} with assignable workflow records and completion tracking.",
+    "statuses": [
+      {"value": "todo", "label": "To Do"},
+      {"value": "in_progress", "label": "In Progress"},
+      {"value": "done", "label": "Done"}
+    ],
+    "fields": [
+      {"suffix": "work_type", "type": "string", "label": "Work Type"},
+      {"suffix": "due_date", "type": "date", "label": "Due Date"},
+      {"suffix": "completed_date", "type": "date", "label": "Completed Date"},
+      {"suffix": "assignee_name", "type": "string", "label": "Assignee"},
+      {"suffix": "notes", "type": "text", "label": "Notes"},
+      {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
+    ]
+  },
+  "generic": {
+    "icon_key": "lucide:Package",
+    "minimum_business_fields": 6,
+    "primary_label": "Title",
+    "summary_template": "{module_name} with operational records, priorities, and notes.",
+    "statuses": [
+      {"value": "new", "label": "New"},
+      {"value": "in_progress", "label": "In Progress"},
+      {"value": "done", "label": "Done"}
+    ],
+    "fields": [
+      {"suffix": "category", "type": "string", "label": "Category"},
+      {"suffix": "priority", "type": "enum", "label": "Priority", "options": [
+        {"label": "Low", "value": "low"},
+        {"label": "Medium", "value": "medium"},
+        {"label": "High", "value": "high"},
+        {"label": "Urgent", "value": "urgent"}
+      ]},
+      {"suffix": "due_date", "type": "date", "label": "Due Date"},
+      {"suffix": "notes", "type": "text", "label": "Notes"},
+      {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
+    ]
+  }
+}

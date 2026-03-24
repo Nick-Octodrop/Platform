@@ -1,7 +1,16 @@
 import { supabase } from "./supabase";
 
-export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const RAW_API_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000").trim();
+const IS_DEV_PROXY_CANDIDATE =
+  import.meta.env.DEV &&
+  typeof window !== "undefined" &&
+  /^https?:\/\//i.test(RAW_API_URL) &&
+  /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(window.location.origin);
+
+export const API_URL = IS_DEV_PROXY_CANDIDATE ? "/__octo_api__" : RAW_API_URL;
 const ACTIVE_WORKSPACE_STORAGE_KEY = "octo_active_workspace_id";
+const TAB_WORKSPACE_STORAGE_KEY = "octo_tab_workspace_id";
+const SANDBOX_SESSION_STORAGE_KEY = "octo_ai_sandbox_session_id";
 const manifestCache = new Map();
 const manifestCacheTs = new Map();
 const manifestHashByModule = new Map();
@@ -38,6 +47,30 @@ const REQUEST_POLICIES = [
   { pattern: /^\/lookup\/[^/]+\/options$/, methods: ["POST"], ttl: 60000 },
 ];
 
+function notifyWorkspaceChanged(workspaceId, scope = "local") {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent("octo:workspace-changed", {
+      detail: {
+        workspaceId: workspaceId || "",
+        scope,
+      },
+    }),
+  );
+}
+
+export function isOctoAiSandboxActive() {
+  if (typeof window === "undefined") return false;
+  try {
+    const search = new URLSearchParams(window.location.search || "");
+    if (search.get("octo_ai_sandbox") === "0" || search.get("octo_ai_live") === "1") return false;
+    if (search.get("octo_ai_sandbox") === "1") return true;
+    return Boolean(window.sessionStorage.getItem(SANDBOX_SESSION_STORAGE_KEY) || "");
+  } catch {
+    return false;
+  }
+}
+
 function resolvePolicy(path, method) {
   for (const policy of REQUEST_POLICIES) {
     if (policy.pattern.test(path) && policy.methods.includes(method)) {
@@ -47,10 +80,15 @@ function resolvePolicy(path, method) {
   return null;
 }
 
-function requestKey(method, path, body, cacheKey) {
-  if (cacheKey) return `${method}:${cacheKey}`;
-  if (!body) return `${method}:${path}`;
-  return `${method}:${path}:${body}`;
+function workspaceScopedKey(key, workspaceId = null) {
+  const resolvedWorkspace = workspaceId ?? getActiveWorkspaceId() ?? "";
+  return `${resolvedWorkspace || "default"}:${key}`;
+}
+
+function requestKey(method, path, body, cacheKey, workspaceId = null) {
+  if (cacheKey) return `${method}:${workspaceScopedKey(cacheKey, workspaceId)}`;
+  if (!body) return `${method}:${workspaceScopedKey(path, workspaceId)}`;
+  return `${method}:${workspaceScopedKey(`${path}:${body}`, workspaceId)}`;
 }
 
 function invalidateRequestPrefix(prefix) {
@@ -107,16 +145,21 @@ export async function apiFetch(path, options = {}) {
     headers.Authorization = `Bearer ${token}`;
   }
   const activeWorkspaceId = getActiveWorkspaceId();
+  const sandboxActive = isOctoAiSandboxActive();
   if (activeWorkspaceId && !headers["X-Workspace-Id"]) {
     headers["X-Workspace-Id"] = activeWorkspaceId;
+  }
+  if (sandboxActive) {
+    headers["Cache-Control"] = "no-store";
+    headers.Pragma = "no-cache";
   }
   const method = (options.method || "GET").toUpperCase();
   const body = typeof options.body === "string" ? options.body : options.body ? JSON.stringify(options.body) : "";
   const policy = resolvePolicy(path, method);
-  const cacheTtl = typeof options.cacheTtl === "number" ? options.cacheTtl : policy?.ttl ?? REQUEST_DEFAULT_TTL_MS;
+  const cacheTtl = sandboxActive ? 0 : typeof options.cacheTtl === "number" ? options.cacheTtl : policy?.ttl ?? REQUEST_DEFAULT_TTL_MS;
   const cacheKey = options.cacheKey || null;
   const cacheAllowed = cacheTtl > 0;
-  const key = requestKey(method, path, body, cacheKey);
+  const key = requestKey(method, path, body, cacheKey, activeWorkspaceId);
 
   if (cacheAllowed) {
     const cached = requestCache.get(key);
@@ -146,6 +189,7 @@ export async function apiFetch(path, options = {}) {
       method,
       body: body || options.body,
       headers,
+      cache: sandboxActive ? "no-store" : options.cache,
       signal: controller?.signal,
     })
       .then(async (response) => {
@@ -205,6 +249,15 @@ export async function apiFetch(path, options = {}) {
 
 export function getActiveWorkspaceId() {
   try {
+    const search = new URLSearchParams(window.location.search || "");
+    const frameMode = search.get("octo_ai_frame") === "1";
+    const sandboxEnabled = search.get("octo_ai_sandbox") === "1";
+    const frameWorkspaceId = search.get("octo_ai_workspace") || "";
+    if (frameMode && sandboxEnabled && frameWorkspaceId) {
+      return frameWorkspaceId;
+    }
+    const tabScoped = window.sessionStorage.getItem(TAB_WORKSPACE_STORAGE_KEY) || "";
+    if (tabScoped) return tabScoped;
     return window.localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY) || "";
   } catch {
     return "";
@@ -218,9 +271,53 @@ export function setActiveWorkspaceId(workspaceId) {
     } else {
       window.localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
     }
+    clearCaches();
+    notifyWorkspaceChanged(workspaceId, "persistent");
   } catch {
     // ignore
   }
+}
+
+export function setTabWorkspaceId(workspaceId) {
+  try {
+    if (workspaceId) {
+      window.sessionStorage.setItem(TAB_WORKSPACE_STORAGE_KEY, workspaceId);
+    } else {
+      window.sessionStorage.removeItem(TAB_WORKSPACE_STORAGE_KEY);
+    }
+    clearCaches();
+    notifyWorkspaceChanged(workspaceId, "tab");
+  } catch {
+    // ignore
+  }
+}
+
+export function clearTabWorkspaceId() {
+  setTabWorkspaceId("");
+}
+
+export function getOctoAiSandboxSessionId() {
+  try {
+    return window.sessionStorage.getItem(SANDBOX_SESSION_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function setOctoAiSandboxSessionId(sessionId) {
+  try {
+    if (sessionId) {
+      window.sessionStorage.setItem(SANDBOX_SESSION_STORAGE_KEY, sessionId);
+    } else {
+      window.sessionStorage.removeItem(SANDBOX_SESSION_STORAGE_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export function clearOctoAiSandboxSessionId() {
+  setOctoAiSandboxSessionId("");
 }
 
 export async function getAuthHeaders(extra = {}) {
@@ -251,14 +348,20 @@ export async function setUiPrefs(payload) {
 }
 
 export async function getModules() {
+  if (isOctoAiSandboxActive()) {
+    modulesCache = null;
+    modulesCacheTs = 0;
+    return apiFetch("/modules", { cacheTtl: 0 });
+  }
   const now = Date.now();
-  if (modulesCache && now - modulesCacheTs < MODULES_TTL_MS) {
+  const workspaceKey = workspaceScopedKey("modules");
+  if (modulesCache && modulesCache.workspaceKey === workspaceKey && now - modulesCacheTs < MODULES_TTL_MS) {
     return modulesCache;
   }
   const res = await apiFetch("/modules");
-  modulesCache = res;
+  modulesCache = { ...res, workspaceKey };
   modulesCacheTs = now;
-  return res;
+  return modulesCache;
 }
 
 export async function enableModule(moduleId) {
@@ -282,21 +385,34 @@ export async function setModuleOrder(moduleId, displayOrder) {
 }
 
 export async function getManifest(moduleId) {
+  if (isOctoAiSandboxActive()) {
+    const res = await apiFetch(`/modules/${moduleId}/manifest`, { cacheTtl: 0 });
+    const manifestHash = res.manifest_hash;
+    if (manifestHash) {
+      const compiled = compiledByHash.get(manifestHash) || compileManifest(res.manifest);
+      if (!compiledByHash.has(manifestHash)) {
+        compiledByHash.set(manifestHash, compiled);
+      }
+      return { ...res, compiled };
+    }
+    return res;
+  }
   const now = Date.now();
-  const cached = manifestCache.get(moduleId);
-  const ts = manifestCacheTs.get(moduleId) || 0;
+  const scopedModuleId = workspaceScopedKey(moduleId);
+  const cached = manifestCache.get(scopedModuleId);
+  const ts = manifestCacheTs.get(scopedModuleId) || 0;
   if (cached && now - ts < MANIFEST_TTL_MS) {
     return cached;
   }
-  const inflight = manifestInFlight.get(moduleId);
+  const inflight = manifestInFlight.get(scopedModuleId);
   if (inflight) {
     return inflight;
   }
-  const cachedHash = manifestHashByModule.get(moduleId);
+  const cachedHash = manifestHashByModule.get(scopedModuleId);
   if (cachedHash && manifestByHash.has(cachedHash) && now - ts < MANIFEST_TTL_MS) {
     const res = manifestByHash.get(cachedHash);
-    manifestCache.set(moduleId, res);
-    manifestCacheTs.set(moduleId, now);
+    manifestCache.set(scopedModuleId, res);
+    manifestCacheTs.set(scopedModuleId, now);
     return res;
   }
   const request = apiFetch(`/modules/${moduleId}/manifest`).then((res) => {
@@ -308,18 +424,18 @@ export async function getManifest(moduleId) {
       }
       const result = { ...res, compiled };
       manifestByHash.set(manifestHash, result);
-      manifestHashByModule.set(moduleId, manifestHash);
-      manifestCache.set(moduleId, result);
-      manifestCacheTs.set(moduleId, now);
+      manifestHashByModule.set(scopedModuleId, manifestHash);
+      manifestCache.set(scopedModuleId, result);
+      manifestCacheTs.set(scopedModuleId, now);
       return result;
     }
-    manifestCache.set(moduleId, res);
-    manifestCacheTs.set(moduleId, now);
+    manifestCache.set(scopedModuleId, res);
+    manifestCacheTs.set(scopedModuleId, now);
     return res;
   }).finally(() => {
-    manifestInFlight.delete(moduleId);
+    manifestInFlight.delete(scopedModuleId);
   });
-  manifestInFlight.set(moduleId, request);
+  manifestInFlight.set(scopedModuleId, request);
   return request;
 }
 
@@ -345,18 +461,19 @@ export async function getPageBootstrap({
   if (q) params.set("q", q);
   if (searchFields) params.set("search_fields", searchFields);
   if (domain) params.set("domain", domain);
-  return apiFetch(`/page/bootstrap?${params.toString()}`);
+  return apiFetch(`/page/bootstrap?${params.toString()}`, { cacheTtl: isOctoAiSandboxActive() ? 0 : undefined });
 }
 
 export function invalidateManifestCache(moduleId) {
-  manifestCache.delete(moduleId);
-  manifestCacheTs.delete(moduleId);
-  const hash = manifestHashByModule.get(moduleId);
+  const scopedModuleId = workspaceScopedKey(moduleId);
+  manifestCache.delete(scopedModuleId);
+  manifestCacheTs.delete(scopedModuleId);
+  const hash = manifestHashByModule.get(scopedModuleId);
   if (hash) {
     manifestByHash.delete(hash);
     compiledByHash.delete(hash);
   }
-  manifestHashByModule.delete(moduleId);
+  manifestHashByModule.delete(scopedModuleId);
 }
 
 export function clearCaches() {
@@ -391,24 +508,28 @@ export async function cloneMarketplaceApp(appId, payload) {
 }
 
 export async function getDraft(moduleId) {
+  if (isOctoAiSandboxActive()) {
+    return apiFetch(`/studio2/modules/${moduleId}/draft`, { cacheTtl: 0 });
+  }
   const now = Date.now();
-  const cached = draftCache.get(moduleId);
-  const ts = draftCacheTs.get(moduleId) || 0;
+  const scopedModuleId = workspaceScopedKey(moduleId);
+  const cached = draftCache.get(scopedModuleId);
+  const ts = draftCacheTs.get(scopedModuleId) || 0;
   if (cached && now - ts < DRAFT_TTL_MS) {
     return cached;
   }
-  const inflight = draftInFlight.get(moduleId);
+  const inflight = draftInFlight.get(scopedModuleId);
   if (inflight) return inflight;
   const request = apiFetch(`/studio2/modules/${moduleId}/draft`)
     .then((res) => {
-      draftCache.set(moduleId, res);
-      draftCacheTs.set(moduleId, now);
+      draftCache.set(scopedModuleId, res);
+      draftCacheTs.set(scopedModuleId, now);
       return res;
     })
     .finally(() => {
-      draftInFlight.delete(moduleId);
+      draftInFlight.delete(scopedModuleId);
     });
-  draftInFlight.set(moduleId, request);
+  draftInFlight.set(scopedModuleId, request);
   return request;
 }
 
@@ -525,4 +646,172 @@ export async function rollbackModule(moduleId, snapshotId, reason = "rollback") 
     method: "POST",
     body: JSON.stringify({ snapshot_id: snapshotId, reason }),
   });
+}
+
+export async function listOctoAiSessions() {
+  return apiFetch("/octo-ai/sessions");
+}
+
+export async function createOctoAiSession(payload = {}) {
+  return apiFetch("/octo-ai/sessions", { method: "POST", body: payload });
+}
+
+export async function getOctoAiSession(sessionId) {
+  return apiFetch(`/octo-ai/sessions/${sessionId}`);
+}
+
+export async function updateOctoAiSession(sessionId, payload = {}) {
+  return apiFetch(`/octo-ai/sessions/${sessionId}`, { method: "PUT", body: payload });
+}
+
+export async function deleteOctoAiSession(sessionId) {
+  return apiFetch(`/octo-ai/sessions/${sessionId}`, { method: "DELETE", body: {} });
+}
+
+export async function getOctoAiExplorer() {
+  return apiFetch("/octo-ai/explorer");
+}
+
+export async function getOctoAiWorkspaceGraph() {
+  return apiFetch("/octo-ai/workspace/graph");
+}
+
+export async function getOctoAiArtifact(artifactType, artifactKey) {
+  return apiFetch(`/octo-ai/artifacts/${artifactType}/${artifactKey}`);
+}
+
+export async function answerOctoAiQuestion(sessionId, payload = {}) {
+  return apiFetch(`/octo-ai/sessions/${sessionId}/questions/answer`, { method: "POST", body: payload });
+}
+
+export async function sendOctoAiChatMessage(sessionId, payload = {}) {
+  return apiFetch(`/octo-ai/sessions/${sessionId}/chat`, { method: "POST", body: payload });
+}
+
+export async function ensureOctoAiSandbox(sessionId) {
+  return apiFetch(`/octo-ai/sessions/${sessionId}/sandbox`, { method: "POST", body: {} });
+}
+
+export async function discardOctoAiSandbox(sessionId) {
+  return apiFetch(`/octo-ai/sessions/${sessionId}/sandbox/discard`, { method: "POST", body: {} });
+}
+
+export async function generateOctoAiPatchset(sessionId, payload = {}) {
+  return apiFetch(`/octo-ai/sessions/${sessionId}/patchsets/generate`, { method: "POST", body: payload });
+}
+
+export async function validateOctoAiPatchset(patchsetId) {
+  return apiFetch(`/octo-ai/patchsets/${patchsetId}/validate`, { method: "POST", body: {} });
+}
+
+export async function applyOctoAiPatchset(patchsetId, approved = true) {
+  return apiFetch(`/octo-ai/patchsets/${patchsetId}/apply`, { method: "POST", body: { approved } });
+}
+
+export async function rollbackOctoAiPatchset(patchsetId) {
+  return apiFetch(`/octo-ai/patchsets/${patchsetId}/rollback`, { method: "POST", body: {} });
+}
+
+export async function createOctoAiRelease(sessionId, payload = {}) {
+  return apiFetch(`/octo-ai/sessions/${sessionId}/releases`, { method: "POST", body: payload });
+}
+
+export async function promoteOctoAiRelease(releaseId) {
+  return apiFetch(`/octo-ai/releases/${releaseId}/promote`, { method: "POST", body: {} });
+}
+
+export async function rollbackOctoAiRelease(releaseId) {
+  return apiFetch(`/octo-ai/releases/${releaseId}/rollback`, { method: "POST", body: {} });
+}
+
+export function startOctoAiChatStream({ sessionId, message, scopeMode = null, onEvent }) {
+  const controller = new AbortController();
+  const promise = (async () => {
+    const headers = await getAuthHeaders();
+    const activeWorkspaceId = getActiveWorkspaceId();
+    if (activeWorkspaceId && !headers["X-Workspace-Id"]) {
+      headers["X-Workspace-Id"] = activeWorkspaceId;
+    }
+    headers.Accept = "text/event-stream";
+    let sawAnyEvent = false;
+    const res = await fetch(`${API_URL}/octo-ai/sessions/${sessionId}/chat/stream`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ message, scope_mode: scopeMode || undefined }),
+      signal: controller.signal,
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      let detail = "";
+      try {
+        const payload = await res.json();
+        detail = payload?.errors?.[0]?.message || payload?.error || payload?.message || "";
+      } catch {
+        try {
+          detail = await res.text();
+        } catch {
+          detail = "";
+        }
+      }
+      throw new Error(detail || `Stream failed (${res.status})`);
+    }
+    if (!res.body) throw new Error(`Stream failed (${res.status})`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let donePayload = null;
+    let streamError = null;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop() || "";
+      for (const chunk of chunks) {
+        const lines = chunk.split("\n");
+        let eventName = "";
+        const dataLines = [];
+        for (const rawLine of lines) {
+          const line = rawLine.trimEnd();
+          if (line.startsWith("event:")) eventName = line.replace("event:", "").trim();
+          if (line.startsWith("data:")) dataLines.push(line.replace("data:", "").trim());
+        }
+        if (!eventName || dataLines.length === 0) continue;
+        try {
+          const payload = JSON.parse(dataLines.join("\n"));
+          const evt = { event: eventName, ...payload };
+          sawAnyEvent = true;
+          onEvent?.(evt);
+          if (eventName === "error") {
+            streamError = payload?.data?.message || payload?.data?.error || payload?.message || "Stream failed";
+          }
+          if (eventName === "done") {
+            donePayload = payload?.data || payload || null;
+          }
+        } catch {
+          // ignore malformed frames
+        }
+      }
+      if (donePayload) break;
+    }
+    if (streamError) throw new Error(streamError);
+    if (!donePayload) {
+      const err = new Error("Stream ended without done event");
+      err.transport = !sawAnyEvent;
+      throw err;
+    }
+    return donePayload;
+  })().catch((err) => {
+    if (err?.name === "AbortError") throw err;
+    const messageText = typeof err?.message === "string" ? err.message : "";
+    const transportFailure = Boolean(
+      err?.transport || /network error|failed to fetch|load failed|networkerror/i.test(messageText),
+    );
+    if (!transportFailure) throw err;
+    return sendOctoAiChatMessage(sessionId, { message, scope_mode: scopeMode || undefined }).then((payload) => {
+      const data = payload?.data || payload || {};
+      return data;
+    });
+  });
+  return { cancel: () => controller.abort(), promise };
 }

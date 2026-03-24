@@ -10,7 +10,7 @@ import { getFieldValue, renderField, setFieldValue } from "../ui/field_renderers
 import { useToast } from "../components/Toast.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { PRIMARY_BUTTON, PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_BUTTON_XS } from "../components/buttonStyles.js";
-import { buildTargetRoute, resolveAppTarget, resolveRouteTarget } from "./appShellUtils.js";
+import { buildRouteWithQuery, buildTargetRoute, resolveAppTarget, resolveRouteTarget } from "./appShellUtils.js";
 import { evalCondition } from "../utils/conditions.js";
 import { useAccessContext } from "../access.js";
 
@@ -635,7 +635,7 @@ export default function AppShell({
       }
       return;
     }
-    const route = buildTargetRoute(moduleId, next);
+    const route = buildTargetRoute(moduleId, next, { preserveFrameParams: false });
     if (!route) return;
     const params = opts.preserveParams ? new URLSearchParams(searchParams || "") : new URLSearchParams();
     const recordParam = opts.recordParamName || "record";
@@ -645,8 +645,7 @@ export default function AppShell({
     if (!opts.recordId) {
       params.delete(recordParam);
     }
-    const suffix = params.toString();
-    navigate(`${route}${suffix ? `?${suffix}` : ""}`);
+    navigate(buildRouteWithQuery(route, params));
   }
 
   async function navigateToEntityRecord(entityRef, targetRecordId) {
@@ -683,22 +682,22 @@ export default function AppShell({
         const modEntityFullId = matchedEntity.id;
         const modDefaultForm = resolveEntityDefaultFormPage(modManifest?.app?.defaults || {}, modEntityFullId);
         if (modDefaultForm) {
-          const route = buildTargetRoute(modId, modDefaultForm);
+          const route = buildTargetRoute(modId, modDefaultForm, { preserveFrameParams: false });
           if (route) {
             const params = new URLSearchParams();
             params.set("record", targetRecordId);
-            navigate(`${route}?${params.toString()}`);
+            navigate(buildRouteWithQuery(route, params));
             return true;
           }
         }
 
         const modFormView = getFormViewId(modManifest, modEntityFullId);
         if (modFormView) {
-          const route = buildTargetRoute(modId, `view:${modFormView}`);
+          const route = buildTargetRoute(modId, `view:${modFormView}`, { preserveFrameParams: false });
           if (route) {
             const params = new URLSearchParams();
             params.set("record", targetRecordId);
-            navigate(`${route}?${params.toString()}`);
+            navigate(buildRouteWithQuery(route, params));
             return true;
           }
         }
@@ -708,7 +707,7 @@ export default function AppShell({
     }
 
     // 3) Final fallback: generic record page.
-    navigate(`/data/${toRouteEntityId(targetEntityFullId)}/${targetRecordId}`);
+    navigate(buildRouteWithQuery(`/data/${toRouteEntityId(targetEntityFullId)}/${targetRecordId}`, new URLSearchParams()));
     return false;
   }
 

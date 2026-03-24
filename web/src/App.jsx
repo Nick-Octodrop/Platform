@@ -17,7 +17,7 @@ import {
   setTheme,
   setUiDensity,
 } from "./theme/theme.js";
-import { getUiPrefs } from "./api.js";
+import { getActiveWorkspaceId, getUiPrefs } from "./api.js";
 import LoginPage from "./pages/LoginPage.jsx";
 import AppsPage from "./pages/AppsPage.jsx";
 import ModuleDetailPage from "./pages/ModuleDetailPage.jsx";
@@ -57,10 +57,14 @@ import EntityRecordPage from "./pages/EntityRecordPage.jsx";
 import AppShell from "./apps/AppShell.jsx";
 import AuthSetPasswordPage from "./pages/AuthSetPasswordPage.jsx";
 import DesktopOnlyGate from "./components/DesktopOnlyGate.jsx";
+import OctoAiSessionsPage from "./pages/OctoAiSessionsPage.jsx";
+import OctoAiSessionDetailPage from "./pages/OctoAiSessionDetailPage.jsx";
+import OctoAiWorkspacePage from "./pages/OctoAiWorkspacePage.jsx";
 
 export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [workspaceKey, setWorkspaceKey] = useState(() => getActiveWorkspaceId());
 
   useEffect(() => {
     let mounted = true;
@@ -167,7 +171,16 @@ export default function App() {
     return () => {
       mounted = false;
     };
-  }, [session?.user]);
+  }, [session?.user, workspaceKey]);
+
+  useEffect(() => {
+    function handleWorkspaceChanged() {
+      setWorkspaceKey(getActiveWorkspaceId());
+    }
+    if (typeof window === "undefined") return undefined;
+    window.addEventListener("octo:workspace-changed", handleWorkspaceChanged);
+    return () => window.removeEventListener("octo:workspace-changed", handleWorkspaceChanged);
+  }, []);
 
   async function handleSignOut() {
     await supabase.auth.signOut();
@@ -419,6 +432,36 @@ export default function App() {
               element={(
                 <CapabilityRoute capability="automations.manage">
                   <OpsJobPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="octo-ai"
+              element={(
+                <CapabilityRoute capability="modules.manage">
+                  <DesktopOnlyGate feature="Octo AI">
+                    <OctoAiSessionsPage />
+                  </DesktopOnlyGate>
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="octo-ai/sessions/:sessionId"
+              element={(
+                <CapabilityRoute capability="modules.manage">
+                  <DesktopOnlyGate feature="Octo AI">
+                    <OctoAiSessionDetailPage />
+                  </DesktopOnlyGate>
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="octo-ai/sandboxes/:sessionId"
+              element={(
+                <CapabilityRoute capability="modules.manage">
+                  <DesktopOnlyGate feature="Octo AI">
+                    <OctoAiWorkspacePage />
+                  </DesktopOnlyGate>
                 </CapabilityRoute>
               )}
             />

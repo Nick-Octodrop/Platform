@@ -8,6 +8,11 @@ primary_region = 'syd'
 
 [build]
   dockerfile = 'Dockerfile'
+  [build.args]
+    OCTO_RUNTIME_BASE = 'registry.fly.io/octodrop-platform-api:runtime-base-py311-playwright'
+
+[processes]
+  app = 'uvicorn app.main:app --host 0.0.0.0 --port 8080'
 
 [http_service]
   internal_port = 8080

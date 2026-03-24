@@ -88,7 +88,7 @@ def list_user_workspaces(user_id: str) -> list[dict]:
             from workspace_members wm
             join workspaces w on w.id = wm.workspace_id
             where wm.user_id=%s
-            order by lower(w.name) asc
+            order by lower(w.name) asc, w.id asc
             """,
             [user_id],
             query_name="workspace_members.list_user_workspaces",
@@ -112,7 +112,7 @@ def list_all_workspaces() -> list[dict]:
                 where wm.workspace_id=w.id
               )::int as member_count
             from workspaces w
-            order by lower(w.name) asc
+            order by lower(w.name) asc, w.id asc
             """,
             [],
             query_name="workspaces.list_all",

@@ -75,7 +75,7 @@ export default function TemplateStudioShell({
     if (raw) {
       try {
         const parsed = JSON.parse(raw);
-        if (parsed && parsed.entity_id && parsed.record_id) {
+        if (parsed && parsed.entity_id) {
           setSample(parsed);
         }
       } catch {
@@ -85,10 +85,25 @@ export default function TemplateStudioShell({
   }, [sampleStorageKey]);
 
   useEffect(() => {
-    if (sample?.entity_id && sample?.record_id) {
-      localStorage.setItem(sampleStorageKey, JSON.stringify(sample));
-    }
+    if (!sample?.entity_id) return;
+    localStorage.setItem(sampleStorageKey, JSON.stringify(sample));
   }, [sample, sampleStorageKey]);
+
+  useEffect(() => {
+    if (!entities.length) return;
+    const currentEntityId = sample?.entity_id || "";
+    const hasCurrentEntity = currentEntityId && entities.some((ent) => ent.id === currentEntityId);
+    if (hasCurrentEntity) return;
+    const templateEntityId = draft?.variables_schema?.entity_id;
+    const hasTemplateEntity = templateEntityId && entities.some((ent) => ent.id === templateEntityId);
+    if (hasTemplateEntity) {
+      setSample((prev) => ({ ...(prev || {}), entity_id: templateEntityId, record_id: "" }));
+      return;
+    }
+    if (currentEntityId) {
+      setSample(DEFAULT_SAMPLE);
+    }
+  }, [entities, draft?.variables_schema?.entity_id, sample?.entity_id]);
 
   useEffect(() => {
     if (!sample?.entity_id) {

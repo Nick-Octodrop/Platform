@@ -5,6 +5,7 @@ import {
   enableModule,
   disableModule,
   deleteModule,
+  getActiveWorkspaceId,
 } from "../api";
 
 const ModuleStoreContext = createContext(null);
@@ -13,6 +14,7 @@ export function ModuleStoreProvider({ user, children }) {
   const [modules, setModules] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [workspaceKey, setWorkspaceKey] = useState(() => getActiveWorkspaceId());
 
   const refresh = useCallback(
     async (opts = {}) => {
@@ -38,7 +40,16 @@ export function ModuleStoreProvider({ user, children }) {
 
   useEffect(() => {
     refresh({ force: true });
-  }, [user, refresh]);
+  }, [user, refresh, workspaceKey]);
+
+  useEffect(() => {
+    function handleWorkspaceChanged() {
+      setWorkspaceKey(getActiveWorkspaceId());
+    }
+    if (typeof window === "undefined") return undefined;
+    window.addEventListener("octo:workspace-changed", handleWorkspaceChanged);
+    return () => window.removeEventListener("octo:workspace-changed", handleWorkspaceChanged);
+  }, []);
 
   const enabledById = useMemo(() => {
     const map = {};

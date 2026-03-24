@@ -6,7 +6,7 @@ import { useModuleStore } from "../state/moduleStore.jsx";
 import { getAppDisplayName } from "../state/appCatalog.js";
 import { getPinnedApps, getRecentApps, recordRecentApp, subscribeAppUsage } from "../state/appUsage.js";
 import { getManifest } from "../api";
-import { buildTargetRoute } from "../apps/appShellUtils.js";
+import { appendOctoAiFrameParams, buildTargetRoute } from "../apps/appShellUtils.js";
 import { useAccessContext } from "../access.js";
 
 const navLinkClass = ({ isActive }) =>
@@ -24,12 +24,12 @@ function AppShortcut({ id, label }) {
       const route = buildTargetRoute(id, homeTarget) || `/apps/${id}`;
       navigate(route);
     } catch {
-      navigate(`/apps/${id}`);
+      navigate(appendOctoAiFrameParams(`/apps/${id}`));
     }
   }
 
   return (
-    <NavLink to={`/apps/${id}`} className={navLinkClass} onClick={openModule}>
+    <NavLink to={appendOctoAiFrameParams(`/apps/${id}`)} className={navLinkClass} onClick={openModule}>
       <span className="badge badge-outline mr-2">{label.slice(0, 1).toUpperCase()}</span>
       {label}
     </NavLink>
@@ -67,6 +67,7 @@ export default function SideNav() {
   }, [enabledApps, pinned, recent]);
 
   const canSeeIntegrations = !accessLoading && hasCapability("workspace.manage_settings");
+  const canSeeOctoAi = !accessLoading && hasCapability("modules.manage");
 
   return (
     <div className="w-64 min-h-full bg-base-200 p-4">
@@ -74,16 +75,17 @@ export default function SideNav() {
       <div className="menu space-y-4">
         <div>
           <div className="text-xs uppercase opacity-60 mb-2">Core</div>
-          <NavLink to="/home" className={navLinkClass}>Home</NavLink>
-          <NavLink to="/apps" className={navLinkClass}>Apps</NavLink>
-          <NavLink to="/studio" className={navLinkClass}>Studio</NavLink>
-          <NavLink to="/automations" className={navLinkClass}>Automations</NavLink>
-          {canSeeIntegrations ? <NavLink to="/integrations" className={navLinkClass}>Integrations</NavLink> : null}
-          <NavLink to="/ops" className={navLinkClass}>Ops</NavLink>
+          <NavLink to={appendOctoAiFrameParams("/home")} className={navLinkClass}>Home</NavLink>
+          <NavLink to={appendOctoAiFrameParams("/apps")} className={navLinkClass}>Apps</NavLink>
+          <NavLink to={appendOctoAiFrameParams("/studio")} className={navLinkClass}>Studio</NavLink>
+          {canSeeOctoAi ? <NavLink to={appendOctoAiFrameParams("/octo-ai")} className={navLinkClass}>Octo AI</NavLink> : null}
+          <NavLink to={appendOctoAiFrameParams("/automations")} className={navLinkClass}>Automations</NavLink>
+          {canSeeIntegrations ? <NavLink to={appendOctoAiFrameParams("/integrations")} className={navLinkClass}>Integrations</NavLink> : null}
+          <NavLink to={appendOctoAiFrameParams("/ops")} className={navLinkClass}>Ops</NavLink>
         </div>
         <div>
           <div className="text-xs uppercase opacity-60 mb-2">Settings</div>
-          <NavLink to="/settings" className={navLinkClass}>Settings</NavLink>
+          <NavLink to={appendOctoAiFrameParams("/settings")} className={navLinkClass}>Settings</NavLink>
         </div>
         <div className="divider"></div>
         <div>

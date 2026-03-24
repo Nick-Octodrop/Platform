@@ -1025,7 +1025,7 @@ export default function AutomationEditorPage({ user }) {
                   const leftVar = expr?.left?.var || "";
                   const op = expr?.op || "eq";
                   const rightVal = expr?.right?.literal ?? "";
-                  const fieldPathPrefix = "trigger.record.";
+                  const fieldPathPrefix = "trigger.record.fields.";
                   const fieldPathOptions = selectedEntityFields.map((field) => ({
                     value: `${fieldPathPrefix}${field.id}`,
                     label: field.label || field.id,
@@ -1045,6 +1045,7 @@ export default function AutomationEditorPage({ user }) {
                   const enumOptions = Array.isArray(selectedFieldDef?.options) ? selectedFieldDef.options : [];
                   const hasEnumOptions = enumOptions.length > 0;
                   const fieldType = selectedFieldDef?.type || "string";
+                  const stopOnFalse = Boolean(step.stop_on_false);
 
                   function updateConditionValue(raw) {
                     let nextValue = raw;
@@ -1170,6 +1171,18 @@ export default function AutomationEditorPage({ user }) {
                         <span className="label label-text-alt opacity-50">
                           {isInListOp ? "Use comma-separated values." : "Condition runs against trigger data."}
                         </span>
+                      </label>
+                      <label className="form-control md:col-span-12">
+                        <span className="label-text">If false</span>
+                        <label className="label cursor-pointer justify-start gap-3">
+                          <input
+                            type="checkbox"
+                            className="toggle toggle-sm"
+                            checked={stopOnFalse}
+                            onChange={(e) => updateStep(index, { stop_on_false: e.target.checked })}
+                          />
+                          <span className="label-text">Stop automation if condition is false</span>
+                        </label>
                       </label>
                     </div>
                   );

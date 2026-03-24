@@ -1,0 +1,7034 @@
+[
+  {
+    "name": "create_training_ops_with_automations",
+    "tags": [
+      "create_module",
+      "complete_module",
+      "real_world",
+      "automation",
+      "workflow"
+    ],
+    "session": {
+      "title": "create_training_ops_with_automations",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a training operations app called Training Operations with courses, attendees, due dates, reminders, completion certificates, automated overdue follow-ups, and rich action buttons."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Training Operations"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 8,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "kanban",
+              "calendar"
+            ],
+            "min_action_count": 2,
+            "min_workflow_state_count": 3,
+            "statusbar_required": true,
+            "min_trigger_count": 1,
+            "interfaces_include": [
+              "dashboardable",
+              "schedulable",
+              "documentable"
+            ],
+            "field_labels_include": [
+              "Session Name",
+              "Training Date"
+            ]
+          },
+          "preview_expect": {
+            "text_contains": [
+              "views",
+              "workflow",
+              "status",
+              "reminders",
+              "completion certificates",
+              "overdue"
+            ],
+            "field_labels_include": [
+              "Session Name",
+              "Training Date"
+            ],
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "dashboardable",
+              "schedulable",
+              "documentable"
+            ]
+          }
+        }
+      }
+    ],
+    "level": 5
+  },
+  {
+    "name": "create_cookbook_studio",
+    "tags": [
+      "create_module",
+      "complete_module",
+      "real_world",
+      "multi_entity",
+      "workflow"
+    ],
+    "session": {
+      "title": "create_cookbook_studio",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a cookbook app called Cookbook Studio to manage recipes, pantry ingredients, cookbook drafts, and action buttons for testing, approving, and publishing recipes."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Cookbook Studio"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 10,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "kanban",
+              "calendar",
+              "graph"
+            ],
+            "min_entity_count": 2,
+            "min_action_count": 3,
+            "min_workflow_state_count": 4,
+            "statusbar_required": true,
+            "interfaces_include": [
+              "dashboardable",
+              "schedulable",
+              "documentable"
+            ],
+            "field_labels_include": [
+              "Recipe Name",
+              "Ingredients",
+              "Method"
+            ],
+            "action_labels_include": [
+              "Plan",
+              "Cook"
+            ],
+            "workflow_state_labels_include": [
+              "Draft"
+            ]
+          },
+          "preview_expect": {
+            "text_contains": [
+              "views",
+              "workflow",
+              "status",
+              "cookbook",
+              "pantry"
+            ],
+            "field_labels_include": [
+              "Recipe Name",
+              "Ingredients",
+              "Method"
+            ],
+            "action_labels_include": [
+              "Plan",
+              "Cook"
+            ],
+            "view_kinds_include": [
+              "list",
+              "form",
+              "kanban",
+              "calendar",
+              "graph"
+            ],
+            "interfaces_include": [
+              "dashboardable",
+              "schedulable",
+              "documentable"
+            ]
+          }
+        }
+      }
+    ],
+    "level": 5
+  },
+  {
+    "name": "cross_module_quote_approval_creates_job",
+    "tags": [
+      "cross_module",
+      "automation",
+      "workflow",
+      "business_flow"
+    ],
+    "session": {
+      "title": "cross_module_quote_approval_creates_job",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Sales, when a quote is approved, create a Job in Jobs, copy the customer and site details from Contacts, and notify the coordinator."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        },
+        "expect": {
+          "candidate_ops_include": [
+            "update_action"
+          ],
+          "manifest_expect": {
+            "min_action_count": 2,
+            "min_workflow_state_count": 3,
+            "statusbar_required": true,
+            "min_dependency_count": 1,
+            "min_trigger_count": 1
+          },
+          "preview_expect": {
+            "text_contains": [
+              "status",
+              "Sales",
+              "Jobs",
+              "Contacts",
+              "notify"
+            ]
+          }
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft",
+          "candidate_ops_include": [
+            "update_action"
+          ],
+          "manifest_expect": {
+            "min_action_count": 2,
+            "min_workflow_state_count": 3,
+            "statusbar_required": true,
+            "min_dependency_count": 1,
+            "min_trigger_count": 1
+          },
+          "preview_expect": {
+            "text_contains": [
+              "status",
+              "Sales",
+              "Jobs",
+              "Contacts",
+              "notify"
+            ]
+          }
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "candidate_ops_include": [
+            "update_action"
+          ],
+          "manifest_expect": {
+            "min_action_count": 2,
+            "min_workflow_state_count": 3,
+            "statusbar_required": true,
+            "min_dependency_count": 1,
+            "min_trigger_count": 1
+          },
+          "preview_expect": {
+            "text_contains": [
+              "status",
+              "Sales",
+              "Jobs",
+              "Contacts",
+              "notify"
+            ]
+          }
+        }
+      }
+    ],
+    "level": 4
+  },
+  {
+    "name": "cross_module_job_completion_generates_documents",
+    "tags": [
+      "cross_module",
+      "automation",
+      "pdf_template",
+      "documents",
+      "business_flow"
+    ],
+    "session": {
+      "title": "cross_module_job_completion_generates_documents",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Jobs, when a job is completed, generate a completion pack in Documents, attach the service report PDF, and mark the customer follow-up in Contacts."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        },
+        "expect": {
+          "manifest_expect": {
+            "min_dependency_count": 1,
+            "min_trigger_count": 1,
+            "interfaces_include": [
+              "documentable"
+            ]
+          },
+          "preview_expect": {
+            "text_contains": [
+              "Jobs",
+              "Contacts",
+              "Documents",
+              "document",
+              "service report"
+            ]
+          }
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft",
+          "manifest_expect": {
+            "min_dependency_count": 1,
+            "min_trigger_count": 1,
+            "interfaces_include": [
+              "documentable"
+            ]
+          },
+          "preview_expect": {
+            "text_contains": [
+              "Jobs",
+              "Contacts",
+              "Documents",
+              "document",
+              "service report"
+            ]
+          }
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_dependency_count": 1,
+            "min_trigger_count": 1,
+            "interfaces_include": [
+              "documentable"
+            ]
+          },
+          "preview_expect": {
+            "text_contains": [
+              "Jobs",
+              "Contacts",
+              "Documents",
+              "document",
+              "service report"
+            ]
+          }
+        }
+      }
+    ],
+    "level": 5
+  },
+  {
+    "name": "create_field_service_odoo_style",
+    "tags": [
+      "create_module",
+      "complete_module",
+      "real_world",
+      "workflow",
+      "documents"
+    ],
+    "session": {
+      "title": "create_field_service_odoo_style",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a field service app called Field Service Control with jobs, technicians, parts used, service reports, customer signatures, scheduling, statuses, action buttons, and documents like an Odoo-style operational module."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Field Service Control"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 10,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "kanban",
+              "calendar",
+              "graph"
+            ],
+            "min_action_count": 3,
+            "min_workflow_state_count": 4,
+            "statusbar_required": true,
+            "interfaces_include": [
+              "documentable",
+              "dashboardable",
+              "schedulable"
+            ]
+          },
+          "preview_expect": {
+            "text_contains": [
+              "views",
+              "workflow",
+              "status",
+              "document",
+              "technicians",
+              "service reports",
+              "documents"
+            ],
+            "view_kinds_include": [
+              "list",
+              "form",
+              "kanban",
+              "calendar",
+              "graph"
+            ],
+            "interfaces_include": [
+              "dashboardable",
+              "schedulable",
+              "documentable"
+            ]
+          }
+        }
+      }
+    ],
+    "level": 5
+  },
+  {
+    "name": "cross_module_crm_lead_to_sales_quote",
+    "tags": [
+      "cross_module",
+      "automation",
+      "transformation",
+      "business_flow"
+    ],
+    "session": {
+      "title": "cross_module_crm_lead_to_sales_quote",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "When a CRM lead becomes qualified, add the flow to create a draft quote in Sales and carry over contact details from Contacts."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        },
+        "expect": {
+          "manifest_expect": {
+            "min_dependency_count": 1,
+            "min_transformation_count": 1,
+            "min_trigger_count": 1
+          },
+          "preview_expect": {
+            "text_contains": [
+              "CRM",
+              "Sales",
+              "Contacts",
+              "draft quote"
+            ]
+          }
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft",
+          "manifest_expect": {
+            "min_dependency_count": 1,
+            "min_transformation_count": 1,
+            "min_trigger_count": 1
+          },
+          "preview_expect": {
+            "text_contains": [
+              "CRM",
+              "Sales",
+              "Contacts",
+              "draft quote"
+            ]
+          }
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_dependency_count": 1,
+            "min_transformation_count": 1,
+            "min_trigger_count": 1
+          },
+          "preview_expect": {
+            "text_contains": [
+              "CRM",
+              "Sales",
+              "Contacts",
+              "draft quote"
+            ]
+          }
+        }
+      }
+    ],
+    "level": 4
+  },
+  {
+    "name": "jobs_add_conditional_completion_requirements",
+    "tags": [
+      "edit_existing",
+      "conditions",
+      "workflow",
+      "business_flow"
+    ],
+    "session": {
+      "title": "jobs_add_conditional_completion_requirements",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Jobs, when the status is Completed require Completion Notes and Customer Sign Off, and only show Follow-up Date when Follow-up Required is checked."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "jobs"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        },
+        "expect": {
+          "manifest_expect": {
+            "min_action_count": 2,
+            "min_workflow_state_count": 3,
+            "statusbar_required": true,
+            "min_condition_count": 2
+          },
+          "preview_expect": {
+            "text_contains": [
+              "status",
+              "when",
+              "Completed",
+              "Completion Notes",
+              "Customer Sign Off",
+              "Follow-up Date",
+              "Follow-up Required"
+            ]
+          }
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft",
+          "manifest_expect": {
+            "min_action_count": 2,
+            "min_workflow_state_count": 3,
+            "statusbar_required": true,
+            "min_condition_count": 2
+          },
+          "preview_expect": {
+            "text_contains": [
+              "status",
+              "when",
+              "Completed",
+              "Completion Notes",
+              "Customer Sign Off",
+              "Follow-up Date",
+              "Follow-up Required"
+            ]
+          }
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_action_count": 2,
+            "min_workflow_state_count": 3,
+            "statusbar_required": true,
+            "min_condition_count": 2
+          },
+          "preview_expect": {
+            "text_contains": [
+              "status",
+              "when",
+              "Completed",
+              "Completion Notes",
+              "Customer Sign Off",
+              "Follow-up Date",
+              "Follow-up Required"
+            ]
+          }
+        }
+      }
+    ],
+    "level": 4
+  },
+  {
+    "name": "sales_quote_approval_email_template",
+    "tags": [
+      "template",
+      "email_template",
+      "automation",
+      "business_flow"
+    ],
+    "session": {
+      "title": "sales_quote_approval_email_template",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Sales, create an approval email template that thanks the customer, shows the approved quote number, lists the next steps, and is ready to send when the quote is approved."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "sales"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        },
+        "expect": {
+          "manifest_expect": {
+            "min_trigger_count": 1
+          }
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft",
+          "manifest_expect": {
+            "min_trigger_count": 1
+          }
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_trigger_count": 1
+          }
+        }
+      }
+    ],
+    "level": 5
+  },
+  {
+    "name": "jobs_service_report_pdf_template",
+    "tags": [
+      "template",
+      "pdf_template",
+      "jinja_template",
+      "documents",
+      "business_flow"
+    ],
+    "session": {
+      "title": "jobs_service_report_pdf_template",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Jobs, create a service report PDF template using Jinja placeholders for customer, site, technician, work completed, materials used, and sign-off."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "jobs"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        },
+        "expect": {
+          "manifest_expect": {
+            "interfaces_include": [
+              "documentable"
+            ]
+          },
+          "preview_expect": {
+            "text_contains": [
+              "document"
+            ]
+          }
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft",
+          "manifest_expect": {
+            "interfaces_include": [
+              "documentable"
+            ]
+          },
+          "preview_expect": {
+            "text_contains": [
+              "document"
+            ]
+          }
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "interfaces_include": [
+              "documentable"
+            ]
+          },
+          "preview_expect": {
+            "text_contains": [
+              "document"
+            ]
+          }
+        }
+      }
+    ],
+    "level": 5
+  },
+  {
+    "name": "contacts_remove_outdated_internal_field",
+    "tags": [
+      "edit_existing",
+      "remove",
+      "business_flow"
+    ],
+    "session": {
+      "title": "contacts_remove_outdated_internal_field",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Contacts, remove the outdated internal reference field if it exists and keep the rest of the form intact."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ],
+    "level": 2
+  },
+  {
+    "name": "create_neetones",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_neetones",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module for managing gym training sessions. Call it Neetones. Make it clean and modern."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Neetones"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_vehicle_logbook",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_vehicle_logbook",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to track vehicle usage, odometer readings, drivers, and notes. Call it Vehicle Logbook."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Vehicle Logbook"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_tool_register",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_tool_register",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage tools, serial numbers, assigned staff, service dates, and condition. Call it Tool Register."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Tool Register"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_site_visits",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_site_visits",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage site visits, visit dates, customer, outcome, and notes. Call it Site Visits."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Site Visits"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_purchase_requests",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_purchase_requests",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage purchase requests, requester, amount, supplier, and notes. Call it Purchase Requests."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Purchase Requests"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_expense_claims",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_expense_claims",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module for employee expense claims with date, amount, category, receipt, and status. Call it Expense Claims."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Expense Claims"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_visitor_sign_in",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_visitor_sign_in",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to track visitors, visit time, host, company, and sign out. Call it Visitor Sign In."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Visitor Sign In"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_contractor_inductions",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_contractor_inductions",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage contractor inductions, expiry dates, company, contact, and notes. Call it Contractor Inductions."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Contractor Inductions"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_stocktake_hub",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_stocktake_hub",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module for stocktakes with location, count date, counted by, variance, and notes. Call it Stocktake Hub."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Stocktake Hub"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_leave_requests",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_leave_requests",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module for leave requests with employee, dates, leave type, status, and manager notes. Call it Leave Requests."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Leave Requests"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_staff_training",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_staff_training",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to track staff training, provider, due date, completion date, and certificate notes. Call it Staff Training."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Staff Training"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_safety_incidents",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_safety_incidents",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to log safety incidents with date, severity, location, people involved, and follow up. Call it Safety Incidents."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Safety Incidents"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_meeting_notes",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_meeting_notes",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module for meeting notes with meeting title, date, attendees, decisions, and action notes. Call it Meeting Notes."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Meeting Notes"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_shift_handover",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_shift_handover",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage shift handovers with date, outgoing staff, incoming staff, summary, and issues. Call it Shift Handover."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Shift Handover"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_kitchen_prep",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_kitchen_prep",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage kitchen prep lists with item, prep date, station, status, and notes. Call it Kitchen Prep."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Kitchen Prep"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_meal_planner",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_meal_planner",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage meals, planned date, meal type, ingredients summary, and notes. Call it Meal Planner."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Meal Planner"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_delivery_runs",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_delivery_runs",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage delivery runs with driver, date, route, vehicle, and notes. Call it Delivery Runs."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Delivery Runs"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_equipment_hire",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_equipment_hire",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage equipment hire with customer, item, out date, due date, and notes. Call it Equipment Hire."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Equipment Hire"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_room_bookings",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_room_bookings",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage room bookings with room, booking date, organiser, purpose, and notes. Call it Room Bookings."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Room Bookings"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_vendor_reviews",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_vendor_reviews",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage vendor reviews with supplier, review date, score, owner, and notes. Call it Vendor Reviews."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Vendor Reviews"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_client_onboarding",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_client_onboarding",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage client onboarding checklists with client, owner, target date, status, and notes. Call it Client Onboarding."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Client Onboarding"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_warranty_claims",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_warranty_claims",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage warranty claims with customer, product, claim date, status, and notes. Call it Warranty Claims."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Warranty Claims"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_service_recalls",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_service_recalls",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage service recalls with asset, recall date, owner, priority, and notes. Call it Service Recalls."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Service Recalls"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_quality_audits",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_quality_audits",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage quality audits with audit date, auditor, score, finding summary, and notes. Call it Quality Audits."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Quality Audits"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_supplier_scorecards",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_supplier_scorecards",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage supplier scorecards with supplier, review date, rating, owner, and notes. Call it Supplier Scorecards."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Supplier Scorecards"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_fuel_logs",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_fuel_logs",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage fuel logs with vehicle, date, litres, cost, and notes. Call it Fuel Logs."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Fuel Logs"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_travel_requests",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_travel_requests",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage travel requests with employee, destination, dates, purpose, and notes. Call it Travel Requests."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Travel Requests"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_audit_actions",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_audit_actions",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage audit actions with title, owner, due date, status, and notes. Call it Audit Actions."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Audit Actions"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_branch_targets",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_branch_targets",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage branch targets with branch, period, target, owner, and notes. Call it Branch Targets."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Branch Targets"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_fleet_checks",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_fleet_checks",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage fleet checks with vehicle, check date, driver, result, and notes. Call it Fleet Checks."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Fleet Checks"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_volunteer_hours",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_volunteer_hours",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to track volunteer hours with volunteer, date, hours, activity, and notes. Call it Volunteer Hours."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Volunteer Hours"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_membership_renewals",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_membership_renewals",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage membership renewals with member, renewal date, plan, status, and notes. Call it Membership Renewals."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Membership Renewals"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_workshop_bookings",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_workshop_bookings",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage workshop bookings with customer, asset, booking date, technician, and notes. Call it Workshop Bookings."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Workshop Bookings"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_returns_processing",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_returns_processing",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage product returns with customer, product, return date, reason, and notes. Call it Returns Processing."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Returns Processing"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_event_run_sheets",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_event_run_sheets",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to manage event run sheets with event, date, owner, venue, and notes. Call it Event Run Sheets."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Event Run Sheets"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_maintenance_requests",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_maintenance_requests",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a maintenance requests module called Maintenance Requests with statuses New, In Progress, Waiting Parts, Done, and actions to move between those stages."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Maintenance Requests"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form"
+            ],
+            "min_action_count": 2
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_time_off_approvals",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_time_off_approvals",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a module called Time Off Approvals with request status Draft, Submitted, Approved, Declined, and actions for submit, approve, and decline."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Time Off Approvals"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_purchase_approval_desk",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_purchase_approval_desk",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a module called Purchase Approval Desk with draft, submitted, approved, rejected statuses and approval actions based on status."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Purchase Approval Desk"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form"
+            ],
+            "min_action_count": 2
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_incident_response",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_incident_response",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a module called Incident Response with severity, status flow Open, Investigating, Contained, Closed, and actions to move the status."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Incident Response"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form"
+            ],
+            "min_action_count": 2
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_vehicle_service_schedule",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_vehicle_service_schedule",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a module called Vehicle Service Schedule with planned, booked, completed statuses and date-driven scheduling views."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Vehicle Service Schedule"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_audit_findings",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_audit_findings",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a module called Audit Findings with statuses Open, Actioned, Verified, Closed and owner-based follow-up actions."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Audit Findings"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_stock_replenishment",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_stock_replenishment",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a module called Stock Replenishment with statuses Draft, Pending Approval, Ordered, Received and actions for approve and receive."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Stock Replenishment"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_candidate_pipeline",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_candidate_pipeline",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a recruitment module called Candidate Pipeline with stage flow Applied, Screen, Interview, Offer, Hired and kanban-first pipeline support."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Candidate Pipeline"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_training_compliance",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_training_compliance",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a module called Training Compliance with due, booked, completed, overdue statuses and reminder-friendly date views."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Training Compliance"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_site_defects",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_site_defects",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a module called Site Defects with status flow Reported, Assigned, In Repair, Resolved and actions for assign and resolve."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Site Defects"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form"
+            ],
+            "interfaces_include": [
+              "dashboardable"
+            ],
+            "min_action_count": 2
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_tool_checkout",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_tool_checkout",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a module called Tool Checkout with statuses Available, Checked Out, Overdue, Returned and actions to check out and return."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Tool Checkout"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_capital_requests",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_capital_requests",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a module called Capital Requests with draft, review, approved, rejected statuses and approval actions."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Capital Requests"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form"
+            ],
+            "min_action_count": 2
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_change_requests",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_change_requests",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a module called Change Requests with draft, submitted, approved, implemented statuses and action buttons for each stage."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Change Requests"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form"
+            ],
+            "min_action_count": 2
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_repair_queue",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_repair_queue",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a module called Repair Queue with queue status New, Diagnosed, Waiting Approval, Repairing, Complete and list plus kanban views."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Repair Queue"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "create_onboarding_tasks",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "create_onboarding_tasks",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a module called Onboarding Tasks with statuses To Do, In Progress, Done, owner assignment, due dates, and approval-style closeout actions."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Onboarding Tasks"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "real_world_holiday_planner_module",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "real_world_holiday_planner_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a Holiday Planner module to manage upcoming trips, travellers, booking dates, budgets, suppliers, and notes. Call it Holiday Planner."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Holiday Planner"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "real_world_customer_site_assets_module",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "real_world_customer_site_assets_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Build a Customer Site Assets module so we can track equipment installed at each customer site, serial numbers, warranty dates, service history, and photos."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Customer Site Assets"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "real_world_warranty_claims_module",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "real_world_warranty_claims_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a Warranty Claims module for faulty products, claim dates, supplier responses, replacement status, and customer updates."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Warranty Claims"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "real_world_job_hazard_analysis_module",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "real_world_job_hazard_analysis_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a Job Hazard Analysis module to record hazards, controls, responsible people, review dates, and signoff before work starts."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Job Hazard Analysis"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "real_world_employee_onboarding_module",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "real_world_employee_onboarding_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Make an Employee Onboarding module with start date, manager, equipment checklist, training steps, payroll status, and notes."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Employee Onboarding"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "real_world_fleet_defects_module",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "real_world_fleet_defects_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a Fleet Defects module to log vehicle defects, severity, reported by, due date, workshop booking, and resolution notes."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Fleet Defects"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable",
+              "dashboardable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "real_world_tool_calibration_module",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "real_world_tool_calibration_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a Tool Calibration module for calibration dates, next due date, certificate uploads, vendor, and status."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Tool Calibration"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "real_world_service_agreements_module",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "real_world_service_agreements_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a Service Agreements module to track contract start and end dates, renewal terms, pricing, service level, and account owner."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Service Agreements"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "real_world_rental_checklists_module",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "real_world_rental_checklists_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Build a Rental Checklists module for pre-hire checks, return inspections, damages, photos, and signoff."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Rental Checklists"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "real_world_room_turnovers_module",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "real_world_room_turnovers_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a Room Turnovers module to manage checkout cleanups, assigned staff, inspection status, linen issues, and ready-for-next-guest time."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Room Turnovers"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "real_world_vendor_compliance_module",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "real_world_vendor_compliance_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a Vendor Compliance module for insurance expiry, safety docs, onboarding status, approved categories, and review notes."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Vendor Compliance"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "real_world_incident_investigations_module",
+    "tags": [
+      "create_module"
+    ],
+    "session": {
+      "title": "real_world_incident_investigations_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create an Incident Investigations module with incident link, investigator, root cause, corrective actions, due dates, and closure signoff."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Incident Investigations"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 6,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "calendar"
+            ],
+            "interfaces_include": [
+              "schedulable"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "upgrade_contacts_latest_style",
+    "tags": [
+      "upgrade"
+    ],
+    "session": {
+      "title": "upgrade_contacts_latest_style",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Upgrade the Contacts module to use the latest recommended module design style."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_list_first_views",
+    "tags": [
+      "upgrade"
+    ],
+    "session": {
+      "title": "contacts_list_first_views",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "For Contacts, make it list-first but include kanban, graph, and pivot views if they make sense."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_modernize_form_layout",
+    "tags": [
+      "upgrade"
+    ],
+    "session": {
+      "title": "contacts_modernize_form_layout",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Modernize the Contacts form layout using the latest design docs without changing its business meaning."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_review_calendar_view",
+    "tags": [
+      "upgrade"
+    ],
+    "session": {
+      "title": "contacts_review_calendar_view",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "For Contacts, add a calendar view only if there is a meaningful date field worth showing there."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_primary_create_action",
+    "tags": [
+      "upgrade"
+    ],
+    "session": {
+      "title": "contacts_primary_create_action",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Review Contacts actions and make sure the primary create action uses + New and the latest recommended style."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_refresh_filters_bulk_actions",
+    "tags": [
+      "upgrade"
+    ],
+    "session": {
+      "title": "contacts_refresh_filters_bulk_actions",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Improve Contacts list filters and bulk actions using the latest module building style."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_latest_page_structure",
+    "tags": [
+      "upgrade"
+    ],
+    "session": {
+      "title": "contacts_latest_page_structure",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Align the Contacts list page and form page to the current marketplace page structure."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_tabs_and_chatter_layout",
+    "tags": [
+      "upgrade"
+    ],
+    "session": {
+      "title": "contacts_tabs_and_chatter_layout",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Make sure Contacts uses tabs consistently and keeps chatter in the recommended right-side card layout."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_nav_home_alignment",
+    "tags": [
+      "upgrade"
+    ],
+    "session": {
+      "title": "contacts_nav_home_alignment",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Update Contacts nav and home pages to follow the latest recommended module design approach."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_outdated_structure_review",
+    "tags": [
+      "upgrade"
+    ],
+    "session": {
+      "title": "contacts_outdated_structure_review",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Review Contacts for outdated page or view structure and modernize it to current design docs."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "scope_switch_neetones_to_contacts_remove_roblux",
+    "tags": [
+      "scope_switch"
+    ],
+    "session": {
+      "title": "scope_switch_neetones_to_contacts_remove_roblux",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "For Neetones, make it list-first with useful views."
+      },
+      {
+        "chat": "Now remove the roblux field from the Contacts module."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_target",
+          "text": "roblux"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "scope_switch_jobs_to_contacts_remove_bear",
+    "tags": [
+      "scope_switch"
+    ],
+    "session": {
+      "title": "scope_switch_jobs_to_contacts_remove_bear",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "For Jobs, modernize the list and form page layout."
+      },
+      {
+        "chat": "Remove the Bear field from the Contacts module."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_target",
+          "text": "Bear"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "scope_switch_maintenance_to_contacts_remove_a_new",
+    "tags": [
+      "scope_switch"
+    ],
+    "session": {
+      "title": "scope_switch_maintenance_to_contacts_remove_a_new",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "For Maintenance, update the module to the latest style."
+      },
+      {
+        "chat": "Remove the A New field from the Contacts module."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_target",
+          "text": "A New"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "scope_switch_field_service_to_contacts_remove_headshots",
+    "tags": [
+      "scope_switch"
+    ],
+    "session": {
+      "title": "scope_switch_field_service_to_contacts_remove_headshots",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "For Field Service, improve the latest layout structure."
+      },
+      {
+        "chat": "Remove the field \"A New Attachment Field Upload Called Headshots For Them\" from the Contacts module."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_target",
+          "text": "A New Attachment Field Upload Called Headshots For Them"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "scope_switch_documents_to_contacts_portal_access",
+    "tags": [
+      "scope_switch"
+    ],
+    "session": {
+      "title": "scope_switch_documents_to_contacts_portal_access",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Review the Documents module for modern layout improvements."
+      },
+      {
+        "chat": "Add a Portal Access checkbox to Contacts form only."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Portal Access",
+          "hints": {
+            "field_label": "Portal Access",
+            "field_type": "bool"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form only."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "scope_switch_tasks_to_contacts_move_roblux",
+    "tags": [
+      "scope_switch"
+    ],
+    "session": {
+      "title": "scope_switch_tasks_to_contacts_move_roblux",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "For Tasks, improve the workflow layout and views."
+      },
+      {
+        "chat": "Move the roblux field into the Internal Notes tab in Contacts."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_target",
+          "text": "roblux"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "tab_target",
+          "text": "Internal Notes"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "scope_switch_sales_to_contacts_contact_source",
+    "tags": [
+      "scope_switch"
+    ],
+    "session": {
+      "title": "scope_switch_sales_to_contacts_contact_source",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "For Sales, make the module list-first with modern views."
+      },
+      {
+        "chat": "Add Contact Source to Contacts and show it in the form and list."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Contact Source",
+          "hints": {
+            "field_label": "Contact Source",
+            "field_type": "string"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form and list."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "scope_switch_crm_to_contacts_reference_number",
+    "tags": [
+      "scope_switch"
+    ],
+    "session": {
+      "title": "scope_switch_crm_to_contacts_reference_number",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "For CRM, review the latest design style for the module."
+      },
+      {
+        "chat": "Add Reference Number to Contacts and include it in the form and list."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Reference Number",
+          "hints": {
+            "field_label": "Reference Number",
+            "field_type": "string"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form and list."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "scope_switch_calendar_to_contacts_master_list",
+    "tags": [
+      "scope_switch"
+    ],
+    "session": {
+      "title": "scope_switch_calendar_to_contacts_master_list",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Upgrade the Calendar module to latest style."
+      },
+      {
+        "chat": "In Contacts, add Master List Name in the Internal Notes tab on the form only."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Master List Name",
+          "hints": {
+            "field_label": "Master List Name",
+            "field_type": "string"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "tab_target",
+          "text": "Internal Notes"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form only."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "scope_switch_variations_to_contacts_account_manager_notes",
+    "tags": [
+      "scope_switch"
+    ],
+    "session": {
+      "title": "scope_switch_variations_to_contacts_account_manager_notes",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "For Variations, make sure the module matches current layout guidance."
+      },
+      {
+        "chat": "Add Account Manager Notes to Contacts and put it in Internal Notes."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Account Manager Notes",
+          "hints": {
+            "field_label": "Account Manager Notes",
+            "field_type": "text"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "tab_target",
+          "text": "Internal Notes"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form only."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_remove_roblux",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_remove_roblux",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Remove the roblux field from the Contacts module."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_target",
+          "text": "roblux"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_remove_bear",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_remove_bear",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Remove the Bear field from the Contacts module."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_target",
+          "text": "Bear"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_remove_a_new",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_remove_a_new",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Remove the A New field from the Contacts module."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_target",
+          "text": "A New"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_remove_headshots_field",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_remove_headshots_field",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Remove the field \"A New Attachment Field Upload Called Headshots For Them\" from the Contacts module."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_target",
+          "text": "A New Attachment Field Upload Called Headshots For Them"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_move_supplier_rating_lower",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_move_supplier_rating_lower",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Move the supplier rating field to the bottom of the main Contacts form section."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_target",
+          "text": "supplier rating"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_cleanup_duplicate_supplier_rating",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_cleanup_duplicate_supplier_rating",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Clean up the duplicate supplier rating fields in the Contacts module and keep only one valid field."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_target",
+          "text": "supplier rating"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_preferred_contact_method",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_preferred_contact_method",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add a field called Preferred Contact Method to the Contacts module and include it in form and list."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Preferred Contact Method",
+          "hints": {
+            "field_label": "Preferred Contact Method",
+            "field_type": "string"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form and list."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_customer_tier",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_customer_tier",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Contacts, add a field called Customer Tier and include it in the form and list."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Customer Tier",
+          "hints": {
+            "field_label": "Customer Tier",
+            "field_type": "string"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form and list."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_is_strategic_account",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_is_strategic_account",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add a checkbox field called Strategic Account to the Contacts module form only."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Strategic Account",
+          "hints": {
+            "field_label": "Strategic Account",
+            "field_type": "bool"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form only."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_nickname",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_nickname",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In the Contacts module, add a field called Nickname and place it in the main form."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Nickname",
+          "hints": {
+            "field_label": "Nickname",
+            "field_type": "string"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form only."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_reference_number",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_reference_number",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add a field called Reference Number to Contacts and show it in form and list."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Reference Number",
+          "hints": {
+            "field_label": "Reference Number",
+            "field_type": "string"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form and list."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_linkedin_url",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_linkedin_url",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add a field called LinkedIn URL to Contacts and include it on the form only."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "LinkedIn URL",
+          "hints": {
+            "field_label": "LinkedIn URL",
+            "field_type": "string"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form only."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_birthday",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_birthday",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add a Birthday field to the Contacts module form only."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Birthday",
+          "hints": {
+            "field_label": "Birthday",
+            "field_type": "date"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form only."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_move_roblux_to_notes",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_move_roblux_to_notes",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Move the roblux field into the Internal Notes tab in Contacts."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_target",
+          "text": "roblux"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "tab_target",
+          "text": "Internal Notes"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_emergency_contact_name",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_emergency_contact_name",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add a field called Emergency Contact Name to the Contacts module form only."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Emergency Contact Name",
+          "hints": {
+            "field_label": "Emergency Contact Name",
+            "field_type": "string"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form only."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_last_contacted_on",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_last_contacted_on",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add a Last Contacted On field to Contacts and show it in the form and list."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Last Contacted On",
+          "hints": {
+            "field_label": "Last Contacted On",
+            "field_type": "date"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form and list."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_portal_access",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_portal_access",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add a checkbox called Portal Access to the Contacts module form only."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Portal Access",
+          "hints": {
+            "field_label": "Portal Access",
+            "field_type": "bool"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form only."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_contact_source",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_contact_source",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add Contact Source to Contacts and show it in the form and list."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Contact Source",
+          "hints": {
+            "field_label": "Contact Source",
+            "field_type": "string"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form and list."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_do_not_disturb",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_do_not_disturb",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add a Do Not Disturb checkbox to the Contacts module form only."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Do Not Disturb",
+          "hints": {
+            "field_label": "Do Not Disturb",
+            "field_type": "bool"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form only."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_internal_reference",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_internal_reference",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add an Internal Reference field to Contacts and show it in form and list."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Internal Reference",
+          "hints": {
+            "field_label": "Internal Reference",
+            "field_type": "string"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form and list."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_service_region",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_service_region",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add a Service Region field to Contacts and include it on the form only."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Service Region",
+          "hints": {
+            "field_label": "Service Region",
+            "field_type": "string"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form only."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_master_list_name_notes",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_master_list_name_notes",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In the Contacts module, add a field called Master List Name and place it in the Internal Notes tab on the form only."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Master List Name",
+          "hints": {
+            "field_label": "Master List Name",
+            "field_type": "string"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "tab_target",
+          "text": "Internal Notes"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form only."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_on_hold_reason",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_on_hold_reason",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add a field called On Hold Reason to the Contacts module and put it in the Internal Notes tab."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "On Hold Reason",
+          "hints": {
+            "field_label": "On Hold Reason",
+            "field_type": "text"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "tab_target",
+          "text": "Internal Notes"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form only."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_credit_review_date",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_credit_review_date",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Contacts, add Credit Review Date and place it in the Accounting tab on the form only."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Credit Review Date",
+          "hints": {
+            "field_label": "Credit Review Date",
+            "field_type": "date"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "tab_target",
+          "text": "Accounting"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form only."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_service_notes",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_service_notes",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add a field called Service Notes to Contacts and put it in the Internal Notes tab."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Service Notes",
+          "hints": {
+            "field_label": "Service Notes",
+            "field_type": "text"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "tab_target",
+          "text": "Internal Notes"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form only."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_customer_since",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_customer_since",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add a Customer Since field to Contacts and place it in the Sales & Purchase tab."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Customer Since",
+          "hints": {
+            "field_label": "Customer Since",
+            "field_type": "date"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "tab_target",
+          "text": "Sales & Purchase"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form only."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_account_manager_notes",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_account_manager_notes",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add Account Manager Notes to Contacts and put it in the Internal Notes tab."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Account Manager Notes",
+          "hints": {
+            "field_label": "Account Manager Notes",
+            "field_type": "text"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "tab_target",
+          "text": "Internal Notes"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form only."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_payment_hold",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_payment_hold",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add a Payment Hold checkbox to Contacts in the Accounting tab."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Payment Hold",
+          "hints": {
+            "field_label": "Payment Hold",
+            "field_type": "bool"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "tab_target",
+          "text": "Accounting"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form only."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_delivery_instructions",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_delivery_instructions",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add Delivery Instructions to Contacts and place it under Contacts & Addresses on the form."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "Delivery Instructions",
+          "hints": {
+            "field_label": "Delivery Instructions",
+            "field_type": "text"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "tab_target",
+          "text": "Contacts & Addresses"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form only."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "contacts_add_vat_verified",
+    "tags": [
+      "contacts_change"
+    ],
+    "session": {
+      "title": "contacts_add_vat_verified",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add a VAT Verified checkbox to Contacts and put it in Accounting."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "contacts"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "field_spec",
+          "text": "VAT Verified",
+          "hints": {
+            "field_label": "VAT Verified",
+            "field_type": "bool"
+          }
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "tab_target",
+          "text": "Accounting"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "placement",
+          "text": "Include it in form only."
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true
+        }
+      }
+    ]
+  }
+]

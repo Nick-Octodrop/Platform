@@ -4,7 +4,7 @@ import { Menu } from "lucide-react";
 import UserMenu from "../components/UserMenu.jsx";
 import NotificationBell from "../components/NotificationBell.jsx";
 import { apiFetch, getManifest, listStudio2Modules } from "../api.js";
-import { buildTargetRoute } from "../apps/appShellUtils.js";
+import { appendOctoAiFrameParams, buildTargetRoute } from "../apps/appShellUtils.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 
 export default function TopNav({ user, onSignOut }) {
@@ -89,6 +89,7 @@ export default function TopNav({ user, onSignOut }) {
     || isDocTemplateStudio;
   const isNotifications = location.pathname.startsWith("/notifications");
   const isAutomations = location.pathname.startsWith("/automations");
+  const isOctoAi = location.pathname.startsWith("/octo-ai");
   const isAutomationRuns = location.pathname.startsWith("/automation-runs");
   const [manifest, setManifest] = useState(null);
   const [studioModules, setStudioModules] = useState([]);
@@ -236,15 +237,15 @@ export default function TopNav({ user, onSignOut }) {
         {isStudioRoute ? (
           <div className={breadcrumbClass}>
             <ul>
-              <li><Link to="/home">Home</Link></li>
-              <li><Link to="/studio">Studio</Link></li>
+              <li><Link to={appendOctoAiFrameParams("/home")}>Home</Link></li>
+              <li><Link to={appendOctoAiFrameParams("/studio")}>Studio</Link></li>
               {isStudioEditor && !isMobile && <li>{studioModuleName}</li>}
             </ul>
           </div>
         ) : isAppRoute ? (
           <div className={breadcrumbClass}>
             <ul>
-              <li><Link to="/home">Home</Link></li>
+              <li><Link to={appendOctoAiFrameParams("/home")}>Home</Link></li>
               <li>
                 {appHomeRoute ? (
                   <Link to={appHomeRoute}>{appName || moduleId}</Link>
@@ -258,57 +259,64 @@ export default function TopNav({ user, onSignOut }) {
         ) : isAppsStore ? (
           <div className={breadcrumbClass}>
             <ul>
-              <li><Link to="/home">Home</Link></li>
+              <li><Link to={appendOctoAiFrameParams("/home")}>Home</Link></li>
               <li>Apps</li>
             </ul>
           </div>
         ) : isSettingsRoute ? (
           <div className={breadcrumbClass}>
             <ul>
-              <li><Link to="/home">Home</Link></li>
-              <li><Link to="/settings">Settings</Link></li>
+              <li><Link to={appendOctoAiFrameParams("/home")}>Home</Link></li>
+              <li><Link to={appendOctoAiFrameParams("/settings")}>Settings</Link></li>
               {settingsLeafLabel && <li>{settingsLeafLabel}</li>}
             </ul>
           </div>
         ) : isNotifications ? (
           <div className={breadcrumbClass}>
             <ul>
-              <li><Link to="/home">Home</Link></li>
+              <li><Link to={appendOctoAiFrameParams("/home")}>Home</Link></li>
               <li>Notifications</li>
             </ul>
           </div>
         ) : isAutomations ? (
           <div className={breadcrumbClass}>
             <ul>
-              <li><Link to="/home">Home</Link></li>
-              <li><Link to="/automations">Automations</Link></li>
+              <li><Link to={appendOctoAiFrameParams("/home")}>Home</Link></li>
+              <li><Link to={appendOctoAiFrameParams("/automations")}>Automations</Link></li>
+            </ul>
+          </div>
+        ) : isOctoAi ? (
+          <div className={breadcrumbClass}>
+            <ul>
+              <li><Link to={appendOctoAiFrameParams("/home")}>Home</Link></li>
+              <li><Link to={appendOctoAiFrameParams("/octo-ai")}>Octo AI</Link></li>
             </ul>
           </div>
         ) : isIntegrations ? (
           <div className={breadcrumbClass}>
             <ul>
-              <li><Link to="/home">Home</Link></li>
+              <li><Link to={appendOctoAiFrameParams("/home")}>Home</Link></li>
               <li>Integrations</li>
             </ul>
           </div>
         ) : isAutomationRuns ? (
           <div className={breadcrumbClass}>
             <ul>
-              <li><Link to="/home">Home</Link></li>
-              <li><Link to="/automations">Automations</Link></li>
+              <li><Link to={appendOctoAiFrameParams("/home")}>Home</Link></li>
+              <li><Link to={appendOctoAiFrameParams("/automations")}>Automations</Link></li>
               <li>Run</li>
             </ul>
           </div>
         ) : isOps ? (
           <div className={breadcrumbClass}>
             <ul>
-              <li><Link to="/home">Home</Link></li>
+              <li><Link to={appendOctoAiFrameParams("/home")}>Home</Link></li>
               <li>Ops</li>
             </ul>
           </div>
         ) : (
           !isHome && (
-            <Link to="/home" className="btn btn-ghost btn-sm">← Home</Link>
+            <Link to={appendOctoAiFrameParams("/home")} className="btn btn-ghost btn-sm">← Home</Link>
           )
         )}
       </div>

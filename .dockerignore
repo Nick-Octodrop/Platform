@@ -1,45 +1,47 @@
-# flyctl launch added from .gitignore
+.git
+.gitignore
+
 # OS/editor
-**\.DS_Store
-**\Thumbs.db
-**\.idea
-**\.vscode
+**/.DS_Store
+**/Thumbs.db
+**/.idea
+**/.vscode
 
 # Python
-**\__pycache__
-**\*.py[cod]
-**\*.pyo
-**\.pytest_cache
-**\.mypy_cache
-**\.ruff_cache
-**\.coverage
-**\.coverage.*
-**\htmlcov
-**\.venv
-**\venv
-**\env
+**/__pycache__
+**/*.py[cod]
+**/*.pyo
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.coverage
+**/.coverage.*
+**/htmlcov
+**/.venv
+**/venv
+**/env
 
 # Node/Vite
-**\node_modules
-**\web\node_modules
-**\web\dist
-**\web\.vite
+**/node_modules
+**/dist
+**/.vite
 
 # Environment/secrets
-**\.env
-**\.env.*
-!**\.env.example
-**\app\.env
-**\web\.env
+**/.env
+**/.env.*
+!**/.env.example
 
 # Local data/artifacts
-**\db-migration
-**\*.dump
-**\*.sql.gz
-**\perf_results.log
+**/db-migration
+**/*.dump
+**/*.sql.gz
+**/perf_results.log
 
 # Runtime/temp files
-**\*.log
-**\*.tmp
-**\*.swp
+**/*.log
+**/*.tmp
+**/*.swp
+
+# Non-runtime project files
+tests/
 fly.toml

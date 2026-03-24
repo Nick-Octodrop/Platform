@@ -6,10 +6,11 @@ import { getAppDisplayName } from "../state/appCatalog.js";
 import { getAppIcon, subscribeAppIcons } from "../state/appIcons.js";
 import { getDefaultOpenRoute, loadEntityIndex } from "../data/entityIndex.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
-import { LayoutGrid, Package, PenTool, Settings as SettingsIcon, Workflow, Wrench } from "lucide-react";
+import { LayoutGrid, Package, PenTool, Settings as SettingsIcon, Sparkles, Workflow, Wrench } from "lucide-react";
 import { normalizeLucideKey, resolveLucideIcon } from "../state/lucideIconCatalog.js";
 import { normalizeHeroKey, resolveHeroIcon } from "../state/heroIconCatalog.js";
 import { useAccessContext } from "../access.js";
+import { appendOctoAiFrameParams } from "../apps/appShellUtils.js";
 
 function AppTile({ app, module, onOpen }) {
   const disabled = module && !module.enabled;
@@ -55,6 +56,7 @@ export default function HomePage({ user }) {
   const [iconVersion, setIconVersion] = useState(0);
   const { loading: accessLoading, hasCapability } = useAccessContext();
   const canSeeStudio = !accessLoading && hasCapability("modules.manage");
+  const canSeeOctoAi = !accessLoading && hasCapability("modules.manage");
   const canSeeAutomations = !accessLoading && hasCapability("automations.manage");
   const canSeeIntegrations = !accessLoading && hasCapability("workspace.manage_settings");
   const homeLoading = loading || accessLoading;
@@ -75,6 +77,7 @@ export default function HomePage({ user }) {
   const systemApps = [
     { id: "apps", name: "App Manager", route: "/apps", system: true, icon: <LayoutGrid size={56} strokeWidth={1.31} className="text-primary" /> },
     ...(canSeeStudio ? [{ id: "studio", name: "Studio", route: "/studio", system: true, icon: <PenTool size={56} strokeWidth={1.31} className="text-primary" /> }] : []),
+    ...(canSeeOctoAi ? [{ id: "octo_ai", name: "Octo AI", route: "/octo-ai", system: true, icon: <Sparkles size={56} strokeWidth={1.31} className="text-primary" /> }] : []),
     ...(canSeeAutomations ? [{ id: "automations", name: "Automations", route: "/automations", system: true, icon: <Workflow size={56} strokeWidth={1.31} className="text-primary" /> }] : []),
     ...(canSeeIntegrations ? [{ id: "integrations", name: "Integrations", route: "/integrations", system: true, icon: <Wrench size={56} strokeWidth={1.31} className="text-primary" /> }] : []),
     { id: "settings", name: "Settings", route: "/settings", system: true, icon: <SettingsIcon size={56} strokeWidth={1.31} className="text-primary" /> },
@@ -95,11 +98,11 @@ export default function HomePage({ user }) {
 
   function handleOpen(app) {
     if (app.system) {
-      navigate(app.route);
+      navigate(appendOctoAiFrameParams(app.route));
       return;
     }
     const route = getDefaultOpenRoute(app.id, entityIndex);
-    navigate(route);
+    navigate(appendOctoAiFrameParams(route));
   }
 
   const allApps = useMemo(() => {
@@ -114,7 +117,7 @@ export default function HomePage({ user }) {
           {allApps.length === 0 ? (
             <div className="card bg-base-100 shadow p-6">
               <div className="text-sm opacity-70 mb-3">No apps installed yet.</div>
-              <button className="btn btn-primary w-fit" onClick={() => navigate("/apps")}>
+              <button className="btn btn-primary w-fit" onClick={() => navigate(appendOctoAiFrameParams("/apps"))}>
                 Open Modules
               </button>
             </div>

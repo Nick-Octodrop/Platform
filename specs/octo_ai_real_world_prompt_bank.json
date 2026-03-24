@@ -1,0 +1,497 @@
+{
+  "version": 1,
+  "prompts": [
+    {
+      "id": "holiday_planner_module",
+      "category": "module_creation",
+      "business_type": "travel",
+      "situation_type": "create_module",
+      "surfaces": ["module", "entities", "views", "workflow"],
+      "prompt": "Create a Holiday Planner module to manage upcoming trips, travellers, booking dates, budgets, suppliers, and notes. Call it Holiday Planner.",
+      "suite_seed": {"kind": "create_module", "module_name": "Holiday Planner"}
+    },
+    {
+      "id": "customer_site_assets_module",
+      "category": "module_creation",
+      "business_type": "field_service",
+      "situation_type": "create_module",
+      "surfaces": ["module", "entities", "views", "workflow"],
+      "prompt": "Build a Customer Site Assets module so we can track equipment installed at each customer site, serial numbers, warranty dates, service history, and photos.",
+      "suite_seed": {"kind": "create_module", "module_name": "Customer Site Assets"}
+    },
+    {
+      "id": "warranty_claims_module",
+      "category": "module_creation",
+      "business_type": "retail_service",
+      "situation_type": "create_module",
+      "surfaces": ["module", "entities", "views", "workflow"],
+      "prompt": "Create a Warranty Claims module for faulty products, claim dates, supplier responses, replacement status, and customer updates.",
+      "suite_seed": {"kind": "create_module", "module_name": "Warranty Claims"}
+    },
+    {
+      "id": "job_hazard_analysis_module",
+      "category": "module_creation",
+      "business_type": "construction",
+      "situation_type": "create_module",
+      "surfaces": ["module", "entities", "views", "workflow"],
+      "prompt": "Create a Job Hazard Analysis module to record hazards, controls, responsible people, review dates, and signoff before work starts.",
+      "suite_seed": {"kind": "create_module", "module_name": "Job Hazard Analysis"}
+    },
+    {
+      "id": "employee_onboarding_module",
+      "category": "module_creation",
+      "business_type": "hr",
+      "situation_type": "create_module",
+      "surfaces": ["module", "entities", "views", "workflow"],
+      "prompt": "Make an Employee Onboarding module with start date, manager, equipment checklist, training steps, payroll status, and notes.",
+      "suite_seed": {"kind": "create_module", "module_name": "Employee Onboarding"}
+    },
+    {
+      "id": "fleet_defects_module",
+      "category": "module_creation",
+      "business_type": "transport",
+      "situation_type": "create_module",
+      "surfaces": ["module", "entities", "views", "workflow"],
+      "prompt": "Create a Fleet Defects module to log vehicle defects, severity, reported by, due date, workshop booking, and resolution notes.",
+      "suite_seed": {"kind": "create_module", "module_name": "Fleet Defects"}
+    },
+    {
+      "id": "tool_calibration_module",
+      "category": "module_creation",
+      "business_type": "engineering",
+      "situation_type": "create_module",
+      "surfaces": ["module", "entities", "views", "workflow"],
+      "prompt": "Create a Tool Calibration module for calibration dates, next due date, certificate uploads, vendor, and status.",
+      "suite_seed": {"kind": "create_module", "module_name": "Tool Calibration"}
+    },
+    {
+      "id": "service_agreements_module",
+      "category": "module_creation",
+      "business_type": "services",
+      "situation_type": "create_module",
+      "surfaces": ["module", "entities", "views", "workflow"],
+      "prompt": "Create a Service Agreements module to track contract start and end dates, renewal terms, pricing, service level, and account owner.",
+      "suite_seed": {"kind": "create_module", "module_name": "Service Agreements"}
+    },
+    {
+      "id": "rental_checklists_module",
+      "category": "module_creation",
+      "business_type": "equipment_rental",
+      "situation_type": "create_module",
+      "surfaces": ["module", "entities", "views", "workflow"],
+      "prompt": "Build a Rental Checklists module for pre-hire checks, return inspections, damages, photos, and signoff.",
+      "suite_seed": {"kind": "create_module", "module_name": "Rental Checklists"}
+    },
+    {
+      "id": "room_turnovers_module",
+      "category": "module_creation",
+      "business_type": "hospitality",
+      "situation_type": "create_module",
+      "surfaces": ["module", "entities", "views", "workflow"],
+      "prompt": "Create a Room Turnovers module to manage checkout cleanups, assigned staff, inspection status, linen issues, and ready-for-next-guest time.",
+      "suite_seed": {"kind": "create_module", "module_name": "Room Turnovers"}
+    },
+    {
+      "id": "vendor_compliance_module",
+      "category": "module_creation",
+      "business_type": "procurement",
+      "situation_type": "create_module",
+      "surfaces": ["module", "entities", "views", "workflow"],
+      "prompt": "Create a Vendor Compliance module for insurance expiry, safety docs, onboarding status, approved categories, and review notes.",
+      "suite_seed": {"kind": "create_module", "module_name": "Vendor Compliance"}
+    },
+    {
+      "id": "incident_investigations_module",
+      "category": "module_creation",
+      "business_type": "health_and_safety",
+      "situation_type": "create_module",
+      "surfaces": ["module", "entities", "views", "workflow"],
+      "prompt": "Create an Incident Investigations module with incident link, investigator, root cause, corrective actions, due dates, and closure signoff.",
+      "suite_seed": {"kind": "create_module", "module_name": "Incident Investigations"}
+    },
+    {
+      "id": "contacts_contacted_status",
+      "category": "workflow_status_actions",
+      "business_type": "sales",
+      "situation_type": "status_update",
+      "surfaces": ["workflow", "actions", "statusbar"],
+      "prompt": "In Contacts, add a Contacted status and give staff a Set: Contacted action button so they can move leads forward properly."
+    },
+    {
+      "id": "jobs_on_hold_status",
+      "category": "workflow_status_actions",
+      "business_type": "field_service",
+      "situation_type": "status_update",
+      "surfaces": ["workflow", "actions", "statusbar"],
+      "prompt": "In Jobs, add an On Hold status with Resume and Set: On Hold actions so the team can pause work cleanly."
+    },
+    {
+      "id": "purchase_requests_approval_statuses",
+      "category": "workflow_status_actions",
+      "business_type": "operations",
+      "situation_type": "approval_workflow",
+      "surfaces": ["workflow", "actions", "conditions"],
+      "prompt": "For Purchase Requests, add Pending Approval, Approved, and Rejected statuses, plus action buttons for managers to approve or reject with comments."
+    },
+    {
+      "id": "leave_requests_manager_approval",
+      "category": "workflow_status_actions",
+      "business_type": "hr",
+      "situation_type": "approval_workflow",
+      "surfaces": ["workflow", "actions", "conditions"],
+      "prompt": "In Leave Requests, add action buttons for Approve and Decline, and make manager notes required when a request is declined."
+    },
+    {
+      "id": "maintenance_awaiting_parts_status",
+      "category": "workflow_status_actions",
+      "business_type": "maintenance",
+      "situation_type": "status_update",
+      "surfaces": ["workflow", "actions", "statusbar"],
+      "prompt": "In Maintenance, add an Awaiting Parts status with a Set: Awaiting Parts action and a Resume Work action."
+    },
+    {
+      "id": "equipment_hire_returned_status",
+      "category": "workflow_status_actions",
+      "business_type": "equipment_rental",
+      "situation_type": "status_update",
+      "surfaces": ["workflow", "actions", "statusbar"],
+      "prompt": "In Equipment Hire, add Picked Up and Returned statuses and make the action buttons obvious for the hire desk."
+    },
+    {
+      "id": "safety_incident_investigation_status",
+      "category": "workflow_status_actions",
+      "business_type": "health_and_safety",
+      "situation_type": "status_update",
+      "surfaces": ["workflow", "actions", "statusbar"],
+      "prompt": "In Safety Incidents, add Investigation Open and Investigation Closed statuses with matching actions for the H&S team."
+    },
+    {
+      "id": "vendor_review_due_status",
+      "category": "workflow_status_actions",
+      "business_type": "procurement",
+      "situation_type": "status_update",
+      "surfaces": ["workflow", "actions", "statusbar"],
+      "prompt": "In Vendor Reviews, add Review Due and Reviewed statuses so procurement can track follow-up properly."
+    },
+    {
+      "id": "contacts_master_floor_plans_attachment",
+      "category": "forms_fields_layout",
+      "business_type": "property_services",
+      "situation_type": "attachment_field",
+      "surfaces": ["fields", "form", "attachments"],
+      "prompt": "In Contacts, add an attachment field on the Master tab labeled Floor plans."
+    },
+    {
+      "id": "jobs_emergency_callout_fields",
+      "category": "forms_fields_layout",
+      "business_type": "field_service",
+      "situation_type": "conditional_form",
+      "surfaces": ["fields", "form", "conditions"],
+      "prompt": "In Jobs, if the job type is Emergency, show After Hours Contact and Callout Reason fields and make them required."
+    },
+    {
+      "id": "quotes_internal_margin",
+      "category": "forms_fields_layout",
+      "business_type": "sales",
+      "situation_type": "field_and_visibility",
+      "surfaces": ["fields", "form", "conditions"],
+      "prompt": "Add an Internal Margin field to Quotes, keep it visible on the form for staff, but make sure it never appears on customer-facing documents."
+    },
+    {
+      "id": "equipment_hire_bond_receipt",
+      "category": "forms_fields_layout",
+      "business_type": "equipment_rental",
+      "situation_type": "attachments_and_conditions",
+      "surfaces": ["fields", "form", "attachments", "conditions"],
+      "prompt": "In Equipment Hire, add a Bond Paid checkbox and a Bond Receipt attachment field that only shows when Bond Paid is ticked."
+    },
+    {
+      "id": "client_onboarding_enterprise_docs",
+      "category": "forms_fields_layout",
+      "business_type": "b2b_services",
+      "situation_type": "conditional_form",
+      "surfaces": ["fields", "form", "attachments", "conditions"],
+      "prompt": "In Client Onboarding, if the client type is Enterprise, show a Compliance Documents attachment field and make it required before approval."
+    },
+    {
+      "id": "site_visits_access_notes",
+      "category": "forms_fields_layout",
+      "business_type": "property_services",
+      "situation_type": "field_layout",
+      "surfaces": ["fields", "form", "layout"],
+      "prompt": "In Site Visits, add a Site Access Notes field and put it near the address and contact details so technicians see it early."
+    },
+    {
+      "id": "contacts_service_region_form_list",
+      "category": "forms_fields_layout",
+      "business_type": "field_service",
+      "situation_type": "field_layout",
+      "surfaces": ["fields", "form", "views"],
+      "prompt": "Add a Service Region field to Contacts and show it on both the form and the list view."
+    },
+    {
+      "id": "service_agreements_renewal_reminder",
+      "category": "forms_fields_layout",
+      "business_type": "services",
+      "situation_type": "field_layout",
+      "surfaces": ["fields", "form", "conditions"],
+      "prompt": "In Service Agreements, add a Renewal Reminder Date field and place it with the contract dates and renewal terms."
+    },
+    {
+      "id": "quote_approved_job_creation",
+      "category": "automations_notifications",
+      "business_type": "field_service",
+      "situation_type": "automation",
+      "surfaces": ["automations", "workflow", "actions"],
+      "prompt": "When a Quote is approved, automatically create a Job, copy the customer and site details across, and notify the coordinator."
+    },
+    {
+      "id": "invoice_overdue_reminder",
+      "category": "automations_notifications",
+      "business_type": "finance",
+      "situation_type": "automation",
+      "surfaces": ["automations", "workflow"],
+      "prompt": "Set up an automation so overdue invoices send a reminder email 7 days after due date and a second reminder 14 days after due date."
+    },
+    {
+      "id": "leave_request_notify_team",
+      "category": "automations_notifications",
+      "business_type": "hr",
+      "situation_type": "automation",
+      "surfaces": ["automations", "workflow"],
+      "prompt": "When a Leave Request is approved, notify the employee, their manager, and the rostering team automatically."
+    },
+    {
+      "id": "low_stock_purchase_request",
+      "category": "automations_notifications",
+      "business_type": "inventory",
+      "situation_type": "automation",
+      "surfaces": ["automations", "workflow", "cross_module"],
+      "prompt": "When stock drops below the minimum level, create a Purchase Request automatically and alert the purchasing admin."
+    },
+    {
+      "id": "high_severity_incident_alert",
+      "category": "automations_notifications",
+      "business_type": "health_and_safety",
+      "situation_type": "automation",
+      "surfaces": ["automations", "workflow"],
+      "prompt": "If a Safety Incident is logged as high severity, immediately notify the H&S manager and create a follow-up investigation task."
+    },
+    {
+      "id": "job_completion_feedback_request",
+      "category": "automations_notifications",
+      "business_type": "services",
+      "situation_type": "automation",
+      "surfaces": ["automations", "workflow", "templates"],
+      "prompt": "When a Job is completed, send the customer a feedback request email the next morning with the technician and service details filled in."
+    },
+    {
+      "id": "service_agreement_expiry_warning",
+      "category": "automations_notifications",
+      "business_type": "services",
+      "situation_type": "automation",
+      "surfaces": ["automations", "workflow", "tasks"],
+      "prompt": "When a Service Agreement is within 30 days of expiry, create a renewal follow-up task and notify the account owner."
+    },
+    {
+      "id": "contractor_induction_expiry_warning",
+      "category": "automations_notifications",
+      "business_type": "construction",
+      "situation_type": "automation",
+      "surfaces": ["automations", "workflow", "templates"],
+      "prompt": "If a Contractor Induction is due to expire within 14 days, email the contractor and the site admin automatically."
+    },
+    {
+      "id": "service_report_pdf_template",
+      "category": "templates_documents",
+      "business_type": "field_service",
+      "situation_type": "pdf_template",
+      "surfaces": ["templates", "pdf", "documents"],
+      "prompt": "Create a Service Report PDF template that includes customer details, work performed, technician notes, photos, and customer signoff."
+    },
+    {
+      "id": "quote_approval_email_template",
+      "category": "templates_documents",
+      "business_type": "sales",
+      "situation_type": "email_template",
+      "surfaces": ["templates", "email"],
+      "prompt": "Create a quote approval email template that thanks the customer, shows the approved quote number, and explains the next steps."
+    },
+    {
+      "id": "client_welcome_email_pack",
+      "category": "templates_documents",
+      "business_type": "b2b_services",
+      "situation_type": "email_template",
+      "surfaces": ["templates", "email"],
+      "prompt": "Create a welcome email template for new clients with their account manager details, support hours, and onboarding checklist link."
+    },
+    {
+      "id": "invoice_overdue_email_template",
+      "category": "templates_documents",
+      "business_type": "finance",
+      "situation_type": "email_template",
+      "surfaces": ["templates", "email"],
+      "prompt": "Create a polite overdue invoice reminder email template with invoice number, amount due, due date, and payment options."
+    },
+    {
+      "id": "rental_handover_pdf",
+      "category": "templates_documents",
+      "business_type": "equipment_rental",
+      "situation_type": "pdf_template",
+      "surfaces": ["templates", "pdf", "documents"],
+      "prompt": "Create a rental handover PDF with customer details, item list, condition checklist, damages, and signatures."
+    },
+    {
+      "id": "induction_certificate_pdf",
+      "category": "templates_documents",
+      "business_type": "construction",
+      "situation_type": "pdf_template",
+      "surfaces": ["templates", "pdf", "documents"],
+      "prompt": "Create an induction completion certificate PDF showing contractor name, company, site, completion date, and expiry date."
+    },
+    {
+      "id": "maintenance_visit_summary_email",
+      "category": "templates_documents",
+      "business_type": "maintenance",
+      "situation_type": "email_template",
+      "surfaces": ["templates", "email"],
+      "prompt": "Create a maintenance visit summary email template with job summary, findings, recommended actions, and attached service report."
+    },
+    {
+      "id": "holiday_itinerary_pdf",
+      "category": "templates_documents",
+      "business_type": "travel",
+      "situation_type": "pdf_template",
+      "surfaces": ["templates", "pdf", "documents"],
+      "prompt": "Create a Holiday Itinerary PDF template with traveller details, travel dates, bookings, flights, hotels, and activity notes."
+    },
+    {
+      "id": "xero_contact_invoice_sync",
+      "category": "integrations_sync",
+      "business_type": "finance",
+      "situation_type": "integration",
+      "surfaces": ["integrations", "sync"],
+      "prompt": "Set up Xero sync so approved Contacts and Invoices can be sent across, but only when the accounting fields are complete."
+    },
+    {
+      "id": "google_calendar_site_visit_sync",
+      "category": "integrations_sync",
+      "business_type": "field_service",
+      "situation_type": "integration",
+      "surfaces": ["integrations", "calendar"],
+      "prompt": "Connect Site Visits to Google Calendar so confirmed visits create calendar events with the customer, site address, and assigned staff."
+    },
+    {
+      "id": "twilio_dispatch_sms",
+      "category": "integrations_sync",
+      "business_type": "field_service",
+      "situation_type": "integration",
+      "surfaces": ["integrations", "sms", "automations"],
+      "prompt": "Set up Twilio SMS so technicians get a text when a Job is dispatched with job number, site, and booking window."
+    },
+    {
+      "id": "mailchimp_marketing_opt_in_sync",
+      "category": "integrations_sync",
+      "business_type": "marketing",
+      "situation_type": "integration",
+      "surfaces": ["integrations", "sync"],
+      "prompt": "Sync marketing opt-in Contacts to Mailchimp, but only include customers who have consented to newsletters."
+    },
+    {
+      "id": "slack_sales_win_notification",
+      "category": "integrations_sync",
+      "business_type": "sales",
+      "situation_type": "integration",
+      "surfaces": ["integrations", "automations"],
+      "prompt": "Post to Slack when a quote over $10,000 is approved, including the customer name, quote number, and salesperson."
+    },
+    {
+      "id": "zapier_customer_onboarding_webhook",
+      "category": "integrations_sync",
+      "business_type": "operations",
+      "situation_type": "integration",
+      "surfaces": ["integrations", "webhooks", "automations"],
+      "prompt": "Send a webhook to Zapier when a new customer onboarding is marked complete so downstream systems can be updated."
+    },
+    {
+      "id": "jobs_dashboard_kpis",
+      "category": "dashboards_reporting",
+      "business_type": "field_service",
+      "situation_type": "dashboard",
+      "surfaces": ["views", "dashboards", "reporting"],
+      "prompt": "Build a Jobs dashboard showing jobs by status, jobs by technician, overdue jobs, and completed jobs this week."
+    },
+    {
+      "id": "sales_conversion_dashboard",
+      "category": "dashboards_reporting",
+      "business_type": "sales",
+      "situation_type": "dashboard",
+      "surfaces": ["views", "dashboards", "reporting"],
+      "prompt": "Create a sales dashboard for leads, quotes sent, quotes won, lost reasons, and conversion rate by salesperson."
+    },
+    {
+      "id": "overdue_invoices_aging_report",
+      "category": "dashboards_reporting",
+      "business_type": "finance",
+      "situation_type": "reporting",
+      "surfaces": ["views", "dashboards", "reporting"],
+      "prompt": "Create an overdue invoices dashboard with aging buckets, total overdue amount, and top overdue customers."
+    },
+    {
+      "id": "maintenance_compliance_dashboard",
+      "category": "dashboards_reporting",
+      "business_type": "maintenance",
+      "situation_type": "dashboard",
+      "surfaces": ["views", "dashboards", "reporting"],
+      "prompt": "Build a maintenance compliance dashboard showing upcoming services, overdue equipment, and technician completion rates."
+    },
+    {
+      "id": "training_expiry_dashboard",
+      "category": "dashboards_reporting",
+      "business_type": "hr",
+      "situation_type": "dashboard",
+      "surfaces": ["views", "dashboards", "reporting"],
+      "prompt": "Create a staff training dashboard that highlights expired certificates, upcoming renewals, and completion by team."
+    },
+    {
+      "id": "customer_onboarding_rollout",
+      "category": "cross_module_rollouts",
+      "business_type": "b2b_services",
+      "situation_type": "cross_module",
+      "surfaces": ["cross_module", "workflow", "automations", "documents"],
+      "prompt": "Build a full customer onboarding flow across Contacts, Tasks, Documents, and email automation so new clients get set up consistently."
+    },
+    {
+      "id": "field_service_completion_rollout",
+      "category": "cross_module_rollouts",
+      "business_type": "field_service",
+      "situation_type": "cross_module",
+      "surfaces": ["cross_module", "workflow", "automations", "templates"],
+      "prompt": "When a field service job is completed, capture technician notes, generate a service report PDF, and email it to the customer automatically."
+    },
+    {
+      "id": "supplier_onboarding_rollout",
+      "category": "cross_module_rollouts",
+      "business_type": "procurement",
+      "situation_type": "cross_module",
+      "surfaces": ["cross_module", "workflow", "documents"],
+      "prompt": "Create a supplier onboarding process across Contacts, Purchase Requests, and Vendor Compliance so new vendors cannot be used until documents are approved."
+    },
+    {
+      "id": "project_handover_rollout",
+      "category": "cross_module_rollouts",
+      "business_type": "projects",
+      "situation_type": "cross_module",
+      "surfaces": ["cross_module", "workflow", "calendar", "documents"],
+      "prompt": "Set up a project handover process that links Sales, Jobs, Calendar, and Documents so operations has everything before work starts."
+    },
+    {
+      "id": "property_inspection_rollout",
+      "category": "cross_module_rollouts",
+      "business_type": "property",
+      "situation_type": "cross_module",
+      "surfaces": ["cross_module", "workflow", "documents", "attachments"],
+      "prompt": "Build a property inspection flow across Contacts, Site Visits, Documents, and Maintenance so inspections, photos, defects, and follow-up work all stay linked."
+    }
+  ]
+}

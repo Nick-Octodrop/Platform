@@ -1,0 +1,2970 @@
+[
+  {
+    "name": "preview_create_vehicle_logbook",
+    "level": 1,
+    "tags": [
+      "preview_contract",
+      "create_module",
+      "plain_language"
+    ],
+    "session": {
+      "title": "preview_create_vehicle_logbook",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a simple module to track vehicle usage, odometer readings, drivers, and notes. Call it Vehicle Logbook.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Create a new module 'Vehicle Logbook'.",
+            "Create module 'Vehicle Logbook'."
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_contacts_add_birthday",
+    "level": 1,
+    "tags": [
+      "preview_contract",
+      "contacts_change",
+      "plain_language"
+    ],
+    "session": {
+      "title": "preview_contacts_add_birthday",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add a Birthday field to the Contacts module form only.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Add field 'Birthday' (date) in Contacts."
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ],
+          "affected_modules_include": [
+            "contacts"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_contacts_remove_roblux_noop",
+    "level": 1,
+    "tags": [
+      "preview_contract",
+      "noop",
+      "contacts_change"
+    ],
+    "session": {
+      "title": "preview_contacts_remove_roblux_noop",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Remove the roblux field from the Contacts module.",
+        "expect": {
+          "ok": true,
+          "question_required": false,
+          "assistant_text_contains": [
+            "No changes are needed right now."
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ],
+          "affected_modules_include": [
+            "contacts"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_upgrade_contacts_latest_style",
+    "level": 2,
+    "tags": [
+      "preview_contract",
+      "upgrade",
+      "contacts_change"
+    ],
+    "session": {
+      "title": "preview_upgrade_contacts_latest_style",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Upgrade the Contacts module to use the latest recommended module design style.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Contacts"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id"
+          ],
+          "affected_modules_include": [
+            "contacts"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_scope_switch_to_contacts_remove_roblux",
+    "level": 2,
+    "tags": [
+      "preview_contract",
+      "scope_switch",
+      "contacts_change"
+    ],
+    "session": {
+      "title": "preview_scope_switch_to_contacts_remove_roblux",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "For Neetones, make it list-first with useful views."
+      },
+      {
+        "chat": "Now remove the roblux field from the Contacts module.",
+        "expect": {
+          "ok": true,
+          "question_required": false,
+          "assistant_text_contains": [
+            "Contacts",
+            "No changes are needed right now."
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ],
+          "affected_modules_include": [
+            "contacts"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_multi_request_contacts_master_bundle",
+    "level": 3,
+    "tags": [
+      "preview_contract",
+      "multi_request",
+      "large_request"
+    ],
+    "session": {
+      "title": "preview_multi_request_contacts_master_bundle",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add a new field in the Contacts module called Roblux. Create a new tab in that module called Master. Put a Master Notes field in that tab.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Add field 'Roblux'",
+            "Create tab 'Master'",
+            "Add field 'Master Notes'"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ],
+          "affected_modules_include": [
+            "contacts"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_contacts_status_action_contacted",
+    "level": 3,
+    "tags": [
+      "preview_contract",
+      "workflow_actions",
+      "contacts_change",
+      "status_update"
+    ],
+    "session": {
+      "title": "preview_contacts_status_action_contacted",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Contacts, add a new Contacted status and add an action button called Set: Contacted so staff can move records through that status clearly.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Add status 'Contacted' to Contacts.",
+            "Update the status workflow and action buttons in Contacts."
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ],
+          "affected_modules_include": [
+            "contacts"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_contacts_master_attachment_floor_plans",
+    "level": 3,
+    "tags": [
+      "preview_contract",
+      "attachments",
+      "form_layout",
+      "contacts_change"
+    ],
+    "session": {
+      "title": "preview_contacts_master_attachment_floor_plans",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Contacts, add an attachment field in the Master tab labeled Floor plans.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Add field 'Floor plans' (attachments) in Contacts.",
+            "Master"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ],
+          "affected_modules_include": [
+            "contacts"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_cross_module_contacts_jobs_bundle",
+    "level": 4,
+    "tags": [
+      "preview_contract",
+      "cross_module",
+      "multi_request"
+    ],
+    "session": {
+      "title": "preview_cross_module_contacts_jobs_bundle",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Contacts, add a Customer Tier field. In Jobs, add a Preferred Technician field and show both plans clearly before you build anything.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Contacts",
+            "Jobs",
+            "Customer Tier",
+            "Preferred Technician"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_jobs_conditional_completion_fields",
+    "level": 5,
+    "tags": [
+      "preview_contract",
+      "conditional_forms",
+      "workflow_actions",
+      "jobs_change"
+    ],
+    "session": {
+      "title": "preview_jobs_conditional_completion_fields",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Jobs, add a Completion Notes field that only shows when the status is Completed, and make a Follow-up Date required in that state.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Jobs",
+            "Completion Notes",
+            "Follow-up Date"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_create_training_compliance_human_name",
+    "level": 1,
+    "tags": [
+      "preview_contract",
+      "create_module",
+      "naming"
+    ],
+    "session": {
+      "title": "preview_create_training_compliance_human_name",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a module called Training Compliance with due, booked, completed, and overdue statuses.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Training Compliance"
+          ],
+          "assistant_text_not_contains": [
+            "training_compliance",
+            "candidate_operations",
+            "artifact_id"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_workspace_graph_conditional_ops_rollout",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "workspace_graph",
+      "conditional_forms",
+      "workflow_actions"
+    ],
+    "session": {
+      "title": "preview_workspace_graph_conditional_ops_rollout",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Across Jobs, Quotes, and Invoices, add approval actions and conditional fields so the right form sections only appear after approval. Show the workspace rollout and dependencies before building anything.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Jobs",
+            "Quotes",
+            "Invoices",
+            "approval",
+            "dependency"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_large_brief_candidate_pipeline",
+    "level": 5,
+    "tags": [
+      "preview_contract",
+      "large_request",
+      "create_module"
+    ],
+    "session": {
+      "title": "preview_large_brief_candidate_pipeline",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Build a recruitment system called Candidate Pipeline with stages Applied, Screen, Interview, Offer, Hired. Include useful views, a status workflow, and clear admin-facing wording before any patching.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Candidate Pipeline",
+            "Applied",
+            "Interview",
+            "Hired"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_remove_calendar_from_contacts",
+    "level": 2,
+    "tags": [
+      "preview_contract",
+      "view_change",
+      "contacts_change"
+    ],
+    "session": {
+      "title": "preview_remove_calendar_from_contacts",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Remove the calendar from my Contacts module record and list experience.",
+        "expect": {
+          "ok": true,
+          "assistant_text_not_contains": [
+            "entity not found",
+            "candidate_operations",
+            "artifact_id"
+          ],
+          "affected_modules_include": [
+            "contacts"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_contacts_add_account_manager_notes",
+    "level": 2,
+    "tags": [
+      "preview_contract",
+      "contacts_change",
+      "plain_language"
+    ],
+    "session": {
+      "title": "preview_contacts_add_account_manager_notes",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add Account Manager Notes to Contacts and put it in the Internal Notes tab.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Add field 'Account Manager Notes' (text) in Contacts.",
+            "Internal Notes"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id"
+          ],
+          "affected_modules_include": [
+            "contacts"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_large_system_brief_service_ops",
+    "level": 5,
+    "tags": [
+      "preview_contract",
+      "large_request",
+      "system_build"
+    ],
+    "session": {
+      "title": "preview_large_system_brief_service_ops",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Build me a small service operations system with work orders, technician scheduling, customer visits, job notes, and completion status. Explain everything you plan to add before building it.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "assistant_text_contains": [
+            "I understand this as:",
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_workspace_graph_field_rollout",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "workspace_graph",
+      "cross_module",
+      "dependency_planning"
+    ],
+    "session": {
+      "title": "preview_workspace_graph_field_rollout",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Across Contacts, Jobs, and Quotes, add a Customer Priority field and keep it consistent everywhere. Show me the module-by-module rollout and any dependency notes before you build it.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Contacts",
+            "Jobs",
+            "Quotes",
+            "Customer Priority",
+            "dependency"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_workspace_graph_approvals_bundle",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "workspace_graph",
+      "cross_module",
+      "system_build"
+    ],
+    "session": {
+      "title": "preview_workspace_graph_approvals_bundle",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add approvals to our Jobs workspace flow. I want approval status in Jobs, approved-by details in Contacts, and approval history visible in Quotes. Explain the workspace impact clearly before building anything.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Jobs",
+            "Contacts",
+            "Quotes",
+            "approval",
+            "workspace impact"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_sandbox_rollout_dispatch_system",
+    "level": 7,
+    "tags": [
+      "preview_contract",
+      "sandbox_rollout",
+      "system_build",
+      "large_request"
+    ],
+    "session": {
+      "title": "preview_sandbox_rollout_dispatch_system",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Build a dispatch system for field work, but explain the sandbox, preview, validation, and rollout steps before anything is applied to my live workspace.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "sandbox",
+            "preview",
+            "validation",
+            "rollout"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_rollback_safe_finance_changes",
+    "level": 7,
+    "tags": [
+      "preview_contract",
+      "sandbox_rollout",
+      "rollback",
+      "cross_module"
+    ],
+    "session": {
+      "title": "preview_rollback_safe_finance_changes",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "We need to change invoicing and quote approvals, but I want a safe rollback path if the new flow confuses staff. Explain the validation and rollback plan before you build it.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "validation",
+            "rollback",
+            "Quotes",
+            "Invoices"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_long_guide_service_business_platform",
+    "level": 8,
+    "tags": [
+      "preview_contract",
+      "long_guide",
+      "system_build",
+      "workspace_graph"
+    ],
+    "session": {
+      "title": "preview_long_guide_service_business_platform",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Use this guide to design the workspace: We run a service business with leads, site visits, quotes, jobs, technicians, suppliers, invoices, and follow-up care. We need intake through completion, strong handoffs, customer history, technician schedules, supplier tracking, and operational reporting. Explain the phased system you would build, which modules are involved, and what you would deliver first before applying anything.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "phased",
+            "Leads",
+            "Quotes",
+            "Jobs",
+            "Invoices"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_long_guide_manufacturing_workspace",
+    "level": 8,
+    "tags": [
+      "preview_contract",
+      "long_guide",
+      "system_build",
+      "cross_module"
+    ],
+    "session": {
+      "title": "preview_long_guide_manufacturing_workspace",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Plan a manufacturing workspace from this brief: sales orders feed production jobs, production consumes stock, purchasing replenishes parts, quality checks sign off each stage, and dispatch confirms delivery. I want a plain-English build roadmap, the modules you would create or change, and the rollout order before anything is built.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "build roadmap",
+            "Sales Orders",
+            "Production",
+            "Purchasing",
+            "Dispatch"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_holiday_planner_module",
+    "level": 1,
+    "tags": [
+      "preview_contract",
+      "module_creation",
+      "create_module",
+      "real_world",
+      "business_travel"
+    ],
+    "session": {
+      "title": "preview_real_world_holiday_planner_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a Holiday Planner module to manage upcoming trips, travellers, booking dates, budgets, suppliers, and notes. Call it Holiday Planner.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Create a new module 'Holiday Planner'.",
+            "Planned changes:",
+            "Holiday Planner"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_customer_site_assets_module",
+    "level": 1,
+    "tags": [
+      "preview_contract",
+      "module_creation",
+      "create_module",
+      "real_world",
+      "business_field_service"
+    ],
+    "session": {
+      "title": "preview_real_world_customer_site_assets_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Build a Customer Site Assets module so we can track equipment installed at each customer site, serial numbers, warranty dates, service history, and photos.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Create a new module 'Customer Site Assets'.",
+            "Planned changes:",
+            "Customer Site Assets"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_warranty_claims_module",
+    "level": 1,
+    "tags": [
+      "preview_contract",
+      "module_creation",
+      "create_module",
+      "real_world",
+      "business_retail_service"
+    ],
+    "session": {
+      "title": "preview_real_world_warranty_claims_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a Warranty Claims module for faulty products, claim dates, supplier responses, replacement status, and customer updates.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Create a new module 'Warranty Claims'.",
+            "Planned changes:",
+            "Warranty Claims"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_job_hazard_analysis_module",
+    "level": 1,
+    "tags": [
+      "preview_contract",
+      "module_creation",
+      "create_module",
+      "real_world",
+      "business_construction"
+    ],
+    "session": {
+      "title": "preview_real_world_job_hazard_analysis_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a Job Hazard Analysis module to record hazards, controls, responsible people, review dates, and signoff before work starts.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Create a new module 'Job Hazard Analysis'.",
+            "Planned changes:",
+            "Job Hazard Analysis"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_employee_onboarding_module",
+    "level": 1,
+    "tags": [
+      "preview_contract",
+      "module_creation",
+      "create_module",
+      "real_world",
+      "business_hr"
+    ],
+    "session": {
+      "title": "preview_real_world_employee_onboarding_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Make an Employee Onboarding module with start date, manager, equipment checklist, training steps, payroll status, and notes.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Create a new module 'Employee Onboarding'.",
+            "Planned changes:",
+            "Employee Onboarding"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_fleet_defects_module",
+    "level": 1,
+    "tags": [
+      "preview_contract",
+      "module_creation",
+      "create_module",
+      "real_world",
+      "business_transport"
+    ],
+    "session": {
+      "title": "preview_real_world_fleet_defects_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a Fleet Defects module to log vehicle defects, severity, reported by, due date, workshop booking, and resolution notes.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Create a new module 'Fleet Defects'.",
+            "Planned changes:",
+            "Fleet Defects"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_tool_calibration_module",
+    "level": 1,
+    "tags": [
+      "preview_contract",
+      "module_creation",
+      "create_module",
+      "real_world",
+      "business_engineering"
+    ],
+    "session": {
+      "title": "preview_real_world_tool_calibration_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a Tool Calibration module for calibration dates, next due date, certificate uploads, vendor, and status.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Create a new module 'Tool Calibration'.",
+            "Planned changes:",
+            "Tool Calibration"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_service_agreements_module",
+    "level": 1,
+    "tags": [
+      "preview_contract",
+      "module_creation",
+      "create_module",
+      "real_world",
+      "business_services"
+    ],
+    "session": {
+      "title": "preview_real_world_service_agreements_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a Service Agreements module to track contract start and end dates, renewal terms, pricing, service level, and account owner.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Create a new module 'Service Agreements'.",
+            "Planned changes:",
+            "Service Agreements"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_rental_checklists_module",
+    "level": 1,
+    "tags": [
+      "preview_contract",
+      "module_creation",
+      "create_module",
+      "real_world",
+      "business_equipment_rental"
+    ],
+    "session": {
+      "title": "preview_real_world_rental_checklists_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Build a Rental Checklists module for pre-hire checks, return inspections, damages, photos, and signoff.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Create a new module 'Rental Checklists'.",
+            "Planned changes:",
+            "Rental Checklists"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_room_turnovers_module",
+    "level": 1,
+    "tags": [
+      "preview_contract",
+      "module_creation",
+      "create_module",
+      "real_world",
+      "business_hospitality"
+    ],
+    "session": {
+      "title": "preview_real_world_room_turnovers_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a Room Turnovers module to manage checkout cleanups, assigned staff, inspection status, linen issues, and ready-for-next-guest time.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Create a new module 'Room Turnovers'.",
+            "Planned changes:",
+            "Room Turnovers"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_vendor_compliance_module",
+    "level": 1,
+    "tags": [
+      "preview_contract",
+      "module_creation",
+      "create_module",
+      "real_world",
+      "business_procurement"
+    ],
+    "session": {
+      "title": "preview_real_world_vendor_compliance_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a Vendor Compliance module for insurance expiry, safety docs, onboarding status, approved categories, and review notes.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Create a new module 'Vendor Compliance'.",
+            "Planned changes:",
+            "Vendor Compliance"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_incident_investigations_module",
+    "level": 1,
+    "tags": [
+      "preview_contract",
+      "module_creation",
+      "create_module",
+      "real_world",
+      "business_health_and_safety"
+    ],
+    "session": {
+      "title": "preview_real_world_incident_investigations_module",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create an Incident Investigations module with incident link, investigator, root cause, corrective actions, due dates, and closure signoff.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Create a new module 'Incident Investigations'.",
+            "Planned changes:",
+            "Incident Investigations"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_contacts_contacted_status",
+    "level": 3,
+    "tags": [
+      "preview_contract",
+      "workflow_status_actions",
+      "workflow_actions",
+      "real_world",
+      "business_sales"
+    ],
+    "session": {
+      "title": "preview_real_world_contacts_contacted_status",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Contacts, add a Contacted status and give staff a Set: Contacted action button so they can move leads forward properly.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:",
+            "Contacts"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_jobs_on_hold_status",
+    "level": 3,
+    "tags": [
+      "preview_contract",
+      "workflow_status_actions",
+      "workflow_actions",
+      "real_world",
+      "business_field_service"
+    ],
+    "session": {
+      "title": "preview_real_world_jobs_on_hold_status",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Jobs, add an On Hold status with Resume and Set: On Hold actions so the team can pause work cleanly.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:",
+            "Jobs"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_purchase_requests_approval_statuses",
+    "level": 3,
+    "tags": [
+      "preview_contract",
+      "workflow_status_actions",
+      "workflow_actions",
+      "real_world",
+      "business_operations"
+    ],
+    "session": {
+      "title": "preview_real_world_purchase_requests_approval_statuses",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "For Purchase Requests, add Pending Approval, Approved, and Rejected statuses, plus action buttons for managers to approve or reject with comments.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:",
+            "Purchase Requests"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_leave_requests_manager_approval",
+    "level": 3,
+    "tags": [
+      "preview_contract",
+      "workflow_status_actions",
+      "workflow_actions",
+      "real_world",
+      "business_hr"
+    ],
+    "session": {
+      "title": "preview_real_world_leave_requests_manager_approval",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Leave Requests, add action buttons for Approve and Decline, and make manager notes required when a request is declined.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:",
+            "Leave Requests"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_maintenance_awaiting_parts_status",
+    "level": 3,
+    "tags": [
+      "preview_contract",
+      "workflow_status_actions",
+      "workflow_actions",
+      "real_world",
+      "business_maintenance"
+    ],
+    "session": {
+      "title": "preview_real_world_maintenance_awaiting_parts_status",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Maintenance, add an Awaiting Parts status with a Set: Awaiting Parts action and a Resume Work action.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:",
+            "Maintenance"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_equipment_hire_returned_status",
+    "level": 3,
+    "tags": [
+      "preview_contract",
+      "workflow_status_actions",
+      "workflow_actions",
+      "real_world",
+      "business_equipment_rental"
+    ],
+    "session": {
+      "title": "preview_real_world_equipment_hire_returned_status",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Equipment Hire, add Picked Up and Returned statuses and make the action buttons obvious for the hire desk.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:",
+            "Equipment Hire"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_safety_incident_investigation_status",
+    "level": 3,
+    "tags": [
+      "preview_contract",
+      "workflow_status_actions",
+      "workflow_actions",
+      "real_world",
+      "business_health_and_safety"
+    ],
+    "session": {
+      "title": "preview_real_world_safety_incident_investigation_status",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Safety Incidents, add Investigation Open and Investigation Closed statuses with matching actions for the H&S team.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:",
+            "Safety Incidents"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_vendor_review_due_status",
+    "level": 3,
+    "tags": [
+      "preview_contract",
+      "workflow_status_actions",
+      "workflow_actions",
+      "real_world",
+      "business_procurement"
+    ],
+    "session": {
+      "title": "preview_real_world_vendor_review_due_status",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Vendor Reviews, add Review Due and Reviewed statuses so procurement can track follow-up properly.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:",
+            "Vendor Reviews"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_contacts_master_floor_plans_attachment",
+    "level": 5,
+    "tags": [
+      "preview_contract",
+      "forms_fields_layout",
+      "conditional_forms",
+      "form_layout",
+      "real_world",
+      "business_property_services"
+    ],
+    "session": {
+      "title": "preview_real_world_contacts_master_floor_plans_attachment",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Contacts, add an attachment field on the Master tab labeled Floor plans.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:",
+            "Contacts"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_jobs_emergency_callout_fields",
+    "level": 5,
+    "tags": [
+      "preview_contract",
+      "forms_fields_layout",
+      "conditional_forms",
+      "form_layout",
+      "real_world",
+      "business_field_service"
+    ],
+    "session": {
+      "title": "preview_real_world_jobs_emergency_callout_fields",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Jobs, if the job type is Emergency, show After Hours Contact and Callout Reason fields and make them required.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:",
+            "Jobs"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_quotes_internal_margin",
+    "level": 5,
+    "tags": [
+      "preview_contract",
+      "forms_fields_layout",
+      "conditional_forms",
+      "form_layout",
+      "real_world",
+      "business_sales"
+    ],
+    "session": {
+      "title": "preview_real_world_quotes_internal_margin",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add an Internal Margin field to Quotes, keep it visible on the form for staff, but make sure it never appears on customer-facing documents.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_equipment_hire_bond_receipt",
+    "level": 5,
+    "tags": [
+      "preview_contract",
+      "forms_fields_layout",
+      "conditional_forms",
+      "form_layout",
+      "real_world",
+      "business_equipment_rental"
+    ],
+    "session": {
+      "title": "preview_real_world_equipment_hire_bond_receipt",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Equipment Hire, add a Bond Paid checkbox and a Bond Receipt attachment field that only shows when Bond Paid is ticked.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:",
+            "Equipment Hire"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_client_onboarding_enterprise_docs",
+    "level": 5,
+    "tags": [
+      "preview_contract",
+      "forms_fields_layout",
+      "conditional_forms",
+      "form_layout",
+      "real_world",
+      "business_b2b_services"
+    ],
+    "session": {
+      "title": "preview_real_world_client_onboarding_enterprise_docs",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Client Onboarding, if the client type is Enterprise, show a Compliance Documents attachment field and make it required before approval.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:",
+            "Client Onboarding"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_site_visits_access_notes",
+    "level": 5,
+    "tags": [
+      "preview_contract",
+      "forms_fields_layout",
+      "conditional_forms",
+      "form_layout",
+      "real_world",
+      "business_property_services"
+    ],
+    "session": {
+      "title": "preview_real_world_site_visits_access_notes",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Site Visits, add a Site Access Notes field and put it near the address and contact details so technicians see it early.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:",
+            "Site Visits"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_contacts_service_region_form_list",
+    "level": 5,
+    "tags": [
+      "preview_contract",
+      "forms_fields_layout",
+      "conditional_forms",
+      "form_layout",
+      "real_world",
+      "business_field_service"
+    ],
+    "session": {
+      "title": "preview_real_world_contacts_service_region_form_list",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Add a Service Region field to Contacts and show it on both the form and the list view.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_service_agreements_renewal_reminder",
+    "level": 5,
+    "tags": [
+      "preview_contract",
+      "forms_fields_layout",
+      "conditional_forms",
+      "form_layout",
+      "real_world",
+      "business_services"
+    ],
+    "session": {
+      "title": "preview_real_world_service_agreements_renewal_reminder",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Service Agreements, add a Renewal Reminder Date field and place it with the contract dates and renewal terms.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:",
+            "Service Agreements"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_quote_approved_job_creation",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "automations_notifications",
+      "automation",
+      "real_world",
+      "business_field_service"
+    ],
+    "session": {
+      "title": "preview_real_world_quote_approved_job_creation",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "When a Quote is approved, automatically create a Job, copy the customer and site details across, and notify the coordinator.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_invoice_overdue_reminder",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "automations_notifications",
+      "automation",
+      "real_world",
+      "business_finance"
+    ],
+    "session": {
+      "title": "preview_real_world_invoice_overdue_reminder",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Set up an automation so overdue invoices send a reminder email 7 days after due date and a second reminder 14 days after due date.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_leave_request_notify_team",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "automations_notifications",
+      "automation",
+      "real_world",
+      "business_hr"
+    ],
+    "session": {
+      "title": "preview_real_world_leave_request_notify_team",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "When a Leave Request is approved, notify the employee, their manager, and the rostering team automatically.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_low_stock_purchase_request",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "automations_notifications",
+      "automation",
+      "real_world",
+      "business_inventory"
+    ],
+    "session": {
+      "title": "preview_real_world_low_stock_purchase_request",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "When stock drops below the minimum level, create a Purchase Request automatically and alert the purchasing admin.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_high_severity_incident_alert",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "automations_notifications",
+      "automation",
+      "real_world",
+      "business_health_and_safety"
+    ],
+    "session": {
+      "title": "preview_real_world_high_severity_incident_alert",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "If a Safety Incident is logged as high severity, immediately notify the H&S manager and create a follow-up investigation task.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_job_completion_feedback_request",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "automations_notifications",
+      "automation",
+      "real_world",
+      "business_services"
+    ],
+    "session": {
+      "title": "preview_real_world_job_completion_feedback_request",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "When a Job is completed, send the customer a feedback request email the next morning with the technician and service details filled in.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_service_agreement_expiry_warning",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "automations_notifications",
+      "automation",
+      "real_world",
+      "business_services"
+    ],
+    "session": {
+      "title": "preview_real_world_service_agreement_expiry_warning",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "When a Service Agreement is within 30 days of expiry, create a renewal follow-up task and notify the account owner.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_contractor_induction_expiry_warning",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "automations_notifications",
+      "automation",
+      "real_world",
+      "business_construction"
+    ],
+    "session": {
+      "title": "preview_real_world_contractor_induction_expiry_warning",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "If a Contractor Induction is due to expire within 14 days, email the contractor and the site admin automatically.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_service_report_pdf_template",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "templates_documents",
+      "templates",
+      "documents",
+      "real_world",
+      "business_field_service"
+    ],
+    "session": {
+      "title": "preview_real_world_service_report_pdf_template",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a Service Report PDF template that includes customer details, work performed, technician notes, photos, and customer signoff.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_quote_approval_email_template",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "templates_documents",
+      "templates",
+      "documents",
+      "real_world",
+      "business_sales"
+    ],
+    "session": {
+      "title": "preview_real_world_quote_approval_email_template",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a quote approval email template that thanks the customer, shows the approved quote number, and explains the next steps.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_client_welcome_email_pack",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "templates_documents",
+      "templates",
+      "documents",
+      "real_world",
+      "business_b2b_services"
+    ],
+    "session": {
+      "title": "preview_real_world_client_welcome_email_pack",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a welcome email template for new clients with their account manager details, support hours, and onboarding checklist link.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_invoice_overdue_email_template",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "templates_documents",
+      "templates",
+      "documents",
+      "real_world",
+      "business_finance"
+    ],
+    "session": {
+      "title": "preview_real_world_invoice_overdue_email_template",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a polite overdue invoice reminder email template with invoice number, amount due, due date, and payment options.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_rental_handover_pdf",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "templates_documents",
+      "templates",
+      "documents",
+      "real_world",
+      "business_equipment_rental"
+    ],
+    "session": {
+      "title": "preview_real_world_rental_handover_pdf",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a rental handover PDF with customer details, item list, condition checklist, damages, and signatures.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_induction_certificate_pdf",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "templates_documents",
+      "templates",
+      "documents",
+      "real_world",
+      "business_construction"
+    ],
+    "session": {
+      "title": "preview_real_world_induction_certificate_pdf",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create an induction completion certificate PDF showing contractor name, company, site, completion date, and expiry date.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_maintenance_visit_summary_email",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "templates_documents",
+      "templates",
+      "documents",
+      "real_world",
+      "business_maintenance"
+    ],
+    "session": {
+      "title": "preview_real_world_maintenance_visit_summary_email",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a maintenance visit summary email template with job summary, findings, recommended actions, and attached service report.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_holiday_itinerary_pdf",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "templates_documents",
+      "templates",
+      "documents",
+      "real_world",
+      "business_travel"
+    ],
+    "session": {
+      "title": "preview_real_world_holiday_itinerary_pdf",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a Holiday Itinerary PDF template with traveller details, travel dates, bookings, flights, hotels, and activity notes.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_xero_contact_invoice_sync",
+    "level": 7,
+    "tags": [
+      "preview_contract",
+      "integrations_sync",
+      "integrations",
+      "sandbox_rollout",
+      "real_world",
+      "business_finance"
+    ],
+    "session": {
+      "title": "preview_real_world_xero_contact_invoice_sync",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Set up Xero sync so approved Contacts and Invoices can be sent across, but only when the accounting fields are complete.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_google_calendar_site_visit_sync",
+    "level": 7,
+    "tags": [
+      "preview_contract",
+      "integrations_sync",
+      "integrations",
+      "sandbox_rollout",
+      "real_world",
+      "business_field_service"
+    ],
+    "session": {
+      "title": "preview_real_world_google_calendar_site_visit_sync",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Connect Site Visits to Google Calendar so confirmed visits create calendar events with the customer, site address, and assigned staff.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_twilio_dispatch_sms",
+    "level": 7,
+    "tags": [
+      "preview_contract",
+      "integrations_sync",
+      "integrations",
+      "sandbox_rollout",
+      "real_world",
+      "business_field_service"
+    ],
+    "session": {
+      "title": "preview_real_world_twilio_dispatch_sms",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Set up Twilio SMS so technicians get a text when a Job is dispatched with job number, site, and booking window.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_mailchimp_marketing_opt_in_sync",
+    "level": 7,
+    "tags": [
+      "preview_contract",
+      "integrations_sync",
+      "integrations",
+      "sandbox_rollout",
+      "real_world",
+      "business_marketing"
+    ],
+    "session": {
+      "title": "preview_real_world_mailchimp_marketing_opt_in_sync",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Sync marketing opt-in Contacts to Mailchimp, but only include customers who have consented to newsletters.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_slack_sales_win_notification",
+    "level": 7,
+    "tags": [
+      "preview_contract",
+      "integrations_sync",
+      "integrations",
+      "sandbox_rollout",
+      "real_world",
+      "business_sales"
+    ],
+    "session": {
+      "title": "preview_real_world_slack_sales_win_notification",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Post to Slack when a quote over $10,000 is approved, including the customer name, quote number, and salesperson.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_zapier_customer_onboarding_webhook",
+    "level": 7,
+    "tags": [
+      "preview_contract",
+      "integrations_sync",
+      "integrations",
+      "sandbox_rollout",
+      "real_world",
+      "business_operations"
+    ],
+    "session": {
+      "title": "preview_real_world_zapier_customer_onboarding_webhook",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Send a webhook to Zapier when a new customer onboarding is marked complete so downstream systems can be updated.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_jobs_dashboard_kpis",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "dashboards_reporting",
+      "dashboard",
+      "reporting",
+      "real_world",
+      "business_field_service"
+    ],
+    "session": {
+      "title": "preview_real_world_jobs_dashboard_kpis",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Build a Jobs dashboard showing jobs by status, jobs by technician, overdue jobs, and completed jobs this week.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_sales_conversion_dashboard",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "dashboards_reporting",
+      "dashboard",
+      "reporting",
+      "real_world",
+      "business_sales"
+    ],
+    "session": {
+      "title": "preview_real_world_sales_conversion_dashboard",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a sales dashboard for leads, quotes sent, quotes won, lost reasons, and conversion rate by salesperson.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_overdue_invoices_aging_report",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "dashboards_reporting",
+      "dashboard",
+      "reporting",
+      "real_world",
+      "business_finance"
+    ],
+    "session": {
+      "title": "preview_real_world_overdue_invoices_aging_report",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create an overdue invoices dashboard with aging buckets, total overdue amount, and top overdue customers.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_maintenance_compliance_dashboard",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "dashboards_reporting",
+      "dashboard",
+      "reporting",
+      "real_world",
+      "business_maintenance"
+    ],
+    "session": {
+      "title": "preview_real_world_maintenance_compliance_dashboard",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Build a maintenance compliance dashboard showing upcoming services, overdue equipment, and technician completion rates.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_training_expiry_dashboard",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "dashboards_reporting",
+      "dashboard",
+      "reporting",
+      "real_world",
+      "business_hr"
+    ],
+    "session": {
+      "title": "preview_real_world_training_expiry_dashboard",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a staff training dashboard that highlights expired certificates, upcoming renewals, and completion by team.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_customer_onboarding_rollout",
+    "level": 7,
+    "tags": [
+      "preview_contract",
+      "cross_module_rollouts",
+      "workspace_graph",
+      "cross_module",
+      "real_world",
+      "business_b2b_services"
+    ],
+    "session": {
+      "title": "preview_real_world_customer_onboarding_rollout",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Build a full customer onboarding flow across Contacts, Tasks, Documents, and email automation so new clients get set up consistently.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_field_service_completion_rollout",
+    "level": 7,
+    "tags": [
+      "preview_contract",
+      "cross_module_rollouts",
+      "workspace_graph",
+      "cross_module",
+      "real_world",
+      "business_field_service"
+    ],
+    "session": {
+      "title": "preview_real_world_field_service_completion_rollout",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "When a field service job is completed, capture technician notes, generate a service report PDF, and email it to the customer automatically.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_supplier_onboarding_rollout",
+    "level": 7,
+    "tags": [
+      "preview_contract",
+      "cross_module_rollouts",
+      "workspace_graph",
+      "cross_module",
+      "real_world",
+      "business_procurement"
+    ],
+    "session": {
+      "title": "preview_real_world_supplier_onboarding_rollout",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a supplier onboarding process across Contacts, Purchase Requests, and Vendor Compliance so new vendors cannot be used until documents are approved.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_project_handover_rollout",
+    "level": 7,
+    "tags": [
+      "preview_contract",
+      "cross_module_rollouts",
+      "workspace_graph",
+      "cross_module",
+      "real_world",
+      "business_projects"
+    ],
+    "session": {
+      "title": "preview_real_world_project_handover_rollout",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Set up a project handover process that links Sales, Jobs, Calendar, and Documents so operations has everything before work starts.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_property_inspection_rollout",
+    "level": 7,
+    "tags": [
+      "preview_contract",
+      "cross_module_rollouts",
+      "workspace_graph",
+      "cross_module",
+      "real_world",
+      "business_property"
+    ],
+    "session": {
+      "title": "preview_real_world_property_inspection_rollout",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Build a property inspection flow across Contacts, Site Visits, Documents, and Maintenance so inspections, photos, defects, and follow-up work all stay linked.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  }
+]
