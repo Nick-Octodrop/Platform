@@ -4,6 +4,7 @@ import { createOctoAiSession, deleteOctoAiSession, ensureOctoAiSandbox, listOcto
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
+import { buildSavedViewDomain } from "../utils/savedViews.js";
 
 const SESSION_STATUSES = ["draft", "planning", "waiting_input", "ready_to_apply", "applied", "failed", "archived"];
 function statusLabel(value) {
@@ -187,8 +188,6 @@ export default function OctoAiSessionsPage() {
     [],
   );
 
-  const activeListFilter = useMemo(() => listFilters.find((flt) => flt.id === statusFilter) || null, [listFilters, statusFilter]);
-
   const filterableFields = useMemo(
     () => [
       { id: "ai_session.title", label: "Change Request" },
@@ -207,6 +206,11 @@ export default function OctoAiSessionsPage() {
     }
     return next;
   }, [clientFilters, statusFilter]);
+  const activeListFilter = useMemo(() => listFilters.find((flt) => flt.id === statusFilter) || null, [listFilters, statusFilter]);
+  const savedViewDomain = useMemo(
+    () => buildSavedViewDomain(activeListFilter, effectiveClientFilters),
+    [activeListFilter, effectiveClientFilters]
+  );
 
   return (
     <div className="h-full min-h-0 flex flex-col overflow-hidden">
@@ -267,6 +271,15 @@ export default function OctoAiSessionsPage() {
                     pageSize: 25,
                     totalItems,
                     onPageChange: setPage,
+                  }}
+                  savedViewsEntityId="system.octo_ai.sessions"
+                  savedViewDomain={savedViewDomain}
+                  savedViewState={{ search, filter: statusFilter, clientFilters }}
+                  onApplySavedViewState={(state) => {
+                    setSearch(state?.search || "");
+                    setStatusFilter(state?.filter || "all");
+                    setClientFilters(Array.isArray(state?.clientFilters) ? state.clientFilters : []);
+                    setPage(0);
                   }}
                   rightActions={
                     selectedIds.length > 0 ? (

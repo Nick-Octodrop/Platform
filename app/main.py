@@ -12689,6 +12689,21 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
     record_context = {}
     if isinstance(context, dict):
         record_context = context.get("record") or context.get("record_draft") or {}
+    # Automation/module action steps often provide only entity_id + record_id.
+    # Hydrate the current record before evaluating action guards so enabled_when /
+    # visible_when behave the same as interactive UI-triggered actions.
+    if not isinstance(record_context, dict) or not record_context:
+        candidate_entity_id = action.get("entity_id") if isinstance(action.get("entity_id"), str) else None
+        candidate_record_id = context.get("record_id") if isinstance(context, dict) else None
+        if isinstance(candidate_entity_id, str) and candidate_entity_id:
+            candidate_entity_id = _normalize_entity_id(candidate_entity_id)
+        if isinstance(candidate_entity_id, str) and candidate_entity_id and isinstance(candidate_record_id, str) and candidate_record_id:
+            try:
+                existing_context_record = generic_records.get(candidate_entity_id, candidate_record_id)
+            except Exception:
+                existing_context_record = None
+            if isinstance(existing_context_record, dict) and isinstance(existing_context_record.get("record"), dict):
+                record_context = existing_context_record.get("record") or {}
     try:
         t0 = time.perf_counter()
         enabled_when = action.get("enabled_when")

@@ -5,6 +5,7 @@ import { useToast } from "../components/Toast.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
+import { buildSavedViewDomain } from "../utils/savedViews.js";
 
 export default function EmailTemplatesPage() {
   const { pushToast } = useToast();
@@ -109,6 +110,10 @@ export default function EmailTemplatesPage() {
     () => listFilters.find((flt) => flt.id === statusFilter) || null,
     [listFilters, statusFilter]
   );
+  const savedViewDomain = useMemo(
+    () => buildSavedViewDomain(activeListFilter, clientFilters),
+    [activeListFilter, clientFilters]
+  );
 
   const filterableFields = useMemo(
     () => [
@@ -167,6 +172,15 @@ export default function EmailTemplatesPage() {
                     pageSize: 25,
                     totalItems,
                     onPageChange: setPage,
+                  }}
+                  savedViewsEntityId="system.email.templates"
+                  savedViewDomain={savedViewDomain}
+                  savedViewState={{ search, filter: statusFilter, clientFilters }}
+                  onApplySavedViewState={(state) => {
+                    setSearch(state?.search || "");
+                    setStatusFilter(state?.filter || "all");
+                    setClientFilters(Array.isArray(state?.clientFilters) ? state.clientFilters : []);
+                    setPage(0);
                   }}
                   rightActions={
                     selectedIds.length === 1 ? (

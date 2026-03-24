@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Bookmark, Filter, List as ListIcon, Plus, RefreshCw, Search as SearchIcon } from "lucide-react";
 import { PRIMARY_BUTTON_SM, SOFT_ICON_SM } from "../components/buttonStyles.js";
 import PaginationControls from "../components/PaginationControls.jsx";
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
+import { apiFetch } from "../api.js";
 
 export default function SystemListToolbar({
   title,
@@ -20,9 +21,109 @@ export default function SystemListToolbar({
   pagination = null,
   showSavedViews = true,
   showListToggle = false,
+  savedViewsEntityId = "",
+  savedViewDomain = null,
+  savedViewState = null,
+  onApplySavedViewState,
 }) {
   const [filterPrompt, setFilterPrompt] = useState(null);
   const [filterPromptValue, setFilterPromptValue] = useState("");
+  const [savedViews, setSavedViews] = useState([]);
+  const [savedViewsError, setSavedViewsError] = useState("");
+  const [savePromptOpen, setSavePromptOpen] = useState(false);
+  const [savePromptValue, setSavePromptValue] = useState("");
+
+  const canManageSavedViews = showSavedViews && typeof savedViewsEntityId === "string" && savedViewsEntityId.trim();
+  const canSaveCurrentView = canManageSavedViews && savedViewDomain && savedViewState && typeof onApplySavedViewState === "function";
+
+  useEffect(() => {
+    if (!canManageSavedViews) {
+      setSavedViews([]);
+      setSavedViewsError("");
+      return;
+    }
+    let cancelled = false;
+    apiFetch(`/filters/${encodeURIComponent(savedViewsEntityId)}`)
+      .then((res) => {
+        if (cancelled) return;
+        setSavedViews(Array.isArray(res?.filters) ? res.filters : []);
+        setSavedViewsError("");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setSavedViews([]);
+        setSavedViewsError(err?.message || "Failed to load saved views");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canManageSavedViews, savedViewsEntityId]);
+
+  const defaultSavedView = useMemo(
+    () => savedViews.find((view) => view?.is_default) || null,
+    [savedViews]
+  );
+
+  async function handleSaveCurrentView() {
+    const name = savePromptValue.trim();
+    if (!name || !canSaveCurrentView) {
+      setSavePromptOpen(false);
+      setSavePromptValue("");
+      return;
+    }
+    try {
+      const res = await apiFetch(`/filters/${encodeURIComponent(savedViewsEntityId)}`, {
+        method: "POST",
+        body: {
+          name,
+          domain: savedViewDomain,
+          state: savedViewState,
+        },
+      });
+      const created = res?.filter;
+      if (created) {
+        setSavedViews((prev) => [created, ...prev]);
+      }
+      setSavedViewsError("");
+    } catch (err) {
+      setSavedViewsError(err?.message || "Failed to save view");
+    } finally {
+      setSavePromptOpen(false);
+      setSavePromptValue("");
+    }
+  }
+
+  async function handleDeleteSavedView(viewId) {
+    if (!viewId) return;
+    try {
+      await apiFetch(`/filters/${encodeURIComponent(viewId)}`, { method: "DELETE" });
+      setSavedViews((prev) => prev.filter((view) => view?.id !== viewId));
+      setSavedViewsError("");
+    } catch (err) {
+      setSavedViewsError(err?.message || "Failed to delete saved view");
+    }
+  }
+
+  async function handleSetDefaultSavedView(viewId) {
+    if (!viewId) return;
+    try {
+      const res = await apiFetch(`/filters/${encodeURIComponent(viewId)}`, {
+        method: "PUT",
+        body: { is_default: true },
+      });
+      const updated = res?.filter;
+      setSavedViews((prev) =>
+        prev.map((view) => {
+          if (!view?.id) return view;
+          if (view.id === viewId) return { ...view, ...(updated || {}), is_default: true };
+          return { ...view, is_default: false };
+        })
+      );
+      setSavedViewsError("");
+    } catch (err) {
+      setSavedViewsError(err?.message || "Failed to set default view");
+    }
+  }
 
   return (
     <>
@@ -92,8 +193,48 @@ export default function SystemListToolbar({
                 </DaisyTooltip>
                 <div className="dropdown-content p-2 shadow bg-base-100 rounded-box w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden">
                   <ul className="menu flex flex-col">
-                    <li><button disabled>Save current view</button></li>
-                    <li><button disabled>Set as default</button></li>
+                    {savedViewsError ? <li><span className="text-error text-xs">{savedViewsError}</span></li> : null}
+                    {canManageSavedViews && savedViews.map((view) => (
+                      <li key={view.id}>
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="flex-1 text-left"
+                            onClick={() => onApplySavedViewState?.(view?.state || {}, view)}
+                          >
+                            {view.name}
+                            {view?.is_default ? " (Default)" : ""}
+                          </button>
+                          <button
+                            className="btn btn-ghost btn-xs"
+                            onClick={() => handleSetDefaultSavedView(view.id)}
+                            type="button"
+                          >
+                            Default
+                          </button>
+                          <button
+                            className="btn btn-ghost btn-xs text-error"
+                            onClick={() => handleDeleteSavedView(view.id)}
+                            type="button"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                    {canManageSavedViews && savedViews.length === 0 ? <li><span className="text-xs opacity-60">No saved views yet.</span></li> : null}
+                    <li>
+                      <button
+                        onClick={() => {
+                          if (!canSaveCurrentView) return;
+                          setSavePromptOpen(true);
+                          setSavePromptValue("");
+                        }}
+                        disabled={!canSaveCurrentView}
+                      >
+                        Save current view
+                      </button>
+                    </li>
+                    {defaultSavedView ? <li><span className="text-xs opacity-60">Default: {defaultSavedView.name}</span></li> : null}
                   </ul>
                 </div>
               </div>
@@ -167,6 +308,36 @@ export default function SystemListToolbar({
                 }}
               >
                 Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {savePromptOpen && (
+        <div className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg">Save current view</h3>
+            <div className="py-2 text-sm opacity-70">Give this saved view a name.</div>
+            <input
+              className="input input-bordered input-sm w-full"
+              placeholder="View name"
+              value={savePromptValue}
+              onChange={(e) => setSavePromptValue(e.target.value)}
+              autoFocus
+            />
+            <div className="modal-action">
+              <button
+                className="btn btn-ghost"
+                onClick={() => {
+                  setSavePromptOpen(false);
+                  setSavePromptValue("");
+                }}
+              >
+                Cancel
+              </button>
+              <button className="btn btn-primary" onClick={handleSaveCurrentView}>
+                Save
               </button>
             </div>
           </div>

@@ -232,13 +232,13 @@ export default function ListViewRenderer({
     return filteredRecords.slice(start, start + Math.max(1, safePageSize));
   }, [filteredRecords, page, safePageSize]);
 
-  const pageIds = useMemo(
-    () => pagedRecords.map((r) => r.record_id || r.record?.id).filter(Boolean),
-    [pagedRecords],
+  const filteredIds = useMemo(
+    () => filteredRecords.map((r) => r.record_id || r.record?.id).filter(Boolean),
+    [filteredRecords],
   );
-  const pageAllSelected = useMemo(
-    () => pageIds.length > 0 && pageIds.every((id) => selectedSet.has(id)),
-    [pageIds, selectedSet],
+  const allFilteredSelected = useMemo(
+    () => filteredIds.length > 0 && filteredIds.every((id) => selectedSet.has(id)),
+    [filteredIds, selectedSet],
   );
   const useVirtual = !isMobile && pagedRecords.length > 200;
   const rowHeight = 40;
@@ -359,14 +359,14 @@ export default function ListViewRenderer({
         {isMobile ? (
           <div className="space-y-2">
             <div className="flex items-center justify-between rounded-box border border-base-300 bg-base-100 px-3 py-2">
-              <div className="text-xs opacity-70">{pagedRecords.length} row(s) on this page</div>
+              <div className="text-xs opacity-70">{filteredRecords.length} matching row(s)</div>
               <label className="label cursor-pointer gap-2">
-                <span className="label-text text-xs">Select page</span>
+                <span className="label-text text-xs">Select all</span>
                 <input
                   className="checkbox"
                   type="checkbox"
-                  checked={pageAllSelected}
-                  onChange={(e) => onToggleAll?.(e.target.checked, pageIds)}
+                  checked={allFilteredSelected}
+                  onChange={(e) => onToggleAll?.(e.target.checked, filteredIds)}
                 />
               </label>
             </div>
@@ -417,8 +417,8 @@ export default function ListViewRenderer({
                 <input
                   className="checkbox"
                   type="checkbox"
-                  checked={pageAllSelected}
-                  onChange={(e) => onToggleAll?.(e.target.checked, pageIds)}
+                  checked={allFilteredSelected}
+                  onChange={(e) => onToggleAll?.(e.target.checked, filteredIds)}
                   onClick={(e) => e.stopPropagation()}
                 />
               </div>
@@ -483,8 +483,8 @@ export default function ListViewRenderer({
                   <input
                     className="checkbox"
                     type="checkbox"
-                    checked={pageAllSelected}
-                    onChange={(e) => onToggleAll?.(e.target.checked, pageIds)}
+                    checked={allFilteredSelected}
+                    onChange={(e) => onToggleAll?.(e.target.checked, filteredIds)}
                     onClick={(e) => e.stopPropagation()}
                   />
                 </th>

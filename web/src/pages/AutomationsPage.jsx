@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
+import { buildSavedViewDomain } from "../utils/savedViews.js";
 
 const DEFAULT_TRIGGER = {
   kind: "event",
@@ -156,6 +157,10 @@ export default function AutomationsPage() {
     () => listFilters.find((flt) => flt.id === statusFilter) || null,
     [listFilters, statusFilter]
   );
+  const savedViewDomain = useMemo(
+    () => buildSavedViewDomain(activeListFilter, clientFilters),
+    [activeListFilter, clientFilters]
+  );
 
   const filterableFields = useMemo(
     () => [
@@ -221,6 +226,15 @@ export default function AutomationsPage() {
                     pageSize: 25,
                     totalItems,
                     onPageChange: setPage,
+                  }}
+                  savedViewsEntityId="system.automations"
+                  savedViewDomain={savedViewDomain}
+                  savedViewState={{ search, filter: statusFilter, clientFilters }}
+                  onApplySavedViewState={(state) => {
+                    setSearch(state?.search || "");
+                    setStatusFilter(state?.filter || "all");
+                    setClientFilters(Array.isArray(state?.clientFilters) ? state.clientFilters : []);
+                    setPage(0);
                   }}
                   rightActions={
                     <>
