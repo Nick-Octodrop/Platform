@@ -171,7 +171,7 @@ cd "C:\Users\nicwi\Documents\My Projects\OCTO"
 ```powershell
 cd "C:\Users\nicwi\Documents\My Projects\OCTO"
 $env:OCTO_AI_EVAL_EMAIL="nick@octodrop.com"
-$env:OCTO_AI_EVAL_PASSWORD="adidas123"
+$env:OCTO_AI_EVAL_PASSWORD="<YOUR_PASSWORD>"
 .\scripts\run_octo_ai_milestone_local.ps1
 ```
 
@@ -180,7 +180,7 @@ $env:OCTO_AI_EVAL_PASSWORD="adidas123"
 ```powershell
 cd "C:\Users\nicwi\Documents\My Projects\OCTO"
 $env:OCTO_AI_EVAL_EMAIL="nick@octodrop.com"
-$env:OCTO_AI_EVAL_PASSWORD="adidas123"
+$env:OCTO_AI_EVAL_PASSWORD="<YOUR_PASSWORD>"
 .\scripts\run_octo_ai_milestone_local.ps1 -Cycles 20
 ```
 

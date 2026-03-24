@@ -488,7 +488,7 @@
             "label": "All",
             "domain": {
               "op": "exists",
-              "field": "outreach.id"
+              "field": "outreach.status"
             }
           },
           {
@@ -714,7 +714,7 @@
                   "default_group_by": "outreach.status"
                 }
               ],
-              "default_filter_id": "pipeline"
+              "default_filter_id": "all"
             }
           ]
         }
@@ -810,7 +810,7 @@
                   "default_group_by": "outreach.status"
                 }
               ],
-              "default_filter_id": "pipeline"
+              "default_filter_id": "all"
             }
           ]
         }
