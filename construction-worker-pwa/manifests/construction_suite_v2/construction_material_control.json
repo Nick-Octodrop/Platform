@@ -4,7 +4,7 @@
     "id": "construction_material_control",
     "key": "construction_material_control",
     "name": "Materials",
-    "version": "2.2.0",
+    "version": "2.2.1",
     "description": "Material requests, receipts, and usage control for construction sites.",
     "category": "Construction",
     "icon_key": "lucide:PackageOpen"
@@ -52,18 +52,18 @@
   "entities": [
     {
       "id": "entity.material_request",
-      "display_field": "material_request.request_date",
+      "display_field": "material_request.description",
       "fields": [
         { "id": "material_request.id", "type": "uuid", "label": "ID", "readonly": true },
         { "id": "material_request.project_id", "type": "lookup", "label": "Project", "entity": "entity.construction_project", "display_field": "construction_project.name", "required": true },
         { "id": "material_request.site_id", "type": "lookup", "label": "Site", "entity": "entity.construction_site", "display_field": "construction_site.name" },
         { "id": "material_request.request_date", "type": "date", "label": "Request Date", "required": true },
         { "id": "material_request.item_id", "type": "lookup", "label": "Catalog Item", "entity": "entity.item", "display_field": "item.name" },
-        { "id": "material_request.description", "type": "string", "label": "Description" },
+        { "id": "material_request.description", "type": "string", "label": "Description", "required_when": { "op": "in", "field": "material_request.status", "value": ["requested", "approved", "fulfilled"] } },
         { "id": "material_request.quantity", "type": "number", "label": "Quantity", "required": true },
         { "id": "material_request.unit", "type": "enum", "label": "Unit", "default": "bag", "options": [{ "value": "bag", "label": "Bag" }, { "value": "kg", "label": "kg" }, { "value": "ton", "label": "Ton" }, { "value": "m3", "label": "m3" }, { "value": "piece", "label": "Piece" }] },
-        { "id": "material_request.requested_by_worker_id", "type": "lookup", "label": "Requested By", "entity": "entity.construction_worker", "display_field": "construction_worker.full_name" },
-        { "id": "material_request.needed_by_date", "type": "date", "label": "Needed By" },
+        { "id": "material_request.requested_by_worker_id", "type": "lookup", "label": "Requested By", "entity": "entity.construction_worker", "display_field": "construction_worker.full_name", "required_when": { "op": "in", "field": "material_request.status", "value": ["requested", "approved", "fulfilled"] } },
+        { "id": "material_request.needed_by_date", "type": "date", "label": "Needed By", "required_when": { "op": "in", "field": "material_request.status", "value": ["requested", "approved"] } },
         {
           "id": "material_request.status",
           "type": "enum",
@@ -77,27 +77,27 @@
             { "value": "cancelled", "label": "Cancelled" }
           ]
         },
-        { "id": "material_request.approved_by", "type": "user", "label": "Approved By" },
+        { "id": "material_request.approved_by", "type": "user", "label": "Approved By", "required_when": { "op": "in", "field": "material_request.status", "value": ["approved", "fulfilled"] } },
         { "id": "material_request.notes", "type": "text", "label": "Notes" },
         { "id": "material_request.created_at", "type": "datetime", "label": "Created At" }
       ]
     },
     {
       "id": "entity.material_receipt",
-      "display_field": "material_receipt.receipt_date",
+      "display_field": "material_receipt.invoice_ref",
       "fields": [
         { "id": "material_receipt.id", "type": "uuid", "label": "ID", "readonly": true },
         { "id": "material_receipt.project_id", "type": "lookup", "label": "Project", "entity": "entity.construction_project", "display_field": "construction_project.name", "required": true },
         { "id": "material_receipt.site_id", "type": "lookup", "label": "Site", "entity": "entity.construction_site", "display_field": "construction_site.name" },
         { "id": "material_receipt.receipt_date", "type": "date", "label": "Receipt Date", "required": true },
         { "id": "material_receipt.item_id", "type": "lookup", "label": "Catalog Item", "entity": "entity.item", "display_field": "item.name", "required": true },
-        { "id": "material_receipt.supplier_contact_id", "type": "lookup", "label": "Supplier", "entity": "entity.contact", "display_field": "contact.name" },
+        { "id": "material_receipt.supplier_contact_id", "type": "lookup", "label": "Supplier", "entity": "entity.contact", "display_field": "contact.name", "required_when": { "op": "in", "field": "material_receipt.status", "value": ["received", "posted"] } },
         { "id": "material_receipt.quantity", "type": "number", "label": "Quantity", "required": true },
         { "id": "material_receipt.unit", "type": "enum", "label": "Unit", "default": "bag", "options": [{ "value": "bag", "label": "Bag" }, { "value": "kg", "label": "kg" }, { "value": "ton", "label": "Ton" }, { "value": "m3", "label": "m3" }, { "value": "piece", "label": "Piece" }] },
-        { "id": "material_receipt.unit_cost", "type": "number", "label": "Unit Cost" },
-        { "id": "material_receipt.total_cost", "type": "number", "label": "Total Cost" },
-        { "id": "material_receipt.received_by", "type": "user", "label": "Received By" },
-        { "id": "material_receipt.invoice_ref", "type": "string", "label": "Invoice / Delivery Ref" },
+        { "id": "material_receipt.unit_cost", "type": "number", "label": "Unit Cost", "required_when": { "op": "eq", "field": "material_receipt.status", "value": "posted" } },
+        { "id": "material_receipt.total_cost", "type": "number", "label": "Total Cost", "required_when": { "op": "eq", "field": "material_receipt.status", "value": "posted" } },
+        { "id": "material_receipt.received_by", "type": "user", "label": "Received By", "required_when": { "op": "in", "field": "material_receipt.status", "value": ["received", "posted"] } },
+        { "id": "material_receipt.invoice_ref", "type": "string", "label": "Invoice / Delivery Ref", "required_when": { "op": "in", "field": "material_receipt.status", "value": ["received", "posted"] } },
         {
           "id": "material_receipt.status",
           "type": "enum",
@@ -128,9 +128,9 @@
         { "id": "material_log.quantity", "type": "number", "label": "Quantity", "required": true },
         { "id": "material_log.unit", "type": "enum", "label": "Unit", "default": "bag", "options": [{ "value": "bag", "label": "Bag" }, { "value": "kg", "label": "kg" }, { "value": "ton", "label": "Ton" }, { "value": "m3", "label": "m3" }, { "value": "piece", "label": "Piece" }] },
         { "id": "material_log.unit_cost", "type": "number", "label": "Unit Cost" },
-        { "id": "material_log.total_cost", "type": "number", "label": "Total Cost" },
-        { "id": "material_log.entered_by_worker_id", "type": "lookup", "label": "Entered By Worker", "entity": "entity.construction_worker", "display_field": "construction_worker.full_name" },
-        { "id": "material_log.supervisor_id", "type": "user", "label": "Supervisor" },
+        { "id": "material_log.total_cost", "type": "number", "label": "Total Cost", "required_when": { "op": "eq", "field": "material_log.status", "value": "approved" } },
+        { "id": "material_log.entered_by_worker_id", "type": "lookup", "label": "Entered By Worker", "entity": "entity.construction_worker", "display_field": "construction_worker.full_name", "required_when": { "op": "in", "field": "material_log.status", "value": ["submitted", "approved"] } },
+        { "id": "material_log.supervisor_id", "type": "user", "label": "Supervisor", "required_when": { "op": "eq", "field": "material_log.status", "value": "approved" } },
         {
           "id": "material_log.status",
           "type": "enum",
@@ -204,7 +204,6 @@
             "material_request.unit",
             "material_request.requested_by_worker_id",
             "material_request.needed_by_date",
-            "material_request.status",
             "material_request.approved_by"
           ]
         },
@@ -273,8 +272,7 @@
             "material_receipt.unit_cost",
             "material_receipt.total_cost",
             "material_receipt.received_by",
-            "material_receipt.invoice_ref",
-            "material_receipt.status"
+            "material_receipt.invoice_ref"
           ]
         },
         {
@@ -363,8 +361,7 @@
             "material_log.unit_cost",
             "material_log.total_cost",
             "material_log.entered_by_worker_id",
-            "material_log.supervisor_id",
-            "material_log.status"
+            "material_log.supervisor_id"
           ]
         },
         {
@@ -396,13 +393,47 @@
       "default": { "type": "bar", "group_by": "material_log.material_type", "measure": "sum:material_log.quantity" }
     }
   ],
+  "workflows": [
+    {
+      "id": "workflow.material_request_status",
+      "entity": "entity.material_request",
+      "status_field": "material_request.status",
+      "states": [
+        { "id": "draft", "label": "Draft" },
+        { "id": "requested", "label": "Requested" },
+        { "id": "approved", "label": "Approved" },
+        { "id": "fulfilled", "label": "Fulfilled" },
+        { "id": "cancelled", "label": "Cancelled" }
+      ]
+    },
+    {
+      "id": "workflow.material_receipt_status",
+      "entity": "entity.material_receipt",
+      "status_field": "material_receipt.status",
+      "states": [
+        { "id": "draft", "label": "Draft" },
+        { "id": "received", "label": "Received" },
+        { "id": "posted", "label": "Posted" }
+      ]
+    },
+    {
+      "id": "workflow.material_log_status",
+      "entity": "entity.material_log",
+      "status_field": "material_log.status",
+      "states": [
+        { "id": "draft", "label": "Draft" },
+        { "id": "submitted", "label": "Submitted" },
+        { "id": "approved", "label": "Approved" }
+      ]
+    }
+  ],
   "pages": [
     {
       "id": "material_request.list_page",
       "title": "Material Requests",
       "layout": "single",
       "header": { "variant": "none", "actions": [{ "action_id": "action.material_request_new" }] },
-      "content": [{ "kind": "container", "variant": "card", "content": [{ "kind": "view_modes", "entity_id": "entity.material_request", "default_mode": "list", "modes": [{ "mode": "list", "target": "view:material_request.list" }, { "mode": "graph", "target": "view:material_request.graph" }, { "mode": "pivot", "target": "view:material_request.list", "default_group_by": "material_request.project_id" }], "default_filter_id": "requested" }] }]
+      "content": [{ "kind": "container", "variant": "card", "content": [{ "kind": "view_modes", "entity_id": "entity.material_request", "default_mode": "list", "modes": [{ "mode": "list", "target": "view:material_request.list" }, { "mode": "graph", "target": "view:material_request.graph" }, { "mode": "pivot", "target": "view:material_request.list", "default_group_by": "material_request.project_id" }] }] }]
     },
     {
       "id": "material_request.form_page",
@@ -430,7 +461,7 @@
       "title": "Material Usage",
       "layout": "single",
       "header": { "variant": "none", "actions": [{ "action_id": "action.material_log_new" }] },
-      "content": [{ "kind": "container", "variant": "card", "content": [{ "kind": "view_modes", "entity_id": "entity.material_log", "default_mode": "calendar", "modes": [{ "mode": "calendar", "target": "view:material_log.calendar" }, { "mode": "list", "target": "view:material_log.list" }, { "mode": "graph", "target": "view:material_log.graph" }, { "mode": "pivot", "target": "view:material_log.list", "default_group_by": "material_log.project_id" }], "default_filter_id": "submitted" }] }]
+      "content": [{ "kind": "container", "variant": "card", "content": [{ "kind": "view_modes", "entity_id": "entity.material_log", "default_mode": "calendar", "modes": [{ "mode": "calendar", "target": "view:material_log.calendar" }, { "mode": "list", "target": "view:material_log.list" }, { "mode": "graph", "target": "view:material_log.graph" }, { "mode": "pivot", "target": "view:material_log.list", "default_group_by": "material_log.project_id" }] }] }]
     },
     {
       "id": "material_log.form_page",

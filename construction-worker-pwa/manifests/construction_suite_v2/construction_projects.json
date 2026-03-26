@@ -4,7 +4,7 @@
     "id": "construction_projects",
     "key": "construction_projects",
     "name": "Projects",
-    "version": "2.2.0",
+    "version": "2.2.1",
     "description": "Construction projects, work packages, and execution planning.",
     "category": "Construction",
     "icon_key": "lucide:Building2"
@@ -92,8 +92,8 @@
         },
         { "id": "construction_project.project_manager_id", "type": "user", "label": "Project Manager" },
         { "id": "construction_project.site_manager_id", "type": "user", "label": "Site Manager" },
-        { "id": "construction_project.start_date", "type": "date", "label": "Start Date" },
-        { "id": "construction_project.target_end_date", "type": "date", "label": "Target End Date" },
+        { "id": "construction_project.start_date", "type": "date", "label": "Start Date", "required_when": { "op": "in", "field": "construction_project.status", "value": ["active", "on_hold", "completed"] } },
+        { "id": "construction_project.target_end_date", "type": "date", "label": "Target End Date", "required_when": { "op": "in", "field": "construction_project.status", "value": ["active", "on_hold", "completed"] } },
         { "id": "construction_project.contract_value", "type": "number", "label": "Contract Value" },
         { "id": "construction_project.labor_budget", "type": "number", "label": "Labor Budget" },
         { "id": "construction_project.material_budget", "type": "number", "label": "Material Budget" },
@@ -129,7 +129,7 @@
         },
         { "id": "construction_work_item.cost_code_id", "type": "lookup", "label": "Cost Code", "entity": "entity.construction_cost_code", "display_field": "construction_cost_code.name" },
         { "id": "construction_work_item.assigned_crew_id", "type": "lookup", "label": "Assigned Crew", "entity": "entity.construction_crew", "display_field": "construction_crew.name" },
-        { "id": "construction_work_item.owner_id", "type": "user", "label": "Owner" },
+        { "id": "construction_work_item.owner_id", "type": "user", "label": "Owner", "required_when": { "op": "in", "field": "construction_work_item.status", "value": ["in_progress", "blocked", "done"] } },
         {
           "id": "construction_work_item.status",
           "type": "enum",
@@ -144,8 +144,8 @@
           ]
         },
         { "id": "construction_work_item.progress_percent", "type": "number", "label": "Progress %" },
-        { "id": "construction_work_item.planned_start_date", "type": "date", "label": "Planned Start" },
-        { "id": "construction_work_item.planned_end_date", "type": "date", "label": "Planned End" },
+        { "id": "construction_work_item.planned_start_date", "type": "date", "label": "Planned Start", "required_when": { "op": "in", "field": "construction_work_item.status", "value": ["in_progress", "blocked", "done"] } },
+        { "id": "construction_work_item.planned_end_date", "type": "date", "label": "Planned End", "required_when": { "op": "in", "field": "construction_work_item.status", "value": ["blocked", "done"] } },
         { "id": "construction_work_item.notes", "type": "text", "label": "Notes" },
         { "id": "construction_work_item.created_at", "type": "datetime", "label": "Created At" }
       ]
@@ -173,6 +173,15 @@
       "visible_when": { "op": "eq", "field": "construction_project.status", "value": "active" }
     },
     {
+      "id": "action.construction_project_resume",
+      "kind": "update_record",
+      "label": "Resume Project",
+      "entity_id": "entity.construction_project",
+      "patch": { "construction_project.status": "active" },
+      "enabled_when": { "op": "eq", "field": "construction_project.status", "value": "on_hold" },
+      "visible_when": { "op": "eq", "field": "construction_project.status", "value": "on_hold" }
+    },
+    {
       "id": "action.construction_project_complete",
       "kind": "update_record",
       "label": "Complete",
@@ -180,6 +189,15 @@
       "patch": { "construction_project.status": "completed" },
       "enabled_when": { "op": "in", "field": "construction_project.status", "value": ["active", "on_hold"] },
       "visible_when": { "op": "in", "field": "construction_project.status", "value": ["active", "on_hold"] }
+    },
+    {
+      "id": "action.construction_project_cancel",
+      "kind": "update_record",
+      "label": "Cancel Project",
+      "entity_id": "entity.construction_project",
+      "patch": { "construction_project.status": "cancelled" },
+      "enabled_when": { "op": "in", "field": "construction_project.status", "value": ["planned", "active", "on_hold"] },
+      "visible_when": { "op": "in", "field": "construction_project.status", "value": ["planned", "active", "on_hold"] }
     },
     {
       "id": "action.construction_work_item_start",
@@ -200,6 +218,15 @@
       "visible_when": { "op": "eq", "field": "construction_work_item.status", "value": "in_progress" }
     },
     {
+      "id": "action.construction_work_item_resume",
+      "kind": "update_record",
+      "label": "Resume",
+      "entity_id": "entity.construction_work_item",
+      "patch": { "construction_work_item.status": "in_progress" },
+      "enabled_when": { "op": "eq", "field": "construction_work_item.status", "value": "blocked" },
+      "visible_when": { "op": "eq", "field": "construction_work_item.status", "value": "blocked" }
+    },
+    {
       "id": "action.construction_work_item_done",
       "kind": "update_record",
       "label": "Mark Done",
@@ -207,6 +234,15 @@
       "patch": { "construction_work_item.status": "done", "construction_work_item.progress_percent": 100 },
       "enabled_when": { "op": "in", "field": "construction_work_item.status", "value": ["in_progress", "blocked"] },
       "visible_when": { "op": "in", "field": "construction_work_item.status", "value": ["in_progress", "blocked"] }
+    },
+    {
+      "id": "action.construction_work_item_cancel",
+      "kind": "update_record",
+      "label": "Cancel",
+      "entity_id": "entity.construction_work_item",
+      "patch": { "construction_work_item.status": "cancelled" },
+      "enabled_when": { "op": "in", "field": "construction_work_item.status", "value": ["pending", "in_progress", "blocked"] },
+      "visible_when": { "op": "in", "field": "construction_work_item.status", "value": ["pending", "in_progress", "blocked"] }
     }
   ],
   "triggers": [
@@ -259,7 +295,7 @@
         "title_field": "construction_project.name",
         "subtitle_fields": [
           "construction_project.code",
-          "construction_project.site_id"
+          "construction_project.site_location"
         ],
         "badge_fields": [
           "construction_project.status",
@@ -297,7 +333,6 @@
             "construction_project.site_location",
             "construction_project.project_type",
             "construction_project.priority",
-            "construction_project.status",
             "construction_project.project_manager_id",
             "construction_project.site_manager_id",
             "construction_project.start_date",
@@ -330,7 +365,9 @@
         "secondary_actions": [
           { "action_id": "action.construction_project_activate" },
           { "action_id": "action.construction_project_hold" },
-          { "action_id": "action.construction_project_complete" }
+          { "action_id": "action.construction_project_resume" },
+          { "action_id": "action.construction_project_complete" },
+          { "action_id": "action.construction_project_cancel" }
         ],
         "tabs": {
           "style": "lifted",
@@ -394,12 +431,11 @@
       "card": {
         "title_field": "construction_work_item.title",
         "subtitle_fields": [
-          "construction_work_item.project_id",
+          "construction_work_item.sequence_code",
           "construction_work_item.phase"
         ],
         "badge_fields": [
           "construction_work_item.status",
-          "construction_work_item.assigned_crew_id",
           "construction_work_item.progress_percent"
         ]
       }
@@ -434,7 +470,6 @@
             "construction_work_item.cost_code_id",
             "construction_work_item.assigned_crew_id",
             "construction_work_item.owner_id",
-            "construction_work_item.status",
             "construction_work_item.progress_percent",
             "construction_work_item.planned_start_date",
             "construction_work_item.planned_end_date"
@@ -453,7 +488,9 @@
         "secondary_actions": [
           { "action_id": "action.construction_work_item_start" },
           { "action_id": "action.construction_work_item_block" },
-          { "action_id": "action.construction_work_item_done" }
+          { "action_id": "action.construction_work_item_resume" },
+          { "action_id": "action.construction_work_item_done" },
+          { "action_id": "action.construction_work_item_cancel" }
         ],
         "tabs": {
           "style": "lifted",
@@ -474,6 +511,32 @@
         "group_by": "construction_work_item.status",
         "measure": "count"
       }
+    }
+  ],
+  "workflows": [
+    {
+      "id": "workflow.construction_project_status",
+      "entity": "entity.construction_project",
+      "status_field": "construction_project.status",
+      "states": [
+        { "id": "planned", "label": "Planned" },
+        { "id": "active", "label": "Active" },
+        { "id": "on_hold", "label": "On Hold" },
+        { "id": "completed", "label": "Completed" },
+        { "id": "cancelled", "label": "Cancelled" }
+      ]
+    },
+    {
+      "id": "workflow.construction_work_item_status",
+      "entity": "entity.construction_work_item",
+      "status_field": "construction_work_item.status",
+      "states": [
+        { "id": "pending", "label": "Pending" },
+        { "id": "in_progress", "label": "In Progress" },
+        { "id": "blocked", "label": "Blocked" },
+        { "id": "done", "label": "Done" },
+        { "id": "cancelled", "label": "Cancelled" }
+      ]
     }
   ],
   "pages": [
@@ -497,8 +560,7 @@
                 { "mode": "calendar", "target": "view:construction_project.calendar" },
                 { "mode": "graph", "target": "view:construction_project.graph" },
                 { "mode": "pivot", "target": "view:construction_project.list", "default_group_by": "construction_project.status" }
-              ],
-              "default_filter_id": "open"
+              ]
             }
           ]
         }
@@ -570,8 +632,7 @@
                 { "mode": "calendar", "target": "view:construction_work_item.calendar" },
                 { "mode": "graph", "target": "view:construction_work_item.graph" },
                 { "mode": "pivot", "target": "view:construction_work_item.list", "default_group_by": "construction_work_item.project_id" }
-              ],
-              "default_filter_id": "open"
+              ]
             }
           ]
         }

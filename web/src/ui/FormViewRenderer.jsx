@@ -36,6 +36,7 @@ export default function FormViewRenderer({
   canCreateLookup,
   onLookupCreate,
   bottomActionsMode = "inline",
+  renderBlocks = null,
 }) {
   if (!view) return <div className="alert">Missing form view</div>;
   const sections = view.sections || [];
@@ -241,6 +242,12 @@ export default function FormViewRenderer({
     const allowed = new Set(tab.sections);
     return sections.filter((s) => allowed.has(s.id));
   })();
+  const activeTabConfig =
+    hasTabs && tabsConfig && Array.isArray(tabsConfig.tabs)
+      ? tabsConfig.tabs.find((tab) => tab?.id === activeTab) || null
+      : null;
+  const activeTabBlocks = Array.isArray(activeTabConfig?.content) ? activeTabConfig.content : [];
+  const hasCustomTabBlocks = activeTabBlocks.length > 0;
 
   function getVisibleFields(section) {
     const fields = Array.isArray(section?.fields) ? section.fields : [];
@@ -336,6 +343,7 @@ export default function FormViewRenderer({
   const emptyTabState =
     hasTabs &&
     activeTab !== activityTabId &&
+    !hasCustomTabBlocks &&
     renderedSections.length === 0;
 
   return (
@@ -420,7 +428,7 @@ export default function FormViewRenderer({
           <Tabs tabs={tabsForUi} activeId={activeTab} onChange={setActiveTab} />
         </div>
       )}
-      <div className="flex-1 min-h-0 overflow-auto space-y-4">
+      <div className={hasCustomTabBlocks ? "flex-1 min-h-0 overflow-hidden" : "flex-1 min-h-0 overflow-auto space-y-4"}>
         {activityConfig?.mode === "panel" && (
           <div className="border border-base-300 rounded-box p-3">
             <div className="text-sm font-semibold mb-2">{activityTabLabel}</div>
@@ -430,6 +438,12 @@ export default function FormViewRenderer({
         {activeTab === activityTabId && (
           <ActivityPanel entityId={entityId} recordId={effectiveRecordId} config={activityConfig || {}} />
         )}
+        {activeTab !== activityTabId && hasCustomTabBlocks && renderBlocks?.(activeTabBlocks, {
+          entityId,
+          recordId: effectiveRecordId,
+          record,
+          hiddenFields: Array.from(hiddenSet),
+        })}
         {emptyTabState && (
           <div className="text-sm opacity-70 py-2">
             Nothing here yet. This section becomes available after the required fields are completed or status changes.

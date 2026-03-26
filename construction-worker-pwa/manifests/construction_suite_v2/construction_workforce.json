@@ -4,7 +4,7 @@
     "id": "construction_workforce",
     "key": "construction_workforce",
     "name": "Workforce",
-    "version": "2.2.0",
+    "version": "2.2.8",
     "description": "Workers, attendance, and labor time capture for construction teams.",
     "category": "Construction",
     "icon_key": "lucide:HardHat"
@@ -25,6 +25,10 @@
           "entity_home_page": "page:construction_worker.list_page",
           "entity_form_page": "page:construction_worker.form_page"
         },
+        "entity.construction_worker_assignment": {
+          "entity_home_page": "page:construction_worker_assignment.list_page",
+          "entity_form_page": "page:construction_worker_assignment.form_page"
+        },
         "entity.time_entry": {
           "entity_home_page": "page:time_entry.list_page",
           "entity_form_page": "page:time_entry.form_page"
@@ -37,6 +41,7 @@
         "mode": "inline",
         "items": [
           { "label": "Workers", "to": "page:construction_worker.list_page" },
+          { "label": "Assignments", "to": "page:construction_worker_assignment.list_page" },
           { "label": "Time Entries", "to": "page:time_entry.list_page" }
         ]
       }
@@ -75,6 +80,33 @@
       ]
     },
     {
+      "id": "entity.construction_worker_assignment",
+      "display_field": "construction_worker_assignment.assignment_role",
+      "fields": [
+        { "id": "construction_worker_assignment.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "construction_worker_assignment.worker_id", "type": "lookup", "label": "Worker", "entity": "entity.construction_worker", "display_field": "construction_worker.full_name", "required": true },
+        { "id": "construction_worker_assignment.project_id", "type": "lookup", "label": "Project", "entity": "entity.construction_project", "display_field": "construction_project.name", "required": true },
+        { "id": "construction_worker_assignment.site_id", "type": "lookup", "label": "Site", "entity": "entity.construction_site", "display_field": "construction_site.name" },
+        {
+          "id": "construction_worker_assignment.assignment_role",
+          "type": "enum",
+          "label": "Assignment Role",
+          "default": "worker",
+          "options": [
+            { "value": "worker", "label": "Worker" },
+            { "value": "supervisor", "label": "Supervisor" },
+            { "value": "foreman", "label": "Foreman" },
+            { "value": "manager", "label": "Manager" }
+          ]
+        },
+        { "id": "construction_worker_assignment.start_date", "type": "date", "label": "Start Date", "required": true },
+        { "id": "construction_worker_assignment.end_date", "type": "date", "label": "End Date", "required_when": { "op": "eq", "field": "construction_worker_assignment.active", "value": false } },
+        { "id": "construction_worker_assignment.active", "type": "bool", "label": "Active", "default": true },
+        { "id": "construction_worker_assignment.notes", "type": "text", "label": "Notes" },
+        { "id": "construction_worker_assignment.created_at", "type": "datetime", "label": "Created At" }
+      ]
+    },
+    {
       "id": "entity.time_entry",
       "display_field": "time_entry.entry_date",
       "fields": [
@@ -85,10 +117,10 @@
         { "id": "time_entry.crew_id", "type": "lookup", "label": "Crew", "entity": "entity.construction_crew", "display_field": "construction_crew.name" },
         { "id": "time_entry.work_item_id", "type": "lookup", "label": "Work Item", "entity": "entity.construction_work_item", "display_field": "construction_work_item.title" },
         { "id": "time_entry.entry_date", "type": "date", "label": "Entry Date", "required": true },
-        { "id": "time_entry.check_in_at", "type": "datetime", "label": "Check In" },
-        { "id": "time_entry.check_out_at", "type": "datetime", "label": "Check Out" },
+        { "id": "time_entry.check_in_at", "type": "datetime", "label": "Check In", "required_when": { "op": "in", "field": "time_entry.status", "value": ["open", "closed", "approved"] } },
+        { "id": "time_entry.check_out_at", "type": "datetime", "label": "Check Out", "required_when": { "op": "in", "field": "time_entry.status", "value": ["closed", "approved"] } },
         { "id": "time_entry.break_minutes", "type": "number", "label": "Break Minutes" },
-        { "id": "time_entry.hours_worked", "type": "number", "label": "Hours Worked" },
+        { "id": "time_entry.hours_worked", "type": "number", "label": "Hours Worked", "required_when": { "op": "in", "field": "time_entry.status", "value": ["closed", "approved"] } },
         {
           "id": "time_entry.status",
           "type": "enum",
@@ -111,7 +143,7 @@
             { "value": "manual", "label": "Manual" }
           ]
         },
-        { "id": "time_entry.approved_by", "type": "user", "label": "Approved By" },
+        { "id": "time_entry.approved_by", "type": "user", "label": "Approved By", "required_when": { "op": "eq", "field": "time_entry.status", "value": "approved" } },
         { "id": "time_entry.notes", "type": "text", "label": "Notes" },
         { "id": "time_entry.created_at", "type": "datetime", "label": "Created At" }
       ]
@@ -119,6 +151,7 @@
   ],
   "actions": [
     { "id": "action.construction_worker_new", "kind": "open_form", "label": "+ New Worker", "target": "construction_worker.form" },
+    { "id": "action.construction_worker_assignment_new", "kind": "open_form", "label": "+ New Assignment", "target": "construction_worker_assignment.form" },
     { "id": "action.time_entry_new", "kind": "open_form", "label": "+ New Time Entry", "target": "time_entry.form" },
     {
       "id": "action.construction_worker_activate",
@@ -164,11 +197,31 @@
       "patch": { "time_entry.status": "open" },
       "enabled_when": { "op": "in", "field": "time_entry.status", "value": ["closed", "approved"] },
       "visible_when": { "op": "in", "field": "time_entry.status", "value": ["closed", "approved"] }
+    },
+    {
+      "id": "action.construction_worker_assignment_activate",
+      "kind": "update_record",
+      "label": "Activate",
+      "entity_id": "entity.construction_worker_assignment",
+      "patch": { "construction_worker_assignment.active": true },
+      "enabled_when": { "op": "eq", "field": "construction_worker_assignment.active", "value": false },
+      "visible_when": { "op": "eq", "field": "construction_worker_assignment.active", "value": false }
+    },
+    {
+      "id": "action.construction_worker_assignment_deactivate",
+      "kind": "update_record",
+      "label": "Deactivate",
+      "entity_id": "entity.construction_worker_assignment",
+      "patch": { "construction_worker_assignment.active": false },
+      "enabled_when": { "op": "eq", "field": "construction_worker_assignment.active", "value": true },
+      "visible_when": { "op": "eq", "field": "construction_worker_assignment.active", "value": true }
     }
   ],
   "triggers": [
     { "id": "construction_workforce.record.worker.created", "event": "record.created", "entity_id": "entity.construction_worker" },
     { "id": "construction_workforce.record.worker.updated", "event": "record.updated", "entity_id": "entity.construction_worker" },
+    { "id": "construction_workforce.record.assignment.created", "event": "record.created", "entity_id": "entity.construction_worker_assignment" },
+    { "id": "construction_workforce.record.assignment.updated", "event": "record.updated", "entity_id": "entity.construction_worker_assignment" },
     { "id": "construction_workforce.record.time_entry.created", "event": "record.created", "entity_id": "entity.time_entry" },
     { "id": "construction_workforce.record.time_entry.updated", "event": "record.updated", "entity_id": "entity.time_entry" }
   ],
@@ -214,12 +267,11 @@
         "title_field": "construction_worker.full_name",
         "subtitle_fields": [
           "construction_worker.worker_code",
-          "construction_worker.default_project_id"
+          "construction_worker.phone"
         ],
         "badge_fields": [
           "construction_worker.role",
-          "construction_worker.active",
-          "construction_worker.crew_id"
+          "construction_worker.active"
         ]
       }
     },
@@ -241,17 +293,6 @@
             "construction_worker.crew_id",
             "construction_worker.crew_name",
             "construction_worker.portal_user_id",
-            "construction_worker.active"
-          ]
-        },
-        {
-          "id": "assignment",
-          "title": "Assignment",
-          "layout": "columns",
-          "columns": 2,
-          "fields": [
-            "construction_worker.default_project_id",
-            "construction_worker.default_site_id",
             "construction_worker.hourly_cost_rate"
           ]
         },
@@ -261,6 +302,16 @@
           "fields": [
             "construction_worker.notes"
           ]
+        },
+        {
+          "id": "assignments_related",
+          "title": "Assignments",
+          "fields": []
+        },
+        {
+          "id": "time_entries_related",
+          "title": "Time Entries",
+          "fields": []
         }
       ],
       "header": {
@@ -270,11 +321,59 @@
         ],
         "tabs": {
           "style": "lifted",
-          "default_tab": "general_tab",
+          "default_tab": "worker_tab",
           "tabs": [
-            { "id": "general_tab", "label": "Worker", "sections": ["general"] },
-            { "id": "assignment_tab", "label": "Assignment", "sections": ["assignment"] },
-            { "id": "notes_tab", "label": "Notes", "sections": ["notes"] }
+            { "id": "worker_tab", "label": "Worker", "sections": ["general"] },
+            { "id": "notes_form_tab", "label": "Notes", "sections": ["notes"] },
+            {
+              "id": "assignments_tab",
+              "label": "Assignments",
+              "sections": ["assignments_related"],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "entity_id": "entity.construction_worker_assignment",
+                  "target": "view:construction_worker_assignment.list",
+                  "record_domain": {
+                    "op": "eq",
+                    "field": "construction_worker_assignment.worker_id",
+                    "value": { "ref": "$record.id" }
+                  },
+                  "create_modal": true,
+                  "create_defaults": {
+                    "construction_worker_assignment.worker_id": { "ref": "$record.id" },
+                    "construction_worker_assignment.project_id": { "ref": "$record.construction_worker.default_project_id" },
+                    "construction_worker_assignment.site_id": { "ref": "$record.construction_worker.default_site_id" },
+                    "construction_worker_assignment.assignment_role": { "ref": "$record.construction_worker.role" },
+                    "construction_worker_assignment.active": true
+                  }
+                }
+              ]
+            },
+            {
+              "id": "time_entries_tab",
+              "label": "Time Entries",
+              "sections": ["time_entries_related"],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "entity_id": "entity.time_entry",
+                  "target": "view:time_entry.list",
+                  "record_domain": {
+                    "op": "eq",
+                    "field": "time_entry.worker_id",
+                    "value": { "ref": "$record.id" }
+                  },
+                  "create_modal": true,
+                  "create_defaults": {
+                    "time_entry.worker_id": { "ref": "$record.id" },
+                    "time_entry.project_id": { "ref": "$record.construction_worker.default_project_id" },
+                    "time_entry.status": "open",
+                    "time_entry.source": "manual"
+                  }
+                }
+              ]
+            }
           ]
         }
       }
@@ -287,6 +386,80 @@
         "type": "bar",
         "group_by": "construction_worker.role",
         "measure": "count"
+      }
+    },
+    {
+      "id": "construction_worker_assignment.list",
+      "kind": "list",
+      "entity": "entity.construction_worker_assignment",
+      "columns": [
+        { "field_id": "construction_worker_assignment.worker_id" },
+        { "field_id": "construction_worker_assignment.project_id" },
+        { "field_id": "construction_worker_assignment.site_id" },
+        { "field_id": "construction_worker_assignment.assignment_role" },
+        { "field_id": "construction_worker_assignment.start_date" },
+        { "field_id": "construction_worker_assignment.end_date" },
+        { "field_id": "construction_worker_assignment.active" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.construction_worker_assignment_new" }],
+        "open_record_target": "page:construction_worker_assignment.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search assignments...",
+          "fields": [
+            "construction_worker_assignment.worker_id",
+            "construction_worker_assignment.project_id",
+            "construction_worker_assignment.site_id",
+            "construction_worker_assignment.notes"
+          ]
+        },
+        "filters": [
+          { "id": "active", "label": "Active", "domain": { "op": "eq", "field": "construction_worker_assignment.active", "value": true } },
+          { "id": "inactive", "label": "Inactive", "domain": { "op": "eq", "field": "construction_worker_assignment.active", "value": false } }
+        ]
+      }
+    },
+    {
+      "id": "construction_worker_assignment.form",
+      "kind": "form",
+      "entity": "entity.construction_worker_assignment",
+      "sections": [
+        {
+          "id": "assignment",
+          "title": "Assignment",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "construction_worker_assignment.worker_id",
+            "construction_worker_assignment.project_id",
+            "construction_worker_assignment.site_id",
+            "construction_worker_assignment.assignment_role",
+            "construction_worker_assignment.start_date",
+            "construction_worker_assignment.end_date"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": [
+            "construction_worker_assignment.notes"
+          ]
+        }
+      ],
+      "header": {
+        "secondary_actions": [
+          { "action_id": "action.construction_worker_assignment_activate" },
+          { "action_id": "action.construction_worker_assignment_deactivate" }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "assignment_tab",
+          "tabs": [
+            { "id": "assignment_tab", "label": "Assignment", "sections": ["assignment"] },
+            { "id": "notes_tab", "label": "Notes", "sections": ["notes"] }
+          ]
+        }
       }
     },
     {
@@ -311,6 +484,10 @@
           "enabled": true,
           "placeholder": "Search time entries...",
           "fields": [
+            "time_entry.worker_id",
+            "time_entry.project_id",
+            "time_entry.site_id",
+            "time_entry.work_item_id",
             "time_entry.notes"
           ]
         },
@@ -353,7 +530,6 @@
             "time_entry.check_out_at",
             "time_entry.break_minutes",
             "time_entry.hours_worked",
-            "time_entry.status",
             "time_entry.source",
             "time_entry.approved_by"
           ]
@@ -394,6 +570,18 @@
       }
     }
   ],
+  "workflows": [
+    {
+      "id": "workflow.time_entry_status",
+      "entity": "entity.time_entry",
+      "status_field": "time_entry.status",
+      "states": [
+        { "id": "open", "label": "Open" },
+        { "id": "closed", "label": "Closed" },
+        { "id": "approved", "label": "Approved" }
+      ]
+    }
+  ],
   "pages": [
     {
       "id": "construction_worker.list_page",
@@ -414,8 +602,7 @@
                 { "mode": "kanban", "target": "view:construction_worker.kanban", "default_group_by": "construction_worker.role" },
                 { "mode": "graph", "target": "view:construction_worker.graph" },
                 { "mode": "pivot", "target": "view:construction_worker.list", "default_group_by": "construction_worker.role" }
-              ],
-              "default_filter_id": "active"
+              ]
             }
           ]
         }
@@ -444,24 +631,7 @@
                       "kind": "container",
                       "variant": "card",
                       "content": [
-                        { "kind": "view", "target": "view:construction_worker.form" },
-                        {
-                          "kind": "related_list",
-                          "entity_id": "entity.time_entry",
-                          "target": "view:time_entry.list",
-                          "record_domain": {
-                            "op": "eq",
-                            "field": "time_entry.worker_id",
-                            "value": { "ref": "$record.id" }
-                          },
-                          "create_modal": true,
-                          "create_defaults": {
-                            "time_entry.worker_id": { "ref": "$record.id" },
-                            "time_entry.project_id": { "ref": "$record.construction_worker.default_project_id" },
-                            "time_entry.status": "open",
-                            "time_entry.source": "manual"
-                          }
-                        }
+                        { "kind": "view", "target": "view:construction_worker.form" }
                       ]
                     }
                   ]
@@ -474,6 +644,75 @@
                       "variant": "card",
                       "content": [
                         { "kind": "chatter", "entity_id": "entity.construction_worker", "record_ref": "$record.id" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "construction_worker_assignment.list_page",
+      "title": "Assignments",
+      "layout": "single",
+      "header": { "variant": "none", "actions": [{ "action_id": "action.construction_worker_assignment_new" }] },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.construction_worker_assignment",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:construction_worker_assignment.list" },
+                { "mode": "pivot", "target": "view:construction_worker_assignment.list", "default_group_by": "construction_worker_assignment.project_id" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "construction_worker_assignment.form_page",
+      "title": "Assignment",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.construction_worker_assignment",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "view", "target": "view:construction_worker_assignment.form" }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "chatter", "entity_id": "entity.construction_worker_assignment", "record_ref": "$record.id" }
                       ]
                     }
                   ]
@@ -503,8 +742,7 @@
                 { "mode": "calendar", "target": "view:time_entry.calendar" },
                 { "mode": "graph", "target": "view:time_entry.graph" },
                 { "mode": "pivot", "target": "view:time_entry.list", "default_group_by": "time_entry.project_id" }
-              ],
-              "default_filter_id": "open"
+              ]
             }
           ]
         }
@@ -569,6 +807,20 @@
           "construction_worker.role",
           "construction_worker.crew_id",
           "construction_worker.active"
+        ]
+      },
+      {
+        "entity_id": "entity.construction_worker_assignment",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "construction_worker_assignment.created_at",
+        "measures": ["count"],
+        "group_bys": [
+          "construction_worker_assignment.project_id",
+          "construction_worker_assignment.site_id",
+          "construction_worker_assignment.worker_id",
+          "construction_worker_assignment.assignment_role",
+          "construction_worker_assignment.active"
         ]
       },
       {

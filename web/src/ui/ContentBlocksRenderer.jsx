@@ -62,11 +62,11 @@ function hasFillHeight(blocks) {
   return false;
 }
 
-export default function ContentBlocksRenderer({ blocks, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, onNavigate, onRunAction, onConfirm, onPrompt, onLookupCreate, externalRefreshTick = 0, previewMode = false, bootstrap = null, bootstrapVersion = 0, bootstrapLoading = false, canWriteRecords = null }) {
+export default function ContentBlocksRenderer({ blocks, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, onNavigate, onRunAction, onConfirm, onPrompt, onLookupCreate, externalRefreshTick = 0, previewMode = false, bootstrap = null, bootstrapVersion = 0, bootstrapLoading = false, canWriteRecords = null, recordContext = null }) {
   const safeBlocks = Array.isArray(blocks) ? blocks : [];
   const fullHeight = hasViewModes(safeBlocks) || hasFillHeight(safeBlocks);
   const inherited = useContext(RecordScopeContext);
-  const baseContext = inherited || (recordId ? { entityId: null, recordId, record: null, setRecord: () => {} } : null);
+  const baseContext = inherited || recordContext || (recordId ? { entityId: null, recordId, record: null, setRecord: () => {} } : null);
   const { hasCapability } = useAccessContext();
   const effectiveCanWriteRecords =
     typeof canWriteRecords === "boolean"
@@ -239,11 +239,14 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
     const tabs = Array.isArray(block.tabs) ? block.tabs : [];
     const defaultId = block.default_tab || tabs[0]?.id || null;
     const [activeId, setActiveId] = useState(defaultId);
+    const shouldFill = tabs.some((tab) => hasFillHeight(tab?.content) || hasViewModes(tab?.content));
 
     return (
-      <div>
-        <Tabs tabs={tabs} activeId={activeId} onChange={setActiveId} />
-        <div className="mt-4">
+      <div className={shouldFill ? "h-full min-h-0 flex flex-col overflow-hidden" : ""}>
+        <div className="shrink-0">
+          <Tabs tabs={tabs} activeId={activeId} onChange={setActiveId} />
+        </div>
+        <div className={shouldFill ? "mt-4 flex-1 min-h-0 overflow-hidden" : "mt-4"}>
           {tabs.map((tab) =>
             tab.id === activeId ? (
               <ContentBlocksRenderer key={tab.id} blocks={tab.content} renderView={renderView} recordId={recordId} searchParams={searchParams} setSearchParams={setSearchParams} manifest={manifest} moduleId={moduleId} actionsMap={actionsMap} onNavigate={onNavigate} onRunAction={onRunAction} onConfirm={onConfirm} onPrompt={onPrompt} onLookupCreate={onLookupCreate} externalRefreshTick={externalRefreshTick} previewMode={previewMode} bootstrap={bootstrap} bootstrapVersion={bootstrapVersion} bootstrapLoading={bootstrapLoading} canWriteRecords={canWriteRecords} />
@@ -262,8 +265,8 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
     const variant = block.variant || "card";
     const title = block.title;
     const hasViewModes = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view_modes" || b?.kind === "related_list");
-    const hasInnerScroll = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view" || b?.kind === "view_modes" || b?.kind === "related_list");
-    const shouldFill = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view" || b?.kind === "view_modes" || b?.kind === "related_list" || b?.kind === "chatter");
+    const hasInnerScroll = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view" || b?.kind === "view_modes" || b?.kind === "related_list" || b?.kind === "tabs");
+    const shouldFill = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view" || b?.kind === "view_modes" || b?.kind === "related_list" || b?.kind === "chatter" || b?.kind === "tabs");
     const content = (
       <ContentBlocksRenderer
         blocks={block.content || []}

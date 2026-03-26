@@ -158,6 +158,37 @@ function normalizeEnumOptions(options) {
     .filter(Boolean);
 }
 
+function isUuidLike(value) {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
+}
+
+function formatGroupedFieldValue(fieldDef, rawValue, lookupLabels = {}, memberLabels = {}) {
+  if (rawValue === null || rawValue === undefined || rawValue === "") return "";
+  if (!fieldDef) return isUuidLike(rawValue) ? "" : String(rawValue);
+  if (fieldDef.type === "enum") {
+    const option = normalizeEnumOptions(fieldDef.options).find((opt) => String(opt.value) === String(rawValue));
+    return String(option?.label ?? rawValue);
+  }
+  if (fieldDef.type === "lookup") {
+    const cacheKey = `${fieldDef.id}:${String(rawValue)}`;
+    return String(lookupLabels[cacheKey] || (isUuidLike(rawValue) ? "" : rawValue));
+  }
+  if (fieldDef.type === "user") {
+    const userId = String(rawValue || "").trim();
+    return String(memberLabels[userId] || (isUuidLike(userId) ? "" : userId));
+  }
+  if (fieldDef.type === "bool") return rawValue ? "Yes" : "No";
+  if (fieldDef.type === "date" || fieldDef.type === "datetime") {
+    const parsed = toDateValue(rawValue);
+    if (parsed) {
+      return fieldDef.type === "date"
+        ? parsed.toLocaleDateString()
+        : parsed.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+    }
+  }
+  return isUuidLike(rawValue) ? "" : String(rawValue);
+}
+
 function csvEscape(value, delimiter = ",") {
   if (value === null || value === undefined) return "";
   const text = String(value);
@@ -369,6 +400,8 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
   const [dragging, setDragging] = useState(null);
   const [busyRowId, setBusyRowId] = useState("");
   const [moveError, setMoveError] = useState("");
+  const [lookupLabels, setLookupLabels] = useState({});
+  const [memberLabels, setMemberLabels] = useState({});
   const fieldMap = useMemo(() => {
     const map = {};
     for (const field of entityDef?.fields || []) {
@@ -376,6 +409,77 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
     }
     return map;
   }, [entityDef]);
+  useEffect(() => {
+    let cancelled = false;
+    const fieldIds = Array.from(new Set([titleField, ...subtitleFields, ...badgeFields, groupBy].filter(Boolean)));
+    const lookupFieldDefs = fieldIds
+      .map((fieldId) => fieldMap[fieldId])
+      .filter((fieldDef) => fieldDef?.type === "lookup" && typeof fieldDef?.entity === "string");
+    if (!lookupFieldDefs.length) return undefined;
+    const pending = [];
+    for (const fieldDef of lookupFieldDefs) {
+      const targetEntityId = fieldDef.entity.startsWith("entity.") ? fieldDef.entity : `entity.${fieldDef.entity}`;
+      const labelField = typeof fieldDef.display_field === "string" ? fieldDef.display_field : null;
+      const ids = new Set(
+        (records || [])
+          .map((row) => String((row?.record || {})[fieldDef.id] || "").trim())
+          .filter(Boolean),
+      );
+      for (const recordId of ids) {
+        const cacheKey = `${fieldDef.id}:${recordId}`;
+        if (lookupLabels[cacheKey]) continue;
+        pending.push({ cacheKey, targetEntityId, recordId, labelField });
+      }
+    }
+    if (!pending.length) return undefined;
+    (async () => {
+      const resolved = await Promise.all(
+        pending.map(async ({ cacheKey, targetEntityId, recordId, labelField }) => {
+          try {
+            const res = await apiFetch(`/records/${encodeURIComponent(targetEntityId)}/${encodeURIComponent(recordId)}`);
+            const rec = res?.record || {};
+            const label = (labelField && rec?.[labelField]) || rec?.display_name || rec?.full_name || rec?.name || recordId;
+            return [cacheKey, String(label)];
+          } catch {
+            return [cacheKey, recordId];
+          }
+        }),
+      );
+      if (!cancelled) setLookupLabels((prev) => ({ ...prev, ...Object.fromEntries(resolved) }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [titleField, subtitleFields, badgeFields, groupBy, fieldMap, records, lookupLabels]);
+  useEffect(() => {
+    let cancelled = false;
+    const fieldIds = Array.from(new Set([titleField, ...subtitleFields, ...badgeFields, groupBy].filter(Boolean)));
+    const needsMembers = fieldIds.some((fieldId) => {
+      const type = String(fieldMap[fieldId]?.type || "").toLowerCase();
+      return type === "user" || type === "users";
+    });
+    if (!needsMembers) return undefined;
+    (async () => {
+      try {
+        const res = await apiFetch("/access/members");
+        const rows = Array.isArray(res?.members) ? res.members : [];
+        const next = {};
+        for (const member of rows) {
+          const userId = String(member?.user_id || "").trim();
+          if (!userId) continue;
+          const name = String(member?.name || "").trim();
+          const email = String(member?.email || "").trim();
+          next[userId] = name || email || userId;
+        }
+        if (!cancelled) setMemberLabels(next);
+      } catch {
+        if (!cancelled) setMemberLabels({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [titleField, subtitleFields, badgeFields, groupBy, fieldMap]);
   const priorityTone = (value) => {
     const v = String(value || "").toLowerCase();
     if (v === "urgent" || v === "critical") return "badge-error";
@@ -399,9 +503,26 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
   const formatCardValue = (fieldId, rawValue) => {
     if (rawValue === null || rawValue === undefined || rawValue === "") return "";
     const fieldDef = fieldMap[fieldId] || null;
+    const isUuidLike = typeof rawValue === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawValue.trim());
     if (fieldDef?.type === "enum") {
       const option = normalizeEnumOptions(fieldDef.options).find((opt) => String(opt.value) === String(rawValue));
       return String(option?.label ?? rawValue);
+    }
+    if (fieldDef?.type === "lookup") {
+      const cacheKey = `${fieldId}:${String(rawValue)}`;
+      return String(lookupLabels[cacheKey] || (isUuidLike ? "" : rawValue));
+    }
+    if (fieldDef?.type === "user") {
+      const userId = String(rawValue || "").trim();
+      return String(memberLabels[userId] || (isUuidLike ? "" : userId));
+    }
+    if (fieldDef?.type === "users") {
+      const values = Array.isArray(rawValue)
+        ? rawValue
+        : (typeof rawValue === "string"
+            ? rawValue.split(",").map((item) => item.trim()).filter(Boolean)
+            : []);
+      return values.map((userId) => memberLabels[userId] || userId).join(", ");
     }
     if (fieldDef?.type === "bool") return rawValue ? "Yes" : "No";
     if (fieldDef?.type === "date" || fieldDef?.type === "datetime") {
@@ -413,6 +534,7 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
       }
     }
     if (Array.isArray(rawValue)) return rawValue.map((item) => String(item ?? "")).filter(Boolean).join(", ");
+    if (isUuidLike) return "";
     return String(rawValue);
   };
 
@@ -482,7 +604,7 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
                 }}
               >
                 <div className="p-2 flex items-center justify-between gap-2">
-                  <div className="font-semibold truncate">{groupBy ? (groupKey ? humanize(groupKey) : "Ungrouped") : "All"}</div>
+                  <div className="font-semibold truncate">{groupBy ? (groupKey ? (formatCardValue(groupBy, groupKey) || humanize(groupKey)) : "Ungrouped") : "All"}</div>
                   <span className="badge badge-ghost badge-sm">{(grouped[groupKey] || []).length}</span>
                 </div>
                 <div className="p-[7px] space-y-3 overflow-y-auto min-h-0">
@@ -734,13 +856,110 @@ function layoutTimedEvents(events) {
   return { items, maxColumns };
 }
 
-function CalendarView({ view, records, onSelectRow }) {
+function CalendarView({ view, records, onSelectRow, entityDef }) {
   const calendar = view?.calendar || {};
   const titleField = calendar.title_field || view?.title_field || "id";
   const startField = calendar.date_start || view?.date_start;
   const endField = calendar.date_end || view?.date_end || startField;
   const allDayField = calendar.all_day_field || view?.all_day_field;
   const statusField = calendar.status_field || view?.status_field;
+  const fieldMap = useMemo(() => {
+    const map = {};
+    for (const field of entityDef?.fields || []) {
+      if (field?.id) map[field.id] = field;
+    }
+    return map;
+  }, [entityDef]);
+  const [lookupLabels, setLookupLabels] = useState({});
+  const [memberLabels, setMemberLabels] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    const fieldDef = fieldMap[titleField];
+    if (fieldDef?.type !== "lookup" || typeof fieldDef?.entity !== "string") return undefined;
+    const targetEntityId = fieldDef.entity.startsWith("entity.") ? fieldDef.entity : `entity.${fieldDef.entity}`;
+    const labelField = typeof fieldDef.display_field === "string" ? fieldDef.display_field : null;
+    const ids = new Set(
+      (records || [])
+        .map((row) => String((row?.record || {})[titleField] || "").trim())
+        .filter(Boolean),
+    );
+    const pending = [];
+    for (const recordId of ids) {
+      const cacheKey = `${titleField}:${recordId}`;
+      if (lookupLabels[cacheKey]) continue;
+      pending.push({ cacheKey, targetEntityId, recordId, labelField });
+    }
+    if (!pending.length) return undefined;
+    (async () => {
+      const resolved = await Promise.all(
+        pending.map(async ({ cacheKey, targetEntityId, recordId, labelField }) => {
+          try {
+            const res = await apiFetch(`/records/${encodeURIComponent(targetEntityId)}/${encodeURIComponent(recordId)}`);
+            const rec = res?.record || {};
+            const label = (labelField && rec?.[labelField]) || rec?.display_name || rec?.full_name || rec?.name || recordId;
+            return [cacheKey, String(label)];
+          } catch {
+            return [cacheKey, recordId];
+          }
+        }),
+      );
+      if (!cancelled) setLookupLabels((prev) => ({ ...prev, ...Object.fromEntries(resolved) }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fieldMap, titleField, records, lookupLabels]);
+  useEffect(() => {
+    let cancelled = false;
+    const fieldDef = fieldMap[titleField];
+    if (fieldDef?.type !== "user") return undefined;
+    (async () => {
+      try {
+        const res = await apiFetch("/access/members");
+        const rows = Array.isArray(res?.members) ? res.members : [];
+        const next = {};
+        for (const member of rows) {
+          const userId = String(member?.user_id || "").trim();
+          if (!userId) continue;
+          const name = String(member?.name || "").trim();
+          const email = String(member?.email || "").trim();
+          next[userId] = name || email || userId;
+        }
+        if (!cancelled) setMemberLabels(next);
+      } catch {
+        if (!cancelled) setMemberLabels({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fieldMap, titleField]);
+  const formatCalendarValue = (fieldId, rawValue) => {
+    if (rawValue === null || rawValue === undefined || rawValue === "") return "";
+    const fieldDef = fieldMap[fieldId] || null;
+    if (fieldDef?.type === "enum") {
+      const option = normalizeEnumOptions(fieldDef.options).find((opt) => String(opt.value) === String(rawValue));
+      return String(option?.label ?? rawValue);
+    }
+    if (fieldDef?.type === "lookup") {
+      const cacheKey = `${fieldId}:${String(rawValue)}`;
+      return String(lookupLabels[cacheKey] || rawValue);
+    }
+    if (fieldDef?.type === "user") {
+      const userId = String(rawValue || "").trim();
+      return String(memberLabels[userId] || userId);
+    }
+    if (fieldDef?.type === "bool") return rawValue ? "Yes" : "No";
+    if (fieldDef?.type === "date" || fieldDef?.type === "datetime") {
+      const parsed = toDateValue(rawValue);
+      if (parsed) {
+        return fieldDef.type === "date"
+          ? parsed.toLocaleDateString()
+          : parsed.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+      }
+    }
+    return String(rawValue);
+  };
   const allowedScales = new Set(["day", "week", "month", "year"]);
   const configuredScale = String(calendar.default_scale || view?.default_scale || "month").toLowerCase();
   const [scale, setScale] = useState(allowedScales.has(configuredScale) ? configuredScale : "month");
@@ -760,7 +979,8 @@ function CalendarView({ view, records, onSelectRow }) {
       const end = endRaw && endRaw >= start ? endRaw : start;
       const startDay = atMidnight(start);
       const endDay = atMidnight(end);
-      const eventTitle = String(rec?.[titleField] || row?.record_id || "Record");
+      const rawTitle = rec?.[titleField];
+      const eventTitle = formatCalendarValue(titleField, rawTitle) || String(row?.record_id || "Record");
       const allDay = Boolean(allDayField && rec?.[allDayField]);
 
       const walker = new Date(startDay);
@@ -792,7 +1012,7 @@ function CalendarView({ view, records, onSelectRow }) {
       }
     }
     return out;
-  }, [records, startField, endField, titleField, allDayField]);
+  }, [records, startField, endField, titleField, allDayField, lookupLabels, memberLabels]);
 
   const timedByDay = useMemo(() => {
     const out = new Map();
@@ -808,7 +1028,8 @@ function CalendarView({ view, records, onSelectRow }) {
       const end = endRaw && endRaw >= start ? endRaw : start;
       const startDay = atMidnight(start);
       const endDay = atMidnight(end);
-      const eventTitle = String(rec?.[titleField] || row?.record_id || "Record");
+      const rawTitle = rec?.[titleField];
+      const eventTitle = formatCalendarValue(titleField, rawTitle) || String(row?.record_id || "Record");
       const explicitAllDay = Boolean(allDayField && rec?.[allDayField]);
       const treatAsTimed = !explicitAllDay && (hasTimeComponent(start) || hasTimeComponent(end));
 
@@ -848,7 +1069,7 @@ function CalendarView({ view, records, onSelectRow }) {
       bucket.layout = layoutTimedEvents(bucket.raw);
     }
     return out;
-  }, [records, startField, endField, titleField, allDayField]);
+  }, [records, startField, endField, titleField, allDayField, lookupLabels, memberLabels]);
 
   function startOfWeek(value) {
     const d = atMidnight(value);
@@ -1721,6 +1942,9 @@ export default function ViewModesBlock({
       .catch(() => setGraphData([]));
   }, [activeView, entityFullId, searchText, searchFields, domain, graphGroupBy, graphMeasure, previewMode, refreshTick, externalRefreshTick]);
 
+  const [groupLookupLabels, setGroupLookupLabels] = useState({});
+  const [groupMemberLabels, setGroupMemberLabels] = useState({});
+
   const [pivotData, setPivotData] = useState(null);
   useEffect(() => {
     if (!entityFullId || previewMode) return;
@@ -1742,6 +1966,137 @@ export default function ViewModesBlock({
       })
       .catch(() => setPivotData(null));
   }, [activeMode, entityFullId, pivotRowGroupBy, pivotColGroupBy, pivotMeasure, searchText, searchFields, domain, previewMode, refreshTick, externalRefreshTick]);
+
+  const groupedFieldValues = useMemo(() => {
+    const out = [];
+    const pushValues = (fieldId, values) => {
+      if (!fieldId) return;
+      const fieldDef = fieldIndex[fieldId];
+      if (!fieldDef) return;
+      const seen = new Set();
+      const cleaned = [];
+      for (const value of values || []) {
+        const key = String(value ?? "").trim();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        cleaned.push(key);
+      }
+      if (!cleaned.length) return;
+      out.push({ fieldId, fieldDef, values: cleaned });
+    };
+    if (graphGroupBy && Array.isArray(graphData) && graphData.length) {
+      pushValues(
+        graphGroupBy,
+        graphData.map((item) => item?.key ?? item?.group ?? item?.label ?? ""),
+      );
+    }
+    if (activeMode === "pivot" && pivotData) {
+      if (pivotRowGroupBy && Array.isArray(pivotData.rows) && pivotData.rows.length) {
+        pushValues(
+          pivotRowGroupBy,
+          pivotData.rows.map((row) => row?.key ?? row?.label ?? ""),
+        );
+      }
+      if (pivotColGroupBy && Array.isArray(pivotData.cols) && pivotData.cols.length) {
+        pushValues(
+          pivotColGroupBy,
+          pivotData.cols.map((col) => col?.key ?? col?.label ?? ""),
+        );
+      }
+    }
+    return out;
+  }, [fieldIndex, graphGroupBy, graphData, activeMode, pivotData, pivotRowGroupBy, pivotColGroupBy]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const lookupGroups = groupedFieldValues.filter(({ fieldDef }) => fieldDef?.type === "lookup" && typeof fieldDef?.entity === "string");
+    if (!lookupGroups.length) return undefined;
+    const pending = [];
+    for (const { fieldId, fieldDef, values } of lookupGroups) {
+      const targetEntityId = fieldDef.entity.startsWith("entity.") ? fieldDef.entity : `entity.${fieldDef.entity}`;
+      const labelField = typeof fieldDef.display_field === "string" ? fieldDef.display_field : null;
+      for (const recordId of values) {
+        const cacheKey = `${fieldId}:${recordId}`;
+        if (groupLookupLabels[cacheKey]) continue;
+        pending.push({ cacheKey, targetEntityId, recordId, labelField });
+      }
+    }
+    if (!pending.length) return undefined;
+    (async () => {
+      const resolved = await Promise.all(
+        pending.map(async ({ cacheKey, targetEntityId, recordId, labelField }) => {
+          try {
+            const res = await apiFetch(`/records/${encodeURIComponent(targetEntityId)}/${encodeURIComponent(recordId)}`);
+            const rec = res?.record || {};
+            const label = (labelField && rec?.[labelField]) || rec?.display_name || rec?.full_name || rec?.name || "";
+            return [cacheKey, String(label || "")];
+          } catch {
+            return [cacheKey, ""];
+          }
+        }),
+      );
+      if (!cancelled) setGroupLookupLabels((prev) => ({ ...prev, ...Object.fromEntries(resolved) }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [groupedFieldValues, groupLookupLabels]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const requiresMemberLabels = groupedFieldValues.some(({ fieldDef }) => fieldDef?.type === "user");
+    if (!requiresMemberLabels) return undefined;
+    (async () => {
+      try {
+        const res = await apiFetch("/access/members");
+        const rows = Array.isArray(res?.members) ? res.members : [];
+        const next = {};
+        for (const member of rows) {
+          const userId = String(member?.user_id || "").trim();
+          if (!userId) continue;
+          const name = String(member?.name || "").trim();
+          const email = String(member?.email || "").trim();
+          next[userId] = name || email || "";
+        }
+        if (!cancelled) setGroupMemberLabels(next);
+      } catch {
+        if (!cancelled) setGroupMemberLabels({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [groupedFieldValues]);
+
+  const presentedGraphData = useMemo(() => {
+    const fieldDef = fieldIndex[graphGroupBy] || null;
+    return (Array.isArray(graphData) ? graphData : []).map((item) => {
+      const rawKey = item?.key ?? item?.group ?? item?.label ?? "";
+      const label = formatGroupedFieldValue(fieldDef, rawKey, groupLookupLabels, groupMemberLabels);
+      return { ...item, label };
+    });
+  }, [fieldIndex, graphGroupBy, graphData, groupLookupLabels, groupMemberLabels]);
+
+  const presentedPivotData = useMemo(() => {
+    if (!pivotData) return null;
+    const rowFieldDef = fieldIndex[pivotRowGroupBy] || null;
+    const colFieldDef = fieldIndex[pivotColGroupBy] || null;
+    return {
+      ...pivotData,
+      rows: Array.isArray(pivotData.rows)
+        ? pivotData.rows.map((row) => ({
+            ...row,
+            label: formatGroupedFieldValue(rowFieldDef, row?.key ?? row?.label ?? "", groupLookupLabels, groupMemberLabels),
+          }))
+        : [],
+      cols: Array.isArray(pivotData.cols)
+        ? pivotData.cols.map((col) => ({
+            ...col,
+            label: formatGroupedFieldValue(colFieldDef, col?.key ?? col?.label ?? "", groupLookupLabels, groupMemberLabels),
+          }))
+        : [],
+    };
+  }, [pivotData, fieldIndex, pivotRowGroupBy, pivotColGroupBy, groupLookupLabels, groupMemberLabels]);
 
   function updateParam(key, value) {
     if (!setSearchParams) return;
@@ -2715,6 +3070,7 @@ export default function ViewModesBlock({
             <CalendarView
               view={activeView}
               records={records}
+              entityDef={entityDef}
               onSelectRow={(row) => {
                 if (!openRecordTarget) return;
                 const recordId = row.record_id || row.record?.id;
@@ -2728,13 +3084,13 @@ export default function ViewModesBlock({
 
         {showGraphMode && (
           <div className="h-full min-h-0">
-            <GraphView data={graphData} type={graphType} />
+            <GraphView data={presentedGraphData} type={graphType} />
           </div>
         )}
 
         {activeMode === "pivot" && (
           <div className="h-full min-h-0">
-            <PivotView data={pivotData} measure={pivotMeasure} />
+            <PivotView data={presentedPivotData} measure={pivotMeasure} />
           </div>
         )}
       </div>

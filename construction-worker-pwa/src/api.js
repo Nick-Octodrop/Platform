@@ -80,6 +80,42 @@ export async function getProjects() {
   return Array.isArray(data?.records) ? data.records : [];
 }
 
+export async function getWorkerAssignments(workerRecordId) {
+  if (!workerRecordId) return [];
+  const domain = encodeURIComponent(
+    JSON.stringify({
+      op: "and",
+      conditions: [
+        {
+          op: "eq",
+          field: "construction_worker_assignment.worker_id",
+          value: workerRecordId,
+        },
+        {
+          op: "eq",
+          field: "construction_worker_assignment.active",
+          value: true,
+        },
+      ],
+    }),
+  );
+  const fields = encodeURIComponent(
+    [
+      "construction_worker_assignment.worker_id",
+      "construction_worker_assignment.project_id",
+      "construction_worker_assignment.site_id",
+      "construction_worker_assignment.assignment_role",
+      "construction_worker_assignment.start_date",
+      "construction_worker_assignment.end_date",
+      "construction_worker_assignment.active",
+    ].join(","),
+  );
+  const data = await apiFetch(
+    `/records/entity.construction_worker_assignment?limit=100&fields=${fields}&domain=${domain}`,
+  );
+  return Array.isArray(data?.records) ? data.records : [];
+}
+
 export async function findWorkerForUser(userId) {
   const domain = encodeURIComponent(
     JSON.stringify({

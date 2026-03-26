@@ -4,7 +4,7 @@
     "id": "construction_core",
     "key": "construction_core",
     "name": "Core",
-    "version": "2.2.0",
+    "version": "2.2.1",
     "description": "Shared construction master data for sites, crews, and cost codes.",
     "category": "Construction",
     "icon_key": "lucide:Blocks"
@@ -49,11 +49,11 @@
         { "id": "construction_site.id", "type": "uuid", "label": "ID", "readonly": true },
         { "id": "construction_site.name", "type": "string", "label": "Site Name", "required": true },
         { "id": "construction_site.code", "type": "string", "label": "Site Code" },
-        { "id": "construction_site.address", "type": "text", "label": "Address" },
+        { "id": "construction_site.address", "type": "text", "label": "Address", "required_when": { "op": "eq", "field": "construction_site.status", "value": "active" } },
         { "id": "construction_site.city", "type": "string", "label": "City" },
         { "id": "construction_site.region", "type": "string", "label": "Region / State" },
         { "id": "construction_site.country", "type": "string", "label": "Country" },
-        { "id": "construction_site.supervisor_id", "type": "user", "label": "Site Supervisor" },
+        { "id": "construction_site.supervisor_id", "type": "user", "label": "Site Supervisor", "required_when": { "op": "eq", "field": "construction_site.status", "value": "active" } },
         { "id": "construction_site.phone", "type": "string", "label": "Phone" },
         {
           "id": "construction_site.status",
@@ -76,13 +76,14 @@
         { "id": "construction_crew.id", "type": "uuid", "label": "ID", "readonly": true },
         { "id": "construction_crew.name", "type": "string", "label": "Crew Name", "required": true },
         { "id": "construction_crew.code", "type": "string", "label": "Crew Code" },
-        { "id": "construction_crew.foreman_user_id", "type": "user", "label": "Foreman" },
+        { "id": "construction_crew.foreman_user_id", "type": "user", "label": "Foreman", "required_when": { "op": "eq", "field": "construction_crew.status", "value": "active" } },
         {
           "id": "construction_crew.default_site_id",
           "type": "lookup",
           "label": "Default Site",
           "entity": "entity.construction_site",
-          "display_field": "construction_site.name"
+          "display_field": "construction_site.name",
+          "required_when": { "op": "eq", "field": "construction_crew.status", "value": "active" }
         },
         {
           "id": "construction_crew.status",
@@ -185,6 +186,44 @@
         "field": "construction_site.status",
         "value": "inactive"
       }
+    },
+    {
+      "id": "action.construction_crew_deactivate",
+      "kind": "update_record",
+      "label": "Deactivate Crew",
+      "entity_id": "entity.construction_crew",
+      "patch": {
+        "construction_crew.status": "inactive"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "construction_crew.status",
+        "value": "active"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "construction_crew.status",
+        "value": "active"
+      }
+    },
+    {
+      "id": "action.construction_crew_activate",
+      "kind": "update_record",
+      "label": "Activate Crew",
+      "entity_id": "entity.construction_crew",
+      "patch": {
+        "construction_crew.status": "active"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "construction_crew.status",
+        "value": "inactive"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "construction_crew.status",
+        "value": "inactive"
+      }
     }
   ],
   "triggers": [
@@ -273,7 +312,6 @@
             "construction_site.country",
             "construction_site.supervisor_id",
             "construction_site.phone",
-            "construction_site.status",
             "construction_site.address"
           ]
         },
@@ -286,6 +324,7 @@
         }
       ],
       "header": {
+        "statusbar": { "field_id": "construction_site.status" },
         "secondary_actions": [
           { "action_id": "action.construction_site_activate" },
           { "action_id": "action.construction_site_deactivate" }
@@ -344,8 +383,7 @@
       "card": {
         "title_field": "construction_crew.name",
         "subtitle_fields": [
-          "construction_crew.code",
-          "construction_crew.default_site_id"
+          "construction_crew.code"
         ],
         "badge_fields": [
           "construction_crew.status"
@@ -366,8 +404,7 @@
             "construction_crew.name",
             "construction_crew.code",
             "construction_crew.foreman_user_id",
-            "construction_crew.default_site_id",
-            "construction_crew.status"
+            "construction_crew.default_site_id"
           ]
         },
         {
@@ -379,6 +416,11 @@
         }
       ],
       "header": {
+        "statusbar": { "field_id": "construction_crew.status" },
+        "secondary_actions": [
+          { "action_id": "action.construction_crew_activate" },
+          { "action_id": "action.construction_crew_deactivate" }
+        ],
         "tabs": {
           "style": "lifted",
           "default_tab": "general_tab",
@@ -512,8 +554,7 @@
                 { "mode": "kanban", "target": "view:construction_site.kanban", "default_group_by": "construction_site.country" },
                 { "mode": "graph", "target": "view:construction_site.graph" },
                 { "mode": "pivot", "target": "view:construction_site.list", "default_group_by": "construction_site.country" }
-              ],
-              "default_filter_id": "active"
+              ]
             }
           ]
         }
@@ -590,7 +631,7 @@
               "default_mode": "list",
               "modes": [
                 { "mode": "list", "target": "view:construction_crew.list" },
-                { "mode": "kanban", "target": "view:construction_crew.kanban", "default_group_by": "construction_crew.default_site_id" },
+                { "mode": "kanban", "target": "view:construction_crew.kanban", "default_group_by": "construction_crew.status" },
                 { "mode": "graph", "target": "view:construction_crew.graph" },
                 { "mode": "pivot", "target": "view:construction_crew.list", "default_group_by": "construction_crew.default_site_id" }
               ]
@@ -727,6 +768,26 @@
             }
           ]
         }
+      ]
+    }
+  ],
+  "workflows": [
+    {
+      "id": "workflow.construction_site_status",
+      "entity": "entity.construction_site",
+      "status_field": "construction_site.status",
+      "states": [
+        { "id": "active", "label": "Active" },
+        { "id": "inactive", "label": "Inactive" }
+      ]
+    },
+    {
+      "id": "workflow.construction_crew_status",
+      "entity": "entity.construction_crew",
+      "status_field": "construction_crew.status",
+      "states": [
+        { "id": "active", "label": "Active" },
+        { "id": "inactive", "label": "Inactive" }
       ]
     }
   ],

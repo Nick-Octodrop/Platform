@@ -11,9 +11,9 @@ export default defineConfig({
       includeAssets: ["icons/icon.svg", "icons/maskable-icon.svg"],
       manifest: {
         id: "/",
-        name: "Octodrop Site Tool",
+        name: "Outil Chantier Octodrop",
         short_name: "Octodrop",
-        description: "Construction worker field tool for clock-in and material logging.",
+        description: "Outil terrain pour ouvriers du batiment, pointage et saisie des materiaux.",
         theme_color: "#206aff",
         background_color: "#ffffff",
         display: "standalone",

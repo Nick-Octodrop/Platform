@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { apiFetch, compileManifest, getManifest, getPageBootstrap } from "../api";
 import { realtimeEnabled, supabase } from "../supabase";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
@@ -228,6 +228,7 @@ export default function AppShell({
   const [previewSearchParams, setPreviewSearchParams] = useState(new URLSearchParams());
   const [previewStoreVersion, setPreviewStoreVersion] = useState(0);
   const previewStoreRef = useRef({ entities: new Map() });
+  const location = useLocation();
   const navigate = useNavigate();
   const { pushToast } = useToast();
   const [manifest, setManifest] = useState(null);
@@ -552,6 +553,7 @@ export default function AppShell({
         displayField: resolvedDisplayField,
         initialValue,
         defaults: defaults && typeof defaults === "object" ? defaults : null,
+        returnRoute: `${location.pathname}${location.search || ""}`,
         resolve,
         manifest: modalManifest,
         compiled: modalCompiled,
@@ -1041,6 +1043,8 @@ export default function AppShell({
               }
             : null
         }
+        moduleId={moduleId}
+        renderAnyView={renderView}
       />
     );
   }
@@ -1091,7 +1095,14 @@ export default function AppShell({
 
   function closeCreateModal(result = null) {
     const resolve = createModal?.resolve;
+    const returnRoute = createModal?.returnRoute || "";
     setCreateModal(null);
+    if (!previewMode && returnRoute) {
+      const currentRoute = `${location.pathname}${location.search || ""}`;
+      if (currentRoute !== returnRoute) {
+        navigate(returnRoute, { replace: true });
+      }
+    }
     resolve?.(result);
   }
 
@@ -1309,6 +1320,7 @@ export default function AppShell({
 
 function AppView({
   view,
+  moduleId,
   manifest,
   compiled,
   recordId,
@@ -1335,6 +1347,7 @@ function AppView({
   previewMode = false,
   previewAllowNav = false,
   previewStore = null,
+  renderAnyView = null,
 }) {
   const { pushToast } = useToast();
   const [records, setRecords] = useState([]);
@@ -2433,6 +2446,30 @@ function AppView({
               previewMode={previewMode && !previewAllowNav}
               canCreateLookup={(lookupEntityId) => canWriteRecords && Boolean(canCreateLookup?.(lookupEntityId))}
               onLookupCreate={onLookupCreate}
+              renderBlocks={(blocks, nestedRecordContext = null) => (
+                <ContentBlocksRenderer
+                  blocks={blocks}
+                  renderView={renderAnyView}
+                  recordId={nestedRecordContext?.recordId || effectiveRecordId || null}
+                  searchParams={searchParams}
+                  setSearchParams={setSearchParams}
+                  manifest={manifest}
+                  moduleId={moduleId}
+                  actionsMap={actionsMap}
+                  onNavigate={onNavigate}
+                  onRunAction={onRunAction}
+                  onConfirm={onConfirm}
+                  onPrompt={onPrompt}
+                  onLookupCreate={onLookupCreate}
+                  externalRefreshTick={refreshTick}
+                  previewMode={previewMode}
+                  canWriteRecords={canWriteRecords}
+                  bootstrap={bootstrap}
+                  bootstrapVersion={bootstrapVersion}
+                  bootstrapLoading={bootstrapLoading}
+                  recordContext={nestedRecordContext}
+                />
+              )}
             />
           )}
         </div>

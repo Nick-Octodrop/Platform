@@ -4,7 +4,7 @@
     "id": "construction_site_ops",
     "key": "construction_site_ops",
     "name": "Site Operations",
-    "version": "2.2.0",
+    "version": "2.2.1",
     "description": "Daily reports and site issues for field coordination.",
     "category": "Construction",
     "icon_key": "lucide:ClipboardList"
@@ -45,13 +45,13 @@
   "entities": [
     {
       "id": "entity.construction_daily_report",
-      "display_field": "construction_daily_report.report_date",
+      "display_field": "construction_daily_report.summary",
       "fields": [
         { "id": "construction_daily_report.id", "type": "uuid", "label": "ID", "readonly": true },
         { "id": "construction_daily_report.project_id", "type": "lookup", "label": "Project", "entity": "entity.construction_project", "display_field": "construction_project.name", "required": true },
         { "id": "construction_daily_report.site_id", "type": "lookup", "label": "Site", "entity": "entity.construction_site", "display_field": "construction_site.name" },
         { "id": "construction_daily_report.report_date", "type": "date", "label": "Report Date", "required": true },
-        { "id": "construction_daily_report.supervisor_id", "type": "user", "label": "Supervisor" },
+        { "id": "construction_daily_report.supervisor_id", "type": "user", "label": "Supervisor", "required_when": { "op": "in", "field": "construction_daily_report.status", "value": ["submitted", "approved"] } },
         {
           "id": "construction_daily_report.weather",
           "type": "enum",
@@ -65,7 +65,7 @@
             { "value": "other", "label": "Other" }
           ]
         },
-        { "id": "construction_daily_report.summary", "type": "text", "label": "Summary" },
+        { "id": "construction_daily_report.summary", "type": "text", "label": "Summary", "required_when": { "op": "in", "field": "construction_daily_report.status", "value": ["submitted", "approved"] } },
         { "id": "construction_daily_report.blockers", "type": "text", "label": "Blockers / Delays" },
         { "id": "construction_daily_report.safety_notes", "type": "text", "label": "Safety Notes" },
         { "id": "construction_daily_report.photos", "type": "attachments", "label": "Photos" },
@@ -130,10 +130,10 @@
             { "value": "closed", "label": "Closed" }
           ]
         },
-        { "id": "construction_issue.owner_id", "type": "user", "label": "Owner" },
+        { "id": "construction_issue.owner_id", "type": "user", "label": "Owner", "required_when": { "op": "in", "field": "construction_issue.status", "value": ["in_progress", "resolved", "closed"] } },
         { "id": "construction_issue.reported_by_worker_id", "type": "lookup", "label": "Reported By Worker", "entity": "entity.construction_worker", "display_field": "construction_worker.full_name" },
         { "id": "construction_issue.due_date", "type": "date", "label": "Due Date" },
-        { "id": "construction_issue.description", "type": "text", "label": "Description" },
+        { "id": "construction_issue.description", "type": "text", "label": "Description", "required_when": { "op": "in", "field": "construction_issue.status", "value": ["in_progress", "resolved", "closed"] } },
         { "id": "construction_issue.photos", "type": "attachments", "label": "Photos" },
         { "id": "construction_issue.created_at", "type": "datetime", "label": "Created At" }
       ]
@@ -161,6 +161,15 @@
       "visible_when": { "op": "eq", "field": "construction_daily_report.status", "value": "submitted" }
     },
     {
+      "id": "action.daily_report_reopen",
+      "kind": "update_record",
+      "label": "Reopen",
+      "entity_id": "entity.construction_daily_report",
+      "patch": { "construction_daily_report.status": "draft" },
+      "enabled_when": { "op": "in", "field": "construction_daily_report.status", "value": ["submitted", "approved"] },
+      "visible_when": { "op": "in", "field": "construction_daily_report.status", "value": ["submitted", "approved"] }
+    },
+    {
       "id": "action.issue_start",
       "kind": "update_record",
       "label": "Start",
@@ -186,6 +195,15 @@
       "patch": { "construction_issue.status": "closed" },
       "enabled_when": { "op": "eq", "field": "construction_issue.status", "value": "resolved" },
       "visible_when": { "op": "eq", "field": "construction_issue.status", "value": "resolved" }
+    },
+    {
+      "id": "action.issue_reopen",
+      "kind": "update_record",
+      "label": "Reopen",
+      "entity_id": "entity.construction_issue",
+      "patch": { "construction_issue.status": "open" },
+      "enabled_when": { "op": "in", "field": "construction_issue.status", "value": ["resolved", "closed"] },
+      "visible_when": { "op": "in", "field": "construction_issue.status", "value": ["resolved", "closed"] }
     }
   ],
   "views": [
@@ -217,7 +235,7 @@
       "kind": "calendar",
       "entity": "entity.construction_daily_report",
       "calendar": {
-        "title_field": "construction_daily_report.project_id",
+        "title_field": "construction_daily_report.summary",
         "date_start": "construction_daily_report.report_date",
         "color_field": "construction_daily_report.status",
         "default_scale": "month"
@@ -239,7 +257,6 @@
             "construction_daily_report.report_date",
             "construction_daily_report.supervisor_id",
             "construction_daily_report.weather",
-            "construction_daily_report.status",
             "construction_daily_report.summary",
             "construction_daily_report.blockers",
             "construction_daily_report.safety_notes"
@@ -257,7 +274,8 @@
         "statusbar": { "field_id": "construction_daily_report.status" },
         "secondary_actions": [
           { "action_id": "action.daily_report_submit" },
-          { "action_id": "action.daily_report_approve" }
+          { "action_id": "action.daily_report_approve" },
+          { "action_id": "action.daily_report_reopen" }
         ],
         "tabs": {
           "style": "lifted",
@@ -310,13 +328,12 @@
       "card": {
         "title_field": "construction_issue.title",
         "subtitle_fields": [
-          "construction_issue.project_id",
-          "construction_issue.issue_type"
+          "construction_issue.issue_type",
+          "construction_issue.due_date"
         ],
         "badge_fields": [
           "construction_issue.priority",
-          "construction_issue.status",
-          "construction_issue.owner_id"
+          "construction_issue.status"
         ]
       }
     },
@@ -337,7 +354,6 @@
             "construction_issue.title",
             "construction_issue.issue_type",
             "construction_issue.priority",
-            "construction_issue.status",
             "construction_issue.owner_id",
             "construction_issue.reported_by_worker_id",
             "construction_issue.due_date",
@@ -357,7 +373,8 @@
         "secondary_actions": [
           { "action_id": "action.issue_start" },
           { "action_id": "action.issue_resolve" },
-          { "action_id": "action.issue_close" }
+          { "action_id": "action.issue_close" },
+          { "action_id": "action.issue_reopen" }
         ],
         "tabs": {
           "style": "lifted",
@@ -380,6 +397,29 @@
       }
     }
   ],
+  "workflows": [
+    {
+      "id": "workflow.construction_daily_report_status",
+      "entity": "entity.construction_daily_report",
+      "status_field": "construction_daily_report.status",
+      "states": [
+        { "id": "draft", "label": "Draft" },
+        { "id": "submitted", "label": "Submitted" },
+        { "id": "approved", "label": "Approved" }
+      ]
+    },
+    {
+      "id": "workflow.construction_issue_status",
+      "entity": "entity.construction_issue",
+      "status_field": "construction_issue.status",
+      "states": [
+        { "id": "open", "label": "Open" },
+        { "id": "in_progress", "label": "In Progress" },
+        { "id": "resolved", "label": "Resolved" },
+        { "id": "closed", "label": "Closed" }
+      ]
+    }
+  ],
   "pages": [
     {
       "id": "construction_daily_report.list_page",
@@ -400,8 +440,7 @@
                 { "mode": "list", "target": "view:construction_daily_report.list" },
                 { "mode": "graph", "target": "view:construction_daily_report.graph" },
                 { "mode": "pivot", "target": "view:construction_daily_report.list", "default_group_by": "construction_daily_report.project_id" }
-              ],
-              "default_filter_id": "submitted"
+              ]
             }
           ]
         }
@@ -472,8 +511,7 @@
                 { "mode": "list", "target": "view:construction_issue.list" },
                 { "mode": "graph", "target": "view:construction_issue.graph" },
                 { "mode": "pivot", "target": "view:construction_issue.list", "default_group_by": "construction_issue.issue_type" }
-              ],
-              "default_filter_id": "open"
+              ]
             }
           ]
         }

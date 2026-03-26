@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { LogOut, Menu, Pencil, Trash2, X } from "lucide-react";
+import { ChevronLeft, LogOut, Menu, Pencil, Trash2, X } from "lucide-react";
 import { supabase } from "./supabase.js";
 import {
   createMaterialLog,
@@ -10,6 +10,7 @@ import {
   getActiveWorkspaceId,
   getProjectMaterialLogs,
   getProjects,
+  getWorkerAssignments,
   getUiPrefs,
   nowIso,
   todayDate,
@@ -23,18 +24,18 @@ const INSTALL_HINT_DISMISSED_KEY = "construction_worker_pwa:install_hint_dismiss
 const PRIMARY_COLOR = "#206aff";
 const PRIMARY_TEXT = "#ffffff";
 const MATERIALS = [
-  { value: "cement", label: "Cement", unit: "bag" },
-  { value: "sand", label: "Sand", unit: "m3" },
-  { value: "steel", label: "Steel", unit: "kg" },
-  { value: "blocks", label: "Blocks", unit: "piece" },
+  { value: "cement", label: "Ciment", unit: "bag" },
+  { value: "sand", label: "Sable", unit: "m3" },
+  { value: "steel", label: "Acier", unit: "kg" },
+  { value: "blocks", label: "Blocs", unit: "piece" },
 ];
 
 const UNITS = [
-  { value: "bag", label: "Bag" },
+  { value: "bag", label: "Sac" },
   { value: "kg", label: "kg" },
-  { value: "ton", label: "Ton" },
+  { value: "ton", label: "Tonne" },
   { value: "m3", label: "m3" },
-  { value: "piece", label: "Unit" },
+  { value: "piece", label: "Unite" },
 ];
 
 const QUICK_ADD = [1, 5, 10, 20];
@@ -57,11 +58,11 @@ function defaultUnitForMaterial(materialType) {
 function unitLabel(unit, quantity = "") {
   const qty = Number(quantity);
   const plural = Number.isFinite(qty) && qty > 1;
-  if (unit === "bag") return plural ? "bags" : "bag";
-  if (unit === "piece") return plural ? "units" : "unit";
+  if (unit === "bag") return plural ? "sacs" : "sac";
+  if (unit === "piece") return plural ? "unites" : "unite";
   if (unit === "kg") return "kg";
   if (unit === "m3") return "m3";
-  if (unit === "ton") return plural ? "tons" : "ton";
+  if (unit === "ton") return plural ? "tonnes" : "tonne";
   return unit || "";
 }
 
@@ -121,6 +122,7 @@ export default function App() {
   const [success, setSuccess] = useState("");
   const [worker, setWorker] = useState(null);
   const [projects, setProjects] = useState([]);
+  const [assignments, setAssignments] = useState([]);
   const [openEntry, setOpenEntry] = useState(null);
   const [materialLogs, setMaterialLogs] = useState([]);
   const [email, setEmail] = useState("");
@@ -139,6 +141,7 @@ export default function App() {
   const [installHintDismissed, setInstallHintDismissed] = useState(false);
   const [installPromptVisible, setInstallPromptVisible] = useState(false);
   const [updatePromptVisible, setUpdatePromptVisible] = useState(false);
+  const [projectSelectionComplete, setProjectSelectionComplete] = useState(false);
 
   useEffect(() => {
     applyTheme(getInitialTheme());
@@ -247,6 +250,7 @@ export default function App() {
     if (!userId) {
       setWorker(null);
       setProjects([]);
+      setAssignments([]);
       setOpenEntry(null);
       setMaterialLogs([]);
       setExpandedMaterialId("");
@@ -258,34 +262,45 @@ export default function App() {
     setLoading(true);
     setError("");
     try {
-      const [nextWorker, nextProjects] = await Promise.all([findWorkerForUser(userId), getProjects()]);
+      const [nextWorker, allProjects] = await Promise.all([findWorkerForUser(userId), getProjects()]);
       if (!nextWorker) {
         setWorker(null);
         setProjects([]);
+        setAssignments([]);
         setOpenEntry(null);
         setMaterialLogs([]);
         setExpandedMaterialId("");
         setEditingMaterialId("");
-        setError("No worker account linked.");
+        setError("Aucun compte ouvrier lie.");
         return;
       }
 
+      const nextAssignments = await getWorkerAssignments(nextWorker.record_id);
       const nextOpen = await findOpenTimeEntry(nextWorker.record_id);
+      const assignmentProjectIds = Array.from(
+        new Set(
+          nextAssignments
+            .map((assignment) => assignment.record?.["construction_worker_assignment.project_id"])
+            .filter(Boolean),
+        ),
+      );
+      const nextProjects = allProjects.filter((project) => assignmentProjectIds.includes(project.record_id));
       const savedProjectId =
         typeof window !== "undefined" ? window.localStorage.getItem(SITE_STORAGE_KEY) || "" : "";
       const nextDefaultProjectId =
         nextOpen?.record?.["time_entry.project_id"] ||
         (savedProjectId && nextProjects.some((project) => project.record_id === savedProjectId) ? savedProjectId : "") ||
-        nextWorker.record?.["construction_worker.default_project_id"] ||
         nextProjects[0]?.record_id ||
         "";
 
       setWorker(nextWorker);
       setProjects(nextProjects);
+      setAssignments(nextAssignments);
       setOpenEntry(nextOpen);
       setSelectedProjectId((current) => current || nextDefaultProjectId);
+      setProjectSelectionComplete(Boolean(nextOpen) || nextProjects.length <= 1);
     } catch (err) {
-      setError(err.message || "Unable to load your worker profile.");
+      setError(err.message || "Impossible de charger votre profil ouvrier.");
     } finally {
       setLoading(false);
       setWorkerContextLoading(false);
@@ -341,17 +356,20 @@ export default function App() {
   const needsSitePicker = projects.length > 1;
   const currentProject =
     projects.find((item) => item.record_id === selectedProjectId) ||
-    projects.find((item) => item.record_id === worker?.record?.["construction_worker.default_project_id"]) ||
     projects[0] ||
     null;
+  const activeProjectId = currentProject?.record_id || "";
+  const selectedAssignment =
+    assignments.find((item) => item.record?.["construction_worker_assignment.project_id"] === activeProjectId) || null;
   const currentSiteName = currentProject?.record?.["construction_project.name"] || "";
-  const activeProjectId = selectedProjectId || currentProject?.record_id || "";
   const activeSiteId =
+    selectedAssignment?.record?.["construction_worker_assignment.site_id"] ||
     currentProject?.record?.["construction_project.site_id"] ||
     worker?.record?.["construction_worker.default_site_id"] ||
     "";
   const activeCrewId = worker?.record?.["construction_worker.crew_id"] || "";
   const isClockedIn = Boolean(openEntry);
+  const needsProjectSelection = !isClockedIn && needsSitePicker && !projectSelectionComplete;
   const showUnitSelect = materialType === "other";
   const liveTimer = formatElapsed(openEntry?.record?.["time_entry.check_in_at"], timerTick);
 
@@ -389,7 +407,7 @@ export default function App() {
       });
       if (authError) throw authError;
     } catch (err) {
-      setError(err.message || "Unable to sign in.");
+      setError(err.message || "Connexion impossible.");
     } finally {
       setLoading(false);
     }
@@ -402,18 +420,20 @@ export default function App() {
       await supabase.auth.signOut();
       setWorker(null);
       setProjects([]);
+      setAssignments([]);
       setOpenEntry(null);
       setMaterialLogs([]);
       setExpandedMaterialId("");
       setEditingMaterialId("");
       setSelectedProjectId("");
+      setProjectSelectionComplete(false);
       setMenuOpen(false);
       setMaterialModalOpen(false);
       if (typeof window !== "undefined") {
         window.localStorage.removeItem(SITE_STORAGE_KEY);
       }
     } catch (err) {
-      setError(err.message || "Unable to sign out.");
+      setError(err.message || "Deconnexion impossible.");
     } finally {
       setLoading(false);
     }
@@ -422,7 +442,7 @@ export default function App() {
   async function handleClockAction() {
     if (!worker?.record_id) return;
     if (!openEntry && !activeProjectId) {
-      setError("No site assigned.");
+      setError("Aucun chantier assigne.");
       return;
     }
 
@@ -451,7 +471,7 @@ export default function App() {
           "time_entry.status": "closed",
           "time_entry.source": before["time_entry.source"] || "pwa",
         });
-        setSuccess("Clocked out");
+        setSuccess("Sortie enregistree.");
       } else {
         await createTimeEntry({
           "time_entry.project_id": activeProjectId,
@@ -463,11 +483,11 @@ export default function App() {
           "time_entry.status": "open",
           "time_entry.source": "pwa",
         });
-        setSuccess("Clocked in");
+        setSuccess("Entree enregistree.");
       }
       await loadWorkerContext(session);
     } catch (err) {
-      setError(err.message || "Unable to save.");
+      setError(err.message || "Impossible d'enregistrer.");
     } finally {
       setLoading(false);
     }
@@ -483,7 +503,7 @@ export default function App() {
     event.preventDefault();
     if (!worker?.record_id) return;
     if (!activeProjectId) {
-      setError("No site assigned.");
+      setError("Aucun chantier assigne.");
       return;
     }
 
@@ -493,7 +513,7 @@ export default function App() {
     try {
       const quantity = Number(materialQty);
       if (!Number.isFinite(quantity) || quantity <= 0) {
-        throw new Error("Enter a quantity.");
+        throw new Error("Saisissez une quantite.");
       }
       const record = {
         "material_log.project_id": activeProjectId,
@@ -510,10 +530,10 @@ export default function App() {
           ...record,
           "material_log.id": editingMaterialId,
         });
-        setSuccess("Material updated");
+        setSuccess("Materiau mis a jour.");
       } else {
         await createMaterialLog(record);
-        setSuccess("Material added");
+        setSuccess("Materiau ajoute.");
       }
       setMaterialQty("");
       setMaterialType("cement");
@@ -522,7 +542,7 @@ export default function App() {
       setMaterialModalOpen(false);
       setMaterialLogs(await getProjectMaterialLogs(activeProjectId));
     } catch (err) {
-      setError(err.message || "Unable to save.");
+      setError(err.message || "Impossible d'enregistrer.");
     } finally {
       setLoading(false);
     }
@@ -567,10 +587,10 @@ export default function App() {
     try {
       await deleteMaterialLog(log.record_id);
       setExpandedMaterialId((current) => (current === log.record_id ? "" : current));
-      setSuccess("Material deleted");
+      setSuccess("Materiau supprime.");
       setMaterialLogs(await getProjectMaterialLogs(activeProjectId));
     } catch (err) {
-      setError(err.message || "Unable to delete.");
+      setError(err.message || "Suppression impossible.");
     } finally {
       setLoading(false);
     }
@@ -613,13 +633,13 @@ export default function App() {
     return (
       <main className="mx-auto flex min-h-screen max-w-sm items-center justify-center px-5 pb-8 pt-4">
         <form className="w-full space-y-4" onSubmit={handleLogin}>
-          <h1 className="text-center text-3xl font-black tracking-tight">Sign in</h1>
+          <h1 className="text-center text-3xl font-black tracking-tight">Connexion</h1>
           <input
             className="input input-bordered input-lg w-full"
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            placeholder="Email"
+            placeholder="E-mail"
             required
           />
           <input
@@ -627,11 +647,11 @@ export default function App() {
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            placeholder="Password"
+            placeholder="Mot de passe"
             required
           />
           <button className="btn btn-lg w-full" style={primarySurfaceStyle} disabled={loading} type="submit">
-            {loading ? <span className="loading loading-spinner" /> : "Sign in"}
+            {loading ? <span className="loading loading-spinner" /> : "Se connecter"}
           </button>
         </form>
         {(error || success) && <Toast error={error} success={success} />}
@@ -649,10 +669,10 @@ export default function App() {
     }
     return (
       <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-5 pb-8 pt-10">
-        <h1 className="text-3xl font-black tracking-tight">No worker account</h1>
-        <p className="mt-2 text-base text-base-content/70">Contact your supervisor</p>
+        <h1 className="text-3xl font-black tracking-tight">Aucun compte ouvrier</h1>
+        <p className="mt-2 text-base text-base-content/70">Contactez votre superviseur.</p>
         <button className="btn btn-ghost mt-6 w-fit px-0 text-sm" disabled={loading} onClick={handleLogout}>
-          Log out
+          Se deconnecter
         </button>
         {(error || success) && <Toast error={error} success={success} />}
       </main>
@@ -669,9 +689,11 @@ export default function App() {
           onLogout={handleLogout}
           siteName=""
         />
-        <div className="mt-10 space-y-2">
-          <p className="text-4xl font-black tracking-tight">No site assigned</p>
-          <p className="text-base text-base-content/70">Contact your supervisor</p>
+        <div className="flex flex-1 items-center justify-center">
+          <div className="space-y-2 text-center">
+            <p className="text-4xl font-black tracking-tight">Aucun projet assigne</p>
+            <p className="text-base text-base-content/70">Vous n'etes affecte a aucun projet.</p>
+          </div>
         </div>
         {(error || success) && <Toast error={error} success={success} />}
       </main>
@@ -687,6 +709,8 @@ export default function App() {
           onMenuToggle={setMenuOpen}
           onLogout={handleLogout}
           siteName={isClockedIn ? currentSiteName : ""}
+          showBackButton={!isClockedIn && needsSitePicker && projectSelectionComplete}
+          onBack={() => setProjectSelectionComplete(false)}
         />
       </div>
 
@@ -698,7 +722,7 @@ export default function App() {
                 <p className="text-xl font-semibold tabular-nums">{liveTimer}</p>
               </div>
               <button className="btn" style={clockOutStyle} onClick={handleClockAction} disabled={loading}>
-                {loading ? <span className="loading loading-spinner" /> : "Clock Out"}
+                {loading ? <span className="loading loading-spinner" /> : "Pointer la sortie"}
               </button>
             </div>
           </div>
@@ -717,7 +741,7 @@ export default function App() {
               }}
               disabled={loading || !activeProjectId}
             >
-              Add material
+              Ajouter un materiau
             </button>
 
             <div className="min-h-0 flex-1">
@@ -741,7 +765,7 @@ export default function App() {
                               }
                             >
                               <span className="capitalize text-base-content/75">
-                                {log.record?.["material_log.material_type"] || "Material"}
+                                {log.record?.["material_log.material_type"] || "Materiau"}
                               </span>
                               <span className="text-base-content/60">
                                 <span>
@@ -765,7 +789,7 @@ export default function App() {
                                     disabled={loading}
                                   >
                                     <Pencil className="h-4 w-4" />
-                                    Edit
+                                    Modifier
                                   </button>
                                   <button
                                     type="button"
@@ -775,7 +799,7 @@ export default function App() {
                                     disabled={loading}
                                   >
                                     <Trash2 className="h-4 w-4" />
-                                    Delete
+                                    Supprimer
                                   </button>
                                 </div>
                               </div>
@@ -786,7 +810,7 @@ export default function App() {
                     </div>
                   ) : (
                     <div className="flex h-full items-center justify-center text-center text-sm text-base-content/55">
-                      No materials added yet.
+                      Aucun materiau ajoute pour le moment.
                     </div>
                   )}
                 </div>
@@ -794,43 +818,61 @@ export default function App() {
             </div>
           </section>
         </>
+      ) : needsProjectSelection ? (
+        <section className="flex flex-1 flex-col">
+          <div className="flex flex-1 items-center justify-center px-4">
+            <div className="flex w-full max-w-xs flex-col items-center space-y-4 text-center">
+              <div className="space-y-2 text-center">
+                <p className="text-3xl font-black tracking-tight">Choisissez votre projet</p>
+              </div>
+              <div className="w-full space-y-3">
+                {projects.map((project) => {
+                  return (
+                    <button
+                      key={project.record_id}
+                      type="button"
+                      className="btn h-auto min-h-0 w-full justify-center rounded-[var(--rounded-btn)] border px-4 py-4 text-center"
+                      style={primarySurfaceStyle}
+                      onClick={() => {
+                        setSelectedProjectId(project.record_id);
+                        setProjectSelectionComplete(true);
+                      }}
+                      disabled={loading}
+                    >
+                      <span className="block">
+                        <span className="block text-base font-semibold">
+                          {project.record?.["construction_project.name"] || "Projet"}
+                        </span>
+                        {project.record?.["construction_project.site_location"] ? (
+                          <span className="mt-1 block text-xs opacity-80">
+                            {project.record?.["construction_project.site_location"]}
+                          </span>
+                        ) : null}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </section>
       ) : (
         <section className="flex flex-1 flex-col">
           <div className="flex flex-1 items-center justify-center px-4">
             <div className="flex w-full max-w-xs flex-col items-center gap-4 text-center">
-                {needsSitePicker ? (
-                  <div className="space-y-1 text-center">
-                    <p className="text-2xl font-bold tracking-tight">Ready to start work at</p>
-                    <div className="flex justify-center">
-                      <select
-                        className="select h-10 min-h-10 w-auto min-w-52 max-w-full border-base-content/15 bg-base-100 px-4 text-center text-lg font-bold tracking-tight shadow-none"
-                        value={activeProjectId}
-                        onChange={(event) => setSelectedProjectId(event.target.value)}
-                        disabled={loading}
-                      >
-                        {projects.map((project) => (
-                          <option key={project.record_id} value={project.record_id}>
-                            {project.record?.["construction_project.name"]}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-1 text-center">
-                    <p className="text-2xl font-bold tracking-tight">Ready to start work at</p>
-                    <p className="text-2xl font-bold tracking-tight">{currentSiteName}?</p>
-                  </div>
-                )}
-                <button
-                  className="btn btn-lg h-16 w-full text-lg"
-                  style={clockInStyle}
-                  onClick={handleClockAction}
-                  disabled={loading || !activeProjectId}
-                >
-                  {loading ? <span className="loading loading-spinner" /> : "Clock In"}
-                </button>
+              <div className="space-y-1 text-center">
+                <p className="text-2xl font-bold tracking-tight">Pret a commencer le travail sur</p>
+                <p className="text-2xl font-bold tracking-tight">{currentSiteName}?</p>
               </div>
+              <button
+                className="btn btn-lg h-16 w-full text-lg"
+                style={clockInStyle}
+                onClick={handleClockAction}
+                disabled={loading || !activeProjectId}
+              >
+                {loading ? <span className="loading loading-spinner" /> : "Pointer l'entree"}
+              </button>
+            </div>
           </div>
         </section>
       )}
@@ -843,7 +885,7 @@ export default function App() {
         />
       ) : null}
 
-      {updatePromptVisible ? <UpdatePrompt onUpdate={handleApplyUpdate} /> : null}
+      {updatePromptVisible && !installPromptVisible ? <UpdatePrompt onUpdate={handleApplyUpdate} /> : null}
 
       {(error || success) && <Toast error={error} success={success} />}
 
@@ -858,7 +900,7 @@ export default function App() {
                   setMaterialModalOpen(false);
                 }}
                 disabled={loading}
-                aria-label="Close"
+                aria-label="Fermer"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -889,7 +931,7 @@ export default function App() {
                   inputMode="decimal"
                   value={materialQty}
                   onChange={(event) => setMaterialQty(event.target.value)}
-                  placeholder="Quantity"
+                  placeholder="Quantite"
                   disabled={loading}
                 />
                 {!showUnitSelect ? (
@@ -932,14 +974,14 @@ export default function App() {
               ) : null}
 
               <button className="btn h-12 min-h-12 w-full" style={primarySurfaceStyle} disabled={loading} type="submit">
-                {loading ? <span className="loading loading-spinner" /> : editingMaterialId ? "Update" : "Add"}
+                {loading ? <span className="loading loading-spinner" /> : editingMaterialId ? "Mettre a jour" : "Ajouter"}
               </button>
             </form>
           </div>
           <button
             type="button"
             className="modal-backdrop"
-            aria-label="Close modal"
+            aria-label="Fermer la fenetre"
             onClick={() => {
               if (!loading) {
                 setMaterialModalOpen(false);
@@ -952,7 +994,7 @@ export default function App() {
   );
 }
 
-function TopBar({ loading, menuOpen, onMenuToggle, onLogout, siteName }) {
+function TopBar({ loading, menuOpen, onMenuToggle, onLogout, siteName, showBackButton = false, onBack }) {
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -972,7 +1014,18 @@ function TopBar({ loading, menuOpen, onMenuToggle, onLogout, siteName }) {
 
   return (
     <header className="flex items-center justify-between gap-3">
-      <div className="min-w-0 flex-1">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        {showBackButton ? (
+          <button
+            className="btn btn-ghost btn-circle shrink-0"
+            type="button"
+            onClick={onBack}
+            disabled={loading}
+            aria-label="Retour"
+          >
+            <ChevronLeft className="h-6 w-6" aria-hidden="true" />
+          </button>
+        ) : null}
         {siteName ? <p className="truncate text-sm font-medium text-base-content/70">{siteName}</p> : null}
       </div>
       <div ref={menuRef}>
@@ -981,7 +1034,7 @@ function TopBar({ loading, menuOpen, onMenuToggle, onLogout, siteName }) {
           type="button"
           onClick={() => onMenuToggle((current) => !current)}
           disabled={loading}
-          aria-label="Open menu"
+          aria-label="Ouvrir le menu"
         >
           <Menu className="h-6 w-6" aria-hidden="true" />
         </button>
@@ -991,7 +1044,7 @@ function TopBar({ loading, menuOpen, onMenuToggle, onLogout, siteName }) {
           <button
             type="button"
             className="fixed inset-0 z-40 bg-black/30"
-            aria-label="Close menu"
+            aria-label="Fermer le menu"
             onClick={() => onMenuToggle(false)}
           />
           <aside ref={menuRef} className="fixed top-0 right-0 z-50 flex h-full w-72 flex-col bg-base-100 shadow-xl">
@@ -1002,7 +1055,7 @@ function TopBar({ loading, menuOpen, onMenuToggle, onLogout, siteName }) {
                 className="btn btn-ghost btn-sm btn-circle"
                 onClick={() => onMenuToggle(false)}
                 disabled={loading}
-                aria-label="Close menu"
+                aria-label="Fermer le menu"
               >
                 <X className="h-5 w-5" aria-hidden="true" />
               </button>
@@ -1015,7 +1068,7 @@ function TopBar({ loading, menuOpen, onMenuToggle, onLogout, siteName }) {
                 disabled={loading}
               >
                 <LogOut className="h-4 w-4" aria-hidden="true" />
-                Log out
+                Se deconnecter
               </button>
             </div>
           </aside>
@@ -1050,11 +1103,11 @@ function InstallPrompt({ canInstall, onInstall, onDismiss }) {
       <div className="w-full max-w-sm rounded-[var(--rounded-btn)] border border-base-300 bg-base-100 p-4 shadow-lg">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-base font-semibold">Add to Home Screen</p>
+            <p className="text-base font-semibold">Ajouter a l'ecran d'accueil</p>
             <p className="mt-1 text-sm text-base-content/70">
               {iosInstructions
-                ? "Save this app to your home screen for faster access."
-                : "Install this app so workers can open it like a normal app."}
+                ? "Enregistrez cette application sur votre ecran d'accueil pour un acces plus rapide."
+                : "Installez cette application pour que les ouvriers puissent l'ouvrir comme une application normale."}
             </p>
           </div>
           <button type="button" className="btn btn-ghost btn-sm btn-circle shrink-0" onClick={onDismiss}>
@@ -1064,20 +1117,25 @@ function InstallPrompt({ canInstall, onInstall, onDismiss }) {
 
         {iosInstructions ? (
           <div className="mt-4 rounded-[var(--rounded-btn)] bg-base-200/60 p-3 text-sm text-base-content/75">
-            <p>1. Tap the Share button in Safari.</p>
-            <p className="mt-1">2. Scroll down.</p>
-            <p className="mt-1">3. Tap `Add to Home Screen`.</p>
+            <p>1. Appuyez sur le bouton Partager dans Safari.</p>
+            <p className="mt-1">2. Faites defiler vers le bas.</p>
+            <p className="mt-1">3. Appuyez sur `Ajouter a l'ecran d'accueil`.</p>
           </div>
         ) : null}
 
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
           {canInstall ? (
-            <button type="button" className="btn flex-1" style={primarySurfaceStyle} onClick={onInstall}>
-              Add to Home Screen
+            <button
+              type="button"
+              className="btn w-full whitespace-nowrap sm:flex-1"
+              style={primarySurfaceStyle}
+              onClick={onInstall}
+            >
+              Ajouter a l'ecran d'accueil
             </button>
           ) : null}
-          <button type="button" className="btn btn-soft flex-1" onClick={onDismiss}>
-            {iosInstructions ? "Close" : "Not now"}
+          <button type="button" className="btn btn-soft w-full whitespace-nowrap sm:flex-1" onClick={onDismiss}>
+            {iosInstructions ? "Fermer" : "Plus tard"}
           </button>
         </div>
       </div>
@@ -1089,10 +1147,10 @@ function UpdatePrompt({ onUpdate }) {
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
       <div className="pointer-events-auto w-full max-w-sm rounded-[var(--rounded-btn)] border border-base-300 bg-base-100 p-4 shadow-lg">
-        <p className="text-sm font-semibold">Update available</p>
-        <p className="mt-1 text-sm text-base-content/70">A newer version is ready. Refresh to update the app.</p>
+        <p className="text-sm font-semibold">Mise a jour disponible</p>
+        <p className="mt-1 text-sm text-base-content/70">Une nouvelle version est prete. Rafraichissez pour mettre l'application a jour.</p>
         <button type="button" className="btn mt-3 w-full" style={primarySurfaceStyle} onClick={onUpdate}>
-          Update now
+          Mettre a jour maintenant
         </button>
       </div>
     </div>
