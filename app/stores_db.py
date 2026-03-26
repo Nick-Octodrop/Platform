@@ -1868,6 +1868,18 @@ class DbConnectionStore:
             )
             return dict(row) if row else None
 
+    def delete(self, connection_id: str) -> bool:
+        with get_conn() as conn:
+            execute(
+                conn,
+                """
+                delete from connections where org_id=%s and id=%s
+                """,
+                [get_org_id(), connection_id],
+                query_name="connections.delete",
+            )
+            return True
+
 
 class DbJobStore:
     def enqueue(self, job: dict) -> dict:

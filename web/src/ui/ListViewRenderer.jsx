@@ -3,6 +3,7 @@ import { FixedSizeList as VirtualList } from "react-window";
 import { getFieldValue } from "./field_renderers.jsx";
 import { resolveFieldLabel } from "../utils/labels.js";
 import { formatDateLike } from "../utils/dateTime.js";
+import { evalCondition } from "../utils/conditions.js";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import { apiFetch } from "../api.js";
 import PaginationControls from "../components/PaginationControls.jsx";
@@ -26,6 +27,16 @@ function normalizeEnumOptions(options) {
       return null;
     })
     .filter(Boolean);
+}
+
+function getRowId(row) {
+  if (!row || typeof row !== "object") return null;
+  if (row.record_id) return row.record_id;
+  if (row.record?.id) return row.record.id;
+  const record = row.record;
+  if (!record || typeof record !== "object") return null;
+  const explicitIdKey = Object.keys(record).find((key) => typeof key === "string" && key.endsWith(".id"));
+  return explicitIdKey ? record[explicitIdKey] : null;
 }
 
 export default function ListViewRenderer({
@@ -177,6 +188,9 @@ export default function ListViewRenderer({
   };
   const filteredRecords = useMemo(() => {
     let next = Array.isArray(records) ? records : [];
+    if (activeFilter?.domain) {
+      next = next.filter((row) => evalCondition(activeFilter.domain, { record: row.record || {} }));
+    }
     if (searchQuery && searchFields.length > 0) {
       const needle = searchQuery.toLowerCase();
       next = next.filter((row) => {
@@ -233,7 +247,7 @@ export default function ListViewRenderer({
   }, [filteredRecords, page, safePageSize]);
 
   const filteredIds = useMemo(
-    () => filteredRecords.map((r) => r.record_id || r.record?.id).filter(Boolean),
+    () => filteredRecords.map((r) => getRowId(r)).filter(Boolean),
     [filteredRecords],
   );
   const allFilteredSelected = useMemo(
@@ -371,7 +385,7 @@ export default function ListViewRenderer({
               </label>
             </div>
             {pagedRecords.map((row, idx) => {
-              const rowId = row.record_id || row.record?.id;
+              const rowId = getRowId(row);
               const selected = rowId && selectedSet.has(rowId);
               return (
                 <button
@@ -440,7 +454,7 @@ export default function ListViewRenderer({
             >
               {({ index, style, data }) => {
                 const row = data.rows[index];
-                const rowId = row.record_id || row.record?.id;
+                const rowId = getRowId(row);
                 const selected = rowId && data.selectedSet.has(rowId);
                 return (
                   <div
@@ -500,7 +514,7 @@ export default function ListViewRenderer({
             </thead>
             <tbody>
               {pagedRecords.map((row) => {
-                const rowId = row.record_id || row.record?.id;
+                const rowId = getRowId(row);
                 const selected = rowId && selectedSet.has(rowId);
                 return (
                   <tr

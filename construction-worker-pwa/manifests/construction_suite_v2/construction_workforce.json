@@ -1,0 +1,604 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "construction_workforce",
+    "key": "construction_workforce",
+    "name": "Workforce",
+    "version": "2.2.0",
+    "description": "Workers, attendance, and labor time capture for construction teams.",
+    "category": "Construction",
+    "icon_key": "lucide:HardHat"
+  },
+  "depends_on": {
+    "required": [
+      { "module": "construction_core", "version": ">=2.2.0" },
+      { "module": "construction_projects", "version": ">=2.2.0" }
+    ]
+  },
+  "app": {
+    "home": "page:construction_worker.list_page",
+    "defaults": {
+      "entity_home_page": "page:construction_worker.list_page",
+      "entity_form_page": "page:construction_worker.form_page",
+      "entities": {
+        "entity.construction_worker": {
+          "entity_home_page": "page:construction_worker.list_page",
+          "entity_form_page": "page:construction_worker.form_page"
+        },
+        "entity.time_entry": {
+          "entity_home_page": "page:time_entry.list_page",
+          "entity_form_page": "page:time_entry.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Construction",
+        "mode": "inline",
+        "items": [
+          { "label": "Workers", "to": "page:construction_worker.list_page" },
+          { "label": "Time Entries", "to": "page:time_entry.list_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [
+        {
+      "id": "entity.construction_worker",
+      "display_field": "construction_worker.full_name",
+      "fields": [
+        { "id": "construction_worker.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "construction_worker.full_name", "type": "string", "label": "Full Name", "required": true },
+        { "id": "construction_worker.worker_code", "type": "string", "label": "Worker Code" },
+        { "id": "construction_worker.phone", "type": "string", "label": "Phone" },
+        {
+          "id": "construction_worker.role",
+          "type": "enum",
+          "label": "Role",
+          "default": "worker",
+          "options": [
+            { "value": "worker", "label": "Worker" },
+            { "value": "supervisor", "label": "Supervisor" },
+            { "value": "foreman", "label": "Foreman" },
+            { "value": "manager", "label": "Manager" }
+          ]
+        },
+        { "id": "construction_worker.crew_id", "type": "lookup", "label": "Crew", "entity": "entity.construction_crew", "display_field": "construction_crew.name" },
+        { "id": "construction_worker.crew_name", "type": "string", "label": "Crew Name" },
+        { "id": "construction_worker.portal_user_id", "type": "user", "label": "Portal User" },
+        { "id": "construction_worker.active", "type": "bool", "label": "Active", "default": true },
+        { "id": "construction_worker.default_project_id", "type": "lookup", "label": "Default Project", "entity": "entity.construction_project", "display_field": "construction_project.name" },
+        { "id": "construction_worker.default_site_id", "type": "lookup", "label": "Default Site", "entity": "entity.construction_site", "display_field": "construction_site.name" },
+        { "id": "construction_worker.hourly_cost_rate", "type": "number", "label": "Hourly Cost Rate" },
+        { "id": "construction_worker.notes", "type": "text", "label": "Notes" },
+        { "id": "construction_worker.created_at", "type": "datetime", "label": "Created At" }
+      ]
+    },
+    {
+      "id": "entity.time_entry",
+      "display_field": "time_entry.entry_date",
+      "fields": [
+        { "id": "time_entry.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "time_entry.project_id", "type": "lookup", "label": "Project", "entity": "entity.construction_project", "display_field": "construction_project.name", "required": true },
+        { "id": "time_entry.site_id", "type": "lookup", "label": "Site", "entity": "entity.construction_site", "display_field": "construction_site.name" },
+        { "id": "time_entry.worker_id", "type": "lookup", "label": "Worker", "entity": "entity.construction_worker", "display_field": "construction_worker.full_name", "required": true },
+        { "id": "time_entry.crew_id", "type": "lookup", "label": "Crew", "entity": "entity.construction_crew", "display_field": "construction_crew.name" },
+        { "id": "time_entry.work_item_id", "type": "lookup", "label": "Work Item", "entity": "entity.construction_work_item", "display_field": "construction_work_item.title" },
+        { "id": "time_entry.entry_date", "type": "date", "label": "Entry Date", "required": true },
+        { "id": "time_entry.check_in_at", "type": "datetime", "label": "Check In" },
+        { "id": "time_entry.check_out_at", "type": "datetime", "label": "Check Out" },
+        { "id": "time_entry.break_minutes", "type": "number", "label": "Break Minutes" },
+        { "id": "time_entry.hours_worked", "type": "number", "label": "Hours Worked" },
+        {
+          "id": "time_entry.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "open",
+          "options": [
+            { "value": "open", "label": "Open" },
+            { "value": "closed", "label": "Closed" },
+            { "value": "approved", "label": "Approved" }
+          ]
+        },
+        {
+          "id": "time_entry.source",
+          "type": "enum",
+          "label": "Source",
+          "default": "pwa",
+          "options": [
+            { "value": "pwa", "label": "PWA" },
+            { "value": "portal", "label": "Portal" },
+            { "value": "manual", "label": "Manual" }
+          ]
+        },
+        { "id": "time_entry.approved_by", "type": "user", "label": "Approved By" },
+        { "id": "time_entry.notes", "type": "text", "label": "Notes" },
+        { "id": "time_entry.created_at", "type": "datetime", "label": "Created At" }
+      ]
+    }
+  ],
+  "actions": [
+    { "id": "action.construction_worker_new", "kind": "open_form", "label": "+ New Worker", "target": "construction_worker.form" },
+    { "id": "action.time_entry_new", "kind": "open_form", "label": "+ New Time Entry", "target": "time_entry.form" },
+    {
+      "id": "action.construction_worker_activate",
+      "kind": "update_record",
+      "label": "Activate",
+      "entity_id": "entity.construction_worker",
+      "patch": { "construction_worker.active": true },
+      "enabled_when": { "op": "eq", "field": "construction_worker.active", "value": false },
+      "visible_when": { "op": "eq", "field": "construction_worker.active", "value": false }
+    },
+    {
+      "id": "action.construction_worker_deactivate",
+      "kind": "update_record",
+      "label": "Deactivate",
+      "entity_id": "entity.construction_worker",
+      "patch": { "construction_worker.active": false },
+      "enabled_when": { "op": "eq", "field": "construction_worker.active", "value": true },
+      "visible_when": { "op": "eq", "field": "construction_worker.active", "value": true }
+    },
+    {
+      "id": "action.time_entry_close",
+      "kind": "update_record",
+      "label": "Close Entry",
+      "entity_id": "entity.time_entry",
+      "patch": { "time_entry.status": "closed" },
+      "enabled_when": { "op": "eq", "field": "time_entry.status", "value": "open" },
+      "visible_when": { "op": "eq", "field": "time_entry.status", "value": "open" }
+    },
+    {
+      "id": "action.time_entry_approve",
+      "kind": "update_record",
+      "label": "Approve",
+      "entity_id": "entity.time_entry",
+      "patch": { "time_entry.status": "approved" },
+      "enabled_when": { "op": "eq", "field": "time_entry.status", "value": "closed" },
+      "visible_when": { "op": "eq", "field": "time_entry.status", "value": "closed" }
+    },
+    {
+      "id": "action.time_entry_reopen",
+      "kind": "update_record",
+      "label": "Reopen",
+      "entity_id": "entity.time_entry",
+      "patch": { "time_entry.status": "open" },
+      "enabled_when": { "op": "in", "field": "time_entry.status", "value": ["closed", "approved"] },
+      "visible_when": { "op": "in", "field": "time_entry.status", "value": ["closed", "approved"] }
+    }
+  ],
+  "triggers": [
+    { "id": "construction_workforce.record.worker.created", "event": "record.created", "entity_id": "entity.construction_worker" },
+    { "id": "construction_workforce.record.worker.updated", "event": "record.updated", "entity_id": "entity.construction_worker" },
+    { "id": "construction_workforce.record.time_entry.created", "event": "record.created", "entity_id": "entity.time_entry" },
+    { "id": "construction_workforce.record.time_entry.updated", "event": "record.updated", "entity_id": "entity.time_entry" }
+  ],
+  "views": [
+    {
+      "id": "construction_worker.list",
+      "kind": "list",
+      "entity": "entity.construction_worker",
+      "columns": [
+        { "field_id": "construction_worker.full_name" },
+        { "field_id": "construction_worker.worker_code" },
+        { "field_id": "construction_worker.role" },
+        { "field_id": "construction_worker.crew_id" },
+        { "field_id": "construction_worker.portal_user_id" },
+        { "field_id": "construction_worker.active" },
+        { "field_id": "construction_worker.default_project_id" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.construction_worker_new" }],
+        "open_record_target": "page:construction_worker.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search workers...",
+          "fields": [
+            "construction_worker.full_name",
+            "construction_worker.worker_code",
+            "construction_worker.phone",
+            "construction_worker.crew_name"
+          ]
+        },
+        "filters": [
+          { "id": "active", "label": "Active", "domain": { "op": "eq", "field": "construction_worker.active", "value": true } },
+          { "id": "inactive", "label": "Inactive", "domain": { "op": "eq", "field": "construction_worker.active", "value": false } },
+          { "id": "supervisors", "label": "Supervisors", "domain": { "op": "in", "field": "construction_worker.role", "value": ["supervisor", "foreman"] } }
+        ]
+      }
+    },
+    {
+      "id": "construction_worker.kanban",
+      "kind": "kanban",
+      "entity": "entity.construction_worker",
+      "card": {
+        "title_field": "construction_worker.full_name",
+        "subtitle_fields": [
+          "construction_worker.worker_code",
+          "construction_worker.default_project_id"
+        ],
+        "badge_fields": [
+          "construction_worker.role",
+          "construction_worker.active",
+          "construction_worker.crew_id"
+        ]
+      }
+    },
+    {
+      "id": "construction_worker.form",
+      "kind": "form",
+      "entity": "entity.construction_worker",
+      "sections": [
+        {
+          "id": "general",
+          "title": "Worker",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "construction_worker.full_name",
+            "construction_worker.worker_code",
+            "construction_worker.phone",
+            "construction_worker.role",
+            "construction_worker.crew_id",
+            "construction_worker.crew_name",
+            "construction_worker.portal_user_id",
+            "construction_worker.active"
+          ]
+        },
+        {
+          "id": "assignment",
+          "title": "Assignment",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "construction_worker.default_project_id",
+            "construction_worker.default_site_id",
+            "construction_worker.hourly_cost_rate"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": [
+            "construction_worker.notes"
+          ]
+        }
+      ],
+      "header": {
+        "secondary_actions": [
+          { "action_id": "action.construction_worker_activate" },
+          { "action_id": "action.construction_worker_deactivate" }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "general_tab",
+          "tabs": [
+            { "id": "general_tab", "label": "Worker", "sections": ["general"] },
+            { "id": "assignment_tab", "label": "Assignment", "sections": ["assignment"] },
+            { "id": "notes_tab", "label": "Notes", "sections": ["notes"] }
+          ]
+        }
+      }
+    },
+    {
+      "id": "construction_worker.graph",
+      "kind": "graph",
+      "entity": "entity.construction_worker",
+      "default": {
+        "type": "bar",
+        "group_by": "construction_worker.role",
+        "measure": "count"
+      }
+    },
+    {
+      "id": "time_entry.list",
+      "kind": "list",
+      "entity": "entity.time_entry",
+      "columns": [
+        { "field_id": "time_entry.entry_date" },
+        { "field_id": "time_entry.project_id" },
+        { "field_id": "time_entry.site_id" },
+        { "field_id": "time_entry.worker_id" },
+        { "field_id": "time_entry.work_item_id" },
+        { "field_id": "time_entry.check_in_at" },
+        { "field_id": "time_entry.check_out_at" },
+        { "field_id": "time_entry.hours_worked" },
+        { "field_id": "time_entry.status" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.time_entry_new" }],
+        "open_record_target": "page:time_entry.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search time entries...",
+          "fields": [
+            "time_entry.notes"
+          ]
+        },
+        "filters": [
+          { "id": "open", "label": "Open", "domain": { "op": "eq", "field": "time_entry.status", "value": "open" } },
+          { "id": "closed", "label": "Closed", "domain": { "op": "eq", "field": "time_entry.status", "value": "closed" } },
+          { "id": "approved", "label": "Approved", "domain": { "op": "eq", "field": "time_entry.status", "value": "approved" } }
+        ]
+      }
+    },
+    {
+      "id": "time_entry.calendar",
+      "kind": "calendar",
+      "entity": "entity.time_entry",
+      "calendar": {
+        "title_field": "time_entry.worker_id",
+        "date_start": "time_entry.check_in_at",
+        "color_field": "time_entry.project_id",
+        "default_scale": "week"
+      }
+    },
+    {
+      "id": "time_entry.form",
+      "kind": "form",
+      "entity": "entity.time_entry",
+      "sections": [
+        {
+          "id": "entry",
+          "title": "Entry",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "time_entry.project_id",
+            "time_entry.site_id",
+            "time_entry.worker_id",
+            "time_entry.crew_id",
+            "time_entry.work_item_id",
+            "time_entry.entry_date",
+            "time_entry.check_in_at",
+            "time_entry.check_out_at",
+            "time_entry.break_minutes",
+            "time_entry.hours_worked",
+            "time_entry.status",
+            "time_entry.source",
+            "time_entry.approved_by"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": [
+            "time_entry.notes"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": { "field_id": "time_entry.status" },
+        "secondary_actions": [
+          { "action_id": "action.time_entry_close" },
+          { "action_id": "action.time_entry_approve" },
+          { "action_id": "action.time_entry_reopen" }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "entry_tab",
+          "tabs": [
+            { "id": "entry_tab", "label": "Entry", "sections": ["entry"] },
+            { "id": "notes_tab", "label": "Notes", "sections": ["notes"] }
+          ]
+        }
+      }
+    },
+    {
+      "id": "time_entry.graph",
+      "kind": "graph",
+      "entity": "entity.time_entry",
+      "default": {
+        "type": "bar",
+        "group_by": "time_entry.project_id",
+        "measure": "sum:time_entry.hours_worked"
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "construction_worker.list_page",
+      "title": "Workers",
+      "layout": "single",
+      "header": { "variant": "none", "actions": [{ "action_id": "action.construction_worker_new" }] },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.construction_worker",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:construction_worker.list" },
+                { "mode": "kanban", "target": "view:construction_worker.kanban", "default_group_by": "construction_worker.role" },
+                { "mode": "graph", "target": "view:construction_worker.graph" },
+                { "mode": "pivot", "target": "view:construction_worker.list", "default_group_by": "construction_worker.role" }
+              ],
+              "default_filter_id": "active"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "construction_worker.form_page",
+      "title": "Worker",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.construction_worker",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "view", "target": "view:construction_worker.form" },
+                        {
+                          "kind": "related_list",
+                          "entity_id": "entity.time_entry",
+                          "target": "view:time_entry.list",
+                          "record_domain": {
+                            "op": "eq",
+                            "field": "time_entry.worker_id",
+                            "value": { "ref": "$record.id" }
+                          },
+                          "create_modal": true,
+                          "create_defaults": {
+                            "time_entry.worker_id": { "ref": "$record.id" },
+                            "time_entry.project_id": { "ref": "$record.construction_worker.default_project_id" },
+                            "time_entry.status": "open",
+                            "time_entry.source": "manual"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "chatter", "entity_id": "entity.construction_worker", "record_ref": "$record.id" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "time_entry.list_page",
+      "title": "Time Entries",
+      "layout": "single",
+      "header": { "variant": "none", "actions": [{ "action_id": "action.time_entry_new" }] },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.time_entry",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:time_entry.list" },
+                { "mode": "calendar", "target": "view:time_entry.calendar" },
+                { "mode": "graph", "target": "view:time_entry.graph" },
+                { "mode": "pivot", "target": "view:time_entry.list", "default_group_by": "time_entry.project_id" }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "time_entry.form_page",
+      "title": "Time Entry",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.time_entry",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "view", "target": "view:time_entry.form" }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "chatter", "entity_id": "entity.time_entry", "record_ref": "$record.id" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "interfaces": {
+    "dashboardable": [
+      {
+        "entity_id": "entity.construction_worker",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "construction_worker.created_at",
+        "measures": ["count"],
+        "group_bys": [
+          "construction_worker.role",
+          "construction_worker.crew_id",
+          "construction_worker.active"
+        ]
+      },
+      {
+        "entity_id": "entity.time_entry",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "time_entry.entry_date",
+        "measures": ["count", "sum:time_entry.hours_worked"],
+        "group_bys": [
+          "time_entry.project_id",
+          "time_entry.site_id",
+          "time_entry.worker_id",
+          "time_entry.crew_id",
+          "time_entry.status"
+        ]
+      }
+    ],
+    "schedulable": [
+      {
+        "entity_id": "entity.time_entry",
+        "enabled": true,
+        "scope": "module_only",
+        "title_field": "time_entry.worker_id",
+        "date_start": "time_entry.check_in_at",
+        "owner_field": "time_entry.approved_by",
+        "status_field": "time_entry.status",
+        "color_field": "time_entry.project_id"
+      }
+    ]
+  },
+  "relations": [],
+  "queries": {}
+}

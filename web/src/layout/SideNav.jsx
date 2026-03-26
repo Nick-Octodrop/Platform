@@ -38,10 +38,10 @@ function AppShortcut({ id, label }) {
 
 export default function SideNav() {
   const { modules } = useModuleStore();
-  const { loading: accessLoading, hasCapability } = useAccessContext();
+  const { loading: accessLoading, hasCapability, isSuperadmin } = useAccessContext();
   const [pinned, setPinned] = useState(getPinnedApps());
   const [recent, setRecent] = useState(getRecentApps());
-  const enabledApps = modules.filter((m) => m.enabled);
+  const enabledApps = modules.filter((m) => m.enabled && (isSuperadmin || m.module_id !== "octo_ai"));
   const enabledById = useMemo(() => {
     const map = {};
     for (const m of enabledApps) map[m.module_id] = m;
@@ -67,7 +67,7 @@ export default function SideNav() {
   }, [enabledApps, pinned, recent]);
 
   const canSeeIntegrations = !accessLoading && hasCapability("workspace.manage_settings");
-  const canSeeOctoAi = !accessLoading && hasCapability("modules.manage");
+  const canSeeOctoAi = !accessLoading && isSuperadmin;
 
   return (
     <div className="w-64 min-h-full bg-base-200 p-4">

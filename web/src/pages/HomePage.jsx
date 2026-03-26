@@ -54,9 +54,9 @@ export default function HomePage({ user }) {
   const navigate = useNavigate();
   const [entityIndex, setEntityIndex] = useState(null);
   const [iconVersion, setIconVersion] = useState(0);
-  const { loading: accessLoading, hasCapability } = useAccessContext();
+  const { loading: accessLoading, hasCapability, isSuperadmin } = useAccessContext();
   const canSeeStudio = !accessLoading && hasCapability("modules.manage");
-  const canSeeOctoAi = !accessLoading && hasCapability("modules.manage");
+  const canSeeOctoAi = !accessLoading && isSuperadmin;
   const canSeeAutomations = !accessLoading && hasCapability("automations.manage");
   const canSeeIntegrations = !accessLoading && hasCapability("workspace.manage_settings");
   const homeLoading = loading || accessLoading;
@@ -85,7 +85,7 @@ export default function HomePage({ user }) {
 
   const installedApps = useMemo(() => {
     return modules
-      .filter((m) => m.enabled)
+      .filter((m) => m.enabled && (isSuperadmin || m.module_id !== "octo_ai"))
       .map((m) => ({
         id: m.module_id,
         name: getAppDisplayName(m.module_id, m),
@@ -94,7 +94,7 @@ export default function HomePage({ user }) {
         icon: <Package size={56} strokeWidth={1.31} className="text-primary" />,
         icon_url: m.icon_key || null,
       }));
-  }, [modules, user, iconVersion]);
+  }, [iconVersion, isSuperadmin, modules, user]);
 
   function handleOpen(app) {
     if (app.system) {

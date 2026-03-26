@@ -255,9 +255,15 @@ export default function AppShell({
   const errorFlashTimerRef = useRef(null);
 
   const recordId = (previewMode ? previewSearchParams : searchParams).get("record");
-  const { hasCapability } = useAccessContext();
+  const { hasCapability, isSuperadmin } = useAccessContext();
   // Respect both platform/workspace permissions and optional per-page bootstrap overrides.
   const canWriteRecords = hasCapability("records.write") && bootstrap?.permissions?.records_write !== false;
+
+  useEffect(() => {
+    if (moduleId === "octo_ai" && !isSuperadmin) {
+      navigate("/home", { replace: true });
+    }
+  }, [isSuperadmin, moduleId, navigate]);
 
   useEffect(() => {
     if (typeof performance !== "undefined" && performance.mark) {

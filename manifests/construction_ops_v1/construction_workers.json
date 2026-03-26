@@ -1,0 +1,326 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "construction_workers",
+    "key": "construction_workers",
+    "name": "Construction Workers",
+    "version": "1.0.0",
+    "description": "Worker master records for site attendance, crews, and portal-linked field users.",
+    "category": "Construction",
+    "icon_key": "lucide:HardHat"
+  },
+  "app": {
+    "home": "page:construction_worker.list_page",
+    "defaults": {
+      "entity_home_page": "page:construction_worker.list_page",
+      "entity_form_page": "page:construction_worker.form_page",
+      "entities": {
+        "entity.construction_worker": {
+          "entity_home_page": "page:construction_worker.list_page",
+          "entity_form_page": "page:construction_worker.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Construction",
+        "items": [
+          {
+            "label": "Workers",
+            "to": "page:construction_worker.list_page"
+          }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.construction_worker",
+      "display_field": "construction_worker.full_name",
+      "fields": [
+        {
+          "id": "construction_worker.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "construction_worker.full_name",
+          "type": "string",
+          "label": "Full Name",
+          "required": true
+        },
+        {
+          "id": "construction_worker.worker_code",
+          "type": "string",
+          "label": "Worker Code"
+        },
+        {
+          "id": "construction_worker.phone",
+          "type": "string",
+          "label": "Phone"
+        },
+        {
+          "id": "construction_worker.role",
+          "type": "enum",
+          "label": "Role",
+          "default": "worker",
+          "options": [
+            { "value": "worker", "label": "Worker" },
+            { "value": "supervisor", "label": "Supervisor" },
+            { "value": "foreman", "label": "Foreman" },
+            { "value": "manager", "label": "Manager" }
+          ]
+        },
+        {
+          "id": "construction_worker.crew_name",
+          "type": "string",
+          "label": "Crew"
+        },
+        {
+          "id": "construction_worker.portal_user_id",
+          "type": "user",
+          "label": "Portal User"
+        },
+        {
+          "id": "construction_worker.active",
+          "type": "bool",
+          "label": "Active",
+          "default": true
+        },
+        {
+          "id": "construction_worker.default_project_id",
+          "type": "lookup",
+          "label": "Default Project",
+          "entity": "entity.construction_project",
+          "display_field": "construction_project.name"
+        },
+        {
+          "id": "construction_worker.notes",
+          "type": "text",
+          "label": "Notes"
+        },
+        {
+          "id": "construction_worker.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "action.construction_worker_new",
+      "kind": "open_form",
+      "label": "+ New Worker",
+      "target": "construction_worker.form"
+    },
+    {
+      "id": "action.construction_worker_activate",
+      "kind": "update_record",
+      "label": "Activate",
+      "entity_id": "entity.construction_worker",
+      "patch": {
+        "construction_worker.active": true
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "construction_worker.active",
+        "value": false
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "construction_worker.active",
+        "value": false
+      }
+    },
+    {
+      "id": "action.construction_worker_deactivate",
+      "kind": "update_record",
+      "label": "Deactivate",
+      "entity_id": "entity.construction_worker",
+      "patch": {
+        "construction_worker.active": false
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "construction_worker.active",
+        "value": true
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "construction_worker.active",
+        "value": true
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "id": "construction_workers.record.created",
+      "event": "record.created",
+      "entity_id": "entity.construction_worker"
+    },
+    {
+      "id": "construction_workers.record.updated",
+      "event": "record.updated",
+      "entity_id": "entity.construction_worker"
+    }
+  ],
+  "views": [
+    {
+      "id": "construction_worker.list",
+      "kind": "list",
+      "entity": "entity.construction_worker",
+      "columns": [
+        { "field_id": "construction_worker.full_name" },
+        { "field_id": "construction_worker.worker_code" },
+        { "field_id": "construction_worker.role" },
+        { "field_id": "construction_worker.crew_name" },
+        { "field_id": "construction_worker.portal_user_id" },
+        { "field_id": "construction_worker.active" },
+        { "field_id": "construction_worker.default_project_id" }
+      ],
+      "header": {
+        "primary_actions": [
+          { "action_id": "action.construction_worker_new" }
+        ],
+        "open_record_target": "page:construction_worker.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search workers...",
+          "fields": [
+            "construction_worker.full_name",
+            "construction_worker.worker_code",
+            "construction_worker.phone",
+            "construction_worker.crew_name"
+          ]
+        }
+      }
+    },
+    {
+      "id": "construction_worker.form",
+      "kind": "form",
+      "entity": "entity.construction_worker",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Worker",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "construction_worker.full_name",
+            "construction_worker.worker_code",
+            "construction_worker.phone",
+            "construction_worker.role",
+            "construction_worker.crew_name",
+            "construction_worker.portal_user_id",
+            "construction_worker.default_project_id",
+            "construction_worker.active"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": [
+            "construction_worker.notes"
+          ]
+        }
+      ],
+      "header": {
+        "secondary_actions": [
+          { "action_id": "action.construction_worker_activate" },
+          { "action_id": "action.construction_worker_deactivate" }
+        ]
+      }
+    },
+    {
+      "id": "construction_worker.graph",
+      "kind": "graph",
+      "entity": "entity.construction_worker",
+      "default": {
+        "type": "bar",
+        "group_by": "construction_worker.role",
+        "measure": "count"
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "construction_worker.list_page",
+      "title": "Workers",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.construction_worker_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.construction_worker",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:construction_worker.list" },
+                { "mode": "graph", "target": "view:construction_worker.graph" }
+              ],
+              "default_filter_id": "all"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "construction_worker.form_page",
+      "title": "Worker",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.construction_worker",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                {
+                  "kind": "view",
+                  "target": "view:construction_worker.form"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "interfaces": {
+    "dashboardable": [
+      {
+        "entity_id": "entity.construction_worker",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "construction_worker.created_at",
+        "measures": ["count"],
+        "group_bys": [
+          "construction_worker.role",
+          "construction_worker.crew_name",
+          "construction_worker.active"
+        ]
+      }
+    ]
+  },
+  "relations": [],
+  "workflows": [],
+  "transformations": [],
+  "modals": [],
+  "queries": {}
+}

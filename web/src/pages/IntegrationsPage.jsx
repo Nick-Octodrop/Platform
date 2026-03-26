@@ -79,6 +79,18 @@ export default function IntegrationsPage() {
     }
   }
 
+  async function removeConnection(id) {
+    const ok = window.confirm("Delete this integration connection? This cannot be undone.");
+    if (!ok) return;
+    try {
+      await apiFetch(`/integrations/connections/${encodeURIComponent(id)}`, { method: "DELETE" });
+      setSelectedIds((prev) => prev.filter((itemId) => itemId !== id));
+      await load();
+    } catch (err) {
+      setError(err?.message || "Delete failed");
+    }
+  }
+
   const rows = useMemo(
     () => (items || []).map((c) => ({
       id: c.id,
@@ -140,6 +152,11 @@ export default function IntegrationsPage() {
   );
 
   const activeFilter = useMemo(() => filters.find((f) => f.id === statusFilter) || null, [filters, statusFilter]);
+  const selectedRows = useMemo(() => {
+    const map = new Map(rows.map((row) => [row.id, row]));
+    return selectedIds.map((id) => map.get(id)).filter(Boolean);
+  }, [rows, selectedIds]);
+  const singleSelected = selectedRows.length === 1 ? selectedRows[0] : null;
 
   return (
     <div className="h-full min-h-0 flex flex-col overflow-hidden">
@@ -167,6 +184,55 @@ export default function IntegrationsPage() {
               }}
               onRefresh={load}
               showSavedViews={false}
+              rightActions={
+                <>
+                  {selectedIds.length === 1 && singleSelected && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="btn btn-sm btn-outline"
+                        type="button"
+                        onClick={() => navigate(`/integrations/connections/${singleSelected.id}`)}
+                      >
+                        Open
+                      </button>
+                      <button
+                        className="btn btn-sm btn-outline"
+                        type="button"
+                        onClick={() => removeConnection(singleSelected.id)}
+                        disabled={singleSelected.status !== "disabled"}
+                        title={singleSelected.status !== "disabled" ? "Disable the connection before deleting it" : undefined}
+                      >
+                        Delete (1)
+                      </button>
+                    </div>
+                  )}
+                  {selectedIds.length > 1 && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="btn btn-sm btn-outline"
+                        type="button"
+                        onClick={() => {
+                          const blocked = selectedRows.filter((row) => row.status !== "disabled");
+                          if (blocked.length > 0) {
+                            setError("Only disabled connections can be deleted.");
+                            return;
+                          }
+                          const ok = window.confirm(`Delete ${selectedIds.length} integration connection(s)?`);
+                          if (!ok) return;
+                          Promise.all(selectedIds.map((id) => apiFetch(`/integrations/connections/${encodeURIComponent(id)}`, { method: "DELETE" })))
+                            .then(() => {
+                              setSelectedIds([]);
+                              load();
+                            })
+                            .catch((err) => setError(err?.message || "Delete failed"));
+                        }}
+                      >
+                        Delete ({selectedIds.length})
+                      </button>
+                    </div>
+                  )}
+                </>
+              }
               pagination={{
                 page,
                 pageSize: 25,

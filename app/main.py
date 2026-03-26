@@ -190,6 +190,19 @@ _EXTRA_CORS_ORIGINS = {
     for origin in os.getenv("OCTO_CORS_ORIGINS", "").split(",")
     if origin.strip()
 }
+_DEFAULT_CORS_REGEX_PATTERNS = [
+    r"^https://[a-z0-9-]+\.netlify\.app$",
+    r"^https://[a-z0-9-]+--[a-z0-9-]+\.netlify\.app$",
+]
+_EXTRA_CORS_REGEX_PATTERNS = [
+    pattern.strip()
+    for pattern in os.getenv("OCTO_CORS_ORIGIN_REGEXES", "").split(",")
+    if pattern.strip()
+]
+_CORS_ORIGIN_REGEXES = [
+    re.compile(pattern)
+    for pattern in [*_DEFAULT_CORS_REGEX_PATTERNS, *_EXTRA_CORS_REGEX_PATTERNS]
+]
 _CORS_ORIGINS = _LOCAL_CORS_ORIGINS | _EXTRA_CORS_ORIGINS
 _AI_DESIGN_FAMILY_CATALOG: dict[str, dict] | None = None
 
@@ -197,7 +210,12 @@ _AI_DESIGN_FAMILY_CATALOG: dict[str, dict] | None = None
 def _attach_cors_headers(request: Request, response: Response) -> Response:
     origin = request.headers.get("origin")
     normalized_origin = origin.rstrip("/") if isinstance(origin, str) else origin
-    if normalized_origin and (normalized_origin in _CORS_ORIGINS or _LOCAL_CORS_REGEX.match(normalized_origin)):
+    regex_allowed = normalized_origin and any(pattern.match(normalized_origin) for pattern in _CORS_ORIGIN_REGEXES)
+    if normalized_origin and (
+        normalized_origin in _CORS_ORIGINS
+        or _LOCAL_CORS_REGEX.match(normalized_origin)
+        or regex_allowed
+    ):
         response.headers.setdefault("Access-Control-Allow-Origin", origin)
         response.headers.setdefault("Access-Control-Allow-Credentials", "true")
         response.headers.setdefault("Access-Control-Allow-Headers", "*")
@@ -313,6 +331,33 @@ def _find_record_anywhere(record_id: str) -> tuple[str, dict] | None:
             except Exception:
                 data = {}
         return row.get("entity_id"), {"record_id": record_id, "record": data or {}}
+
+
+def _candidate_entity_ids(entity_id: str | None) -> list[str]:
+    if not isinstance(entity_id, str) or not entity_id:
+        return []
+    if entity_id.startswith("entity."):
+        return [entity_id, entity_id[7:]]
+    return [entity_id, f"entity.{entity_id}"]
+
+
+def _get_record_for_entity_candidates(entity_id: str | None, record_id: str | None) -> tuple[str | None, dict | None]:
+    if not isinstance(entity_id, str) or not entity_id or not isinstance(record_id, str) or not record_id:
+        return None, None
+    seen: set[str] = set()
+    for candidate in _candidate_entity_ids(entity_id):
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        existing = generic_records.get(candidate, record_id)
+        if isinstance(existing, dict):
+            return candidate, existing
+    fallback = _find_record_anywhere(record_id)
+    if isinstance(fallback, tuple) and len(fallback) == 2:
+        found_entity_id, existing = fallback
+        if _match_entity_id(entity_id, found_entity_id):
+            return found_entity_id, existing
+    return None, None
 
 
 def _get_perf_budget_ms(method: str, path: str) -> float | None:
@@ -784,6 +829,12 @@ def _require_admin(actor: dict | None) -> JSONResponse | None:
     return None
 
 
+def _require_superadmin(actor: dict | None, message: str = "Superadmin role required") -> JSONResponse | None:
+    if not isinstance(actor, dict) or actor.get("platform_role") != "superadmin":
+        return _error_response("FORBIDDEN", message, status=403)
+    return None
+
+
 _WORKSPACE_ROLES = {"admin", "member", "readonly", "portal"}
 _PLATFORM_ROLES = {"standard", "superadmin"}
 
@@ -944,7 +995,12 @@ class ActorContextMiddleware(BaseHTTPMiddleware):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=sorted(_CORS_ORIGINS),
-    allow_origin_regex=r"http://localhost:\d+|http://127\.0\.0\.1:\d+",
+    allow_origin_regex="|".join([
+        r"http://localhost:\d+",
+        r"http://127\.0\.0\.1:\d+",
+        *_DEFAULT_CORS_REGEX_PATTERNS,
+        *_EXTRA_CORS_REGEX_PATTERNS,
+    ]),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -7227,6 +7283,12 @@ async def studio_list_modules(request: Request) -> dict:
 
 @app.post("/studio2/agent/chat")
 async def studio2_agent_chat(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_superadmin(actor, "Studio AI is available to superadmins only")
+    if denied:
+        return denied
     body = await _safe_json(request)
     include_progress = bool(body.get("include_progress")) if isinstance(body, dict) else False
     if not isinstance(body, dict):
@@ -7236,6 +7298,12 @@ async def studio2_agent_chat(request: Request) -> dict:
 
 @app.post("/studio2/agent/chat/stream")
 async def studio2_agent_chat_stream(request: Request) -> StreamingResponse:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_superadmin(actor, "Studio AI is available to superadmins only")
+    if denied:
+        return denied
     body = await _safe_json(request)
     if not isinstance(body, dict):
         body = {}
@@ -11994,6 +12062,12 @@ async def _studio2_agent_chat_run(
 
 @app.post("/studio2/agent/plan")
 async def studio2_agent_plan(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_superadmin(actor, "Studio AI is available to superadmins only")
+    if denied:
+        return denied
     if not _openai_configured():
         return _openai_not_configured()
     body = await _safe_json(request)
@@ -12040,6 +12114,11 @@ async def studio2_agent_plan(request: Request) -> dict:
 
 @app.get("/studio2/agent/status")
 async def studio2_agent_status() -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    if actor.get("platform_role") != "superadmin":
+        return _ok_response({"data": {"configured": False, "disabled": True}})
     if not _openai_configured():
         return _ok_response({"data": {"configured": False}})
     return _ok_response(
@@ -12698,10 +12777,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
         if isinstance(candidate_entity_id, str) and candidate_entity_id:
             candidate_entity_id = _normalize_entity_id(candidate_entity_id)
         if isinstance(candidate_entity_id, str) and candidate_entity_id and isinstance(candidate_record_id, str) and candidate_record_id:
-            try:
-                existing_context_record = generic_records.get(candidate_entity_id, candidate_record_id)
-            except Exception:
-                existing_context_record = None
+            _, existing_context_record = _get_record_for_entity_candidates(candidate_entity_id, candidate_record_id)
             if isinstance(existing_context_record, dict) and isinstance(existing_context_record.get("record"), dict):
                 record_context = existing_context_record.get("record") or {}
     try:
@@ -12838,8 +12914,9 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
         record_id = context.get("record_id") if isinstance(context, dict) else None
         if not isinstance(record_id, str) or not record_id:
             return _error_response("ACTION_INVALID", "record_id is required", "record_id", status=400)
-        existing = generic_records.get(entity_id, record_id)
-        found_entity_id = entity_id
+        found_entity_id, existing = _get_record_for_entity_candidates(entity_id, record_id)
+        if not isinstance(found_entity_id, str) or not found_entity_id:
+            found_entity_id = entity_id
         if not existing:
             return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
         phase_ms["load_record"] = (time.perf_counter() - t0) * 1000
@@ -12959,8 +13036,9 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
         for record_id in selected_ids:
             if not isinstance(record_id, str):
                 continue
-            existing = generic_records.get(entity_id, record_id)
-            target_entity_id = entity_id
+            target_entity_id, existing = _get_record_for_entity_candidates(entity_id, record_id)
+            if not isinstance(target_entity_id, str) or not target_entity_id:
+                target_entity_id = entity_id
             if not existing:
                 continue
             before_record = existing.get("record") if isinstance(existing, dict) else {}
@@ -15534,6 +15612,17 @@ def _ai_extract_requested_module_labels(text: str) -> list[str]:
         (r"\binvoic(?:e|es|ing)\b", "Invoices"),
         (r"\bquot(?:e|es|ation|ations|ing)\b", "Quotes"),
         (r"\bdispatch\b|\bfield\s+service\b|\bfield\s+work\b|\bfieldwork\b|\bservice\s+desk\b", "Field Service"),
+    )
+
+
+def _studio_ai_disabled_response() -> JSONResponse:
+    return _json_response(
+        {
+            "ok": False,
+            "error": {"code": "STUDIO_AI_DISABLED", "message": "Studio AI is disabled"},
+            "errors": [{"code": "STUDIO_AI_DISABLED", "message": "Studio AI is disabled", "path": None, "detail": None}],
+        },
+        status=403,
     )
     for pattern, label in inferred_business_areas:
         if re.search(pattern, text, flags=re.IGNORECASE):
@@ -28337,6 +28426,23 @@ async def update_integration_connection(request: Request, connection_id: str) ->
         # fallback for older store implementations
         updated = connection_store.get(connection_id)
     return _ok_response({"connection": updated})
+
+
+@app.delete("/integrations/connections/{connection_id}")
+async def delete_integration_connection(request: Request, connection_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    item = connection_store.get(connection_id)
+    if not item or not _is_integration_type(item.get("type")):
+        return _error_response("CONNECTION_NOT_FOUND", "Connection not found", "connection_id", status=404)
+    if item.get("status") != "disabled":
+        return _error_response("CONNECTION_DELETE_FORBIDDEN", "Only disabled connections can be deleted", "status", status=400)
+    connection_store.delete(connection_id)
+    return _ok_response({"deleted": True})
 
 
 # ---- Notifications ----

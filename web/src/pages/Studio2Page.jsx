@@ -624,6 +624,7 @@ export default function Studio2Page({ user }) {
   const navigate = useNavigate();
   const { moduleId: routeModuleId } = useParams();
   const { isSuperadmin } = useAccessContext();
+  const studioAiEnabled = isSuperadmin;
 
   const rootRef = useRef(null);
   const leftPaneRef = useRef(null);
@@ -2322,83 +2323,92 @@ function buildPreviewManifest() {
 
   const userLabel = user?.email || "User";
 
-  const renderLeftPane = useMemo(() => () => (
-    <div ref={leftPaneRef} className="h-full min-h-0 flex flex-col overflow-hidden">
-      <div ref={chatListRef} className="flex-1 min-h-0 overflow-auto space-y-4">
-        {agentStatus?.configured === false && (
-          <div className="alert alert-warning text-xs">OpenAI not configured. Set OPENAI_API_KEY.</div>
-        )}
-        {agentError?.code === "OPENAI_NOT_CONFIGURED" && (
-          <div className="alert alert-warning text-xs">OpenAI not configured. Set OPENAI_API_KEY.</div>
-        )}
-        {chatMessages.length === 0 && (
-          <div className="chat chat-start">
-            <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">assistant</div>
-            <div className="chat-bubble text-sm leading-5 max-w-[85%] bg-base-200 text-base-content">
-              {routeModuleId
-                ? `Describe the change you want for ${activeModuleName} and I will draft an update.`
-                : "Describe the module change you want and I will draft an update."}
-            </div>
-          </div>
-        )}
-        {chatMessages.map((m, idx) => (
-          <div key={`${m.role}-${idx}`} className={`chat ${m.role === "user" ? "chat-end" : "chat-start"}`}>
-            <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">
-              {m.role === "user" ? userLabel : m.role}
-            </div>
-            <div className={`chat-bubble text-sm leading-5 max-w-[85%] ${m.role === "user" ? "bg-primary text-primary-content" : "bg-base-200 text-base-content"}`}>
-              <div className="whitespace-pre-wrap text-sm">{m.text}</div>
-            </div>
-            {m.diagnostics?.parse_error && (
-              <div className="chat-footer mt-2 text-xs text-error">
-                AI parse error: {m.diagnostics.parse_error}
+  const renderLeftPane = useMemo(() => () => {
+    if (!studioAiEnabled) {
+      return (
+        <div ref={leftPaneRef} className="h-full min-h-0 flex flex-col overflow-hidden">
+          <div className="alert alert-info text-sm">Studio AI is currently disabled for non-superadmins.</div>
+        </div>
+      );
+    }
+    return (
+      <div ref={leftPaneRef} className="h-full min-h-0 flex flex-col overflow-hidden">
+        <div ref={chatListRef} className="flex-1 min-h-0 overflow-auto space-y-4">
+          {agentStatus?.configured === false && (
+            <div className="alert alert-warning text-xs">OpenAI not configured. Set OPENAI_API_KEY.</div>
+          )}
+          {agentError?.code === "OPENAI_NOT_CONFIGURED" && (
+            <div className="alert alert-warning text-xs">OpenAI not configured. Set OPENAI_API_KEY.</div>
+          )}
+          {chatMessages.length === 0 && (
+            <div className="chat chat-start">
+              <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">assistant</div>
+              <div className="chat-bubble text-sm leading-5 max-w-[85%] bg-base-200 text-base-content">
+                {routeModuleId
+                  ? `Describe the change you want for ${activeModuleName} and I will draft an update.`
+                  : "Describe the module change you want and I will draft an update."}
               </div>
-            )}
-          </div>
-        ))}
-        {(chatLoading || progressEvents.length > 0) && (
-          <div className="border border-base-200 rounded-box p-3 space-y-2">
-            <div className="flex items-center justify-between text-xs font-semibold uppercase opacity-70">
-              <span>Agent Progress</span>
-              {stopReason && <span className="badge badge-outline badge-sm">{stopReason}</span>}
             </div>
-            <div className="text-xs opacity-70">
-              {summarizeProgressEvent(progressEvents[progressEvents.length - 1])}
-            </div>
-            {groupedProgress.map(([key, list]) => (
-              <div key={key} className="collapse collapse-arrow border border-base-200 rounded-box">
-                <input type="checkbox" defaultChecked={key === "meta" || chatLoading} />
-                <div className="collapse-title text-xs font-semibold">
-                  {key === "meta" ? "Plan" : `Iteration ${key.replace("iter-", "")}`}
-                </div>
-                <div className="collapse-content space-y-2">
-                  {list.map((evt, idx) => renderProgressEvent(evt, idx))}
-                </div>
+          )}
+          {chatMessages.map((m, idx) => (
+            <div key={`${m.role}-${idx}`} className={`chat ${m.role === "user" ? "chat-end" : "chat-start"}`}>
+              <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">
+                {m.role === "user" ? userLabel : m.role}
               </div>
-            ))}
-            {chatLoading && !streamDone && (
-              <div className="text-xs opacity-60">Running… {summarizeProgressEvent(progressEvents[progressEvents.length - 1])}</div>
-            )}
-            {streamDone && <div className="text-xs opacity-60">Stream complete.</div>}
-          </div>
-        )}
-      </div>
-      <div className="shrink-0">
-        <div className="flex gap-2">
-          <AgentChatInput
-            value={chatInput}
-            onChange={setChatInput}
-            onSend={handleAgentChat}
-            disabled={!routeModuleId || chatLoading}
-            minRows={1}
-          />
-          {chatLoading && (
-            <button className="btn btn-ghost btn-sm" onClick={cancelAgentRun}>Cancel</button>
+              <div className={`chat-bubble text-sm leading-5 max-w-[85%] ${m.role === "user" ? "bg-primary text-primary-content" : "bg-base-200 text-base-content"}`}>
+                <div className="whitespace-pre-wrap text-sm">{m.text}</div>
+              </div>
+              {m.diagnostics?.parse_error && (
+                <div className="chat-footer mt-2 text-xs text-error">
+                  AI parse error: {m.diagnostics.parse_error}
+                </div>
+              )}
+            </div>
+          ))}
+          {(chatLoading || progressEvents.length > 0) && (
+            <div className="border border-base-200 rounded-box p-3 space-y-2">
+              <div className="flex items-center justify-between text-xs font-semibold uppercase opacity-70">
+                <span>Agent Progress</span>
+                {stopReason && <span className="badge badge-outline badge-sm">{stopReason}</span>}
+              </div>
+              <div className="text-xs opacity-70">
+                {summarizeProgressEvent(progressEvents[progressEvents.length - 1])}
+              </div>
+              {groupedProgress.map(([key, list]) => (
+                <div key={key} className="collapse collapse-arrow border border-base-200 rounded-box">
+                  <input type="checkbox" defaultChecked={key === "meta" || chatLoading} />
+                  <div className="collapse-title text-xs font-semibold">
+                    {key === "meta" ? "Plan" : `Iteration ${key.replace("iter-", "")}`}
+                  </div>
+                  <div className="collapse-content space-y-2">
+                    {list.map((evt, idx) => renderProgressEvent(evt, idx))}
+                  </div>
+                </div>
+              ))}
+              {chatLoading && !streamDone && (
+                <div className="text-xs opacity-60">Running… {summarizeProgressEvent(progressEvents[progressEvents.length - 1])}</div>
+              )}
+              {streamDone && <div className="text-xs opacity-60">Stream complete.</div>}
+            </div>
           )}
         </div>
+        <div className="shrink-0">
+          <div className="flex gap-2">
+            <AgentChatInput
+              value={chatInput}
+              onChange={setChatInput}
+              onSend={handleAgentChat}
+              disabled={!routeModuleId || chatLoading}
+              minRows={1}
+            />
+            {chatLoading && (
+              <button className="btn btn-ghost btn-sm" onClick={cancelAgentRun}>Cancel</button>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
-  ), [
+    );
+  }, [
     activeModuleName,
     agentError,
     agentStatus?.configured,
@@ -2412,6 +2422,7 @@ function buildPreviewManifest() {
     routeModuleId,
     stopReason,
     streamDone,
+    studioAiEnabled,
     userLabel,
   ]);
 
@@ -2419,7 +2430,7 @@ function buildPreviewManifest() {
     <div className="pb-3">
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold">Validation</div>
-        {(validation.status === "error" || validationWarnings.length > 0) && (
+        {studioAiEnabled && (validation.status === "error" || validationWarnings.length > 0) && (
           <button
             className="btn btn-sm btn-primary"
             onClick={() => {
@@ -2451,6 +2462,9 @@ function buildPreviewManifest() {
           </button>
         )}
       </div>
+      {!studioAiEnabled && (
+        <div className="text-xs opacity-60 mt-2">Studio AI actions are disabled for non-superadmins.</div>
+      )}
       {draftError && (
         <div className="alert alert-error text-xs mt-2">
           JSON error: {draftError.message} {draftError.line ? `(${draftError.line}:${draftError.col})` : ""}
@@ -2541,6 +2555,7 @@ function buildPreviewManifest() {
     validation,
     validationErrors,
     validationWarnings,
+    studioAiEnabled,
   ]);
 
   const studioProfile = useMemo(() => ({

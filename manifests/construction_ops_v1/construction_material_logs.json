@@ -1,0 +1,422 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "construction_material_logs",
+    "key": "construction_material_logs",
+    "name": "Construction Material Logs",
+    "version": "1.0.0",
+    "description": "Daily material usage logs for site consumption, approvals, and simple cost tracking.",
+    "category": "Construction",
+    "icon_key": "lucide:PackageOpen"
+  },
+  "depends_on": {
+    "required": [
+      {
+        "module": "construction_projects",
+        "version": ">=1.0.0"
+      },
+      {
+        "module": "construction_workers",
+        "version": ">=1.0.0"
+      }
+    ]
+  },
+  "app": {
+    "home": "page:material_log.list_page",
+    "defaults": {
+      "entity_home_page": "page:material_log.list_page",
+      "entity_form_page": "page:material_log.form_page",
+      "entities": {
+        "entity.material_log": {
+          "entity_home_page": "page:material_log.list_page",
+          "entity_form_page": "page:material_log.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Construction",
+        "items": [
+          {
+            "label": "Material Logs",
+            "to": "page:material_log.list_page"
+          }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.material_log",
+      "display_field": "material_log.material_type",
+      "fields": [
+        {
+          "id": "material_log.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "material_log.project_id",
+          "type": "lookup",
+          "label": "Project",
+          "entity": "entity.construction_project",
+          "display_field": "construction_project.name",
+          "required": true
+        },
+        {
+          "id": "material_log.log_date",
+          "type": "date",
+          "label": "Log Date",
+          "required": true
+        },
+        {
+          "id": "material_log.material_type",
+          "type": "enum",
+          "label": "Material Type",
+          "required": true,
+          "options": [
+            { "value": "cement", "label": "Cement" },
+            { "value": "sand", "label": "Sand" },
+            { "value": "steel", "label": "Steel" },
+            { "value": "blocks", "label": "Blocks" },
+            { "value": "gravel", "label": "Gravel" },
+            { "value": "other", "label": "Other" }
+          ]
+        },
+        {
+          "id": "material_log.quantity",
+          "type": "number",
+          "label": "Quantity",
+          "required": true
+        },
+        {
+          "id": "material_log.unit",
+          "type": "enum",
+          "label": "Unit",
+          "default": "bag",
+          "options": [
+            { "value": "bag", "label": "Bag" },
+            { "value": "kg", "label": "kg" },
+            { "value": "ton", "label": "Ton" },
+            { "value": "m3", "label": "m3" },
+            { "value": "piece", "label": "Piece" }
+          ]
+        },
+        {
+          "id": "material_log.unit_cost",
+          "type": "number",
+          "label": "Unit Cost"
+        },
+        {
+          "id": "material_log.total_cost",
+          "type": "number",
+          "label": "Total Cost"
+        },
+        {
+          "id": "material_log.entered_by_worker_id",
+          "type": "lookup",
+          "label": "Entered By Worker",
+          "entity": "entity.construction_worker",
+          "display_field": "construction_worker.full_name"
+        },
+        {
+          "id": "material_log.supervisor_id",
+          "type": "user",
+          "label": "Supervisor"
+        },
+        {
+          "id": "material_log.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "draft",
+          "options": [
+            { "value": "draft", "label": "Draft" },
+            { "value": "submitted", "label": "Submitted" },
+            { "value": "approved", "label": "Approved" }
+          ]
+        },
+        {
+          "id": "material_log.notes",
+          "type": "text",
+          "label": "Notes"
+        },
+        {
+          "id": "material_log.photo",
+          "type": "attachments",
+          "label": "Photos"
+        },
+        {
+          "id": "material_log.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "action.material_log_new",
+      "kind": "open_form",
+      "label": "+ New Material Log",
+      "target": "material_log.form"
+    },
+    {
+      "id": "action.material_log_submit",
+      "kind": "update_record",
+      "label": "Submit",
+      "entity_id": "entity.material_log",
+      "patch": {
+        "material_log.status": "submitted"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "material_log.status",
+        "value": "draft"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "material_log.status",
+        "value": "draft"
+      }
+    },
+    {
+      "id": "action.material_log_approve",
+      "kind": "update_record",
+      "label": "Approve",
+      "entity_id": "entity.material_log",
+      "patch": {
+        "material_log.status": "approved"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "material_log.status",
+        "value": "submitted"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "material_log.status",
+        "value": "submitted"
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "id": "construction_material_logs.record.created",
+      "event": "record.created",
+      "entity_id": "entity.material_log"
+    },
+    {
+      "id": "construction_material_logs.record.updated",
+      "event": "record.updated",
+      "entity_id": "entity.material_log"
+    },
+    {
+      "id": "construction_material_logs.workflow.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.material_log",
+      "status_field": "material_log.status"
+    }
+  ],
+  "views": [
+    {
+      "id": "material_log.list",
+      "kind": "list",
+      "entity": "entity.material_log",
+      "columns": [
+        { "field_id": "material_log.log_date" },
+        { "field_id": "material_log.project_id" },
+        { "field_id": "material_log.material_type" },
+        { "field_id": "material_log.quantity" },
+        { "field_id": "material_log.unit" },
+        { "field_id": "material_log.total_cost" },
+        { "field_id": "material_log.entered_by_worker_id" },
+        { "field_id": "material_log.status" }
+      ],
+      "header": {
+        "primary_actions": [
+          { "action_id": "action.material_log_new" }
+        ],
+        "open_record_target": "page:material_log.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search material logs...",
+          "fields": [
+            "material_log.material_type",
+            "material_log.status",
+            "material_log.unit"
+          ]
+        }
+      }
+    },
+    {
+      "id": "material_log.form",
+      "kind": "form",
+      "entity": "entity.material_log",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Material Log",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "material_log.project_id",
+            "material_log.log_date",
+            "material_log.material_type",
+            "material_log.quantity",
+            "material_log.unit",
+            "material_log.unit_cost",
+            "material_log.total_cost",
+            "material_log.status",
+            "material_log.entered_by_worker_id",
+            "material_log.supervisor_id"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": [
+            "material_log.notes",
+            "material_log.photo"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": {
+          "field_id": "material_log.status"
+        },
+        "secondary_actions": [
+          { "action_id": "action.material_log_submit" },
+          { "action_id": "action.material_log_approve" }
+        ]
+      }
+    },
+    {
+      "id": "material_log.graph",
+      "kind": "graph",
+      "entity": "entity.material_log",
+      "default": {
+        "type": "bar",
+        "group_by": "material_log.material_type",
+        "measure": "count"
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "material_log.list_page",
+      "title": "Material Logs",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.material_log_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.material_log",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:material_log.list" },
+                { "mode": "graph", "target": "view:material_log.graph" },
+                { "mode": "pivot", "target": "view:material_log.list", "default_group_by": "material_log.project_id" }
+              ],
+              "default_filter_id": "all"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "material_log.form_page",
+      "title": "Material Log",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.material_log",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                {
+                  "kind": "view",
+                  "target": "view:material_log.form"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "interfaces": {
+    "dashboardable": [
+      {
+        "entity_id": "entity.material_log",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "material_log.log_date",
+        "measures": ["count", "sum:material_log.quantity", "sum:material_log.total_cost"],
+        "group_bys": [
+          "material_log.project_id",
+          "material_log.material_type",
+          "material_log.status",
+          "material_log.entered_by_worker_id"
+        ],
+        "default_widgets": [
+          {
+            "id": "materials_by_type",
+            "type": "group",
+            "title": "Materials by Type",
+            "group_by": "material_log.material_type",
+            "measure": "count"
+          }
+        ]
+      }
+    ],
+    "documentable": [
+      {
+        "entity_id": "entity.material_log",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "material_log.photo",
+        "title_field": "material_log.material_type",
+        "owner_field": "material_log.supervisor_id",
+        "category_field": "material_log.status",
+        "date_field": "material_log.created_at",
+        "record_label_field": "material_log.material_type",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
+      }
+    ]
+  },
+  "relations": [],
+  "workflows": [
+    {
+      "id": "workflow.material_log_status",
+      "entity": "entity.material_log",
+      "status_field": "material_log.status",
+      "states": [
+        { "id": "draft", "label": "Draft", "order": 1 },
+        { "id": "submitted", "label": "Submitted", "order": 2 },
+        { "id": "approved", "label": "Approved", "order": 3 }
+      ]
+    }
+  ],
+  "transformations": [],
+  "modals": [],
+  "queries": {}
+}

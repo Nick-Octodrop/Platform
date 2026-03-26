@@ -678,6 +678,12 @@ class MemoryConnectionStore:
                 return copy.deepcopy(item)
         return None
 
+    def delete(self, connection_id: str) -> bool:
+        if connection_id not in self._items:
+            return False
+        del self._items[connection_id]
+        return True
+
 
 class MemoryAutomationStore:
     def __init__(self) -> None:

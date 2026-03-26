@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+import json
 import sys
 import time
 import traceback
@@ -564,7 +565,17 @@ def _handle_action(step: dict, inputs: dict, ctx: dict, job_store: DbJobStore) -
     module_id = step.get("module_id") or inputs.get("module_id")
     if not isinstance(module_id, str) or not module_id:
         raise RuntimeError("module_id required for module action")
-    result = app_main.run_action_internal(module_id, action_id, inputs, actor={"user_id": "system", "role": "system"})
+    result = app_main.run_action_internal(
+        module_id,
+        action_id,
+        inputs,
+        actor={"user_id": "system", "role": "system", "workspace_role": "admin", "platform_role": "superadmin"},
+    )
+    if hasattr(result, "body") and hasattr(result, "status_code"):
+        try:
+            result = json.loads(result.body.decode("utf-8"))
+        except Exception:
+            result = None
     if not isinstance(result, dict) or not result.get("ok"):
         errors = result.get("errors") if isinstance(result, dict) else None
         raise RuntimeError(f"Module action failed: {errors}")

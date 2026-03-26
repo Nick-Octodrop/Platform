@@ -1,0 +1,762 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "construction_core",
+    "key": "construction_core",
+    "name": "Core",
+    "version": "2.2.0",
+    "description": "Shared construction master data for sites, crews, and cost codes.",
+    "category": "Construction",
+    "icon_key": "lucide:Blocks"
+  },
+  "app": {
+    "home": "page:construction_site.list_page",
+    "defaults": {
+      "entity_home_page": "page:construction_site.list_page",
+      "entity_form_page": "page:construction_site.form_page",
+      "entities": {
+        "entity.construction_site": {
+          "entity_home_page": "page:construction_site.list_page",
+          "entity_form_page": "page:construction_site.form_page"
+        },
+        "entity.construction_crew": {
+          "entity_home_page": "page:construction_crew.list_page",
+          "entity_form_page": "page:construction_crew.form_page"
+        },
+        "entity.construction_cost_code": {
+          "entity_home_page": "page:construction_cost_code.list_page",
+          "entity_form_page": "page:construction_cost_code.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Construction",
+        "mode": "inline",
+        "items": [
+          { "label": "Sites", "to": "page:construction_site.list_page" },
+          { "label": "Crews", "to": "page:construction_crew.list_page" },
+          { "label": "Cost Codes", "to": "page:construction_cost_code.list_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.construction_site",
+      "display_field": "construction_site.name",
+      "fields": [
+        { "id": "construction_site.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "construction_site.name", "type": "string", "label": "Site Name", "required": true },
+        { "id": "construction_site.code", "type": "string", "label": "Site Code" },
+        { "id": "construction_site.address", "type": "text", "label": "Address" },
+        { "id": "construction_site.city", "type": "string", "label": "City" },
+        { "id": "construction_site.region", "type": "string", "label": "Region / State" },
+        { "id": "construction_site.country", "type": "string", "label": "Country" },
+        { "id": "construction_site.supervisor_id", "type": "user", "label": "Site Supervisor" },
+        { "id": "construction_site.phone", "type": "string", "label": "Phone" },
+        {
+          "id": "construction_site.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "active",
+          "options": [
+            { "value": "active", "label": "Active" },
+            { "value": "inactive", "label": "Inactive" }
+          ]
+        },
+        { "id": "construction_site.notes", "type": "text", "label": "Notes" },
+        { "id": "construction_site.created_at", "type": "datetime", "label": "Created At" }
+      ]
+    },
+    {
+      "id": "entity.construction_crew",
+      "display_field": "construction_crew.name",
+      "fields": [
+        { "id": "construction_crew.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "construction_crew.name", "type": "string", "label": "Crew Name", "required": true },
+        { "id": "construction_crew.code", "type": "string", "label": "Crew Code" },
+        { "id": "construction_crew.foreman_user_id", "type": "user", "label": "Foreman" },
+        {
+          "id": "construction_crew.default_site_id",
+          "type": "lookup",
+          "label": "Default Site",
+          "entity": "entity.construction_site",
+          "display_field": "construction_site.name"
+        },
+        {
+          "id": "construction_crew.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "active",
+          "options": [
+            { "value": "active", "label": "Active" },
+            { "value": "inactive", "label": "Inactive" }
+          ]
+        },
+        { "id": "construction_crew.notes", "type": "text", "label": "Notes" },
+        { "id": "construction_crew.created_at", "type": "datetime", "label": "Created At" }
+      ]
+    },
+    {
+      "id": "entity.construction_cost_code",
+      "display_field": "construction_cost_code.name",
+      "fields": [
+        { "id": "construction_cost_code.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "construction_cost_code.code", "type": "string", "label": "Code", "required": true },
+        { "id": "construction_cost_code.name", "type": "string", "label": "Name", "required": true },
+        {
+          "id": "construction_cost_code.category",
+          "type": "enum",
+          "label": "Category",
+          "default": "labor",
+          "options": [
+            { "value": "labor", "label": "Labor" },
+            { "value": "materials", "label": "Materials" },
+            { "value": "subcontract", "label": "Subcontract" },
+            { "value": "equipment", "label": "Equipment" },
+            { "value": "other", "label": "Other" }
+          ]
+        },
+        {
+          "id": "construction_cost_code.active",
+          "type": "bool",
+          "label": "Active",
+          "default": true
+        },
+        { "id": "construction_cost_code.notes", "type": "text", "label": "Notes" },
+        { "id": "construction_cost_code.created_at", "type": "datetime", "label": "Created At" }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "action.construction_site_new",
+      "kind": "open_form",
+      "label": "+ New Site",
+      "target": "construction_site.form"
+    },
+    {
+      "id": "action.construction_crew_new",
+      "kind": "open_form",
+      "label": "+ New Crew",
+      "target": "construction_crew.form"
+    },
+    {
+      "id": "action.construction_cost_code_new",
+      "kind": "open_form",
+      "label": "+ New Cost Code",
+      "target": "construction_cost_code.form"
+    },
+    {
+      "id": "action.construction_site_deactivate",
+      "kind": "update_record",
+      "label": "Deactivate Site",
+      "entity_id": "entity.construction_site",
+      "patch": {
+        "construction_site.status": "inactive"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "construction_site.status",
+        "value": "active"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "construction_site.status",
+        "value": "active"
+      }
+    },
+    {
+      "id": "action.construction_site_activate",
+      "kind": "update_record",
+      "label": "Activate Site",
+      "entity_id": "entity.construction_site",
+      "patch": {
+        "construction_site.status": "active"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "construction_site.status",
+        "value": "inactive"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "construction_site.status",
+        "value": "inactive"
+      }
+    }
+  ],
+  "triggers": [
+    { "id": "construction_core.record.site.created", "event": "record.created", "entity_id": "entity.construction_site" },
+    { "id": "construction_core.record.site.updated", "event": "record.updated", "entity_id": "entity.construction_site" },
+    { "id": "construction_core.record.crew.created", "event": "record.created", "entity_id": "entity.construction_crew" },
+    { "id": "construction_core.record.crew.updated", "event": "record.updated", "entity_id": "entity.construction_crew" },
+    { "id": "construction_core.record.cost_code.created", "event": "record.created", "entity_id": "entity.construction_cost_code" },
+    { "id": "construction_core.record.cost_code.updated", "event": "record.updated", "entity_id": "entity.construction_cost_code" }
+  ],
+  "views": [
+    {
+      "id": "construction_site.list",
+      "kind": "list",
+      "entity": "entity.construction_site",
+      "columns": [
+        { "field_id": "construction_site.name" },
+        { "field_id": "construction_site.code" },
+        { "field_id": "construction_site.city" },
+        { "field_id": "construction_site.region" },
+        { "field_id": "construction_site.country" },
+        { "field_id": "construction_site.supervisor_id" },
+        { "field_id": "construction_site.status" }
+      ],
+      "header": {
+        "primary_actions": [
+          { "action_id": "action.construction_site_new" }
+        ],
+        "open_record_target": "page:construction_site.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search sites...",
+          "fields": [
+            "construction_site.name",
+            "construction_site.code",
+            "construction_site.city",
+            "construction_site.region",
+            "construction_site.country"
+          ]
+        },
+        "filters": [
+          {
+            "id": "active",
+            "label": "Active",
+            "domain": { "op": "eq", "field": "construction_site.status", "value": "active" }
+          },
+          {
+            "id": "inactive",
+            "label": "Inactive",
+            "domain": { "op": "eq", "field": "construction_site.status", "value": "inactive" }
+          }
+        ]
+      }
+    },
+    {
+      "id": "construction_site.kanban",
+      "kind": "kanban",
+      "entity": "entity.construction_site",
+      "card": {
+        "title_field": "construction_site.name",
+        "subtitle_fields": [
+          "construction_site.code",
+          "construction_site.city"
+        ],
+        "badge_fields": [
+          "construction_site.country",
+          "construction_site.status"
+        ]
+      }
+    },
+    {
+      "id": "construction_site.form",
+      "kind": "form",
+      "entity": "entity.construction_site",
+      "sections": [
+        {
+          "id": "general",
+          "title": "General",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "construction_site.name",
+            "construction_site.code",
+            "construction_site.city",
+            "construction_site.region",
+            "construction_site.country",
+            "construction_site.supervisor_id",
+            "construction_site.phone",
+            "construction_site.status",
+            "construction_site.address"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": [
+            "construction_site.notes"
+          ]
+        }
+      ],
+      "header": {
+        "secondary_actions": [
+          { "action_id": "action.construction_site_activate" },
+          { "action_id": "action.construction_site_deactivate" }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "general_tab",
+          "tabs": [
+            { "id": "general_tab", "label": "General", "sections": ["general"] },
+            { "id": "notes_tab", "label": "Notes", "sections": ["notes"] }
+          ]
+        }
+      }
+    },
+    {
+      "id": "construction_site.graph",
+      "kind": "graph",
+      "entity": "entity.construction_site",
+      "default": {
+        "type": "bar",
+        "group_by": "construction_site.country",
+        "measure": "count"
+      }
+    },
+    {
+      "id": "construction_crew.list",
+      "kind": "list",
+      "entity": "entity.construction_crew",
+      "columns": [
+        { "field_id": "construction_crew.name" },
+        { "field_id": "construction_crew.code" },
+        { "field_id": "construction_crew.foreman_user_id" },
+        { "field_id": "construction_crew.default_site_id" },
+        { "field_id": "construction_crew.status" }
+      ],
+      "header": {
+        "primary_actions": [
+          { "action_id": "action.construction_crew_new" }
+        ],
+        "open_record_target": "page:construction_crew.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search crews...",
+          "fields": [
+            "construction_crew.name",
+            "construction_crew.code",
+            "construction_crew.notes"
+          ]
+        }
+      }
+    },
+    {
+      "id": "construction_crew.kanban",
+      "kind": "kanban",
+      "entity": "entity.construction_crew",
+      "card": {
+        "title_field": "construction_crew.name",
+        "subtitle_fields": [
+          "construction_crew.code",
+          "construction_crew.default_site_id"
+        ],
+        "badge_fields": [
+          "construction_crew.status"
+        ]
+      }
+    },
+    {
+      "id": "construction_crew.form",
+      "kind": "form",
+      "entity": "entity.construction_crew",
+      "sections": [
+        {
+          "id": "general",
+          "title": "General",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "construction_crew.name",
+            "construction_crew.code",
+            "construction_crew.foreman_user_id",
+            "construction_crew.default_site_id",
+            "construction_crew.status"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": [
+            "construction_crew.notes"
+          ]
+        }
+      ],
+      "header": {
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "general_tab",
+          "tabs": [
+            { "id": "general_tab", "label": "General", "sections": ["general"] },
+            { "id": "notes_tab", "label": "Notes", "sections": ["notes"] }
+          ]
+        }
+      }
+    },
+    {
+      "id": "construction_crew.graph",
+      "kind": "graph",
+      "entity": "entity.construction_crew",
+      "default": {
+        "type": "bar",
+        "group_by": "construction_crew.default_site_id",
+        "measure": "count"
+      }
+    },
+    {
+      "id": "construction_cost_code.list",
+      "kind": "list",
+      "entity": "entity.construction_cost_code",
+      "columns": [
+        { "field_id": "construction_cost_code.code" },
+        { "field_id": "construction_cost_code.name" },
+        { "field_id": "construction_cost_code.category" },
+        { "field_id": "construction_cost_code.active" }
+      ],
+      "header": {
+        "primary_actions": [
+          { "action_id": "action.construction_cost_code_new" }
+        ],
+        "open_record_target": "page:construction_cost_code.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search cost codes...",
+          "fields": [
+            "construction_cost_code.code",
+            "construction_cost_code.name",
+            "construction_cost_code.notes"
+          ]
+        }
+      }
+    },
+    {
+      "id": "construction_cost_code.kanban",
+      "kind": "kanban",
+      "entity": "entity.construction_cost_code",
+      "card": {
+        "title_field": "construction_cost_code.name",
+        "subtitle_fields": [
+          "construction_cost_code.code"
+        ],
+        "badge_fields": [
+          "construction_cost_code.category",
+          "construction_cost_code.active"
+        ]
+      }
+    },
+    {
+      "id": "construction_cost_code.form",
+      "kind": "form",
+      "entity": "entity.construction_cost_code",
+      "sections": [
+        {
+          "id": "general",
+          "title": "General",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "construction_cost_code.code",
+            "construction_cost_code.name",
+            "construction_cost_code.category",
+            "construction_cost_code.active"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": [
+            "construction_cost_code.notes"
+          ]
+        }
+      ],
+      "header": {
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "general_tab",
+          "tabs": [
+            { "id": "general_tab", "label": "General", "sections": ["general"] },
+            { "id": "notes_tab", "label": "Notes", "sections": ["notes"] }
+          ]
+        }
+      }
+    },
+    {
+      "id": "construction_cost_code.graph",
+      "kind": "graph",
+      "entity": "entity.construction_cost_code",
+      "default": {
+        "type": "bar",
+        "group_by": "construction_cost_code.category",
+        "measure": "count"
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "construction_site.list_page",
+      "title": "Sites",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.construction_site_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.construction_site",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:construction_site.list" },
+                { "mode": "kanban", "target": "view:construction_site.kanban", "default_group_by": "construction_site.country" },
+                { "mode": "graph", "target": "view:construction_site.graph" },
+                { "mode": "pivot", "target": "view:construction_site.list", "default_group_by": "construction_site.country" }
+              ],
+              "default_filter_id": "active"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "construction_site.form_page",
+      "title": "Site",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.construction_site",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "view", "target": "view:construction_site.form" }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.construction_site",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "construction_crew.list_page",
+      "title": "Crews",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.construction_crew_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.construction_crew",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:construction_crew.list" },
+                { "mode": "kanban", "target": "view:construction_crew.kanban", "default_group_by": "construction_crew.default_site_id" },
+                { "mode": "graph", "target": "view:construction_crew.graph" },
+                { "mode": "pivot", "target": "view:construction_crew.list", "default_group_by": "construction_crew.default_site_id" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "construction_crew.form_page",
+      "title": "Crew",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.construction_crew",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "view", "target": "view:construction_crew.form" }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.construction_crew",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "construction_cost_code.list_page",
+      "title": "Cost Codes",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.construction_cost_code_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.construction_cost_code",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:construction_cost_code.list" },
+                { "mode": "kanban", "target": "view:construction_cost_code.kanban", "default_group_by": "construction_cost_code.category" },
+                { "mode": "graph", "target": "view:construction_cost_code.graph" },
+                { "mode": "pivot", "target": "view:construction_cost_code.list", "default_group_by": "construction_cost_code.category" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "construction_cost_code.form_page",
+      "title": "Cost Code",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.construction_cost_code",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "view", "target": "view:construction_cost_code.form" }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.construction_cost_code",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "interfaces": {
+    "dashboardable": [
+      {
+        "entity_id": "entity.construction_site",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "construction_site.created_at",
+        "measures": ["count"],
+        "group_bys": [
+          "construction_site.status",
+          "construction_site.country",
+          "construction_site.supervisor_id"
+        ]
+      },
+      {
+        "entity_id": "entity.construction_cost_code",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "construction_cost_code.created_at",
+        "measures": ["count"],
+        "group_bys": [
+          "construction_cost_code.category",
+          "construction_cost_code.active"
+        ]
+      }
+    ]
+  },
+  "relations": [],
+  "queries": {}
+}

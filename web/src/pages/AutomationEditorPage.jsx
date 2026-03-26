@@ -6,10 +6,12 @@ import CodeTextarea from "../components/CodeTextarea.jsx";
 import ValidationPanel from "../components/ValidationPanel.jsx";
 import AgentChatInput from "../ui/AgentChatInput.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
+import { useAccessContext } from "../access.js";
 
 export default function AutomationEditorPage({ user }) {
   const { automationId } = useParams();
   const navigate = useNavigate();
+  const { isSuperadmin } = useAccessContext();
 
   const [item, setItem] = useState(null);
   const [name, setName] = useState("");
@@ -298,53 +300,58 @@ export default function AutomationEditorPage({ user }) {
   }, [name, trigger, steps]);
 
   const bubbleBase = "chat-bubble text-sm leading-5 max-w-[85%]";
-  const agentIntro = "Describe the automation change you want and I will draft an update.";
   const userLabel = user?.email || "User";
 
   const renderLeftPane = useCallback(() => (
     <div className="h-full min-h-0 flex flex-col overflow-hidden">
-      <div className="flex-1 min-h-0 overflow-auto space-y-4">
-        {chatMessages.length === 0 && (
-          <div className="chat chat-start">
-            <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">assistant</div>
-            <div className={`${bubbleBase} bg-base-200 text-base-content`}>
-              {agentIntro}
-            </div>
+      {isSuperadmin ? (
+        <>
+          <div className="flex-1 min-h-0 overflow-auto space-y-4">
+            {chatMessages.length === 0 && (
+              <div className="chat chat-start">
+                <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">assistant</div>
+                <div className={`${bubbleBase} bg-base-200 text-base-content`}>
+                  Describe the automation change you want and I will draft an update.
+                </div>
+              </div>
+            )}
+            {chatMessages.map((m, idx) => (
+              <div key={`${m.role}-${idx}`} className={`chat ${m.role === "user" ? "chat-end" : "chat-start"}`}>
+                <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">
+                  {m.role === "user" ? userLabel : m.role}
+                </div>
+                <div className={`${bubbleBase} ${m.role === "user" ? "bg-primary text-primary-content" : "bg-base-200 text-base-content"}`}>
+                  <div className="whitespace-pre-wrap text-sm">{m.text}</div>
+                </div>
+              </div>
+            ))}
+            {chatLoading && <div className="text-xs opacity-60">Agent is thinking…</div>}
           </div>
-        )}
-        {chatMessages.map((m, idx) => (
-          <div key={`${m.role}-${idx}`} className={`chat ${m.role === "user" ? "chat-end" : "chat-start"}`}>
-            <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">
-              {m.role === "user" ? userLabel : m.role}
-            </div>
-            <div className={`${bubbleBase} ${m.role === "user" ? "bg-primary text-primary-content" : "bg-base-200 text-base-content"}`}>
-              <div className="whitespace-pre-wrap text-sm">{m.text}</div>
-            </div>
+          <div className="shrink-0">
+            <AgentChatInput
+              value={chatInput}
+              onChange={setChatInput}
+              onSend={() => {
+                const text = chatInput.trim();
+                if (!text || chatLoading) return;
+                setChatMessages((prev) => [...prev, { role: "user", text }]);
+                setChatInput("");
+                setChatLoading(true);
+                setTimeout(() => {
+                  setChatMessages((prev) => [...prev, { role: "assistant", text: "Agent wiring coming soon." }]);
+                  setChatLoading(false);
+                }, 500);
+              }}
+              disabled={chatLoading}
+              minRows={1}
+            />
           </div>
-        ))}
-        {chatLoading && <div className="text-xs opacity-60">Agent is thinking…</div>}
-      </div>
-      <div className="shrink-0">
-        <AgentChatInput
-          value={chatInput}
-          onChange={setChatInput}
-          onSend={() => {
-            const text = chatInput.trim();
-            if (!text || chatLoading) return;
-            setChatMessages((prev) => [...prev, { role: "user", text }]);
-            setChatInput("");
-            setChatLoading(true);
-            setTimeout(() => {
-              setChatMessages((prev) => [...prev, { role: "assistant", text: "Agent wiring coming soon." }]);
-              setChatLoading(false);
-            }, 500);
-          }}
-          disabled={chatLoading}
-          minRows={1}
-        />
-      </div>
+        </>
+      ) : (
+        <div className="alert alert-info text-sm">Automation AI is currently disabled for non-superadmins.</div>
+      )}
     </div>
-  ), [chatMessages, chatLoading, chatInput, userLabel]);
+  ), [bubbleBase, chatInput, chatLoading, chatMessages, isSuperadmin, userLabel]);
 
   const renderValidationPanel = useCallback(() => (
     <ValidationPanel
@@ -353,10 +360,10 @@ export default function AutomationEditorPage({ user }) {
       warnings={[]}
       idleMessage="Validation runs automatically while you edit."
       showSuccess={true}
-      showFix
+      showFix={isSuperadmin}
       fixDisabled
     />
-  ), [validationErrors]);
+  ), [isSuperadmin, validationErrors]);
 
   const builderTab = (
     <div className="space-y-4">

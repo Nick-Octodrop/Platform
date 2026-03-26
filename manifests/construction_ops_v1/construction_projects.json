@@ -1,0 +1,430 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "construction_projects",
+    "key": "construction_projects",
+    "name": "Construction Projects",
+    "version": "1.0.0",
+    "description": "Project master records for field operations, labor tracking, and material control.",
+    "category": "Construction",
+    "icon_key": "lucide:Building2"
+  },
+  "app": {
+    "home": "page:construction_project.list_page",
+    "defaults": {
+      "entity_home_page": "page:construction_project.list_page",
+      "entity_form_page": "page:construction_project.form_page",
+      "entities": {
+        "entity.construction_project": {
+          "entity_home_page": "page:construction_project.list_page",
+          "entity_form_page": "page:construction_project.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Construction",
+        "items": [
+          {
+            "label": "Projects",
+            "to": "page:construction_project.list_page"
+          }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.construction_project",
+      "display_field": "construction_project.name",
+      "fields": [
+        {
+          "id": "construction_project.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "construction_project.name",
+          "type": "string",
+          "label": "Project Name",
+          "required": true
+        },
+        {
+          "id": "construction_project.code",
+          "type": "string",
+          "label": "Project Code"
+        },
+        {
+          "id": "construction_project.client_name",
+          "type": "string",
+          "label": "Client"
+        },
+        {
+          "id": "construction_project.site_location",
+          "type": "string",
+          "label": "Site Location"
+        },
+        {
+          "id": "construction_project.country",
+          "type": "string",
+          "label": "Country"
+        },
+        {
+          "id": "construction_project.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "planned",
+          "options": [
+            {
+              "value": "planned",
+              "label": "Planned"
+            },
+            {
+              "value": "active",
+              "label": "Active"
+            },
+            {
+              "value": "on_hold",
+              "label": "On Hold"
+            },
+            {
+              "value": "completed",
+              "label": "Completed"
+            },
+            {
+              "value": "cancelled",
+              "label": "Cancelled"
+            }
+          ]
+        },
+        {
+          "id": "construction_project.site_manager_id",
+          "type": "user",
+          "label": "Site Manager"
+        },
+        {
+          "id": "construction_project.start_date",
+          "type": "date",
+          "label": "Start Date"
+        },
+        {
+          "id": "construction_project.target_end_date",
+          "type": "date",
+          "label": "Target End Date"
+        },
+        {
+          "id": "construction_project.labor_budget",
+          "type": "number",
+          "label": "Labor Budget"
+        },
+        {
+          "id": "construction_project.material_budget",
+          "type": "number",
+          "label": "Material Budget"
+        },
+        {
+          "id": "construction_project.notes",
+          "type": "text",
+          "label": "Notes"
+        },
+        {
+          "id": "construction_project.attachments",
+          "type": "attachments",
+          "label": "Attachments"
+        },
+        {
+          "id": "construction_project.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "action.construction_project_new",
+      "kind": "open_form",
+      "label": "+ New Project",
+      "target": "construction_project.form"
+    },
+    {
+      "id": "action.construction_project_activate",
+      "kind": "update_record",
+      "label": "Activate",
+      "entity_id": "entity.construction_project",
+      "patch": {
+        "construction_project.status": "active"
+      },
+      "enabled_when": {
+        "op": "in",
+        "field": "construction_project.status",
+        "value": ["planned", "on_hold"]
+      },
+      "visible_when": {
+        "op": "in",
+        "field": "construction_project.status",
+        "value": ["planned", "on_hold"]
+      }
+    },
+    {
+      "id": "action.construction_project_hold",
+      "kind": "update_record",
+      "label": "Put On Hold",
+      "entity_id": "entity.construction_project",
+      "patch": {
+        "construction_project.status": "on_hold"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "construction_project.status",
+        "value": "active"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "construction_project.status",
+        "value": "active"
+      }
+    },
+    {
+      "id": "action.construction_project_complete",
+      "kind": "update_record",
+      "label": "Mark Completed",
+      "entity_id": "entity.construction_project",
+      "patch": {
+        "construction_project.status": "completed"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "construction_project.status",
+        "value": "active"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "construction_project.status",
+        "value": "active"
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "id": "construction_projects.record.created",
+      "event": "record.created",
+      "entity_id": "entity.construction_project"
+    },
+    {
+      "id": "construction_projects.record.updated",
+      "event": "record.updated",
+      "entity_id": "entity.construction_project"
+    },
+    {
+      "id": "construction_projects.workflow.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.construction_project",
+      "status_field": "construction_project.status"
+    }
+  ],
+  "views": [
+    {
+      "id": "construction_project.list",
+      "kind": "list",
+      "entity": "entity.construction_project",
+      "columns": [
+        { "field_id": "construction_project.name" },
+        { "field_id": "construction_project.code" },
+        { "field_id": "construction_project.client_name" },
+        { "field_id": "construction_project.site_location" },
+        { "field_id": "construction_project.status" },
+        { "field_id": "construction_project.site_manager_id" },
+        { "field_id": "construction_project.start_date" },
+        { "field_id": "construction_project.target_end_date" }
+      ],
+      "header": {
+        "primary_actions": [
+          { "action_id": "action.construction_project_new" }
+        ],
+        "open_record_target": "page:construction_project.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search projects...",
+          "fields": [
+            "construction_project.name",
+            "construction_project.code",
+            "construction_project.client_name",
+            "construction_project.site_location"
+          ]
+        }
+      }
+    },
+    {
+      "id": "construction_project.form",
+      "kind": "form",
+      "entity": "entity.construction_project",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Project",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "construction_project.name",
+            "construction_project.code",
+            "construction_project.client_name",
+            "construction_project.site_location",
+            "construction_project.country",
+            "construction_project.status",
+            "construction_project.site_manager_id",
+            "construction_project.start_date",
+            "construction_project.target_end_date"
+          ]
+        },
+        {
+          "id": "budget",
+          "title": "Budget",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "construction_project.labor_budget",
+            "construction_project.material_budget"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": [
+            "construction_project.notes",
+            "construction_project.attachments"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": {
+          "field_id": "construction_project.status"
+        },
+        "secondary_actions": [
+          { "action_id": "action.construction_project_activate" },
+          { "action_id": "action.construction_project_hold" },
+          { "action_id": "action.construction_project_complete" }
+        ]
+      }
+    },
+    {
+      "id": "construction_project.graph",
+      "kind": "graph",
+      "entity": "entity.construction_project",
+      "default": {
+        "type": "bar",
+        "group_by": "construction_project.status",
+        "measure": "count"
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "construction_project.list_page",
+      "title": "Construction Projects",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.construction_project_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.construction_project",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:construction_project.list" },
+                { "mode": "graph", "target": "view:construction_project.graph" }
+              ],
+              "default_filter_id": "all"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "construction_project.form_page",
+      "title": "Project",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.construction_project",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                {
+                  "kind": "view",
+                  "target": "view:construction_project.form"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "interfaces": {
+    "dashboardable": [
+      {
+        "entity_id": "entity.construction_project",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "construction_project.created_at",
+        "measures": ["count"],
+        "group_bys": [
+          "construction_project.status",
+          "construction_project.site_manager_id",
+          "construction_project.country"
+        ]
+      }
+    ],
+    "documentable": [
+      {
+        "entity_id": "entity.construction_project",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "construction_project.attachments",
+        "title_field": "construction_project.name",
+        "owner_field": "construction_project.site_manager_id",
+        "category_field": "construction_project.status",
+        "date_field": "construction_project.created_at",
+        "record_label_field": "construction_project.name",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
+      }
+    ]
+  },
+  "relations": [],
+  "workflows": [
+    {
+      "id": "workflow.construction_project_status",
+      "entity": "entity.construction_project",
+      "status_field": "construction_project.status",
+      "states": [
+        { "id": "planned", "label": "Planned", "order": 1 },
+        { "id": "active", "label": "Active", "order": 2 },
+        { "id": "on_hold", "label": "On Hold", "order": 3 },
+        { "id": "completed", "label": "Completed", "order": 4 },
+        { "id": "cancelled", "label": "Cancelled", "order": 5 }
+      ]
+    }
+  ],
+  "transformations": [],
+  "modals": [],
+  "queries": {}
+}

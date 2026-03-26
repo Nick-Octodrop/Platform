@@ -30,7 +30,7 @@ ALLOWED_V1_TOP_KEYS = {
     "transformations",
 }
 ALLOWED_V1_APP_KEYS = {"home", "nav", "defaults"}
-ALLOWED_V1_NAV_GROUP_KEYS = {"group", "items"}
+ALLOWED_V1_NAV_GROUP_KEYS = {"group", "items", "mode", "inline", "as_link"}
 ALLOWED_V1_NAV_ITEM_KEYS = {"label", "to"}
 ALLOWED_V1_PAGE_KEYS = {"id", "title", "layout", "header", "content", "breadcrumbs"}
 ALLOWED_V1_PAGE_HEADER_KEYS = {"actions", "variant"}
@@ -1827,6 +1827,15 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
                     if not isinstance(items, list):
                         errors.append(_issue("MANIFEST_APP_NAV_INVALID", "nav group items must be a list", f"{gpath}.items"))
                         continue
+                    mode = _get(group, "mode")
+                    if mode is not None and mode not in ("dropdown", "inline", "link"):
+                        errors.append(_issue("MANIFEST_APP_NAV_INVALID", "nav group mode must be dropdown|inline|link", f"{gpath}.mode"))
+                    inline = _get(group, "inline")
+                    if inline is not None and not isinstance(inline, bool):
+                        errors.append(_issue("MANIFEST_APP_NAV_INVALID", "nav group inline must be a boolean", f"{gpath}.inline"))
+                    as_link = _get(group, "as_link")
+                    if as_link is not None and not isinstance(as_link, bool):
+                        errors.append(_issue("MANIFEST_APP_NAV_INVALID", "nav group as_link must be a boolean", f"{gpath}.as_link"))
                     for iidx, item in enumerate(items):
                         ipath = f"{gpath}.items[{iidx}]"
                         if not isinstance(item, dict):

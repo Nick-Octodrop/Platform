@@ -227,7 +227,9 @@ export default function AppsPage({ user }) {
   }
 
   const items = useMemo(() => {
-    const installed = modules.map((m) => ({
+    const installed = modules
+      .filter((m) => isSuperadmin || m.module_id !== "octo_ai")
+      .map((m) => ({
       kind: "installed",
       id: m.module_id,
       title: getAppDisplayName(m.module_id, m),
@@ -238,7 +240,9 @@ export default function AppsPage({ user }) {
       icon_url: m.icon_key || null,
       keywords: ["installed", m.module_id, m.name || "", m.description || ""].filter(Boolean),
     }));
-    const marketplace = (Array.isArray(marketplaceApps) ? marketplaceApps : []).map((a) => ({
+    const marketplace = (Array.isArray(marketplaceApps) ? marketplaceApps : [])
+      .filter((a) => isSuperadmin || (a.id !== "octo_ai" && a.source_module_id !== "octo_ai"))
+      .map((a) => ({
       kind: "marketplace",
       id: a.id,
       title: a.title || a.slug || "App",
@@ -249,7 +253,7 @@ export default function AppsPage({ user }) {
       keywords: ["marketplace", a.slug, a.title, a.source_module_id, a.description].filter(Boolean),
     }));
     return [...installed, ...marketplace];
-  }, [marketplaceApps, modules]);
+  }, [isSuperadmin, marketplaceApps, modules]);
 
   const filteredItems = useMemo(() => {
     const needle = query.trim().toLowerCase();

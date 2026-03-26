@@ -87,6 +87,20 @@ export default function IntegrationConnectionPage() {
     }
   }
 
+  async function removeConnection() {
+    if (!item?.id) return;
+    const ok = window.confirm("Delete this integration connection? This cannot be undone.");
+    if (!ok) return;
+    setError("");
+    setNotice("");
+    try {
+      await apiFetch(`/integrations/connections/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+      navigate("/integrations");
+    } catch (err) {
+      setError(err?.message || "Delete failed");
+    }
+  }
+
   const provider = providerFromType(item?.type);
 
   return (
@@ -98,6 +112,15 @@ export default function IntegrationConnectionPage() {
       onTabChange={setActiveTab}
       rightActions={(
         <div className="flex items-center gap-2">
+          <button
+            className="btn btn-sm btn-outline btn-error"
+            type="button"
+            onClick={removeConnection}
+            disabled={loading || saving || !item || item.status !== "disabled"}
+            title={item && item.status !== "disabled" ? "Disable the connection before deleting it" : undefined}
+          >
+            Delete
+          </button>
           <button className="btn btn-sm btn-ghost" type="button" onClick={load} disabled={loading || saving}>
             Refresh
           </button>

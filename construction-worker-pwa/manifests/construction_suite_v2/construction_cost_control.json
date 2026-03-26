@@ -1,0 +1,281 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "construction_cost_control",
+    "key": "construction_cost_control",
+    "name": "Cost Control",
+    "version": "2.2.0",
+    "description": "Budgets and expenses for construction profitability control.",
+    "category": "Construction",
+    "icon_key": "lucide:Receipt"
+  },
+  "depends_on": {
+    "required": [
+      { "module": "contacts", "version": ">=1.0.0" },
+      { "module": "construction_core", "version": ">=2.2.0" },
+      { "module": "construction_projects", "version": ">=2.2.0" },
+      { "module": "construction_material_control", "version": ">=2.2.0" },
+      { "module": "construction_workforce", "version": ">=2.2.0" }
+    ]
+  },
+  "app": {
+    "home": "page:construction_budget_line.list_page",
+    "defaults": {
+      "entity_home_page": "page:construction_budget_line.list_page",
+      "entity_form_page": "page:construction_budget_line.form_page",
+      "entities": {
+        "entity.construction_budget_line": {
+          "entity_home_page": "page:construction_budget_line.list_page",
+          "entity_form_page": "page:construction_budget_line.form_page"
+        },
+        "entity.construction_expense": {
+          "entity_home_page": "page:construction_expense.list_page",
+          "entity_form_page": "page:construction_expense.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Construction",
+        "mode": "inline",
+        "items": [
+          { "label": "Budgets", "to": "page:construction_budget_line.list_page" },
+          { "label": "Expenses", "to": "page:construction_expense.list_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.construction_budget_line",
+      "display_field": "construction_budget_line.project_id",
+      "fields": [
+        { "id": "construction_budget_line.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "construction_budget_line.project_id", "type": "lookup", "label": "Project", "entity": "entity.construction_project", "display_field": "construction_project.name", "required": true },
+        { "id": "construction_budget_line.cost_code_id", "type": "lookup", "label": "Cost Code", "entity": "entity.construction_cost_code", "display_field": "construction_cost_code.name", "required": true },
+        { "id": "construction_budget_line.category", "type": "enum", "label": "Category", "default": "labor", "options": [{ "value": "labor", "label": "Labor" }, { "value": "materials", "label": "Materials" }, { "value": "subcontract", "label": "Subcontract" }, { "value": "equipment", "label": "Equipment" }, { "value": "other", "label": "Other" }] },
+        { "id": "construction_budget_line.description", "type": "string", "label": "Description" },
+        { "id": "construction_budget_line.planned_amount", "type": "number", "label": "Planned Amount", "required": true },
+        { "id": "construction_budget_line.committed_amount", "type": "number", "label": "Committed Amount" },
+        { "id": "construction_budget_line.actual_amount", "type": "number", "label": "Actual Amount" },
+        { "id": "construction_budget_line.notes", "type": "text", "label": "Notes" },
+        { "id": "construction_budget_line.created_at", "type": "datetime", "label": "Created At" }
+      ]
+    },
+    {
+      "id": "entity.construction_expense",
+      "display_field": "construction_expense.expense_date",
+      "fields": [
+        { "id": "construction_expense.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "construction_expense.project_id", "type": "lookup", "label": "Project", "entity": "entity.construction_project", "display_field": "construction_project.name", "required": true },
+        { "id": "construction_expense.site_id", "type": "lookup", "label": "Site", "entity": "entity.construction_site", "display_field": "construction_site.name" },
+        { "id": "construction_expense.cost_code_id", "type": "lookup", "label": "Cost Code", "entity": "entity.construction_cost_code", "display_field": "construction_cost_code.name" },
+        { "id": "construction_expense.expense_date", "type": "date", "label": "Expense Date", "required": true },
+        { "id": "construction_expense.expense_type", "type": "enum", "label": "Expense Type", "default": "materials", "options": [{ "value": "labor", "label": "Labor" }, { "value": "materials", "label": "Materials" }, { "value": "subcontract", "label": "Subcontract" }, { "value": "equipment", "label": "Equipment" }, { "value": "other", "label": "Other" }] },
+        { "id": "construction_expense.supplier_contact_id", "type": "lookup", "label": "Supplier / Vendor", "entity": "entity.contact", "display_field": "contact.name" },
+        { "id": "construction_expense.reference", "type": "string", "label": "Reference" },
+        { "id": "construction_expense.amount", "type": "number", "label": "Amount", "required": true },
+        { "id": "construction_expense.status", "type": "enum", "label": "Status", "default": "draft", "options": [{ "value": "draft", "label": "Draft" }, { "value": "posted", "label": "Posted" }, { "value": "void", "label": "Void" }] },
+        { "id": "construction_expense.notes", "type": "text", "label": "Notes" },
+        { "id": "construction_expense.attachments", "type": "attachments", "label": "Attachments" },
+        { "id": "construction_expense.created_at", "type": "datetime", "label": "Created At" }
+      ]
+    }
+  ],
+  "actions": [
+    { "id": "action.construction_budget_line_new", "kind": "open_form", "label": "+ New Budget Line", "target": "construction_budget_line.form" },
+    { "id": "action.construction_expense_new", "kind": "open_form", "label": "+ New Expense", "target": "construction_expense.form" },
+    { "id": "action.construction_expense_post", "kind": "update_record", "label": "Post", "entity_id": "entity.construction_expense", "patch": { "construction_expense.status": "posted" }, "enabled_when": { "op": "eq", "field": "construction_expense.status", "value": "draft" }, "visible_when": { "op": "eq", "field": "construction_expense.status", "value": "draft" } },
+    { "id": "action.construction_expense_void", "kind": "update_record", "label": "Void", "entity_id": "entity.construction_expense", "patch": { "construction_expense.status": "void" }, "enabled_when": { "op": "eq", "field": "construction_expense.status", "value": "posted" }, "visible_when": { "op": "eq", "field": "construction_expense.status", "value": "posted" } }
+  ],
+  "views": [
+    {
+      "id": "construction_budget_line.list",
+      "kind": "list",
+      "entity": "entity.construction_budget_line",
+      "columns": [
+        { "field_id": "construction_budget_line.project_id" },
+        { "field_id": "construction_budget_line.cost_code_id" },
+        { "field_id": "construction_budget_line.category" },
+        { "field_id": "construction_budget_line.planned_amount" },
+        { "field_id": "construction_budget_line.committed_amount" },
+        { "field_id": "construction_budget_line.actual_amount" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.construction_budget_line_new" }],
+        "open_record_target": "page:construction_budget_line.form_page",
+        "search": { "enabled": true, "placeholder": "Search budget lines...", "fields": ["construction_budget_line.description", "construction_budget_line.notes"] }
+      }
+    },
+    {
+      "id": "construction_budget_line.form",
+      "kind": "form",
+      "entity": "entity.construction_budget_line",
+      "sections": [
+        {
+          "id": "budget",
+          "title": "Budget",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "construction_budget_line.project_id",
+            "construction_budget_line.cost_code_id",
+            "construction_budget_line.category",
+            "construction_budget_line.description",
+            "construction_budget_line.planned_amount",
+            "construction_budget_line.committed_amount",
+            "construction_budget_line.actual_amount"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": ["construction_budget_line.notes"]
+        }
+      ],
+      "header": {
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "budget_tab",
+          "tabs": [
+            { "id": "budget_tab", "label": "Budget", "sections": ["budget"] },
+            { "id": "notes_tab", "label": "Notes", "sections": ["notes"] }
+          ]
+        }
+      }
+    },
+    {
+      "id": "construction_budget_line.graph",
+      "kind": "graph",
+      "entity": "entity.construction_budget_line",
+      "default": { "type": "bar", "group_by": "construction_budget_line.project_id", "measure": "sum:construction_budget_line.planned_amount" }
+    },
+    {
+      "id": "construction_expense.list",
+      "kind": "list",
+      "entity": "entity.construction_expense",
+      "columns": [
+        { "field_id": "construction_expense.expense_date" },
+        { "field_id": "construction_expense.project_id" },
+        { "field_id": "construction_expense.expense_type" },
+        { "field_id": "construction_expense.supplier_contact_id" },
+        { "field_id": "construction_expense.reference" },
+        { "field_id": "construction_expense.amount" },
+        { "field_id": "construction_expense.status" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.construction_expense_new" }],
+        "open_record_target": "page:construction_expense.form_page",
+        "search": { "enabled": true, "placeholder": "Search expenses...", "fields": ["construction_expense.reference", "construction_expense.notes"] },
+        "filters": [
+          { "id": "draft", "label": "Draft", "domain": { "op": "eq", "field": "construction_expense.status", "value": "draft" } },
+          { "id": "posted", "label": "Posted", "domain": { "op": "eq", "field": "construction_expense.status", "value": "posted" } }
+        ]
+      }
+    },
+    {
+      "id": "construction_expense.form",
+      "kind": "form",
+      "entity": "entity.construction_expense",
+      "sections": [
+        {
+          "id": "expense",
+          "title": "Expense",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "construction_expense.project_id",
+            "construction_expense.site_id",
+            "construction_expense.cost_code_id",
+            "construction_expense.expense_date",
+            "construction_expense.expense_type",
+            "construction_expense.supplier_contact_id",
+            "construction_expense.reference",
+            "construction_expense.amount",
+            "construction_expense.status"
+          ]
+        },
+        {
+          "id": "supporting",
+          "title": "Supporting",
+          "fields": [
+            "construction_expense.notes",
+            "construction_expense.attachments"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": { "field_id": "construction_expense.status" },
+        "secondary_actions": [{ "action_id": "action.construction_expense_post" }, { "action_id": "action.construction_expense_void" }],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "expense_tab",
+          "tabs": [
+            { "id": "expense_tab", "label": "Expense", "sections": ["expense"] },
+            { "id": "supporting_tab", "label": "Supporting", "sections": ["supporting"] }
+          ]
+        }
+      }
+    },
+    {
+      "id": "construction_expense.graph",
+      "kind": "graph",
+      "entity": "entity.construction_expense",
+      "default": { "type": "bar", "group_by": "construction_expense.project_id", "measure": "sum:construction_expense.amount" }
+    }
+  ],
+  "pages": [
+    {
+      "id": "construction_budget_line.list_page",
+      "title": "Budgets",
+      "layout": "single",
+      "header": { "variant": "none", "actions": [{ "action_id": "action.construction_budget_line_new" }] },
+      "content": [{ "kind": "container", "variant": "card", "content": [{ "kind": "view_modes", "entity_id": "entity.construction_budget_line", "default_mode": "list", "modes": [{ "mode": "list", "target": "view:construction_budget_line.list" }, { "mode": "graph", "target": "view:construction_budget_line.graph" }, { "mode": "pivot", "target": "view:construction_budget_line.list", "default_group_by": "construction_budget_line.project_id" }] }] }]
+    },
+    {
+      "id": "construction_budget_line.form_page",
+      "title": "Budget Line",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [{ "kind": "record", "entity_id": "entity.construction_budget_line", "record_id_query": "record", "content": [{ "kind": "grid", "columns": 12, "gap": "md", "items": [{ "span": 8, "content": [{ "kind": "container", "variant": "card", "content": [{ "kind": "view", "target": "view:construction_budget_line.form" }] }] }, { "span": 4, "content": [{ "kind": "container", "variant": "card", "content": [{ "kind": "chatter", "entity_id": "entity.construction_budget_line", "record_ref": "$record.id" }] }] }] }] }]
+    },
+    {
+      "id": "construction_expense.list_page",
+      "title": "Expenses",
+      "layout": "single",
+      "header": { "variant": "none", "actions": [{ "action_id": "action.construction_expense_new" }] },
+      "content": [{ "kind": "container", "variant": "card", "content": [{ "kind": "view_modes", "entity_id": "entity.construction_expense", "default_mode": "list", "modes": [{ "mode": "list", "target": "view:construction_expense.list" }, { "mode": "graph", "target": "view:construction_expense.graph" }, { "mode": "pivot", "target": "view:construction_expense.list", "default_group_by": "construction_expense.project_id" }], "default_filter_id": "posted" }] }]
+    },
+    {
+      "id": "construction_expense.form_page",
+      "title": "Expense",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [{ "kind": "record", "entity_id": "entity.construction_expense", "record_id_query": "record", "content": [{ "kind": "grid", "columns": 12, "gap": "md", "items": [{ "span": 8, "content": [{ "kind": "container", "variant": "card", "content": [{ "kind": "view", "target": "view:construction_expense.form" }] }] }, { "span": 4, "content": [{ "kind": "container", "variant": "card", "content": [{ "kind": "chatter", "entity_id": "entity.construction_expense", "record_ref": "$record.id" }] }] }] }] }]
+    }
+  ],
+  "interfaces": {
+    "dashboardable": [
+      { "entity_id": "entity.construction_budget_line", "enabled": true, "scope": "module_and_global", "date_field": "construction_budget_line.created_at", "measures": ["count", "sum:construction_budget_line.planned_amount", "sum:construction_budget_line.committed_amount", "sum:construction_budget_line.actual_amount"], "group_bys": ["construction_budget_line.project_id", "construction_budget_line.cost_code_id", "construction_budget_line.category"] },
+      { "entity_id": "entity.construction_expense", "enabled": true, "scope": "module_and_global", "date_field": "construction_expense.expense_date", "measures": ["count", "sum:construction_expense.amount"], "group_bys": ["construction_expense.project_id", "construction_expense.expense_type", "construction_expense.cost_code_id", "construction_expense.supplier_contact_id", "construction_expense.status"] }
+    ],
+    "documentable": [
+      {
+        "entity_id": "entity.construction_expense",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "construction_expense.attachments",
+        "title_field": "construction_expense.reference",
+        "owner_field": "construction_expense.supplier_contact_id",
+        "category_field": "construction_expense.status",
+        "date_field": "construction_expense.created_at",
+        "record_label_field": "construction_expense.reference",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
+      }
+    ]
+  },
+  "relations": [],
+  "queries": {}
+}

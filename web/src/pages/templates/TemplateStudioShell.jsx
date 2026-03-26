@@ -5,6 +5,7 @@ import ValidationPanel from "../../components/ValidationPanel.jsx";
 import TemplateAgentPane from "./TemplateAgentPane.jsx";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM } from "../../components/buttonStyles.js";
 import { apiFetch } from "../../api.js";
+import { useAccessContext } from "../../access.js";
 
 const DEFAULT_SAMPLE = { entity_id: "", record_id: "" };
 
@@ -27,6 +28,7 @@ export default function TemplateStudioShell({
   activeTab: externalActiveTab,
   onTabChange,
 }) {
+  const { isSuperadmin } = useAccessContext();
   const [record, setRecord] = useState(null);
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -305,7 +307,7 @@ export default function TemplateStudioShell({
       warnings={mergedWarnings}
       idleMessage="Validation runs automatically while you edit."
       showSuccess={true}
-      showFix={showFixWithAi}
+      showFix={showFixWithAi && isSuperadmin}
       fixDisabled
     />
   );

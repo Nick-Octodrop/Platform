@@ -1,11 +1,20 @@
 import React, { useState } from "react";
 import AgentChatInput from "../../ui/AgentChatInput.jsx";
+import { useAccessContext } from "../../access.js";
 
 export default function TemplateAgentPane({ disabled, initialMessage }) {
+  const { isSuperadmin } = useAccessContext();
   const [input, setInput] = useState("");
   const message = initialMessage || "Describe the template change you want and I will draft an update.";
 
   const bubbleBase = "chat-bubble text-sm leading-5 max-w-[85%]";
+  if (!isSuperadmin) {
+    return (
+      <div className="h-full min-h-0 flex flex-col overflow-hidden">
+        <div className="alert alert-info text-sm">Template AI is currently disabled for non-superadmins.</div>
+      </div>
+    );
+  }
   return (
     <div className="h-full min-h-0 flex flex-col overflow-hidden">
       <div className="flex-1 min-h-0 overflow-auto space-y-4">

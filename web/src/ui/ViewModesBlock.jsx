@@ -1535,7 +1535,10 @@ export default function ViewModesBlock({
     () => resolveTemplateRefs(block?.create_defaults || null, recordScope),
     [block?.create_defaults, recordScope]
   );
-  const domain = buildDomain(activeFilter, clientFilters, recordDomain);
+  const domain = useMemo(
+    () => buildDomain(activeFilter, clientFilters, recordDomain),
+    [activeFilter, clientFilters, recordDomain]
+  );
 
   useEffect(() => {
     if (previewMode || !entityFullId) return;

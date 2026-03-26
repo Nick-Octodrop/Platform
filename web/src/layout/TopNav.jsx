@@ -330,10 +330,28 @@ export default function TopNav({ user, onSignOut }) {
           <div className="flex items-center gap-4 pointer-events-auto">
             {navItems.map((group) => {
               const items = group.items || [];
-              const explicitLink =
-                group.asLink === true ||
-                group.inline === true ||
-                String(group.mode || "").toLowerCase() === "link";
+              const mode = String(group.mode || "").toLowerCase();
+              const renderInline = group.inline === true || mode === "inline";
+              const explicitLink = group.asLink === true || mode === "link";
+              if (renderInline) {
+                return (
+                  <div className="flex items-center gap-6" key={`${group.groupLabel}-inline`}>
+                    {items.map((item) => {
+                      const target = buildTargetRoute(moduleId, item.to);
+                      const active = target && currentPath.startsWith(target);
+                      return (
+                        <Link
+                          key={`${group.groupLabel}-${item.label}`}
+                          to={target || "#"}
+                          className={`text-sm font-medium whitespace-nowrap px-1 ${active ? "text-primary" : "opacity-80"}`}
+                        >
+                          {item.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                );
+              }
               const single = items.length === 1 || (explicitLink && items.length > 0);
               if (single) {
                 const target = buildTargetRoute(moduleId, items[0].to);

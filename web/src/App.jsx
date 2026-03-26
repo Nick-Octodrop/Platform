@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { supabase } from "./supabase";
 import ProtectedRoute from "./auth/ProtectedRoute.jsx";
 import CapabilityRoute from "./auth/CapabilityRoute.jsx";
+import SuperadminRoute from "./auth/SuperadminRoute.jsx";
 import ShellLayout from "./layout/ShellLayout.jsx";
 import { ModuleStoreProvider } from "./state/moduleStore.jsx";
 import { ToastProvider } from "./components/Toast.jsx";
@@ -65,6 +66,7 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [workspaceKey, setWorkspaceKey] = useState(() => getActiveWorkspaceId());
+  const [updatePromptVisible, setUpdatePromptVisible] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -182,8 +184,26 @@ export default function App() {
     return () => window.removeEventListener("octo:workspace-changed", handleWorkspaceChanged);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    function handleUpdateReady() {
+      setUpdatePromptVisible(true);
+    }
+    window.addEventListener("octo:web-pwa-update-ready", handleUpdateReady);
+    return () => window.removeEventListener("octo:web-pwa-update-ready", handleUpdateReady);
+  }, []);
+
   async function handleSignOut() {
     await supabase.auth.signOut();
+  }
+
+  async function handleApplyUpdate() {
+    const applyUpdate = typeof window !== "undefined" ? window.__octoWebApplyUpdate : null;
+    if (typeof applyUpdate === "function") {
+      await applyUpdate(true);
+    } else if (typeof window !== "undefined") {
+      window.location.reload();
+    }
   }
 
   const user = session?.user || null;
@@ -191,6 +211,7 @@ export default function App() {
   return (
     <ToastProvider>
       <ErrorBoundary>
+        {updatePromptVisible ? <WebUpdatePrompt onUpdate={handleApplyUpdate} /> : null}
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/auth/set-password" element={<AuthSetPasswordPage user={user} />} />
@@ -438,31 +459,31 @@ export default function App() {
             <Route
               path="octo-ai"
               element={(
-                <CapabilityRoute capability="modules.manage">
+                <SuperadminRoute>
                   <DesktopOnlyGate feature="Octo AI">
                     <OctoAiSessionsPage />
                   </DesktopOnlyGate>
-                </CapabilityRoute>
+                </SuperadminRoute>
               )}
             />
             <Route
               path="octo-ai/sessions/:sessionId"
               element={(
-                <CapabilityRoute capability="modules.manage">
+                <SuperadminRoute>
                   <DesktopOnlyGate feature="Octo AI">
                     <OctoAiSessionDetailPage />
                   </DesktopOnlyGate>
-                </CapabilityRoute>
+                </SuperadminRoute>
               )}
             />
             <Route
               path="octo-ai/sandboxes/:sessionId"
               element={(
-                <CapabilityRoute capability="modules.manage">
+                <SuperadminRoute>
                   <DesktopOnlyGate feature="Octo AI">
                     <OctoAiWorkspacePage />
                   </DesktopOnlyGate>
-                </CapabilityRoute>
+                </SuperadminRoute>
               )}
             />
             <Route
@@ -502,5 +523,19 @@ export default function App() {
         </Routes>
       </ErrorBoundary>
     </ToastProvider>
+  );
+}
+
+function WebUpdatePrompt({ onUpdate }) {
+  return (
+    <div className="fixed inset-x-0 bottom-4 z-50 flex justify-center px-4">
+      <div className="w-full max-w-sm rounded-xl border border-base-300 bg-base-100 p-4 shadow-lg">
+        <p className="text-sm font-semibold">Update available</p>
+        <p className="mt-1 text-sm text-base-content/70">A newer version of Octodrop is ready.</p>
+        <button type="button" className="btn btn-primary mt-3 w-full" onClick={onUpdate}>
+          Update now
+        </button>
+      </div>
+    </div>
   );
 }

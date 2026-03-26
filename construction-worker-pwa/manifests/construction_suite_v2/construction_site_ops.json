@@ -1,0 +1,592 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "construction_site_ops",
+    "key": "construction_site_ops",
+    "name": "Site Operations",
+    "version": "2.2.0",
+    "description": "Daily reports and site issues for field coordination.",
+    "category": "Construction",
+    "icon_key": "lucide:ClipboardList"
+  },
+  "depends_on": {
+    "required": [
+      { "module": "construction_projects", "version": ">=2.2.0" },
+      { "module": "construction_workforce", "version": ">=2.2.0" }
+    ]
+  },
+  "app": {
+    "home": "page:construction_daily_report.list_page",
+    "defaults": {
+      "entity_home_page": "page:construction_daily_report.list_page",
+      "entity_form_page": "page:construction_daily_report.form_page",
+      "entities": {
+        "entity.construction_daily_report": {
+          "entity_home_page": "page:construction_daily_report.list_page",
+          "entity_form_page": "page:construction_daily_report.form_page"
+        },
+        "entity.construction_issue": {
+          "entity_home_page": "page:construction_issue.list_page",
+          "entity_form_page": "page:construction_issue.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Construction",
+        "mode": "inline",
+        "items": [
+          { "label": "Daily Reports", "to": "page:construction_daily_report.list_page" },
+          { "label": "Site Issues", "to": "page:construction_issue.list_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.construction_daily_report",
+      "display_field": "construction_daily_report.report_date",
+      "fields": [
+        { "id": "construction_daily_report.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "construction_daily_report.project_id", "type": "lookup", "label": "Project", "entity": "entity.construction_project", "display_field": "construction_project.name", "required": true },
+        { "id": "construction_daily_report.site_id", "type": "lookup", "label": "Site", "entity": "entity.construction_site", "display_field": "construction_site.name" },
+        { "id": "construction_daily_report.report_date", "type": "date", "label": "Report Date", "required": true },
+        { "id": "construction_daily_report.supervisor_id", "type": "user", "label": "Supervisor" },
+        {
+          "id": "construction_daily_report.weather",
+          "type": "enum",
+          "label": "Weather",
+          "default": "clear",
+          "options": [
+            { "value": "clear", "label": "Clear" },
+            { "value": "cloudy", "label": "Cloudy" },
+            { "value": "rain", "label": "Rain" },
+            { "value": "storm", "label": "Storm" },
+            { "value": "other", "label": "Other" }
+          ]
+        },
+        { "id": "construction_daily_report.summary", "type": "text", "label": "Summary" },
+        { "id": "construction_daily_report.blockers", "type": "text", "label": "Blockers / Delays" },
+        { "id": "construction_daily_report.safety_notes", "type": "text", "label": "Safety Notes" },
+        { "id": "construction_daily_report.photos", "type": "attachments", "label": "Photos" },
+        {
+          "id": "construction_daily_report.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "draft",
+          "options": [
+            { "value": "draft", "label": "Draft" },
+            { "value": "submitted", "label": "Submitted" },
+            { "value": "approved", "label": "Approved" }
+          ]
+        },
+        { "id": "construction_daily_report.created_at", "type": "datetime", "label": "Created At" }
+      ]
+    },
+    {
+      "id": "entity.construction_issue",
+      "display_field": "construction_issue.title",
+      "fields": [
+        { "id": "construction_issue.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "construction_issue.project_id", "type": "lookup", "label": "Project", "entity": "entity.construction_project", "display_field": "construction_project.name", "required": true },
+        { "id": "construction_issue.site_id", "type": "lookup", "label": "Site", "entity": "entity.construction_site", "display_field": "construction_site.name" },
+        { "id": "construction_issue.work_item_id", "type": "lookup", "label": "Work Item", "entity": "entity.construction_work_item", "display_field": "construction_work_item.title" },
+        { "id": "construction_issue.title", "type": "string", "label": "Title", "required": true },
+        {
+          "id": "construction_issue.issue_type",
+          "type": "enum",
+          "label": "Issue Type",
+          "default": "delay",
+          "options": [
+            { "value": "delay", "label": "Delay" },
+            { "value": "quality", "label": "Quality" },
+            { "value": "safety", "label": "Safety" },
+            { "value": "materials", "label": "Materials" },
+            { "value": "coordination", "label": "Coordination" },
+            { "value": "other", "label": "Other" }
+          ]
+        },
+        {
+          "id": "construction_issue.priority",
+          "type": "enum",
+          "label": "Priority",
+          "default": "medium",
+          "options": [
+            { "value": "low", "label": "Low" },
+            { "value": "medium", "label": "Medium" },
+            { "value": "high", "label": "High" },
+            { "value": "critical", "label": "Critical" }
+          ]
+        },
+        {
+          "id": "construction_issue.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "open",
+          "options": [
+            { "value": "open", "label": "Open" },
+            { "value": "in_progress", "label": "In Progress" },
+            { "value": "resolved", "label": "Resolved" },
+            { "value": "closed", "label": "Closed" }
+          ]
+        },
+        { "id": "construction_issue.owner_id", "type": "user", "label": "Owner" },
+        { "id": "construction_issue.reported_by_worker_id", "type": "lookup", "label": "Reported By Worker", "entity": "entity.construction_worker", "display_field": "construction_worker.full_name" },
+        { "id": "construction_issue.due_date", "type": "date", "label": "Due Date" },
+        { "id": "construction_issue.description", "type": "text", "label": "Description" },
+        { "id": "construction_issue.photos", "type": "attachments", "label": "Photos" },
+        { "id": "construction_issue.created_at", "type": "datetime", "label": "Created At" }
+      ]
+    }
+  ],
+  "actions": [
+    { "id": "action.daily_report_new", "kind": "open_form", "label": "+ New Report", "target": "construction_daily_report.form" },
+    { "id": "action.issue_new", "kind": "open_form", "label": "+ New Issue", "target": "construction_issue.form" },
+    {
+      "id": "action.daily_report_submit",
+      "kind": "update_record",
+      "label": "Submit",
+      "entity_id": "entity.construction_daily_report",
+      "patch": { "construction_daily_report.status": "submitted" },
+      "enabled_when": { "op": "eq", "field": "construction_daily_report.status", "value": "draft" },
+      "visible_when": { "op": "eq", "field": "construction_daily_report.status", "value": "draft" }
+    },
+    {
+      "id": "action.daily_report_approve",
+      "kind": "update_record",
+      "label": "Approve",
+      "entity_id": "entity.construction_daily_report",
+      "patch": { "construction_daily_report.status": "approved" },
+      "enabled_when": { "op": "eq", "field": "construction_daily_report.status", "value": "submitted" },
+      "visible_when": { "op": "eq", "field": "construction_daily_report.status", "value": "submitted" }
+    },
+    {
+      "id": "action.issue_start",
+      "kind": "update_record",
+      "label": "Start",
+      "entity_id": "entity.construction_issue",
+      "patch": { "construction_issue.status": "in_progress" },
+      "enabled_when": { "op": "eq", "field": "construction_issue.status", "value": "open" },
+      "visible_when": { "op": "eq", "field": "construction_issue.status", "value": "open" }
+    },
+    {
+      "id": "action.issue_resolve",
+      "kind": "update_record",
+      "label": "Resolve",
+      "entity_id": "entity.construction_issue",
+      "patch": { "construction_issue.status": "resolved" },
+      "enabled_when": { "op": "in", "field": "construction_issue.status", "value": ["open", "in_progress"] },
+      "visible_when": { "op": "in", "field": "construction_issue.status", "value": ["open", "in_progress"] }
+    },
+    {
+      "id": "action.issue_close",
+      "kind": "update_record",
+      "label": "Close",
+      "entity_id": "entity.construction_issue",
+      "patch": { "construction_issue.status": "closed" },
+      "enabled_when": { "op": "eq", "field": "construction_issue.status", "value": "resolved" },
+      "visible_when": { "op": "eq", "field": "construction_issue.status", "value": "resolved" }
+    }
+  ],
+  "views": [
+    {
+      "id": "construction_daily_report.list",
+      "kind": "list",
+      "entity": "entity.construction_daily_report",
+      "columns": [
+        { "field_id": "construction_daily_report.report_date" },
+        { "field_id": "construction_daily_report.project_id" },
+        { "field_id": "construction_daily_report.site_id" },
+        { "field_id": "construction_daily_report.supervisor_id" },
+        { "field_id": "construction_daily_report.weather" },
+        { "field_id": "construction_daily_report.status" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.daily_report_new" }],
+        "open_record_target": "page:construction_daily_report.form_page",
+        "search": { "enabled": true, "placeholder": "Search daily reports...", "fields": ["construction_daily_report.summary", "construction_daily_report.blockers"] },
+        "filters": [
+          { "id": "draft", "label": "Draft", "domain": { "op": "eq", "field": "construction_daily_report.status", "value": "draft" } },
+          { "id": "submitted", "label": "Submitted", "domain": { "op": "eq", "field": "construction_daily_report.status", "value": "submitted" } },
+          { "id": "approved", "label": "Approved", "domain": { "op": "eq", "field": "construction_daily_report.status", "value": "approved" } }
+        ]
+      }
+    },
+    {
+      "id": "construction_daily_report.calendar",
+      "kind": "calendar",
+      "entity": "entity.construction_daily_report",
+      "calendar": {
+        "title_field": "construction_daily_report.project_id",
+        "date_start": "construction_daily_report.report_date",
+        "color_field": "construction_daily_report.status",
+        "default_scale": "month"
+      }
+    },
+    {
+      "id": "construction_daily_report.form",
+      "kind": "form",
+      "entity": "entity.construction_daily_report",
+      "sections": [
+        {
+          "id": "report",
+          "title": "Report",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "construction_daily_report.project_id",
+            "construction_daily_report.site_id",
+            "construction_daily_report.report_date",
+            "construction_daily_report.supervisor_id",
+            "construction_daily_report.weather",
+            "construction_daily_report.status",
+            "construction_daily_report.summary",
+            "construction_daily_report.blockers",
+            "construction_daily_report.safety_notes"
+          ]
+        },
+        {
+          "id": "photos",
+          "title": "Photos",
+          "fields": [
+            "construction_daily_report.photos"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": { "field_id": "construction_daily_report.status" },
+        "secondary_actions": [
+          { "action_id": "action.daily_report_submit" },
+          { "action_id": "action.daily_report_approve" }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "report_tab",
+          "tabs": [
+            { "id": "report_tab", "label": "Report", "sections": ["report"] },
+            { "id": "photos_tab", "label": "Photos", "sections": ["photos"] }
+          ]
+        }
+      }
+    },
+    {
+      "id": "construction_daily_report.graph",
+      "kind": "graph",
+      "entity": "entity.construction_daily_report",
+      "default": {
+        "type": "bar",
+        "group_by": "construction_daily_report.status",
+        "measure": "count"
+      }
+    },
+    {
+      "id": "construction_issue.list",
+      "kind": "list",
+      "entity": "entity.construction_issue",
+      "columns": [
+        { "field_id": "construction_issue.project_id" },
+        { "field_id": "construction_issue.title" },
+        { "field_id": "construction_issue.issue_type" },
+        { "field_id": "construction_issue.priority" },
+        { "field_id": "construction_issue.status" },
+        { "field_id": "construction_issue.owner_id" },
+        { "field_id": "construction_issue.due_date" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.issue_new" }],
+        "open_record_target": "page:construction_issue.form_page",
+        "search": { "enabled": true, "placeholder": "Search site issues...", "fields": ["construction_issue.title", "construction_issue.description"] },
+        "filters": [
+          { "id": "open", "label": "Open", "domain": { "op": "in", "field": "construction_issue.status", "value": ["open", "in_progress"] } },
+          { "id": "resolved", "label": "Resolved", "domain": { "op": "eq", "field": "construction_issue.status", "value": "resolved" } },
+          { "id": "critical", "label": "Critical", "domain": { "op": "eq", "field": "construction_issue.priority", "value": "critical" } }
+        ]
+      }
+    },
+    {
+      "id": "construction_issue.kanban",
+      "kind": "kanban",
+      "entity": "entity.construction_issue",
+      "card": {
+        "title_field": "construction_issue.title",
+        "subtitle_fields": [
+          "construction_issue.project_id",
+          "construction_issue.issue_type"
+        ],
+        "badge_fields": [
+          "construction_issue.priority",
+          "construction_issue.status",
+          "construction_issue.owner_id"
+        ]
+      }
+    },
+    {
+      "id": "construction_issue.form",
+      "kind": "form",
+      "entity": "entity.construction_issue",
+      "sections": [
+        {
+          "id": "issue",
+          "title": "Issue",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "construction_issue.project_id",
+            "construction_issue.site_id",
+            "construction_issue.work_item_id",
+            "construction_issue.title",
+            "construction_issue.issue_type",
+            "construction_issue.priority",
+            "construction_issue.status",
+            "construction_issue.owner_id",
+            "construction_issue.reported_by_worker_id",
+            "construction_issue.due_date",
+            "construction_issue.description"
+          ]
+        },
+        {
+          "id": "photos",
+          "title": "Photos",
+          "fields": [
+            "construction_issue.photos"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": { "field_id": "construction_issue.status" },
+        "secondary_actions": [
+          { "action_id": "action.issue_start" },
+          { "action_id": "action.issue_resolve" },
+          { "action_id": "action.issue_close" }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "issue_tab",
+          "tabs": [
+            { "id": "issue_tab", "label": "Issue", "sections": ["issue"] },
+            { "id": "photos_tab", "label": "Photos", "sections": ["photos"] }
+          ]
+        }
+      }
+    },
+    {
+      "id": "construction_issue.graph",
+      "kind": "graph",
+      "entity": "entity.construction_issue",
+      "default": {
+        "type": "bar",
+        "group_by": "construction_issue.issue_type",
+        "measure": "count"
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "construction_daily_report.list_page",
+      "title": "Daily Reports",
+      "layout": "single",
+      "header": { "variant": "none", "actions": [{ "action_id": "action.daily_report_new" }] },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.construction_daily_report",
+              "default_mode": "calendar",
+              "modes": [
+                { "mode": "calendar", "target": "view:construction_daily_report.calendar" },
+                { "mode": "list", "target": "view:construction_daily_report.list" },
+                { "mode": "graph", "target": "view:construction_daily_report.graph" },
+                { "mode": "pivot", "target": "view:construction_daily_report.list", "default_group_by": "construction_daily_report.project_id" }
+              ],
+              "default_filter_id": "submitted"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "construction_daily_report.form_page",
+      "title": "Daily Report",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.construction_daily_report",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "view", "target": "view:construction_daily_report.form" }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "chatter", "entity_id": "entity.construction_daily_report", "record_ref": "$record.id" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "construction_issue.list_page",
+      "title": "Site Issues",
+      "layout": "single",
+      "header": { "variant": "none", "actions": [{ "action_id": "action.issue_new" }] },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.construction_issue",
+              "default_mode": "kanban",
+              "modes": [
+                { "mode": "kanban", "target": "view:construction_issue.kanban", "default_group_by": "construction_issue.status" },
+                { "mode": "list", "target": "view:construction_issue.list" },
+                { "mode": "graph", "target": "view:construction_issue.graph" },
+                { "mode": "pivot", "target": "view:construction_issue.list", "default_group_by": "construction_issue.issue_type" }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "construction_issue.form_page",
+      "title": "Site Issue",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.construction_issue",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "view", "target": "view:construction_issue.form" }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "chatter", "entity_id": "entity.construction_issue", "record_ref": "$record.id" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "interfaces": {
+    "dashboardable": [
+      {
+        "entity_id": "entity.construction_daily_report",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "construction_daily_report.report_date",
+        "measures": ["count"],
+        "group_bys": [
+          "construction_daily_report.project_id",
+          "construction_daily_report.site_id",
+          "construction_daily_report.status",
+          "construction_daily_report.weather"
+        ]
+      },
+      {
+        "entity_id": "entity.construction_issue",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "construction_issue.created_at",
+        "measures": ["count"],
+        "group_bys": [
+          "construction_issue.project_id",
+          "construction_issue.issue_type",
+          "construction_issue.priority",
+          "construction_issue.status",
+          "construction_issue.owner_id"
+        ]
+      }
+    ],
+    "documentable": [
+      {
+        "entity_id": "entity.construction_daily_report",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "construction_daily_report.photos",
+        "title_field": "construction_daily_report.report_date",
+        "owner_field": "construction_daily_report.supervisor_id",
+        "category_field": "construction_daily_report.status",
+        "date_field": "construction_daily_report.created_at",
+        "record_label_field": "construction_daily_report.report_date",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
+      },
+      {
+        "entity_id": "entity.construction_issue",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "construction_issue.photos",
+        "title_field": "construction_issue.title",
+        "owner_field": "construction_issue.owner_id",
+        "category_field": "construction_issue.status",
+        "date_field": "construction_issue.created_at",
+        "record_label_field": "construction_issue.title",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
+      }
+    ]
+  },
+  "relations": [],
+  "queries": {}
+}
