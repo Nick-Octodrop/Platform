@@ -8,12 +8,26 @@ html, body, #root {
 
 html {
   font-size: 14px;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
   overflow: hidden;
   font-size: 1rem;
+}
+
+/* Prevent iOS Safari focus zoom on touch devices. */
+@media (hover: none) and (pointer: coarse) {
+  input,
+  select,
+  textarea,
+  .input,
+  .select,
+  .textarea,
+  .file-input {
+    font-size: 16px !important;
+  }
 }
 
 @layer components {
