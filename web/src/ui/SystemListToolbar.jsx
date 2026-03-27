@@ -6,6 +6,31 @@ import DaisyTooltip from "../components/DaisyTooltip.jsx";
 import { apiFetch } from "../api.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 
+function normalizeSavedView(view) {
+  if (!view || typeof view !== "object") return null;
+  const normalizeJsonObject = (value) => {
+    if (!value) return {};
+    if (typeof value === "object" && !Array.isArray(value)) return value;
+    if (typeof value === "string") {
+      try {
+        const parsed = JSON.parse(value);
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  };
+  return {
+    ...view,
+    id: view.id ? String(view.id) : "",
+    name: typeof view.name === "string" ? view.name : "",
+    domain: normalizeJsonObject(view.domain),
+    state: normalizeJsonObject(view.state),
+    is_default: Boolean(view.is_default),
+  };
+}
+
 export default function SystemListToolbar({
   title,
   createTooltip = "New",
@@ -38,7 +63,14 @@ export default function SystemListToolbar({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const canManageSavedViews = showSavedViews && typeof savedViewsEntityId === "string" && savedViewsEntityId.trim();
-  const canSaveCurrentView = canManageSavedViews && savedViewDomain && savedViewState && typeof onApplySavedViewState === "function";
+  const canSaveCurrentView = canManageSavedViews && savedViewState && typeof onApplySavedViewState === "function";
+
+  async function reloadSavedViews() {
+    if (!canManageSavedViews) return;
+    const res = await apiFetch(`/filters/${encodeURIComponent(savedViewsEntityId)}`);
+    setSavedViews(Array.isArray(res?.filters) ? res.filters.map(normalizeSavedView).filter(Boolean) : []);
+    setSavedViewsError("");
+  }
 
   useEffect(() => {
     if (!canManageSavedViews) {
@@ -50,7 +82,7 @@ export default function SystemListToolbar({
     apiFetch(`/filters/${encodeURIComponent(savedViewsEntityId)}`)
       .then((res) => {
         if (cancelled) return;
-        setSavedViews(Array.isArray(res?.filters) ? res.filters : []);
+        setSavedViews(Array.isArray(res?.filters) ? res.filters.map(normalizeSavedView).filter(Boolean) : []);
         setSavedViewsError("");
       })
       .catch((err) => {
@@ -81,13 +113,15 @@ export default function SystemListToolbar({
         method: "POST",
         body: {
           name,
-          domain: savedViewDomain,
+          domain: savedViewDomain || {},
           state: savedViewState,
         },
       });
-      const created = res?.filter;
+      const created = normalizeSavedView(res?.filter);
       if (created) {
-        setSavedViews((prev) => [created, ...prev]);
+        setSavedViews((prev) => [created, ...prev.filter((view) => view?.id !== created.id)]);
+      } else {
+        await reloadSavedViews();
       }
       setSavedViewsError("");
     } catch (err) {
@@ -103,6 +137,7 @@ export default function SystemListToolbar({
     try {
       await apiFetch(`/filters/${encodeURIComponent(viewId)}`, { method: "DELETE" });
       setSavedViews((prev) => prev.filter((view) => view?.id !== viewId));
+      await reloadSavedViews();
       setSavedViewsError("");
     } catch (err) {
       setSavedViewsError(err?.message || "Failed to delete saved view");
@@ -116,7 +151,7 @@ export default function SystemListToolbar({
         method: "PUT",
         body: { is_default: true },
       });
-      const updated = res?.filter;
+      const updated = normalizeSavedView(res?.filter);
       setSavedViews((prev) =>
         prev.map((view) => {
           if (!view?.id) return view;
@@ -124,6 +159,7 @@ export default function SystemListToolbar({
           return { ...view, is_default: false };
         })
       );
+      await reloadSavedViews();
       setSavedViewsError("");
     } catch (err) {
       setSavedViewsError(err?.message || "Failed to set default view");

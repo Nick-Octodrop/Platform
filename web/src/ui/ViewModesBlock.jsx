@@ -226,6 +226,31 @@ function suggestEntitySlug(entityFullId) {
     .toLowerCase() || "records";
 }
 
+function normalizeSavedFilterRow(filter) {
+  if (!filter || typeof filter !== "object") return null;
+  const normalizeJsonObject = (value) => {
+    if (!value) return {};
+    if (typeof value === "object" && !Array.isArray(value)) return value;
+    if (typeof value === "string") {
+      try {
+        const parsed = JSON.parse(value);
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  };
+  return {
+    ...filter,
+    id: filter.id ? String(filter.id) : "",
+    name: typeof filter.name === "string" ? filter.name : "",
+    domain: normalizeJsonObject(filter.domain),
+    state: normalizeJsonObject(filter.state),
+    is_default: Boolean(filter.is_default),
+  };
+}
+
 function parseCsvText(text) {
   const rows = [];
   let cur = "";
@@ -1780,7 +1805,7 @@ export default function ViewModesBlock({
       apiFetch(`/filters/${entityFullId}`)
         .then((res) => {
           if (!mounted) return;
-          setSavedFilters(res.filters || []);
+          setSavedFilters(Array.isArray(res?.filters) ? res.filters.map(normalizeSavedFilterRow).filter(Boolean) : []);
         })
         .catch(() => {});
       apiFetch(`/prefs/entity/${entityFullId}`)
@@ -1798,6 +1823,16 @@ export default function ViewModesBlock({
       mounted = false;
     };
   }, [entityFullId, previewMode]);
+
+  async function reloadSavedFilters() {
+    if (previewMode || !entityFullId) return;
+    try {
+      const res = await apiFetch(`/filters/${entityFullId}`);
+      setSavedFilters(Array.isArray(res?.filters) ? res.filters.map(normalizeSavedFilterRow).filter(Boolean) : []);
+    } catch {
+      // ignore
+    }
+  }
 
   useEffect(() => {
     if (forceListOnly) return;
@@ -2220,7 +2255,6 @@ export default function ViewModesBlock({
   }
 
   async function handleSaveFilter() {
-    if (!domain) return;
     if (!onPrompt) return;
     const promptDialog = onPrompt;
     const name = await promptDialog({ title: "Save view as", defaultValue: "" });
@@ -2239,10 +2273,15 @@ export default function ViewModesBlock({
     };
     apiFetch(`/filters/${entityFullId}`, {
       method: "POST",
-      body: JSON.stringify({ name, domain, state }),
+      body: JSON.stringify({ name, domain: domain || {}, state }),
     })
-      .then((res) => {
-        setSavedFilters((prev) => [res.filter, ...prev]);
+      .then(async (res) => {
+        const created = normalizeSavedFilterRow(res?.filter);
+        if (created?.id) {
+          setSavedFilters((prev) => [created, ...prev.filter((item) => item?.id !== created.id)]);
+        } else {
+          await reloadSavedFilters();
+        }
       })
       .catch(() => {});
   }
@@ -2250,8 +2289,9 @@ export default function ViewModesBlock({
   function handleDeleteSavedView(viewId) {
     if (!viewId) return;
     apiFetch(`/filters/${viewId}`, { method: "DELETE" })
-      .then(() => {
+      .then(async () => {
         setSavedFilters((prev) => prev.filter((f) => f.id !== viewId));
+        await reloadSavedFilters();
       })
       .catch(() => {});
   }
@@ -2839,7 +2879,7 @@ export default function ViewModesBlock({
                         </li>
                       ))}
                       <li>
-                        <button onClick={handleSaveFilter} disabled={!domain}>Save current view</button>
+                        <button onClick={handleSaveFilter}>Save current view</button>
                       </li>
                       <li>
                         <button onClick={handleSetDefault} disabled={!filterParam}>Set as default</button>
@@ -3770,7 +3810,6 @@ export default function ViewModesBlock({
                       await handleSaveFilter();
                       setMobileMenuSheet("");
                     }}
-                    disabled={!domain}
                   >
                     Save Current View
                   </button>

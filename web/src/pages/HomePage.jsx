@@ -26,25 +26,25 @@ function AppTile({ app, module, onOpen }) {
   return (
     <div className={`flex flex-col items-center text-center ${disabled ? "opacity-60" : ""}`}>
       <button
-        className="bg-base-100 border border-base-200 rounded-2xl shadow hover:shadow-md transition w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 flex items-center justify-center"
+        className="bg-base-100 border border-base-200 rounded-2xl shadow hover:shadow-md transition w-24 h-24 sm:w-24 sm:h-24 md:w-28 md:h-28 flex items-center justify-center"
         onClick={() => onOpen(app)}
         type="button"
       >
         {LucideIcon ? (
           <div className="text-primary">
-            <LucideIcon size={40} strokeWidth={1.4} className="sm:w-12 sm:h-12 md:w-14 md:h-14" />
+            <LucideIcon size={44} strokeWidth={1.4} className="sm:w-12 sm:h-12 md:w-14 md:h-14" />
           </div>
         ) : HeroIcon ? (
           <div className="text-primary">
-            <HeroIcon className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14" />
+            <HeroIcon className="w-11 h-11 sm:w-12 sm:h-12 md:w-14 md:h-14" />
           </div>
         ) : isImageUrl ? (
-          <img src={iconUrl} alt={app.name} className="w-14 h-14 sm:w-18 sm:h-18 md:w-24 md:h-24 object-contain" />
+          <img src={iconUrl} alt={app.name} className="w-16 h-16 sm:w-18 sm:h-18 md:w-24 md:h-24 object-contain" />
         ) : (
-          <div className="text-4xl sm:text-5xl text-primary">{icon}</div>
+          <div className="text-[2.75rem] sm:text-5xl text-primary">{icon}</div>
         )}
       </button>
-      <div className="mt-2 w-20 sm:w-24 md:w-28 text-[11px] sm:text-xs font-semibold leading-tight line-clamp-2">{app.name}</div>
+      <div className="mt-2 w-24 sm:w-24 md:w-28 text-[11px] sm:text-xs font-semibold leading-tight line-clamp-2">{app.name}</div>
     </div>
   );
 }

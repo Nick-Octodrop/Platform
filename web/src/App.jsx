@@ -18,7 +18,7 @@ import {
   setTheme,
   setUiDensity,
 } from "./theme/theme.js";
-import { getActiveWorkspaceId, getUiPrefs } from "./api.js";
+import { apiFetch, getActiveWorkspaceId, getUiPrefs, setActiveWorkspaceId } from "./api.js";
 import LoginPage from "./pages/LoginPage.jsx";
 import AppsPage from "./pages/AppsPage.jsx";
 import ModuleDetailPage from "./pages/ModuleDetailPage.jsx";
@@ -186,6 +186,30 @@ export default function App() {
     window.addEventListener("octo:workspace-changed", handleWorkspaceChanged);
     return () => window.removeEventListener("octo:workspace-changed", handleWorkspaceChanged);
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+    if (!session?.user || workspaceKey) return undefined;
+    (async () => {
+      try {
+        const res = await apiFetch("/access/context", { cacheTtl: 10000, cacheKey: "access_context_seed" });
+        if (!alive || getActiveWorkspaceId()) return;
+        const defaultWorkspaceId =
+          res?.actor?.workspace_id ||
+          res?.workspaces?.[0]?.workspace_id ||
+          res?.workspaces?.[0]?.id ||
+          "";
+        if (defaultWorkspaceId) {
+          setActiveWorkspaceId(defaultWorkspaceId);
+        }
+      } catch {
+        // ignore; workspace can still be selected manually
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [session?.user, workspaceKey]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
