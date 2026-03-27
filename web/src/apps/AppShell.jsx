@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { apiFetch, compileManifest, getManifest, getPageBootstrap } from "../api";
+import { apiFetch, compileManifest, getActiveWorkspaceId, getManifest, getPageBootstrap } from "../api";
 import { realtimeEnabled, supabase } from "../supabase";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import FormViewRenderer from "../ui/FormViewRenderer.jsx";
@@ -252,6 +252,7 @@ export default function AppShell({
   const [createSaving, setCreateSaving] = useState(false);
   const [bootstrap, setBootstrap] = useState(null);
   const [bootstrapVersion, setBootstrapVersion] = useState(0);
+  const [workspaceKey, setWorkspaceKey] = useState(() => getActiveWorkspaceId());
   const realtimeDebounceRef = useRef(null);
   const [errorFlash, setErrorFlash] = useState(null);
   const [errorFlashUntil, setErrorFlashUntil] = useState(0);
@@ -273,6 +274,15 @@ export default function AppShell({
       performance.mark("nav_start");
     }
   }, [moduleId, pageId, viewId, recordId]);
+
+  useEffect(() => {
+    function handleWorkspaceChanged() {
+      setWorkspaceKey(getActiveWorkspaceId());
+    }
+    if (typeof window === "undefined") return undefined;
+    window.addEventListener("octo:workspace-changed", handleWorkspaceChanged);
+    return () => window.removeEventListener("octo:workspace-changed", handleWorkspaceChanged);
+  }, []);
 
   useEffect(() => {
     async function loadManifest() {
@@ -297,7 +307,7 @@ export default function AppShell({
       }
     }
     loadManifest();
-  }, [moduleId, manifestOverride, pageId, viewId]);
+  }, [moduleId, manifestOverride, pageId, viewId, workspaceKey]);
 
   useEffect(() => {
     if (!error) return;
@@ -372,7 +382,7 @@ export default function AppShell({
     return () => {
       cancelled = true;
     };
-  }, [moduleId, pageId, viewId, recordId, manifestOverride]);
+  }, [moduleId, pageId, viewId, recordId, manifestOverride, workspaceKey]);
 
   const appDef = manifest?.app || null;
   const formPageIds = useMemo(() => collectFormPageIds(appDef?.defaults), [appDef?.defaults]);
