@@ -29,6 +29,7 @@ import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import AgentChatInput from "../ui/AgentChatInput.jsx";
+import useMediaQuery from "../hooks/useMediaQuery.js";
 import { useAccessContext } from "../access.js";
 import { formatDateTime, formatTime } from "../utils/dateTime.js";
 
@@ -620,6 +621,7 @@ function applyOps(manifest, ops) {
 }
 
 export default function Studio2Page({ user }) {
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const { pushToast } = useToast();
   const navigate = useNavigate();
   const { moduleId: routeModuleId } = useParams();
@@ -2779,10 +2781,10 @@ function buildPreviewManifest() {
 
   if (!routeModuleId) {
     return (
-      <div className={`h-full min-h-0 flex flex-col overflow-hidden ${debugClass}`} ref={rootRef}>
-        <div className="card bg-base-100 shadow h-full min-h-0 flex flex-col overflow-hidden">
-          <div className="card-body flex flex-col min-h-0">
-            <div className="mt-4 flex-1 min-h-0 overflow-auto overflow-x-hidden">
+      <div className={`${isMobile ? "min-h-full bg-base-100 flex flex-col" : "h-full min-h-0 flex flex-col overflow-hidden"} ${debugClass}`} ref={rootRef}>
+        <div className={isMobile ? "h-full min-h-0 flex flex-col bg-base-100 overflow-hidden" : "card bg-base-100 shadow h-full min-h-0 flex flex-col overflow-hidden"}>
+          <div className={isMobile ? "h-full min-h-0 p-4 flex flex-col" : "card-body flex flex-col min-h-0"}>
+            <div className={`${isMobile ? "flex-1 min-h-0 overflow-auto overflow-x-hidden" : "mt-4 flex-1 min-h-0 overflow-auto overflow-x-hidden"}`}>
               {loadingModules && <div className="text-sm opacity-60">Loading modules...</div>}
               {modulesError && <div className="text-sm text-error">{modulesError}</div>}
               {!loadingModules && !modulesError && (
@@ -2881,8 +2883,6 @@ function buildPreviewManifest() {
                     fieldIndex={listFieldIndex}
                     records={listRecords}
                     hideHeader
-                    disableHorizontalScroll
-                    tableClassName="w-full table-fixed min-w-0"
                     searchQuery={search}
                     searchFields={["studio.name", "studio.module_id"]}
                     filters={listFilters}
@@ -3004,7 +3004,7 @@ function buildPreviewManifest() {
   }
 
   return (
-    <div className={`h-full min-h-0 flex flex-col overflow-hidden ${debugClass}`} ref={rootRef}>
+    <div className={`${isMobile ? "min-h-full bg-base-100 flex flex-col" : "h-full min-h-0 flex flex-col overflow-hidden"} ${debugClass}`} ref={rootRef}>
       <TemplateStudioShell
         title={moduleTitle}
         recordId={routeModuleId}

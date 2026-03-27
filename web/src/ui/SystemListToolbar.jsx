@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Bookmark, Filter, List as ListIcon, Plus, RefreshCw, Search as SearchIcon } from "lucide-react";
+import { Bookmark, Filter, List as ListIcon, MoreHorizontal, Plus, RefreshCw, Search as SearchIcon } from "lucide-react";
 import { PRIMARY_BUTTON_SM, SOFT_ICON_SM } from "../components/buttonStyles.js";
 import PaginationControls from "../components/PaginationControls.jsx";
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
 import { apiFetch } from "../api.js";
+import useMediaQuery from "../hooks/useMediaQuery.js";
 
 export default function SystemListToolbar({
   title,
@@ -26,12 +27,15 @@ export default function SystemListToolbar({
   savedViewState = null,
   onApplySavedViewState,
 }) {
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const [filterPrompt, setFilterPrompt] = useState(null);
   const [filterPromptValue, setFilterPromptValue] = useState("");
   const [savedViews, setSavedViews] = useState([]);
   const [savedViewsError, setSavedViewsError] = useState("");
   const [savePromptOpen, setSavePromptOpen] = useState(false);
   const [savePromptValue, setSavePromptValue] = useState("");
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const canManageSavedViews = showSavedViews && typeof savedViewsEntityId === "string" && savedViewsEntityId.trim();
   const canSaveCurrentView = canManageSavedViews && savedViewDomain && savedViewState && typeof onApplySavedViewState === "function";
@@ -63,6 +67,7 @@ export default function SystemListToolbar({
     () => savedViews.find((view) => view?.is_default) || null,
     [savedViews]
   );
+  const hasMobileMenuOptions = filters.length > 0 || filterableFields.length > 0 || showSavedViews;
 
   async function handleSaveCurrentView() {
     const name = savePromptValue.trim();
@@ -139,7 +144,7 @@ export default function SystemListToolbar({
           <div className="text-lg font-semibold">{title}</div>
         </div>
 
-        <div className="flex items-center justify-center flex-1 min-w-0">
+        <div className={`flex items-center justify-center flex-1 min-w-0 ${isMobile ? "hidden" : ""}`}>
           <div className="join items-center overflow-visible">
             <DaisyTooltip label="Search" className="join-item" placement="bottom">
               <button className={SOFT_ICON_SM}>
@@ -267,7 +272,170 @@ export default function SystemListToolbar({
             />
           )}
         </div>
+
+        {isMobile && (
+          <div className="order-4 flex w-full items-center gap-2 min-w-0">
+            <DaisyTooltip label="Search" placement="top">
+              <button
+                className={`${SOFT_ICON_SM} shrink-0`}
+                type="button"
+                aria-label="Search"
+                onClick={() => setMobileSearchOpen((open) => !open)}
+              >
+                <SearchIcon className="h-4 w-4" />
+              </button>
+            </DaisyTooltip>
+            {onRefresh && (
+              <DaisyTooltip label="Refresh" placement="top">
+                <button
+                  className={`${SOFT_ICON_SM} shrink-0`}
+                  type="button"
+                  onClick={onRefresh}
+                  aria-label="Refresh"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </button>
+              </DaisyTooltip>
+            )}
+            {hasMobileMenuOptions && (
+              <DaisyTooltip label="More actions" placement="top">
+                <button
+                  className={`${SOFT_ICON_SM} shrink-0`}
+                  type="button"
+                  aria-label="More actions"
+                  onClick={() => setMobileMenuOpen(true)}
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+              </DaisyTooltip>
+            )}
+          </div>
+        )}
+
+        {isMobile && mobileSearchOpen && (
+          <div className="order-5 w-full shrink-0">
+            <input
+              className="input input-bordered w-full"
+              placeholder="Search…"
+              value={searchValue}
+              onChange={(e) => onSearchChange?.(e.target.value)}
+              autoFocus
+            />
+          </div>
+        )}
       </div>
+
+      {isMobile && mobileMenuOpen && (
+        <div className="fixed inset-0 z-[220]">
+          <button
+            type="button"
+            className="absolute inset-0 bg-base-content/35"
+            aria-label="Close menu"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          <div className="absolute inset-x-0 bottom-0 rounded-t-3xl border-t border-base-300 bg-base-100 p-4 shadow-2xl">
+            <div className="mx-auto mb-4 h-1.5 w-24 rounded-full bg-base-300" />
+            <div className="max-h-[60vh] overflow-auto space-y-2">
+              {(filters.length > 0 || filterableFields.length > 0) && (
+                <div className="border-b border-base-300 pb-2 mb-2">
+                  <div className="px-2 pb-2 text-sm font-semibold">Filters</div>
+                  {filters.map((flt) => (
+                    <button
+                      key={flt.id}
+                      type="button"
+                      className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                      onClick={() => {
+                        onFilterChange?.(flt.id);
+                        setMobileMenuOpen(false);
+                      }}
+                    >
+                      {flt.label}
+                    </button>
+                  ))}
+                  {filterableFields.length > 0 ? (
+                    <div className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide opacity-50">Custom</div>
+                  ) : null}
+                  {filterableFields.map((field) => (
+                    <button
+                      key={field.id}
+                      type="button"
+                      className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                      onClick={() => {
+                        setFilterPrompt({ field });
+                        setFilterPromptValue("");
+                        setMobileMenuOpen(false);
+                      }}
+                    >
+                      {field.label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                    onClick={() => {
+                      onClearFilters?.();
+                      setMobileMenuOpen(false);
+                    }}
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+
+              {showSavedViews && (
+                <div className="space-y-2">
+                  <div className="px-2 pb-2 text-sm font-semibold">Saved Views</div>
+                  {savedViewsError ? <div className="px-4 text-sm text-error">{savedViewsError}</div> : null}
+                  {canManageSavedViews && savedViews.map((view) => (
+                    <div key={view.id} className="flex items-center gap-2 rounded-2xl px-2 py-1 hover:bg-base-200">
+                      <button
+                        type="button"
+                        className="flex-1 rounded-xl px-2 py-3 text-left text-base"
+                        onClick={() => {
+                          onApplySavedViewState?.(view?.state || {}, view);
+                          setMobileMenuOpen(false);
+                        }}
+                      >
+                        {view.name}
+                        {view?.is_default ? " (Default)" : ""}
+                      </button>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => handleSetDefaultSavedView(view.id)}
+                        type="button"
+                      >
+                        Default
+                      </button>
+                      <button
+                        className="btn btn-ghost btn-sm text-error"
+                        onClick={() => handleDeleteSavedView(view.id)}
+                        type="button"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ))}
+                  {canManageSavedViews && savedViews.length === 0 ? <div className="px-4 text-sm opacity-60">No saved views yet.</div> : null}
+                  <button
+                    type="button"
+                    className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200 disabled:opacity-50"
+                    onClick={() => {
+                      if (!canSaveCurrentView) return;
+                      setSavePromptOpen(true);
+                      setSavePromptValue("");
+                      setMobileMenuOpen(false);
+                    }}
+                    disabled={!canSaveCurrentView}
+                  >
+                    Save current view
+                  </button>
+                  {defaultSavedView ? <div className="px-4 text-xs opacity-60">Default: {defaultSavedView.name}</div> : null}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {filterPrompt && (
         <div className="modal modal-open">

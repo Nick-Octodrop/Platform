@@ -2,12 +2,14 @@ import React, { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { PRIMARY_BUTTON_SM } from "../components/buttonStyles.js";
 import SystemListToolbar from "./SystemListToolbar.jsx";
+import useMediaQuery from "../hooks/useMediaQuery.js";
 
 export default function SettingsShell({
   title,
   categories = [],
   blocks = [],
 }) {
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
 
@@ -34,8 +36,8 @@ export default function SettingsShell({
 
   return (
     <div className="h-full min-h-0 flex flex-col overflow-hidden">
-      <div className="card bg-base-100 border border-base-300 shadow-sm h-full min-h-0 flex flex-col overflow-hidden">
-        <div className="card-body flex flex-col min-h-0">
+      <div className={isMobile ? "h-full min-h-0 flex flex-col bg-base-100 overflow-hidden" : "card bg-base-100 border border-base-300 shadow-sm h-full min-h-0 flex flex-col overflow-hidden"}>
+        <div className={isMobile ? "h-full min-h-0 p-4 flex flex-col" : "card-body flex flex-col min-h-0"}>
           <div className="shrink-0">
             <SystemListToolbar
               title={title}

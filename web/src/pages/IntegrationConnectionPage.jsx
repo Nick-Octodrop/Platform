@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiFetch } from "../api.js";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
+import useMediaQuery from "../hooks/useMediaQuery.js";
 import { formatDateTime } from "../utils/dateTime.js";
 
 function providerFromType(type) {
@@ -13,6 +14,7 @@ function providerFromType(type) {
 export default function IntegrationConnectionPage() {
   const { connectionId } = useParams();
   const navigate = useNavigate();
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const [item, setItem] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -110,6 +112,32 @@ export default function IntegrationConnectionPage() {
       tabs={tabs}
       activeTabId={activeTab}
       onTabChange={setActiveTab}
+      mobilePrimaryActions={[
+        {
+          label: "Save",
+          onClick: save,
+          disabled: loading || saving || !name.trim(),
+          className: "btn btn-primary btn-sm",
+        },
+      ]}
+      mobileOverflowActions={[
+        {
+          label: "Delete",
+          onClick: removeConnection,
+          disabled: loading || saving || !item || item.status !== "disabled",
+          title: item && item.status !== "disabled" ? "Disable the connection before deleting it" : undefined,
+        },
+        {
+          label: "Refresh",
+          onClick: load,
+          disabled: loading || saving,
+        },
+        {
+          label: "Back",
+          onClick: () => navigate(-1),
+          disabled: saving,
+        },
+      ]}
       rightActions={(
         <div className="flex items-center gap-2">
           <button
@@ -136,7 +164,7 @@ export default function IntegrationConnectionPage() {
       {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
       {notice ? <div className="alert alert-success text-sm mb-4">{notice}</div> : null}
 
-      <div className="rounded-box border border-base-300 bg-base-100 overflow-hidden min-h-[22rem]">
+      <div className={`${isMobile ? "min-h-[22rem] bg-base-100" : "rounded-box border border-base-300 bg-base-100 overflow-hidden min-h-[22rem]"}`}>
         {loading ? (
           <div className="p-4 text-sm opacity-70">Loading…</div>
         ) : !item ? (

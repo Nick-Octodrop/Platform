@@ -2,6 +2,7 @@ import React from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { SOFT_ICON_SM } from "./buttonStyles.js";
 import DaisyTooltip from "./DaisyTooltip.jsx";
+import useMediaQuery from "../hooks/useMediaQuery.js";
 
 export default function PaginationControls({
   page = 0,
@@ -10,6 +11,7 @@ export default function PaginationControls({
   onPageChange,
   className = "",
 }) {
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const safeTotal = Number.isFinite(totalItems) ? Math.max(0, totalItems) : 0;
   const safePageSize = Number.isFinite(pageSize) && pageSize > 0 ? pageSize : 25;
   if (safeTotal <= safePageSize) return null;
@@ -20,7 +22,7 @@ export default function PaginationControls({
   const canNext = safePage < totalPages - 1;
 
   return (
-    <div className={`flex items-center gap-2 ${className}`.trim()}>
+    <div className={`flex items-center ${isMobile ? "gap-1" : "gap-2"} ${className}`.trim()}>
       <div className="join">
         <DaisyTooltip label="Previous" className="join-item" placement="top">
           <button
@@ -32,7 +34,7 @@ export default function PaginationControls({
             <ChevronLeft className="h-4 w-4" />
           </button>
         </DaisyTooltip>
-        <div className="join-item pagination-page-indicator h-8 min-h-8 px-2 flex items-center text-xs opacity-80 tabular-nums border border-base-content/20 bg-base-100">
+        <div className={`join-item pagination-page-indicator h-8 min-h-8 flex items-center opacity-80 tabular-nums border border-base-content/20 bg-base-100 ${isMobile ? "px-1.5 text-[11px]" : "px-2 text-xs"}`}>
           {safePage + 1} / {totalPages}
         </div>
         <DaisyTooltip label="Next" className="join-item" placement="top">

@@ -115,6 +115,26 @@ export default function EmailConnectionDetailPage() {
     <TabbedPaneShell
       title={item?.name || "SMTP Connection"}
       subtitle="SMTP connection setup"
+      mobilePrimaryActions={[
+        {
+          label: "Save",
+          onClick: save,
+          disabled: loading || saving || !name.trim(),
+          className: "btn btn-primary btn-sm",
+        },
+      ]}
+      mobileOverflowActions={[
+        {
+          label: "Refresh",
+          onClick: load,
+          disabled: loading || saving,
+        },
+        {
+          label: "Back",
+          onClick: () => navigate(-1),
+          disabled: saving,
+        },
+      ]}
       rightActions={(
         <div className="flex items-center gap-2">
           <button className="btn btn-sm btn-ghost" type="button" onClick={load} disabled={loading || saving}>

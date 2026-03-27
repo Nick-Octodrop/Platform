@@ -64,7 +64,9 @@ function hasFillHeight(blocks) {
 
 export default function ContentBlocksRenderer({ blocks, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, onNavigate, onRunAction, onConfirm, onPrompt, onLookupCreate, externalRefreshTick = 0, previewMode = false, bootstrap = null, bootstrapVersion = 0, bootstrapLoading = false, canWriteRecords = null, recordContext = null }) {
   const safeBlocks = Array.isArray(blocks) ? blocks : [];
-  const fullHeight = hasViewModes(safeBlocks) || hasFillHeight(safeBlocks);
+  const isMobile = useMediaQuery("(max-width: 768px)");
+  const mobileRecordPage = isMobile && (safeBlocks.some((block) => block?.kind === "record") || Boolean(recordContext?.recordId) || Boolean(recordId));
+  const fullHeight = !mobileRecordPage && (hasViewModes(safeBlocks) || hasFillHeight(safeBlocks));
   const inherited = useContext(RecordScopeContext);
   const baseContext = inherited || recordContext || (recordId ? { entityId: null, recordId, record: null, setRecord: () => {} } : null);
   const { hasCapability } = useAccessContext();
@@ -117,7 +119,7 @@ export default function ContentBlocksRenderer({ blocks, renderView, recordId, se
 
 function BlockRenderer({ block, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, recordContext, onNavigate, onRunAction, onConfirm, onPrompt, onLookupCreate, externalRefreshTick = 0, previewMode = false, bootstrap, bootstrapVersion, bootstrapLoading, canWriteRecords }) {
   const isMobile = useMediaQuery("(max-width: 768px)");
-  const [mobileChatterOpen, setMobileChatterOpen] = useState(false);
+  const mobileRecordPage = isMobile && Boolean(recordContext?.recordId || recordId);
   if (!block || typeof block !== "object") {
     return <div className="alert alert-warning">Invalid block</div>;
   }
@@ -203,10 +205,10 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
 
   if (kind === "grid") {
     return (
-      <div className={`grid grid-cols-12 items-stretch h-full min-h-0 ${gapClass(block.gap)}`}>
+      <div className={`grid grid-cols-12 items-stretch ${mobileRecordPage ? "" : "h-full min-h-0"} ${gapClass(block.gap)}`}>
         {(block.items || []).map((item, idx) => (
-          <div key={`${item.span || "span"}-${idx}`} className={`${spanClass(item.span)} h-full min-h-0 flex flex-col overflow-hidden`}>
-            <div className="flex-1 min-h-0 overflow-hidden">
+          <div key={`${item.span || "span"}-${idx}`} className={`${spanClass(item.span)} ${mobileRecordPage ? "" : "h-full min-h-0"} flex flex-col ${mobileRecordPage ? "" : "overflow-hidden"}`}>
+            <div className={`${mobileRecordPage ? "" : "flex-1 min-h-0 overflow-hidden"}`}>
               <ContentBlocksRenderer
                 blocks={item.content}
                 renderView={renderView}
@@ -292,33 +294,33 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
     );
     if (variant === "panel") {
       return (
-        <div className={`bg-base-200 rounded-box ${shouldFill ? "h-full min-h-0" : ""} flex flex-col overflow-hidden`}>
+        <div className={`bg-base-200 ${isMobile ? "rounded-none" : "rounded-box"} ${shouldFill && !mobileRecordPage ? "h-full min-h-0" : ""} flex flex-col ${mobileRecordPage ? "" : "overflow-hidden"}`}>
           {title && (
-            <div className="shrink-0 px-4 pt-4 text-sm font-semibold">
+            <div className={`shrink-0 text-sm font-semibold ${isMobile ? "px-4 pt-4" : "px-4 pt-4"}`}>
               {title}
             </div>
           )}
-          <div className={`flex-1 min-h-0 ${hasInnerScroll ? "overflow-hidden flex flex-col" : "overflow-auto"} px-4 pb-4 ${title ? "pt-3" : "pt-4"}`}>{content}</div>
+          <div className={`${mobileRecordPage ? "" : "flex-1 min-h-0"} ${mobileRecordPage ? "" : (hasInnerScroll ? "overflow-hidden flex flex-col" : "overflow-auto")} ${isMobile ? "px-4 pb-4" : "px-4 pb-4"} ${title ? (isMobile ? "pt-3" : "pt-3") : (isMobile ? "pt-4" : "pt-4")}`}>{content}</div>
         </div>
       );
     }
     if (variant === "flat") {
       return (
-        <div className={`${shouldFill ? "h-full min-h-0" : ""} flex flex-col overflow-hidden`}>
+        <div className={`${shouldFill && !mobileRecordPage ? "h-full min-h-0" : ""} flex flex-col ${mobileRecordPage ? "" : "overflow-hidden"}`}>
           {title && (
             <div className="shrink-0 text-sm font-semibold">
               {title}
             </div>
           )}
-          <div className={`flex-1 min-h-0 ${hasInnerScroll ? "overflow-hidden flex flex-col" : "overflow-auto"} ${title ? "pt-3" : ""}`}>{content}</div>
+          <div className={`${mobileRecordPage ? "" : "flex-1 min-h-0"} ${mobileRecordPage ? "" : (hasInnerScroll ? "overflow-hidden flex flex-col" : "overflow-auto")} ${title ? "pt-3" : ""}`}>{content}</div>
         </div>
       );
     }
     return (
-      <div className={`card bg-base-100 shadow ${shouldFill ? "h-full min-h-0" : ""} flex flex-col overflow-hidden`}>
-        <div className="card-body flex-1 min-h-0 flex flex-col overflow-hidden">
+      <div className={`card bg-base-100 shadow ${isMobile ? "rounded-none" : ""} ${shouldFill && !mobileRecordPage ? "h-full min-h-0" : ""} flex flex-col ${mobileRecordPage ? "" : "overflow-hidden"}`}>
+        <div className={`card-body ${isMobile ? "p-4" : ""} ${mobileRecordPage ? "" : "flex-1 min-h-0"} flex flex-col ${mobileRecordPage ? "" : "overflow-hidden"}`}>
           {title && <div className="shrink-0 text-sm font-semibold">{title}</div>}
-          <div className={`flex-1 min-h-0 ${hasInnerScroll ? "overflow-hidden flex flex-col" : "overflow-auto"} ${title ? "pt-3" : ""}`}>{content}</div>
+          <div className={`${mobileRecordPage ? "" : "flex-1 min-h-0"} ${mobileRecordPage ? "" : (hasInnerScroll ? "overflow-hidden flex flex-col" : "overflow-auto")} ${title ? (isMobile ? "pt-3" : "pt-3") : ""}`}>{content}</div>
         </div>
       </div>
     );
@@ -329,6 +331,37 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
     const queryKey = block.record_id_query || "record";
     const recordIdFromQuery = searchParams?.get ? searchParams.get(queryKey) : null;
     if (!entityId) return <div className="alert alert-warning">Record block missing entity_id</div>;
+    if (isMobile) {
+      return (
+        <RecordScopeProvider
+          entityId={entityId}
+          recordId={recordIdFromQuery}
+          previewMode={previewMode}
+        >
+          <ContentBlocksRenderer
+            blocks={block.content || []}
+            renderView={renderView}
+            recordId={recordIdFromQuery}
+            searchParams={searchParams}
+            setSearchParams={setSearchParams}
+            manifest={manifest}
+            moduleId={moduleId}
+            actionsMap={actionsMap}
+            onNavigate={onNavigate}
+            onRunAction={onRunAction}
+            onConfirm={onConfirm}
+            onPrompt={onPrompt}
+            onLookupCreate={onLookupCreate}
+            externalRefreshTick={externalRefreshTick}
+            previewMode={previewMode}
+            bootstrap={bootstrap}
+            bootstrapVersion={bootstrapVersion}
+            bootstrapLoading={bootstrapLoading}
+            canWriteRecords={canWriteRecords}
+          />
+        </RecordScopeProvider>
+      );
+    }
     return (
       <div className="h-full min-h-0 flex flex-col overflow-hidden">
         <RecordScopeProvider
@@ -388,35 +421,10 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
     }
     if (isMobile) {
       return (
-        <>
-          <div className="w-full">
-            <button
-              type="button"
-              className="btn btn-outline btn-sm w-full"
-              onClick={() => setMobileChatterOpen(true)}
-            >
-              Activity & Attachments
-            </button>
-          </div>
-          {mobileChatterOpen ? (
-            <div className="modal modal-open">
-              <div className="modal-box w-[96vw] max-w-none h-[86vh] p-0 flex flex-col">
-                <div className="px-4 py-3 border-b border-base-300 flex items-center justify-between gap-2">
-                  <div className="text-sm font-semibold">Activity & Attachments</div>
-                  <button type="button" className={SOFT_BUTTON_SM} onClick={() => setMobileChatterOpen(false)}>
-                    Done
-                  </button>
-                </div>
-                <div className="flex-1 min-h-0 p-3 overflow-hidden">
-                  <ChatterPanel entityId={entityId} recordId={resolvedId} />
-                </div>
-              </div>
-              <button className="modal-backdrop" type="button" onClick={() => setMobileChatterOpen(false)}>
-                Close
-              </button>
-            </div>
-          ) : null}
-        </>
+        <div className="pt-1">
+          <div className="text-sm font-semibold mb-2">Activity & Attachments</div>
+          <ChatterPanel entityId={entityId} recordId={resolvedId} />
+        </div>
       );
     }
     return <ChatterPanel entityId={entityId} recordId={resolvedId} />;

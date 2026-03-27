@@ -29,6 +29,7 @@ import PaginationControls from "../components/PaginationControls.jsx";
 import { evalCondition } from "../utils/conditions.js";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_BUTTON_XS, SOFT_ICON_SM } from "../components/buttonStyles.js";
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
+import useMediaQuery from "../hooks/useMediaQuery.js";
 
 function IconList() {
   return <List className="h-4 w-4" />;
@@ -427,7 +428,7 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
       );
       for (const recordId of ids) {
         const cacheKey = `${fieldDef.id}:${recordId}`;
-        if (lookupLabels[cacheKey]) continue;
+        if (Object.prototype.hasOwnProperty.call(lookupLabels, cacheKey)) continue;
         pending.push({ cacheKey, targetEntityId, recordId, labelField });
       }
     }
@@ -886,7 +887,7 @@ function CalendarView({ view, records, onSelectRow, entityDef }) {
     const pending = [];
     for (const recordId of ids) {
       const cacheKey = `${titleField}:${recordId}`;
-      if (lookupLabels[cacheKey]) continue;
+      if (Object.prototype.hasOwnProperty.call(lookupLabels, cacheKey)) continue;
       pending.push({ cacheKey, targetEntityId, recordId, labelField });
     }
     if (!pending.length) return undefined;
@@ -1517,6 +1518,7 @@ export default function ViewModesBlock({
   recordContext = null,
   forceListOnly = false,
 }) {
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const modes = Array.isArray(block?.modes) ? block.modes : [];
   const views = Array.isArray(manifest?.views) ? manifest.views : [];
   const appDefaults = manifest?.app?.defaults || {};
@@ -1600,7 +1602,7 @@ export default function ViewModesBlock({
   }, [canWriteRecords, previewMode, groupByParam, groupByFieldDef]);
 
   useEffect(() => {
-    if (!settingsMenuOpen) return undefined;
+    if (!settingsMenuOpen || isMobile) return undefined;
     function handlePointerDown(event) {
       if (!settingsMenuRef.current) return;
       if (!settingsMenuRef.current.contains(event.target)) {
@@ -1613,7 +1615,7 @@ export default function ViewModesBlock({
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("touchstart", handlePointerDown);
     };
-  }, [settingsMenuOpen]);
+  }, [settingsMenuOpen, isMobile]);
 
   function castGroupValue(rawValue) {
     if (rawValue === "") return null;
@@ -2017,7 +2019,7 @@ export default function ViewModesBlock({
       const labelField = typeof fieldDef.display_field === "string" ? fieldDef.display_field : null;
       for (const recordId of values) {
         const cacheKey = `${fieldId}:${recordId}`;
-        if (groupLookupLabels[cacheKey]) continue;
+        if (Object.prototype.hasOwnProperty.call(groupLookupLabels, cacheKey)) continue;
         pending.push({ cacheKey, targetEntityId, recordId, labelField });
       }
     }
@@ -2338,6 +2340,72 @@ export default function ViewModesBlock({
   const showGroupBy = !forceListOnly && (activeMode === "kanban" || activeMode === "graph" || activeMode === "pivot") && filterableFields.length > 0;
   const showGraphMeasure = activeMode === "graph" && measureOptions.length > 0;
   const showPivotMeasure = activeMode === "pivot" && measureOptions.length > 0;
+  const showMobileToolbarActions = isMobile && (
+    showFilters
+    || showSavedViews
+    || showGroupBy
+    || activeMode === "graph"
+    || activeMode === "pivot"
+    || activeMode === "list"
+    || bulkActions.length > 0
+    || selectedIds.length > 0
+    || templateFieldDefs.length > 0
+    || canWriteRecords
+  );
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [mobileModeSheetOpen, setMobileModeSheetOpen] = useState(false);
+  const [mobileMenuSheet, setMobileMenuSheet] = useState("");
+  const mobileToolbarGroupClass = "join items-center overflow-visible";
+  const mobileToolbarButtonClass = SOFT_ICON_SM;
+  const mobileToolbarButtonActiveClass = "bg-base-300";
+  const toolbarStartDropdownClass = isMobile
+    ? "dropdown-content left-0 right-auto p-2 shadow bg-base-100 rounded-box w-[calc(100vw-2rem)] max-w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden"
+    : "dropdown-content p-2 shadow bg-base-100 rounded-box w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden";
+  const toolbarEndDropdownClass = isMobile
+    ? "dropdown-content right-0 left-auto p-2 shadow bg-base-100 rounded-box w-[calc(100vw-2rem)] max-w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden"
+    : "dropdown-content p-2 shadow bg-base-100 rounded-box w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden";
+  const settingsMenuClass = isMobile
+    ? "absolute right-0 mt-2 menu p-2 shadow bg-base-100 rounded-box w-[calc(100vw-2rem)] max-w-64 z-[210] border border-base-300"
+    : "absolute right-0 mt-2 menu p-2 shadow bg-base-100 rounded-box w-64 z-[210] border border-base-300";
+
+  useEffect(() => {
+    setMobileSearchOpen(false);
+  }, [entityFullId, activeMode, isMobile]);
+
+  useEffect(() => {
+    setMobileModeSheetOpen(false);
+  }, [activeMode, isMobile]);
+
+  useEffect(() => {
+    setMobileMenuSheet("");
+  }, [activeMode, entityFullId, isMobile]);
+
+  useEffect(() => {
+    if (!mobileModeSheetOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileModeSheetOpen]);
+
+  useEffect(() => {
+    if (!settingsMenuOpen || !isMobile) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [settingsMenuOpen, isMobile]);
+
+  useEffect(() => {
+    if (!mobileMenuSheet || !isMobile) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileMenuSheet, isMobile]);
 
   function formatExportValue(fieldDef, rawValue, lookupLabels, memberLabels) {
     if (rawValue === null || rawValue === undefined) return "";
@@ -2620,7 +2688,7 @@ export default function ViewModesBlock({
 
   return (
     <div className="flex flex-col gap-4 h-full min-h-0 overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 relative z-30 shrink-0">
+        <div className={isMobile ? "flex flex-wrap items-center justify-between gap-3 relative z-30 shrink-0" : "grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 relative z-30 shrink-0"}>
           <div className="flex items-center gap-2 min-w-0">
           {canWriteRecords && (
             <DaisyTooltip label={`New ${entityLabel}`} placement="bottom">
@@ -2647,13 +2715,17 @@ export default function ViewModesBlock({
           <div className="text-lg font-semibold">{entityLabel}</div>
         </div>
 
-        <div className="order-3 w-full sm:order-none sm:w-auto flex items-center justify-start sm:justify-center flex-1 min-w-0 sm:min-w-[16rem]">
-          {(showSearch || showFilters || showGroupBy || showSavedViews) && (
-            <div className="join items-center overflow-visible">
+        <div className="order-3 sm:order-none flex items-center justify-start sm:justify-center flex-none min-w-0">
+          {(!isMobile && (showSearch || showFilters || showGroupBy || showSavedViews)) && (
+            <div className={mobileToolbarGroupClass}>
               {showSearch && (
                 <>
                   <DaisyTooltip label="Search" className="join-item" placement="bottom">
-                    <button className={SOFT_ICON_SM} type="button" aria-label="Search">
+                    <button
+                      className={mobileToolbarButtonClass}
+                      type="button"
+                      aria-label="Search"
+                    >
                       <IconSearch />
                     </button>
                   </DaisyTooltip>
@@ -2666,13 +2738,17 @@ export default function ViewModesBlock({
                 </>
               )}
               {showFilters && (
-                <div className="dropdown dropdown-end dropdown-bottom join-item">
+                <div className="dropdown dropdown-bottom join-item">
                   <DaisyTooltip label="Filters" className="join-item" placement="bottom">
-                    <button className={SOFT_ICON_SM} type="button" aria-label="Filters">
+                    <button
+                      className={mobileToolbarButtonClass}
+                      type="button"
+                      aria-label="Filters"
+                    >
                       <IconFilter />
                     </button>
                   </DaisyTooltip>
-                  <div className="dropdown-content p-2 shadow bg-base-100 rounded-box w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden">
+                  <div className={toolbarStartDropdownClass}>
                     <ul className="menu flex flex-col">
                       {manifestFilterList.map((flt) => (
                         <li key={flt.id}>
@@ -2705,13 +2781,17 @@ export default function ViewModesBlock({
                 </div>
               )}
               {showGroupBy && (
-                <div className="dropdown dropdown-end dropdown-bottom join-item">
+                <div className="dropdown dropdown-bottom join-item">
                   <DaisyTooltip label="Sort and group" className="join-item" placement="bottom">
-                    <button className={SOFT_ICON_SM} type="button" aria-label="Sort and group">
+                    <button
+                      className={mobileToolbarButtonClass}
+                      type="button"
+                      aria-label="Sort and group"
+                    >
                       <IconSort />
                     </button>
                   </DaisyTooltip>
-                  <div className="dropdown-content p-2 shadow bg-base-100 rounded-box w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden">
+                  <div className={toolbarStartDropdownClass}>
                     <ul className="menu flex flex-col">
                       {filterableFields.map((field) => (
                         <li key={field.id}>
@@ -2726,13 +2806,17 @@ export default function ViewModesBlock({
                 </div>
               )}
               {showSavedViews && (
-                <div className="dropdown dropdown-end dropdown-bottom join-item">
+                <div className="dropdown dropdown-bottom join-item">
                   <DaisyTooltip label="Saved views" className="join-item" placement="bottom">
-                    <button className={SOFT_ICON_SM} type="button" aria-label="Saved views">
+                    <button
+                      className={mobileToolbarButtonClass}
+                      type="button"
+                      aria-label="Saved views"
+                    >
                       <IconBookmark />
                     </button>
                   </DaisyTooltip>
-                  <div className="dropdown-content p-2 shadow bg-base-100 rounded-box w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden">
+                  <div className={toolbarStartDropdownClass}>
                     <ul className="menu flex flex-col">
                       {savedFilters.map((flt) => (
                         <li key={flt.id}>
@@ -2765,7 +2849,7 @@ export default function ViewModesBlock({
                 </div>
               )}
               <DaisyTooltip label="Refresh" className="join-item" placement="bottom">
-                <button className={SOFT_ICON_SM} type="button" onClick={() => setRefreshTick((v) => v + 1)} aria-label="Refresh">
+                <button className={mobileToolbarButtonClass} type="button" onClick={() => setRefreshTick((v) => v + 1)} aria-label="Refresh">
                   <IconRefresh />
                 </button>
               </DaisyTooltip>
@@ -2773,51 +2857,128 @@ export default function ViewModesBlock({
           )}
         </div>
 
-        <div className="w-full sm:w-auto flex flex-wrap items-center gap-2 min-w-0 sm:min-w-[10rem] justify-start sm:justify-end overflow-visible">
-          <div className="relative" ref={settingsMenuRef}>
-            <button
-              className={SOFT_ICON_SM}
-              type="button"
-              aria-label="Import export settings"
-              onClick={() => setSettingsMenuOpen((open) => !open)}
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </button>
-            {settingsMenuOpen && (
-              <ul className="absolute right-0 mt-2 menu p-2 shadow bg-base-100 rounded-box w-64 z-[210] border border-base-300">
-                <li>
-                  <button
-                    onClick={() => {
-                      handleDownloadImportTemplate();
-                      setSettingsMenuOpen(false);
-                    }}
-                    disabled={!templateFieldDefs.length}
-                  >
-                    <Download className="h-4 w-4" />
-                    Download import template
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={() => {
-                      resetImportState();
-                      setImportModalOpen(true);
-                      setSettingsMenuOpen(false);
-                    }}
-                    disabled={!canWriteRecords}
-                  >
-                    <Upload className="h-4 w-4" />
-                    Import CSV
-                  </button>
-                </li>
-              </ul>
-            )}
+        {isMobile && showSearch && mobileSearchOpen && (
+          <div className="order-4 w-full shrink-0">
+            <input
+              className="input input-bordered w-full"
+              placeholder="Search…"
+              value={searchText}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              autoFocus
+            />
           </div>
-          {activeMode === "graph" && (
-            <div className="join">
+        )}
+
+        <div className={isMobile ? "flex w-full items-center gap-2 min-w-0" : "order-none sm:order-3 flex items-center justify-end gap-2 min-w-0 flex-nowrap overflow-visible"}>
+          <div className={isMobile ? "flex items-center gap-2 min-w-0 flex-1 flex-nowrap overflow-x-auto overflow-y-visible no-scrollbar" : "contents"}>
+            {isMobile && showSearch && (
+              <DaisyTooltip label="Search" placement="top">
+                <button
+                  className={`${mobileToolbarButtonClass} shrink-0`}
+                  type="button"
+                  aria-label="Search"
+                  onClick={() => setMobileSearchOpen((open) => !open)}
+                >
+                  <IconSearch />
+                </button>
+              </DaisyTooltip>
+            )}
+            {isMobile && (
+              <DaisyTooltip label="Refresh" placement="top">
+                <button
+                  className={`${mobileToolbarButtonClass} shrink-0`}
+                  type="button"
+                  onClick={() => setRefreshTick((v) => v + 1)}
+                  aria-label="Refresh"
+                >
+                  <IconRefresh />
+                </button>
+              </DaisyTooltip>
+            )}
+            {(!isMobile || showMobileToolbarActions) && (
+              <div className="relative shrink-0" ref={settingsMenuRef}>
+                <button
+                  className={mobileToolbarButtonClass}
+                  type="button"
+                  aria-label={isMobile ? "More actions" : "Import export settings"}
+                  onClick={() => setSettingsMenuOpen((open) => !open)}
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+                {settingsMenuOpen && !isMobile && (
+                  <ul className={settingsMenuClass}>
+                    {selectedIds.length > 0 && activeMode === "list" && (
+                      <>
+                        <li className="menu-title">Selection</li>
+                        <li>
+                          <button
+                            onClick={() => {
+                              handleBulkDelete();
+                              setSettingsMenuOpen(false);
+                            }}
+                          >
+                            Delete Selected
+                          </button>
+                        </li>
+                        <li>
+                          <button
+                            onClick={() => {
+                              setExportModalOpen(true);
+                              setSettingsMenuOpen(false);
+                            }}
+                          >
+                            Export Selected
+                          </button>
+                        </li>
+                        {bulkActions.map((action) => (
+                          <li key={action.id || action.label}>
+                            <button
+                              onClick={() => {
+                                onRunAction?.(action);
+                                setSettingsMenuOpen(false);
+                              }}
+                            >
+                              {resolveActionLabel(action)}
+                            </button>
+                          </li>
+                        ))}
+                      </>
+                    )}
+                    {(selectedIds.length > 0 && activeMode === "list") && <li className="menu-title">Import / Export</li>}
+                    <li>
+                      <button
+                        onClick={() => {
+                          handleDownloadImportTemplate();
+                          setSettingsMenuOpen(false);
+                        }}
+                        disabled={!templateFieldDefs.length}
+                      >
+                        <Download className="h-4 w-4" />
+                        Download import template
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        onClick={() => {
+                          resetImportState();
+                          setImportModalOpen(true);
+                          setSettingsMenuOpen(false);
+                        }}
+                        disabled={!canWriteRecords}
+                      >
+                        <Upload className="h-4 w-4" />
+                        Import CSV
+                      </button>
+                    </li>
+                  </ul>
+                )}
+              </div>
+            )}
+            {activeMode === "graph" && (
+              <div className={`${mobileToolbarGroupClass} shrink-0`}>
               <DaisyTooltip label="Bar chart" className="join-item" placement="top">
                 <button
-                  className={`${SOFT_ICON_SM} ${graphType === "bar" ? "bg-base-300" : ""}`}
+                  className={`${mobileToolbarButtonClass} ${graphType === "bar" ? mobileToolbarButtonActiveClass : ""}`}
                   onClick={() => handleGraphTypeChange("bar")}
                 >
                   <IconGraph />
@@ -2825,7 +2986,7 @@ export default function ViewModesBlock({
               </DaisyTooltip>
               <DaisyTooltip label="Line chart" className="join-item" placement="top">
                 <button
-                  className={`${SOFT_ICON_SM} ${graphType === "line" ? "bg-base-300" : ""}`}
+                  className={`${mobileToolbarButtonClass} ${graphType === "line" ? mobileToolbarButtonActiveClass : ""}`}
                   onClick={() => handleGraphTypeChange("line")}
                 >
                   <IconLine />
@@ -2833,7 +2994,7 @@ export default function ViewModesBlock({
               </DaisyTooltip>
               <DaisyTooltip label="Pie chart" className="join-item" placement="top">
                 <button
-                  className={`${SOFT_ICON_SM} ${graphType === "pie" ? "bg-base-300" : ""}`}
+                  className={`${mobileToolbarButtonClass} ${graphType === "pie" ? mobileToolbarButtonActiveClass : ""}`}
                   onClick={() => handleGraphTypeChange("pie")}
                 >
                   <IconPie />
@@ -2842,11 +3003,18 @@ export default function ViewModesBlock({
               {showGraphMeasure && (
                 <div className="dropdown dropdown-end dropdown-bottom join-item">
                   <DaisyTooltip label="Measure" className="join-item" placement="top">
-                    <button className={SOFT_ICON_SM} type="button" tabIndex={0}>
+                    <button
+                      className={mobileToolbarButtonClass}
+                      type="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        if (isMobile) setMobileMenuSheet("graph_measure");
+                      }}
+                    >
                       <IconMeasure />
                     </button>
                   </DaisyTooltip>
-                  <div className="dropdown-content p-2 shadow bg-base-100 rounded-box w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden">
+                  {!isMobile && <div className={toolbarEndDropdownClass}>
                     <ul className="menu flex flex-col">
                       {measureOptions.map((opt) => (
                         <li key={opt.value}>
@@ -2854,20 +3022,27 @@ export default function ViewModesBlock({
                         </li>
                       ))}
                     </ul>
-                  </div>
+                  </div>}
                 </div>
               )}
-            </div>
-          )}
-          {activeMode === "pivot" && (
-            <div className="join">
+              </div>
+            )}
+            {activeMode === "pivot" && (
+              <div className={`${mobileToolbarGroupClass} shrink-0`}>
               <div className="dropdown dropdown-end dropdown-bottom join-item">
                 <DaisyTooltip label="Rows" className="join-item" placement="top">
-                  <button className={SOFT_ICON_SM} type="button" tabIndex={0}>
+                  <button
+                    className={mobileToolbarButtonClass}
+                    type="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      if (isMobile) setMobileMenuSheet("pivot_rows");
+                    }}
+                  >
                     <IconGroup />
                   </button>
                 </DaisyTooltip>
-                <div className="dropdown-content p-2 shadow bg-base-100 rounded-box w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden">
+                {!isMobile && <div className={toolbarEndDropdownClass}>
                   <ul className="menu flex flex-col">
                     {filterableFields.map((field) => (
                       <li key={field.id}>
@@ -2875,15 +3050,22 @@ export default function ViewModesBlock({
                       </li>
                     ))}
                   </ul>
-                </div>
+                </div>}
               </div>
               <div className="dropdown dropdown-end dropdown-bottom join-item">
                 <DaisyTooltip label="Columns" className="join-item" placement="top">
-                  <button className={SOFT_ICON_SM} type="button" tabIndex={0}>
+                  <button
+                    className={mobileToolbarButtonClass}
+                    type="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      if (isMobile) setMobileMenuSheet("pivot_cols");
+                    }}
+                  >
                     <IconColumns />
                   </button>
                 </DaisyTooltip>
-                <div className="dropdown-content p-2 shadow bg-base-100 rounded-box w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden">
+                {!isMobile && <div className={toolbarEndDropdownClass}>
                   <ul className="menu flex flex-col">
                     {filterableFields.map((field) => (
                       <li key={field.id}>
@@ -2894,16 +3076,23 @@ export default function ViewModesBlock({
                       <button onClick={() => handlePivotColChange("")}>Clear</button>
                     </li>
                   </ul>
-                </div>
+                </div>}
               </div>
               {showPivotMeasure && (
                 <div className="dropdown dropdown-end dropdown-bottom join-item">
                   <DaisyTooltip label="Measure" className="join-item" placement="top">
-                    <button className={SOFT_ICON_SM} type="button" tabIndex={0}>
+                    <button
+                      className={mobileToolbarButtonClass}
+                      type="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        if (isMobile) setMobileMenuSheet("pivot_measure");
+                      }}
+                    >
                       <IconMeasure />
                     </button>
                   </DaisyTooltip>
-                  <div className="dropdown-content p-2 shadow bg-base-100 rounded-box w-64 z-[200] max-h-72 overflow-y-auto overflow-x-hidden">
+                  {!isMobile && <div className={toolbarEndDropdownClass}>
                     <ul className="menu flex flex-col">
                       {measureOptions.map((opt) => (
                         <li key={opt.value}>
@@ -2911,75 +3100,79 @@ export default function ViewModesBlock({
                         </li>
                       ))}
                     </ul>
-                  </div>
+                  </div>}
                 </div>
               )}
-            </div>
-          )}
-          {!forceListOnly && (
-            <div className="join">
-              {modeButtons.map((m) => {
-                const active = m.mode === activeMode;
-                const icon = m.mode === "list"
-                  ? <IconList />
-                  : m.mode === "kanban"
-                    ? <IconKanban />
-                    : m.mode === "graph"
-                      ? <IconGraph />
-                      : m.mode === "calendar"
-                        ? <IconCalendar />
-                        : <IconPivot />;
-                const modeTip = m.mode === "kanban"
-                  ? "Kanban"
-                  : m.mode === "graph"
-                    ? "Graph"
-                    : m.mode === "calendar"
-                      ? "Calendar"
-                      : m.mode === "pivot"
-                        ? "Pivot"
-                        : "List";
-                return (
-                  <DaisyTooltip key={m.mode} label={modeTip} className="join-item" placement="top">
-                    <button
-                      className={`${SOFT_ICON_SM} ${active ? "bg-base-300" : ""}`}
-                      onClick={() => !m.disabled && handleModeChange(m.mode)}
-                      disabled={m.disabled}
-                      type="button"
-                      aria-label={m.mode}
-                    >
-                      {icon}
-                    </button>
-                  </DaisyTooltip>
-                );
-              })}
-            </div>
-          )}
+              </div>
+            )}
+            {!forceListOnly && (
+              isMobile ? (
+                <DaisyTooltip label="View mode" placement="top">
+                  <button
+                    className={`${mobileToolbarButtonClass} shrink-0`}
+                    type="button"
+                    onClick={() => setMobileModeSheetOpen(true)}
+                    aria-label="View mode"
+                  >
+                    {activeMode === "list"
+                      ? <IconList />
+                      : activeMode === "kanban"
+                        ? <IconKanban />
+                        : activeMode === "graph"
+                          ? <IconGraph />
+                          : activeMode === "calendar"
+                            ? <IconCalendar />
+                            : <IconPivot />}
+                  </button>
+                </DaisyTooltip>
+              ) : (
+                <div className="join shrink-0">
+                  {modeButtons.map((m) => {
+                    const active = m.mode === activeMode;
+                    const icon = m.mode === "list"
+                      ? <IconList />
+                      : m.mode === "kanban"
+                        ? <IconKanban />
+                        : m.mode === "graph"
+                          ? <IconGraph />
+                          : m.mode === "calendar"
+                            ? <IconCalendar />
+                            : <IconPivot />;
+                    const modeTip = m.mode === "kanban"
+                      ? "Kanban"
+                      : m.mode === "graph"
+                        ? "Graph"
+                        : m.mode === "calendar"
+                          ? "Calendar"
+                          : m.mode === "pivot"
+                            ? "Pivot"
+                            : "List";
+                    return (
+                      <DaisyTooltip key={m.mode} label={modeTip} className="join-item" placement="top">
+                        <button
+                          className={`${SOFT_ICON_SM} ${active ? "bg-base-300" : ""}`}
+                          onClick={() => !m.disabled && handleModeChange(m.mode)}
+                          disabled={m.disabled}
+                          type="button"
+                          aria-label={m.mode}
+                        >
+                          {icon}
+                        </button>
+                      </DaisyTooltip>
+                    );
+                  })}
+                </div>
+              )
+            )}
+          </div>
           {activeMode === "list" && (
-            <PaginationControls
-              page={listPage}
-              pageSize={listPageSize}
-              totalItems={listTotalItems}
-              onPageChange={setListPage}
-            />
-          )}
-          {selectedIds.length > 0 && (
-            <button className={SOFT_BUTTON_SM} onClick={handleBulkDelete}>Delete ({selectedIds.length})</button>
-          )}
-          {activeMode === "list" && selectedIds.length > 0 && (
-            <button className={SOFT_BUTTON_SM} onClick={() => setExportModalOpen(true)}>
-              Export ({selectedIds.length})
-            </button>
-          )}
-          {bulkActions.length > 0 && selectedIds.length > 0 && (
-            <div className="dropdown dropdown-end">
-              <button className={SOFT_BUTTON_SM}>Bulk</button>
-              <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-50">
-                {bulkActions.map((action) => (
-                  <li key={action.id || action.label}>
-                    <button onClick={() => onRunAction?.(action)}>{resolveActionLabel(action)}</button>
-                  </li>
-                ))}
-              </ul>
+            <div className={isMobile ? "ml-auto shrink-0" : "shrink-0"}>
+              <PaginationControls
+                page={listPage}
+                pageSize={listPageSize}
+                totalItems={listTotalItems}
+                onPageChange={setListPage}
+              />
             </div>
           )}
         </div>
@@ -3234,6 +3427,523 @@ export default function ViewModesBlock({
           <button className="modal-backdrop" type="button" onClick={() => !importBusy && setImportModalOpen(false)}>
             close
           </button>
+        </div>
+      )}
+
+      {isMobile && settingsMenuOpen && (
+        <div className="fixed inset-0 z-[220]">
+          <button
+            type="button"
+            className="absolute inset-0 bg-base-content/35"
+            aria-label="Close actions"
+            onClick={() => setSettingsMenuOpen(false)}
+          />
+          <div className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4">
+            <div className="mx-auto mb-4 h-1.5 w-24 rounded-full bg-base-300" />
+            <div className="space-y-2">
+              {(showFilters || showGroupBy || showSavedViews) && (
+                <div className="border-b border-base-300 pb-2 mb-2">
+                  <div className="px-2 pb-2 text-sm font-semibold">View Options</div>
+                  {showFilters && (
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-3 rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                      onClick={() => {
+                        setSettingsMenuOpen(false);
+                        setMobileMenuSheet("filters");
+                      }}
+                    >
+                      <Filter className="h-5 w-5" />
+                      <span className="font-medium">Filters</span>
+                    </button>
+                  )}
+                  {showGroupBy && (
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-3 rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                      onClick={() => {
+                        setSettingsMenuOpen(false);
+                        setMobileMenuSheet("group_by");
+                      }}
+                    >
+                      <ArrowUpDown className="h-5 w-5" />
+                      <span className="font-medium">Sort and Group</span>
+                    </button>
+                  )}
+                  {showSavedViews && (
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-3 rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                      onClick={() => {
+                        setSettingsMenuOpen(false);
+                        setMobileMenuSheet("saved_views");
+                      }}
+                    >
+                      <Bookmark className="h-5 w-5" />
+                      <span className="font-medium">Saved Views</span>
+                    </button>
+                  )}
+                </div>
+              )}
+              {activeMode === "graph" && (
+                <div className="border-b border-base-300 pb-2 mb-2">
+                  <div className="px-2 pb-2 text-sm font-semibold">Graph</div>
+                  <div className="grid grid-cols-3 gap-2 px-2 pb-2">
+                    <button
+                      type="button"
+                      className={`rounded-2xl border px-3 py-3 text-sm ${graphType === "bar" ? "border-primary bg-primary/5 text-primary" : "border-base-300"}`}
+                      onClick={() => handleGraphTypeChange("bar")}
+                    >
+                      Bar
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded-2xl border px-3 py-3 text-sm ${graphType === "line" ? "border-primary bg-primary/5 text-primary" : "border-base-300"}`}
+                      onClick={() => handleGraphTypeChange("line")}
+                    >
+                      Line
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded-2xl border px-3 py-3 text-sm ${graphType === "pie" ? "border-primary bg-primary/5 text-primary" : "border-base-300"}`}
+                      onClick={() => handleGraphTypeChange("pie")}
+                    >
+                      Pie
+                    </button>
+                  </div>
+                  {showGraphMeasure && (
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-3 rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                      onClick={() => {
+                        setSettingsMenuOpen(false);
+                        setMobileMenuSheet("graph_measure");
+                      }}
+                    >
+                      <Ruler className="h-5 w-5" />
+                      <span className="font-medium">Measure</span>
+                    </button>
+                  )}
+                </div>
+              )}
+              {activeMode === "pivot" && (
+                <div className="border-b border-base-300 pb-2 mb-2">
+                  <div className="px-2 pb-2 text-sm font-semibold">Pivot</div>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-3 rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                    onClick={() => {
+                      setSettingsMenuOpen(false);
+                      setMobileMenuSheet("pivot_rows");
+                    }}
+                  >
+                    <ListFilter className="h-5 w-5" />
+                    <span className="font-medium">Rows</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-3 rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                    onClick={() => {
+                      setSettingsMenuOpen(false);
+                      setMobileMenuSheet("pivot_cols");
+                    }}
+                  >
+                    <Columns2 className="h-5 w-5" />
+                    <span className="font-medium">Columns</span>
+                  </button>
+                  {showPivotMeasure && (
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-3 rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                      onClick={() => {
+                        setSettingsMenuOpen(false);
+                        setMobileMenuSheet("pivot_measure");
+                      }}
+                    >
+                      <Ruler className="h-5 w-5" />
+                      <span className="font-medium">Measure</span>
+                    </button>
+                  )}
+                </div>
+              )}
+              {bulkActions.length > 0 && selectedIds.length > 0 && (
+                <div className="border-b border-base-300 pb-2 mb-2">
+                  <div className="px-2 pb-2 text-sm font-semibold">Selection</div>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-3 rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                    onClick={() => {
+                      handleBulkDelete();
+                      setSettingsMenuOpen(false);
+                    }}
+                  >
+                    <span className="font-medium">Delete Selected</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-3 rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                    onClick={() => {
+                      setSettingsMenuOpen(false);
+                      setMobileMenuSheet("bulk_actions");
+                    }}
+                  >
+                    <span className="font-medium">Bulk Actions</span>
+                  </button>
+                </div>
+              )}
+              {activeMode === "list" && selectedIds.length > 0 && bulkActions.length === 0 && (
+                <div className="border-b border-base-300 pb-2 mb-2">
+                  <div className="px-2 pb-2 text-sm font-semibold">Selection</div>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-3 rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                    onClick={() => {
+                      handleBulkDelete();
+                      setSettingsMenuOpen(false);
+                    }}
+                  >
+                    <span className="font-medium">Delete Selected</span>
+                  </button>
+                </div>
+              )}
+              {activeMode === "list" && selectedIds.length > 0 && (
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                  onClick={() => {
+                    setExportModalOpen(true);
+                    setSettingsMenuOpen(false);
+                  }}
+                >
+                  <Download className="h-5 w-5" />
+                  <span className="font-medium">Export Selected</span>
+                </button>
+              )}
+              <button
+                type="button"
+                className="flex w-full items-center gap-3 rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200 disabled:opacity-50"
+                onClick={() => {
+                  handleDownloadImportTemplate();
+                  setSettingsMenuOpen(false);
+                }}
+                disabled={!templateFieldDefs.length}
+              >
+                <Download className="h-5 w-5" />
+                <span className="font-medium">Download Import Template</span>
+              </button>
+              <button
+                type="button"
+                className="flex w-full items-center gap-3 rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200 disabled:opacity-50"
+                onClick={() => {
+                  resetImportState();
+                  setImportModalOpen(true);
+                  setSettingsMenuOpen(false);
+                }}
+                disabled={!canWriteRecords}
+              >
+                <Upload className="h-5 w-5" />
+                <span className="font-medium">Import CSV</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isMobile && mobileMenuSheet && (
+        <div className="fixed inset-0 z-[220]">
+          <button
+            type="button"
+            className="absolute inset-0 bg-base-content/35"
+            aria-label="Close menu"
+            onClick={() => setMobileMenuSheet("")}
+          />
+          <div className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4">
+            <div className="mx-auto mb-4 h-1.5 w-24 rounded-full bg-base-300" />
+            <div className="max-h-[60vh] overflow-auto">
+              {mobileMenuSheet === "filters" && (
+                <div className="space-y-2">
+                  <div className="px-2 pb-2 text-sm font-semibold">Filters</div>
+                  {manifestFilterList.map((flt) => (
+                    <button
+                      key={flt.id}
+                      type="button"
+                      className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                      onClick={() => {
+                        handleFilterChange(flt.id);
+                        setMobileMenuSheet("");
+                      }}
+                    >
+                      {flt.label || flt.id}
+                    </button>
+                  ))}
+                  {filterableFields.length > 0 && (
+                    <div className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide opacity-50">Custom</div>
+                  )}
+                  {filterableFields.map((field) => (
+                    <button
+                      key={field.id}
+                      type="button"
+                      className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                      onClick={async () => {
+                        if (!onPrompt) return;
+                        const value = await onPrompt({ title: `Filter ${field.label}`, defaultValue: "" });
+                        if (value === null || value === "") return;
+                        setClientFilters((prev) => [
+                          ...prev,
+                          { field_id: field.id, label: field.label || field.id, op: "contains", value },
+                        ]);
+                        setMobileMenuSheet("");
+                      }}
+                    >
+                      {field.label || field.id}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                    onClick={() => {
+                      handleFilterChange("");
+                      setMobileMenuSheet("");
+                    }}
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+              {mobileMenuSheet === "group_by" && (
+                <div className="space-y-2">
+                  <div className="px-2 pb-2 text-sm font-semibold">Sort and Group</div>
+                  {filterableFields.map((field) => (
+                    <button
+                      key={field.id}
+                      type="button"
+                      className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                      onClick={() => {
+                        handleGroupByChange(field.id);
+                        setMobileMenuSheet("");
+                      }}
+                    >
+                      {field.label || field.id}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                    onClick={() => {
+                      handleGroupByChange("");
+                      setMobileMenuSheet("");
+                    }}
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+              {mobileMenuSheet === "saved_views" && (
+                <div className="space-y-2">
+                  <div className="px-2 pb-2 text-sm font-semibold">Saved Views</div>
+                  {savedFilters.map((flt) => (
+                    <div key={flt.id} className="flex items-center gap-2 rounded-2xl px-2 py-1 hover:bg-base-200">
+                      <button
+                        type="button"
+                        className="flex-1 rounded-xl px-2 py-3 text-left text-base"
+                        onClick={() => {
+                          applySavedView(flt);
+                          setMobileMenuSheet("");
+                        }}
+                      >
+                        {flt.name}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm btn-square"
+                        aria-label={`Remove ${flt.name}`}
+                        onClick={() => handleDeleteSavedView(flt.id)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200 disabled:opacity-50"
+                    onClick={async () => {
+                      await handleSaveFilter();
+                      setMobileMenuSheet("");
+                    }}
+                    disabled={!domain}
+                  >
+                    Save Current View
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200 disabled:opacity-50"
+                    onClick={() => {
+                      handleSetDefault();
+                      setMobileMenuSheet("");
+                    }}
+                    disabled={!filterParam}
+                  >
+                    Set as Default
+                  </button>
+                </div>
+              )}
+              {mobileMenuSheet === "graph_measure" && (
+                <div className="space-y-2">
+                  <div className="px-2 pb-2 text-sm font-semibold">Measure</div>
+                  {measureOptions.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                      onClick={() => {
+                        handleGraphMeasureChange(opt.value);
+                        setMobileMenuSheet("");
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {mobileMenuSheet === "pivot_rows" && (
+                <div className="space-y-2">
+                  <div className="px-2 pb-2 text-sm font-semibold">Pivot Rows</div>
+                  {filterableFields.map((field) => (
+                    <button
+                      key={field.id}
+                      type="button"
+                      className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                      onClick={() => {
+                        handlePivotRowChange(field.id);
+                        setMobileMenuSheet("");
+                      }}
+                    >
+                      {field.label || field.id}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {mobileMenuSheet === "pivot_cols" && (
+                <div className="space-y-2">
+                  <div className="px-2 pb-2 text-sm font-semibold">Pivot Columns</div>
+                  {filterableFields.map((field) => (
+                    <button
+                      key={field.id}
+                      type="button"
+                      className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                      onClick={() => {
+                        handlePivotColChange(field.id);
+                        setMobileMenuSheet("");
+                      }}
+                    >
+                      {field.label || field.id}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                    onClick={() => {
+                      handlePivotColChange("");
+                      setMobileMenuSheet("");
+                    }}
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+              {mobileMenuSheet === "pivot_measure" && (
+                <div className="space-y-2">
+                  <div className="px-2 pb-2 text-sm font-semibold">Pivot Measure</div>
+                  {measureOptions.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                      onClick={() => {
+                        handlePivotMeasureChange(opt.value);
+                        setMobileMenuSheet("");
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {mobileMenuSheet === "bulk_actions" && (
+                <div className="space-y-2">
+                  <div className="px-2 pb-2 text-sm font-semibold">Bulk Actions</div>
+                  {bulkActions.map((action) => (
+                    <button
+                      key={action.id || action.label}
+                      type="button"
+                      className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
+                      onClick={() => {
+                        onRunAction?.(action);
+                        setMobileMenuSheet("");
+                      }}
+                    >
+                      {resolveActionLabel(action)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isMobile && mobileModeSheetOpen && !forceListOnly && (
+        <div className="fixed inset-0 z-[220]">
+          <button
+            type="button"
+            className="absolute inset-0 bg-base-content/35"
+            aria-label="Close view mode picker"
+            onClick={() => setMobileModeSheetOpen(false)}
+          />
+          <div className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4">
+            <div className="mx-auto mb-4 h-1.5 w-24 rounded-full bg-base-300" />
+            <div className="grid grid-cols-2 gap-3">
+              {modeButtons.map((m) => {
+                const active = m.mode === activeMode;
+                const icon = m.mode === "list"
+                  ? <IconList />
+                  : m.mode === "kanban"
+                    ? <IconKanban />
+                    : m.mode === "graph"
+                      ? <IconGraph />
+                      : m.mode === "calendar"
+                        ? <IconCalendar />
+                        : <IconPivot />;
+                const label = m.mode === "kanban"
+                  ? "Kanban"
+                  : m.mode === "graph"
+                    ? "Graph"
+                    : m.mode === "calendar"
+                      ? "Calendar"
+                      : m.mode === "pivot"
+                        ? "Pivot"
+                        : "List";
+                return (
+                  <button
+                    key={m.mode}
+                    type="button"
+                    disabled={m.disabled}
+                    onClick={() => {
+                      if (m.disabled) return;
+                      handleModeChange(m.mode);
+                      setMobileModeSheetOpen(false);
+                    }}
+                    className={`rounded-2xl border p-4 flex flex-col items-center justify-center gap-3 min-h-28 ${
+                      active ? "border-primary bg-primary/5 text-primary" : "border-base-300 bg-base-200/40"
+                    } ${m.disabled ? "opacity-50" : ""}`}
+                  >
+                    <span className="flex h-5 w-5 items-center justify-center">{icon}</span>
+                    <span className="text-sm font-medium">{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
     </div>

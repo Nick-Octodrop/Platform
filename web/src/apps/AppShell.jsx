@@ -13,6 +13,7 @@ import { PRIMARY_BUTTON, PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_BUTTON_XS } fro
 import { buildRouteWithQuery, buildTargetRoute, resolveAppTarget, resolveRouteTarget } from "./appShellUtils.js";
 import { evalCondition } from "../utils/conditions.js";
 import { useAccessContext } from "../access.js";
+import useMediaQuery from "../hooks/useMediaQuery.js";
 
 function deriveRecordEntityId(entityId) {
   if (!entityId) return "";
@@ -230,6 +231,7 @@ export default function AppShell({
   const previewStoreRef = useRef({ entities: new Map() });
   const location = useLocation();
   const navigate = useNavigate();
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const { pushToast } = useToast();
   const [manifest, setManifest] = useState(null);
   const [compiled, setCompiled] = useState(null);
@@ -1150,8 +1152,15 @@ export default function AppShell({
     }
   }
 
+  const mobileRecordPage = Boolean(
+    isMobile &&
+    active?.type === "page" &&
+    Array.isArray(activePage?.content) &&
+    activePage.content.some((block) => block?.kind === "record")
+  );
+
   return (
-    <div className="flex flex-col h-full min-h-0 overflow-hidden">
+    <div className={mobileRecordPage ? "flex flex-col min-h-full" : "flex flex-col h-full min-h-0 overflow-hidden"}>
       {errorBanner && <div className="alert alert-error mb-3">{errorBanner}</div>}
       {previewMode && previewAllowNav && previewNavItems.length > 0 && (
         <div className="mb-3">
@@ -1172,7 +1181,7 @@ export default function AppShell({
         </div>
       )}
       {active.type === "page" && activePage?.header?.variant !== "none" && (
-        <div className="card bg-base-100 shadow mb-4">
+        <div className={`card bg-base-100 shadow mb-4 ${isMobile ? "rounded-none" : ""}`}>
           <div className="card-body">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
@@ -1186,9 +1195,9 @@ export default function AppShell({
         </div>
       )}
 
-      <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+      <div className={mobileRecordPage ? "" : "flex-1 min-h-0 overflow-hidden flex flex-col"}>
         {active.type === "page" && activePage && (
-          <div className="flex-1 min-h-0 overflow-hidden">
+          <div className={mobileRecordPage ? "" : "flex-1 min-h-0 overflow-hidden"}>
             <ContentBlocksRenderer
               blocks={activePage.content || []}
               renderView={renderView}
@@ -1215,8 +1224,8 @@ export default function AppShell({
 
         {active.type === "view" && (
           <div className="flex-1 min-h-0 overflow-hidden">
-            <div className="card bg-base-100 shadow h-full min-h-0">
-              <div className="card-body h-full min-h-0 p-3 sm:p-4">{renderView(activeViewId)}</div>
+            <div className={`card bg-base-100 shadow h-full min-h-0 ${isMobile ? "rounded-none" : ""}`}>
+              <div className={`card-body h-full min-h-0 ${isMobile ? "p-4" : "p-3 sm:p-4"}`}>{renderView(activeViewId)}</div>
             </div>
           </div>
         )}

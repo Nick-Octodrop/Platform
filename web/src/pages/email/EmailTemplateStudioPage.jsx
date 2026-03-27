@@ -3,9 +3,11 @@ import { useParams } from "react-router-dom";
 import { apiFetch } from "../../api.js";
 import TemplateStudioShell from "../templates/TemplateStudioShell.jsx";
 import { emailTemplateProfile } from "../templates/templateProfiles.jsx";
+import useMediaQuery from "../../hooks/useMediaQuery.js";
 
 export default function EmailTemplateStudioPage({ user }) {
   const { id } = useParams();
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const [connections, setConnections] = useState([]);
 
   const profile = useMemo(() => emailTemplateProfile, []);
@@ -56,7 +58,7 @@ export default function EmailTemplateStudioPage({ user }) {
   }, []);
 
   return (
-    <div className="h-full min-h-0 flex flex-col overflow-hidden">
+    <div className={isMobile ? "min-h-full bg-base-100 flex flex-col" : "h-full min-h-0 flex flex-col overflow-hidden"}>
       <TemplateStudioShell
         title={profile.title}
         recordId={id}

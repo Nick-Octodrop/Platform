@@ -114,6 +114,17 @@ export default function DiagnosticsModulePage() {
       tabs={tabs}
       activeTabId={activeTab}
       onTabChange={setActiveTab}
+      mobileOverflowActions={[
+        {
+          label: "Refresh",
+          onClick: loadDiagnostics,
+          disabled: loading,
+        },
+        {
+          label: "Back",
+          onClick: () => navigate("/settings/diagnostics"),
+        },
+      ]}
       rightActions={(
         <div className="flex items-center gap-2">
           <button className="btn btn-sm btn-ghost" type="button" onClick={loadDiagnostics} disabled={loading}>

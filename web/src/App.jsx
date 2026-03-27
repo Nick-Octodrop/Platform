@@ -67,6 +67,9 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [workspaceKey, setWorkspaceKey] = useState(() => getActiveWorkspaceId());
   const [updatePromptVisible, setUpdatePromptVisible] = useState(false);
+  const [installPromptVisible, setInstallPromptVisible] = useState(false);
+  const [installPromptEvent, setInstallPromptEvent] = useState(null);
+  const [installMode, setInstallMode] = useState("browser");
 
   useEffect(() => {
     let mounted = true;
@@ -193,6 +196,62 @@ export default function App() {
     return () => window.removeEventListener("octo:web-pwa-update-ready", handleUpdateReady);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const dismissalKey = "octo:pwa-install-dismissed-v1";
+    const isStandalone = () => {
+      const displayStandalone = window.matchMedia?.("(display-mode: standalone)")?.matches;
+      const navigatorStandalone = typeof window.navigator?.standalone === "boolean" && window.navigator.standalone;
+      return Boolean(displayStandalone || navigatorStandalone);
+    };
+    const ua = window.navigator?.userAgent || "";
+    const isIos = /iPad|iPhone|iPod/.test(ua);
+    const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
+    const hasDismissed = window.localStorage.getItem(dismissalKey) === "1";
+
+    function refreshInstallAvailability() {
+      if (isStandalone()) {
+        setInstallPromptVisible(false);
+        return;
+      }
+      if (installPromptEvent) {
+        setInstallMode("browser");
+        setInstallPromptVisible(!hasDismissed);
+        return;
+      }
+      if (isIos && isSafari) {
+        setInstallMode("ios");
+        setInstallPromptVisible(!hasDismissed);
+        return;
+      }
+      setInstallMode("browser");
+      setInstallPromptVisible(false);
+    }
+
+    function handleBeforeInstallPrompt(event) {
+      event.preventDefault();
+      setInstallPromptEvent(event);
+      setInstallMode("browser");
+      if (!isStandalone() && !hasDismissed) {
+        setInstallPromptVisible(true);
+      }
+    }
+
+    function handleAppInstalled() {
+      setInstallPromptEvent(null);
+      setInstallPromptVisible(false);
+      window.localStorage.removeItem(dismissalKey);
+    }
+
+    refreshInstallAvailability();
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
+  }, [installPromptEvent]);
+
   async function handleSignOut() {
     await supabase.auth.signOut();
   }
@@ -206,12 +265,40 @@ export default function App() {
     }
   }
 
+  async function handleInstallApp() {
+    if (!installPromptEvent) return;
+    try {
+      await installPromptEvent.prompt();
+      await installPromptEvent.userChoice;
+    } catch {
+      // ignore
+    } finally {
+      setInstallPromptEvent(null);
+      setInstallPromptVisible(false);
+    }
+  }
+
+  function handleDismissInstallPrompt() {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("octo:pwa-install-dismissed-v1", "1");
+    }
+    setInstallPromptVisible(false);
+  }
+
   const user = session?.user || null;
 
   return (
     <ToastProvider>
       <ErrorBoundary>
         {updatePromptVisible ? <WebUpdatePrompt onUpdate={handleApplyUpdate} /> : null}
+        {!updatePromptVisible && installPromptVisible ? (
+          <WebInstallPrompt
+            mode={installMode}
+            canInstall={Boolean(installPromptEvent)}
+            onInstall={handleInstallApp}
+            onDismiss={handleDismissInstallPrompt}
+          />
+        ) : null}
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/auth/set-password" element={<AuthSetPasswordPage user={user} />} />
@@ -236,9 +323,7 @@ export default function App() {
               path="studio"
               element={(
                 <CapabilityRoute capability="modules.manage">
-                  <DesktopOnlyGate feature="Studio">
-                    <Studio2Page user={user} />
-                  </DesktopOnlyGate>
+                  <Studio2Page user={user} />
                 </CapabilityRoute>
               )}
             />
@@ -246,9 +331,7 @@ export default function App() {
               path="studio/:moduleId"
               element={(
                 <CapabilityRoute capability="modules.manage">
-                  <DesktopOnlyGate feature="Studio">
-                    <Studio2Page user={user} />
-                  </DesktopOnlyGate>
+                  <Studio2Page user={user} />
                 </CapabilityRoute>
               )}
             />
@@ -384,9 +467,7 @@ export default function App() {
               path="integrations"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
-                  <DesktopOnlyGate feature="Integrations">
-                    <IntegrationsPage />
-                  </DesktopOnlyGate>
+                  <IntegrationsPage />
                 </CapabilityRoute>
               )}
             />
@@ -394,9 +475,7 @@ export default function App() {
               path="integrations/connections/:connectionId"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
-                  <DesktopOnlyGate feature="Integrations">
-                    <IntegrationConnectionPage />
-                  </DesktopOnlyGate>
+                  <IntegrationConnectionPage />
                 </CapabilityRoute>
               )}
             />
@@ -404,9 +483,7 @@ export default function App() {
               path="automations"
               element={(
                 <CapabilityRoute capability="automations.manage">
-                  <DesktopOnlyGate feature="Automations">
-                    <AutomationsPage />
-                  </DesktopOnlyGate>
+                  <AutomationsPage />
                 </CapabilityRoute>
               )}
             />
@@ -414,9 +491,7 @@ export default function App() {
               path="automations/:automationId"
               element={(
                 <CapabilityRoute capability="automations.manage">
-                  <DesktopOnlyGate feature="Automations">
-                    <AutomationEditorPage user={user} />
-                  </DesktopOnlyGate>
+                  <AutomationEditorPage user={user} />
                 </CapabilityRoute>
               )}
             />
@@ -424,9 +499,7 @@ export default function App() {
               path="automations/:automationId/runs"
               element={(
                 <CapabilityRoute capability="automations.manage">
-                  <DesktopOnlyGate feature="Automations">
-                    <AutomationRunsPage />
-                  </DesktopOnlyGate>
+                  <AutomationRunsPage />
                 </CapabilityRoute>
               )}
             />
@@ -434,9 +507,7 @@ export default function App() {
               path="automation-runs/:runId"
               element={(
                 <CapabilityRoute capability="automations.manage">
-                  <DesktopOnlyGate feature="Automations">
-                    <AutomationRunDetailPage />
-                  </DesktopOnlyGate>
+                  <AutomationRunDetailPage />
                 </CapabilityRoute>
               )}
             />
@@ -535,6 +606,51 @@ function WebUpdatePrompt({ onUpdate }) {
         <button type="button" className="btn btn-primary mt-3 w-full" onClick={onUpdate}>
           Update now
         </button>
+      </div>
+    </div>
+  );
+}
+
+function WebInstallPrompt({ mode, canInstall, onInstall, onDismiss }) {
+  const isIos = mode === "ios";
+  return (
+    <div className="fixed inset-x-0 bottom-4 z-50 flex justify-center px-4">
+      <div className="w-full max-w-sm rounded-xl border border-base-300 bg-base-100 p-4 shadow-lg">
+        <p className="text-sm font-semibold">Install Octodrop</p>
+        {canInstall ? (
+          <p className="mt-1 text-sm text-base-content/70">
+            Install Octodrop as an app for faster launch, standalone windowing, and better update flow.
+          </p>
+        ) : isIos ? (
+          <p className="mt-1 text-sm text-base-content/70">
+            On iPhone or iPad, open the browser share menu and choose <span className="font-medium">Add to Home Screen</span>.
+          </p>
+        ) : (
+          <p className="mt-1 text-sm text-base-content/70">
+            Use your browser menu and choose <span className="font-medium">Install app</span> or <span className="font-medium">Add to desktop</span>.
+          </p>
+        )}
+        {isIos ? (
+          <ol className="mt-3 space-y-1 text-sm text-base-content/80">
+            <li>1. Tap the Share button in Safari.</li>
+            <li>2. Choose `Add to Home Screen`.</li>
+            <li>3. Tap `Add` to install Octodrop.</li>
+          </ol>
+        ) : null}
+        <div className="mt-3 flex items-center gap-2">
+          {canInstall ? (
+            <button type="button" className="btn btn-primary flex-1" onClick={onInstall}>
+              Install now
+            </button>
+          ) : (
+            <button type="button" className="btn btn-primary flex-1" onClick={onDismiss}>
+              OK
+            </button>
+          )}
+          <button type="button" className="btn btn-ghost" onClick={onDismiss}>
+            Not now
+          </button>
+        </div>
       </div>
     </div>
   );

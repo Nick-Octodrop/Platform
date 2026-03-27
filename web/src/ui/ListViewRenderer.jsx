@@ -39,6 +39,10 @@ function getRowId(row) {
   return explicitIdKey ? record[explicitIdKey] : null;
 }
 
+function isUuidLike(value) {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
+}
+
 export default function ListViewRenderer({
   view,
   fieldIndex,
@@ -78,6 +82,7 @@ export default function ListViewRenderer({
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [lookupLabels, setLookupLabels] = useState({});
   const [memberLabels, setMemberLabels] = useState({});
+  const [membersLoaded, setMembersLoaded] = useState(false);
   const [internalPage, setInternalPage] = useState(0);
 
   const isExternalPagination = typeof externalPage === "number" && typeof onPageChange === "function";
@@ -102,7 +107,7 @@ export default function ListViewRenderer({
       );
       for (const recordId of ids) {
         const cacheKey = `${col.field_id}:${recordId}`;
-        if (lookupLabels[cacheKey]) continue;
+        if (Object.prototype.hasOwnProperty.call(lookupLabels, cacheKey)) continue;
         pending.push({ cacheKey, targetEntityId, recordId, labelField });
       }
     }
@@ -119,10 +124,10 @@ export default function ListViewRenderer({
               rec?.display_name ||
               rec?.full_name ||
               rec?.name ||
-              recordId;
+              "";
             return [cacheKey, String(label)];
           } catch {
-            return [cacheKey, recordId];
+            return [cacheKey, ""];
           }
         }),
       );
@@ -149,9 +154,15 @@ export default function ListViewRenderer({
           const email = typeof member?.email === "string" ? member.email.trim() : "";
           next[userId] = name || email || userId;
         }
-        if (!cancelled) setMemberLabels(next);
+        if (!cancelled) {
+          setMemberLabels(next);
+          setMembersLoaded(true);
+        }
       } catch {
-        if (!cancelled) setMemberLabels({});
+        if (!cancelled) {
+          setMemberLabels({});
+          setMembersLoaded(true);
+        }
       }
     }
     loadMembers();
@@ -170,11 +181,15 @@ export default function ListViewRenderer({
     }
     if (field?.type === "lookup") {
       const cacheKey = `${col.field_id}:${String(rawValue)}`;
-      return String(lookupLabels[cacheKey] || rawValue);
+      if (Object.prototype.hasOwnProperty.call(lookupLabels, cacheKey)) {
+        return String(lookupLabels[cacheKey] || "");
+      }
+      return isUuidLike(rawValue) ? "" : String(rawValue);
     }
     if (field?.type === "user") {
       const userId = String(rawValue || "").trim();
-      return String(memberLabels[userId] || userId);
+      if (membersLoaded) return String(memberLabels[userId] || (isUuidLike(userId) ? "" : userId));
+      return isUuidLike(userId) ? "" : userId;
     }
     if (field?.type === "users") {
       const values = Array.isArray(rawValue)
@@ -182,7 +197,10 @@ export default function ListViewRenderer({
         : (typeof rawValue === "string"
             ? rawValue.split(",").map((item) => item.trim()).filter(Boolean)
             : []);
-      return values.map((userId) => memberLabels[userId] || userId).join(", ");
+      if (!membersLoaded) {
+        return values.every((userId) => isUuidLike(userId)) ? "" : values.join(", ");
+      }
+      return values.map((userId) => memberLabels[userId] || (isUuidLike(userId) ? "" : userId)).filter(Boolean).join(", ");
     }
     return String(formatDateLike(rawValue, { fieldType: field?.type, fieldId: col.field_id }));
   };
@@ -370,61 +388,7 @@ export default function ListViewRenderer({
       ) : null}
 
       <div className={disableHorizontalScroll ? "overflow-x-hidden" : "overflow-x-auto"}>
-        {isMobile ? (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between rounded-box border border-base-300 bg-base-100 px-3 py-2">
-              <div className="text-xs opacity-70">{filteredRecords.length} matching row(s)</div>
-              <label className="label cursor-pointer gap-2">
-                <span className="label-text text-xs">Select all</span>
-                <input
-                  className="checkbox"
-                  type="checkbox"
-                  checked={allFilteredSelected}
-                  onChange={(e) => onToggleAll?.(e.target.checked, filteredIds)}
-                />
-              </label>
-            </div>
-            {pagedRecords.map((row, idx) => {
-              const rowId = getRowId(row);
-              const selected = rowId && selectedSet.has(rowId);
-              return (
-                <button
-                  key={rowId || `row-${idx}`}
-                  type="button"
-                  className={`w-full text-left rounded-box border ${selected ? "border-primary bg-base-200" : "border-base-300 bg-base-100"} p-3`}
-                  onClick={() => onSelectRow?.(row)}
-                >
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <div className="text-xs uppercase tracking-wide opacity-60">Record</div>
-                    <input
-                      className="checkbox"
-                      type="checkbox"
-                      checked={Boolean(selected)}
-                      onChange={(e) => onToggleSelect?.(rowId, e.target.checked)}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    {columns.map((col) => {
-                      const value = formatCellValue(row, col);
-                      return (
-                        <div key={col.field_id} className="flex items-start justify-between gap-3 text-xs">
-                          <div className="opacity-60 min-w-[6rem]">{resolveFieldLabel(col, fieldIndex)}</div>
-                          <div className="text-right break-all">{value || "—"}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </button>
-              );
-            })}
-            {pagedRecords.length === 0 && (
-              <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-70">
-                No records found.
-              </div>
-            )}
-          </div>
-        ) : useVirtual ? (
+        {useVirtual ? (
           <div className="w-full">
             <div className="grid items-center gap-2 text-sm font-semibold px-3 py-2" style={{ gridTemplateColumns: gridTemplate }}>
               <div>
@@ -490,7 +454,7 @@ export default function ListViewRenderer({
             </VirtualList>
           </div>
         ) : (
-          <table className={`table table-hover ${tableClassName}`.trim()}>
+          <table className={`table table-hover min-w-max ${tableClassName}`.trim()}>
             <thead className="[&_th]:border-b-0">
               <tr>
                 <th className="w-10 border-b-0">

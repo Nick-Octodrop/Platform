@@ -142,10 +142,10 @@ export default function EmailConnectionsPage() {
   const activeFilter = useMemo(() => filters.find((f) => f.id === statusFilter) || null, [filters, statusFilter]);
 
   return (
-    <div className="h-full min-h-0 flex flex-col overflow-hidden">
-      <div className="card bg-base-100 shadow h-full min-h-0 flex flex-col overflow-hidden">
-        <div className="card-body flex flex-col min-h-0">
-          <div className="mt-4 flex-1 min-h-0 overflow-auto overflow-x-hidden">
+    <div className="min-h-full bg-base-100 md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
+      <div className="bg-base-100 md:card md:shadow md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
+        <div className="p-4 md:card-body md:flex md:flex-col md:min-h-0">
+          <div className="space-y-4 md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
             <SystemListToolbar
               title="Email Connections"
@@ -175,7 +175,7 @@ export default function EmailConnectionsPage() {
               }}
             />
 
-            <div className="mt-4">
+            <div className="md:mt-4">
               {loading ? (
                 <div className="text-sm opacity-70">Loading…</div>
               ) : rows.length === 0 ? (

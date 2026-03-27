@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiFetch } from "../api";
 import PaginationControls from "../components/PaginationControls.jsx";
+import useMediaQuery from "../hooks/useMediaQuery.js";
 
 export default function AutomationRunsPage() {
   const { automationId } = useParams();
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const [runs, setRuns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
@@ -35,14 +37,14 @@ export default function AutomationRunsPage() {
   }, [automationId]);
 
   return (
-    <div className="space-y-6">
+    <div className={isMobile ? "min-h-full bg-base-100 p-4 space-y-4" : "space-y-6"}>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Automation Runs</h1>
         <Link className="btn" to={`/automations/${automationId}`}>Back</Link>
       </div>
 
-      <div className="card bg-base-100 shadow">
-        <div className="card-body">
+      <div className={isMobile ? "bg-base-100" : "card bg-base-100 shadow"}>
+        <div className={isMobile ? "" : "card-body"}>
           {loading ? (
             <div className="text-sm opacity-70">Loading…</div>
           ) : (
@@ -57,7 +59,7 @@ export default function AutomationRunsPage() {
               </div>
 
               <div className="overflow-x-auto">
-                <table className="table w-full">
+                <table className="table w-full min-w-max">
                 <thead>
                   <tr>
                     <th>Status</th>
@@ -69,10 +71,10 @@ export default function AutomationRunsPage() {
                 <tbody>
                   {pagedRuns.map((run) => (
                     <tr key={run.id}>
-                      <td>{run.status}</td>
-                      <td className="opacity-70 text-sm">{run.started_at || "-"}</td>
-                      <td className="opacity-70 text-sm">{run.ended_at || "-"}</td>
-                      <td className="text-right">
+                      <td className="whitespace-nowrap">{run.status}</td>
+                      <td className="whitespace-nowrap opacity-70 text-sm">{run.started_at || "-"}</td>
+                      <td className="whitespace-nowrap opacity-70 text-sm">{run.ended_at || "-"}</td>
+                      <td className="whitespace-nowrap text-right">
                         <Link className="btn btn-sm" to={`/automation-runs/${run.id}`}>View</Link>
                       </td>
                     </tr>

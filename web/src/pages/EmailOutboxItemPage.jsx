@@ -76,6 +76,17 @@ export default function EmailOutboxItemPage() {
     <TabbedPaneShell
       title={item?.subject || "Email"}
       subtitle={headerStatus ? `Status: ${headerStatus}` : "Email preview"}
+      mobileOverflowActions={[
+        {
+          label: "Refresh",
+          onClick: load,
+          disabled: loading,
+        },
+        {
+          label: "Back",
+          onClick: () => navigate(-1),
+        },
+      ]}
       rightActions={(
         <div className="flex items-center gap-2">
           <button className="btn btn-sm btn-ghost" type="button" onClick={load} disabled={loading}>

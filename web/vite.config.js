@@ -17,11 +17,47 @@ export default defineConfig(({ mode }) => {
           name: "Octodrop Platform",
           short_name: "Octodrop",
           description: "Octodrop workspace platform for mobile and desktop.",
+          categories: ["business", "productivity", "utilities"],
           theme_color: "#111827",
           background_color: "#111827",
           display: "standalone",
+          display_override: ["window-controls-overlay", "standalone", "browser"],
           start_url: "/home",
           scope: "/",
+          prefer_related_applications: false,
+          launch_handler: {
+            client_mode: ["focus-existing", "auto"],
+          },
+          shortcuts: [
+            {
+              name: "Home",
+              short_name: "Home",
+              description: "Open the Octodrop home dashboard.",
+              url: "/home",
+              icons: [{ src: "/icons/icon.svg", sizes: "any", type: "image/svg+xml" }],
+            },
+            {
+              name: "Apps",
+              short_name: "Apps",
+              description: "Browse installed workspace apps.",
+              url: "/apps",
+              icons: [{ src: "/icons/icon.svg", sizes: "any", type: "image/svg+xml" }],
+            },
+            {
+              name: "Settings",
+              short_name: "Settings",
+              description: "Open workspace and account settings.",
+              url: "/settings",
+              icons: [{ src: "/icons/icon.svg", sizes: "any", type: "image/svg+xml" }],
+            },
+            {
+              name: "Notifications",
+              short_name: "Alerts",
+              description: "View notifications and activity.",
+              url: "/notifications",
+              icons: [{ src: "/icons/icon.svg", sizes: "any", type: "image/svg+xml" }],
+            }
+          ],
           icons: [
             {
               src: "/icons/icon.svg",

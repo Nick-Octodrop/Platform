@@ -3,16 +3,25 @@ import { useLocation, Outlet } from "react-router-dom";
 import TopNav from "./TopNav.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { recordRecentApp } from "../state/appUsage.js";
+import useMediaQuery from "../hooks/useMediaQuery.js";
 import {
   clearOctoAiSandboxSessionId,
 } from "../api.js";
 
 export default function ShellLayout({ user, onSignOut, children }) {
   const location = useLocation();
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const search = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const isEmbedMode = search.get("octo_ai_embed") === "1";
   const isFrameMode = search.get("octo_ai_frame") === "1";
   const isNestedFrame = typeof window !== "undefined" && window.self !== window.top;
+  const isAppRoute = location.pathname === "/apps" || location.pathname.startsWith("/apps/");
+  const isSettingsRoute = location.pathname.startsWith("/settings");
+  const isStudioRoute = location.pathname.startsWith("/studio");
+  const isAutomationRoute = location.pathname.startsWith("/automations") || location.pathname.startsWith("/automation-runs");
+  const isTemplateStudioRoute =
+    location.pathname.startsWith("/email/templates/")
+    || location.pathname.startsWith("/documents/templates/");
   useEffect(() => {
     const parts = location.pathname.split("/").filter(Boolean);
     if (parts[0] === "apps" && parts[1]) {
@@ -32,7 +41,13 @@ export default function ShellLayout({ user, onSignOut, children }) {
   const isHome = location.pathname === "/";
   const baseMainClass = isEmbedMode || isHome
     ? "flex-1 min-h-0 overflow-hidden p-0"
-    : "flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 lg:p-6";
+    : isMobile && isAppRoute
+      ? "flex-1 min-h-0 overflow-y-auto p-0"
+      : isMobile && isSettingsRoute
+        ? "flex-1 min-h-0 overflow-y-auto p-0"
+        : isMobile && (isStudioRoute || isAutomationRoute || isTemplateStudioRoute)
+          ? "flex-1 min-h-0 overflow-y-auto p-0"
+      : "flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 lg:p-6";
   const mainClass = baseMainClass;
 
   if (!user) {

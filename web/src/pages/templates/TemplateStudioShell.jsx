@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+import { MessageSquare, MoreHorizontal, ShieldCheck } from "lucide-react";
 import Tabs from "../../components/Tabs.jsx";
 import ValidationPanel from "../../components/ValidationPanel.jsx";
 import TemplateAgentPane from "./TemplateAgentPane.jsx";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM } from "../../components/buttonStyles.js";
 import { apiFetch } from "../../api.js";
 import { useAccessContext } from "../../access.js";
+import useMediaQuery from "../../hooks/useMediaQuery.js";
 
 const DEFAULT_SAMPLE = { entity_id: "", record_id: "" };
 
@@ -29,6 +31,7 @@ export default function TemplateStudioShell({
   onTabChange,
 }) {
   const { isSuperadmin } = useAccessContext();
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const [record, setRecord] = useState(null);
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -40,6 +43,8 @@ export default function TemplateStudioShell({
   const [sample, setSample] = useState(DEFAULT_SAMPLE);
   const [renderModalOpen, setRenderModalOpen] = useState(false);
   const [renderSample, setRenderSample] = useState({ entity_id: "", record_id: "" });
+  const [mobileUtilitySheet, setMobileUtilitySheet] = useState("");
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const debounceRef = useRef(null);
   const previewDebounceRef = useRef(null);
   const lastAutoPreviewRef = useRef("");
@@ -312,6 +317,9 @@ export default function TemplateStudioShell({
     />
   );
 
+  const primaryAction = actions.find((action) => action.kind === "primary") || null;
+  const secondaryActions = actions.filter((action) => action !== primaryAction);
+
   useEffect(() => {
     if (!validate) return;
     if (!draft || !recordId) return;
@@ -357,6 +365,119 @@ export default function TemplateStudioShell({
       }
     };
   }, [draft, sample, activeTabId, profile?.autoPreview, profile?.autoPreviewMode]);
+
+  if (isMobile) {
+    return (
+      <div className="min-h-full bg-base-100">
+        <div className="p-4 flex flex-col gap-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="text-2xl font-semibold truncate">{title}</div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {primaryAction && (
+                <button
+                  className={PRIMARY_BUTTON_SM}
+                  onClick={() => primaryAction.onClick?.(ctx)}
+                  disabled={saving || primaryAction.disabled}
+                >
+                  {primaryAction.label}
+                </button>
+              )}
+              {(secondaryActions.length > 0 || extraActions.length > 0) && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    className={SOFT_BUTTON_SM}
+                    aria-label="More actions"
+                    onClick={() => setMobileActionsOpen((open) => !open)}
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </button>
+                  {mobileActionsOpen && (
+                    <ul className="absolute right-0 top-full mt-2 menu p-2 shadow bg-base-100 rounded-box w-56 z-[220] border border-base-300">
+                      {secondaryActions.map((action) => (
+                        <li key={action.id}>
+                          <button
+                            onClick={() => {
+                              action.onClick?.(ctx);
+                              setMobileActionsOpen(false);
+                            }}
+                            disabled={saving || action.disabled}
+                          >
+                            {action.label}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className={SOFT_BUTTON_SM}
+              onClick={() => setMobileUtilitySheet("agent")}
+            >
+              <MessageSquare className="h-4 w-4" />
+              Agent
+            </button>
+            <button
+              type="button"
+              className={SOFT_BUTTON_SM}
+              onClick={() => setMobileUtilitySheet("validation")}
+            >
+              <ShieldCheck className="h-4 w-4" />
+              Validation
+            </button>
+          </div>
+
+          <div>
+            <Tabs
+              activeId={activeTabId}
+              onChange={handleTabChange}
+              tabs={(profile?.rightTabs || []).map((tab) => ({ id: tab.id, label: tab.label }))}
+            />
+          </div>
+
+          <div className="flex flex-col gap-4 min-w-0">
+            {(profile?.rightTabs || []).map((tab) => {
+              if (tab.id !== activeTabId) return null;
+              return <div key={tab.id}>{tab.render(ctx)}</div>;
+            })}
+          </div>
+        </div>
+
+        {mobileUtilitySheet && (
+          <div className="fixed inset-0 z-[220]">
+            <button
+              type="button"
+              className="absolute inset-0 bg-base-content/35"
+              aria-label="Close panel"
+              onClick={() => setMobileUtilitySheet("")}
+            />
+            <div className="absolute inset-x-0 bottom-0 max-h-[85vh] rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4 flex flex-col">
+              <div className="mx-auto mb-4 h-1.5 w-24 rounded-full bg-base-300" />
+              <div className="flex items-center justify-between gap-2 pb-3">
+                <div className="text-sm font-semibold">
+                  {mobileUtilitySheet === "agent" ? "Agent" : ""}
+                </div>
+                <button type="button" className={SOFT_BUTTON_SM} onClick={() => setMobileUtilitySheet("")}>
+                  Done
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-auto">
+                {mobileUtilitySheet === "agent" ? leftPaneContent : validationContent}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-6rem)] min-h-0 flex flex-col overflow-hidden">

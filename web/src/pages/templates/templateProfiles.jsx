@@ -564,7 +564,7 @@ function EmailHistoryTab({ templateId }) {
   }
   return (
     <div className="overflow-x-auto">
-      <table className="table table-sm">
+      <table className="table table-sm min-w-max">
         <thead>
           <tr>
             <th>Status</th>
@@ -576,10 +576,10 @@ function EmailHistoryTab({ templateId }) {
         <tbody>
           {items.map((row) => (
             <tr key={row.id}>
-              <td>{row.status}</td>
-              <td className="text-xs">{(row.to || []).join(", ")}</td>
-              <td className="text-xs">{row.subject}</td>
-              <td className="text-xs">{formatDateTime(row.created_at, row.created_at || "")}</td>
+              <td className="whitespace-nowrap">{row.status}</td>
+              <td className="text-xs whitespace-nowrap">{(row.to || []).join(", ")}</td>
+              <td className="text-xs whitespace-nowrap">{row.subject}</td>
+              <td className="text-xs whitespace-nowrap">{formatDateTime(row.created_at, row.created_at || "")}</td>
             </tr>
           ))}
         </tbody>
@@ -630,7 +630,7 @@ function DocHistoryTab({ templateId }) {
   }
   return (
     <div className="overflow-x-auto">
-      <table className="table table-sm">
+      <table className="table table-sm min-w-max">
         <thead>
           <tr>
             <th>Record</th>
@@ -644,10 +644,10 @@ function DocHistoryTab({ templateId }) {
             const attachment = attachments.find((a) => a.id === link.attachment_id);
             return (
               <tr key={link.id}>
-                <td className="text-xs">{link.entity_id}:{link.record_id}</td>
-                <td className="text-xs">{attachment?.filename || link.attachment_id}</td>
-                <td className="text-xs">{formatDateTime(attachment?.created_at || link.created_at, attachment?.created_at || link.created_at || "")}</td>
-                <td>
+                <td className="text-xs whitespace-nowrap">{link.entity_id}:{link.record_id}</td>
+                <td className="text-xs whitespace-nowrap">{attachment?.filename || link.attachment_id}</td>
+                <td className="text-xs whitespace-nowrap">{formatDateTime(attachment?.created_at || link.created_at, attachment?.created_at || link.created_at || "")}</td>
+                <td className="whitespace-nowrap">
                   {attachment?.id && (
                     <a className="btn btn-ghost btn-xs" href={`/attachments/${attachment.id}/download`} target="_blank" rel="noreferrer">
                       Open
@@ -703,7 +703,7 @@ function DocJobsTab({ templateId }) {
   }
   return (
     <div className="overflow-x-auto">
-      <table className="table table-sm">
+      <table className="table table-sm min-w-max">
         <thead>
           <tr>
             <th>Status</th>
@@ -715,10 +715,10 @@ function DocJobsTab({ templateId }) {
         <tbody>
           {items.map((job) => (
             <tr key={job.id}>
-              <td>{job.status}</td>
-              <td className="text-xs">{job.run_at}</td>
-              <td className="text-xs">{job.attempt}</td>
-              <td className="text-xs">{job.last_error || ""}</td>
+              <td className="whitespace-nowrap">{job.status}</td>
+              <td className="text-xs whitespace-nowrap">{job.run_at}</td>
+              <td className="text-xs whitespace-nowrap">{job.attempt}</td>
+              <td className="text-xs whitespace-nowrap">{job.last_error || ""}</td>
             </tr>
           ))}
         </tbody>

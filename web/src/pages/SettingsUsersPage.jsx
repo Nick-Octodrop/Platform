@@ -223,6 +223,13 @@ export default function SettingsUsersPage() {
       title="Users & Roles"
       subtitle="Invite workspace users and manage access roles."
       tabs={tabs}
+      mobileOverflowActions={[
+        {
+          label: "Refresh",
+          onClick: load,
+          disabled: loading || saving,
+        },
+      ]}
       rightActions={(
         <button className="btn btn-sm btn-ghost" type="button" disabled={loading || saving} onClick={load}>
           Refresh

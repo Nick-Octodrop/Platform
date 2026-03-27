@@ -110,6 +110,27 @@ export default function OpsJobPage() {
     <TabbedPaneShell
       title={job?.type || "Job"}
       subtitle={job?.status ? `Status: ${job.status}` : "Job detail"}
+      mobileOverflowActions={[
+        {
+          label: "Refresh",
+          onClick: load,
+          disabled: loading || acting,
+        },
+        {
+          label: "Retry",
+          onClick: retry,
+          disabled: !job || acting,
+        },
+        {
+          label: "Cancel",
+          onClick: cancel,
+          disabled: !job || acting,
+        },
+        {
+          label: "Back",
+          onClick: () => navigate(-1),
+        },
+      ]}
       rightActions={(
         <div className="flex items-center gap-2">
           <button className="btn btn-sm btn-ghost" type="button" onClick={load} disabled={loading || acting}>

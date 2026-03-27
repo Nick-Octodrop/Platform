@@ -203,6 +203,13 @@ export default function SettingsWorkspacesPage() {
       ]}
       activeTabId={activeTab}
       onTabChange={goTab}
+      mobileOverflowActions={[
+        {
+          label: "Refresh",
+          onClick: load,
+          disabled: loading || workspaceNameSaving || logoUploading,
+        },
+      ]}
       rightActions={(
         <button className="btn btn-sm btn-ghost" type="button" disabled={loading || workspaceNameSaving || logoUploading} onClick={load}>
           Refresh

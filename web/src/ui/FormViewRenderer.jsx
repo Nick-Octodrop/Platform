@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
+import { MoreHorizontal } from "lucide-react";
 import { renderField, setFieldValue, getFieldValue } from "./field_renderers.jsx";
 import { apiFetch } from "../api.js";
 import { evalCondition } from "../utils/conditions.js";
@@ -7,6 +8,7 @@ import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_BUTTON_XS } from "../components
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
 import ActivityPanel from "./ActivityPanel.jsx";
 import AttachmentField from "./AttachmentField.jsx";
+import useMediaQuery from "../hooks/useMediaQuery.js";
 
 export default function FormViewRenderer({
   view,
@@ -40,6 +42,7 @@ export default function FormViewRenderer({
 }) {
   if (!view) return <div className="alert">Missing form view</div>;
   const sections = view.sections || [];
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const viewLineEditors = useMemo(() => {
     const raw = view?.line_editors ?? view?.lineEditors;
     return raw && typeof raw === "object" ? raw : {};
@@ -108,6 +111,9 @@ export default function FormViewRenderer({
   const [sectionTabs, setSectionTabs] = useState({});
   const [workspaceMembers, setWorkspaceMembers] = useState([]);
   const [workspaceMembersLoading, setWorkspaceMembersLoading] = useState(false);
+  const [mobileAttachmentSheet, setMobileAttachmentSheet] = useState(null);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
+  const mobileActionsRef = useRef(null);
 
   const missing = sectionFieldIds.find((fieldId) => !fieldIndex[fieldId]);
   if (missing) {
@@ -345,12 +351,29 @@ export default function FormViewRenderer({
     activeTab !== activityTabId &&
     !hasCustomTabBlocks &&
     renderedSections.length === 0;
+  const mobileHeaderActions = [...primaryActions, ...secondaryActions];
+
+  useEffect(() => {
+    if (!mobileActionsOpen) return undefined;
+    function handlePointerDown(event) {
+      if (!mobileActionsRef.current) return;
+      if (!mobileActionsRef.current.contains(event.target)) {
+        setMobileActionsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+    };
+  }, [mobileActionsOpen]);
 
   return (
-    <div className="h-full min-h-0 flex flex-col gap-4">
+    <div className={`h-full min-h-0 flex flex-col ${isMobile ? "gap-4" : "gap-4"}`}>
       {header && !hideHeader && (
         <div className="shrink-0 flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0 flex-1">
+          <div className="flex flex-1 flex-wrap items-center gap-3 min-w-0">
             <h1 className="text-base font-semibold truncate">{titleText}</h1>
             {!autoSaveEnabled && !readonly && isDirty && (
               <span className="text-sm opacity-60">Unsaved changes</span>
@@ -374,7 +397,42 @@ export default function FormViewRenderer({
               </div>
             )}
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2 shrink-0 w-full md:w-auto md:max-w-[60%]">
+          <div className="ml-auto flex shrink-0 items-center justify-end gap-2 self-start">
+            {isMobile && mobileHeaderActions.length > 0 && (
+              <div className="relative" ref={mobileActionsRef}>
+                <button
+                  type="button"
+                  className={SOFT_BUTTON_SM}
+                  onClick={() => setMobileActionsOpen((open) => !open)}
+                  aria-label="More actions"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+                {mobileActionsOpen && (
+                  <ul className="absolute right-0 top-full mt-2 menu p-2 shadow bg-base-100 rounded-box w-56 z-[220] border border-base-300">
+                    {mobileHeaderActions.map((item) => {
+                      const disabled = !item.enabled || previewMode || readonly;
+                      return (
+                        <li key={item.label}>
+                          <button
+                            onClick={() => {
+                              if (disabled) return;
+                              onActionClick?.(item.action);
+                              setMobileActionsOpen(false);
+                            }}
+                            disabled={disabled}
+                          >
+                            {item.label}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+          <div className={`flex flex-wrap items-center justify-end gap-2 shrink-0 w-full md:w-auto md:max-w-[60%] ${isMobile ? "hidden" : ""}`}>
             {primaryActions.map((item) => {
               const disabled = !item.enabled || previewMode || readonly;
               const reason = readonly
@@ -428,9 +486,9 @@ export default function FormViewRenderer({
           <Tabs tabs={tabsForUi} activeId={activeTab} onChange={setActiveTab} />
         </div>
       )}
-      <div className={hasCustomTabBlocks ? "flex-1 min-h-0 overflow-hidden" : "flex-1 min-h-0 overflow-auto space-y-4"}>
-        {activityConfig?.mode === "panel" && (
-          <div className="border border-base-300 rounded-box p-3">
+      <div className={hasCustomTabBlocks ? (isMobile ? "space-y-4" : "flex-1 min-h-0 overflow-hidden") : (isMobile ? "space-y-4" : "flex-1 min-h-0 overflow-auto space-y-4")}>
+      {activityConfig?.mode === "panel" && (
+          <div className={`border border-base-300 rounded-box ${isMobile ? "p-4" : "p-3"}`}>
             <div className="text-sm font-semibold mb-2">{activityTabLabel}</div>
             <ActivityPanel entityId={entityId} recordId={effectiveRecordId} config={activityConfig || {}} />
           </div>
@@ -495,15 +553,31 @@ export default function FormViewRenderer({
                             {field.label || field.id}
                           </legend>
                           {isAttachmentField ? (
-                            <AttachmentField
-                              entityId={entityId}
-                              recordId={effectiveRecordId}
-                              fieldId={fieldId}
-                              readonly={readonly || isDisabled}
-                              previewMode={previewMode}
-                              buttonLabel={field?.ui?.button_label || field?.button_label || "Attach"}
-                              description={field?.ui?.description || field?.help_text || ""}
-                            />
+                            isMobile ? (
+                              <button
+                                type="button"
+                                className="btn btn-outline btn-sm w-full justify-start"
+                                onClick={() => setMobileAttachmentSheet({
+                                  fieldId,
+                                  label: field.label || field.id,
+                                  readonly: readonly || isDisabled,
+                                  buttonLabel: field?.ui?.button_label || field?.button_label || "Attach",
+                                  description: field?.ui?.description || field?.help_text || "",
+                                })}
+                              >
+                                {field.label || field.id}
+                              </button>
+                            ) : (
+                              <AttachmentField
+                                entityId={entityId}
+                                recordId={effectiveRecordId}
+                                fieldId={fieldId}
+                                readonly={readonly || isDisabled}
+                                previewMode={previewMode}
+                                buttonLabel={field?.ui?.button_label || field?.button_label || "Attach"}
+                                description={field?.ui?.description || field?.help_text || ""}
+                              />
+                            )
                           ) : field.type === "lookup" ? (
                             <LookupField
                               field={field}
@@ -570,6 +644,36 @@ export default function FormViewRenderer({
           >
             Discard
           </button>
+        </div>
+      )}
+      {isMobile && mobileAttachmentSheet && (
+        <div className="fixed inset-0 z-[220]">
+          <button
+            type="button"
+            className="absolute inset-0 bg-base-content/35"
+            aria-label="Close attachments"
+            onClick={() => setMobileAttachmentSheet(null)}
+          />
+          <div className="absolute inset-x-0 bottom-0 max-h-[86vh] rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4 flex flex-col">
+            <div className="mx-auto mb-4 h-1.5 w-24 rounded-full bg-base-300" />
+            <div className="px-1 pb-3 flex items-center justify-between gap-2">
+              <div className="text-sm font-semibold">{mobileAttachmentSheet.label}</div>
+              <button type="button" className={SOFT_BUTTON_SM} onClick={() => setMobileAttachmentSheet(null)}>
+                Done
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-auto">
+              <AttachmentField
+                entityId={entityId}
+                recordId={effectiveRecordId}
+                fieldId={mobileAttachmentSheet.fieldId}
+                readonly={mobileAttachmentSheet.readonly}
+                previewMode={previewMode}
+                buttonLabel={mobileAttachmentSheet.buttonLabel}
+                description={mobileAttachmentSheet.description}
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>

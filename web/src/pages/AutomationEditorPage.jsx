@@ -7,11 +7,13 @@ import ValidationPanel from "../components/ValidationPanel.jsx";
 import AgentChatInput from "../ui/AgentChatInput.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
 import { useAccessContext } from "../access.js";
+import useMediaQuery from "../hooks/useMediaQuery.js";
 
 export default function AutomationEditorPage({ user }) {
   const { automationId } = useParams();
   const navigate = useNavigate();
   const { isSuperadmin } = useAccessContext();
+  const isMobile = useMediaQuery("(max-width: 768px)");
 
   const [item, setItem] = useState(null);
   const [name, setName] = useState("");
@@ -1293,7 +1295,7 @@ export default function AutomationEditorPage({ user }) {
   }), [builderTab, runsTab, jsonTab, save, publish, saving, item?.status]);
 
   return (
-    <div className="h-full min-h-0 flex flex-col overflow-hidden">
+    <div className={isMobile ? "min-h-full bg-base-100 flex flex-col" : "h-full min-h-0 flex flex-col overflow-hidden"}>
       <TemplateStudioShell
         title={item?.name || "Automation"}
         recordId={automationId}

@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiFetch } from "../api";
+import useMediaQuery from "../hooks/useMediaQuery.js";
 
 export default function AutomationRunDetailPage() {
   const { runId } = useParams();
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -30,7 +32,7 @@ export default function AutomationRunDetailPage() {
   const { run, steps } = data;
 
   return (
-    <div className="space-y-6">
+    <div className={isMobile ? "min-h-full bg-base-100 p-4 space-y-4" : "space-y-6"}>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Run {run.id}</h1>
@@ -39,15 +41,15 @@ export default function AutomationRunDetailPage() {
         <Link className="btn" to="/automations">Automations</Link>
       </div>
 
-      <div className="card bg-base-100 shadow">
-        <div className="card-body">
+      <div className={isMobile ? "bg-base-100" : "card bg-base-100 shadow"}>
+        <div className={isMobile ? "" : "card-body"}>
           <div className="text-sm opacity-70">Trigger</div>
           <pre className="text-xs whitespace-pre-wrap">{JSON.stringify(run.trigger_payload || {}, null, 2)}</pre>
         </div>
       </div>
 
-      <div className="card bg-base-100 shadow">
-        <div className="card-body">
+      <div className={isMobile ? "bg-base-100" : "card bg-base-100 shadow"}>
+        <div className={isMobile ? "" : "card-body"}>
           <h2 className="font-semibold mb-2">Steps</h2>
           {(steps || []).length === 0 && <div className="text-sm opacity-60">No steps recorded.</div>}
           <div className="space-y-3">
