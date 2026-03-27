@@ -1589,6 +1589,113 @@ def _collect_activity_changes(
     return changes
 
 
+def _activity_add_event(
+    entity_id: str | None,
+    record_id: str | None,
+    event_type: str,
+    payload: dict | None,
+    actor: dict | None = None,
+) -> dict | None:
+    if not isinstance(entity_id, str) or not entity_id:
+        return None
+    if not isinstance(record_id, str) or not record_id:
+        return None
+    try:
+        return activity_store.add_event(
+            _normalize_entity_id(entity_id),
+            record_id,
+            event_type,
+            payload or {},
+            actor=actor,
+        )
+    except Exception:
+        logger.exception("activity_event_add_failed entity_id=%s record_id=%s event_type=%s", entity_id, record_id, event_type)
+        return None
+
+
+def _activity_add_record_created_event(entity_def: dict, record_id: str, record: dict, actor: dict | None = None) -> None:
+    display_field = entity_def.get("display_field") if isinstance(entity_def, dict) else None
+    display_value = record.get(display_field) if isinstance(display_field, str) and isinstance(record, dict) else None
+    payload = {
+        "action": "record_created",
+        "message": f"Record created{f': {display_value}' if display_value else ''}.",
+        "record_label": _format_activity_value(display_value) if display_value is not None else None,
+        "created_fields": sorted([key for key in record.keys() if isinstance(key, str)]),
+    }
+    _activity_add_event(entity_def.get("id"), record_id, "system", payload, actor=actor)
+
+
+def _activity_add_status_change_event(
+    entity_def: dict,
+    record_id: str,
+    status_field: str,
+    before_value: Any,
+    after_value: Any,
+    actor: dict | None = None,
+) -> None:
+    label = status_field
+    for field in entity_def.get("fields") if isinstance(entity_def, dict) else []:
+        if isinstance(field, dict) and field.get("id") == status_field:
+            label = field.get("label") or status_field
+            break
+    payload = {
+        "action": "status_changed",
+        "message": f"{label} changed from {_format_activity_value(before_value)} to {_format_activity_value(after_value)}.",
+        "field": status_field,
+        "label": label,
+        "from": _format_activity_value(before_value),
+        "to": _format_activity_value(after_value),
+    }
+    _activity_add_event(entity_def.get("id"), record_id, "system", payload, actor=actor)
+
+
+def _activity_add_action_event(
+    entity_id: str | None,
+    record_id: str | None,
+    action_id: str | None,
+    action_label: str | None,
+    action_kind: str | None,
+    actor: dict | None = None,
+    extra_payload: dict | None = None,
+) -> None:
+    if not isinstance(record_id, str) or not record_id:
+        return
+    payload = {
+        "action": "action_executed",
+        "message": f"Action executed: {action_label or action_id or action_kind or 'Action'}.",
+        "action_id": action_id,
+        "action_label": action_label or action_id or action_kind or "Action",
+        "action_kind": action_kind,
+    }
+    if isinstance(extra_payload, dict):
+        payload.update(extra_payload)
+    _activity_add_event(entity_id, record_id, "system", payload, actor=actor)
+
+
+def _activity_add_attachment_event(
+    entity_id: str | None,
+    record_id: str | None,
+    attachment: dict | None,
+    *,
+    action: str,
+    purpose: str | None = None,
+    actor: dict | None = None,
+) -> dict | None:
+    if not isinstance(attachment, dict):
+        return None
+    filename = attachment.get("filename") or "Attachment"
+    payload = {
+        "action": action,
+        "message": f"{'Removed' if action == 'removed' else 'Added'} attachment: {filename}.",
+        "attachment_id": attachment.get("id"),
+        "filename": filename,
+        "mime_type": attachment.get("mime_type"),
+        "size": attachment.get("size"),
+        "purpose": purpose or "default",
+    }
+    return _activity_add_event(entity_id, record_id, "attachment", payload, actor=actor)
+
+
 def _compile_manifest(manifest: dict) -> dict:
     entities = manifest.get("entities") if isinstance(manifest, dict) else None
     views = manifest.get("views") if isinstance(manifest, dict) else None
@@ -12796,6 +12903,14 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
     if kind in {"navigate", "open_form", "refresh"}:
         record_id = context.get("record_id") if isinstance(context, dict) else None
         entity_id = action.get("entity_id") if isinstance(action.get("entity_id"), str) else None
+        _activity_add_action_event(
+            entity_id,
+            record_id,
+            action_id,
+            action.get("label") if isinstance(action.get("label"), str) else None,
+            kind,
+            actor=getattr(request.state, "user", None),
+        )
         _emit_triggers(
             request,
             module_id,
@@ -12866,12 +12981,23 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                 )
             raise
         _add_chatter_entry(entity_id, record["record_id"], "system", "Record created", getattr(request.state, "user", None))
+        created_record = record.get("record") if isinstance(record, dict) else None
+        created_id = record.get("record_id") if isinstance(record, dict) else None
+        if created_id and isinstance(created_record, dict):
+            _activity_add_record_created_event(entity_def, created_id, created_record, actor=getattr(request.state, "user", None))
+            _activity_add_action_event(
+                entity_def.get("id"),
+                created_id,
+                action_id,
+                action.get("label") if isinstance(action.get("label"), str) else None,
+                kind,
+                actor=getattr(request.state, "user", None),
+                extra_payload={"record_created": True},
+            )
         _resp_cache_invalidate_entity(entity_id)
         phase_ms["write"] = (time.perf_counter() - t0) * 1000
         phase_ms["total"] = (time.perf_counter() - action_start) * 1000
         _action_logger.info("action_perf=%s", {"action_id": action_id, "kind": kind, "ms": phase_ms})
-        created_record = record.get("record") if isinstance(record, dict) else None
-        created_id = record.get("record_id") if isinstance(record, dict) else None
         if created_id and isinstance(created_record, dict):
             created_snapshot = _automation_record_snapshot(created_record, entity_def)
             _emit_triggers(
@@ -12968,6 +13094,26 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                         )
                     except Exception:
                         pass
+        status_field = (workflow or {}).get("status_field")
+        if isinstance(status_field, str) and isinstance(before_record, dict) and isinstance(after_record, dict):
+            if before_record.get(status_field) != after_record.get(status_field):
+                _activity_add_status_change_event(
+                    entity_def,
+                    record_id,
+                    status_field,
+                    before_record.get(status_field),
+                    after_record.get(status_field),
+                    actor=getattr(request.state, "user", None),
+                )
+        _activity_add_action_event(
+            entity_def.get("id"),
+            record_id,
+            action_id,
+            action.get("label") if isinstance(action.get("label"), str) else None,
+            kind,
+            actor=getattr(request.state, "user", None),
+            extra_payload={"changed_fields": changed},
+        )
         if isinstance(after_record, dict):
             before_snapshot = _automation_record_snapshot(before_record, entity_def)
             after_snapshot = _automation_record_snapshot(after_record, entity_def)
@@ -12987,7 +13133,6 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                 },
                 entity_id=entity_def.get("id"),
             )
-            status_field = (workflow or {}).get("status_field")
             if isinstance(status_field, str) and before_record and before_record.get(status_field) != after_record.get(status_field):
                 _emit_triggers(
                     request,
@@ -13075,6 +13220,25 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                             )
                         except Exception:
                             pass
+            status_field = (workflow or {}).get("status_field")
+            if isinstance(status_field, str) and isinstance(after_record, dict) and before_record.get(status_field) != after_record.get(status_field):
+                _activity_add_status_change_event(
+                    entity_def,
+                    record_id,
+                    status_field,
+                    before_record.get(status_field),
+                    after_record.get(status_field),
+                    actor=getattr(request.state, "user", None),
+                )
+            _activity_add_action_event(
+                entity_def.get("id"),
+                record_id,
+                action_id,
+                action.get("label") if isinstance(action.get("label"), str) else None,
+                kind,
+                actor=getattr(request.state, "user", None),
+                extra_payload={"changed_fields": changed, "bulk": True},
+            )
             if isinstance(after_record, dict):
                 before_snapshot = _automation_record_snapshot(before_record, entity_def)
                 after_snapshot = _automation_record_snapshot(after_record, entity_def)
@@ -27371,6 +27535,8 @@ async def create_generic_record(request: Request, entity_id: str) -> dict:
     record_id = record.get("record_id") if isinstance(record, dict) else None
     record_payload = record.get("record") if isinstance(record, dict) else None
     if record_id and isinstance(record_payload, dict):
+        _add_chatter_entry(entity_id, record_id, "system", "Record created", getattr(request.state, "user", None))
+        _activity_add_record_created_event(found[1], record_id, record_payload, actor=getattr(request.state, "user", None))
         created_snapshot = _automation_record_snapshot(record_payload, found[1])
         _emit_triggers(
             request,
@@ -27477,9 +27643,20 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
                     )
                 except Exception:
                     pass
+        _add_chatter_entry(entity_id, record_id, "system", "Record updated", getattr(request.state, "user", None))
         changed = _changed_fields(before_record, after_record)
         before_snapshot = _automation_record_snapshot(before_record, found[1])
         after_snapshot = _automation_record_snapshot(after_record, found[1])
+        status_field = (workflow or {}).get("status_field")
+        if isinstance(status_field, str) and before_record.get(status_field) != after_record.get(status_field):
+            _activity_add_status_change_event(
+                found[1],
+                record_id,
+                status_field,
+                before_record.get(status_field),
+                after_record.get(status_field),
+                actor=getattr(request.state, "user", None),
+            )
         _emit_triggers(
             request,
             found[0],
@@ -27496,7 +27673,6 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
             },
             entity_id=found[1].get("id"),
         )
-        status_field = (workflow or {}).get("status_field")
         if isinstance(status_field, str) and before_record.get(status_field) != after_record.get(status_field):
             _emit_triggers(
                 request,
@@ -27877,12 +28053,21 @@ async def add_activity_attachment(
             "purpose": "activity",
         }
     )
-    item = activity_store.add_attachment(
+    item = _activity_add_attachment_event(
         normalized_entity,
         record_id,
         attachment,
+        action="added",
+        purpose="activity",
         actor=getattr(request.state, "user", None),
     )
+    if not item:
+        item = activity_store.add_attachment(
+            normalized_entity,
+            record_id,
+            attachment,
+            actor=getattr(request.state, "user", None),
+        )
     return _ok_response({"item": item, "attachment": attachment})
 
 
@@ -29739,10 +29924,12 @@ async def link_attachment(request: Request) -> dict:
     try:
         attachment = attachment_store.get_attachment(body.get("attachment_id"))
         if attachment:
-            activity_store.add_attachment(
-                _normalize_entity_id(body.get("entity_id")),
+            _activity_add_attachment_event(
+                body.get("entity_id"),
                 body.get("record_id"),
                 attachment,
+                action="added",
+                purpose=body.get("purpose"),
                 actor=getattr(request.state, "user", None),
             )
     except Exception:
@@ -29792,23 +29979,14 @@ async def delete_record_attachment(request: Request, entity_id: str, record_id: 
         return _error_response("ATTACHMENT_NOT_FOUND", "Attachment not linked to this record", "attachment_id", status=404)
 
     if attachment:
-        try:
-            activity_store.add_event(
-                _normalize_entity_id(entity_id),
-                record_id,
-                "attachment",
-                {
-                    "action": "removed",
-                    "attachment_id": attachment.get("id"),
-                    "filename": attachment.get("filename"),
-                    "mime_type": attachment.get("mime_type"),
-                    "size": attachment.get("size"),
-                    "purpose": purpose or "default",
-                },
-                actor=getattr(request.state, "user", None),
-            )
-        except Exception:
-            logger.exception("activity_attachment_remove_event_failed entity_id=%s record_id=%s attachment_id=%s", entity_id, record_id, attachment_id)
+        _activity_add_attachment_event(
+            entity_id,
+            record_id,
+            attachment,
+            action="removed",
+            purpose=purpose or "default",
+            actor=getattr(request.state, "user", None),
+        )
 
     try:
         remaining_links = int(attachment_store.count_links(attachment_id))

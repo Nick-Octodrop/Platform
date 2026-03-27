@@ -4,9 +4,10 @@ import { BrowserRouter } from "react-router-dom";
 import { registerSW } from "virtual:pwa-register";
 import App from "./App.jsx";
 import "./styles.css";
-import { applyTheme, getInitialTheme } from "./theme/theme.js";
+import { applyBrandColors, applyTheme, getBrandColors, getInitialTheme } from "./theme/theme.js";
 
 applyTheme(getInitialTheme());
+applyBrandColors(getBrandColors());
 const updateSW = registerSW({
   immediate: true,
   onNeedRefresh() {

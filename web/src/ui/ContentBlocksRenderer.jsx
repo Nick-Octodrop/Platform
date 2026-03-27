@@ -1186,6 +1186,7 @@ function ChatterPanel({ entityId, recordId }) {
             );
           }
           const changes = Array.isArray(payload?.changes) ? payload.changes : [];
+          const systemMessage = typeof payload?.message === "string" ? payload.message.trim() : "";
           return (
             <div key={item.id} className="flex items-start gap-2 rounded-box bg-base-200/50 px-3 py-2">
               <div className="pt-0.5">
@@ -1201,6 +1202,8 @@ function ChatterPanel({ entityId, recordId }) {
                       </li>
                     ))}
                   </ul>
+                ) : systemMessage ? (
+                  <div className="mt-1 text-xs text-base-content/70">{systemMessage}</div>
                 ) : (
                   <div className="mt-1 text-xs text-base-content/60">Record updated.</div>
                 )}

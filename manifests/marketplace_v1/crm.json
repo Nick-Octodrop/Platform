@@ -4,7 +4,7 @@
     "id": "crm",
     "key": "crm",
     "name": "CRM",
-    "version": "1.7.0",
+    "version": "1.7.1",
     "description": "Lead and opportunity pipeline for pre-sales qualification and conversion.",
     "category": "Sales",
     "icon_key": "lucide:Target"
@@ -53,7 +53,7 @@
         {
           "id": "opportunity.id",
           "type": "uuid",
-          "label": "ID",
+          "label": "Record ID",
           "readonly": true
         },
         {
@@ -633,6 +633,34 @@
             }
           ]
         }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "opportunity.title",
+          "opportunity.contact_id",
+          "opportunity.company_name",
+          "opportunity.email_from",
+          "opportunity.phone",
+          "opportunity.stage",
+          "opportunity.owner_id",
+          "opportunity.team",
+          "opportunity.priority",
+          "opportunity.next_activity_date",
+          "opportunity.estimated_value",
+          "opportunity.probability",
+          "opportunity.expected_close_date",
+          "opportunity.quote_id",
+          "opportunity.source",
+          "opportunity.medium",
+          "opportunity.campaign",
+          "opportunity.tags",
+          "opportunity.description",
+          "opportunity.lost_reason"
+        ]
       }
     },
     {

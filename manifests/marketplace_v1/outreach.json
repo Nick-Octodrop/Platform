@@ -4,7 +4,7 @@
     "id": "outreach",
     "key": "outreach",
     "name": "Outreach",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Outbound prospecting tracker for potential customers, outreach sends, replies, and conversion into Contacts.",
     "category": "Sales",
     "icon_key": "lucide:Megaphone"
@@ -57,7 +57,7 @@
         {
           "id": "outreach.id",
           "type": "uuid",
-          "label": "ID",
+          "label": "Record ID",
           "readonly": true
         },
         {
@@ -271,12 +271,20 @@
       "enabled_when": {
         "op": "in",
         "field": "outreach.status",
-        "value": ["draft", "ready", "replied"]
+        "value": [
+          "draft",
+          "ready",
+          "replied"
+        ]
       },
       "visible_when": {
         "op": "in",
         "field": "outreach.status",
-        "value": ["draft", "ready", "replied"]
+        "value": [
+          "draft",
+          "ready",
+          "replied"
+        ]
       },
       "confirm": {
         "title": "Send Outreach",
@@ -313,12 +321,18 @@
       "enabled_when": {
         "op": "in",
         "field": "outreach.status",
-        "value": ["sent", "replied"]
+        "value": [
+          "sent",
+          "replied"
+        ]
       },
       "visible_when": {
         "op": "in",
         "field": "outreach.status",
-        "value": ["sent", "replied"]
+        "value": [
+          "sent",
+          "replied"
+        ]
       }
     },
     {
@@ -333,7 +347,10 @@
           {
             "op": "in",
             "field": "outreach.status",
-            "value": ["replied", "interested"]
+            "value": [
+              "replied",
+              "interested"
+            ]
           },
           {
             "op": "not",
@@ -350,7 +367,10 @@
           {
             "op": "in",
             "field": "outreach.status",
-            "value": ["replied", "interested"]
+            "value": [
+              "replied",
+              "interested"
+            ]
           },
           {
             "op": "not",
@@ -379,7 +399,10 @@
         "condition": {
           "op": "in",
           "field": "outreach.status",
-          "value": ["converted", "archived"]
+          "value": [
+            "converted",
+            "archived"
+          ]
         }
       },
       "visible_when": {
@@ -387,7 +410,10 @@
         "condition": {
           "op": "in",
           "field": "outreach.status",
-          "value": ["converted", "archived"]
+          "value": [
+            "converted",
+            "archived"
+          ]
         }
       },
       "confirm": {
@@ -455,18 +481,36 @@
       "kind": "list",
       "entity": "entity.outreach",
       "columns": [
-        { "field_id": "outreach.prospect_name" },
-        { "field_id": "outreach.company_name" },
-        { "field_id": "outreach.email" },
-        { "field_id": "outreach.type" },
-        { "field_id": "outreach.catalog_item_id" },
-        { "field_id": "outreach.status" },
-        { "field_id": "outreach.owner_id" },
-        { "field_id": "outreach.follow_up_date" }
+        {
+          "field_id": "outreach.prospect_name"
+        },
+        {
+          "field_id": "outreach.company_name"
+        },
+        {
+          "field_id": "outreach.email"
+        },
+        {
+          "field_id": "outreach.type"
+        },
+        {
+          "field_id": "outreach.catalog_item_id"
+        },
+        {
+          "field_id": "outreach.status"
+        },
+        {
+          "field_id": "outreach.owner_id"
+        },
+        {
+          "field_id": "outreach.follow_up_date"
+        }
       ],
       "header": {
         "primary_actions": [
-          { "action_id": "action.outreach_new" }
+          {
+            "action_id": "action.outreach_new"
+          }
         ],
         "open_record_target": "page:outreach.form_page",
         "search": {
@@ -497,7 +541,13 @@
             "domain": {
               "op": "in",
               "field": "outreach.status",
-              "value": ["draft", "ready", "sent", "replied", "interested"]
+              "value": [
+                "draft",
+                "ready",
+                "sent",
+                "replied",
+                "interested"
+              ]
             }
           },
           {
@@ -506,7 +556,9 @@
             "domain": {
               "op": "eq",
               "field": "outreach.owner_id",
-              "value": { "ref": "$actor.user_id" }
+              "value": {
+                "ref": "$actor.user_id"
+              }
             }
           },
           {
@@ -629,12 +681,24 @@
           "field_id": "outreach.status"
         },
         "secondary_actions": [
-          { "action_id": "action.outreach_mark_ready" },
-          { "action_id": "action.outreach_send" },
-          { "action_id": "action.outreach_mark_replied" },
-          { "action_id": "action.outreach_mark_interested" },
-          { "action_id": "action.outreach_convert_contact" },
-          { "action_id": "action.outreach_archive" }
+          {
+            "action_id": "action.outreach_mark_ready"
+          },
+          {
+            "action_id": "action.outreach_send"
+          },
+          {
+            "action_id": "action.outreach_mark_replied"
+          },
+          {
+            "action_id": "action.outreach_mark_interested"
+          },
+          {
+            "action_id": "action.outreach_convert_contact"
+          },
+          {
+            "action_id": "action.outreach_archive"
+          }
         ],
         "tabs": {
           "style": "lifted",
@@ -643,20 +707,52 @@
             {
               "id": "prospect_tab",
               "label": "Prospect",
-              "sections": ["main"]
+              "sections": [
+                "main"
+              ]
             },
             {
               "id": "outreach_tab",
               "label": "Outreach",
-              "sections": ["outreach_details"]
+              "sections": [
+                "outreach_details"
+              ]
             },
             {
               "id": "internal_notes_tab",
               "label": "Internal Notes",
-              "sections": ["internal_notes"]
+              "sections": [
+                "internal_notes"
+              ]
             }
           ]
         }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "outreach.prospect_name",
+          "outreach.company_name",
+          "outreach.email",
+          "outreach.phone",
+          "outreach.type",
+          "outreach.status",
+          "outreach.owner_id",
+          "outreach.catalog_item_id",
+          "outreach.channel",
+          "outreach.source",
+          "outreach.segment",
+          "outreach.outreach_date",
+          "outreach.follow_up_date",
+          "outreach.reply_summary",
+          "outreach.next_step",
+          "outreach.contact_id",
+          "outreach.tags",
+          "outreach.notes"
+        ]
       }
     },
     {
@@ -678,7 +774,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.outreach_new" }
+          {
+            "action_id": "action.outreach_new"
+          }
         ]
       },
       "content": [
@@ -840,7 +938,9 @@
         "enabled": true,
         "scope": "module_and_global",
         "date_field": "outreach.created_at",
-        "measures": ["count"],
+        "measures": [
+          "count"
+        ],
         "group_bys": [
           "outreach.type",
           "outreach.status",
@@ -886,28 +986,108 @@
       "entity": "entity.outreach",
       "status_field": "outreach.status",
       "states": [
-        { "id": "draft", "label": "Draft", "order": 1 },
-        { "id": "ready", "label": "Ready", "order": 2 },
-        { "id": "sent", "label": "Sent", "order": 3 },
-        { "id": "replied", "label": "Replied", "order": 4 },
-        { "id": "interested", "label": "Interested", "order": 5 },
-        { "id": "converted", "label": "Converted", "order": 6 },
-        { "id": "archived", "label": "Archived", "order": 7 }
+        {
+          "id": "draft",
+          "label": "Draft",
+          "order": 1
+        },
+        {
+          "id": "ready",
+          "label": "Ready",
+          "order": 2
+        },
+        {
+          "id": "sent",
+          "label": "Sent",
+          "order": 3
+        },
+        {
+          "id": "replied",
+          "label": "Replied",
+          "order": 4
+        },
+        {
+          "id": "interested",
+          "label": "Interested",
+          "order": 5
+        },
+        {
+          "id": "converted",
+          "label": "Converted",
+          "order": 6
+        },
+        {
+          "id": "archived",
+          "label": "Archived",
+          "order": 7
+        }
       ],
       "transitions": [
-        { "from": "draft", "to": "ready", "label": "Mark Ready" },
-        { "from": "draft", "to": "sent", "label": "Send Outreach" },
-        { "from": "ready", "to": "sent", "label": "Send Outreach" },
-        { "from": "sent", "to": "replied", "label": "Mark Replied" },
-        { "from": "sent", "to": "interested", "label": "Mark Interested" },
-        { "from": "replied", "to": "interested", "label": "Mark Interested" },
-        { "from": "replied", "to": "converted", "label": "Convert to Contact" },
-        { "from": "interested", "to": "converted", "label": "Convert to Contact" },
-        { "from": "draft", "to": "archived", "label": "Archive" },
-        { "from": "ready", "to": "archived", "label": "Archive" },
-        { "from": "sent", "to": "archived", "label": "Archive" },
-        { "from": "replied", "to": "archived", "label": "Archive" },
-        { "from": "interested", "to": "archived", "label": "Archive" }
+        {
+          "from": "draft",
+          "to": "ready",
+          "label": "Mark Ready"
+        },
+        {
+          "from": "draft",
+          "to": "sent",
+          "label": "Send Outreach"
+        },
+        {
+          "from": "ready",
+          "to": "sent",
+          "label": "Send Outreach"
+        },
+        {
+          "from": "sent",
+          "to": "replied",
+          "label": "Mark Replied"
+        },
+        {
+          "from": "sent",
+          "to": "interested",
+          "label": "Mark Interested"
+        },
+        {
+          "from": "replied",
+          "to": "interested",
+          "label": "Mark Interested"
+        },
+        {
+          "from": "replied",
+          "to": "converted",
+          "label": "Convert to Contact"
+        },
+        {
+          "from": "interested",
+          "to": "converted",
+          "label": "Convert to Contact"
+        },
+        {
+          "from": "draft",
+          "to": "archived",
+          "label": "Archive"
+        },
+        {
+          "from": "ready",
+          "to": "archived",
+          "label": "Archive"
+        },
+        {
+          "from": "sent",
+          "to": "archived",
+          "label": "Archive"
+        },
+        {
+          "from": "replied",
+          "to": "archived",
+          "label": "Archive"
+        },
+        {
+          "from": "interested",
+          "to": "archived",
+          "label": "Archive"
+        }
       ]
     }
   ],
@@ -917,12 +1097,24 @@
       "source_entity_id": "entity.outreach",
       "target_entity_id": "entity.contact",
       "field_mappings": {
-        "contact.name": { "from": "outreach.prospect_name" },
-        "contact.email": { "from": "outreach.email" },
-        "contact.phone": { "from": "outreach.phone" },
-        "contact.company_type": { "value": "person" },
-        "contact.status": { "value": "active" },
-        "contact.notes": { "from": "outreach.notes" }
+        "contact.name": {
+          "from": "outreach.prospect_name"
+        },
+        "contact.email": {
+          "from": "outreach.email"
+        },
+        "contact.phone": {
+          "from": "outreach.phone"
+        },
+        "contact.company_type": {
+          "value": "person"
+        },
+        "contact.status": {
+          "value": "active"
+        },
+        "contact.notes": {
+          "from": "outreach.notes"
+        }
       },
       "link_fields": {
         "source_to_target": "outreach.contact_id"

@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { API_URL, apiFetch, getActiveWorkspaceId, getUiPrefs, setActiveWorkspaceId, setUiPrefs } from "../api";
 import { useToast } from "../components/Toast.jsx";
 import PaginationControls from "../components/PaginationControls.jsx";
-import { applyBrandColors, setBrandColors } from "../theme/theme.js";
+import { applyBrandColors, DEFAULT_BRAND_COLORS, setBrandColors } from "../theme/theme.js";
 import { supabase } from "../supabase.js";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 
@@ -22,7 +22,7 @@ export default function SettingsWorkspacesPage() {
   const [context, setContext] = useState(null);
   const [workspaces, setWorkspaces] = useState([]);
   const [workspacesPage, setWorkspacesPage] = useState(0);
-  const [workspacePrefs, setWorkspacePrefs] = useState({ logo_url: "", colors: { primary: "", secondary: "", accent: "" } });
+  const [workspacePrefs, setWorkspacePrefs] = useState({ logo_url: "", colors: { ...DEFAULT_BRAND_COLORS } });
   const [workspaceName, setWorkspaceName] = useState("");
   const [workspaceNameSaving, setWorkspaceNameSaving] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
@@ -44,9 +44,9 @@ export default function SettingsWorkspacesPage() {
       setWorkspacePrefs({
         logo_url: prefsRes?.workspace?.logo_url || "",
         colors: {
-          primary: prefsRes?.workspace?.colors?.primary || "",
-          secondary: prefsRes?.workspace?.colors?.secondary || "",
-          accent: prefsRes?.workspace?.colors?.accent || "",
+          primary: prefsRes?.workspace?.colors?.primary || DEFAULT_BRAND_COLORS.primary,
+          secondary: prefsRes?.workspace?.colors?.secondary || DEFAULT_BRAND_COLORS.secondary,
+          accent: prefsRes?.workspace?.colors?.accent || DEFAULT_BRAND_COLORS.accent,
         },
       });
       if (!activeWorkspaceId && res?.actor?.workspace_id) {
@@ -407,7 +407,7 @@ export default function SettingsWorkspacesPage() {
                     <input
                       type="color"
                       className="input input-bordered h-10"
-                      value={workspacePrefs.colors?.primary || "#4f46e5"}
+                      value={workspacePrefs.colors?.primary || DEFAULT_BRAND_COLORS.primary}
                       onChange={(e) => {
                         const colors = { ...(workspacePrefs.colors || {}), primary: e.target.value };
                         saveWorkspacePrefs({ ...workspacePrefs, colors });

@@ -59,7 +59,7 @@ export default function SettingsShell({
                   <div
                     key={block.id}
                     className={`border rounded-box p-4 bg-base-100 shadow-sm flex flex-col min-h-[140px] ${
-                      block.wired === false ? "border-warning/40" : "border-base-200"
+                      block.wired === false ? "border-warning/40" : "border-base-300"
                     }`}
                   >
                     <div className="text-base font-semibold">{block.title}</div>

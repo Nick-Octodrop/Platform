@@ -333,7 +333,7 @@ export default function AppsPage({ user }) {
                     };
                     const sourceId = item.source_module_id || item.id;
                     return (
-                      <div key={`mkt-${item.id}`} className={`${SETTINGS_CARD_CLASS} border-base-200`}>
+                      <div key={`mkt-${item.id}`} className={`${SETTINGS_CARD_CLASS} border-base-300`}>
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 flex items-start gap-3">
                             <div className="w-10 h-10 bg-transparent flex items-center justify-center shrink-0">
@@ -395,7 +395,7 @@ export default function AppsPage({ user }) {
                     <div
                       key={`inst-${item.id}`}
                       className={`${SETTINGS_CARD_CLASS} ${
-                        disabled ? "border-warning/40" : "border-base-200"
+                        disabled ? "border-warning/40" : "border-base-300"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-3">

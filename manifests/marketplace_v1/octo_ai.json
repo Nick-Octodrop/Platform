@@ -4,7 +4,7 @@
     "id": "octo_ai",
     "key": "octo_ai",
     "name": "Octo AI",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Workspace-aware AI planning, patch generation, validation, apply, and rollback.",
     "category": "Admin",
     "icon_key": "lucide:Sparkles"
@@ -38,21 +38,52 @@
       "id": "entity.ai_session",
       "display_field": "ai_session.title",
       "fields": [
-        { "id": "ai_session.id", "type": "uuid", "label": "ID", "readonly": true },
-        { "id": "ai_session.title", "type": "string", "label": "Title", "required": true },
+        {
+          "id": "ai_session.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "ai_session.title",
+          "type": "string",
+          "label": "Title",
+          "required": true
+        },
         {
           "id": "ai_session.status",
           "type": "enum",
           "label": "Status",
           "default": "draft",
           "options": [
-            { "value": "draft", "label": "Draft" },
-            { "value": "planning", "label": "Planning" },
-            { "value": "waiting_input", "label": "Waiting Input" },
-            { "value": "ready_to_apply", "label": "Ready To Apply" },
-            { "value": "applied", "label": "Applied" },
-            { "value": "failed", "label": "Failed" },
-            { "value": "archived", "label": "Archived" }
+            {
+              "value": "draft",
+              "label": "Draft"
+            },
+            {
+              "value": "planning",
+              "label": "Planning"
+            },
+            {
+              "value": "waiting_input",
+              "label": "Waiting Input"
+            },
+            {
+              "value": "ready_to_apply",
+              "label": "Ready To Apply"
+            },
+            {
+              "value": "applied",
+              "label": "Applied"
+            },
+            {
+              "value": "failed",
+              "label": "Failed"
+            },
+            {
+              "value": "archived",
+              "label": "Archived"
+            }
           ]
         },
         {
@@ -61,10 +92,22 @@
           "label": "Scope Mode",
           "default": "auto",
           "options": [
-            { "value": "auto", "label": "Auto" },
-            { "value": "current_item", "label": "Current Item" },
-            { "value": "selected_items", "label": "Selected Items" },
-            { "value": "workspace", "label": "Workspace" }
+            {
+              "value": "auto",
+              "label": "Auto"
+            },
+            {
+              "value": "current_item",
+              "label": "Current Item"
+            },
+            {
+              "value": "selected_items",
+              "label": "Selected Items"
+            },
+            {
+              "value": "workspace",
+              "label": "Workspace"
+            }
           ]
         },
         {
@@ -73,133 +116,387 @@
           "label": "Selected Artifact Type",
           "default": "none",
           "options": [
-            { "value": "module", "label": "Module" },
-            { "value": "automation", "label": "Automation" },
-            { "value": "integration", "label": "Integration" },
-            { "value": "none", "label": "None" }
+            {
+              "value": "module",
+              "label": "Module"
+            },
+            {
+              "value": "automation",
+              "label": "Automation"
+            },
+            {
+              "value": "integration",
+              "label": "Integration"
+            },
+            {
+              "value": "none",
+              "label": "None"
+            }
           ]
         },
-        { "id": "ai_session.selected_artifact_key", "type": "string", "label": "Selected Artifact Key" },
-        { "id": "ai_session.created_by", "type": "string", "label": "Created By" },
-        { "id": "ai_session.last_activity_at", "type": "datetime", "label": "Last Activity" },
-        { "id": "ai_session.last_error", "type": "text", "label": "Last Error" },
-        { "id": "ai_session.summary", "type": "text", "label": "Summary" },
-        { "id": "ai_session.created_at", "type": "datetime", "label": "Created At" }
+        {
+          "id": "ai_session.selected_artifact_key",
+          "type": "string",
+          "label": "Selected Artifact Key"
+        },
+        {
+          "id": "ai_session.created_by",
+          "type": "string",
+          "label": "Created By"
+        },
+        {
+          "id": "ai_session.last_activity_at",
+          "type": "datetime",
+          "label": "Last Activity"
+        },
+        {
+          "id": "ai_session.last_error",
+          "type": "text",
+          "label": "Last Error"
+        },
+        {
+          "id": "ai_session.summary",
+          "type": "text",
+          "label": "Summary"
+        },
+        {
+          "id": "ai_session.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
       ]
     },
     {
       "id": "entity.ai_message",
       "display_field": "ai_message.body",
       "fields": [
-        { "id": "ai_message.id", "type": "uuid", "label": "ID", "readonly": true },
-        { "id": "ai_message.session_id", "type": "lookup", "label": "Session", "entity": "entity.ai_session", "display_field": "ai_session.title", "required": true },
+        {
+          "id": "ai_message.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "ai_message.session_id",
+          "type": "lookup",
+          "label": "Session",
+          "entity": "entity.ai_session",
+          "display_field": "ai_session.title",
+          "required": true
+        },
         {
           "id": "ai_message.role",
           "type": "enum",
           "label": "Role",
           "options": [
-            { "value": "user", "label": "User" },
-            { "value": "assistant", "label": "Assistant" },
-            { "value": "system", "label": "System" }
+            {
+              "value": "user",
+              "label": "User"
+            },
+            {
+              "value": "assistant",
+              "label": "Assistant"
+            },
+            {
+              "value": "system",
+              "label": "System"
+            }
           ]
         },
-        { "id": "ai_message.body", "type": "text", "label": "Body" },
+        {
+          "id": "ai_message.body",
+          "type": "text",
+          "label": "Body"
+        },
         {
           "id": "ai_message.message_type",
           "type": "enum",
           "label": "Message Type",
           "options": [
-            { "value": "chat", "label": "Chat" },
-            { "value": "plan", "label": "Plan" },
-            { "value": "question", "label": "Question" },
-            { "value": "answer", "label": "Answer" },
-            { "value": "apply_result", "label": "Apply Result" },
-            { "value": "error", "label": "Error" }
+            {
+              "value": "chat",
+              "label": "Chat"
+            },
+            {
+              "value": "plan",
+              "label": "Plan"
+            },
+            {
+              "value": "question",
+              "label": "Question"
+            },
+            {
+              "value": "answer",
+              "label": "Answer"
+            },
+            {
+              "value": "apply_result",
+              "label": "Apply Result"
+            },
+            {
+              "value": "error",
+              "label": "Error"
+            }
           ]
         },
-        { "id": "ai_message.created_at", "type": "datetime", "label": "Created At" }
+        {
+          "id": "ai_message.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
       ]
     },
     {
       "id": "entity.ai_plan",
       "display_field": "ai_plan.id",
       "fields": [
-        { "id": "ai_plan.id", "type": "uuid", "label": "ID", "readonly": true },
-        { "id": "ai_plan.session_id", "type": "lookup", "label": "Session", "entity": "entity.ai_session", "display_field": "ai_session.title", "required": true },
+        {
+          "id": "ai_plan.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "ai_plan.session_id",
+          "type": "lookup",
+          "label": "Session",
+          "entity": "entity.ai_session",
+          "display_field": "ai_session.title",
+          "required": true
+        },
         {
           "id": "ai_plan.status",
           "type": "enum",
           "label": "Status",
           "default": "draft",
           "options": [
-            { "value": "draft", "label": "Draft" },
-            { "value": "approved", "label": "Approved" },
-            { "value": "superseded", "label": "Superseded" },
-            { "value": "rejected", "label": "Rejected" }
+            {
+              "value": "draft",
+              "label": "Draft"
+            },
+            {
+              "value": "approved",
+              "label": "Approved"
+            },
+            {
+              "value": "superseded",
+              "label": "Superseded"
+            },
+            {
+              "value": "rejected",
+              "label": "Rejected"
+            }
           ]
         },
-        { "id": "ai_plan.scope_summary", "type": "text", "label": "Scope Summary" },
-        { "id": "ai_plan.affected_artifacts_json", "type": "text", "label": "Affected Artifacts JSON" },
-        { "id": "ai_plan.questions_json", "type": "text", "label": "Questions JSON" },
-        { "id": "ai_plan.assumptions_json", "type": "text", "label": "Assumptions JSON" },
-        { "id": "ai_plan.risks_json", "type": "text", "label": "Risks JSON" },
-        { "id": "ai_plan.plan_json", "type": "text", "label": "Plan JSON" },
-        { "id": "ai_plan.created_at", "type": "datetime", "label": "Created At" }
+        {
+          "id": "ai_plan.scope_summary",
+          "type": "text",
+          "label": "Scope Summary"
+        },
+        {
+          "id": "ai_plan.affected_artifacts_json",
+          "type": "text",
+          "label": "Affected Artifacts JSON"
+        },
+        {
+          "id": "ai_plan.questions_json",
+          "type": "text",
+          "label": "Questions JSON"
+        },
+        {
+          "id": "ai_plan.assumptions_json",
+          "type": "text",
+          "label": "Assumptions JSON"
+        },
+        {
+          "id": "ai_plan.risks_json",
+          "type": "text",
+          "label": "Risks JSON"
+        },
+        {
+          "id": "ai_plan.plan_json",
+          "type": "text",
+          "label": "Plan JSON"
+        },
+        {
+          "id": "ai_plan.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
       ]
     },
     {
       "id": "entity.ai_patchset",
       "display_field": "ai_patchset.id",
       "fields": [
-        { "id": "ai_patchset.id", "type": "uuid", "label": "ID", "readonly": true },
-        { "id": "ai_patchset.session_id", "type": "lookup", "label": "Session", "entity": "entity.ai_session", "display_field": "ai_session.title", "required": true },
-        { "id": "ai_patchset.plan_id", "type": "lookup", "label": "Plan", "entity": "entity.ai_plan", "display_field": "ai_plan.id" },
+        {
+          "id": "ai_patchset.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "ai_patchset.session_id",
+          "type": "lookup",
+          "label": "Session",
+          "entity": "entity.ai_session",
+          "display_field": "ai_session.title",
+          "required": true
+        },
+        {
+          "id": "ai_patchset.plan_id",
+          "type": "lookup",
+          "label": "Plan",
+          "entity": "entity.ai_plan",
+          "display_field": "ai_plan.id"
+        },
         {
           "id": "ai_patchset.status",
           "type": "enum",
           "label": "Status",
           "default": "draft",
           "options": [
-            { "value": "draft", "label": "Draft" },
-            { "value": "validated", "label": "Validated" },
-            { "value": "invalid", "label": "Invalid" },
-            { "value": "approved", "label": "Approved" },
-            { "value": "applied", "label": "Applied" },
-            { "value": "rolled_back", "label": "Rolled Back" },
-            { "value": "failed", "label": "Failed" }
+            {
+              "value": "draft",
+              "label": "Draft"
+            },
+            {
+              "value": "validated",
+              "label": "Validated"
+            },
+            {
+              "value": "invalid",
+              "label": "Invalid"
+            },
+            {
+              "value": "approved",
+              "label": "Approved"
+            },
+            {
+              "value": "applied",
+              "label": "Applied"
+            },
+            {
+              "value": "rolled_back",
+              "label": "Rolled Back"
+            },
+            {
+              "value": "failed",
+              "label": "Failed"
+            }
           ]
         },
-        { "id": "ai_patchset.base_snapshot_refs_json", "type": "text", "label": "Base Snapshot Refs JSON" },
-        { "id": "ai_patchset.patch_json", "type": "text", "label": "Patch JSON" },
-        { "id": "ai_patchset.validation_json", "type": "text", "label": "Validation JSON" },
-        { "id": "ai_patchset.apply_log_json", "type": "text", "label": "Apply Log JSON" },
-        { "id": "ai_patchset.created_at", "type": "datetime", "label": "Created At" },
-        { "id": "ai_patchset.applied_at", "type": "datetime", "label": "Applied At" }
+        {
+          "id": "ai_patchset.base_snapshot_refs_json",
+          "type": "text",
+          "label": "Base Snapshot Refs JSON"
+        },
+        {
+          "id": "ai_patchset.patch_json",
+          "type": "text",
+          "label": "Patch JSON"
+        },
+        {
+          "id": "ai_patchset.validation_json",
+          "type": "text",
+          "label": "Validation JSON"
+        },
+        {
+          "id": "ai_patchset.apply_log_json",
+          "type": "text",
+          "label": "Apply Log JSON"
+        },
+        {
+          "id": "ai_patchset.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        },
+        {
+          "id": "ai_patchset.applied_at",
+          "type": "datetime",
+          "label": "Applied At"
+        }
       ]
     },
     {
       "id": "entity.ai_snapshot",
       "display_field": "ai_snapshot.artifact_key",
       "fields": [
-        { "id": "ai_snapshot.id", "type": "uuid", "label": "ID", "readonly": true },
-        { "id": "ai_snapshot.patchset_id", "type": "lookup", "label": "Patchset", "entity": "entity.ai_patchset", "display_field": "ai_patchset.id" },
-        { "id": "ai_snapshot.artifact_type", "type": "string", "label": "Artifact Type" },
-        { "id": "ai_snapshot.artifact_key", "type": "string", "label": "Artifact Key" },
-        { "id": "ai_snapshot.artifact_version", "type": "string", "label": "Artifact Version" },
-        { "id": "ai_snapshot.snapshot_json", "type": "text", "label": "Snapshot JSON" },
-        { "id": "ai_snapshot.created_at", "type": "datetime", "label": "Created At" }
+        {
+          "id": "ai_snapshot.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "ai_snapshot.patchset_id",
+          "type": "lookup",
+          "label": "Patchset",
+          "entity": "entity.ai_patchset",
+          "display_field": "ai_patchset.id"
+        },
+        {
+          "id": "ai_snapshot.artifact_type",
+          "type": "string",
+          "label": "Artifact Type"
+        },
+        {
+          "id": "ai_snapshot.artifact_key",
+          "type": "string",
+          "label": "Artifact Key"
+        },
+        {
+          "id": "ai_snapshot.artifact_version",
+          "type": "string",
+          "label": "Artifact Version"
+        },
+        {
+          "id": "ai_snapshot.snapshot_json",
+          "type": "text",
+          "label": "Snapshot JSON"
+        },
+        {
+          "id": "ai_snapshot.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
       ]
     },
     {
       "id": "entity.ai_workspace_index",
       "display_field": "ai_workspace_index.node_key",
       "fields": [
-        { "id": "ai_workspace_index.id", "type": "uuid", "label": "ID", "readonly": true },
-        { "id": "ai_workspace_index.node_type", "type": "string", "label": "Node Type" },
-        { "id": "ai_workspace_index.node_key", "type": "string", "label": "Node Key" },
-        { "id": "ai_workspace_index.parent_key", "type": "string", "label": "Parent Key" },
-        { "id": "ai_workspace_index.summary_json", "type": "text", "label": "Summary JSON" },
-        { "id": "ai_workspace_index.updated_at", "type": "datetime", "label": "Updated At" }
+        {
+          "id": "ai_workspace_index.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "ai_workspace_index.node_type",
+          "type": "string",
+          "label": "Node Type"
+        },
+        {
+          "id": "ai_workspace_index.node_key",
+          "type": "string",
+          "label": "Node Key"
+        },
+        {
+          "id": "ai_workspace_index.parent_key",
+          "type": "string",
+          "label": "Parent Key"
+        },
+        {
+          "id": "ai_workspace_index.summary_json",
+          "type": "text",
+          "label": "Summary JSON"
+        },
+        {
+          "id": "ai_workspace_index.updated_at",
+          "type": "datetime",
+          "label": "Updated At"
+        }
       ]
     }
   ],
@@ -209,12 +506,30 @@
       "kind": "list",
       "entity": "entity.ai_session",
       "columns": [
-        { "field_id": "ai_session.title", "label": "Title" },
-        { "field_id": "ai_session.status", "label": "Status" },
-        { "field_id": "ai_session.scope_mode", "label": "Scope" },
-        { "field_id": "ai_session.selected_artifact_type", "label": "Artifact" },
-        { "field_id": "ai_session.created_by", "label": "Created By" },
-        { "field_id": "ai_session.last_activity_at", "label": "Last Activity" }
+        {
+          "field_id": "ai_session.title",
+          "label": "Title"
+        },
+        {
+          "field_id": "ai_session.status",
+          "label": "Status"
+        },
+        {
+          "field_id": "ai_session.scope_mode",
+          "label": "Scope"
+        },
+        {
+          "field_id": "ai_session.selected_artifact_type",
+          "label": "Artifact"
+        },
+        {
+          "field_id": "ai_session.created_by",
+          "label": "Created By"
+        },
+        {
+          "field_id": "ai_session.last_activity_at",
+          "label": "Last Activity"
+        }
       ]
     },
     {
@@ -237,7 +552,24 @@
             "ai_session.last_activity_at"
           ]
         }
-      ]
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "ai_session.title",
+          "ai_session.status",
+          "ai_session.scope_mode",
+          "ai_session.selected_artifact_type",
+          "ai_session.selected_artifact_key",
+          "ai_session.summary",
+          "ai_session.last_error",
+          "ai_session.created_by",
+          "ai_session.last_activity_at"
+        ]
+      }
     }
   ],
   "pages": [
@@ -246,7 +578,10 @@
       "title": "AI Sessions",
       "layout": "single",
       "content": [
-        { "kind": "view", "target": "ai_session.list" }
+        {
+          "kind": "view",
+          "target": "ai_session.list"
+        }
       ]
     },
     {
@@ -259,7 +594,10 @@
           "entity_id": "entity.ai_session",
           "record_id_query": "record",
           "content": [
-            { "kind": "view", "target": "ai_session.form" }
+            {
+              "kind": "view",
+              "target": "ai_session.form"
+            }
           ]
         }
       ]

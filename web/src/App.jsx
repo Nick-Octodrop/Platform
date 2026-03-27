@@ -11,6 +11,7 @@ import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import {
   applyBrandColors,
   applyUiDensity,
+  DEFAULT_BRAND_COLORS,
   getInitialUiDensity,
   getInitialTheme,
   normalizeUiDensity,
@@ -158,10 +159,9 @@ export default function App() {
         if (!mounted) return;
         const workspace = res?.workspace || {};
         const userPrefs = res?.user || {};
-        if (workspace?.colors) {
-          setBrandColors(workspace.colors);
-          applyBrandColors(workspace.colors);
-        }
+        const nextBrandColors = workspace?.colors ? { ...DEFAULT_BRAND_COLORS, ...workspace.colors } : DEFAULT_BRAND_COLORS;
+        setBrandColors(nextBrandColors);
+        applyBrandColors(nextBrandColors);
         const nextTheme = userPrefs?.theme || workspace?.theme || getInitialTheme();
         if (nextTheme) {
           setTheme(nextTheme);

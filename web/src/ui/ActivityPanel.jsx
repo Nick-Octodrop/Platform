@@ -409,6 +409,7 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
             );
           }
           const changes = Array.isArray(payload?.changes) ? payload.changes : [];
+          const systemMessage = typeof payload?.message === "string" ? payload.message.trim() : "";
           return (
             <div key={item.id} className="card card-compact rounded-box border border-base-300 bg-base-200">
               <div className="card-body gap-1 p-3">
@@ -421,6 +422,8 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
                     </li>
                   ))}
                 </ul>
+              ) : systemMessage ? (
+                <div className="text-sm opacity-80">{systemMessage}</div>
               ) : (
                 <div className="text-sm opacity-70">Record updated.</div>
               )}

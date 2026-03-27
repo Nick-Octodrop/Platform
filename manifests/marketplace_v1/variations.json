@@ -4,7 +4,7 @@
     "id": "variations",
     "key": "variations",
     "name": "Variations",
-    "version": "1.1.2",
+    "version": "1.1.3",
     "description": "Change order and variation management across jobs and quotations.",
     "category": "Commercial",
     "icon_key": "lucide:GitCompareArrows"
@@ -57,7 +57,7 @@
         {
           "id": "variation.id",
           "type": "uuid",
-          "label": "ID",
+          "label": "Record ID",
           "readonly": true
         },
         {
@@ -509,6 +509,26 @@
           {
             "action_id": "action.variation_refresh"
           }
+        ]
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "variation.number",
+          "variation.status",
+          "variation.job_id",
+          "variation.quote_id",
+          "variation.contact_id",
+          "variation.request_date",
+          "variation.decision_date",
+          "variation.amount",
+          "variation.requested_by",
+          "variation.approved_by",
+          "variation.reason",
+          "variation.description"
         ]
       }
     },

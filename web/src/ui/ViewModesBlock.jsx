@@ -616,7 +616,7 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
             {groupKeys.map((groupKey) => (
               <div
                 key={groupKey}
-                className={`w-[320px] shrink-0 bg-base-100 rounded-box border shadow-sm p-2 h-full min-h-0 flex flex-col ${
+                className={`w-[320px] shrink-0 bg-base-200 rounded-box border shadow-sm p-2 h-full min-h-0 flex flex-col ${
                   dragging && dragging.groupKey !== groupKey ? "border-primary/40" : "border-base-300"
                 }`}
                 onDragOver={(e) => {
@@ -2376,7 +2376,7 @@ export default function ViewModesBlock({
   const searchEnabled = Boolean(listView?.header?.search?.enabled);
   const showSearch = searchEnabled;
   const showFilters = !forceListOnly && (manifestFilterList.length > 0 || filterableFields.length > 0);
-  const showSavedViews = !forceListOnly && (savedFilters.length > 0 || showFilters);
+  const showSavedViews = !forceListOnly && Boolean(entityFullId);
   const showGroupBy = !forceListOnly && (activeMode === "kanban" || activeMode === "graph" || activeMode === "pivot") && filterableFields.length > 0;
   const showGraphMeasure = activeMode === "graph" && measureOptions.length > 0;
   const showPivotMeasure = activeMode === "pivot" && measureOptions.length > 0;

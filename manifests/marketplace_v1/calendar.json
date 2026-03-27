@@ -4,7 +4,7 @@
     "id": "calendar",
     "key": "calendar",
     "name": "Calendar",
-    "version": "1.2.2",
+    "version": "1.2.3",
     "description": "Scheduling and event operations with strong calendar-first workflows.",
     "category": "Operations",
     "icon_key": "lucide:Calendar"
@@ -45,7 +45,7 @@
         {
           "id": "calendar_event.id",
           "type": "uuid",
-          "label": "ID",
+          "label": "Record ID",
           "readonly": true
         },
         {
@@ -528,6 +528,26 @@
           {
             "action_id": "action.calendar_refresh"
           }
+        ]
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "calendar_event.title",
+          "calendar_event.status",
+          "calendar_event.start_at",
+          "calendar_event.end_at",
+          "calendar_event.all_day",
+          "calendar_event.owner_id",
+          "calendar_event.participant_ids",
+          "calendar_event.scope",
+          "calendar_event.location",
+          "calendar_event.color_key",
+          "calendar_event.tags",
+          "calendar_event.description"
         ]
       }
     },

@@ -4,7 +4,7 @@
     "id": "shop_finance",
     "key": "shop_finance",
     "name": "Shop Finance",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "description": "Commerce finance tracking for Shopify operations including sales, shipping income, ad spend, product costs, fees, and payout reconciliation by owner.",
     "category": "Finance",
     "icon_key": "lucide:ChartColumnBig"
@@ -61,7 +61,7 @@
         {
           "id": "finance_entry.id",
           "type": "uuid",
-          "label": "ID",
+          "label": "Record ID",
           "readonly": true
         },
         {
@@ -352,7 +352,7 @@
         {
           "id": "finance_payout.id",
           "type": "uuid",
-          "label": "ID",
+          "label": "Record ID",
           "readonly": true
         },
         {
@@ -542,12 +542,18 @@
       "enabled_when": {
         "op": "in",
         "field": "finance_entry.status",
-        "value": ["draft", "posted"]
+        "value": [
+          "draft",
+          "posted"
+        ]
       },
       "visible_when": {
         "op": "in",
         "field": "finance_entry.status",
-        "value": ["draft", "posted"]
+        "value": [
+          "draft",
+          "posted"
+        ]
       }
     },
     {
@@ -605,12 +611,18 @@
       "enabled_when": {
         "op": "in",
         "field": "finance_payout.status",
-        "value": ["draft", "posted"]
+        "value": [
+          "draft",
+          "posted"
+        ]
       },
       "visible_when": {
         "op": "in",
         "field": "finance_payout.status",
-        "value": ["draft", "posted"]
+        "value": [
+          "draft",
+          "posted"
+        ]
       }
     },
     {
@@ -689,21 +701,45 @@
       "kind": "list",
       "entity": "entity.finance_entry",
       "columns": [
-        { "field_id": "finance_entry.entry_date" },
-        { "field_id": "finance_entry.description" },
-        { "field_id": "finance_entry.entry_class" },
-        { "field_id": "finance_entry.category" },
-        { "field_id": "finance_entry.amount_gross" },
-        { "field_id": "finance_entry.amount_net" },
-        { "field_id": "finance_entry.fee_amount" },
-        { "field_id": "finance_entry.cogs_amount" },
-        { "field_id": "finance_entry.owner_id" },
-        { "field_id": "finance_entry.source_channel" },
-        { "field_id": "finance_entry.status" }
+        {
+          "field_id": "finance_entry.entry_date"
+        },
+        {
+          "field_id": "finance_entry.description"
+        },
+        {
+          "field_id": "finance_entry.entry_class"
+        },
+        {
+          "field_id": "finance_entry.category"
+        },
+        {
+          "field_id": "finance_entry.amount_gross"
+        },
+        {
+          "field_id": "finance_entry.amount_net"
+        },
+        {
+          "field_id": "finance_entry.fee_amount"
+        },
+        {
+          "field_id": "finance_entry.cogs_amount"
+        },
+        {
+          "field_id": "finance_entry.owner_id"
+        },
+        {
+          "field_id": "finance_entry.source_channel"
+        },
+        {
+          "field_id": "finance_entry.status"
+        }
       ],
       "header": {
         "primary_actions": [
-          { "action_id": "action.finance_entry_new" }
+          {
+            "action_id": "action.finance_entry_new"
+          }
         ],
         "open_record_target": "page:finance_entry.form_page",
         "search": {
@@ -732,7 +768,10 @@
             "domain": {
               "op": "in",
               "field": "finance_entry.status",
-              "value": ["draft", "posted"]
+              "value": [
+                "draft",
+                "posted"
+              ]
             }
           },
           {
@@ -741,7 +780,9 @@
             "domain": {
               "op": "eq",
               "field": "finance_entry.owner_id",
-              "value": { "ref": "$actor.user_id" }
+              "value": {
+                "ref": "$actor.user_id"
+              }
             }
           },
           {
@@ -797,19 +838,39 @@
       "kind": "list",
       "entity": "entity.finance_payout",
       "columns": [
-        { "field_id": "finance_payout.payout_date" },
-        { "field_id": "finance_payout.payout_reference" },
-        { "field_id": "finance_payout.provider" },
-        { "field_id": "finance_payout.gross_sales_amount" },
-        { "field_id": "finance_payout.fee_amount" },
-        { "field_id": "finance_payout.ad_spend_amount" },
-        { "field_id": "finance_payout.net_payout_amount" },
-        { "field_id": "finance_payout.owner_id" },
-        { "field_id": "finance_payout.status" }
+        {
+          "field_id": "finance_payout.payout_date"
+        },
+        {
+          "field_id": "finance_payout.payout_reference"
+        },
+        {
+          "field_id": "finance_payout.provider"
+        },
+        {
+          "field_id": "finance_payout.gross_sales_amount"
+        },
+        {
+          "field_id": "finance_payout.fee_amount"
+        },
+        {
+          "field_id": "finance_payout.ad_spend_amount"
+        },
+        {
+          "field_id": "finance_payout.net_payout_amount"
+        },
+        {
+          "field_id": "finance_payout.owner_id"
+        },
+        {
+          "field_id": "finance_payout.status"
+        }
       ],
       "header": {
         "primary_actions": [
-          { "action_id": "action.finance_payout_new" }
+          {
+            "action_id": "action.finance_payout_new"
+          }
         ],
         "open_record_target": "page:finance_payout.form_page",
         "search": {
@@ -835,7 +896,10 @@
             "domain": {
               "op": "in",
               "field": "finance_payout.status",
-              "value": ["draft", "posted"]
+              "value": [
+                "draft",
+                "posted"
+              ]
             }
           },
           {
@@ -844,7 +908,9 @@
             "domain": {
               "op": "eq",
               "field": "finance_payout.owner_id",
-              "value": { "ref": "$actor.user_id" }
+              "value": {
+                "ref": "$actor.user_id"
+              }
             }
           },
           {
@@ -926,9 +992,15 @@
           "field_id": "finance_entry.status"
         },
         "secondary_actions": [
-          { "action_id": "action.finance_entry_mark_posted" },
-          { "action_id": "action.finance_entry_mark_reconciled" },
-          { "action_id": "action.finance_entry_archive" }
+          {
+            "action_id": "action.finance_entry_mark_posted"
+          },
+          {
+            "action_id": "action.finance_entry_mark_reconciled"
+          },
+          {
+            "action_id": "action.finance_entry_archive"
+          }
         ],
         "tabs": {
           "style": "lifted",
@@ -937,15 +1009,49 @@
             {
               "id": "entry_tab",
               "label": "Entry",
-              "sections": ["entry"]
+              "sections": [
+                "entry"
+              ]
             },
             {
               "id": "supporting_tab",
               "label": "Notes & Receipts",
-              "sections": ["supporting"]
+              "sections": [
+                "supporting"
+              ]
             }
           ]
         }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "finance_entry.entry_date",
+          "finance_entry.description",
+          "finance_entry.entry_class",
+          "finance_entry.category",
+          "finance_entry.owner_id",
+          "finance_entry.source_channel",
+          "finance_entry.catalog_item_id",
+          "finance_entry.order_reference",
+          "finance_entry.payout_reference",
+          "finance_entry.quantity",
+          "finance_entry.amount_gross",
+          "finance_entry.amount_net",
+          "finance_entry.tax_amount",
+          "finance_entry.fee_amount",
+          "finance_entry.shipping_amount",
+          "finance_entry.cogs_amount",
+          "finance_entry.currency",
+          "finance_entry.payment_account",
+          "finance_entry.status",
+          "finance_entry.notes",
+          "finance_entry.receipts",
+          "finance_entry.tags"
+        ]
       }
     },
     {
@@ -991,9 +1097,15 @@
           "field_id": "finance_payout.status"
         },
         "secondary_actions": [
-          { "action_id": "action.finance_payout_mark_posted" },
-          { "action_id": "action.finance_payout_mark_reconciled" },
-          { "action_id": "action.finance_payout_archive" }
+          {
+            "action_id": "action.finance_payout_mark_posted"
+          },
+          {
+            "action_id": "action.finance_payout_mark_reconciled"
+          },
+          {
+            "action_id": "action.finance_payout_archive"
+          }
         ],
         "tabs": {
           "style": "lifted",
@@ -1002,15 +1114,45 @@
             {
               "id": "summary_tab",
               "label": "Payout",
-              "sections": ["summary"]
+              "sections": [
+                "summary"
+              ]
             },
             {
               "id": "notes_tab",
               "label": "Notes & Statements",
-              "sections": ["payout_notes"]
+              "sections": [
+                "payout_notes"
+              ]
             }
           ]
         }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "finance_payout.payout_reference",
+          "finance_payout.provider",
+          "finance_payout.payout_date",
+          "finance_payout.owner_id",
+          "finance_payout.period_start",
+          "finance_payout.period_end",
+          "finance_payout.gross_sales_amount",
+          "finance_payout.refund_amount",
+          "finance_payout.shipping_income_amount",
+          "finance_payout.fee_amount",
+          "finance_payout.shipping_cost_amount",
+          "finance_payout.ad_spend_amount",
+          "finance_payout.product_cost_amount",
+          "finance_payout.net_payout_amount",
+          "finance_payout.currency",
+          "finance_payout.status",
+          "finance_payout.notes",
+          "finance_payout.statement_attachments"
+        ]
       }
     }
   ],
@@ -1022,7 +1164,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.finance_entry_new" }
+          {
+            "action_id": "action.finance_entry_new"
+          }
         ]
       },
       "content": [
@@ -1062,7 +1206,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.finance_payout_new" }
+          {
+            "action_id": "action.finance_payout_new"
+          }
         ]
       },
       "content": [
@@ -1280,7 +1426,9 @@
         "enabled": true,
         "scope": "module_and_global",
         "date_field": "finance_entry.entry_date",
-        "measures": ["count"],
+        "measures": [
+          "count"
+        ],
         "group_bys": [
           "finance_entry.entry_class",
           "finance_entry.category",
@@ -1311,7 +1459,9 @@
         "enabled": true,
         "scope": "module_and_global",
         "date_field": "finance_payout.payout_date",
-        "measures": ["count"],
+        "measures": [
+          "count"
+        ],
         "group_bys": [
           "finance_payout.owner_id",
           "finance_payout.provider",
@@ -1343,18 +1493,58 @@
       "entity": "entity.finance_entry",
       "status_field": "finance_entry.status",
       "states": [
-        { "id": "draft", "label": "Draft", "order": 1 },
-        { "id": "posted", "label": "Posted", "order": 2 },
-        { "id": "reconciled", "label": "Reconciled", "order": 3 },
-        { "id": "archived", "label": "Archived", "order": 4 }
+        {
+          "id": "draft",
+          "label": "Draft",
+          "order": 1
+        },
+        {
+          "id": "posted",
+          "label": "Posted",
+          "order": 2
+        },
+        {
+          "id": "reconciled",
+          "label": "Reconciled",
+          "order": 3
+        },
+        {
+          "id": "archived",
+          "label": "Archived",
+          "order": 4
+        }
       ],
       "transitions": [
-        { "from": "draft", "to": "posted", "label": "Mark Posted" },
-        { "from": "draft", "to": "reconciled", "label": "Mark Reconciled" },
-        { "from": "posted", "to": "reconciled", "label": "Mark Reconciled" },
-        { "from": "draft", "to": "archived", "label": "Archive" },
-        { "from": "posted", "to": "archived", "label": "Archive" },
-        { "from": "reconciled", "to": "archived", "label": "Archive" }
+        {
+          "from": "draft",
+          "to": "posted",
+          "label": "Mark Posted"
+        },
+        {
+          "from": "draft",
+          "to": "reconciled",
+          "label": "Mark Reconciled"
+        },
+        {
+          "from": "posted",
+          "to": "reconciled",
+          "label": "Mark Reconciled"
+        },
+        {
+          "from": "draft",
+          "to": "archived",
+          "label": "Archive"
+        },
+        {
+          "from": "posted",
+          "to": "archived",
+          "label": "Archive"
+        },
+        {
+          "from": "reconciled",
+          "to": "archived",
+          "label": "Archive"
+        }
       ]
     },
     {
@@ -1362,18 +1552,58 @@
       "entity": "entity.finance_payout",
       "status_field": "finance_payout.status",
       "states": [
-        { "id": "draft", "label": "Draft", "order": 1 },
-        { "id": "posted", "label": "Posted", "order": 2 },
-        { "id": "reconciled", "label": "Reconciled", "order": 3 },
-        { "id": "archived", "label": "Archived", "order": 4 }
+        {
+          "id": "draft",
+          "label": "Draft",
+          "order": 1
+        },
+        {
+          "id": "posted",
+          "label": "Posted",
+          "order": 2
+        },
+        {
+          "id": "reconciled",
+          "label": "Reconciled",
+          "order": 3
+        },
+        {
+          "id": "archived",
+          "label": "Archived",
+          "order": 4
+        }
       ],
       "transitions": [
-        { "from": "draft", "to": "posted", "label": "Mark Posted" },
-        { "from": "draft", "to": "reconciled", "label": "Mark Reconciled" },
-        { "from": "posted", "to": "reconciled", "label": "Mark Reconciled" },
-        { "from": "draft", "to": "archived", "label": "Archive" },
-        { "from": "posted", "to": "archived", "label": "Archive" },
-        { "from": "reconciled", "to": "archived", "label": "Archive" }
+        {
+          "from": "draft",
+          "to": "posted",
+          "label": "Mark Posted"
+        },
+        {
+          "from": "draft",
+          "to": "reconciled",
+          "label": "Mark Reconciled"
+        },
+        {
+          "from": "posted",
+          "to": "reconciled",
+          "label": "Mark Reconciled"
+        },
+        {
+          "from": "draft",
+          "to": "archived",
+          "label": "Archive"
+        },
+        {
+          "from": "posted",
+          "to": "archived",
+          "label": "Archive"
+        },
+        {
+          "from": "reconciled",
+          "to": "archived",
+          "label": "Archive"
+        }
       ]
     }
   ],

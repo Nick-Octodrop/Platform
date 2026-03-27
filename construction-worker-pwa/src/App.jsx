@@ -372,6 +372,9 @@ export default function App() {
   const needsProjectSelection = !isClockedIn && needsSitePicker && !projectSelectionComplete;
   const showUnitSelect = materialType === "other";
   const liveTimer = formatElapsed(openEntry?.record?.["time_entry.check_in_at"], timerTick);
+  const canGoBack =
+    (!isClockedIn && needsSitePicker && (projectSelectionComplete || Boolean(selectedProjectId))) ||
+    materialModalOpen;
 
   useEffect(() => {
     let active = true;
@@ -621,6 +624,28 @@ export default function App() {
     }
   }
 
+  function handleBackNavigation() {
+    if (loading) return;
+    if (materialModalOpen) {
+      setMaterialModalOpen(false);
+      return;
+    }
+    if (menuOpen) {
+      setMenuOpen(false);
+      return;
+    }
+    if (!isClockedIn && needsSitePicker && projectSelectionComplete) {
+      setProjectSelectionComplete(false);
+      return;
+    }
+    if (!isClockedIn && needsSitePicker && selectedProjectId) {
+      setSelectedProjectId("");
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(SITE_STORAGE_KEY);
+      }
+    }
+  }
+
   if (booting) {
     return (
       <div className="flex min-h-screen items-center justify-center px-4">
@@ -709,8 +734,8 @@ export default function App() {
           onMenuToggle={setMenuOpen}
           onLogout={handleLogout}
           siteName={isClockedIn ? currentSiteName : ""}
-          showBackButton={!isClockedIn && needsSitePicker && projectSelectionComplete}
-          onBack={() => setProjectSelectionComplete(false)}
+          showBackButton={canGoBack}
+          onBack={handleBackNavigation}
         />
       </div>
 

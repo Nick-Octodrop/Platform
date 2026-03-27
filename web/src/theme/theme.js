@@ -1,6 +1,13 @@
 const THEME_KEY = "octo_theme";
 const BRAND_KEY = "octo_brand_colors";
 const UI_DENSITY_KEY = "octo_ui_density";
+export const DEFAULT_THEME = "light";
+export const DEFAULT_UI_DENSITY = "md";
+export const DEFAULT_BRAND_COLORS = {
+  primary: "#206aff",
+  secondary: "",
+  accent: "",
+};
 
 function hexToOklch(hex) {
   if (!hex) return null;
@@ -52,7 +59,7 @@ function deriveContrast(base) {
 export function getInitialTheme() {
   const stored = localStorage.getItem(THEME_KEY);
   if (stored) return stored;
-  return "dark";
+  return DEFAULT_THEME;
 }
 
 export function normalizeUiDensity(value) {
@@ -61,31 +68,31 @@ export function normalizeUiDensity(value) {
 
 export function getInitialUiDensity() {
   const stored = localStorage.getItem(UI_DENSITY_KEY);
-  return normalizeUiDensity(stored || "sm");
+  return normalizeUiDensity(stored || DEFAULT_UI_DENSITY);
 }
 
 export function getBrandColors() {
   try {
     const raw = localStorage.getItem(BRAND_KEY);
-    if (!raw) return { primary: "", secondary: "", accent: "" };
+    if (!raw) return { ...DEFAULT_BRAND_COLORS };
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object") {
       return {
-        primary: parsed.primary || "",
-        secondary: parsed.secondary || "",
-        accent: parsed.accent || "",
+        primary: parsed.primary || DEFAULT_BRAND_COLORS.primary,
+        secondary: parsed.secondary || DEFAULT_BRAND_COLORS.secondary,
+        accent: parsed.accent || DEFAULT_BRAND_COLORS.accent,
       };
     }
   } catch {
     // ignore
   }
-  return { primary: "", secondary: "", accent: "" };
+  return { ...DEFAULT_BRAND_COLORS };
 }
 
 export function applyBrandColors(colors) {
   const rootStyle = document.documentElement.style;
   const bodyStyle = document.body?.style;
-  const primary = hexToOklch(colors?.primary);
+  const primary = hexToOklch(colors?.primary || DEFAULT_BRAND_COLORS.primary);
   const secondary = hexToOklch(colors?.secondary);
   const accent = hexToOklch(colors?.accent);
   const applyVar = (key, value) => {

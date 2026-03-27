@@ -4,7 +4,7 @@
     "id": "sales",
     "key": "sales",
     "name": "Sales",
-    "version": "1.6.4",
+    "version": "1.6.5",
     "description": "Quotation management for operational sales workflows and quote-to-job handoff.",
     "category": "Sales",
     "icon_key": "lucide:FileCheck2"
@@ -71,7 +71,7 @@
         {
           "id": "quote.id",
           "type": "uuid",
-          "label": "ID",
+          "label": "Record ID",
           "readonly": true
         },
         {
@@ -208,7 +208,7 @@
         {
           "id": "quote_line.id",
           "type": "uuid",
-          "label": "ID",
+          "label": "Record ID",
           "readonly": true
         },
         {
@@ -681,7 +681,24 @@
             "quote_line.notes"
           ]
         }
-      ]
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "quote_line.quote_id",
+          "quote_line.item_id",
+          "quote_line.sort_order",
+          "quote_line.description",
+          "quote_line.qty",
+          "quote_line.unit_price",
+          "quote_line.tax_rate",
+          "quote_line.line_total",
+          "quote_line.notes"
+        ]
+      }
     },
     {
       "id": "quote.form",
@@ -834,6 +851,28 @@
             }
           ]
         }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "quote.number",
+          "quote.reference",
+          "quote.contact_id",
+          "quote.opportunity_id",
+          "quote.status",
+          "quote.owner_id",
+          "quote.quote_date",
+          "quote.expiry_date",
+          "quote.currency",
+          "quote.subtotal",
+          "quote.tax",
+          "quote.total",
+          "quote.notes",
+          "quote.internal_notes"
+        ]
       }
     },
     {

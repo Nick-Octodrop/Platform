@@ -4,7 +4,7 @@
     "id": "catalog",
     "key": "catalog",
     "name": "Catalog",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "description": "Shared item catalog for products, manufactured goods, services, and labor used across modules.",
     "category": "Operations",
     "icon_key": "lucide:Package"
@@ -44,7 +44,7 @@
         {
           "id": "item.id",
           "type": "uuid",
-          "label": "ID",
+          "label": "Record ID",
           "readonly": true
         },
         {
@@ -417,6 +417,28 @@
             }
           ]
         }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "item.code",
+          "item.name",
+          "item.type",
+          "item.fulfillment_method",
+          "item.status",
+          "item.uom",
+          "item.tags",
+          "item.can_sell",
+          "item.can_purchase",
+          "item.sales_price",
+          "item.cost_price",
+          "item.tax_rate",
+          "item.lead_time_days",
+          "item.description"
+        ]
       }
     },
     {
