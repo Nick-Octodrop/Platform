@@ -8,7 +8,7 @@ import { recordRecentApp } from "../state/appUsage.js";
 import { getDefaultOpenRoute, loadEntityIndex } from "../data/entityIndex.js";
 import { apiFetch, invalidateModulesCache, setModuleIcon, setModuleOrder } from "../api.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
-import { Package } from "lucide-react";
+import { MoreVertical, Package } from "lucide-react";
 import { LUCIDE_ICON_LIST, normalizeLucideKey, resolveLucideIcon } from "../state/lucideIconCatalog.js";
 import {
   HERO_ICON_FAMILIES,
@@ -21,6 +21,7 @@ import {
 import { useAccessContext } from "../access.js";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import { appendOctoAiFrameParams } from "../apps/appShellUtils.js";
+import useMediaQuery from "../hooks/useMediaQuery.js";
 
 // Kept intentionally minimal: App Manager cards shouldn't surface extra status/meta beyond actions + app version.
 
@@ -40,19 +41,19 @@ function AppIcon({ app }) {
   if (LucideIcon) {
     return (
       <div className="text-primary">
-        <LucideIcon size={40} strokeWidth={1.31} />
+        <LucideIcon size={44} strokeWidth={1.31} />
       </div>
     );
   }
   if (HeroIcon) {
     return (
       <div className="text-primary">
-        <HeroIcon className="w-10 h-10" />
+        <HeroIcon className="w-11 h-11" />
       </div>
     );
   }
   if (isImageUrl) {
-    return <img src={iconUrl} alt={app.name} className="w-10 h-10 object-contain" />;
+    return <img src={iconUrl} alt={app.name} className="w-11 h-11 object-contain" />;
   }
   return <div className="text-primary">{app.icon}</div>;
 }
@@ -60,6 +61,7 @@ function AppIcon({ app }) {
 const SETTINGS_CARD_CLASS = "border rounded-box p-4 bg-base-100 shadow-sm flex flex-col min-h-[140px]";
 
 export default function AppsPage({ user }) {
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const { modules, loading, error, actions } = useModuleStore();
   const { pushToast } = useToast();
   const navigate = useNavigate();
@@ -79,6 +81,7 @@ export default function AppsPage({ user }) {
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
   const [marketplaceError, setMarketplaceError] = useState("");
   const [marketplaceCloneBusy, setMarketplaceCloneBusy] = useState("");
+  const [openMenuId, setOpenMenuId] = useState("");
   const { hasCapability, isSuperadmin } = useAccessContext();
   const canManageModules = hasCapability("modules.manage");
 
@@ -224,6 +227,10 @@ export default function AppsPage({ user }) {
     }
   }
 
+  function closeAppMenu() {
+    setOpenMenuId("");
+  }
+
   if (!user) {
     return <div className="alert">Please log in to view apps.</div>;
   }
@@ -314,7 +321,7 @@ export default function AppsPage({ user }) {
             ) : null}
 
             {!loading && !marketplaceLoading && filteredItems.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              <div className={`${isMobile ? "grid grid-cols-3 gap-2" : "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"}`}>
                 {filteredItems.map((item) => {
                   if (item.kind === "marketplace") {
                     const marketplaceRow = marketplaceApps.find((a) => a.id === item.id);
@@ -326,51 +333,100 @@ export default function AppsPage({ user }) {
                     };
                     const sourceId = item.source_module_id || item.id;
                     return (
-                      <div key={`mkt-${item.id}`} className={`${SETTINGS_CARD_CLASS} border-base-200`}>
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0 flex items-start gap-3">
-                            <div className="w-10 h-10 bg-transparent flex items-center justify-center shrink-0">
+                      <div key={`mkt-${item.id}`} className={`${SETTINGS_CARD_CLASS} ${isMobile ? "relative min-h-[128px] p-3" : ""} border-base-200`}>
+                        <div className={`flex ${isMobile ? "flex-col items-center text-center gap-2" : "items-start justify-between gap-3"}`}>
+                          <div className={`min-w-0 ${isMobile ? "flex flex-col items-center gap-2 w-full" : "flex items-start gap-3"}`}>
+                            <div className={`${isMobile ? "w-14 h-14" : "w-10 h-10"} bg-transparent flex items-center justify-center shrink-0`}>
                               <AppIcon app={app} />
                             </div>
                             <div className="min-w-0">
-                              <div className="text-base font-semibold truncate">{item.title}</div>
-                              <div className="text-xs opacity-60 mt-1 flex flex-wrap items-center gap-2">
+                              <div className={`${isMobile ? "text-xs font-semibold leading-tight line-clamp-2" : "text-base font-semibold truncate"}`}>{item.title}</div>
+                              <div className={`${isMobile ? "hidden" : "text-xs opacity-60 mt-1 flex flex-wrap items-center gap-2"}`}>
                                 <span className="font-mono">{sourceId}</span>
                                 {item.module_version ? <span className="font-mono opacity-60">V {item.module_version}</span> : null}
                               </div>
                             </div>
                           </div>
-                          <div className="shrink-0 flex items-center gap-2">
-                            {canManageModules ? (
+                          {isMobile ? (
+                            <div className="absolute right-2 top-2">
                               <button
-                                className="btn btn-sm btn-primary"
-                                onClick={() =>
-                                  cloneMarketplaceApp(
-                                    marketplaceRow || { id: item.id, title: item.title, slug: item.title }
-                                  )
-                                }
-                                disabled={marketplaceCloneBusy === item.id}
+                                className="btn btn-ghost btn-xs btn-square"
                                 type="button"
-                              >
-                                {marketplaceCloneBusy === item.id ? "Cloning..." : "Clone"}
-                              </button>
-                            ) : null}
-                            {isSuperadmin ? (
-                              <button
-                                className="btn btn-sm btn-outline btn-error"
-                                type="button"
-                                onClick={() => {
-                                  if (!window.confirm("Permanently delete this marketplace listing? This cannot be undone.")) return;
-                                  deleteMarketplaceApp(marketplaceRow || { id: item.id });
+                                aria-label="More actions"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOpenMenuId((prev) => (prev === `mkt-${item.id}` ? "" : `mkt-${item.id}`));
                                 }}
                               >
-                                Delete
+                                <MoreVertical className="w-4 h-4" />
                               </button>
-                            ) : null}
-                          </div>
+                              {openMenuId === `mkt-${item.id}` ? (
+                                <ul className="absolute right-0 bottom-full mb-2 menu p-2 shadow bg-base-100 rounded-box w-44 z-50 border border-base-300">
+                                  {canManageModules ? (
+                                    <li>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          closeAppMenu();
+                                          cloneMarketplaceApp(marketplaceRow || { id: item.id, title: item.title, slug: item.title });
+                                        }}
+                                        disabled={marketplaceCloneBusy === item.id}
+                                      >
+                                        {marketplaceCloneBusy === item.id ? "Cloning..." : "Clone"}
+                                      </button>
+                                    </li>
+                                  ) : null}
+                                  {isSuperadmin ? (
+                                    <li>
+                                      <button
+                                        type="button"
+                                        className="text-error"
+                                        onClick={() => {
+                                          closeAppMenu();
+                                          if (!window.confirm("Permanently delete this marketplace listing? This cannot be undone.")) return;
+                                          deleteMarketplaceApp(marketplaceRow || { id: item.id });
+                                        }}
+                                      >
+                                        Delete
+                                      </button>
+                                    </li>
+                                  ) : null}
+                                </ul>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <div className="shrink-0 flex items-center gap-2">
+                              {canManageModules ? (
+                                <button
+                                  className="btn btn-sm btn-primary"
+                                  onClick={() =>
+                                    cloneMarketplaceApp(
+                                      marketplaceRow || { id: item.id, title: item.title, slug: item.title }
+                                    )
+                                  }
+                                  disabled={marketplaceCloneBusy === item.id}
+                                  type="button"
+                                >
+                                  {marketplaceCloneBusy === item.id ? "Cloning..." : "Clone"}
+                                </button>
+                              ) : null}
+                              {isSuperadmin ? (
+                                <button
+                                  className="btn btn-sm btn-outline btn-error"
+                                  type="button"
+                                  onClick={() => {
+                                    if (!window.confirm("Permanently delete this marketplace listing? This cannot be undone.")) return;
+                                    deleteMarketplaceApp(marketplaceRow || { id: item.id });
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              ) : null}
+                            </div>
+                          )}
                         </div>
-                        {item.description ? <div className="text-sm opacity-70 mt-2 leading-snug">{item.description}</div> : null}
-                        <div className="mt-auto pt-4" />
+                        {!isMobile && item.description ? <div className="text-sm opacity-70 mt-2 leading-snug">{item.description}</div> : null}
+                        <div className={`${isMobile ? "mt-1" : "mt-auto pt-4"}`} />
                       </div>
                     );
                   }
@@ -387,68 +443,116 @@ export default function AppsPage({ user }) {
                   return (
                     <div
                       key={`inst-${item.id}`}
-                      className={`${SETTINGS_CARD_CLASS} ${
+                      className={`${SETTINGS_CARD_CLASS} ${isMobile ? "relative min-h-[128px] p-3 cursor-pointer" : ""} ${
                         disabled ? "border-warning/40" : "border-base-200"
                       }`}
+                      onClick={isMobile ? () => handleOpen(item.id) : undefined}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex items-start gap-3">
-                          <div className="w-10 h-10 bg-transparent flex items-center justify-center shrink-0">
+                      <div className={`flex ${isMobile ? "flex-col items-center text-center gap-2" : "items-start justify-between gap-3"}`}>
+                        <div className={`min-w-0 ${isMobile ? "flex flex-col items-center gap-2 w-full" : "flex items-start gap-3"}`}>
+                          <div className={`${isMobile ? "w-14 h-14" : "w-10 h-10"} bg-transparent flex items-center justify-center shrink-0`}>
                             <AppIcon app={app} />
                           </div>
                           <div className="min-w-0">
-                            <div className="text-base font-semibold truncate">{item.title}</div>
-                            <div className="text-xs opacity-60 mt-1 flex flex-wrap items-center gap-2">
+                            <div className={`${isMobile ? "text-xs font-semibold leading-tight line-clamp-2" : "text-base font-semibold truncate"}`}>{item.title}</div>
+                            <div className={`${isMobile ? "hidden" : "text-xs opacity-60 mt-1 flex flex-wrap items-center gap-2"}`}>
                               <span className="font-mono">{item.id}</span>
                               {item.module_version ? <span className="font-mono opacity-60">V {item.module_version}</span> : null}
                             </div>
                           </div>
                         </div>
-                        <div className="shrink-0 flex items-center gap-2">
-                          {canManageModules ? (
-                            moduleRecord?.enabled ? (
-                              <button className="btn btn-sm btn-outline" onClick={() => toggleModule(item.id, false)} type="button">
-                                Disable
-                              </button>
-                            ) : (
-                              <button className="btn btn-sm btn-primary" onClick={() => toggleModule(item.id, true)} type="button">
-                                Enable
-                              </button>
-                            )
-                          ) : null}
-                          <div className="dropdown dropdown-end">
-                            <button className="btn btn-sm btn-outline" onClick={(e) => e.stopPropagation()} type="button">
-                              ⋮
+                        {isMobile ? (
+                          <div className="absolute right-2 top-2">
+                            <button
+                              className="btn btn-ghost btn-xs btn-square"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenMenuId((prev) => (prev === item.id ? "" : item.id));
+                              }}
+                              type="button"
+                              aria-label="More actions"
+                            >
+                              <MoreVertical className="w-4 h-4" />
                             </button>
-                            <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-48 z-50">
-                              <li><button onClick={() => handleDetails(item.id)}>View details</button></li>
-                              {canManageModules ? (
-                                <>
-                                  <li>
-                                    <button
-                                      onClick={() => {
-                                        setIconPickerApp(app);
-                                        setIconQuery("");
-                                        setIconLibrary("lucide");
-                                        setHeroFamily("24/outline");
-                                        setIconPickerOpen(true);
-                                      }}
-                                    >
-                                      Choose icon…
-                                    </button>
-                                  </li>
-                                  <li><button onClick={() => handleSetOrder(app)}>Set order…</button></li>
-                                  <li><button onClick={() => openDelete(item.id)} className="text-error">Remove / delete…</button></li>
-                                </>
-                              ) : null}
-                            </ul>
+                            {openMenuId === item.id ? (
+                              <ul className="absolute right-0 bottom-full mb-2 menu p-2 shadow bg-base-100 rounded-box w-44 z-50 border border-base-300">
+                                <li><button onClick={() => { closeAppMenu(); handleOpen(item.id); }}>Open</button></li>
+                                <li><button onClick={() => { closeAppMenu(); handleDetails(item.id); }}>View details</button></li>
+                                {canManageModules ? (
+                                  <>
+                                    <li>
+                                      <button onClick={() => { closeAppMenu(); toggleModule(item.id, !moduleRecord?.enabled); }}>
+                                        {moduleRecord?.enabled ? "Disable" : "Enable"}
+                                      </button>
+                                    </li>
+                                    <li>
+                                      <button
+                                        onClick={() => {
+                                          closeAppMenu();
+                                          setIconPickerApp(app);
+                                          setIconQuery("");
+                                          setIconLibrary("lucide");
+                                          setHeroFamily("24/outline");
+                                          setIconPickerOpen(true);
+                                        }}
+                                      >
+                                        Choose icon…
+                                      </button>
+                                    </li>
+                                    <li><button onClick={() => { closeAppMenu(); handleSetOrder(app); }}>Set order…</button></li>
+                                    <li><button onClick={() => { closeAppMenu(); openDelete(item.id); }} className="text-error">Remove / delete…</button></li>
+                                  </>
+                                ) : null}
+                              </ul>
+                            ) : null}
                           </div>
-                        </div>
+                        ) : (
+                          <div className="shrink-0 flex items-center gap-2">
+                            {canManageModules ? (
+                              moduleRecord?.enabled ? (
+                                <button className="btn btn-sm btn-outline" onClick={() => toggleModule(item.id, false)} type="button">
+                                  Disable
+                                </button>
+                              ) : (
+                                <button className="btn btn-sm btn-primary" onClick={() => toggleModule(item.id, true)} type="button">
+                                  Enable
+                                </button>
+                              )
+                            ) : null}
+                            <div className="dropdown dropdown-end">
+                              <button className="btn btn-sm btn-outline" onClick={(e) => e.stopPropagation()} type="button">
+                                ⋮
+                              </button>
+                              <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-48 z-50">
+                                <li><button onClick={() => handleDetails(item.id)}>View details</button></li>
+                                {canManageModules ? (
+                                  <>
+                                    <li>
+                                      <button
+                                        onClick={() => {
+                                          setIconPickerApp(app);
+                                          setIconQuery("");
+                                          setIconLibrary("lucide");
+                                          setHeroFamily("24/outline");
+                                          setIconPickerOpen(true);
+                                        }}
+                                      >
+                                        Choose icon…
+                                      </button>
+                                    </li>
+                                    <li><button onClick={() => handleSetOrder(app)}>Set order…</button></li>
+                                    <li><button onClick={() => openDelete(item.id)} className="text-error">Remove / delete…</button></li>
+                                  </>
+                                ) : null}
+                              </ul>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      {item.description ? (
+                      {!isMobile && item.description ? (
                         <div className="text-sm opacity-70 mt-2 leading-snug">{item.description}</div>
                       ) : null}
-                      <div className="mt-auto pt-4" />
+                      <div className={`${isMobile ? "mt-1" : "mt-auto pt-4"}`} />
                     </div>
                   );
                 })}

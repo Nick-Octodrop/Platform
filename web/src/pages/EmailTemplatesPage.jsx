@@ -199,8 +199,6 @@ export default function EmailTemplatesPage() {
                   fieldIndex={listFieldIndex}
                   records={listRecords}
                   hideHeader
-                  disableHorizontalScroll
-                  tableClassName="w-full table-fixed min-w-0"
                   searchQuery={search}
                   searchFields={["email.name", "email.subject", "email.id"]}
                   filters={listFilters}

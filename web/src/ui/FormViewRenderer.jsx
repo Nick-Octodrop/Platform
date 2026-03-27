@@ -1142,6 +1142,7 @@ function normalizeUserIds(value) {
 }
 
 function WorkspaceUserField({ field, value, onChange, readonly, members, loadingMembers = false }) {
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const [opened, setOpened] = useState(false);
   const [search, setSearch] = useState("");
   const containerRef = useRef(null);
@@ -1199,7 +1200,7 @@ function WorkspaceUserField({ field, value, onChange, readonly, members, loading
           </button>
         )}
       </div>
-      {opened && (
+      {opened && !isMobile && (
         <div className="absolute z-30 mt-1 w-full rounded-box border border-base-400 bg-base-100 shadow">
           <ul className="menu menu-compact max-h-64 overflow-auto">
             {loadingMembers && <li className="menu-title"><span>Loading workspace users…</span></li>}
@@ -1228,11 +1229,66 @@ function WorkspaceUserField({ field, value, onChange, readonly, members, loading
           </ul>
         </div>
       )}
+      {opened && isMobile && (
+        <div className="fixed inset-0 z-[220]">
+          <button
+            type="button"
+            className="absolute inset-0 bg-base-content/35"
+            aria-label="Close workspace user picker"
+            onClick={() => setOpened(false)}
+          />
+          <div className="absolute inset-x-0 bottom-0 max-h-[86vh] rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4 flex flex-col">
+            <div className="mx-auto mb-4 h-1.5 w-24 rounded-full bg-base-300" />
+            <div className="px-1 pb-3 flex items-center justify-between gap-2">
+              <div className="text-sm font-semibold">Select workspace user</div>
+              <button type="button" className={SOFT_BUTTON_SM} onClick={() => setOpened(false)}>
+                Done
+              </button>
+            </div>
+            <input
+              className="input input-bordered w-full"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search workspace user..."
+              disabled={readonly || field.readonly}
+              autoFocus
+            />
+            <div className="mt-3 flex-1 min-h-0 overflow-auto">
+              <ul className="menu menu-compact">
+                {loadingMembers && <li className="menu-title"><span>Loading workspace users…</span></li>}
+                {!loadingMembers && normalizedMembers.length === 0 && (
+                  <li className="menu-title"><span>No workspace users found</span></li>
+                )}
+                {!loadingMembers && normalizedMembers.length > 0 && filtered.length === 0 && (
+                  <li className="menu-title"><span>No matches</span></li>
+                )}
+                {!loadingMembers &&
+                  filtered.map((member) => (
+                    <li key={member.user_id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onChange(member.user_id);
+                          setOpened(false);
+                          setSearch("");
+                        }}
+                        className={member.user_id === selectedId ? "active" : ""}
+                      >
+                        {member.label}
+                      </button>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function WorkspaceUsersField({ field, value, onChange, readonly, members, loadingMembers = false }) {
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const [opened, setOpened] = useState(false);
   const [search, setSearch] = useState("");
   const containerRef = useRef(null);
@@ -1318,7 +1374,7 @@ function WorkspaceUsersField({ field, value, onChange, readonly, members, loadin
           disabled={readonly || field.readonly}
         />
       </div>
-      {opened && (
+      {opened && !isMobile && (
         <div className="absolute z-30 mt-1 w-full rounded-box border border-base-400 bg-base-100 shadow">
           <ul className="menu menu-compact max-h-64 overflow-auto">
             {loadingMembers && <li className="menu-title"><span>Loading workspace users…</span></li>}
@@ -1339,11 +1395,61 @@ function WorkspaceUsersField({ field, value, onChange, readonly, members, loadin
           </ul>
         </div>
       )}
+      {opened && isMobile && (
+        <div className="fixed inset-0 z-[220]">
+          <button
+            type="button"
+            className="absolute inset-0 bg-base-content/35"
+            aria-label="Close workspace users picker"
+            onClick={() => setOpened(false)}
+          />
+          <div className="absolute inset-x-0 bottom-0 max-h-[86vh] rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4 flex flex-col">
+            <div className="mx-auto mb-4 h-1.5 w-24 rounded-full bg-base-300" />
+            <div className="px-1 pb-3 flex items-center justify-between gap-2">
+              <div className="text-sm font-semibold">Select workspace users</div>
+              <button type="button" className={SOFT_BUTTON_SM} onClick={() => setOpened(false)}>
+                Done
+              </button>
+            </div>
+            <input
+              className="input input-bordered w-full"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setOpened(true);
+              }}
+              placeholder={selectedMembers.length > 0 ? "Add another user..." : "Search workspace users..."}
+              disabled={readonly || field.readonly}
+              autoFocus
+            />
+            <div className="mt-3 flex-1 min-h-0 overflow-auto">
+              <ul className="menu menu-compact">
+                {loadingMembers && <li className="menu-title"><span>Loading workspace users…</span></li>}
+                {!loadingMembers && normalizedMembers.length === 0 && (
+                  <li className="menu-title"><span>No workspace users found</span></li>
+                )}
+                {!loadingMembers && normalizedMembers.length > 0 && filtered.length === 0 && (
+                  <li className="menu-title"><span>No matches</span></li>
+                )}
+                {!loadingMembers &&
+                  filtered.map((member) => (
+                    <li key={member.user_id}>
+                      <button type="button" onClick={() => addUser(member.user_id)}>
+                        {member.label}
+                      </button>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function LookupField({ field, value, onChange, readonly, record, previewMode = false, onCreate, canCreate }) {
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const [options, setOptions] = useState([]);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -1528,7 +1634,7 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
           </button>
         )}
       </div>
-      {showOptions && (
+      {showOptions && !isMobile && (
         <div className="absolute z-30 mt-1 w-full rounded-box border border-base-400 bg-base-100 shadow">
           <ul className="menu menu-compact max-h-64 overflow-auto">
             {loading && <li className="menu-title"><span>Loading…</span></li>}
@@ -1573,6 +1679,79 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
               </li>
             )}
           </ul>
+        </div>
+      )}
+      {showOptions && isMobile && (
+        <div className="fixed inset-0 z-[220]">
+          <button
+            type="button"
+            className="absolute inset-0 bg-base-content/35"
+            aria-label="Close lookup picker"
+            onClick={() => setOpened(false)}
+          />
+          <div className="absolute inset-x-0 bottom-0 max-h-[86vh] rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4 flex flex-col">
+            <div className="mx-auto mb-4 h-1.5 w-24 rounded-full bg-base-300" />
+            <div className="px-1 pb-3 flex items-center justify-between gap-2">
+              <div className="text-sm font-semibold">{field.label || "Select record"}</div>
+              <button type="button" className={SOFT_BUTTON_SM} onClick={() => setOpened(false)}>
+                Done
+              </button>
+            </div>
+            <input
+              className="input input-bordered w-full"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search..."
+              disabled={readonly || field.readonly}
+              autoFocus
+            />
+            <div className="mt-3 flex-1 min-h-0 overflow-auto">
+              <ul className="menu menu-compact">
+                {loading && <li className="menu-title"><span>Loading…</span></li>}
+                {!loading && search.trim().length < 2 && (
+                  <li className="menu-title"><span>Type to search…</span></li>
+                )}
+                {!loading && search.trim().length >= 2 && options.length === 0 && (
+                  <li className="menu-title"><span>No results</span></li>
+                )}
+                {options.map((opt) => (
+                  <li key={opt.value}>
+                    <button
+                      type="button"
+                      onClick={() => handleSelect(opt)}
+                      className={opt.value === value ? "active" : ""}
+                    >
+                      {opt.label}
+                    </button>
+                  </li>
+                ))}
+                {allowCreate && (
+                  <li className="border-t border-base-400 mt-1 pt-1">
+                    <button
+                      type="button"
+                      disabled={typeof onCreate !== "function"}
+                      onClick={async () => {
+                        if (typeof onCreate !== "function") return;
+                        const result = await onCreate({
+                          entityId: field?.entity,
+                          displayField: field?.display_field,
+                          initialValue: search.trim() || "",
+                        });
+                        if (result?.record_id) {
+                          setSelectedLabel(result.label || "");
+                          setSearch(result.label || "");
+                          onChange(result.record_id);
+                          setOpened(false);
+                        }
+                      }}
+                    >
+                      + Create new
+                    </button>
+                  </li>
+                )}
+              </ul>
+            </div>
+          </div>
         </div>
       )}
       {field.disabled_hint && <div className="text-xs opacity-60 mt-1">{field.disabled_hint}</div>}

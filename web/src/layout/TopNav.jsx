@@ -96,6 +96,7 @@ export default function TopNav({ user, onSignOut }) {
   const [studioLoading, setStudioLoading] = useState(false);
   const [recordCrumbLabel, setRecordCrumbLabel] = useState("");
   const [mobileAppMenuOpen, setMobileAppMenuOpen] = useState(false);
+  const [mobileHomeMenuOpen, setMobileHomeMenuOpen] = useState(false);
   const accountEmail = user?.email || "Account";
   const accountLabel = user?.email ? user.email.split("@")[0] : "Account";
 
@@ -317,16 +318,17 @@ export default function TopNav({ user, onSignOut }) {
 
   useEffect(() => {
     setMobileAppMenuOpen(false);
+    setMobileHomeMenuOpen(false);
   }, [location.pathname, location.search]);
 
   useEffect(() => {
-    if (!mobileAppMenuOpen) return undefined;
+    if (!mobileAppMenuOpen && !mobileHomeMenuOpen) return undefined;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [mobileAppMenuOpen]);
+  }, [mobileAppMenuOpen, mobileHomeMenuOpen]);
 
   return (
     <div className="bg-base-100 shadow overflow-visible relative z-40">
@@ -538,6 +540,18 @@ export default function TopNav({ user, onSignOut }) {
             </ul>
           </div>
           )
+        ) : isHome && isMobile ? (
+          <div className="min-w-0 flex items-center gap-2">
+            <button
+              className="btn btn-ghost btn-sm btn-square shrink-0"
+              type="button"
+              aria-label="Open menu"
+              onClick={() => setMobileHomeMenuOpen(true)}
+            >
+              <Menu className="w-4 h-4" />
+            </button>
+            <div className="text-sm font-semibold truncate">{mobileTitle}</div>
+          </div>
         ) : (
           !isHome && (
             <Link to={appendOctoAiFrameParams("/home")} className="btn btn-ghost btn-sm">← Home</Link>
@@ -695,6 +709,63 @@ export default function TopNav({ user, onSignOut }) {
                   Sign out
                 </button>
               </div>
+            </div>
+          </aside>
+        </div>
+      )}
+      {isMobile && isHome && mobileHomeMenuOpen && (
+        <div className="fixed inset-0 z-[120]">
+          <button
+            type="button"
+            className="absolute inset-0 bg-base-content/30"
+            aria-label="Close menu"
+            onClick={() => setMobileHomeMenuOpen(false)}
+          />
+          <aside className="absolute inset-y-0 left-0 w-[82vw] max-w-sm bg-base-100 shadow-2xl border-r border-base-300 flex flex-col">
+            <div className="flex items-center justify-between px-4 py-4 border-b border-base-200">
+              <div className="text-sm font-semibold">Menu</div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm btn-square shrink-0"
+                aria-label="Close menu"
+                onClick={() => setMobileHomeMenuOpen(false)}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
+              <div className="space-y-1">
+                <Link
+                  to={appendOctoAiFrameParams("/apps")}
+                  onClick={() => setMobileHomeMenuOpen(false)}
+                  className="block rounded-lg px-3 py-2 text-sm text-base-content/80"
+                >
+                  Apps
+                </Link>
+                <Link
+                  to={appendOctoAiFrameParams("/settings")}
+                  onClick={() => setMobileHomeMenuOpen(false)}
+                  className="block rounded-lg px-3 py-2 text-sm text-base-content/80"
+                >
+                  Settings
+                </Link>
+              </div>
+            </div>
+            <div className="border-t border-base-200 px-4 py-4 space-y-3">
+              <div className="px-1">
+                <div className="text-sm font-semibold truncate">{accountLabel}</div>
+                <div className="text-xs opacity-60 truncate">{accountEmail}</div>
+              </div>
+              <button
+                type="button"
+                className="block w-full rounded-lg px-3 py-2 text-left text-sm text-base-content/80"
+                onClick={() => {
+                  setMobileHomeMenuOpen(false);
+                  onSignOut?.();
+                }}
+              >
+                Sign out
+              </button>
             </div>
           </aside>
         </div>

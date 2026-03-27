@@ -199,8 +199,6 @@ export default function DocumentsPage() {
                   fieldIndex={listFieldIndex}
                   records={listRecords}
                   hideHeader
-                  disableHorizontalScroll
-                  tableClassName="w-full table-fixed min-w-0"
                   searchQuery={search}
                   searchFields={["doc.name", "doc.format", "doc.id"]}
                   filters={listFilters}
