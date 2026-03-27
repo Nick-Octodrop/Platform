@@ -30,6 +30,7 @@ export default function SettingsWorkspacesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeWorkspaceId, setActive] = useState(getActiveWorkspaceId());
+  const [deleteBusyId, setDeleteBusyId] = useState("");
   const logoFileRef = useRef(null);
   const { pushToast } = useToast();
 
@@ -74,6 +75,9 @@ export default function SettingsWorkspacesPage() {
       workspace_name: w.workspace_name || w.name || w.workspace_id || w.id,
       role: w.role || (actor.platform_role === "superadmin" ? "admin" : "member"),
       member_count: w.member_count,
+      is_sandbox: Boolean(w.is_sandbox),
+      sandbox_status: w.sandbox_status || "",
+      sandbox_owner_user_id: w.sandbox_owner_user_id || "",
     }));
   }, [workspaces, actor.platform_role]);
 
@@ -104,6 +108,23 @@ export default function SettingsWorkspacesPage() {
     setActiveWorkspaceId(workspaceId);
     setActive(workspaceId);
     window.location.reload();
+  }
+
+  async function deleteWorkspace(workspaceId, workspaceName) {
+    if (!workspaceId || deleteBusyId) return;
+    if (!window.confirm(`Delete workspace "${workspaceName || workspaceId}"? This cannot be undone.`)) return;
+    setDeleteBusyId(workspaceId);
+    try {
+      await apiFetch(`/access/workspaces/${encodeURIComponent(workspaceId)}`, {
+        method: "DELETE",
+      });
+      setWorkspaces((prev) => prev.filter((item) => (item.workspace_id || item.id) !== workspaceId));
+      pushToast("success", "Workspace deleted");
+    } catch (err) {
+      pushToast("error", err?.message || "Failed to delete workspace");
+    } finally {
+      setDeleteBusyId("");
+    }
   }
 
   const canEditWorkspaceSettings = actor.platform_role === "superadmin" || actor.workspace_role === "admin";
@@ -242,8 +263,9 @@ export default function SettingsWorkspacesPage() {
                     <tr>
                       <th>Name</th>
                       <th>Role</th>
+                      <th>Type</th>
                       <th>Members</th>
-                      <th className="w-32">Actions</th>
+                      <th className="w-48">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -251,8 +273,15 @@ export default function SettingsWorkspacesPage() {
                       <tr key={workspace.workspace_id}>
                         <td className="whitespace-nowrap">{workspace.workspace_name}</td>
                         <td className="whitespace-nowrap">{workspace.role || "—"}</td>
+                        <td className="whitespace-nowrap">
+                          {workspace.is_sandbox ? (
+                            <span className="badge badge-outline">Sandbox</span>
+                          ) : (
+                            <span className="badge badge-ghost">Workspace</span>
+                          )}
+                        </td>
                         <td className="whitespace-nowrap">{workspace.member_count ?? "—"}</td>
-                        <td>
+                        <td className="whitespace-nowrap">
                           <button
                             className={`btn btn-xs ${activeWorkspaceId === workspace.workspace_id ? "btn-primary" : "btn-outline"}`}
                             onClick={() => switchWorkspace(workspace.workspace_id)}
@@ -260,6 +289,16 @@ export default function SettingsWorkspacesPage() {
                           >
                             {activeWorkspaceId === workspace.workspace_id ? "Active" : "Switch"}
                           </button>
+                          {actor.platform_role === "superadmin" ? (
+                            <button
+                              className="btn btn-xs btn-error ml-2"
+                              type="button"
+                              disabled={deleteBusyId === workspace.workspace_id || activeWorkspaceId === workspace.workspace_id}
+                              onClick={() => deleteWorkspace(workspace.workspace_id, workspace.workspace_name)}
+                            >
+                              {deleteBusyId === workspace.workspace_id ? "Deleting..." : "Delete"}
+                            </button>
+                          ) : null}
                         </td>
                       </tr>
                     ))}

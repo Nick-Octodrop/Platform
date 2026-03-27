@@ -156,6 +156,7 @@ from app.workspaces import (
     list_user_workspaces,
     list_all_workspaces,
     workspace_exists,
+    delete_workspace,
     update_workspace_name,
     get_platform_role,
     add_workspace_member,
@@ -23176,6 +23177,53 @@ def _ai_latest_sandbox_record(session_id: str) -> dict | None:
     return items[0] if items else None
 
 
+def _ai_sandbox_workspace_metadata() -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for item in _ai_sort(_ai_list_records(_AI_ENTITY_SESSION, limit=5000), field="last_activity_at", reverse=True):
+        data = _ai_record_data(item)
+        sandbox_workspace_id = data.get("sandbox_workspace_id") if isinstance(data.get("sandbox_workspace_id"), str) else ""
+        if (
+            not sandbox_workspace_id
+            or _ai_is_virtual_sandbox_workspace_id(sandbox_workspace_id)
+            or sandbox_workspace_id in out
+        ):
+            continue
+        out[sandbox_workspace_id] = {
+            "is_sandbox": True,
+            "sandbox_session_id": data.get("id") if isinstance(data.get("id"), str) else "",
+            "sandbox_owner_user_id": data.get("created_by") if isinstance(data.get("created_by"), str) else "",
+            "sandbox_status": data.get("sandbox_status") if isinstance(data.get("sandbox_status"), str) else "",
+            "source_workspace_id": data.get("workspace_id") if isinstance(data.get("workspace_id"), str) else "",
+            "sandbox_name": data.get("sandbox_name") if isinstance(data.get("sandbox_name"), str) else "",
+        }
+    return out
+
+
+def _annotate_access_workspaces(workspaces: list[dict] | None, actor: dict | None) -> list[dict]:
+    rows = list(workspaces or [])
+    actor_user_id = actor.get("user_id") if isinstance(actor, dict) else ""
+    is_superadmin = isinstance(actor, dict) and actor.get("platform_role") == "superadmin"
+    sandbox_meta = _ai_sandbox_workspace_metadata()
+    annotated = []
+    for item in rows:
+        row = dict(item or {})
+        workspace_id = row.get("workspace_id") or row.get("id")
+        if not isinstance(workspace_id, str) or not workspace_id:
+            continue
+        row["workspace_id"] = workspace_id
+        meta = sandbox_meta.get(workspace_id)
+        if meta and not is_superadmin:
+            owner_user_id = meta.get("sandbox_owner_user_id")
+            if owner_user_id and owner_user_id != actor_user_id:
+                continue
+        if meta:
+            row.update(meta)
+        else:
+            row.setdefault("is_sandbox", False)
+        annotated.append(row)
+    return annotated
+
+
 def _ai_session_event_records(session_id: str) -> list[dict]:
     events = []
     for item in _ai_sort(_ai_list_records(_AI_ENTITY_EVENT_LOG, limit=2000), field="created_at", reverse=True):
@@ -24785,6 +24833,9 @@ async def delete_octo_ai_session(request: Request, session_id: str) -> dict:
     with _ai_session_scope(request, session_id, actor) as bound:
         if not bound or not bound[0]:
             return _error_response("AI_SESSION_NOT_FOUND", "Session not found", "session_id", status=404)
+        session, workspace_id = bound
+        session_data = _ai_record_data(session)
+        sandbox_workspace_id = session_data.get("sandbox_workspace_id") if isinstance(session_data.get("sandbox_workspace_id"), str) else ""
 
         message_ids: list[str] = []
         plan_ids: list[str] = []
@@ -24851,6 +24902,17 @@ async def delete_octo_ai_session(request: Request, session_id: str) -> dict:
             _ai_delete_record(_AI_ENTITY_MESSAGE, message_id)
         _ai_delete_record(_AI_ENTITY_SESSION, session_id)
 
+        sandbox_workspace_deleted = False
+        if (
+            USE_DB
+            and isinstance(sandbox_workspace_id, str)
+            and sandbox_workspace_id.strip()
+            and not _ai_is_virtual_sandbox_workspace_id(sandbox_workspace_id)
+            and sandbox_workspace_id != workspace_id
+            and workspace_exists(sandbox_workspace_id)
+        ):
+            sandbox_workspace_deleted = delete_workspace(sandbox_workspace_id)
+
         return _ok_response(
             {
                 "deleted": {
@@ -24863,6 +24925,8 @@ async def delete_octo_ai_session(request: Request, session_id: str) -> dict:
                     "validation_runs": len(validation_run_ids),
                     "sandboxes": len(sandbox_ids),
                     "event_logs": len(event_log_ids),
+                    "sandbox_workspace_id": sandbox_workspace_id or None,
+                    "sandbox_workspace_deleted": sandbox_workspace_deleted,
                 }
             }
         )
@@ -27857,6 +27921,7 @@ async def access_context(request: Request) -> dict:
     workspaces = actor.get("workspaces") or []
     if actor.get("platform_role") == "superadmin":
         workspaces = list_all_workspaces()
+    workspaces = _annotate_access_workspaces(workspaces, actor)
     return _ok_response(
         {
             "actor": {
@@ -27870,6 +27935,27 @@ async def access_context(request: Request) -> dict:
             "permissions": _actor_permissions(actor),
         }
     )
+
+
+@app.delete("/access/workspaces/{workspace_id}")
+async def delete_access_workspace(request: Request, workspace_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_superadmin(actor, "Superadmin role required")
+    if denied:
+        return denied
+    if not isinstance(workspace_id, str) or not workspace_id.strip():
+        return _error_response("WORKSPACE_REQUIRED", "Workspace id required", "workspace_id", status=400)
+    workspace_id = workspace_id.strip()
+    if workspace_id == actor.get("workspace_id"):
+        return _error_response("WORKSPACE_DELETE_FORBIDDEN", "Switch away before deleting the active workspace", "workspace_id", status=400)
+    if not workspace_exists(workspace_id):
+        return _error_response("WORKSPACE_NOT_FOUND", "Workspace not found", "workspace_id", status=404)
+    ok = delete_workspace(workspace_id)
+    if not ok:
+        return _error_response("WORKSPACE_DELETE_FAILED", "Failed to delete workspace", "workspace_id", status=400)
+    return _ok_response({"deleted": True, "workspace_id": workspace_id})
 
 
 @app.patch("/access/workspace")

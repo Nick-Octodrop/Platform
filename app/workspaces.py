@@ -4,6 +4,7 @@ from typing import Any
 
 import os
 import time
+from psycopg2 import sql
 
 from app.db import execute, fetch_all, fetch_one, get_conn
 
@@ -129,6 +130,66 @@ def workspace_exists(workspace_id: str) -> bool:
             query_name="workspaces.exists",
         )
         return bool(row)
+
+
+def delete_workspace(workspace_id: str) -> bool:
+    if not workspace_id:
+        return False
+    with get_conn() as conn:
+        members = fetch_all(
+            conn,
+            """
+            select user_id
+            from workspace_members
+            where workspace_id=%s
+            """,
+            [workspace_id],
+            query_name="workspaces.members_for_delete",
+        ) or []
+        org_tables = fetch_all(
+            conn,
+            """
+            select table_schema, table_name
+            from information_schema.columns
+            where table_schema='public' and column_name='org_id'
+            group by table_schema, table_name
+            order by table_name asc
+            """,
+            [],
+            query_name="workspaces.org_tables_for_delete",
+        ) or []
+        for row in org_tables:
+            table_schema = row.get("table_schema")
+            table_name = row.get("table_name")
+            if not isinstance(table_schema, str) or not isinstance(table_name, str):
+                continue
+            if table_name == "workspaces":
+                continue
+            execute(
+                conn,
+                sql.SQL("delete from {}.{} where org_id=%s").format(
+                    sql.Identifier(table_schema),
+                    sql.Identifier(table_name),
+                ),
+                [workspace_id],
+                query_name=f"workspaces.delete_scope.{table_name}",
+            )
+        deleted = fetch_one(
+            conn,
+            """
+            delete from workspaces
+            where id=%s
+            returning id
+            """,
+            [workspace_id],
+            query_name="workspaces.delete",
+        )
+        if deleted:
+            for member in members:
+                user_id = member.get("user_id")
+                if isinstance(user_id, str) and user_id:
+                    invalidate_membership_cache(user_id)
+        return bool(deleted)
 
 
 def update_workspace_name(workspace_id: str, name: str) -> dict | None:
