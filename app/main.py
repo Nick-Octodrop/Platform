@@ -15778,6 +15778,10 @@ def _ai_extract_requested_module_labels(text: str) -> list[str]:
         (r"\bquot(?:e|es|ation|ations|ing)\b", "Quotes"),
         (r"\bdispatch\b|\bfield\s+service\b|\bfield\s+work\b|\bfieldwork\b|\bservice\s+desk\b", "Field Service"),
     )
+    for pattern, label in inferred_business_areas:
+        if re.search(pattern, text, flags=re.IGNORECASE):
+            _push(label)
+    return labels
 
 
 def _studio_ai_disabled_response() -> JSONResponse:
@@ -15789,10 +15793,6 @@ def _studio_ai_disabled_response() -> JSONResponse:
         },
         status=403,
     )
-    for pattern, label in inferred_business_areas:
-        if re.search(pattern, text, flags=re.IGNORECASE):
-            _push(label)
-    return labels
 
 
 def _ai_preview_contract_flags(text: str) -> dict[str, bool]:
