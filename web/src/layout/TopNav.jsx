@@ -286,10 +286,6 @@ export default function TopNav({ user, onSignOut }) {
   }, [isAppRoute]);
   const mobileBackTarget = useMemo(() => {
     if (isAppRoute) {
-      if (isRecordPage && currentPageId) {
-        return buildTargetRoute(moduleId, `page:${currentPageId}`);
-      }
-      if (appHomeRoute) return appHomeRoute;
       return appendOctoAiFrameParams("/home");
     }
     if (isStudioRoute) {
@@ -300,8 +296,6 @@ export default function TopNav({ user, onSignOut }) {
     }
     return null;
   }, [
-    appHomeRoute,
-    currentPageId,
     isAppRoute,
     isAppsStore,
     isAutomations,
@@ -309,11 +303,9 @@ export default function TopNav({ user, onSignOut }) {
     isNotifications,
     isOctoAi,
     isOps,
-    isRecordPage,
     isSettingsRoute,
     isStudioEditor,
     isStudioRoute,
-    moduleId,
   ]);
 
   useEffect(() => {
