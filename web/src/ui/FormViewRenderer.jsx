@@ -90,21 +90,17 @@ export default function FormViewRenderer({
   const tabsConfig = header?.tabs || null;
   const activityConfig = view?.activity && view.activity.enabled === true ? view.activity : null;
   const activityTabId = "__activity";
-  const detailsTabId = "__details";
   const activityTabLabel = (typeof activityConfig?.tab_label === "string" && activityConfig.tab_label.trim()) || "Activity";
   const tabsForUi = useMemo(() => {
     const baseTabs = Array.isArray(tabsConfig?.tabs) ? tabsConfig.tabs : [];
-    if (!activityConfig || activityConfig.mode === "panel") {
+    if (!activityConfig || activityConfig.mode !== "tab") {
       return baseTabs;
     }
     if (baseTabs.length > 0) {
       if (baseTabs.some((tab) => tab?.id === activityTabId)) return baseTabs;
       return [...baseTabs, { id: activityTabId, label: activityTabLabel }];
     }
-    return [
-      { id: detailsTabId, label: "Details" },
-      { id: activityTabId, label: activityTabLabel },
-    ];
+    return [{ id: activityTabId, label: activityTabLabel }];
   }, [tabsConfig?.tabs, activityConfig, activityTabLabel]);
   const hasTabs = tabsForUi.length > 0;
   const [activeTab, setActiveTab] = useState(() => tabsConfig?.default_tab || tabsForUi[0]?.id || null);

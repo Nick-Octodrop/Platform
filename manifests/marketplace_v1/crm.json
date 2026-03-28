@@ -13,7 +13,7 @@
     "required": [
       {
         "module": "contacts",
-        "version": ">=1.0.0"
+        "version": ">=1.0.0"  
       },
       {
         "module": "sales",
@@ -922,18 +922,15 @@
         "quote.reference": {
           "from": "opportunity.title"
         },
-        "quote.contact_id": {
-          "from": "opportunity.contact_id"
-        },
-        "quote.owner_id": {
-          "from": "opportunity.owner_id"
-        },
-        "quote.quote_date": {
-          "from": "opportunity.created_at"
-        },
-        "quote.expiry_date": {
-          "from": "opportunity.expected_close_date"
-        },
+      "quote.contact_id": {
+        "from": "opportunity.contact_id"
+      },
+      "quote.owner_id": {
+        "from": "opportunity.owner_id"
+      },
+      "quote.expiry_date": {
+        "from": "opportunity.expected_close_date"
+      },
         "quote.notes": {
           "from": "opportunity.description"
         },

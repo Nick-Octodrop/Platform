@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef, createContext, useContext } from "react";
-import { apiFetch, API_URL } from "../api.js";
+import { apiFetch, API_URL, getActiveWorkspaceId } from "../api.js";
 import { supabase } from "../supabase.js";
 import { evalCondition } from "../utils/conditions.js";
 import Tabs from "../components/Tabs.jsx";
@@ -942,7 +942,7 @@ function ChatterPanel({ entityId, recordId }) {
         try {
           const res = await fetch(`${API_URL}/api/activity/attachment`, {
             method: "POST",
-            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            headers: workspaceHeaders(token),
             body: form,
           }).then((r) => r.json());
           if (!res.ok) throw new Error(res?.errors?.[0]?.message || "Upload failed");
@@ -1237,3 +1237,10 @@ function ChatterPanel({ entityId, recordId }) {
     </div>
   );
 }
+  function workspaceHeaders(token) {
+    const workspaceId = getActiveWorkspaceId();
+    return {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(workspaceId ? { "X-Workspace-Id": workspaceId } : {}),
+    };
+  }

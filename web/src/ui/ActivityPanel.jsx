@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Paperclip, Send, Trash2 } from "lucide-react";
-import { API_URL, apiFetch } from "../api.js";
+import { API_URL, apiFetch, getActiveWorkspaceId } from "../api.js";
 import { supabase } from "../supabase.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import { useAccessContext } from "../access.js";
@@ -245,7 +245,7 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
         try {
           const response = await fetch(`${API_URL}/api/activity/attachment`, {
             method: "POST",
-            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            headers: workspaceHeaders(token),
             body: form,
           });
           const data = await response.json();
@@ -278,12 +278,8 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
     try {
       const session = (await supabase.auth.getSession()).data.session;
       const token = session?.access_token;
-      if (!token) {
-        window.open(`${API_URL}/attachments/${attachmentId}/download`, "_blank", "noopener,noreferrer");
-        return;
-      }
       const response = await fetch(`${API_URL}/attachments/${attachmentId}/download`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: workspaceHeaders(token),
       });
       if (!response.ok) throw new Error("Download failed");
       const blob = await response.blob();
@@ -435,3 +431,10 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
     </div>
   );
 }
+  function workspaceHeaders(token) {
+    const workspaceId = getActiveWorkspaceId();
+    return {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(workspaceId ? { "X-Workspace-Id": workspaceId } : {}),
+    };
+  }

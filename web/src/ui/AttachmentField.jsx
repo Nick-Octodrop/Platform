@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Paperclip } from "lucide-react";
-import { API_URL, apiFetch } from "../api.js";
+import { API_URL, apiFetch, getActiveWorkspaceId } from "../api.js";
 import { supabase } from "../supabase.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import AttachmentGallery from "./AttachmentGallery.jsx";
@@ -50,12 +50,16 @@ export default function AttachmentField({
   async function uploadOne(file) {
     const session = (await supabase.auth.getSession()).data.session;
     const token = session?.access_token;
+    const workspaceId = getActiveWorkspaceId();
 
     const form = new FormData();
     form.append("file", file);
     const uploadRes = await fetch(`${API_URL}/attachments/upload`, {
       method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(workspaceId ? { "X-Workspace-Id": workspaceId } : {}),
+      },
       body: form,
     });
     const uploadData = await uploadRes.json();

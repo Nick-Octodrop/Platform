@@ -14,7 +14,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { API_URL } from "../api.js";
+import { API_URL, getActiveWorkspaceId } from "../api.js";
 import { supabase } from "../supabase.js";
 import { formatDateTime } from "../utils/dateTime.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
@@ -92,8 +92,12 @@ function iconForType(type) {
 async function fetchAttachmentBlob(attachmentId) {
   const session = (await supabase.auth.getSession()).data.session;
   const token = session?.access_token;
+  const workspaceId = getActiveWorkspaceId();
   const response = await fetch(`${API_URL}/attachments/${attachmentId}/download`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(workspaceId ? { "X-Workspace-Id": workspaceId } : {}),
+    },
   });
   if (!response.ok) throw new Error("Download failed");
   return response.blob();
