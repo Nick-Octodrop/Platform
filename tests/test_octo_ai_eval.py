@@ -412,10 +412,14 @@ class TestOctoAiEvalRunner(unittest.TestCase):
                 "contacts_add_payment_hold",
                 "contacts_cleanup_duplicate_supplier_rating",
                 "create_candidate_pipeline",
+                "create_training_ops_with_automations",
+                "cross_module_quote_approval_creates_job",
+                "cross_module_job_completion_generates_documents",
+                "cross_module_crm_lead_to_sales_quote",
                 "real_world_vendor_compliance_module",
             }
         }
-        self.assertEqual(len(scenarios), 4)
+        self.assertEqual(len(scenarios), 8)
         client = InProcessClient()
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
@@ -424,6 +428,10 @@ class TestOctoAiEvalRunner(unittest.TestCase):
                     "contacts_add_payment_hold",
                     "contacts_cleanup_duplicate_supplier_rating",
                     "create_candidate_pipeline",
+                    "create_training_ops_with_automations",
+                    "cross_module_quote_approval_creates_job",
+                    "cross_module_job_completion_generates_documents",
+                    "cross_module_crm_lead_to_sales_quote",
                     "real_world_vendor_compliance_module",
                 ):
                     result = _run_scenario(client, scenarios[name], outdir, fail_fast=False)

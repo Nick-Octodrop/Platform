@@ -278,7 +278,7 @@ export default function ListViewRenderer({
   const gridTemplate = `2.5rem repeat(${columns.length}, minmax(140px, 1fr))`;
 
   return (
-    <div className="space-y-4">
+    <div className="h-full min-h-0 flex flex-col gap-4">
       {header && !hideHeader && (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -387,7 +387,7 @@ export default function ListViewRenderer({
         </div>
       ) : null}
 
-      <div className={disableHorizontalScroll ? "overflow-x-hidden" : "overflow-x-auto"}>
+      <div className={isMobile ? "flex-1 min-h-0 w-full overflow-x-auto overflow-y-auto no-scrollbar" : disableHorizontalScroll ? "flex-1 min-h-0 overflow-x-hidden overflow-y-auto" : "flex-1 min-h-0 overflow-x-auto overflow-y-auto"}>
         {useVirtual ? (
           <div className="w-full">
             <div className="grid items-center gap-2 text-sm font-semibold px-3 py-2" style={{ gridTemplateColumns: gridTemplate }}>
@@ -454,7 +454,7 @@ export default function ListViewRenderer({
             </VirtualList>
           </div>
         ) : (
-          <table className={`table table-hover min-w-max ${tableClassName}`.trim()}>
+          <table className={`table table-hover ${tableClassName} min-w-max`.trim()}>
             <thead className="[&_th]:border-b-0">
               <tr>
                 <th className="w-10 border-b-0">

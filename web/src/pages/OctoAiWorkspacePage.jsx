@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import Tabs from "../components/Tabs.jsx";
+import useMediaQuery from "../hooks/useMediaQuery.js";
 import {
   answerOctoAiQuestion,
   applyOctoAiPatchset,
@@ -54,6 +55,26 @@ function ActionStrip({ actions, busy = false }) {
             {action.label}
           </button>
         ))}
+    </div>
+  );
+}
+
+function InfoList({ title, items, emptyText }) {
+  return (
+    <div className="rounded-box border border-base-200 bg-base-100 p-3">
+      <div className="text-xs font-semibold uppercase tracking-wide opacity-70">{title}</div>
+      {Array.isArray(items) && items.length > 0 ? (
+        <ul className="mt-2 space-y-1 text-sm leading-6">
+          {items.map((item) => (
+            <li key={item} className="flex gap-2">
+              <span className="opacity-60">-</span>
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="mt-2 text-sm opacity-60">{emptyText}</div>
+      )}
     </div>
   );
 }
@@ -302,6 +323,7 @@ function questionSupersededByAppliedRevision(latestPlan, latestPatchset) {
 export default function OctoAiWorkspacePage() {
   const navigate = useNavigate();
   const { sessionId } = useParams();
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const chatScrollRef = useRef(null);
   const chatBottomRef = useRef(null);
   const composerRef = useRef(null);
@@ -320,6 +342,7 @@ export default function OctoAiWorkspacePage() {
   const [previewNonce, setPreviewNonce] = useState(0);
   const [previewNotice, setPreviewNotice] = useState("");
   const [agentTab, setAgentTab] = useState("chat");
+  const [mobileUtilitySheet, setMobileUtilitySheet] = useState("");
   const [selectedRevisionId, setSelectedRevisionId] = useState("");
   const [pendingChatMessage, setPendingChatMessage] = useState(null);
   const [pendingAssistantState, setPendingAssistantState] = useState("");
@@ -787,6 +810,17 @@ export default function OctoAiWorkspacePage() {
     if (requestStage === "Publishing") return "Publishing changes to live...";
     return "Describe a follow-up change...";
   }, [requestStage]);
+  const openChangesView = useMemo(
+    () => () => {
+      if (isMobile) {
+        setMobileUtilitySheet("details");
+        return;
+      }
+      setDetailsTab("changes");
+      setDetailsOpen(true);
+    },
+    [isMobile],
+  );
   const actionStripActions = useMemo(() => {
     if (requestStage === "Idle" && !selectedRevision) {
       return [];
@@ -795,12 +829,12 @@ export default function OctoAiWorkspacePage() {
       if (activeQuestionMeta?.kind === "confirm_plan") {
         return [
           { label: "Apply to Sandbox", primary: true, onClick: doConfirmPlan, hint: "Approve the plan, validate the revision, and apply it to sandbox." },
-          { label: "View Scope", onClick: () => { setDetailsTab("changes"); setDetailsOpen(true); } },
+          { label: "View Scope", onClick: openChangesView },
         ];
       }
       return [
         { label: "Answer in Chat", primary: true, onClick: () => composerRef.current?.focus(), hint: "This request needs one more detail before it can be applied." },
-        { label: "View Scope", onClick: () => { setDetailsTab("changes"); setDetailsOpen(true); } },
+        { label: "View Scope", onClick: openChangesView },
       ];
     }
     if (selectedRevision) {
@@ -812,7 +846,7 @@ export default function OctoAiWorkspacePage() {
           onClick: doPromoteRelease,
           disabled: publishingRevision || selectedRevisionRelease?.status === "promoted",
         },
-        { label: "View Changes", onClick: () => { setDetailsTab("changes"); setDetailsOpen(true); } },
+        { label: "View Changes", onClick: openChangesView },
       ];
       if (currentSandboxRevision?.id && selectedRevision.id !== currentSandboxRevision.id) {
         actions.push({ label: "Restore to Sandbox", onClick: doRestoreRevision, disabled: restoringRevision });
@@ -823,13 +857,13 @@ export default function OctoAiWorkspacePage() {
     }
     if (requestStage === "Planning" || requestStage === "Idle") {
       return [
-        { label: "View Scope", primary: true, onClick: () => { setDetailsTab("changes"); setDetailsOpen(true); }, hint: "Review the current scope while you keep refining the request in chat." },
+        { label: "View Scope", primary: true, onClick: openChangesView, hint: "Review the current scope while you keep refining the request in chat." },
       ];
     }
     if (requestStage === "Ready to Apply") {
       return [
         { label: "Apply to Sandbox", primary: true, onClick: doApplyRevision, hint: "Apply the validated revision and refresh the preview automatically." },
-        { label: "View Changes", onClick: () => { setDetailsTab("changes"); setDetailsOpen(true); } },
+        { label: "View Changes", onClick: openChangesView },
       ];
     }
     if (requestStage === "Applying to Sandbox") {
@@ -850,7 +884,263 @@ export default function OctoAiWorkspacePage() {
       ];
     }
     return [];
-  }, [activeQuestionMeta?.kind, agentTab, appliedRevisions.length, currentSandboxRevision?.id, doPromoteRelease, hasPendingQuestion, latestPromotedRelease?.id, publishingRevision, requestStage, restoringRevision, selectedRevision, selectedRevisionRelease?.status, navigate]);
+  }, [activeQuestionMeta?.kind, agentTab, appliedRevisions.length, currentSandboxRevision?.id, doPromoteRelease, hasPendingQuestion, latestPromotedRelease?.id, openChangesView, publishingRevision, requestStage, restoringRevision, selectedRevision, selectedRevisionRelease?.status, navigate]);
+
+  const previewPane = (
+    <div className="relative h-full min-h-0 overflow-hidden bg-base-100">
+      {previewNotice ? (
+        <div className="absolute left-3 top-3 z-10 rounded-full border border-base-200 bg-base-100/95 px-3 py-1 text-xs font-medium text-primary shadow-sm">
+          {previewNotice}
+        </div>
+      ) : null}
+      {applyingRevision || publishingRevision ? (
+        <div className="absolute right-3 top-3 z-10 rounded-full border border-base-200 bg-base-100/95 px-3 py-1 text-xs shadow-sm">
+          {applyingRevision ? "Applying revision..." : "Publishing..."}
+        </div>
+      ) : null}
+      {!data.session?.sandbox_workspace_id ? (
+        <div className="flex h-full items-center justify-center p-4 text-sm opacity-60">No sandbox workspace is attached to this session yet.</div>
+      ) : (
+        <iframe
+          key={`${workspaceFrameSrc}:${previewNonce}`}
+          title="Sandbox workspace preview"
+          src={workspaceFrameSrc}
+          className="h-full w-full border-0 bg-base-100"
+        />
+      )}
+    </div>
+  );
+
+  const revisionsPane = (
+    <div className="space-y-3">
+      {appliedRevisions.map((patchset, index) => {
+        const isSelected = patchset.id === selectedRevision?.id;
+        const isCurrent = patchset.id === currentSandboxRevision?.id;
+        const release = Array.isArray(data.releases) ? data.releases.find((item) => item?.patchset_id === patchset.id && item?.status !== "rolled_back") : null;
+        return (
+          <button
+            key={patchset.id}
+            type="button"
+            onClick={() => setSelectedRevisionId(patchset.id)}
+            className={`w-full rounded-lg border p-3 text-left ${isSelected ? "border-primary bg-primary/5" : "border-base-300 bg-base-100"}`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-medium">Revision {appliedRevisions.length - index}</div>
+              <div className="flex items-center gap-2">
+                {isCurrent ? <StatusChip label="Current" tone="primary" /> : null}
+                {release?.status === "promoted" ? <StatusChip label="Published" tone="success" /> : null}
+              </div>
+            </div>
+            <div className="mt-2 text-sm opacity-80">{summarizePatchsetRevision(patchset)}</div>
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  const chatPane = (
+    <div className="flex h-full min-h-0 flex-col space-y-3">
+      <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-auto space-y-2">
+        {renderedMessages.length > 0 ? (
+          renderedMessages.map((msg) => (
+            <div key={msg.id} className={`chat ${messageRoleClass(msg)}`}>
+              <div className={`${messageBubbleClass(msg)} whitespace-pre-wrap text-sm`}>
+                {msg.pending ? (
+                  <div className="flex items-center gap-2">
+                    <span className="loading loading-spinner loading-sm" aria-hidden="true" />
+                    <span>{msg.body}</span>
+                  </div>
+                ) : (
+                  chatMessageText(msg)
+                )}
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="chat chat-start">
+            <div className={`${messageBubbleClass({ role: "assistant" })} whitespace-pre-wrap text-sm`}>
+              Describe the change you want to make. I will plan it first, then show the right workflow actions when there is something real to act on.
+            </div>
+          </div>
+        )}
+        <div ref={chatBottomRef} />
+      </div>
+      <div className="border-t border-base-200 pt-3 space-y-2">
+        {hasPendingQuestion && activeQuestion ? (
+          <div className="rounded-lg border border-base-300 bg-base-50 px-3 py-2 text-sm">
+            <div className="text-xs font-medium uppercase tracking-wide opacity-60">Needs input</div>
+            <div className="mt-1 whitespace-pre-wrap">{activeQuestion}</div>
+          </div>
+        ) : null}
+        {actionStripActions.length > 0 ? (
+          <ActionStrip actions={actionStripActions} busy={busy || streaming || applyingRevision || publishingRevision || restoringRevision} />
+        ) : null}
+        {activeQuestionMeta?.kind === "field_spec" ? (
+          <div className="space-y-2">
+            <input
+              type="text"
+              className="input input-bordered input-sm w-full"
+              placeholder="Field label"
+              value={fieldSpecLabel}
+              onChange={(e) => setFieldSpecLabel(e.target.value)}
+            />
+            <select className="select select-bordered select-sm w-full" value={fieldSpecType} onChange={(e) => setFieldSpecType(e.target.value)}>
+              {(activeQuestionMeta?.options?.field_types || []).map((kind) => (
+                <option key={kind} value={kind}>{kind}</option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+        <textarea
+          ref={composerRef}
+          className="textarea textarea-bordered w-full text-sm"
+          rows={4}
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder={hasPendingQuestion ? (questionNeedsTypedReply(activeQuestionMeta) ? "Type the missing detail or correction here..." : "Reply with clarification or extra instructions...") : composerPlaceholder}
+          disabled={applyingRevision || publishingRevision || restoringRevision}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              if (!streaming && !busy && message.trim()) {
+                sendMessage();
+              }
+            }
+          }}
+        />
+        <div className="flex items-center justify-end gap-2">
+          <button className={PRIMARY_BUTTON_SM} disabled={streaming || busy || applyingRevision || publishingRevision || restoringRevision || !message.trim()} onClick={sendMessage}>
+            {streaming ? "Sending..." : hasPendingQuestion ? (questionNeedsTypedReply(activeQuestionMeta) ? "Answer" : "Send Reply") : "Send"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const mobileDetailsPane = (
+    <div className="space-y-3">
+      <InfoList title="Plan Summary" items={planSummaryText ? [planSummaryText] : []} emptyText="No summary yet." />
+      <InfoList title="Changes" items={changeSummaries} emptyText="Describe the change in chat to generate a scoped plan." />
+      <InfoList title="Modules" items={moduleSummaries} emptyText="Modules will appear here once the plan is scoped." />
+      <InfoList title="Advisories" items={latestAdvisories} emptyText="No advisories for this draft." />
+    </div>
+  );
+
+  const mobileAgentPane = (
+    <div className="space-y-4">
+      {appliedRevisions.length > 0 ? (
+        <Tabs
+          tabs={[
+            { id: "chat", label: "Chat" },
+            { id: "revisions", label: `Revisions (${appliedRevisions.length})` },
+          ]}
+          activeId={agentTab}
+          onChange={setAgentTab}
+          fullWidth
+        />
+      ) : null}
+      <div className="min-h-0">
+        {agentTab === "revisions" && appliedRevisions.length > 0 ? revisionsPane : chatPane}
+      </div>
+    </div>
+  );
+
+  if (isMobile) {
+    return (
+      <div className="h-full min-h-0 bg-base-100 flex flex-col overflow-hidden">
+        {error ? <div className="alert alert-error text-sm rounded-none">{error}</div> : null}
+        <div className="flex-1 min-h-0 flex flex-col bg-base-100 overflow-hidden">
+          {loading ? (
+            <div className="flex-1 min-h-0 flex items-center justify-center px-4 text-sm opacity-70">Loading workspace...</div>
+          ) : !data.session?.sandbox_workspace_id || data.session?.sandbox_status === "discarded" ? (
+            <div className="flex-1 min-h-0 flex flex-col px-4 py-5">
+              <div className="rounded-none text-center gap-4 flex flex-col">
+                <h2 className="text-lg font-semibold">Sandbox not ready</h2>
+                <p className="text-sm opacity-75">
+                  {activeSession
+                    ? "Create the sandbox for this request, then keep working here with the live sandbox preview."
+                    : "This session no longer has an active sandbox. Historical sessions stay readable, but only active sessions can launch a sandbox."}
+                </p>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <button className={SOFT_BUTTON_SM} onClick={() => navigate("/octo-ai")}>Back to sessions</button>
+                  <button className={SOFT_BUTTON_SM} onClick={() => navigate(`/octo-ai/sessions/${sessionId}`)}>View history</button>
+                  {activeSession ? (
+                    <button className={PRIMARY_BUTTON_SM} disabled={busy} onClick={doEnsureSandbox}>Create Sandbox</button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="shrink-0 border-b border-base-200 bg-base-100 px-4 py-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-lg font-semibold truncate">{data.session?.title || "Change Request"}</div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <StatusChip label={requestStage} tone={stageTone} />
+                      {selectedRevision ? (
+                        <span className="text-xs opacity-60">
+                          {selectedRevision.id === currentSandboxRevision?.id ? "Current revision" : `Selected revision ${selectedRevision.id.slice(0, 8)}`}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {appliedRevisions.length > 0 ? (
+                      <button
+                        type="button"
+                        className={SOFT_BUTTON_SM}
+                        onClick={() => {
+                          setAgentTab("revisions");
+                          setMobileUtilitySheet("agent");
+                        }}
+                      >
+                        Revisions
+                      </button>
+                    ) : null}
+                    <button type="button" className={PRIMARY_BUTTON_SM} onClick={() => setMobileUtilitySheet("agent")}>
+                      AI
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="flex-1 min-h-0 bg-base-100">
+                <div className="h-full min-h-0">
+                  {previewPane}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+        {mobileUtilitySheet ? (
+          <div className="fixed inset-0 z-[220]">
+            <button
+              type="button"
+              className="absolute inset-0 bg-base-content/35"
+              aria-label="Close panel"
+              onClick={() => setMobileUtilitySheet("")}
+            />
+            <div className="absolute inset-x-0 bottom-0 max-h-[85vh] rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4 flex flex-col">
+              <div className="mx-auto mb-4 h-1.5 w-24 rounded-full bg-base-300" />
+              <div className="flex items-center justify-between gap-2 pb-3">
+                <div className="text-sm font-semibold">
+                  {mobileUtilitySheet === "agent" ? "Octo AI" : mobileUtilitySheet === "preview" ? "Sandbox Preview" : "Plan Details"}
+                </div>
+                <button type="button" className={SOFT_BUTTON_SM} onClick={() => setMobileUtilitySheet("")}>Done</button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-auto">
+                {mobileUtilitySheet === "preview"
+                  ? <div className="h-[60vh]">{previewPane}</div>
+                  : mobileUtilitySheet === "agent"
+                    ? mobileAgentPane
+                    : mobileDetailsPane}
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-6rem)] min-h-0 flex flex-col overflow-hidden">
@@ -882,30 +1172,9 @@ export default function OctoAiWorkspacePage() {
         ) : (
           <PanelGroup direction="horizontal" autoSaveId="octo-ai-sandbox-shell" className="h-full min-h-0">
             <Panel defaultSize={72} minSize={50}>
-              <div className="card bg-base-100 shadow h-full min-h-0 flex flex-col overflow-hidden">
-                <div className="flex-1 min-h-0 p-4">
-                  <div className="relative h-full min-h-0 overflow-hidden rounded-box border border-base-300 bg-base-100">
-                    {previewNotice ? (
-                      <div className="absolute left-3 top-3 z-10 rounded-full border border-base-200 bg-base-100/95 px-3 py-1 text-xs font-medium text-primary shadow-sm">
-                        {previewNotice}
-                      </div>
-                    ) : null}
-                    {applyingRevision || publishingRevision ? (
-                      <div className="absolute right-3 top-3 z-10 rounded-full border border-base-200 bg-base-100/95 px-3 py-1 text-xs shadow-sm">
-                        {applyingRevision ? "Applying revision..." : "Publishing..."}
-                      </div>
-                    ) : null}
-                    {!data.session?.sandbox_workspace_id ? (
-                      <div className="flex h-full items-center justify-center text-sm opacity-60">No sandbox workspace is attached to this session yet.</div>
-                    ) : (
-                      <iframe
-                        key={`${workspaceFrameSrc}:${previewNonce}`}
-                        title="Sandbox workspace preview"
-                        src={workspaceFrameSrc}
-                        className="h-full w-full border-0 bg-base-100"
-                      />
-                    )}
-                  </div>
+              <div className="h-full min-h-0 flex flex-col overflow-hidden bg-base-100">
+                <div className="flex-1 min-h-0">
+                  {previewPane}
                 </div>
               </div>
             </Panel>
@@ -942,107 +1211,9 @@ export default function OctoAiWorkspacePage() {
                 </div>
                 <div className="flex-1 min-h-0 overflow-auto p-4">
                   {agentTab === "revisions" && appliedRevisions.length > 0 ? (
-                    <div className="space-y-3">
-                      {appliedRevisions.map((patchset, index) => {
-                        const isSelected = patchset.id === selectedRevision?.id;
-                        const isCurrent = patchset.id === currentSandboxRevision?.id;
-                        const release = Array.isArray(data.releases) ? data.releases.find((item) => item?.patchset_id === patchset.id && item?.status !== "rolled_back") : null;
-                        return (
-                          <button
-                            key={patchset.id}
-                            type="button"
-                            onClick={() => setSelectedRevisionId(patchset.id)}
-                            className={`w-full rounded-lg border p-3 text-left ${isSelected ? "border-primary bg-primary/5" : "border-base-300 bg-base-100"}`}
-                          >
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="text-sm font-medium">Revision {appliedRevisions.length - index}</div>
-                              <div className="flex items-center gap-2">
-                                {isCurrent ? <StatusChip label="Current" tone="primary" /> : null}
-                                {release?.status === "promoted" ? <StatusChip label="Published" tone="success" /> : null}
-                              </div>
-                            </div>
-                            <div className="mt-2 text-sm opacity-80">{summarizePatchsetRevision(patchset)}</div>
-                          </button>
-                        );
-                      })}
-                    </div>
+                    revisionsPane
                   ) : (
-                    <div className="flex h-full min-h-0 flex-col space-y-3">
-                      <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-auto space-y-2">
-                        {renderedMessages.length > 0 ? (
-                          renderedMessages.map((msg) => (
-                            <div key={msg.id} className={`chat ${messageRoleClass(msg)}`}>
-                              <div className={`${messageBubbleClass(msg)} whitespace-pre-wrap text-sm`}>
-                                {msg.pending ? (
-                                  <div className="flex items-center gap-2">
-                                    <span className="loading loading-spinner loading-sm" aria-hidden="true" />
-                                    <span>{msg.body}</span>
-                                  </div>
-                                ) : (
-                                  chatMessageText(msg)
-                                )}
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="chat chat-start">
-                            <div className={`${messageBubbleClass({ role: "assistant" })} whitespace-pre-wrap text-sm`}>
-                              Describe the change you want to make. I will plan it first, then show the right workflow actions when there is something real to act on.
-                            </div>
-                          </div>
-                        )}
-                        <div ref={chatBottomRef} />
-                      </div>
-                      <div className="border-t border-base-200 pt-3 space-y-2">
-                        {hasPendingQuestion && activeQuestion ? (
-                          <div className="rounded-lg border border-base-300 bg-base-50 px-3 py-2 text-sm">
-                            <div className="text-xs font-medium uppercase tracking-wide opacity-60">Needs input</div>
-                            <div className="mt-1 whitespace-pre-wrap">{activeQuestion}</div>
-                          </div>
-                        ) : null}
-                        {actionStripActions.length > 0 ? (
-                          <ActionStrip actions={actionStripActions} busy={busy || streaming || applyingRevision || publishingRevision || restoringRevision} />
-                        ) : null}
-                        {activeQuestionMeta?.kind === "field_spec" ? (
-                          <div className="space-y-2">
-                            <input
-                              type="text"
-                              className="input input-bordered input-sm w-full"
-                              placeholder="Field label"
-                              value={fieldSpecLabel}
-                              onChange={(e) => setFieldSpecLabel(e.target.value)}
-                            />
-                            <select className="select select-bordered select-sm w-full" value={fieldSpecType} onChange={(e) => setFieldSpecType(e.target.value)}>
-                              {(activeQuestionMeta?.options?.field_types || []).map((kind) => (
-                                <option key={kind} value={kind}>{kind}</option>
-                              ))}
-                            </select>
-                          </div>
-                        ) : null}
-                        <textarea
-                          ref={composerRef}
-                          className="textarea textarea-bordered w-full text-sm"
-                          rows={4}
-                          value={message}
-                          onChange={(e) => setMessage(e.target.value)}
-                          placeholder={hasPendingQuestion ? (questionNeedsTypedReply(activeQuestionMeta) ? "Type the missing detail or correction here..." : "Reply with clarification or extra instructions...") : composerPlaceholder}
-                          disabled={applyingRevision || publishingRevision || restoringRevision}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) {
-                              e.preventDefault();
-                              if (!streaming && !busy && message.trim()) {
-                                sendMessage();
-                              }
-                            }
-                          }}
-                        />
-                        <div className="flex items-center justify-end gap-2">
-                          <button className={PRIMARY_BUTTON_SM} disabled={streaming || busy || applyingRevision || publishingRevision || restoringRevision || !message.trim()} onClick={sendMessage}>
-                            {streaming ? "Sending..." : hasPendingQuestion ? (questionNeedsTypedReply(activeQuestionMeta) ? "Answer" : "Send Reply") : "Send"}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
+                    chatPane
                   )}
                 </div>
               </div>

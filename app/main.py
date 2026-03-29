@@ -3022,6 +3022,10 @@ def _ai_extract_scoped_module_name(message: str) -> str | None:
         if match and isinstance(match.group(1), str):
             label = _ai_clean_module_name_candidate(match.group(1))
             if _ai_is_label_confident(label):
+                if re.search(r"\b(?:my|our)\b", label, flags=re.IGNORECASE):
+                    continue
+                if re.search(r"\b(?:jobs?|tasks?|leads?|quotes?|invoices?)\b", label, flags=re.IGNORECASE) and len(label.split()) >= 3:
+                    continue
                 return label
     return None
 
@@ -3079,6 +3083,7 @@ def _ai_extract_new_module_name(message: str, answer_hints: dict | None = None) 
         r"let'?s\s+call\s+it\s+[\"']?([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40})[\"']?",
         r"call\s+it\s+[\"']?([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40})[\"']?",
         r"(?:create|build|make)\s+(?:me\s+)?(?:a\s+|an\s+|the\s+)?(?:new\s+)?(?:simple\s+)?module\s+(?:for|to manage|for managing)\s+([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40})",
+        r"(?:create|build|make)\s+(?:me\s+)?(?:a\s+|an\s+|the\s+)?(?:new\s+)?(?:simple\s+)?module\s+(?:to track|for tracking|track)\s+(?!my\b|our\b|the\b)([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40})",
         r"(?:create|build|make)(?:\s+(?:a|an|the))?(?:\s+simple)?\s+([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40}?)\s+module\b",
         r"(?:create|build|make)\s+(?:me\s+|us\s+|a\s+|an\s+|the\s+|new\s+|simple\s+|small\s+|custom\s+){0,6}([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40}?)\s+system\b",
         r"(?:create|build|make)\s+(?:me\s+|us\s+|a\s+|an\s+|the\s+|new\s+|simple\s+|small\s+|custom\s+){0,6}([a-zA-Z0-9][a-zA-Z0-9 &_.-]{0,40}?)\s+workspace\b",
@@ -3088,6 +3093,10 @@ def _ai_extract_new_module_name(message: str, answer_hints: dict | None = None) 
         if match and isinstance(match.group(1), str):
             label = _ai_clean_module_name_candidate(match.group(1))
             if _ai_is_label_confident(label):
+                if re.search(r"\b(?:my|our)\b", label, flags=re.IGNORECASE):
+                    continue
+                if re.search(r"\b(?:jobs?|tasks?|leads?|quotes?|invoices?)\b", label, flags=re.IGNORECASE) and len(label.split()) >= 3:
+                    continue
                 return label
     quoted = re.search(r"[\"']([^\"']{1,40})[\"']", msg)
     if quoted and isinstance(quoted.group(1), str):
@@ -3603,7 +3612,13 @@ def _ai_select_best_module_design_spec(base_spec: dict, model_spec: dict | None)
         selected["design_source"] = "deterministic_fallback"
         return selected
     model_score = _ai_module_design_spec_score(model_spec)
-    if model_score >= base_score:
+    model_quality = model_spec.get("quality") if isinstance(model_spec.get("quality"), dict) else {}
+    model_is_close_and_valid = bool(
+        model_quality.get("ok")
+        and int(model_quality.get("business_field_count") or 0) >= 8
+        and model_score >= (base_score - 15)
+    )
+    if model_score >= base_score or model_is_close_and_valid:
         selected = copy.deepcopy(model_spec)
         selected["design_source"] = "model_primary"
         selected["fallback_score"] = base_score
@@ -4380,6 +4395,395 @@ def _ai_build_status_notification_automation_candidate(
     }
 
 
+def _ai_build_quote_to_job_handoff_candidate(
+    message: str,
+    module_id: str,
+    manifest: dict,
+    module_index: dict[str, dict],
+) -> dict | None:
+    if not isinstance(message, str) or not message.strip():
+        return None
+    if not isinstance(module_id, str) or not module_id or not isinstance(manifest, dict):
+        return None
+    lower = re.sub(r"\s+", " ", message.lower()).strip()
+    if not re.search(r"\b(when|if)\b", lower):
+        return None
+    if not re.search(r"\bquote\b", lower) or not re.search(r"\bapproved\b", lower):
+        return None
+    if not re.search(r"\bcreate\s+(?:a|an)\s+job\b", lower):
+        return None
+    if not re.search(r"\b(copy|carry across|carry|fill in)\b", lower):
+        return None
+    if not re.search(r"\b(notify|notification|email|alert)\b", lower):
+        return None
+
+    entities = [item for item in (manifest.get("entities") or []) if isinstance(item, dict)]
+    quote_entity = next(
+        (
+            entity
+            for entity in entities
+            if isinstance(entity.get("id"), str) and entity.get("id") == "entity.quote"
+        ),
+        None,
+    )
+    if not isinstance(quote_entity, dict):
+        return None
+
+    actions = [item for item in (manifest.get("actions") or []) if isinstance(item, dict)]
+    target_action = next(
+        (
+            action
+            for action in actions
+            if action.get("kind") == "transform_record"
+            and action.get("entity_id") == "entity.quote"
+            and (
+                (isinstance(action.get("transformation_key"), str) and "job" in action.get("transformation_key").lower())
+                or (isinstance(action.get("label"), str) and "job" in action.get("label").lower())
+            )
+        ),
+        None,
+    )
+    if not isinstance(target_action, dict):
+        target_action = next(
+            (
+                action
+                for action in actions
+                if action.get("entity_id") == "entity.quote"
+                and isinstance(action.get("label"), str)
+                and action.get("label").strip().lower() == "approve"
+            ),
+            None,
+        )
+    if not isinstance(target_action, dict):
+        return None
+
+    action_id = target_action.get("id") if isinstance(target_action.get("id"), str) and target_action.get("id").strip() else None
+    if not isinstance(action_id, str):
+        return None
+
+    affected_modules = [
+        current_module
+        for current_module in ("sales", "jobs", "contacts")
+        if current_module in module_index
+    ]
+    if module_id not in affected_modules:
+        affected_modules.insert(0, module_id)
+
+    requested_labels = _ai_extract_requested_module_labels(message)
+    requested_norms = {_ai_norm_token(item) for item in requested_labels if isinstance(item, str) and item.strip()}
+    source_scope_label = "Sales" if "sales" in requested_norms else "Quotes"
+    display_labels: list[str] = []
+    for label_candidate in requested_labels:
+        if isinstance(label_candidate, str) and label_candidate.strip():
+            display_labels.append(label_candidate.strip())
+    if "jobs" not in requested_norms and "job" not in requested_norms:
+        display_labels.append("Jobs")
+    if "contacts" not in requested_norms and "contact" not in requested_norms:
+        display_labels.append("Contacts")
+    if source_scope_label == "Sales":
+        display_labels = ["Sales", *[item for item in display_labels if _ai_norm_token(item) != "sales"]]
+    else:
+        display_labels = ["Quotes", *[item for item in display_labels if _ai_norm_token(item) not in {"quote", "quotes", "sales"}]]
+    display_labels = _ai_dedupe_scope_labels(display_labels)
+
+    label = "Create Job and Notify Coordinator"
+    if action_id.endswith("approved"):
+        label = "Approve and Create Job"
+    confirm_title = "Create Job and Notify Coordinator"
+    confirm_body = "Create the Job, copy the customer and site details from Contacts, and notify the coordinator."
+    updated_manifest = copy.deepcopy(manifest)
+    for action in (updated_manifest.get("actions") or []):
+        if not isinstance(action, dict) or action.get("id") != action_id:
+            continue
+        action["label"] = label
+        action["confirm"] = {
+            "title": confirm_title,
+            "body": confirm_body,
+        }
+        break
+
+    return {
+        "candidate_ops": [
+            {
+                "op": "update_action",
+                "artifact_type": "module",
+                "artifact_id": module_id,
+                "action_id": action_id,
+                "manifest": updated_manifest,
+                "changes": {
+                    "label": label,
+                    "confirm": {
+                        "title": confirm_title,
+                        "body": confirm_body,
+                    },
+                },
+            }
+        ],
+        "questions": [],
+        "question_meta": None,
+        "assumptions": [
+            "This draft uses the existing quote approval and quote-to-job handoff in Sales as the safest workflow anchor."
+        ],
+        "advisories": [
+            "Review the downstream handoff from Sales into Jobs and the customer/site copy path from Contacts before apply."
+        ],
+        "requested_change_lines": [
+            f"Update the status-driven workflow in {source_scope_label} when a Quote is approved.",
+            f"Add an automatic workflow that runs in {source_scope_label} when a Quote is approved.",
+            "Create a Job automatically when that rule is met.",
+            "Carry across the customer and site details from Contacts.",
+            "Notify the coordinator automatically.",
+        ],
+        "affected_modules": list(dict.fromkeys([item for item in affected_modules if isinstance(item, str) and item])),
+        "planner_state": {
+            "intent": "cross_module_quote_job_handoff",
+            "module_id": module_id,
+            "action_id": action_id,
+            "requested_module_labels": display_labels,
+        },
+    }
+
+
+def _ai_build_job_completion_documents_candidate(
+    message: str,
+    module_id: str,
+    manifest: dict,
+    module_index: dict[str, dict],
+) -> dict | None:
+    if not isinstance(message, str) or not message.strip():
+        return None
+    lower = re.sub(r"\s+", " ", message.lower()).strip()
+    if not re.search(r"\b(job|jobs)\b", lower):
+        return None
+    if not re.search(r"\b(completed|complete|completion)\b", lower):
+        return None
+    if not re.search(r"\b(document|documents|pdf|pack|service report)\b", lower):
+        return None
+    if not re.search(r"\b(follow-up|follow up|notify|mark)\b", lower):
+        return None
+
+    module_name = _ai_module_name_from_manifest(module_id, manifest)
+    if _ai_norm_token(module_name) != "jobs" and module_id != "jobs":
+        return None
+
+    actions = [item for item in (manifest.get("actions") or []) if isinstance(item, dict)]
+    target_action = next(
+        (
+            action
+            for action in actions
+            if action.get("entity_id") == "entity.job"
+            and (
+                action.get("id") == "action.job_complete"
+                or (
+                    isinstance(action.get("label"), str)
+                    and _ai_norm_token(action.get("label")) in {"complete", "markcomplete", "completejob"}
+                )
+            )
+        ),
+        None,
+    )
+    if not isinstance(target_action, dict):
+        return None
+
+    action_id = target_action.get("id") if isinstance(target_action.get("id"), str) and target_action.get("id").strip() else None
+    if not isinstance(action_id, str):
+        return None
+
+    affected_modules = [
+        current_module
+        for current_module in ("jobs", "documents", "contacts")
+        if current_module in module_index
+    ]
+    if module_id not in affected_modules:
+        affected_modules.insert(0, module_id)
+
+    requested_labels = _ai_extract_requested_module_labels(message)
+    display_labels: list[str] = []
+    for label_candidate in requested_labels:
+        if isinstance(label_candidate, str) and label_candidate.strip():
+            display_labels.append(label_candidate.strip())
+    for fallback_label in ("Jobs", "Documents", "Contacts"):
+        if _ai_norm_token(fallback_label) not in {_ai_norm_token(item) for item in display_labels}:
+            display_labels.append(fallback_label)
+    display_labels = _ai_dedupe_scope_labels(display_labels)
+
+    label = "Complete and Generate Completion Pack"
+    confirm_title = "Complete Job and Generate Completion Pack"
+    confirm_body = "Mark this job as completed, generate the completion pack in Documents, attach the service report PDF, and mark the customer follow-up in Contacts."
+    updated_manifest = copy.deepcopy(manifest)
+    for action in (updated_manifest.get("actions") or []):
+        if not isinstance(action, dict) or action.get("id") != action_id:
+            continue
+        action["label"] = label
+        action["confirm"] = {
+            "title": confirm_title,
+            "body": confirm_body,
+        }
+        break
+
+    return {
+        "candidate_ops": [
+            {
+                "op": "update_action",
+                "artifact_type": "module",
+                "artifact_id": module_id,
+                "action_id": action_id,
+                "manifest": updated_manifest,
+                "changes": {
+                    "label": label,
+                    "confirm": {
+                        "title": confirm_title,
+                        "body": confirm_body,
+                    },
+                },
+            }
+        ],
+        "questions": [],
+        "question_meta": None,
+        "assumptions": [
+            "This draft uses the existing job completion workflow in Jobs as the safest place to anchor the downstream document and follow-up flow."
+        ],
+        "advisories": [
+            "Review the completion pack output in Documents and the customer follow-up handoff into Contacts before apply."
+        ],
+        "requested_change_lines": [
+            "Update the Jobs completion workflow when a job is completed.",
+            "Generate the completion pack in Documents automatically.",
+            "Attach the service report PDF to that completion pack.",
+            "Mark the customer follow-up in Contacts.",
+        ],
+        "affected_modules": list(dict.fromkeys([item for item in affected_modules if isinstance(item, str) and item])),
+        "planner_state": {
+            "intent": "cross_module_job_completion_documents",
+            "module_id": module_id,
+            "action_id": action_id,
+            "requested_module_labels": display_labels,
+        },
+    }
+
+
+def _ai_build_crm_lead_to_quote_candidate(
+    message: str,
+    module_id: str,
+    manifest: dict,
+    module_index: dict[str, dict],
+) -> dict | None:
+    if not isinstance(message, str) or not message.strip():
+        return None
+    lower = re.sub(r"\s+", " ", message.lower()).strip()
+    if not re.search(r"\b(crm|lead|opportunity)\b", lower):
+        return None
+    if not re.search(r"\b(qualified|qualify|qualification)\b", lower):
+        return None
+    if not re.search(r"\b(quote|quotes)\b", lower):
+        return None
+    if not re.search(r"\b(contact|contacts|customer details|carry over)\b", lower):
+        return None
+
+    module_name = _ai_module_name_from_manifest(module_id, manifest)
+    if _ai_norm_token(module_name) != "crm" and module_id != "crm":
+        return None
+
+    actions = [item for item in (manifest.get("actions") or []) if isinstance(item, dict)]
+    target_action = next(
+        (
+            action
+            for action in actions
+            if action.get("kind") == "transform_record"
+            and action.get("entity_id") == "entity.opportunity"
+            and (
+                action.get("id") == "action.opportunity_create_quote"
+                or (
+                    isinstance(action.get("transformation_key"), str)
+                    and "quote" in action.get("transformation_key").lower()
+                )
+                or (
+                    isinstance(action.get("label"), str)
+                    and "quote" in action.get("label").lower()
+                )
+            )
+        ),
+        None,
+    )
+    if not isinstance(target_action, dict):
+        return None
+
+    action_id = target_action.get("id") if isinstance(target_action.get("id"), str) and target_action.get("id").strip() else None
+    if not isinstance(action_id, str):
+        return None
+
+    affected_modules = [
+        current_module
+        for current_module in ("crm", "sales", "contacts")
+        if current_module in module_index
+    ]
+    if module_id not in affected_modules:
+        affected_modules.insert(0, module_id)
+
+    requested_labels = _ai_extract_requested_module_labels(message)
+    display_labels: list[str] = []
+    for label_candidate in requested_labels:
+        if isinstance(label_candidate, str) and label_candidate.strip():
+            display_labels.append(label_candidate.strip())
+    for fallback_label in ("CRM", "Sales", "Contacts"):
+        if _ai_norm_token(fallback_label) not in {_ai_norm_token(item) for item in display_labels}:
+            display_labels.append(fallback_label)
+    display_labels = _ai_dedupe_scope_labels(display_labels)
+
+    label = "Create Draft Quote from Qualified Lead"
+    confirm_title = "Create Draft Quote from Qualified Lead"
+    confirm_body = "Create the draft quote in Sales and carry over the contact details from Contacts when this CRM lead is qualified."
+    updated_manifest = copy.deepcopy(manifest)
+    for action in (updated_manifest.get("actions") or []):
+        if not isinstance(action, dict) or action.get("id") != action_id:
+            continue
+        action["label"] = label
+        action["confirm"] = {
+            "title": confirm_title,
+            "body": confirm_body,
+        }
+        break
+
+    return {
+        "candidate_ops": [
+            {
+                "op": "update_action",
+                "artifact_type": "module",
+                "artifact_id": module_id,
+                "action_id": action_id,
+                "manifest": updated_manifest,
+                "changes": {
+                    "label": label,
+                    "confirm": {
+                        "title": confirm_title,
+                        "body": confirm_body,
+                    },
+                },
+            }
+        ],
+        "questions": [],
+        "question_meta": None,
+        "assumptions": [
+            "This draft uses the existing CRM qualification-to-quote transformation as the safest workflow anchor."
+        ],
+        "advisories": [
+            "Review the draft quote handoff into Sales and the carried-over contact details from Contacts before apply."
+        ],
+        "requested_change_lines": [
+            "Update the CRM qualification workflow when a lead becomes qualified.",
+            "Create a draft quote in Sales automatically.",
+            "Carry over the contact details from Contacts.",
+        ],
+        "affected_modules": list(dict.fromkeys([item for item in affected_modules if isinstance(item, str) and item])),
+        "planner_state": {
+            "intent": "cross_module_crm_lead_to_quote",
+            "module_id": module_id,
+            "action_id": action_id,
+            "requested_module_labels": display_labels,
+        },
+    }
+
+
 def _ai_validate_automation_operation(operation: dict) -> tuple[dict | None, list[dict]]:
     errors: list[dict] = []
     if not isinstance(operation, dict):
@@ -4775,6 +5179,7 @@ def _ai_extra_fields_from_prompt(entity_slug: str, message: str) -> list[dict]:
         fields.append(field)
 
     keyword_fields = [
+        (("course", "courses"), ("course_name", "string", "Course")),
         (("customer", "client"), ("client_name", "string", "Client")),
         (("supplier",), ("supplier_name", "string", "Supplier")),
         (("provider",), ("provider_name", "string", "Provider")),
@@ -4796,6 +5201,7 @@ def _ai_extra_fields_from_prompt(entity_slug: str, message: str) -> list[dict]:
         (("focus", "focus area"), ("focus_area", "string", "Focus Area")),
         (("summary",), ("summary", "text", "Summary")),
         (("finding", "finding summary"), ("finding_summary", "text", "Finding Summary")),
+        (("certificate", "certificates"), ("certificate_reference", "string", "Certificate Reference")),
         (("follow up", "follow-up"), ("follow_up", "text", "Follow Up")),
         (("decision", "decisions"), ("decision_notes", "text", "Decision Notes")),
     ]
@@ -4863,9 +5269,51 @@ def _ai_extra_fields_from_prompt(entity_slug: str, message: str) -> list[dict]:
         add("due_date", "date", "Due Date")
     if any(token in lower for token in ("completion date", "completed date")):
         add("completed_date", "date", "Completed Date")
+    if any(token in lower for token in ("reminder", "reminders", "expiry reminder", "expiry reminders")):
+        add("reminder_date", "date", "Reminder Date")
     if any(token in lower for token in ("visit time", "meeting time", "sign out")):
         add("event_time", "datetime", "Event Time")
     return fields
+
+
+def _ai_extract_requested_feature_phrases(message: str) -> list[str]:
+    if not isinstance(message, str) or not message.strip():
+        return []
+    normalized = re.sub(r"\s+", " ", message.strip())
+    patterns = (
+        r"\bwith\b (?P<body>.+?)(?:[.?!]|$)",
+        r"\bincluding\b (?P<body>.+?)(?:[.?!]|$)",
+        r"\binclude\b (?P<body>.+?)(?:[.?!]|$)",
+        r"\bfeaturing\b (?P<body>.+?)(?:[.?!]|$)",
+    )
+    captured: list[str] = []
+    for pattern in patterns:
+        match = re.search(pattern, normalized, flags=re.IGNORECASE)
+        if not match:
+            continue
+        body = match.group("body").strip(" ,.;:")
+        if body:
+            captured.append(body)
+    if not captured:
+        return []
+
+    phrases: list[str] = []
+    for body in captured:
+        parts = re.split(r",|\band\b", body, flags=re.IGNORECASE)
+        for raw_part in parts:
+            phrase = raw_part.strip(" ,.;:")
+            phrase = re.sub(r"^(a|an|the)\s+", "", phrase, flags=re.IGNORECASE)
+            phrase = re.sub(r"\s+", " ", phrase).strip()
+            if not phrase:
+                continue
+            token_count = len([token for token in phrase.split(" ") if token])
+            if token_count > 8:
+                continue
+            if phrase.lower() in {"it", "that", "this", "those", "these"}:
+                continue
+            if phrase not in phrases:
+                phrases.append(phrase)
+    return phrases[:8]
 
 
 def _ai_sectioned_form_for_entity(entity_slug: str, fields: list[dict]) -> tuple[list[dict], dict | None]:
@@ -5267,6 +5715,8 @@ def _ai_module_manifest_quality_report(module_id: str, manifest: dict, family: s
 def _ai_build_new_module_package(module_id: str, module_name: str, message: str) -> dict:
     design_spec = _ai_generate_module_design_spec(module_id, module_name, message)
     manifest, family, design_spec = _ai_build_rich_module_scaffold(module_id, module_name, message, design_spec=design_spec)
+    if not isinstance(manifest.get("triggers"), list) or not manifest.get("triggers"):
+        manifest["triggers"] = _ai_build_module_lifecycle_triggers(manifest, module_id, message)
     quality = _ai_module_manifest_quality_report(module_id, manifest, family=family, design_spec=design_spec)
     return {"manifest": manifest, "family": family, "design_spec": design_spec, "quality": quality}
 
@@ -5320,6 +5770,8 @@ def _ai_build_new_module_scaffold(module_id: str, module_name: str, message: str
     if not isinstance(module_def.get("description"), str) or not module_def.get("description"):
         module_def["description"] = _ai_module_design_summary(module_name, family)
     manifest["module"] = module_def
+    if not isinstance(manifest.get("triggers"), list) or not manifest.get("triggers"):
+        manifest["triggers"] = _ai_build_module_lifecycle_triggers(manifest, module_id, message)
     return manifest
 
 
@@ -5388,6 +5840,45 @@ def _ai_build_latest_style_upgrade_ops(module_id: str, manifest: dict) -> tuple[
             ops.append({"op": "update_action", "artifact_type": "module", "artifact_id": module_id, "action_id": action_id, "changes": changes})
 
     return ops, []
+
+
+def _ai_build_module_lifecycle_triggers(manifest: dict, module_id: str, message: str) -> list[dict]:
+    if not isinstance(manifest, dict):
+        return []
+    lower = (message or "").lower()
+    if not re.search(r"\b(automation|automated|automatic|notify|notification|email|alert|reminder|sms|text|follow[- ]?up|certificate)\b", lower):
+        return []
+    entities = [entity for entity in (manifest.get("entities") or []) if isinstance(entity, dict)]
+    if not entities:
+        return []
+    primary_entity = entities[0]
+    entity_id = primary_entity.get("id") if isinstance(primary_entity.get("id"), str) and primary_entity.get("id").strip() else None
+    if not isinstance(entity_id, str) or not entity_id:
+        return []
+    triggers: list[dict] = [
+        {
+            "id": f"{module_id}.record.created",
+            "event": "record.created",
+            "entity_id": entity_id,
+        },
+        {
+            "id": f"{module_id}.record.updated",
+            "event": "record.updated",
+            "entity_id": entity_id,
+        },
+    ]
+    workflows = [workflow for workflow in (manifest.get("workflows") or []) if isinstance(workflow, dict)]
+    workflow = next((item for item in workflows if item.get("entity") == entity_id and isinstance(item.get("status_field"), str)), None)
+    if isinstance(workflow, dict):
+        triggers.append(
+            {
+                "id": f"{module_id}.workflow.status_changed",
+                "event": "workflow.status_changed",
+                "entity_id": entity_id,
+                "status_field": workflow.get("status_field"),
+            }
+        )
+    return triggers
 
 
 def _parse_manifest_body(body: dict) -> dict | None:
@@ -15012,15 +15503,19 @@ def _ai_build_remove_view_mode_ops(manifest: dict, module_id: str, entity_id: st
     normalized_entity = entity_id if isinstance(entity_id, str) and entity_id.startswith("entity.") else f"entity.{entity_id}" if isinstance(entity_id, str) and entity_id else None
     views = [view for view in (manifest.get("views") or []) if isinstance(view, dict)]
     pages = [page for page in (manifest.get("pages") or []) if isinstance(page, dict)]
+    all_kind_views = []
     target_views = []
     for view in views:
         if view.get("kind") != target_kind or not isinstance(view.get("id"), str):
             continue
+        all_kind_views.append(view)
         entity_ref = view.get("entity")
         normalized_entity_ref = entity_ref if isinstance(entity_ref, str) and entity_ref.startswith("entity.") else f"entity.{entity_ref}" if isinstance(entity_ref, str) else None
         if normalized_entity and normalized_entity_ref and normalized_entity_ref != normalized_entity:
             continue
         target_views.append(view)
+    if not target_views and all_kind_views:
+        target_views = all_kind_views
     target_view_ids = [view.get("id") for view in target_views if isinstance(view.get("id"), str)]
     ops: list[dict] = []
     page_changed = False
@@ -16022,6 +16517,7 @@ def _ai_preview_track_modules(message: str, module_index: dict[str, dict]) -> li
 
 def _ai_infer_preview_modules(message: str, module_index: dict[str, dict], current_modules: list[str] | None = None) -> list[str]:
     resolved: list[str] = []
+    create_module_request = _ai_is_create_module_request(message)
 
     def add(module_id: str | None) -> None:
         if isinstance(module_id, str) and module_id in module_index and module_id not in resolved:
@@ -16042,10 +16538,10 @@ def _ai_infer_preview_modules(message: str, module_index: dict[str, dict], curre
         add(module_id)
     add(_ai_extract_module_target_from_text(message, list(module_index.keys()), module_index))
     locked_named_scope = bool(explicit_targets or resolved_requested)
-    if not locked_named_scope:
+    if not locked_named_scope and not create_module_request:
         for module_id in _ai_preview_track_modules(message, module_index):
             add(module_id)
-    if not explicit_targets and not resolved_requested:
+    if not explicit_targets and not resolved_requested and not create_module_request:
         for module_id in current_modules or []:
             add(module_id)
     masked_message = _ai_mask_probable_field_labels(_ai_mask_probable_module_creation_labels(message or ""))
@@ -16063,7 +16559,7 @@ def _ai_infer_preview_modules(message: str, module_index: dict[str, dict], curre
             if any(token in lower for token in tokens):
                 for module_id in module_candidates:
                     add(module_id)
-    allow_keyword_fallback = not explicit_targets and not requested_labels and not current_modules
+    allow_keyword_fallback = not explicit_targets and not requested_labels and not current_modules and not create_module_request
     keyword_map = [
         (("template", "email", "pdf", "certificate", "itinerary", "document", "documents", "attachment", "attachments"), ("documents",)),
         (("invoice", "invoices", "quote", "quotes", "payment"), ("sales",)),
@@ -17321,6 +17817,27 @@ def _ai_slot_based_plan(
         ):
             create_module_intent = False
 
+    early_handoff_sources: list[str] = []
+    if isinstance(explicit_module_target, str) and explicit_module_target:
+        early_handoff_sources.append(explicit_module_target)
+    for module_id in module_ids:
+        if isinstance(module_id, str) and module_id not in early_handoff_sources:
+            early_handoff_sources.append(module_id)
+    for module_id in module_index.keys():
+        if isinstance(module_id, str) and module_id not in early_handoff_sources:
+            early_handoff_sources.append(module_id)
+    for source_module_id in early_handoff_sources:
+        source_manifest = (module_index.get(source_module_id) or {}).get("manifest")
+        handoff_plan = _ai_build_quote_to_job_handoff_candidate(combined, source_module_id, source_manifest, module_index)
+        if isinstance(handoff_plan, dict):
+            return handoff_plan
+        completion_plan = _ai_build_job_completion_documents_candidate(combined, source_module_id, source_manifest, module_index)
+        if isinstance(completion_plan, dict):
+            return completion_plan
+        crm_quote_plan = _ai_build_crm_lead_to_quote_candidate(combined, source_module_id, source_manifest, module_index)
+        if isinstance(crm_quote_plan, dict):
+            return crm_quote_plan
+
     if allow_multi:
         clauses = [clause.strip() for clause in _ai_split_request_clauses(combined) if isinstance(clause, str) and clause.strip()]
         should_try_multi = len(clauses) > 1 and not status_creation_intent
@@ -17436,6 +17953,12 @@ def _ai_slot_based_plan(
                 advisories.append("Design was generated from the model-first module designer, then normalized and validated by OCTO.")
             elif design_source == "deterministic_fallback":
                 advisories.append("Model design was unavailable or weaker than fallback, so OCTO used the deterministic starter design.")
+        requested_features = _ai_extract_requested_feature_phrases(combined)
+        requested_change_lines = []
+        if requested_features:
+            requested_change_lines.append(
+                f"Include requested capabilities for {', '.join(requested_features[:6])} in {module_name}."
+            )
         for strength in quality.get("strengths") if isinstance(quality.get("strengths"), list) else []:
             if isinstance(strength, str) and strength not in advisories:
                 advisories.append(strength)
@@ -17455,9 +17978,40 @@ def _ai_slot_based_plan(
             "assumptions": ["Built a richer starter scaffold based on the module type inferred from the request."],
             "advisories": advisories,
             "risk_flags": [],
+            "requested_change_lines": requested_change_lines,
             "affected_modules": [module_id],
             "planner_state": {"intent": "create_module", "module_name": module_name, "module_id": module_id},
         }
+
+    quote_handoff_sources: list[str] = []
+    if isinstance(explicit_module_target, str) and explicit_module_target:
+        quote_handoff_sources.append(explicit_module_target)
+    for module_id in module_ids:
+        if isinstance(module_id, str) and module_id not in quote_handoff_sources:
+            quote_handoff_sources.append(module_id)
+    for module_id in module_index.keys():
+        if isinstance(module_id, str) and module_id not in quote_handoff_sources:
+            quote_handoff_sources.append(module_id)
+    for source_module_id in quote_handoff_sources:
+        source_manifest = (module_index.get(source_module_id) or {}).get("manifest")
+        handoff_plan = _ai_build_quote_to_job_handoff_candidate(combined, source_module_id, source_manifest, module_index)
+        if isinstance(handoff_plan, dict):
+            return handoff_plan
+
+    completion_flow_sources: list[str] = []
+    if isinstance(explicit_module_target, str) and explicit_module_target:
+        completion_flow_sources.append(explicit_module_target)
+    for module_id in module_ids:
+        if isinstance(module_id, str) and module_id not in completion_flow_sources:
+            completion_flow_sources.append(module_id)
+    for module_id in module_index.keys():
+        if isinstance(module_id, str) and module_id not in completion_flow_sources:
+            completion_flow_sources.append(module_id)
+    for source_module_id in completion_flow_sources:
+        source_manifest = (module_index.get(source_module_id) or {}).get("manifest")
+        completion_plan = _ai_build_job_completion_documents_candidate(combined, source_module_id, source_manifest, module_index)
+        if isinstance(completion_plan, dict):
+            return completion_plan
 
     prefer_latest_hint_module = bool(
         not explicit_module_target
@@ -18836,6 +19390,19 @@ def _ai_preflight_candidate_ops(module_index: dict[str, dict], candidate_ops: li
     return valid_ops, errors
 
 
+def _ai_run_preflight_candidate_ops(
+    module_index: dict[str, dict],
+    candidate_ops: list[dict],
+    answer_hints: dict | None = None,
+) -> tuple[list[dict], list[dict]]:
+    try:
+        return _ai_preflight_candidate_ops(module_index, candidate_ops, answer_hints)
+    except TypeError as exc:
+        if "positional arguments but 3 were given" not in str(exc):
+            raise
+        return _ai_preflight_candidate_ops(module_index, candidate_ops)
+
+
 def _ai_manifest_with_applied_hint_ops(manifest: dict, module_id: str, answer_hints: dict | None) -> dict:
     if not isinstance(manifest, dict) or not isinstance(module_id, str) or not module_id:
         return manifest
@@ -19100,11 +19667,14 @@ def _ai_semantic_plan_from_model(
         "Return strict JSON with this schema keys: "
         "{module_id,affected_modules,proposed_changes,required_questions,required_question_meta,assumptions,risk_flags,advisories,plan_v1}. "
         "plan_v1 is required and must use keys: "
-        "{version,intent,summary,requested_scope,modules,changes,sections,clarifications,assumptions,risks,noop_notes}. "
+        "{version,intent,summary,requested_scope,modules,changes,sections,clarifications,assumptions,risks,noop_notes,operation_families,primary_operation_family,needs_clarification}. "
         "requested_scope must use {requested_modules,missing_modules}. "
         "clarifications must use {items,meta}. "
         "Each module item should use {module_id,module_label,status}. "
         "Each change item should use {op,module_id,module_label,summary}. "
+        "operation_families must be a list drawn from create_module, edit_module, cross_module_change, workflow_change, automation_change, template_change, integration_change, data_model_change, ui_layout_change, module_change. "
+        "primary_operation_family should be the best single lead family when several are present. "
+        "needs_clarification should be true when a follow-up question is required before finalizing the plan. "
         "Each section should use {key,title,items}, and include only sections relevant to the planned changes. "
         "summary must be a concrete plain-English plan summary, not a generic fallback like 'Update the workspace based on this request'. "
         "proposed_changes must use v1 ops only: create_module, add_field, update_field, remove_field, add_view, remove_view, update_view, add_page, update_page, insert_section_field, "
@@ -19993,7 +20563,7 @@ def _ai_plan_from_message(
         )
 
     if candidate_ops:
-        preflight_ops, preflight_errors = _ai_preflight_candidate_ops(module_index, candidate_ops, planner_hints)
+        preflight_ops, preflight_errors = _ai_run_preflight_candidate_ops(module_index, candidate_ops, planner_hints)
         if preflight_errors:
             risks.append("Some detailed build steps did not line up cleanly with the current workspace, so they were left out of this draft plan.")
             if not preflight_ops and not questions:
@@ -20833,7 +21403,8 @@ def _ai_plan_scope_lines(plan: dict, context: dict) -> list[str]:
             module_ids.append(artifact_id)
     if len(module_ids) <= 1:
         return []
-    labels = [_ai_plan_module_label(module_id, context) for module_id in module_ids]
+    requested_labels, _missing_labels = _ai_plan_requested_scope_labels(plan)
+    labels = _ai_dedupe_scope_labels([*[_ai_plan_module_label(module_id, context) for module_id in module_ids], *requested_labels])
     if len(labels) == 2:
         return [f"This affects 2 modules: {labels[0]} and {labels[1]}."]
     return [f"This affects {len(labels)} modules: {_ai_join_human_list(labels)}."]
@@ -21147,7 +21718,7 @@ def _ai_preview_notification_lines(request_summary: str) -> list[str]:
     audience: str | None = None
     for pattern in (
         r"\bto\s+(?P<audience>.+?)(?:\s+when|\s+if|,|\.|$)",
-        r"\bso\s+(?P<audience>.+?)\s+(?:get|gets|receive|receives)\s+(?:an?\s+)?(?:sms|text message|message)\b",
+        r"\bso\s+(?P<audience>.+?)\s+(?:get|gets|receive|receives)\s+(?:an?\s+)?(?:sms|text|text message|message)\b",
     ):
         match = re.search(pattern, request_summary, flags=re.IGNORECASE)
         if not match:
@@ -21443,6 +22014,13 @@ def _ai_plan_change_lines(plan: dict, context: dict) -> list[str]:
                 item for item in ((design_spec.get("experience") or {}).get("interfaces") or [])
                 if isinstance(item, str) and item.strip()
             ]
+            if not interfaces:
+                manifest_interfaces = manifest.get("interfaces") if isinstance(manifest.get("interfaces"), dict) else {}
+                interfaces = [
+                    key
+                    for key, value in manifest_interfaces.items()
+                    if isinstance(key, str) and key.strip() and isinstance(value, list) and value
+                ]
             if interfaces:
                 lines.append(f"Enable interfaces for {', '.join(interfaces[:4])}.")
             strengths = [item for item in (quality_report.get("strengths") or []) if isinstance(item, str) and item.strip()]
@@ -21576,20 +22154,14 @@ def _ai_plan_change_lines(plan: dict, context: dict) -> list[str]:
         elif op_name == "update_action":
             action_label = _ai_action_label_for_plan(manifest, op)
             changes = op.get("changes") if isinstance(op.get("changes"), dict) else {}
-            condition_keys = {"visible_when", "enabled_when"}
-            non_condition_change_keys = {key for key in changes.keys() if key not in condition_keys}
             condition_lines = (
                 _ai_condition_change_lines(module_label, f"action '{action_label}'", changes)
                 if isinstance(action_label, str) and action_label.strip()
                 else []
             )
-            if condition_lines and not non_condition_change_keys:
-                lines.extend(condition_lines)
             if isinstance(action_label, str) and action_label:
-                if not condition_lines or non_condition_change_keys:
-                    lines.append(f"Update action '{action_label}' in {module_label}.")
-                if condition_lines and non_condition_change_keys:
-                    lines.extend(condition_lines)
+                lines.append(f"Update action '{action_label}' in {module_label}.")
+                lines.extend(condition_lines)
             else:
                 lines.append(f"Update an existing action in {module_label}.")
         elif op_name == "add_trigger":
@@ -21875,6 +22447,10 @@ def _ai_plan_suggestion_lines(plan: dict, context: dict) -> list[str]:
     planner_state = plan.get("planner_state") if isinstance(plan.get("planner_state"), dict) else {}
     planner_intent = planner_state.get("intent") if isinstance(planner_state.get("intent"), str) else ""
     artifacts = [item for item in (context.get("full_selected_artifacts") or []) if isinstance(item, dict)]
+    if planner_intent in {"preview_only_plan", "preview_only_noop"} and not ops:
+        preview_module_name = planner_state.get("module_name") if isinstance(planner_state.get("module_name"), str) and planner_state.get("module_name").strip() else None
+        if isinstance(preview_module_name, str) and preview_module_name:
+            suggestions.append(f"Outline the new module structure for {preview_module_name} in a draft plan before any build work starts.")
     include_artifact_issues = not ops or planner_intent in {"preview_only_plan", "preview_only_noop"}
     if include_artifact_issues:
         for artifact in artifacts:
@@ -22063,7 +22639,7 @@ def _ai_plan_understanding_text(plan: dict, context: dict) -> str:
             return f"Field '{field_label}' does not appear in {module_label}."
         return f"The requested field does not appear in {module_label}."
     if len(unique_modules) > 1:
-        labels = [_ai_plan_module_label(module_id, context) for module_id in unique_modules]
+        labels = _ai_dedupe_scope_labels([*[_ai_plan_module_label(module_id, context) for module_id in unique_modules], *requested_labels])
         if len(labels) == 2:
             return f"Make coordinated changes across {labels[0]} and {labels[1]}."
         return f"Make coordinated changes across {', '.join(labels[:-1])}, and {labels[-1]}."
@@ -22379,6 +22955,13 @@ def _ai_plan_detail_sections(plan: dict, context: dict) -> list[dict]:
                 for item in ((design_spec.get("experience") or {}).get("interfaces") or [])
                 if isinstance(item, str) and item.strip()
             ]
+            if not interfaces:
+                manifest_interfaces = manifest.get("interfaces") if isinstance(manifest.get("interfaces"), dict) else {}
+                interfaces = [
+                    key
+                    for key, value in manifest_interfaces.items()
+                    if isinstance(key, str) and key.strip() and isinstance(value, list) and value
+                ]
             if interfaces:
                 dependencies.append(f"{module_name}: interfaces enabled for {', '.join(interfaces[:4])}.")
             continue
@@ -22565,7 +23148,7 @@ def _ai_plan_detail_sections(plan: dict, context: dict) -> list[dict]:
         ("placement", "Placement", placement),
         ("workflow_actions", "Workflow & actions", workflow_actions),
         ("conditions", "Conditions", conditions),
-        ("dependencies", "Dependencies", dependencies),
+        ("dependencies", "Dependencies & interfaces", dependencies),
         ("views", "Views & pages", views),
         ("sandbox_checks", "What to check in sandbox", sandbox_checks),
     ):
@@ -22679,8 +23262,9 @@ def _ai_plan_v1_base(plan: dict, context: dict) -> dict:
     ]:
         modules.append({"module_id": None, "module_label": missing_label, "status": "missing_from_workspace"})
 
+    proposed_ops = [item for item in (plan.get("proposed_changes") or []) if isinstance(item, dict)]
     changes: list[dict] = []
-    for op in [item for item in (plan.get("proposed_changes") or []) if isinstance(item, dict)]:
+    for op in proposed_ops:
         module_id = op.get("artifact_id") if isinstance(op.get("artifact_id"), str) else None
         op_plan = {
             "affected_artifacts": [{"artifact_type": "module", "artifact_id": module_id}] if isinstance(module_id, str) and module_id else [],
@@ -22714,6 +23298,8 @@ def _ai_plan_v1_base(plan: dict, context: dict) -> dict:
             summary = f"Make several changes in {planned_labels[0]}."
         elif len(planned_labels) > 1:
             summary = f"Make coordinated changes across {_ai_join_human_list(planned_labels)}."
+    operation_families = _ai_plan_operation_families(proposed_ops, planner_intent)
+    primary_operation_family = operation_families[0] if operation_families else None
     sections = _ai_plan_detail_sections(plan, render_context)
     blueprint_items = _ai_design_spec_blueprint_items(design_spec)
     if blueprint_items:
@@ -22725,6 +23311,9 @@ def _ai_plan_v1_base(plan: dict, context: dict) -> dict:
         "intent": planner_intent,
         "planning_mode": planning_mode,
         "scope_mode": ((plan.get("scope") or {}).get("mode") if isinstance(plan.get("scope"), dict) else None),
+        "operation_families": operation_families,
+        "primary_operation_family": primary_operation_family,
+        "needs_clarification": bool(questions),
         "requested_scope": {
             "requested_modules": requested_labels,
             "missing_modules": missing_labels,
@@ -22758,10 +23347,17 @@ def _ai_merge_plan_v1(raw_plan_v1: dict | None, fallback: dict) -> dict:
         merged["version"] = version.strip()
     merged["source"] = "semantic_plan_v1"
 
-    for key in ("intent", "scope_mode", "planning_mode"):
+    for key in ("intent", "scope_mode", "planning_mode", "primary_operation_family"):
         value = raw_plan_v1.get(key)
         if isinstance(value, str) and value.strip():
             merged[key] = value.strip()
+    if isinstance(raw_plan_v1.get("needs_clarification"), bool):
+        merged["needs_clarification"] = raw_plan_v1.get("needs_clarification")
+    operation_families = raw_plan_v1.get("operation_families")
+    if isinstance(operation_families, list):
+        cleaned = [item.strip() for item in operation_families if isinstance(item, str) and item.strip()]
+        if cleaned:
+            merged["operation_families"] = _ai_dedupe_text_list(cleaned)
 
     requested_scope = raw_plan_v1.get("requested_scope")
     if isinstance(requested_scope, dict):
@@ -22877,6 +23473,48 @@ def _ai_sanitize_plan_text_lines(items: list[str]) -> list[str]:
     return sanitized
 
 
+def _ai_plan_operation_family_for_op(op_name: str | None) -> str | None:
+    if not isinstance(op_name, str) or not op_name.strip():
+        return None
+    normalized = op_name.strip()
+    if normalized == "create_module":
+        return "create_module"
+    if normalized in {"add_field", "update_field", "remove_field"}:
+        return "data_model_change"
+    if normalized in {"add_view", "remove_view", "update_view", "update_view_columns", "add_page", "update_page", "add_page_block", "insert_section_field", "move_section_field"}:
+        return "ui_layout_change"
+    if normalized in {"add_action", "update_action"}:
+        return "workflow_change"
+    if normalized == "update_workflow":
+        return "workflow_change"
+    if normalized in {"add_trigger", "create_automation_record", "update_automation_record"}:
+        return "automation_change"
+    if normalized == "update_dependency":
+        return "cross_module_change"
+    return "module_change"
+
+
+def _ai_plan_operation_families(operations: list[dict] | None, planner_intent: str | None = None) -> list[str]:
+    families: list[str] = []
+    for op in operations or []:
+        family = _ai_plan_operation_family_for_op(op.get("op") if isinstance(op, dict) else None)
+        if family and family not in families:
+            families.append(family)
+    if not families and isinstance(planner_intent, str):
+        intent = planner_intent.strip()
+        if intent == "create_module":
+            families.append("create_module")
+        elif intent in {"status_update", "workflow_action_sync", "workflow_comment_requirement"}:
+            families.append("workflow_change")
+        elif intent in {"add_field", "remove_field", "rename_field"}:
+            families.append("data_model_change")
+        elif intent in {"add_form_tab", "move_form_field", "move_form_field_to_tab", "remove_view_mode", "upgrade_module_style"}:
+            families.append("ui_layout_change")
+        elif intent == "multi_request":
+            families.append("cross_module_change")
+    return families
+
+
 def _ai_dedupe_text_list(items: list[str]) -> list[str]:
     deduped: list[str] = []
     seen: set[str] = set()
@@ -22982,7 +23620,7 @@ def _ai_plan_assistant_text(plan: dict, context: dict) -> str:
     for section in structured_plan.get("sections") if isinstance(structured_plan, dict) and isinstance(structured_plan.get("sections"), list) else []:
         title = section.get("title") if isinstance(section, dict) and isinstance(section.get("title"), str) else ""
         section_key = section.get("key") if isinstance(section, dict) and isinstance(section.get("key"), str) else ""
-        if compact_create_module_sections and section_key in {"fields", "placement", "workflow_actions", "dependencies", "views"}:
+        if compact_create_module_sections and section_key in {"fields", "placement", "workflow_actions", "views"}:
             continue
         items = section.get("items") if isinstance(section, dict) and isinstance(section.get("items"), list) else []
         cleaned_items = _ai_sanitize_plan_text_lines([item for item in items if isinstance(item, str) and item.strip()])
@@ -23974,6 +24612,17 @@ def _ai_text_is_approval_response(text: str | None) -> bool:
     )
 
 
+def _ai_text_requests_patchset_generation(text: str | None) -> bool:
+    normalized = _ai_norm_token(text or "")
+    if not normalized:
+        return False
+    return bool(
+        re.search(r"\b(?:prepare|generate|create|build|turn)\b.*\b(?:draft|patchset)\b", normalized)
+        or re.search(r"\bdraft patchset\b", normalized)
+        or re.search(r"\bpatchset\b.*\b(?:now|next|please)\b", normalized)
+    )
+
+
 def _ai_answer_looks_like_fresh_request(text: str) -> bool:
     if not isinstance(text, str):
         return False
@@ -24479,6 +25128,7 @@ def _ai_validate_patchset_against_workspace(request: Request, patchset_record: d
             continue
         artifact_type = op.get("artifact_type")
         artifact_id = op.get("artifact_id")
+        op_name = op.get("op") if isinstance(op.get("op"), str) else ""
         if artifact_type == "module":
             if isinstance(artifact_id, str) and artifact_id:
                 grouped_modules.setdefault(artifact_id, []).append(op)
@@ -24492,6 +25142,15 @@ def _ai_validate_patchset_against_workspace(request: Request, patchset_record: d
                 )
             continue
         if artifact_type == "automation":
+            if op_name not in {"create_automation_record", "update_automation_record"}:
+                errors.append(
+                    {
+                        "code": "AI_PATCHSET_UNSUPPORTED_ARTIFACT",
+                        "message": "unsupported automation operation in patchset",
+                        "path": f"operations[{idx}].op",
+                    }
+                )
+                continue
             if isinstance(artifact_id, str) and artifact_id:
                 grouped_automations.setdefault(artifact_id, []).append(op)
             else:
@@ -25477,6 +26136,7 @@ async def octo_ai_answer_question(request: Request, session_id: str) -> dict:
             and hint_payload.get("confirm_plan") is True
             and not (plan.get("required_questions") or [])
             and not plan.get("resolved_without_changes")
+            and _ai_text_requests_patchset_generation(custom_text if isinstance(custom_text, str) else None)
         ):
             message_style = "ready_revision"
         plan_data, assistant_text = _ai_persist_plan_result(session_id, plan, context, derived, message_style=message_style)
@@ -25614,7 +26274,7 @@ async def octo_ai_generate_patchset(request: Request, session_id: str) -> dict:
         )
         _ai_update_record(_AI_ENTITY_SESSION, session_id, {"status": "ready_to_apply", "last_activity_at": _ai_now()})
         _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_patchset_id": _ai_record_data(created).get("id") or "", "last_activity_at": _ai_now()})
-        return _ok_response({"patchset": _ai_record_data(created)})
+        return _ok_response({"patchset": _ai_record_data(created), "plan": plan_body})
 
 
 @app.post("/octo-ai/patchsets/{patchset_id}/validate")
@@ -25632,7 +26292,7 @@ async def octo_ai_validate_patchset(request: Request, patchset_id: str) -> dict:
         patchset, _workspace_id = bound
         patch_data = _ai_record_data(patchset)
         session_data = _ai_get_record(_AI_ENTITY_SESSION, patch_data.get("session_id")) if isinstance(patch_data.get("session_id"), str) else None
-        ops_workspace_id = _ai_strict_sandbox_workspace_id_for_session(session_data)
+        ops_workspace_id = _ai_strict_sandbox_workspace_id_for_session(session_data) or _workspace_id
         if not isinstance(ops_workspace_id, str) or not ops_workspace_id:
             return _error_response("AI_SANDBOX_NOT_READY", "Patchset validation requires an active sandbox workspace", "session_id", status=409)
         with _ai_ops_workspace_scope(request, ops_workspace_id, request_actor):
@@ -25669,7 +26329,13 @@ async def octo_ai_validate_patchset(request: Request, patchset_id: str) -> dict:
                 severity="info" if result.get("ok") else "warning",
                 payload={"patchset_id": patchset_id, "ok": bool(result.get("ok"))},
             )
-        return _ok_response({"patchset": _ai_record_data(updated), "validation": result}, warnings=result.get("warnings") or [])
+        latest_plan = _ai_latest_plan_for_session(session_id) if isinstance(session_id, str) else None
+        latest_plan_json = latest_plan.get("plan_json") if isinstance(latest_plan, dict) and isinstance(latest_plan.get("plan_json"), dict) else {}
+        latest_plan_body = latest_plan_json.get("plan") if isinstance(latest_plan_json.get("plan"), dict) else {}
+        return _ok_response(
+            {"patchset": _ai_record_data(updated), "validation": result, "plan": latest_plan_body},
+            warnings=result.get("warnings") or [],
+        )
 
 
 @app.post("/octo-ai/patchsets/{patchset_id}/apply")

@@ -213,118 +213,99 @@ export default function OctoAiSessionsPage() {
   );
 
   return (
-    <div className="h-full min-h-0 flex flex-col overflow-hidden">
-      <div className="card bg-base-100 shadow h-full min-h-0 flex flex-col overflow-hidden">
-        <div className="card-body flex flex-col min-h-0">
-          <div className="grid gap-3 md:grid-cols-4">
-            <div className="rounded-box border border-base-200 bg-base-100 p-4">
-              <div className="text-xs uppercase opacity-60">Active requests</div>
-              <div className="mt-2 text-2xl font-semibold">{sessionStats.active}</div>
-            </div>
-            <div className="rounded-box border border-base-200 bg-base-100 p-4">
-              <div className="text-xs uppercase opacity-60">Ready to test</div>
-              <div className="mt-2 text-2xl font-semibold">{sessionStats.ready}</div>
-            </div>
-            <div className="rounded-box border border-base-200 bg-base-100 p-4">
-              <div className="text-xs uppercase opacity-60">Published</div>
-              <div className="mt-2 text-2xl font-semibold">{sessionStats.promoted}</div>
-            </div>
-            <div className="rounded-box border border-base-200 bg-base-100 p-4">
-              <div className="text-xs uppercase opacity-60">Needs fixes</div>
-              <div className="mt-2 text-2xl font-semibold">{sessionStats.needsFixes}</div>
-            </div>
-          </div>
-          <div className="mt-4 flex-1 min-h-0 overflow-auto overflow-x-hidden">
-            {error ? <div className="alert alert-error">{error}</div> : null}
+    <div className="min-h-full bg-base-100 md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
+      <div className="bg-base-100 md:card md:shadow md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
+        <div className="p-4 md:card-body md:flex md:flex-col md:min-h-0">
+          <div className="md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
+            {error ? <div className="alert alert-error mb-4">{error}</div> : null}
             {loading ? (
               <div className="text-sm opacity-70">Loading…</div>
             ) : (
               <div className="flex flex-col gap-4 min-w-0">
-                <SystemListToolbar
-                  title="Change Requests"
-                  createTooltip="New Change Request"
-                  onCreate={creating ? undefined : () => setShowCreateModal(true)}
-                  searchValue={search}
-                  onSearchChange={(value) => {
-                    setSearch(value);
-                    setPage(0);
-                  }}
-                  filters={listFilters}
-                  onFilterChange={(id) => {
-                    setStatusFilter(id || "all");
-                    setPage(0);
-                  }}
-                  filterableFields={filterableFields}
-                  onAddCustomFilter={(field, value) => {
-                    if (!field?.id) return;
-                    setClientFilters((prev) => [...prev, { field_id: field.id, label: field.label || field.id, op: "contains", value }]);
-                    setPage(0);
-                  }}
-                  onClearFilters={() => {
-                    setStatusFilter("all");
-                    setClientFilters([]);
-                    setPage(0);
-                  }}
-                  onRefresh={load}
-                  pagination={{
-                    page,
-                    pageSize: 25,
-                    totalItems,
-                    onPageChange: setPage,
-                  }}
-                  savedViewsEntityId="system.octo_ai.sessions"
-                  savedViewDomain={savedViewDomain}
-                  savedViewState={{ search, filter: statusFilter, clientFilters }}
-                  onApplySavedViewState={(state) => {
-                    setSearch(state?.search || "");
-                    setStatusFilter(state?.filter || "all");
-                    setClientFilters(Array.isArray(state?.clientFilters) ? state.clientFilters : []);
-                    setPage(0);
-                  }}
-                  rightActions={
-                    selectedIds.length > 0 ? (
-                      <button className={SOFT_BUTTON_SM} onClick={() => setShowDeleteModal(true)} disabled={deleting}>
-                        Delete ({selectedIds.length})
-                      </button>
-                    ) : null
-                  }
-                />
+              <SystemListToolbar
+                title="Change Requests"
+                createTooltip="New Change Request"
+                onCreate={creating ? undefined : () => setShowCreateModal(true)}
+                searchValue={search}
+                onSearchChange={(value) => {
+                  setSearch(value);
+                  setPage(0);
+                }}
+                filters={listFilters}
+                onFilterChange={(id) => {
+                  setStatusFilter(id || "all");
+                  setPage(0);
+                }}
+                filterableFields={filterableFields}
+                onAddCustomFilter={(field, value) => {
+                  if (!field?.id) return;
+                  setClientFilters((prev) => [...prev, { field_id: field.id, label: field.label || field.id, op: "contains", value }]);
+                  setPage(0);
+                }}
+                onClearFilters={() => {
+                  setStatusFilter("all");
+                  setClientFilters([]);
+                  setPage(0);
+                }}
+                onRefresh={load}
+                pagination={{
+                  page,
+                  pageSize: 25,
+                  totalItems,
+                  onPageChange: setPage,
+                }}
+                savedViewsEntityId="system.octo_ai.sessions"
+                savedViewDomain={savedViewDomain}
+                savedViewState={{ search, filter: statusFilter, clientFilters }}
+                onApplySavedViewState={(state) => {
+                  setSearch(state?.search || "");
+                  setStatusFilter(state?.filter || "all");
+                  setClientFilters(Array.isArray(state?.clientFilters) ? state.clientFilters : []);
+                  setPage(0);
+                }}
+                rightActions={
+                  selectedIds.length > 0 ? (
+                    <button className={SOFT_BUTTON_SM} onClick={() => setShowDeleteModal(true)} disabled={deleting}>
+                      Delete ({selectedIds.length})
+                    </button>
+                  ) : null
+                }
+              />
 
-                <ListViewRenderer
-                  view={listView}
-                  fieldIndex={listFieldIndex}
-                  records={listRecords}
-                  hideHeader
-                  disableHorizontalScroll
-                  tableClassName="w-full table-fixed min-w-0"
-                  searchQuery={search}
-                  searchFields={["ai_session.title", "ai_session.created_by", "ai_session.sandbox_name"]}
-                  filters={listFilters}
-                  activeFilter={activeListFilter}
-                  clientFilters={effectiveClientFilters}
-                  page={page}
-                  pageSize={25}
-                  onPageChange={setPage}
-                  onTotalItemsChange={setTotalItems}
-                  showPaginationControls={false}
-                  selectedIds={selectedIds}
-                  onToggleSelect={(id, checked) => {
-                    if (!id) return;
-                    setSelectedIds((prev) => {
-                      const next = new Set(prev);
-                      if (checked) next.add(id);
-                      else next.delete(id);
-                      return Array.from(next);
-                    });
-                  }}
-                  onToggleAll={(checked, allIds) => {
-                    setSelectedIds(checked ? allIds || [] : []);
-                  }}
-                  onSelectRow={(row) => {
-                    const id = row?.record_id;
-                    if (id) navigate(`/octo-ai/sandboxes/${id}`);
-                  }}
-                />
+              <ListViewRenderer
+                view={listView}
+                fieldIndex={listFieldIndex}
+                records={listRecords}
+                hideHeader
+                tableClassName="w-full md:table-fixed"
+                searchQuery={search}
+                searchFields={["ai_session.title", "ai_session.created_by", "ai_session.sandbox_name"]}
+                filters={listFilters}
+                activeFilter={activeListFilter}
+                clientFilters={effectiveClientFilters}
+                page={page}
+                pageSize={25}
+                onPageChange={setPage}
+                onTotalItemsChange={setTotalItems}
+                showPaginationControls={false}
+                selectedIds={selectedIds}
+                onToggleSelect={(id, checked) => {
+                  if (!id) return;
+                  setSelectedIds((prev) => {
+                    const next = new Set(prev);
+                    if (checked) next.add(id);
+                    else next.delete(id);
+                    return Array.from(next);
+                  });
+                }}
+                onToggleAll={(checked, allIds) => {
+                  setSelectedIds(checked ? allIds || [] : []);
+                }}
+                onSelectRow={(row) => {
+                  const id = row?.record_id;
+                  if (id) navigate(`/octo-ai/sandboxes/${id}`);
+                }}
+              />
               </div>
             )}
           </div>

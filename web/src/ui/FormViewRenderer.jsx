@@ -916,8 +916,8 @@ function InlineLineItemsTable({
 
   return (
     <div className="rounded-box border border-base-300 bg-base-100">
-      <div className="overflow-x-auto min-h-80">
-        <table className="table table-sm">
+      <div className="w-full overflow-x-auto overflow-y-visible min-h-80 no-scrollbar">
+        <table className="table table-sm min-w-max">
           <thead>
             <tr>
               {columns.map((col) => (

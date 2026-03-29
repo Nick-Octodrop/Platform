@@ -18,6 +18,7 @@ export default function ShellLayout({ user, onSignOut, children }) {
   const isAppRoute = location.pathname === "/apps" || location.pathname.startsWith("/apps/");
   const isSettingsRoute = location.pathname.startsWith("/settings");
   const isStudioRoute = location.pathname.startsWith("/studio");
+  const isOctoAiRoute = location.pathname.startsWith("/octo-ai");
   const isAutomationRoute = location.pathname.startsWith("/automations") || location.pathname.startsWith("/automation-runs");
   const isTemplateStudioRoute =
     location.pathname.startsWith("/email/templates/")
@@ -42,10 +43,10 @@ export default function ShellLayout({ user, onSignOut, children }) {
   const baseMainClass = isEmbedMode || isHome
     ? "flex-1 min-h-0 overflow-hidden p-0"
     : isMobile && isAppRoute
-      ? "flex-1 min-h-0 overflow-y-auto p-0"
+        ? "flex-1 min-h-0 overflow-y-auto p-0"
       : isMobile && isSettingsRoute
         ? "flex-1 min-h-0 overflow-y-auto p-0"
-        : isMobile && (isStudioRoute || isAutomationRoute || isTemplateStudioRoute)
+        : isMobile && (isStudioRoute || isOctoAiRoute || isAutomationRoute || isTemplateStudioRoute)
           ? "flex-1 min-h-0 overflow-y-auto p-0"
       : "flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 lg:p-6";
   const mainClass = baseMainClass;

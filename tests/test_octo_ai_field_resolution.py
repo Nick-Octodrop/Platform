@@ -1222,6 +1222,70 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         )
         self.assertEqual(structured["questions"]["meta"]["id"], "confirm_plan")
 
+    def test_structured_plan_tracks_mixed_operation_families(self) -> None:
+        structured = _ai_build_structured_plan(
+            {
+                "required_questions": [],
+                "required_question_meta": None,
+                "assumptions": [],
+                "risk_flags": [],
+                "affected_artifacts": [
+                    {"artifact_type": "module", "artifact_id": "jobs"},
+                ],
+                "proposed_changes": [
+                    {
+                        "op": "add_field",
+                        "artifact_type": "module",
+                        "artifact_id": "jobs",
+                        "field": {"label": "Owner Email", "type": "string"},
+                    },
+                    {
+                        "op": "add_trigger",
+                        "artifact_type": "module",
+                        "artifact_id": "jobs",
+                        "trigger": {"id": "jobs.created.notify", "event": "record.created"},
+                    },
+                    {
+                        "op": "update_view",
+                        "artifact_type": "module",
+                        "artifact_id": "jobs",
+                        "view_id": "job.form",
+                        "changes": {"header": {"tabs": {"style": "lifted"}}},
+                    },
+                ],
+                "planner_state": {"intent": "multi_request"},
+            },
+            {
+                "full_selected_artifacts": [
+                    {"artifact_type": "module", "artifact_id": "jobs", "manifest": {"module": {"name": "Jobs"}}},
+                ],
+            },
+        )
+
+        self.assertEqual(
+            structured["operation_families"],
+            ["data_model_change", "automation_change", "ui_layout_change"],
+        )
+        self.assertEqual(structured["primary_operation_family"], "data_model_change")
+        self.assertFalse(structured["needs_clarification"])
+
+    def test_structured_plan_marks_clarification_state(self) -> None:
+        structured = _ai_build_structured_plan(
+            {
+                "required_questions": ["Should this be a new module or an extension of Jobs?"],
+                "required_question_meta": {"id": "scope_choice", "kind": "text"},
+                "assumptions": [],
+                "risk_flags": [],
+                "affected_artifacts": [],
+                "proposed_changes": [],
+                "planner_state": {"intent": "multi_request"},
+            },
+            {"full_selected_artifacts": []},
+        )
+
+        self.assertTrue(structured["needs_clarification"])
+        self.assertEqual(structured["clarifications"]["items"], ["Should this be a new module or an extension of Jobs?"])
+
     def test_plan_text_lists_rollout_and_dependency_notes_for_cross_module_changes(self) -> None:
         text = _ai_plan_assistant_text(
             {
@@ -2088,6 +2152,33 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertEqual(derived.get("affected_modules"), ["software_delivery"])
         self.assertNotIn("Some proposed operations were invalid against current artifact IDs and were removed.", plan.get("risk_flags") or [])
         self.assertNotIn("I need clarification before patching", _ai_plan_assistant_text(plan, {"request_summary": "make me a new module to track software engineering contracting jobs"}))
+
+    def test_slot_plan_create_module_to_track_equipment_servicing_stays_new_module_scoped(self) -> None:
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts"},
+            "entities": [{"id": "entity.contact", "label": "Contact", "fields": [{"id": "contact.name", "label": "Name", "type": "string"}]}],
+            "views": [{"id": "contact.form", "kind": "form", "entity": "entity.contact", "sections": [{"id": "main", "fields": ["contact.name"]}]}],
+        }
+        module_index = {"contacts": {"manifest": contacts_manifest}}
+        session = {
+            "scope_mode": "auto",
+            "selected_artifact_type": "module",
+            "selected_artifact_key": "contacts",
+            "status": "planning",
+        }
+        message = (
+            "Create me a new module to track equipment servicing, including equipment ID, service dates, technician notes, "
+            "customer history, warranty status, and automatic reminders for upcoming services. Show me the draft plan first."
+        )
+
+        plan = _ai_slot_based_plan(message, ["contacts"], module_index, answer_hints=None)
+
+        create_ops = [op for op in (plan.get("candidate_ops") or []) if isinstance(op, dict) and op.get("op") == "create_module"]
+        self.assertEqual(len(create_ops), 1)
+        self.assertEqual(create_ops[0].get("artifact_id"), "equipment_servicing")
+        self.assertEqual(((create_ops[0].get("manifest") or {}).get("module") or {}).get("name"), "Equipment Servicing")
+        self.assertEqual(plan.get("affected_modules"), ["equipment_servicing"])
+        self.assertEqual((plan.get("planner_state") or {}).get("module_id"), "equipment_servicing")
 
     def test_create_module_preflight_rejects_shallow_manifest_quality(self) -> None:
         shallow_manifest = {
@@ -6197,6 +6288,92 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("Notify the coordinator automatically.", text)
         self.assertNotIn("Only send approved records across.", text)
 
+    def test_cross_module_quote_handoff_prefers_action_update_plan(self) -> None:
+        sales_manifest = main.json.loads((main.ROOT / "manifests" / "marketplace_v1" / "sales.json").read_text(encoding="utf-8"))
+        jobs_manifest = {"module": {"id": "jobs", "key": "jobs", "name": "Jobs"}, "entities": [{"id": "entity.job", "fields": []}]}
+        contacts_manifest = {"module": {"id": "contacts", "key": "contacts", "name": "Contacts"}, "entities": [{"id": "entity.contact", "fields": []}]}
+        module_index = {
+            "sales": {"manifest": sales_manifest},
+            "jobs": {"manifest": jobs_manifest},
+            "contacts": {"manifest": contacts_manifest},
+        }
+        message = "In Sales, when a quote is approved, create a Job in Jobs, copy the customer and site details from Contacts, and notify the coordinator."
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={},
+            )
+
+        ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertTrue(any(op.get("op") == "update_action" for op in ops))
+        self.assertIn("Notify the coordinator automatically.", _ai_plan_assistant_text(plan, {"request_summary": message, "full_selected_artifacts": []}))
+
+    def test_cross_module_job_completion_documents_prefers_action_update_plan(self) -> None:
+        jobs_manifest = main.json.loads((main.ROOT / "manifests" / "marketplace_v1" / "jobs.json").read_text(encoding="utf-8"))
+        documents_manifest = {"module": {"id": "documents", "key": "documents", "name": "Documents"}, "entities": [{"id": "entity.document_record", "fields": []}]}
+        contacts_manifest = {"module": {"id": "contacts", "key": "contacts", "name": "Contacts"}, "entities": [{"id": "entity.contact", "fields": []}]}
+        module_index = {
+            "jobs": {"manifest": jobs_manifest},
+            "documents": {"manifest": documents_manifest},
+            "contacts": {"manifest": contacts_manifest},
+        }
+        message = "In Jobs, when a job is completed, generate a completion pack in Documents, attach the service report PDF, and mark the customer follow-up in Contacts."
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={},
+            )
+
+        ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertTrue(any(op.get("op") == "update_action" for op in ops))
+        text = _ai_plan_assistant_text(plan, {"request_summary": message, "full_selected_artifacts": []})
+        self.assertIn("Generate the completion pack in Documents automatically.", text)
+        self.assertIn("Attach the service report PDF", text)
+        self.assertIn("Mark the customer follow-up in Contacts.", text)
+
+    def test_cross_module_crm_lead_to_quote_prefers_action_update_plan(self) -> None:
+        crm_manifest = main.json.loads((main.ROOT / "manifests" / "marketplace_v1" / "crm.json").read_text(encoding="utf-8"))
+        sales_manifest = {"module": {"id": "sales", "key": "sales", "name": "Sales"}, "entities": [{"id": "entity.quote", "fields": []}]}
+        contacts_manifest = {"module": {"id": "contacts", "key": "contacts", "name": "Contacts"}, "entities": [{"id": "entity.contact", "fields": []}]}
+        module_index = {
+            "crm": {"manifest": crm_manifest},
+            "sales": {"manifest": sales_manifest},
+            "contacts": {"manifest": contacts_manifest},
+        }
+        message = "When a CRM lead becomes qualified, add the flow to create a draft quote in Sales and carry over contact details from Contacts."
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={},
+            )
+
+        ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertTrue(any(op.get("op") == "update_action" for op in ops))
+        text = _ai_plan_assistant_text(plan, {"request_summary": message, "full_selected_artifacts": []})
+        self.assertIn("Create a draft quote in Sales automatically.", text)
+        self.assertIn("Carry over the contact details from Contacts.", text)
+
     def test_template_preview_request_lists_named_template_and_requested_content(self) -> None:
         jobs_manifest = {
             "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
@@ -6418,6 +6595,29 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("draft plan before any build work starts", text)
         self.assertNotIn("concrete module/entity/view target", text)
         self.assertNotIn("I need one clarification", text)
+
+    def test_create_module_plan_echoes_requested_capabilities_in_preview(self) -> None:
+        message = (
+            "Create a training operations app called Training Operations with courses, attendees, due dates, "
+            "reminders, completion certificates, automated overdue follow-ups, and rich action buttons."
+        )
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={},
+            )
+
+        text = _ai_plan_assistant_text(plan, {"request_summary": message, "full_selected_artifacts": []})
+        self.assertIn("reminders", text.lower())
+        self.assertIn("completion certificates", text.lower())
+        self.assertIn("overdue follow-ups", text.lower())
 
     def test_create_module_status_request_stays_in_confirm_plan_flow_and_keeps_human_name(self) -> None:
         message = "Create a module called Training Compliance with due, booked, completed, and overdue statuses."

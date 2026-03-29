@@ -555,9 +555,7 @@ export default function App() {
               path="octo-ai"
               element={(
                 <SuperadminRoute>
-                  <DesktopOnlyGate feature="Octo AI">
-                    <OctoAiSessionsPage />
-                  </DesktopOnlyGate>
+                  <OctoAiSessionsPage />
                 </SuperadminRoute>
               )}
             />
@@ -565,9 +563,7 @@ export default function App() {
               path="octo-ai/sessions/:sessionId"
               element={(
                 <SuperadminRoute>
-                  <DesktopOnlyGate feature="Octo AI">
-                    <OctoAiSessionDetailPage />
-                  </DesktopOnlyGate>
+                  <OctoAiSessionDetailPage />
                 </SuperadminRoute>
               )}
             />
@@ -575,9 +571,7 @@ export default function App() {
               path="octo-ai/sandboxes/:sessionId"
               element={(
                 <SuperadminRoute>
-                  <DesktopOnlyGate feature="Octo AI">
-                    <OctoAiWorkspacePage />
-                  </DesktopOnlyGate>
+                  <OctoAiWorkspacePage />
                 </SuperadminRoute>
               )}
             />

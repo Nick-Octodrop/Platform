@@ -2,6 +2,12 @@
 
 Use this file to bring a fresh Codex session up to speed on the current Octo AI direction, architecture, runtime loops, and recent product decisions.
 
+Start here on every Octo AI task:
+
+1. Read [OCTO_AI_ARCHITECTURE.md](/mnt/c/Users/nicwi/Documents/My%20Projects/OCTO/OCTO_AI_ARCHITECTURE.md) first.
+2. Treat that file as the canonical architecture contract.
+3. If implementation pressure conflicts with the contract, update the contract deliberately or call out the exception.
+
 ## Goal
 
 Make Octo AI feel like a strong ChatGPT-style business builder while keeping OCTO's deterministic manifest compiler, validation, sandboxing, and release flow safe.
