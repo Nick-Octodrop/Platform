@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { MoreHorizontal } from "lucide-react";
 import Tabs from "../components/Tabs.jsx";
 import useMediaQuery from "../hooks/useMediaQuery.js";
+import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "./pageShell.js";
 
 // A reusable "studio-like" shell: title + tabs + a single scrollable pane.
 // Used for settings/reference pages that should feel like the studio tab pane (no side panels).
@@ -40,8 +41,8 @@ export default function TabbedPaneShell({
 
   return (
     <div className={`h-full min-h-0 flex flex-col overflow-hidden ${isMobile ? "bg-base-100" : ""}`}>
-      <div className={`${isMobile ? "h-full min-h-0 flex flex-col bg-base-100 overflow-hidden" : "card bg-base-100 border border-base-300 shadow-sm h-full min-h-0 flex flex-col overflow-hidden"}`}>
-        <div className={`${isMobile ? "h-full min-h-0 p-4 flex flex-col" : "card-body h-full min-h-0 p-3 sm:p-4 flex flex-col"}`}>
+      <div className={`${isMobile ? "h-full min-h-0 flex flex-col bg-base-100 overflow-hidden" : DESKTOP_PAGE_SHELL}`}>
+        <div className={`${isMobile ? "h-full min-h-0 p-4 flex flex-col" : `${DESKTOP_PAGE_SHELL_BODY} p-3 sm:p-4`}`}>
           <div className="shrink-0 flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="text-base font-semibold truncate">{title}</div>

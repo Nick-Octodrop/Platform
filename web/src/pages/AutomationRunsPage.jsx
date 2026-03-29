@@ -43,7 +43,7 @@ export default function AutomationRunsPage() {
         <Link className="btn" to={`/automations/${automationId}`}>Back</Link>
       </div>
 
-      <div className={isMobile ? "bg-base-100" : "card bg-base-100 shadow"}>
+      <div className={isMobile ? "bg-base-100" : "card bg-base-100 rounded-[1.75rem] border border-base-300 shadow-sm"}>
         <div className={isMobile ? "" : "card-body"}>
           {loading ? (
             <div className="text-sm opacity-70">Loading…</div>

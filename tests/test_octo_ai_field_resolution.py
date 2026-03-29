@@ -1,5 +1,6 @@
 import os
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -27,6 +28,7 @@ from app.main import (  # noqa: E402
     _ai_extract_explicit_module_targets_from_text,
     _ai_extract_field_label,
     _ai_extract_field_labels,
+    _ai_focus_request_text,
     _ai_infer_field_type,
     _ai_get_record,
     _ai_parse_placement_answer,
@@ -270,6 +272,7 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertEqual(_ai_infer_field_type("Add a Birthday field to Contacts."), "date")
         self.assertEqual(_ai_infer_field_type("Add an Anniversary Date field to Contacts."), "date")
         self.assertEqual(_ai_infer_field_type("Add Account Manager Notes to Contacts."), "text")
+        self.assertEqual(_ai_infer_field_type("Make that field an int number field."), "int")
 
     def test_plan_text_stays_plain_language(self) -> None:
         text = _ai_plan_assistant_text(
@@ -1285,6 +1288,44 @@ class TestOctoAiFieldResolution(unittest.TestCase):
 
         self.assertTrue(structured["needs_clarification"])
         self.assertEqual(structured["clarifications"]["items"], ["Should this be a new module or an extension of Jobs?"])
+
+    def test_structured_plan_keeps_template_family_for_preview_only_request(self) -> None:
+        message = "Create a Service Report PDF template that includes customer details, work performed, technician notes, photos, and customer signoff."
+
+        structured = _ai_build_structured_plan(
+            {
+                "required_questions": ["Confirm this plan?"],
+                "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan"},
+                "assumptions": [],
+                "risk_flags": [],
+                "affected_artifacts": [],
+                "proposed_changes": [],
+                "planner_state": {"intent": "preview_only_plan"},
+            },
+            {"full_selected_artifacts": [], "request_summary": message},
+        )
+
+        self.assertEqual(structured["operation_families"], ["template_change"])
+        self.assertEqual(structured["primary_operation_family"], "template_change")
+
+    def test_structured_plan_keeps_integration_family_for_preview_only_request(self) -> None:
+        message = "Set up Xero sync so approved Contacts and Invoices can be sent across, but only when the accounting fields are complete."
+
+        structured = _ai_build_structured_plan(
+            {
+                "required_questions": ["Confirm this plan?"],
+                "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan"},
+                "assumptions": [],
+                "risk_flags": [],
+                "affected_artifacts": [],
+                "proposed_changes": [],
+                "planner_state": {"intent": "preview_only_plan"},
+            },
+            {"full_selected_artifacts": [], "request_summary": message},
+        )
+
+        self.assertEqual(structured["operation_families"], ["integration_change"])
+        self.assertEqual(structured["primary_operation_family"], "integration_change")
 
     def test_plan_text_lists_rollout_and_dependency_notes_for_cross_module_changes(self) -> None:
         text = _ai_plan_assistant_text(
@@ -2550,6 +2591,22 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertEqual(
             tracks,
             ["Site Visits", "Jobs", "Job Notes", "Technician Scheduling", "Completion Status"],
+        )
+
+    def test_focus_request_text_prefers_final_ask_for_long_requirements_brief(self) -> None:
+        message = (
+            "Insurance - Workflow & Requirements for Insurance v1\n\n"
+            "- This document describes the first production-ready version of an insurance jobs workflow.\n"
+            "- Staff must be able to store the Xero invoice reference.\n"
+            "- Acceptance criteria and business rules follow.\n\n"
+            "Take this requirements document and build AusPac Insurance Jobs v1 as an OCTO app. "
+            "Include the main job workflow, quote checkpoints, invoice tracking, and dashboards. "
+            "Show me the draft plan first."
+        )
+
+        self.assertEqual(
+            _ai_focus_request_text(message),
+            "Take this requirements document and build AusPac Insurance Jobs v1 as an OCTO app. Include the main job workflow, quote checkpoints, invoice tracking, and dashboards. Show me the draft plan first.",
         )
 
     def test_generate_module_design_spec_skips_model_for_field_rich_vendor_compliance_brief(self) -> None:
@@ -5055,6 +5112,90 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertEqual((add_field_ops[0].get("field") or {}).get("label"), "Pluto")
         self.assertEqual((add_field_ops[0].get("field") or {}).get("id"), "crm.pluto")
 
+    def test_followup_field_type_change_keeps_existing_field_label(self) -> None:
+        session = _ai_create_record(
+            _AI_ENTITY_SESSION,
+            {
+                "title": "Contacts accounting field type follow-up",
+                "status": "planning",
+                "sandbox_status": "active",
+                "sandbox_workspace_id": "ws_sandbox_blush_field_type",
+                "created_at": "2026-03-30T00:00:00Z",
+            },
+        )
+        session_id = _ai_record_data(session)["id"]
+        plan = _ai_create_record(
+            _AI_ENTITY_PLAN,
+            {
+                "session_id": session_id,
+                "status": "draft",
+                "affected_artifacts_json": [{"artifact_type": "module", "artifact_id": "contacts"}],
+                "plan_json": {
+                    "plan": {
+                        "candidate_operations": [
+                            {
+                                "op": "add_field",
+                                "artifact_type": "module",
+                                "artifact_id": "contacts",
+                                "entity_id": "entity.contact",
+                                "field": {"id": "contact.blush", "label": "Blush", "type": "string"},
+                            },
+                            {
+                                "op": "insert_section_field",
+                                "artifact_type": "module",
+                                "artifact_id": "contacts",
+                                "view_id": "contact.form",
+                                "field_id": "contact.blush",
+                                "placement_label": "Accounting",
+                            },
+                        ],
+                        "planner_state": {
+                            "intent": "add_field",
+                            "module_id": "contacts",
+                            "field_label": "Blush",
+                            "field_id": "contact.blush",
+                            "tab_label": "Accounting",
+                        },
+                    }
+                },
+                "created_at": "2026-03-30T00:00:01Z",
+            },
+        )
+        _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_plan_id": _ai_record_data(plan)["id"]})
+        _ai_create_record(
+            _AI_ENTITY_MESSAGE,
+            {
+                "session_id": session_id,
+                "role": "user",
+                "message_type": "chat",
+                "body": "Add a field called Blush into the accounting tab in my contacts module.",
+                "created_at": "2026-03-30T00:00:00Z",
+            },
+        )
+
+        hints = main._ai_collect_answer_hints(session_id)
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts"},
+            "entities": [{"id": "entity.contact", "fields": [{"id": "contact.name", "label": "Name", "type": "string"}]}],
+            "views": [],
+        }
+        module_index = {"contacts": {"manifest": contacts_manifest}}
+
+        with patch.object(main, "_ai_build_workspace_graph", lambda _request: {}), patch.object(main, "_ai_module_manifest_index", lambda _request: module_index), patch.object(main, "USE_AI", False):
+            plan, derived = _ai_plan_from_message(
+                SimpleNamespace(state=SimpleNamespace(actor={})),
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": "", "status": "planning"},
+                "Can you make that field an int number field?",
+                answer_hints=hints,
+            )
+
+        self.assertEqual(derived.get("affected_modules"), ["contacts"])
+        update_ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict) and op.get("op") == "update_field"]
+        self.assertEqual(len(update_ops), 1)
+        self.assertEqual(update_ops[0].get("field_id"), "contact.blush")
+        self.assertEqual((update_ops[0].get("changes") or {}).get("type"), "int")
+        self.assertEqual((plan.get("planner_state") or {}).get("field_label"), "Blush")
+
     def test_apply_patchset_creates_post_apply_assistant_message(self) -> None:
         with TestClient(main.app) as client:
             create_response = client.post("/octo-ai/sessions", json={"title": "Stacked CRM change"})
@@ -6410,6 +6551,37 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("Include customer details, work performed, technician notes, photos, and customer signoff.", text)
         self.assertNotIn("Map the first draft plan across Jobs.", text)
 
+    def test_integration_preview_request_lists_provider_and_flow(self) -> None:
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts"},
+            "entities": [{"id": "entity.contact", "fields": [{"id": "contact.name", "label": "Name", "type": "string"}]}],
+            "views": [],
+        }
+        sales_manifest = {
+            "module": {"id": "sales", "key": "sales", "name": "Sales"},
+            "entities": [{"id": "entity.invoice", "fields": [{"id": "invoice.number", "label": "Invoice Number", "type": "string"}]}],
+            "views": [],
+        }
+        module_index = {"contacts": {"manifest": contacts_manifest}, "sales": {"manifest": sales_manifest}}
+        message = "Set up Xero sync so approved Contacts and Invoices can be sent across, but only when the accounting fields are complete."
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={},
+            )
+
+        text = _ai_plan_assistant_text(plan, {"request_summary": message, "full_selected_artifacts": []})
+
+        self.assertIn("Set up the requested Xero integration.", text)
+        self.assertIn("Keep the integration flow so approved Contacts and Invoices can be sent across, but only when the accounting fields are complete.", text)
+
     def test_dashboard_preview_request_lists_dashboard_and_metrics(self) -> None:
         jobs_manifest = {
             "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
@@ -6766,6 +6938,8 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("Jobs", text)
         self.assertIn("Invoices", text)
         self.assertIn("Phase 1", text)
+        self.assertIn("Recommended module architecture", text)
+        self.assertIn("multi-module workspace", text)
         self.assertNotIn("What should the new field be called?", text)
 
     def test_long_guide_manufacturing_request_mentions_build_roadmap(self) -> None:
@@ -6809,6 +6983,54 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("Dispatch", text)
         self.assertIn("Phase 1", text)
         self.assertNotIn("What should the new field be called?", text)
+
+    def test_requirements_document_prompt_uses_final_ask_not_background_document_noise(self) -> None:
+        main._octo_ai_seed_in_memory_baseline_modules()
+        req = type("R", (), {"state": type("S", (), {"cache": {}})()})()
+        module_index = _ai_module_manifest_index(req)
+        requirements_doc = Path("manifests/AUSPAC_INSURANCE_V1_REQUIREMENTS.md").read_text(encoding="utf-8")
+        message = (
+            requirements_doc
+            + "\n\nTake this requirements document and build AusPac Insurance Jobs v1 as an OCTO app. "
+            + "Include the main job workflow, supporting activity and rate line records, insurer/customer/installer relationships, "
+            + "scheduling and confirmation tracking, quote/proposal checkpoints, completion/reporting, invoice tracking, "
+            + "and useful dashboards. Show me the draft plan first."
+        )
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={},
+            )
+
+        self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
+        self.assertEqual(plan.get("candidate_operations"), [])
+        self.assertEqual((plan.get("planner_state") or {}).get("intent"), "preview_only_plan")
+        self.assertIn("sales", derived.get("affected_modules") or [])
+        text = _ai_plan_assistant_text(
+            plan,
+            {
+                "request_summary": message,
+                "full_selected_artifacts": [
+                    {"artifact_type": "module", "artifact_id": module_id, "manifest": (module_index.get(module_id) or {}).get("manifest")}
+                    for module_id in (derived.get("affected_modules") or [])
+                ],
+            },
+        )
+        self.assertIn("Quotes", text)
+        self.assertIn("Jobs", text)
+        self.assertIn("Invoices", text)
+        self.assertIn("Recommended module architecture", text)
+        self.assertIn("multi-module workspace", text)
+        self.assertNotIn("Xero integration", text)
+        self.assertNotIn("Production", text)
+        self.assertNotIn("Purchasing", text)
 
     def test_project_handover_connector_brief_prefers_preview_only_plan(self) -> None:
         module_index = {

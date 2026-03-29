@@ -387,7 +387,15 @@ export default function ListViewRenderer({
         </div>
       ) : null}
 
-      <div className={isMobile ? "flex-1 min-h-0 w-full overflow-x-auto overflow-y-auto no-scrollbar" : disableHorizontalScroll ? "flex-1 min-h-0 overflow-x-hidden overflow-y-auto" : "flex-1 min-h-0 overflow-x-auto overflow-y-auto"}>
+      <div
+        className={
+          isMobile
+            ? "flex-1 min-h-0 w-full overflow-x-auto overflow-y-auto no-scrollbar"
+            : disableHorizontalScroll
+              ? "flex-1 min-h-0 overflow-x-hidden overflow-y-auto"
+              : "flex-1 min-h-0 overflow-x-auto overflow-y-auto"
+        }
+      >
         {useVirtual ? (
           <div className="w-full">
             <div className="grid items-center gap-2 text-sm font-semibold px-3 py-2" style={{ gridTemplateColumns: gridTemplate }}>

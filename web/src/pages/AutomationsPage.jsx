@@ -5,6 +5,7 @@ import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import { buildSavedViewDomain } from "../utils/savedViews.js";
+import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 
 const DEFAULT_TRIGGER = {
   kind: "event",
@@ -183,9 +184,9 @@ export default function AutomationsPage() {
   }, []);
 
   return (
-    <div className="min-h-full bg-base-100 md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
-      <div className="bg-base-100 md:card md:shadow md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
-        <div className="p-4 md:card-body md:flex md:flex-col md:min-h-0">
+    <div className="min-h-full md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
+      <div className={DESKTOP_PAGE_SHELL}>
+        <div className={DESKTOP_PAGE_SHELL_BODY}>
           <div className="md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {error && <div className="alert alert-error">{error}</div>}
             {loading ? (

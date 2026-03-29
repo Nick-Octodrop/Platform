@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { PRIMARY_BUTTON_SM } from "../components/buttonStyles.js";
 import SystemListToolbar from "./SystemListToolbar.jsx";
 import useMediaQuery from "../hooks/useMediaQuery.js";
+import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "./pageShell.js";
 
 export default function SettingsShell({
   title,
@@ -36,8 +37,8 @@ export default function SettingsShell({
 
   return (
     <div className="h-full min-h-0 flex flex-col overflow-hidden">
-      <div className={isMobile ? "h-full min-h-0 flex flex-col bg-base-100 overflow-hidden" : "card bg-base-100 border border-base-300 shadow-sm h-full min-h-0 flex flex-col overflow-hidden"}>
-        <div className={isMobile ? "h-full min-h-0 p-4 flex flex-col" : "card-body flex flex-col min-h-0"}>
+      <div className={isMobile ? "h-full min-h-0 flex flex-col bg-base-100 overflow-hidden" : DESKTOP_PAGE_SHELL}>
+        <div className={isMobile ? "h-full min-h-0 p-4 flex flex-col" : DESKTOP_PAGE_SHELL_BODY}>
           <div className="shrink-0">
             <SystemListToolbar
               title={title}

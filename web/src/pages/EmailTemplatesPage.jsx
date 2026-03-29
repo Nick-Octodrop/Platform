@@ -130,9 +130,9 @@ export default function EmailTemplatesPage() {
   }, []);
 
   return (
-    <div className="min-h-full bg-base-100 md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
-      <div className="bg-base-100 md:card md:shadow md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
-        <div className="p-4 md:card-body md:flex md:flex-col md:min-h-0">
+    <div className="min-h-full md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
+      <div className="bg-base-100 md:card md:rounded-[1.75rem] md:border md:border-base-300 md:shadow-sm md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
+        <div className="p-4 md:card-body md:flex md:flex-col md:min-h-0 md:overflow-hidden">
           <div className="space-y-4 md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {loading ? (
               <div className="text-sm opacity-70">Loading…</div>

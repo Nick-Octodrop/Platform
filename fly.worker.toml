@@ -2,9 +2,7 @@ app = "octodrop-platform-worker"
 primary_region = "syd"
 
 [build]
-  dockerfile = "Dockerfile"
-  [build.args]
-    OCTO_RUNTIME_BASE = "registry.fly.io/octodrop-platform-api:runtime-base-py311-playwright"
+  dockerfile = "Dockerfile.worker"
 
 [processes]
   app = "python -m app.worker"

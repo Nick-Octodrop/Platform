@@ -35,11 +35,7 @@ def _load_env_file(path: Path) -> None:
 
 _load_env_file(ROOT / "app" / ".env")
 
-from app.attachments import store_bytes, delete_storage
-from app.doc_render import render_html, render_pdf, normalize_margins
 from app.email import get_provider, render_template
-from app import main as app_main
-from app.records_validation import find_entity_def as _find_entity_def_in_registry
 from app.secrets import SecretStoreError
 from app.stores import MemoryAutomationStore, MemoryJobStore
 from app.stores_db import (
@@ -55,6 +51,30 @@ from app.stores_db import (
     set_org_id,
     reset_org_id,
 )
+
+
+def _get_attachment_helpers():
+    from app.attachments import delete_storage, store_bytes
+
+    return store_bytes, delete_storage
+
+
+def _get_doc_render_helpers():
+    from app.doc_render import normalize_margins, render_html, render_pdf
+
+    return render_html, render_pdf, normalize_margins
+
+
+def _get_app_main():
+    from app import main as app_main
+
+    return app_main
+
+
+def _get_entity_def_resolver():
+    from app.records_validation import find_entity_def as find_entity_def_in_registry
+
+    return find_entity_def_in_registry
 
 
 def _now() -> datetime:
@@ -106,6 +126,10 @@ def _handle_email_send(job: dict, org_id: str) -> None:
 
 
 def _handle_doc_generate(job: dict, org_id: str) -> None:
+    render_html, render_pdf, normalize_margins = _get_doc_render_helpers()
+    store_bytes, _ = _get_attachment_helpers()
+    app_main = _get_app_main()
+    find_entity_def_in_registry = _get_entity_def_resolver()
     doc_store = DbDocTemplateStore()
     attach_store = DbAttachmentStore()
     records = DbGenericRecordStore()
@@ -126,7 +150,7 @@ def _handle_doc_generate(job: dict, org_id: str) -> None:
         def list(self):
             return app_main.registry.list()
 
-    found = _find_entity_def_in_registry(
+    found = find_entity_def_in_registry(
         _RegistryProxy(),
         lambda module_id, manifest_hash: app_main.store.get_snapshot(module_id, manifest_hash),
         entity_id,
@@ -194,6 +218,7 @@ def _handle_doc_generate(job: dict, org_id: str) -> None:
 
 
 def _handle_attachments_cleanup(job: dict, org_id: str) -> None:
+    _, delete_storage = _get_attachment_helpers()
     attach_store = DbAttachmentStore()
     payload = job.get("payload") or {}
     source = payload.get("source") or "preview"
@@ -303,13 +328,15 @@ def _fetch_record_payload(entity_id: str | None, record_id: str | None) -> dict:
 def _find_entity_def(entity_id: str | None) -> dict | None:
     if not isinstance(entity_id, str) or not entity_id:
         return None
+    app_main = _get_app_main()
+    find_entity_def_in_registry = _get_entity_def_resolver()
 
     class _RegistryProxy:
         def list(self):
             return app_main.registry.list()
 
     for candidate in _candidate_entity_ids(entity_id):
-        found = _find_entity_def_in_registry(
+        found = find_entity_def_in_registry(
             _RegistryProxy(),
             lambda module_id, manifest_hash: app_main.store.get_snapshot(module_id, manifest_hash),
             candidate,
@@ -465,6 +492,7 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
         return {"notifications": notifications, "notification": notifications[0]}
 
     if action_id == "system.send_email":
+        app_main = _get_app_main()
         email_store = DbEmailStore()
         conn_store = DbConnectionStore()
         connection = None
@@ -562,6 +590,7 @@ def _handle_action(step: dict, inputs: dict, ctx: dict, job_store: DbJobStore) -
         raise RuntimeError("action_id required")
     if action_id.startswith("system."):
         return _handle_system_action(action_id, inputs, ctx, job_store)
+    app_main = _get_app_main()
     module_id = step.get("module_id") or inputs.get("module_id")
     if not isinstance(module_id, str) or not module_id:
         raise RuntimeError("module_id required for module action")

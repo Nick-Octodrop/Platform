@@ -22,6 +22,7 @@ import { useAccessContext } from "../access.js";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import { appendOctoAiFrameParams } from "../apps/appShellUtils.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
+import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 
 // Kept intentionally minimal: App Manager cards shouldn't surface extra status/meta beyond actions + app version.
 
@@ -289,9 +290,9 @@ export default function AppsPage({ user }) {
   }, [heroFamily, iconQuery]);
 
   return (
-    <div className="min-h-full bg-base-100 md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
-      <div className="bg-base-100 md:card md:border md:border-base-300 md:shadow-sm md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
-        <div className="p-4 md:card-body md:flex md:flex-col md:min-h-0">
+    <div className="min-h-full md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
+      <div className={DESKTOP_PAGE_SHELL}>
+        <div className={DESKTOP_PAGE_SHELL_BODY}>
           <div className="shrink-0">
             <SystemListToolbar
               title="Apps"

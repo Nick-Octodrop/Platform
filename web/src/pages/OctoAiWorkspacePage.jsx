@@ -18,6 +18,7 @@ import {
   validateOctoAiPatchset,
 } from "../api.js";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM } from "../components/buttonStyles.js";
+import { DESKTOP_PANEL_SHELL } from "../ui/pageShell.js";
 
 function JsonBlock({ value }) {
   return (
@@ -887,7 +888,7 @@ export default function OctoAiWorkspacePage() {
   }, [activeQuestionMeta?.kind, agentTab, appliedRevisions.length, currentSandboxRevision?.id, doPromoteRelease, hasPendingQuestion, latestPromotedRelease?.id, openChangesView, publishingRevision, requestStage, restoringRevision, selectedRevision, selectedRevisionRelease?.status, navigate]);
 
   const previewPane = (
-    <div className="relative h-full min-h-0 overflow-hidden bg-base-100">
+    <div className={`relative h-full min-h-0 overflow-hidden ${isMobile ? "bg-base-100" : DESKTOP_PANEL_SHELL}`}>
       {previewNotice ? (
         <div className="absolute left-3 top-3 z-10 rounded-full border border-base-200 bg-base-100/95 px-3 py-1 text-xs font-medium text-primary shadow-sm">
           {previewNotice}
@@ -1172,7 +1173,7 @@ export default function OctoAiWorkspacePage() {
         ) : (
           <PanelGroup direction="horizontal" autoSaveId="octo-ai-sandbox-shell" className="h-full min-h-0">
             <Panel defaultSize={72} minSize={50}>
-              <div className="h-full min-h-0 flex flex-col overflow-hidden bg-base-100">
+              <div className="h-full min-h-0 flex flex-col overflow-hidden">
                 <div className="flex-1 min-h-0">
                   {previewPane}
                 </div>

@@ -11,7 +11,6 @@ import { normalizeLucideKey, resolveLucideIcon } from "../state/lucideIconCatalo
 import { normalizeHeroKey, resolveHeroIcon } from "../state/heroIconCatalog.js";
 import { useAccessContext } from "../access.js";
 import { appendOctoAiFrameParams } from "../apps/appShellUtils.js";
-import useMediaQuery from "../hooks/useMediaQuery.js";
 
 function AppTile({ app, module, onOpen }) {
   const disabled = module && !module.enabled;
@@ -57,15 +56,11 @@ export default function HomePage({ user }) {
   const [entityIndex, setEntityIndex] = useState(null);
   const [iconVersion, setIconVersion] = useState(0);
   const { loading: accessLoading, hasCapability, isSuperadmin } = useAccessContext();
-  const isMobile = useMediaQuery("(max-width: 768px)");
   const canSeeStudio = !accessLoading && hasCapability("modules.manage");
   const canSeeOctoAi = !accessLoading && isSuperadmin;
   const canSeeAutomations = !accessLoading && hasCapability("automations.manage");
   const canSeeIntegrations = !accessLoading && hasCapability("workspace.manage_settings");
   const homeLoading = loading || accessLoading;
-  const search = useMemo(() => new URLSearchParams(location.search), [location.search]);
-  const isOctoAiFrame = search.get("octo_ai_frame") === "1";
-  const useMobileFrameLayout = isOctoAiFrame && isMobile;
 
   useEffect(() => {
     async function buildIndex() {
@@ -116,10 +111,10 @@ export default function HomePage({ user }) {
   }, [installedApps, systemApps]);
 
   return (
-    <div className={`w-full overflow-x-hidden ${useMobileFrameLayout ? "min-h-screen h-screen bg-base-100 overflow-y-auto" : isOctoAiFrame ? "h-full min-h-0 flex justify-center overflow-y-auto bg-base-100" : "min-h-full md:h-full flex justify-center overflow-y-auto md:overflow-hidden"}`}>
-      {homeLoading && <LoadingSpinner className={`${useMobileFrameLayout ? "min-h-screen w-full" : isOctoAiFrame ? "h-full w-full" : "min-h-full w-full"}`} />}
+    <div className="w-full overflow-x-hidden min-h-full md:h-full flex justify-center overflow-y-auto md:overflow-hidden">
+      {homeLoading && <LoadingSpinner className="min-h-full w-full" />}
       {!homeLoading && (
-        <div className={`w-full ${useMobileFrameLayout ? "py-4" : isOctoAiFrame ? "flex justify-center items-start pt-4 sm:pt-[12vh] pb-6 sm:pb-0" : "flex justify-center items-start pt-4 sm:pt-[12vh] pb-6 sm:pb-0"}`}>
+        <div className="w-full flex justify-center items-start pt-4 sm:pt-[12vh] pb-6 sm:pb-0">
           {allApps.length === 0 ? (
             <div className="card bg-base-100 shadow p-6">
               <div className="text-sm opacity-70 mb-3">No apps installed yet.</div>
@@ -128,8 +123,8 @@ export default function HomePage({ user }) {
               </button>
             </div>
           ) : (
-            <div className={`w-full ${useMobileFrameLayout ? "" : "flex justify-center"}`}>
-              <div className={`grid w-full gap-x-2 gap-y-4 justify-items-center grid-cols-3 sm:grid-cols-4 md:grid-cols-5 ${useMobileFrameLayout ? "content-start max-w-none" : "max-w-[728px] px-3 sm:px-4"}`}>
+            <div className="w-full flex justify-center">
+              <div className="grid w-full gap-x-2 gap-y-4 justify-items-center grid-cols-3 sm:grid-cols-4 md:grid-cols-5 max-w-[728px] px-3 sm:px-4">
                 {allApps.map((app) => (
                   <AppTile key={app.id} app={app} module={app.module} onOpen={handleOpen} />
                 ))}

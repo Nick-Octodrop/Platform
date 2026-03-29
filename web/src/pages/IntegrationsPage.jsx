@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api.js";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
+import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 
 function providerFromType(type) {
   const raw = String(type || "");
@@ -159,9 +160,9 @@ export default function IntegrationsPage() {
   const singleSelected = selectedRows.length === 1 ? selectedRows[0] : null;
 
   return (
-    <div className="min-h-full bg-base-100 md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
-      <div className="bg-base-100 md:card md:shadow md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
-        <div className="p-4 md:card-body md:flex md:flex-col md:min-h-0">
+    <div className="min-h-full md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
+      <div className={DESKTOP_PAGE_SHELL}>
+        <div className={DESKTOP_PAGE_SHELL_BODY}>
           <div className="md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
             <SystemListToolbar

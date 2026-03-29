@@ -41,14 +41,14 @@ export default function AutomationRunDetailPage() {
         <Link className="btn" to="/automations">Automations</Link>
       </div>
 
-      <div className={isMobile ? "bg-base-100" : "card bg-base-100 shadow"}>
+      <div className={isMobile ? "bg-base-100" : "card bg-base-100 rounded-[1.75rem] border border-base-300 shadow-sm"}>
         <div className={isMobile ? "" : "card-body"}>
           <div className="text-sm opacity-70">Trigger</div>
           <pre className="text-xs whitespace-pre-wrap">{JSON.stringify(run.trigger_payload || {}, null, 2)}</pre>
         </div>
       </div>
 
-      <div className={isMobile ? "bg-base-100" : "card bg-base-100 shadow"}>
+      <div className={isMobile ? "bg-base-100" : "card bg-base-100 rounded-[1.75rem] border border-base-300 shadow-sm"}>
         <div className={isMobile ? "" : "card-body"}>
           <h2 className="font-semibold mb-2">Steps</h2>
           {(steps || []).length === 0 && <div className="text-sm opacity-60">No steps recorded.</div>}

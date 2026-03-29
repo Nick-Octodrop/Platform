@@ -3010,7 +3010,7 @@ def _ai_clean_module_name_candidate(raw: str | None) -> str | None:
 
 
 def _ai_extract_scoped_module_name(message: str) -> str | None:
-    msg = (message or "").strip()
+    msg = _ai_focus_request_text(message)
     if not msg:
         return None
     patterns = [
@@ -16206,6 +16206,7 @@ def _ai_hint_scope_switch_module(answer_hints: dict | None, module_ids: list[str
 def _ai_extract_requested_module_labels(text: str) -> list[str]:
     if not isinstance(text, str) or not text.strip():
         return []
+    text = _ai_focus_request_text(text)
     labels: list[str] = []
     seen: set[str] = set()
     split_pattern = rf"\b(?:{_AI_SCOPE_ACTION_VERBS_PATTERN})\b"
@@ -16291,7 +16292,7 @@ def _studio_ai_disabled_response() -> JSONResponse:
 
 
 def _ai_preview_contract_flags(text: str) -> dict[str, bool]:
-    lower = re.sub(r"\s+", " ", (text or "").lower()).strip()
+    lower = re.sub(r"\s+", " ", (_ai_focus_request_text(text) or "").lower()).strip()
     return {
         "sandbox": any(token in lower for token in ("sandbox", "draft patchset", "live workspace")),
         "preview": any(
@@ -16344,6 +16345,7 @@ def _ai_build_preview_only_plan(
     confirm_plan: bool | None = None,
     force: bool = False,
 ) -> dict | None:
+    message = _ai_focus_request_text(message)
     if not force and not _ai_preview_contract_requested(message):
         return None
     resolved_modules = [module_id for module_id in affected_modules if isinstance(module_id, str) and module_id]
@@ -16406,7 +16408,7 @@ def _ai_build_preview_only_plan(
 
 
 def _ai_preview_plan_style(text: str) -> dict[str, bool]:
-    lower = re.sub(r"\s+", " ", (text or "").lower()).strip()
+    lower = re.sub(r"\s+", " ", (_ai_focus_request_text(text) or "").lower()).strip()
     if not lower:
         return {"system_brief": False, "roadmap": False, "phased": False, "deliver_first": False}
     system_brief = any(
@@ -16458,7 +16460,7 @@ def _ai_preview_plan_style(text: str) -> dict[str, bool]:
 
 
 def _ai_preview_roadmap_tracks(text: str) -> list[str]:
-    lower = re.sub(r"\s+", " ", (text or "").lower()).strip()
+    lower = re.sub(r"\s+", " ", (_ai_focus_request_text(text) or "").lower()).strip()
     if not lower:
         return []
     track_patterns = [
@@ -16487,21 +16489,32 @@ def _ai_preview_roadmap_tracks(text: str) -> list[str]:
     return tracks[:8]
 
 
+def _ai_preview_track_module_map() -> dict[str, tuple[str, ...]]:
+    return {
+        "Leads": ("crm", "contacts", "sales"),
+        "Site Visits": ("field_service", "jobs"),
+        "Quotes": ("sales", "quotes"),
+        "Jobs": ("jobs",),
+        "Job Notes": ("jobs",),
+        "Technician Scheduling": ("field_service", "jobs"),
+        "Supplier Tracking": ("jobs", "contacts"),
+        "Invoices": ("sales",),
+        "Follow-Up Care": ("field_service", "jobs"),
+        "Customer History": ("contacts",),
+        "Operational Reporting": ("jobs", "sales", "field_service"),
+        "Sales Orders": ("sales",),
+        "Production": ("jobs",),
+        "Purchasing": ("catalog", "shop_finance", "contacts"),
+        "Dispatch": ("field_service", "jobs"),
+        "Quality Checks": ("jobs", "tasks"),
+        "Completion Status": ("jobs",),
+    }
+
+
 def _ai_preview_track_modules(message: str, module_index: dict[str, dict]) -> list[str]:
     if not isinstance(message, str) or not message.strip():
         return []
-    track_module_map = {
-        "Leads": ["crm", "contacts", "sales"],
-        "Site Visits": ["field_service", "jobs"],
-        "Quotes": ["sales", "quotes"],
-        "Jobs": ["jobs"],
-        "Technician Scheduling": ["field_service", "jobs"],
-        "Supplier Tracking": ["jobs", "contacts"],
-        "Invoices": ["sales"],
-        "Follow-Up Care": ["field_service", "jobs"],
-        "Customer History": ["contacts"],
-        "Operational Reporting": ["jobs", "sales", "field_service"],
-    }
+    track_module_map = _ai_preview_track_module_map()
     resolved: list[str] = []
     for track in _ai_preview_roadmap_tracks(message):
         direct_match = _ai_find_module_by_alias(track, list(module_index.keys()), module_index)
@@ -16509,13 +16522,14 @@ def _ai_preview_track_modules(message: str, module_index: dict[str, dict]) -> li
             if direct_match not in resolved:
                 resolved.append(direct_match)
             continue
-        for module_id in track_module_map.get(track, []):
+        for module_id in track_module_map.get(track, ()):
             if module_id in module_index and module_id not in resolved:
                 resolved.append(module_id)
     return resolved
 
 
 def _ai_infer_preview_modules(message: str, module_index: dict[str, dict], current_modules: list[str] | None = None) -> list[str]:
+    message = _ai_focus_request_text(message)
     resolved: list[str] = []
     create_module_request = _ai_is_create_module_request(message)
 
@@ -16642,6 +16656,102 @@ def _ai_should_force_preview_fallback(
     return previewable_request and (
         low_signal_question or style_revision_question or unresolved_requested_scope or untyped_freeform_question or not questions
     )
+
+
+def _ai_is_long_context_requirements_brief(text: str) -> bool:
+    if not isinstance(text, str) or not text.strip():
+        return False
+    normalized = text.strip()
+    if len(normalized) < 500 and normalized.count("\n") < 4:
+        return False
+    lower = normalized.lower()
+    cues = (
+        "requirements",
+        "requirement",
+        "workflow",
+        "acceptance criteria",
+        "functional requirements",
+        "scope",
+        "business rules",
+        "this brief",
+        "this guide",
+        "this requirements document",
+        "this document",
+    )
+    return any(cue in lower for cue in cues)
+
+
+def _ai_focus_request_text(text: str) -> str:
+    if not isinstance(text, str):
+        return ""
+    normalized = text.strip()
+    if not normalized:
+        return ""
+    if not _ai_is_long_context_requirements_brief(normalized):
+        return normalized
+
+    request_cues = re.compile(
+        r"\b(?:take|use|plan|design|build|create|show|outline|explain|turn)\b.*\b(?:draft plan|preview|roadmap|before|octo app|octo ai|workspace|system|module|modules)\b",
+        flags=re.IGNORECASE,
+    )
+    suggested_prompt_match = re.search(r"Suggested prompt:\s*`([^`]{40,2000})`", normalized, flags=re.IGNORECASE | re.DOTALL)
+    if suggested_prompt_match and isinstance(suggested_prompt_match.group(1), str):
+        candidate = re.sub(r"\s+", " ", suggested_prompt_match.group(1)).strip()
+        if request_cues.search(candidate):
+            return candidate
+    normalized_one_line = re.sub(r"\s+", " ", normalized).strip()
+    tail_prompt_match = re.search(
+        r"((?:take|use|plan|design|build|create|show|outline|explain|turn)\b.{20,1200}?(?:show me the draft plan first|before anything is applied|before anything is built|before building it|before you build|before applying anything|before any build work starts).{0,240}?(?:[.?!]|$))",
+        normalized_one_line,
+        flags=re.IGNORECASE,
+    )
+    if tail_prompt_match and isinstance(tail_prompt_match.group(1), str):
+        candidate = tail_prompt_match.group(1).strip()
+        if request_cues.search(candidate):
+            return candidate
+    backtick_matches = [
+        match.group(1).strip()
+        for match in re.finditer(r"`([^`]{40,2000})`", normalized, flags=re.DOTALL)
+        if isinstance(match.group(1), str) and match.group(1).strip()
+    ]
+    for candidate in reversed(backtick_matches):
+        if request_cues.search(candidate):
+            return re.sub(r"\s+", " ", candidate).strip()
+
+    paragraphs = [
+        para.strip()
+        for para in re.split(r"\n\s*\n", normalized)
+        if isinstance(para, str) and para.strip()
+    ]
+    for candidate in reversed(paragraphs):
+        cleaned_candidate = candidate.replace("`", "").strip()
+        if request_cues.search(cleaned_candidate):
+            return re.sub(r"\s+", " ", cleaned_candidate).strip()
+
+    lines = [
+        line.strip(" -*\t")
+        for line in normalized.splitlines()
+        if isinstance(line, str) and line.strip()
+    ]
+    for candidate in reversed(lines):
+        cleaned_candidate = candidate.replace("`", "").strip()
+        if request_cues.search(cleaned_candidate):
+            return re.sub(r"\s+", " ", cleaned_candidate).strip()
+    direct_request_matches = [
+        match.group(1).strip()
+        for match in re.finditer(
+            r"((?:take|use|plan|design|build|create|show|outline|explain|turn)\b.{20,1200}?(?:draft plan|preview|roadmap|before|octo app|octo ai|workspace|system|module|modules).{0,400}?(?:[.?!]|$))",
+            normalized_one_line,
+            flags=re.IGNORECASE,
+        )
+        if isinstance(match.group(1), str) and match.group(1).strip()
+    ]
+    for candidate in reversed(direct_request_matches):
+        if request_cues.search(candidate):
+            return candidate
+
+    tail = " ".join(paragraphs[-2:]).strip() if paragraphs else normalized
+    return re.sub(r"\s+", " ", tail).strip()
 
 
 def _ai_preview_plan_metadata(plan: dict, context: dict) -> dict[str, Any]:
@@ -16888,6 +16998,20 @@ def _ai_extract_field_label(text: str, answer_hints: dict | None = None) -> str 
             return None
         return label or None
     msg = text or ""
+    if isinstance(answer_hints, dict):
+        hinted_label = answer_hints.get("field_label") if isinstance(answer_hints.get("field_label"), str) else None
+        deictic_field_reference = bool(
+            re.search(r"\b(?:this|that|the|same)\s+field\b", msg, flags=re.IGNORECASE)
+            or re.search(r"\b(?:make|change|update|convert|set|turn)\s+(?:it|this|that)\b", msg, flags=re.IGNORECASE)
+        )
+        explicit_rename = bool(
+            re.search(r"\b(?:called|named|call)\b", msg, flags=re.IGNORECASE)
+            or re.search(r"\brename\b.*\bto\b", msg, flags=re.IGNORECASE)
+        )
+        if deictic_field_reference and not explicit_rename:
+            label = _clean_candidate(hinted_label)
+            if label:
+                return label
     quoted = re.search(r"['\"]([^'\"]{1,80})['\"]", msg)
     if quoted and isinstance(quoted.group(1), str):
         label = _clean_candidate(quoted.group(1))
@@ -16982,7 +17106,7 @@ def _ai_extract_field_labels(text: str) -> list[str]:
 def _ai_is_create_module_request(text: str) -> bool:
     if not isinstance(text, str) or not text.strip():
         return False
-    lowered = re.sub(r"\s+", " ", text.lower()).strip()
+    lowered = re.sub(r"\s+", " ", _ai_focus_request_text(text).lower()).strip()
     if re.search(
         r"\b(?:change|edit|update|modify)\b.*\b(?:module)\b.*\b(?:field|attribute|tab|section|view|page|button|workflow|form|list|layout)\b",
         lowered,
@@ -17034,6 +17158,12 @@ def _ai_infer_field_type(text: str, answer_hints: dict | None = None) -> str:
     lowered = " ".join([*hint_parts, text or ""]).lower()
     if any(token in lowered for token in ["checkbox", "check box", "boolean", "bool", "toggle", "yes/no", "yes no"]):
         return "bool"
+    if any(token in lowered for token in ["integer", "whole number", "int number", "integer number", "count field", "counting number"]):
+        return "int"
+    if any(token in lowered for token in ["decimal", "float", "floating point"]):
+        return "float"
+    if any(token in lowered for token in ["number", "numeric"]):
+        return "int" if re.search(r"\b(?:an?\s+)?int\b", lowered) else "float"
     if any(token in lowered for token in ["datetime", "date time", "date-time", "timestamp", "scheduled at", "starts at", "ends at"]):
         return "datetime"
     if any(token in lowered for token in ["birthday", "birth date", "birthdate", "date of birth", "dob", "anniversary date"]):
@@ -19064,6 +19194,68 @@ def _ai_slot_based_plan(
         }
         return result
 
+    hinted_field_ref = None
+    if isinstance(answer_hints, dict):
+        for key in ("field_id", "field_target", "field_label"):
+            value = answer_hints.get(key)
+            if isinstance(value, str) and value.strip():
+                hinted_field_ref = value.strip()
+                break
+    requested_field_type = _ai_infer_field_type(combined, answer_hints=answer_hints)
+    hinted_field_type = answer_hints.get("field_type") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("field_type"), str) else None
+    field_type_change_intent = bool(
+        hinted_field_ref
+        and requested_field_type in {"int", "float", "bool", "date", "datetime", "text", "attachments", "string"}
+        and requested_field_type != (hinted_field_type or "")
+        and (
+            re.search(r"\b(?:make|change|update|convert|set|turn)\b", lower)
+            or re.search(r"\bshould be\b", lower)
+        )
+        and (
+            re.search(r"\b(?:this|that|the|same)\s+field\b", lower)
+            or re.search(r"\b(?:it|this|that)\b", lower)
+            or bool(_ai_extract_field_label(combined, answer_hints=answer_hints))
+        )
+    )
+    if field_type_change_intent:
+        field_ref = hinted_field_ref or _ai_extract_field_label(combined, answer_hints=answer_hints)
+        resolved = _ai_resolve_field_reference(manifest, target_entity, field_ref) if isinstance(field_ref, str) else None
+        if not isinstance(resolved, dict) and isinstance(field_ref, str):
+            resolved = _ai_resolve_field_reference_from_hint_ops(answer_hints, matched_module, field_ref)
+        field_id = None
+        field_label = _ai_extract_field_label(combined, answer_hints=answer_hints)
+        if isinstance(resolved, dict):
+            field_id = resolved.get("field_id") if isinstance(resolved.get("field_id"), str) and resolved.get("field_id").strip() else None
+            resolved_field = resolved.get("field") if isinstance(resolved.get("field"), dict) else {}
+            if not field_label and isinstance(resolved_field.get("label"), str) and resolved_field.get("label").strip():
+                field_label = resolved_field.get("label").strip()
+        if not isinstance(field_id, str) and isinstance(answer_hints, dict):
+            hinted_field_id = answer_hints.get("field_id")
+            if isinstance(hinted_field_id, str) and hinted_field_id.strip():
+                field_id = hinted_field_id.strip()
+        if not isinstance(field_label, str) or not field_label.strip():
+            field_label = _ai_display_field_reference(field_id or field_ref) if isinstance(field_id or field_ref, str) else None
+        if not isinstance(field_id, str) or not field_id:
+            return ask("Which field should I change the type for?", {"id": "field_target", "kind": "text", "prompt": "Which field should I change the type for?"})
+        result["candidate_ops"] = [
+            {
+                "op": "update_field",
+                "artifact_type": "module",
+                "artifact_id": matched_module,
+                "entity_id": entity_id,
+                "field_id": field_id,
+                "changes": {"type": requested_field_type},
+            }
+        ]
+        result["assumptions"] = ["This keeps the existing field and updates its data type."]
+        result["planner_state"] = {
+            "intent": "update_field",
+            "module_id": matched_module,
+            "field_id": field_id,
+            "field_label": field_label,
+        }
+        return result
+
     field_intent = bool(
         (
             re.search(r"\b(field|attribute|checkbox|toggle|flag)\b", lower)
@@ -20302,6 +20494,7 @@ def _ai_plan_from_message(
     explicit_scope: str | None = None,
     answer_hints: dict | None = None,
 ) -> tuple[dict, dict]:
+    planning_message = _ai_focus_request_text(message)
     graph = _ai_build_workspace_graph(request)
     planner_hints = copy.deepcopy(answer_hints) if isinstance(answer_hints, dict) else {}
     module_index = _ai_module_index_with_pending_modules(_ai_module_manifest_index(request), planner_hints)
@@ -20332,10 +20525,10 @@ def _ai_plan_from_message(
                 or (op.get("artifact_type") == "module" and op.get("artifact_id") == hint_scope_switch_module)
             )
         ]
-    explicit_module_target = _ai_extract_module_target_from_text(message, list(module_index.keys()), module_index)
-    explicit_module_targets = _ai_extract_explicit_module_targets_from_text(message, list(module_index.keys()), module_index)
-    requested_module_labels = _ai_extract_requested_module_labels(message)
-    create_module_intent = _ai_is_create_module_request(message or "")
+    explicit_module_target = _ai_extract_module_target_from_text(planning_message, list(module_index.keys()), module_index)
+    explicit_module_targets = _ai_extract_explicit_module_targets_from_text(planning_message, list(module_index.keys()), module_index)
+    requested_module_labels = _ai_extract_requested_module_labels(planning_message)
+    create_module_intent = _ai_is_create_module_request(planning_message or "")
     hint_module_match = _ai_find_module_by_alias(hint_module_target, list(module_index.keys()), module_index) if isinstance(hint_module_target, str) and hint_module_target.strip() else None
     additive_followup_inherits_scope = bool(
         not create_module_intent
@@ -20343,12 +20536,20 @@ def _ai_plan_from_message(
         and not explicit_module_targets
         and not requested_module_labels
         and len(inherited_followup_modules) == 1
-        and _ai_should_extend_existing_plan(message, session, planner_hints, module_index)
+        and _ai_should_extend_existing_plan(planning_message, session, planner_hints, module_index)
     )
     if additive_followup_inherits_scope:
         planner_hints["_extend_existing_plan"] = True
-        explicit_followup_field_label = _ai_extract_field_label(message, answer_hints=None)
-        if _is_label_confident(explicit_followup_field_label or ""):
+        explicit_followup_field_label = _ai_extract_field_label(planning_message, answer_hints=None)
+        deictic_followup_field_reference = bool(
+            re.search(r"\b(?:this|that|the|same)\s+field\b", planning_message, flags=re.IGNORECASE)
+            or re.search(r"\b(?:make|change|update|convert|set|turn)\s+(?:it|this|that)\b", planning_message, flags=re.IGNORECASE)
+        )
+        explicit_followup_rename = bool(
+            re.search(r"\b(?:called|named|call)\b", planning_message, flags=re.IGNORECASE)
+            or re.search(r"\brename\b.*\bto\b", planning_message, flags=re.IGNORECASE)
+        )
+        if _is_label_confident(explicit_followup_field_label or "") and not (deictic_followup_field_reference and not explicit_followup_rename):
             planner_hints["field_label"] = explicit_followup_field_label
             planner_hints.pop("field_id", None)
             planner_hints.pop("field_target", None)
@@ -20370,7 +20571,7 @@ def _ai_plan_from_message(
     elif prefer_latest_hint_module:
         affected_modules = [hint_module_match]
     elif explicit_module_targets:
-        if re.search(r"\b(?:actually|instead|rather than|scratch that|forget that|ignore that|ignore the previous|on second thought|wait|no)\b", message or "", flags=re.IGNORECASE):
+        if re.search(r"\b(?:actually|instead|rather than|scratch that|forget that|ignore that|ignore the previous|on second thought|wait|no)\b", planning_message or "", flags=re.IGNORECASE):
             affected_modules = [explicit_module_targets[-1]]
         else:
             affected_modules = explicit_module_targets
@@ -20381,10 +20582,10 @@ def _ai_plan_from_message(
     else:
         if isinstance(hint_module_target, str) and hint_module_target.strip():
             affected_modules.extend(_ai_match_modules_from_text(hint_module_target, graph))
-        affected_modules.extend(_ai_match_modules_from_text(message, graph))
+        affected_modules.extend(_ai_match_modules_from_text(planning_message, graph))
     affected_modules = list(dict.fromkeys([mid for mid in affected_modules if mid in module_index]))
-    if not affected_modules and _ai_preview_contract_requested(message):
-        affected_modules = _ai_infer_preview_modules(message, module_index, affected_modules)
+    if not affected_modules and _ai_preview_contract_requested(planning_message):
+        affected_modules = _ai_infer_preview_modules(planning_message, module_index, affected_modules)
     resolved_requested_module_ids = [
         module_id
         for module_id in explicit_module_targets
@@ -20454,22 +20655,22 @@ def _ai_plan_from_message(
     requested_change_lines: list[str] = []
     resolved_without_changes = False
     confirm_plan = answer_hints.get("confirm_plan") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("confirm_plan"), bool) else None
-    preview_style = _ai_preview_plan_style(message)
-    force_preview_only = _ai_preview_contract_requested(message) and bool(preview_style.get("system_brief"))
+    preview_style = _ai_preview_plan_style(planning_message)
+    force_preview_only = _ai_preview_contract_requested(planning_message) and bool(preview_style.get("system_brief"))
     planning_mode = _ai_detect_planning_mode(
-        message,
+        planning_message,
         create_module_intent=create_module_intent,
         preview_only=force_preview_only,
     )
     if (force_preview_only or bool(preview_style.get("system_brief"))) and not unresolved_requested_scope_only:
-        for module_id in _ai_preview_track_modules(message, module_index):
+        for module_id in _ai_preview_track_modules(planning_message, module_index):
             if module_id not in affected_modules:
                 affected_modules.append(module_id)
 
     slot_plan = None
     if not force_preview_only:
         slot_plan = _ai_slot_based_plan(
-            message,
+            planning_message,
             affected_modules,
             module_index,
             answer_hints=planner_hints,
@@ -20505,7 +20706,7 @@ def _ai_plan_from_message(
         semantic = _ai_semantic_plan_from_model(
             request,
             session,
-            message,
+            planning_message,
             module_index,
             graph,
             affected_modules,
@@ -20530,7 +20731,7 @@ def _ai_plan_from_message(
 
     if slot_plan is None and not force_preview_only and not candidate_ops:
         heuristic_ops, heuristic_questions, heuristic_meta = _ai_extract_candidate_ops(
-            message,
+            planning_message,
             affected_modules,
             module_index,
             answer_hints=planner_hints,
@@ -20544,7 +20745,7 @@ def _ai_plan_from_message(
         candidate_ops, placement_questions, placement_question_meta = _ai_reconcile_add_field_intent(
             module_index,
             candidate_ops,
-            message=message,
+            message=planning_message,
             answer_hints=planner_hints,
         )
         if placement_questions and not questions:
@@ -20553,7 +20754,7 @@ def _ai_plan_from_message(
 
     if candidate_ops and not questions:
         candidate_ops, affected_modules, assumptions = _ai_merge_followup_candidate_ops(
-            message,
+            planning_message,
             session,
             planner_hints,
             module_index,
@@ -20627,7 +20828,7 @@ def _ai_plan_from_message(
         advisories.append("dependency review: check shared module links before apply.")
         advisories.append("Review the workspace impact: this reaches multiple modules and shared flows.")
     preview_only_plan = _ai_build_preview_only_plan(
-        message,
+        planning_message,
         affected_modules,
         requested_module_labels,
         missing_requested_module_labels,
@@ -20655,16 +20856,20 @@ def _ai_plan_from_message(
         planner_state = preview_only_plan.get("planner_state") if isinstance(preview_only_plan.get("planner_state"), dict) else planner_state
         resolved_without_changes = bool(preview_only_plan.get("resolved_without_changes"))
     if not candidate_ops and not resolved_without_changes:
-        inferred_preview_modules = _ai_infer_preview_modules(message, module_index, affected_modules)
+        inferred_preview_modules = (
+            []
+            if unresolved_requested_scope_only and not _ai_preview_specific_change_lines(planning_message)
+            else _ai_infer_preview_modules(planning_message, module_index, affected_modules)
+        )
         if _ai_should_force_preview_fallback(
-            message,
+            planning_message,
             inferred_preview_modules,
             requested_module_labels,
             questions,
             question_meta,
         ):
             forced_preview_plan = _ai_build_preview_only_plan(
-                message,
+                planning_message,
                 inferred_preview_modules,
                 requested_module_labels,
                 missing_requested_module_labels,
@@ -21788,6 +21993,51 @@ def _ai_preview_template_lines(request_summary: str) -> list[str]:
     return list(dict.fromkeys(lines))
 
 
+def _ai_preview_integration_lines(request_summary: str) -> list[str]:
+    if not isinstance(request_summary, str) or not request_summary.strip():
+        return []
+    lower = request_summary.lower()
+    if not re.search(r"\b(sync|integration|integrations|webhook|xero|quickbooks|google calendar|outlook calendar|mailchimp|slack|zapier)\b", lower):
+        return []
+    lines: list[str] = []
+    provider_patterns = [
+        (r"\bxero\b", "Xero"),
+        (r"\bquickbooks\b", "QuickBooks"),
+        (r"\bgoogle calendar\b", "Google Calendar"),
+        (r"\boutlook calendar\b", "Outlook Calendar"),
+        (r"\bmailchimp\b", "Mailchimp"),
+        (r"\bslack\b", "Slack"),
+        (r"\bzapier\b", "Zapier"),
+        (r"\bwebhook\b", "webhook"),
+    ]
+    provider_label = next((label for pattern, label in provider_patterns if re.search(pattern, lower, flags=re.IGNORECASE)), "")
+    if provider_label:
+        if provider_label == "webhook":
+            lines.append("Set up the requested webhook integration.")
+        else:
+            lines.append(f"Set up the requested {provider_label} integration.")
+    elif re.search(r"\bsync\b", lower):
+        lines.append("Set up the requested sync integration.")
+    else:
+        lines.append("Set up the requested integration.")
+    flow_match = re.search(
+        r"\bso\s+(?P<details>.+?)(?:[.?!]|$)",
+        request_summary,
+        flags=re.IGNORECASE,
+    )
+    if not flow_match:
+        flow_match = re.search(
+            r"\b(?:that|to)\s+(?P<details>.+?)(?:[.?!]|$)",
+            request_summary,
+            flags=re.IGNORECASE,
+        )
+    if flow_match:
+        wording = flow_match.group("details").strip(" .,:;")
+        if wording:
+            lines.append(f"Keep the integration flow so {wording}.")
+    return list(dict.fromkeys(lines))
+
+
 def _ai_preview_dashboard_lines(request_summary: str) -> list[str]:
     if not isinstance(request_summary, str) or not request_summary.strip():
         return []
@@ -21817,7 +22067,13 @@ def _ai_preview_dashboard_lines(request_summary: str) -> list[str]:
 
 def _ai_preview_specific_change_lines(request_summary: str) -> list[str]:
     lines: list[str] = []
-    for builder in (_ai_preview_template_lines, _ai_preview_dashboard_lines, _ai_preview_automation_lines, _ai_preview_notification_lines):
+    for builder in (
+        _ai_preview_template_lines,
+        _ai_preview_integration_lines,
+        _ai_preview_dashboard_lines,
+        _ai_preview_automation_lines,
+        _ai_preview_notification_lines,
+    ):
         lines.extend(builder(request_summary))
     return list(dict.fromkeys([item for item in lines if isinstance(item, str) and item.strip()]))
 
@@ -22880,6 +23136,8 @@ def _ai_condition_change_lines(module_label: str, subject_text: str, condition_s
 def _ai_plan_detail_sections(plan: dict, context: dict) -> list[dict]:
     render_context = _ai_context_with_planned_modules(plan, context)
     ops = [item for item in (plan.get("proposed_changes") or []) if isinstance(item, dict)]
+    planner_state = plan.get("planner_state") if isinstance(plan.get("planner_state"), dict) else {}
+    planner_intent = planner_state.get("intent") if isinstance(planner_state.get("intent"), str) else ""
     fields: list[str] = []
     placement: list[str] = []
     workflow_actions: list[str] = []
@@ -22887,6 +23145,53 @@ def _ai_plan_detail_sections(plan: dict, context: dict) -> list[dict]:
     dependencies: list[str] = []
     views: list[str] = []
     sandbox_checks: list[str] = []
+    architecture: list[str] = []
+
+    if planner_intent in {"preview_only_plan", "preview_only_noop"} and not ops:
+        request_summary = render_context.get("request_summary") if isinstance(render_context.get("request_summary"), str) else ""
+        tracks = [item for item in _ai_preview_roadmap_tracks(request_summary) if isinstance(item, str) and item.strip()]
+        requested_labels, _missing_labels = _ai_plan_requested_scope_labels(plan)
+        preview_module_index = {
+            artifact.get("artifact_id"): {"manifest": artifact.get("manifest")}
+            for artifact in (render_context.get("full_selected_artifacts") or [])
+            if isinstance(artifact, dict)
+            and artifact.get("artifact_type") == "module"
+            and isinstance(artifact.get("artifact_id"), str)
+            and isinstance(artifact.get("manifest"), dict)
+        }
+        inferred_modules = _ai_preview_track_modules(request_summary, preview_module_index)
+        module_labels = [
+            _ai_plan_module_label(module_id, render_context)
+            for module_id in inferred_modules
+            if isinstance(module_id, str) and module_id
+        ]
+        module_labels = _ai_dedupe_scope_labels(module_labels)
+        if len(module_labels) >= 3 or len(tracks) >= 4:
+            architecture.append("Treat this as a coordinated multi-module workspace, not one oversized module.")
+        elif len(module_labels) == 1:
+            architecture.append(f"Keep the first rollout centred on {module_labels[0]} as the main module.")
+        elif isinstance(planner_state.get("module_name"), str) and planner_state.get("module_name").strip():
+            architecture.append(f"Start with one strong module for {planner_state.get('module_name').strip()} before splitting anything further.")
+
+        reverse_map: dict[str, list[str]] = {}
+        for track, module_candidates in _ai_preview_track_module_map().items():
+            for module_id in module_candidates:
+                reverse_map.setdefault(module_id, [])
+                if track not in reverse_map[module_id]:
+                    reverse_map[module_id].append(track)
+        for module_id in inferred_modules[:4]:
+            if not isinstance(module_id, str) or not module_id:
+                continue
+            owned_tracks = [track for track in reverse_map.get(module_id, []) if track in tracks]
+            if not owned_tracks:
+                continue
+            module_label = _ai_plan_module_label(module_id, render_context)
+            architecture.append(f"{module_label}: cover {_ai_join_human_list(owned_tracks[:4])}.")
+        if not architecture and requested_labels:
+            if len(requested_labels) > 1:
+                architecture.append(f"Split the draft plan across {_ai_join_human_list(requested_labels[:6])} rather than forcing everything into one module.")
+            elif len(requested_labels) == 1:
+                architecture.append(f"Use {requested_labels[0]} as the primary module boundary for the first draft.")
 
     for op in ops:
         op_name = op.get("op")
@@ -23144,6 +23449,7 @@ def _ai_plan_detail_sections(plan: dict, context: dict) -> list[dict]:
 
     sections: list[dict] = []
     for key, title, items in (
+        ("architecture", "Recommended module architecture", architecture),
         ("fields", "Fields", fields),
         ("placement", "Placement", placement),
         ("workflow_actions", "Workflow & actions", workflow_actions),
@@ -23298,7 +23604,8 @@ def _ai_plan_v1_base(plan: dict, context: dict) -> dict:
             summary = f"Make several changes in {planned_labels[0]}."
         elif len(planned_labels) > 1:
             summary = f"Make coordinated changes across {_ai_join_human_list(planned_labels)}."
-    operation_families = _ai_plan_operation_families(proposed_ops, planner_intent)
+    request_summary = render_context.get("request_summary") if isinstance(render_context.get("request_summary"), str) else None
+    operation_families = _ai_plan_operation_families(proposed_ops, planner_intent, request_summary=request_summary)
     primary_operation_family = operation_families[0] if operation_families else None
     sections = _ai_plan_detail_sections(plan, render_context)
     blueprint_items = _ai_design_spec_blueprint_items(design_spec)
@@ -23494,7 +23801,26 @@ def _ai_plan_operation_family_for_op(op_name: str | None) -> str | None:
     return "module_change"
 
 
-def _ai_plan_operation_families(operations: list[dict] | None, planner_intent: str | None = None) -> list[str]:
+def _ai_plan_preview_operation_families(request_summary: str | None) -> list[str]:
+    if not isinstance(request_summary, str) or not request_summary.strip():
+        return []
+    families: list[str] = []
+    if _ai_preview_template_lines(request_summary):
+        families.append("template_change")
+    if _ai_preview_integration_lines(request_summary):
+        families.append("integration_change")
+    if _ai_preview_automation_lines(request_summary) or _ai_preview_notification_lines(request_summary):
+        families.append("automation_change")
+    if _ai_preview_dashboard_lines(request_summary):
+        families.append("ui_layout_change")
+    return families
+
+
+def _ai_plan_operation_families(
+    operations: list[dict] | None,
+    planner_intent: str | None = None,
+    request_summary: str | None = None,
+) -> list[str]:
     families: list[str] = []
     for op in operations or []:
         family = _ai_plan_operation_family_for_op(op.get("op") if isinstance(op, dict) else None)
@@ -23512,6 +23838,9 @@ def _ai_plan_operation_families(operations: list[dict] | None, planner_intent: s
             families.append("ui_layout_change")
         elif intent == "multi_request":
             families.append("cross_module_change")
+    for family in _ai_plan_preview_operation_families(request_summary):
+        if family not in families:
+            families.append(family)
     return families
 
 
