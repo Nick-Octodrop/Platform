@@ -7032,6 +7032,105 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertNotIn("Production", text)
         self.assertNotIn("Purchasing", text)
 
+    def test_structured_plan_adds_architecture_decisions_and_first_delivery_slice_for_preview_brief(self) -> None:
+        plan = {
+            "planner_state": {
+                "intent": "preview_only_plan",
+                "request_summary": (
+                    "Use this guide to design the workspace: We run a service business with leads, quotes, jobs, "
+                    "technicians, invoices, and follow-up care. Explain the phased system and what you would deliver first."
+                ),
+            },
+            "affected_artifacts": [
+                {"artifact_type": "module", "artifact_id": "crm"},
+                {"artifact_type": "module", "artifact_id": "sales"},
+                {"artifact_type": "module", "artifact_id": "jobs"},
+                {"artifact_type": "module", "artifact_id": "invoices"},
+            ],
+            "proposed_changes": [],
+            "required_questions": ["Confirm this plan?"],
+            "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan"},
+        }
+        context = {
+            "request_summary": plan["planner_state"]["request_summary"],
+            "full_selected_artifacts": [
+                {"artifact_type": "module", "artifact_id": "crm", "manifest": {"module": {"name": "CRM"}}},
+                {"artifact_type": "module", "artifact_id": "sales", "manifest": {"module": {"name": "Sales"}}},
+                {"artifact_type": "module", "artifact_id": "jobs", "manifest": {"module": {"name": "Jobs"}}},
+                {"artifact_type": "module", "artifact_id": "invoices", "manifest": {"module": {"name": "Invoices"}}},
+            ],
+        }
+
+        structured = _ai_build_structured_plan(plan, context)
+
+        self.assertIn("Treat this as a coordinated multi-module workspace, not one oversized module.", structured["architecture_decisions"])
+        self.assertTrue(any(item.startswith("Phase 1: deliver ") for item in structured["first_delivery_slice"]))
+        sections = {item["key"]: item["items"] for item in structured["sections"]}
+        self.assertIn("architecture", sections)
+        self.assertIn("first_delivery", sections)
+
+    def test_preview_plan_prefers_reuse_then_new_module_when_scope_is_mixed(self) -> None:
+        plan = {
+            "planner_state": {
+                "intent": "preview_only_plan",
+                "request_summary": "Plan a contractor compliance rollout that extends Contacts and adds Compliance for approvals and expiry reminders.",
+                "requested_module_labels": ["Contacts", "Compliance"],
+                "missing_module_labels": ["Compliance"],
+            },
+            "affected_artifacts": [
+                {"artifact_type": "module", "artifact_id": "contacts"},
+            ],
+            "proposed_changes": [],
+            "required_questions": ["Confirm this plan?"],
+            "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan"},
+        }
+        context = {
+            "request_summary": plan["planner_state"]["request_summary"],
+            "full_selected_artifacts": [
+                {"artifact_type": "module", "artifact_id": "contacts", "manifest": {"module": {"name": "Contacts"}}},
+            ],
+        }
+
+        structured = _ai_build_structured_plan(plan, context)
+
+        self.assertTrue(
+            any("Reuse existing Contacts" in item and "Compliance" in item for item in structured["architecture_decisions"])
+        )
+        self.assertTrue(
+            any(item.startswith("Phase 1: extend Contacts first, then add Compliance") for item in structured["first_delivery_slice"])
+        )
+
+    def test_create_module_structured_plan_adds_first_delivery_slice(self) -> None:
+        plan = {
+            "planner_state": {
+                "intent": "create_module",
+                "module_name": "Equipment Servicing",
+            },
+            "affected_artifacts": [],
+            "proposed_changes": [
+                {
+                    "op": "create_module",
+                    "artifact_id": "equipment_servicing",
+                    "design_spec": {
+                        "experience": {"interfaces": ["dashboardable", "documentable"]},
+                    },
+                    "manifest": {
+                        "module": {"name": "Equipment Servicing"},
+                    },
+                }
+            ],
+            "required_questions": ["Confirm this plan?"],
+            "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan"},
+        }
+
+        structured = _ai_build_structured_plan(plan, {"request_summary": "Create a new equipment servicing module."})
+
+        self.assertIn("Start with one strong module for Equipment Servicing before splitting anything further.", structured["architecture_decisions"])
+        self.assertIn(
+            "Phase 1: land the core Equipment Servicing record, workflow, and starter views before any downstream automations or templates.",
+            structured["first_delivery_slice"],
+        )
+
     def test_project_handover_connector_brief_prefers_preview_only_plan(self) -> None:
         module_index = {
             "sales": {"manifest": {"module": {"id": "sales", "key": "sales", "name": "Sales"}, "entities": [], "views": []}},

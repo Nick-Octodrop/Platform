@@ -60,9 +60,13 @@ ALLOWED_V1_BLOCK_KEYS = {
     "default_group_by",
     "default_filter_id",
     "record_domain",
+    "compact",
+    "param_scope",
+    "page_size",
     "view",
     "create_defaults",
     "create_modal",
+    "cards",
 }
 ALLOWED_V1_ACTION_KINDS = {"navigate", "open_form", "refresh", "create_record", "update_record", "bulk_update", "transform_record"}
 ALLOWED_V1_TRIGGER_KEYS = {"id", "event", "entity_id", "action_id", "status_field"}
@@ -75,10 +79,23 @@ ALLOWED_V1_TAB_KEYS = {"id", "label", "content"}
 ALLOWED_V1_TEXT_KEYS = {"kind", "text"}
 ALLOWED_V1_CHATTER_KEYS = {"kind", "entity_id", "record_ref"}
 ALLOWED_V1_CONTAINER_KEYS = {"kind", "variant", "title", "content"}
+ALLOWED_V1_STAT_CARDS_KEYS = {"kind", "title", "columns", "cards"}
+ALLOWED_V1_STAT_CARD_KEYS = {"id", "label", "subtitle", "entity_id", "measure", "domain", "icon", "tone", "target", "date_field", "format"}
 ALLOWED_V1_TOOLBAR_KEYS = {"kind", "align", "actions"}
 ALLOWED_V1_STATUSBAR_KEYS = {"kind", "entity_id", "record_ref", "field_id", "mode"}
 ALLOWED_V1_RECORD_KEYS = {"kind", "entity_id", "record_id_query", "content"}
-ALLOWED_V1_VIEW_MODES_KEYS = {"kind", "entity_id", "modes", "default_mode", "default_group_by", "default_filter_id", "record_domain"}
+ALLOWED_V1_VIEW_MODES_KEYS = {
+    "kind",
+    "entity_id",
+    "modes",
+    "default_mode",
+    "default_group_by",
+    "default_filter_id",
+    "record_domain",
+    "compact",
+    "param_scope",
+    "page_size",
+}
 ALLOWED_V1_RELATED_LIST_KEYS = {"kind", "entity_id", "target", "view", "record_domain", "create_defaults", "create_modal"}
 ALLOWED_V1_VIEW_MODE_ITEM_KEYS = {"mode", "target", "default_group_by"}
 MAX_BLOCK_DEPTH = 6
@@ -463,6 +480,62 @@ def _validate_blocks(
             _reject_unknown_keys(errors, block, ALLOWED_V1_CONTAINER_KEYS, bpath)
             content = _get(block, "content", [])
             _validate_blocks(content, f"{bpath}.content", view_ids, entity_by_id, action_by_id, errors, allow_layout, allow_chatter, allow_v13, record_entity, depth + 1)
+        elif kind == "stat_cards":
+            if not allow_v13:
+                errors.append(_issue("MANIFEST_BLOCK_KIND_INVALID", "stat_cards blocks require manifest_version >= 1.3", f"{bpath}.kind"))
+                continue
+            _reject_unknown_keys(errors, block, ALLOWED_V1_STAT_CARDS_KEYS, bpath)
+            columns = _get(block, "columns")
+            if columns is not None and (not isinstance(columns, int) or columns < 1 or columns > 6):
+                errors.append(_issue("MANIFEST_STAT_CARDS_INVALID", "stat_cards.columns must be 1..6", f"{bpath}.columns"))
+            cards = _get(block, "cards", [])
+            if not isinstance(cards, list) or len(cards) == 0:
+                errors.append(_issue("MANIFEST_STAT_CARDS_INVALID", "stat_cards.cards must be a non-empty list", f"{bpath}.cards"))
+                continue
+            card_ids = []
+            for cidx, card in enumerate(cards):
+                cpath = f"{bpath}.cards[{cidx}]"
+                if not isinstance(card, dict):
+                    errors.append(_issue("MANIFEST_STAT_CARD_INVALID", "stat card must be an object", cpath))
+                    continue
+                _reject_unknown_keys(errors, card, ALLOWED_V1_STAT_CARD_KEYS, cpath)
+                cid = _get(card, "id")
+                if not isinstance(cid, str) or not cid:
+                    errors.append(_issue("MANIFEST_STAT_CARD_INVALID", "stat card id is required", f"{cpath}.id"))
+                else:
+                    card_ids.append(cid)
+                label = _get(card, "label")
+                if not isinstance(label, str) or not label:
+                    errors.append(_issue("MANIFEST_STAT_CARD_INVALID", "stat card label is required", f"{cpath}.label"))
+                entity_id = _get(card, "entity_id")
+                if not isinstance(entity_id, str) or not entity_id:
+                    errors.append(_issue("MANIFEST_STAT_CARD_INVALID", "stat card entity_id is required", f"{cpath}.entity_id"))
+                elif entity_id not in entity_by_id and f"entity.{entity_id}" not in entity_by_id:
+                    errors.append(_issue("MANIFEST_STAT_CARD_INVALID", "stat card entity_id not found", f"{cpath}.entity_id"))
+                measure = _get(card, "measure")
+                if not isinstance(measure, str) or not measure:
+                    errors.append(_issue("MANIFEST_STAT_CARD_INVALID", "stat card measure is required", f"{cpath}.measure"))
+                elif measure.startswith("sum:") or measure.startswith("count_distinct:"):
+                    mfield = measure.split(":", 1)[1]
+                    entity_obj = entity_by_id.get(entity_id) or entity_by_id.get(f"entity.{entity_id}") if isinstance(entity_id, str) else None
+                    if entity_obj and mfield not in _field_ids(entity_obj):
+                        errors.append(_issue("MANIFEST_VIEW_FIELD_UNKNOWN", "stat card measure field not found", f"{cpath}.measure"))
+                elif measure != "count":
+                    errors.append(_issue("MANIFEST_STAT_CARD_INVALID", "measure must be count, sum:<field>, or count_distinct:<field>", f"{cpath}.measure"))
+                domain = _get(card, "domain")
+                if domain is not None:
+                    _validate_condition(domain, f"{cpath}.domain", errors)
+                date_field = _get(card, "date_field")
+                if date_field is not None and not isinstance(date_field, str):
+                    errors.append(_issue("MANIFEST_STAT_CARD_INVALID", "date_field must be string", f"{cpath}.date_field"))
+                target = _get(card, "target")
+                if target is not None and not isinstance(target, str):
+                    errors.append(_issue("MANIFEST_TARGET_INVALID", "stat card target must be string", f"{cpath}.target"))
+                fmt = _get(card, "format")
+                if fmt is not None and fmt not in {"number", "currency", "hours"}:
+                    errors.append(_issue("MANIFEST_STAT_CARD_INVALID", "format must be number|currency|hours", f"{cpath}.format"))
+            if len(card_ids) != len(set(card_ids)):
+                errors.append(_issue("MANIFEST_STAT_CARD_INVALID", "stat card ids must be unique", f"{bpath}.cards"))
         elif kind == "toolbar":
             if not allow_v13:
                 errors.append(_issue("MANIFEST_BLOCK_KIND_INVALID", "toolbar blocks require manifest_version >= 1.3", f"{bpath}.kind"))

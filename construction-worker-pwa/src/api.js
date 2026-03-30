@@ -172,9 +172,20 @@ export async function findOpenTimeEntry(workerRecordId) {
   const fields = encodeURIComponent(
     [
       "time_entry.project_id",
+      "time_entry.site_id",
+      "time_entry.worker_id",
+      "time_entry.crew_id",
+      "time_entry.work_item_id",
       "time_entry.entry_date",
       "time_entry.check_in_at",
+      "time_entry.check_out_at",
+      "time_entry.break_minutes",
+      "time_entry.hours_worked",
       "time_entry.status",
+      "time_entry.source",
+      "time_entry.approved_by",
+      "time_entry.notes",
+      "time_entry.created_at",
     ].join(","),
   );
   const data = await apiFetch(`/records/entity.time_entry?limit=1&fields=${fields}&domain=${domain}`);
@@ -215,21 +226,41 @@ export async function deleteMaterialLog(recordId) {
   });
 }
 
-export async function getProjectMaterialLogs(projectId) {
-  if (!projectId) return [];
+export async function getProjectMaterialLogs(projectId, workerRecordId) {
+  if (!projectId || !workerRecordId) return [];
   const domain = encodeURIComponent(
     JSON.stringify({
-      op: "eq",
-      field: "material_log.project_id",
-      value: projectId,
+      op: "and",
+      conditions: [
+        {
+          op: "eq",
+          field: "material_log.project_id",
+          value: projectId,
+        },
+        {
+          op: "eq",
+          field: "material_log.entered_by_worker_id",
+          value: workerRecordId,
+        },
+      ],
     }),
   );
   const fields = encodeURIComponent(
     [
+      "material_log.project_id",
+      "material_log.site_id",
+      "material_log.work_item_id",
       "material_log.material_type",
       "material_log.quantity",
       "material_log.unit",
+      "material_log.unit_cost",
+      "material_log.total_cost",
+      "material_log.entered_by_worker_id",
+      "material_log.supervisor_id",
       "material_log.log_date",
+      "material_log.status",
+      "material_log.notes",
+      "material_log.photo",
       "material_log.created_at",
     ].join(","),
   );
@@ -335,5 +366,7 @@ export function nowIso() {
 }
 
 export function todayDate() {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
 }

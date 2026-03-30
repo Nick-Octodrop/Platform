@@ -1544,6 +1544,8 @@ export default function ViewModesBlock({
   forceListOnly = false,
 }) {
   const isMobile = useMediaQuery("(max-width: 768px)");
+  const compact = block?.compact === true;
+  const compactMobile = compact && isMobile;
   const modes = Array.isArray(block?.modes) ? block.modes : [];
   const views = Array.isArray(manifest?.views) ? manifest.views : [];
   const appDefaults = manifest?.app?.defaults || {};
@@ -1743,9 +1745,11 @@ export default function ViewModesBlock({
   const showListMode = activeMode === "list";
   const showKanbanMode = activeMode === "kanban";
   const showCalendarMode = activeMode === "calendar";
-  const listPageSize = Number.isFinite(Number(listView?.page_size)) && Number(listView?.page_size) > 0
-    ? Number(listView?.page_size)
-    : 25;
+  const listPageSize = Number.isFinite(Number(block?.page_size)) && Number(block?.page_size) > 0
+    ? Number(block?.page_size)
+    : Number.isFinite(Number(listView?.page_size)) && Number(listView?.page_size) > 0
+      ? Number(listView?.page_size)
+      : 25;
   const pivotRowGroupBy = pivotRowParam || groupByParam || activeModeDef?.default_group_by || block?.default_group_by || "";
   const pivotColGroupBy = pivotColParam || "";
   const pivotMeasure = pivotMeasureParam || "count";
@@ -2372,12 +2376,12 @@ export default function ViewModesBlock({
     }
     return opts;
   }, [entityDef]);
-  const createInModal = Boolean(forceListOnly && block?.create_modal !== false && typeof onLookupCreate === "function");
+  const createInModal = Boolean(!compact && forceListOnly && block?.create_modal !== false && typeof onLookupCreate === "function");
   const searchEnabled = Boolean(listView?.header?.search?.enabled);
-  const showSearch = searchEnabled;
-  const showFilters = !forceListOnly && (manifestFilterList.length > 0 || filterableFields.length > 0);
-  const showSavedViews = !forceListOnly && Boolean(entityFullId);
-  const showGroupBy = !forceListOnly && (activeMode === "kanban" || activeMode === "graph" || activeMode === "pivot") && filterableFields.length > 0;
+  const showSearch = !compact && searchEnabled;
+  const showFilters = !compact && !forceListOnly && (manifestFilterList.length > 0 || filterableFields.length > 0);
+  const showSavedViews = !compact && !forceListOnly && Boolean(entityFullId);
+  const showGroupBy = !compact && !forceListOnly && (activeMode === "kanban" || activeMode === "graph" || activeMode === "pivot") && filterableFields.length > 0;
   const showGraphMeasure = activeMode === "graph" && measureOptions.length > 0;
   const showPivotMeasure = activeMode === "pivot" && measureOptions.length > 0;
   const showMobileToolbarActions = isMobile && (
@@ -2727,7 +2731,8 @@ export default function ViewModesBlock({
   }
 
   return (
-    <div className="flex flex-col gap-4 h-full min-h-0 overflow-hidden">
+    <div className={`flex flex-col ${compact ? "gap-3" : "gap-4"} ${compactMobile ? "" : "h-full min-h-0 overflow-hidden"}`}>
+      {!compact && (
         <div className={isMobile ? "flex flex-wrap items-center justify-between gap-3 relative z-30 shrink-0" : "grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 relative z-30 shrink-0"}>
           <div className="flex items-center gap-2 min-w-0">
           {canWriteRecords && (
@@ -3216,7 +3221,8 @@ export default function ViewModesBlock({
             </div>
           )}
         </div>
-      </div>
+        </div>
+      )}
 
       {clientFilters.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -3231,13 +3237,14 @@ export default function ViewModesBlock({
         </div>
       )}
 
-      <div className={`flex-1 min-h-0 relative z-0 ${activeMode === "calendar" ? "overflow-hidden" : "overflow-auto"}`}>
+      <div className={`${compactMobile ? "relative z-0" : `flex-1 min-h-0 relative z-0 ${activeMode === "calendar" ? "overflow-hidden" : "overflow-auto"}`}`}>
         {activeView && activeViewKind === "list" && showListMode && (
-          <div className="h-full min-h-0">
+          <div className={compactMobile ? "" : "h-full min-h-0"}>
             <ListViewRenderer
               view={activeView}
               fieldIndex={fieldIndex}
               records={records}
+              enableSelection={!compact}
               header={activeView.header}
               hideHeader={true}
               searchQuery={searchText}
@@ -3279,7 +3286,7 @@ export default function ViewModesBlock({
         )}
 
         {activeView && activeViewKind === "kanban" && showKanbanMode && (
-          <div className="h-full min-h-0">
+          <div className={compactMobile ? "" : "h-full min-h-0"}>
             <KanbanView
               view={activeView}
               entityDef={entityDef}
@@ -3299,7 +3306,7 @@ export default function ViewModesBlock({
         )}
 
         {activeView && activeViewKind === "calendar" && showCalendarMode && (
-          <div className="h-full min-h-0 overflow-hidden">
+          <div className={compactMobile ? "" : "h-full min-h-0 overflow-hidden"}>
             <CalendarView
               view={activeView}
               records={records}
@@ -3316,13 +3323,13 @@ export default function ViewModesBlock({
         )}
 
         {showGraphMode && (
-          <div className="h-full min-h-0">
+          <div className={compactMobile ? "min-h-[16rem]" : "h-full min-h-0"}>
             <GraphView data={presentedGraphData} type={graphType} />
           </div>
         )}
 
         {activeMode === "pivot" && (
-          <div className="h-full min-h-0">
+          <div className={compactMobile ? "min-h-[16rem]" : "h-full min-h-0"}>
             <PivotView data={presentedPivotData} measure={pivotMeasure} />
           </div>
         )}

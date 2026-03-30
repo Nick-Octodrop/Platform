@@ -120,6 +120,8 @@ Planner contract:
   - requested scope
   - target artifacts
   - one or more operations
+  - architecture decisions
+  - first delivery slice
   - assumptions
   - clarifications
   - risks

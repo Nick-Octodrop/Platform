@@ -10,6 +10,7 @@ import { formatDateTime } from "../utils/dateTime.js";
 import AttachmentGallery from "./AttachmentGallery.jsx";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
+import { resolveLucideIcon } from "../state/lucideIconCatalog.js";
 
 const GAP_MAP = {
   sm: "gap-2",
@@ -31,6 +32,47 @@ function normalizeViewTarget(target) {
   if (target.startsWith("view:")) return target.slice(5);
   if (target.startsWith("page:")) return null;
   return target;
+}
+
+function resolveBlockRefs(value, context = {}) {
+  if (Array.isArray(value)) return value.map((item) => resolveBlockRefs(item, context));
+  if (!value || typeof value !== "object") return value;
+  if (Object.keys(value).length === 1 && Object.prototype.hasOwnProperty.call(value, "ref")) {
+    const ref = value.ref;
+    if (typeof ref !== "string") return value;
+    if (ref === "$today") return new Date().toISOString().slice(0, 10);
+    if (ref === "$now") return new Date().toISOString();
+    if (ref === "$record.id") return context?.recordId ?? null;
+    if (ref.startsWith("$record.")) {
+      const fieldId = ref.slice(8);
+      return context?.record?.[fieldId] ?? null;
+    }
+    return value;
+  }
+  const out = {};
+  for (const [key, item] of Object.entries(value)) {
+    out[key] = resolveBlockRefs(item, context);
+  }
+  return out;
+}
+
+function formatStatCardValue(value, format = "number") {
+  const numeric = typeof value === "number" ? value : Number(value || 0);
+  if (!Number.isFinite(numeric)) return "0";
+  if (format === "currency") {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0,
+    }).format(numeric);
+  }
+  if (format === "hours") {
+    return new Intl.NumberFormat(undefined, {
+      minimumFractionDigits: Number.isInteger(numeric) ? 0 : 1,
+      maximumFractionDigits: 2,
+    }).format(numeric);
+  }
+  return new Intl.NumberFormat().format(numeric);
 }
 
 const RecordScopeContext = createContext(null);
@@ -62,11 +104,23 @@ function hasFillHeight(blocks) {
   return false;
 }
 
+function blockPrefersFill(block) {
+  if (!block || typeof block !== "object") return false;
+  if (block.kind === "view_modes" || block.kind === "related_list" || block.kind === "view" || block.kind === "record" || block.kind === "chatter") {
+    return true;
+  }
+  if (block.kind === "container") return hasFillHeight(block.content);
+  if (block.kind === "stack") return hasFillHeight(block.content);
+  if (block.kind === "grid") return Array.isArray(block.items) && block.items.some((item) => hasFillHeight(item?.content));
+  if (block.kind === "tabs") return Array.isArray(block.tabs) && block.tabs.some((tab) => hasFillHeight(tab?.content));
+  return false;
+}
+
 export default function ContentBlocksRenderer({ blocks, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, onNavigate, onRunAction, onConfirm, onPrompt, onLookupCreate, externalRefreshTick = 0, previewMode = false, bootstrap = null, bootstrapVersion = 0, bootstrapLoading = false, canWriteRecords = null, recordContext = null }) {
   const safeBlocks = Array.isArray(blocks) ? blocks : [];
   const isMobile = useMediaQuery("(max-width: 768px)");
   const mobileRecordPage = isMobile && (safeBlocks.some((block) => block?.kind === "record") || Boolean(recordContext?.recordId) || Boolean(recordId));
-  const fullHeight = !mobileRecordPage && (hasViewModes(safeBlocks) || hasFillHeight(safeBlocks));
+  const fullHeight = !isMobile && !mobileRecordPage && (hasViewModes(safeBlocks) || hasFillHeight(safeBlocks));
   const inherited = useContext(RecordScopeContext);
   const baseContext = inherited || recordContext || (recordId ? { entityId: null, recordId, record: null, setRecord: () => {} } : null);
   const { hasCapability } = useAccessContext();
@@ -75,7 +129,7 @@ export default function ContentBlocksRenderer({ blocks, renderView, recordId, se
       ? canWriteRecords
       : hasCapability("records.write") && bootstrap?.permissions?.records_write !== false;
   const content = (
-    <div className={fullHeight ? "h-full min-h-0 flex flex-col overflow-hidden" : "space-y-4"}>
+    <div className={fullHeight ? "h-full min-h-0 flex flex-col overflow-hidden gap-4" : "space-y-4"}>
       {safeBlocks.map((block, idx) => {
         const node = (
           <BlockRenderer
@@ -102,7 +156,7 @@ export default function ContentBlocksRenderer({ blocks, renderView, recordId, se
             canWriteRecords={effectiveCanWriteRecords}
           />
         );
-        if (!fullHeight) return node;
+        if (!fullHeight || !blockPrefersFill(block)) return node;
         return (
           <div key={`wrap-${block?.kind || "block"}-${idx}`} className="flex-1 min-h-0 h-full overflow-hidden">
             {node}
@@ -120,6 +174,7 @@ export default function ContentBlocksRenderer({ blocks, renderView, recordId, se
 function BlockRenderer({ block, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, recordContext, onNavigate, onRunAction, onConfirm, onPrompt, onLookupCreate, externalRefreshTick = 0, previewMode = false, bootstrap, bootstrapVersion, bootstrapLoading, canWriteRecords }) {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const mobileRecordPage = isMobile && Boolean(recordContext?.recordId || recordId);
+  const constrainHeight = !isMobile && !mobileRecordPage;
   if (!block || typeof block !== "object") {
     return <div className="alert alert-warning">Invalid block</div>;
   }
@@ -129,7 +184,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
     const viewId = normalizeViewTarget(block.target);
     if (!viewId) return <div className="alert alert-error">Invalid view target</div>;
     return (
-      <div className="flex-1 h-full min-h-0 flex flex-col overflow-hidden">
+      <div className={constrainHeight ? "flex-1 h-full min-h-0 flex flex-col overflow-hidden" : "flex flex-col"}>
         {renderView(viewId, recordContext, previewMode, { showViewTitle: false })}
       </div>
     );
@@ -137,7 +192,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
 
   if (kind === "view_modes") {
     return (
-      <ViewModesBlock
+      <ScopedViewModesBlock
         block={block}
         manifest={manifest}
         searchParams={searchParams}
@@ -172,7 +227,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
       create_modal: block.create_modal !== false,
     };
     return (
-      <ViewModesBlock
+      <ScopedViewModesBlock
         block={mappedBlock}
         manifest={manifest}
         searchParams={searchParams}
@@ -205,10 +260,10 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
 
   if (kind === "grid") {
     return (
-      <div className={`grid grid-cols-12 items-stretch ${mobileRecordPage ? "" : "h-full min-h-0"} ${gapClass(block.gap)}`}>
+      <div className={`grid grid-cols-12 items-stretch ${constrainHeight ? "h-full min-h-0" : ""} ${gapClass(block.gap)}`}>
         {(block.items || []).map((item, idx) => (
-          <div key={`${item.span || "span"}-${idx}`} className={`${spanClass(item.span)} ${mobileRecordPage ? "" : "h-full min-h-0"} flex flex-col ${mobileRecordPage ? "" : "overflow-hidden"}`}>
-            <div className={`${mobileRecordPage ? "" : "flex-1 min-h-0 overflow-hidden"}`}>
+          <div key={`${item.span || "span"}-${idx}`} className={`${spanClass(item.span)} ${constrainHeight ? "h-full min-h-0 overflow-hidden" : ""} flex flex-col`}>
+            <div className={`${constrainHeight ? "flex-1 min-h-0 overflow-hidden" : ""}`}>
               <ContentBlocksRenderer
                 blocks={item.content}
                 renderView={renderView}
@@ -263,6 +318,17 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
     return <div className="prose max-w-none whitespace-pre-wrap">{block.text || ""}</div>;
   }
 
+  if (kind === "stat_cards") {
+    return (
+      <StatCardsBlock
+        block={block}
+        moduleId={moduleId}
+        recordContext={recordContext}
+        onNavigate={onNavigate}
+      />
+    );
+  }
+
   if (kind === "container") {
     const variant = block.variant || "card";
     const title = block.title;
@@ -294,33 +360,33 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
     );
     if (variant === "panel") {
       return (
-        <div className={`bg-base-200 ${isMobile ? "rounded-none" : "rounded-box"} ${shouldFill && !mobileRecordPage ? "h-full min-h-0" : ""} flex flex-col ${mobileRecordPage ? "" : "overflow-hidden"}`}>
+        <div className={`bg-base-200 ${isMobile ? "rounded-none" : "rounded-box"} ${shouldFill && constrainHeight ? "h-full min-h-0" : ""} flex flex-col ${constrainHeight ? "overflow-hidden" : ""}`}>
           {title && (
             <div className={`shrink-0 text-sm font-semibold ${isMobile ? "px-4 pt-4" : "px-4 pt-4"}`}>
               {title}
             </div>
           )}
-          <div className={`${mobileRecordPage ? "" : "flex-1 min-h-0"} ${mobileRecordPage ? "" : (hasInnerScroll ? "overflow-hidden flex flex-col" : "overflow-auto")} ${isMobile ? "px-4 pb-4" : "px-4 pb-4"} ${title ? (isMobile ? "pt-3" : "pt-3") : (isMobile ? "pt-4" : "pt-4")}`}>{content}</div>
+          <div className={`${constrainHeight ? "flex-1 min-h-0" : ""} ${constrainHeight ? (hasInnerScroll ? "overflow-hidden flex flex-col" : "overflow-auto") : ""} ${isMobile ? "px-4 pb-4" : "px-4 pb-4"} ${title ? (isMobile ? "pt-3" : "pt-3") : (isMobile ? "pt-4" : "pt-4")}`}>{content}</div>
         </div>
       );
     }
     if (variant === "flat") {
       return (
-        <div className={`${shouldFill && !mobileRecordPage ? "h-full min-h-0" : ""} flex flex-col ${mobileRecordPage ? "" : "overflow-hidden"}`}>
+        <div className={`${shouldFill && constrainHeight ? "h-full min-h-0" : ""} flex flex-col ${constrainHeight ? "overflow-hidden" : ""}`}>
           {title && (
             <div className="shrink-0 text-sm font-semibold">
               {title}
             </div>
           )}
-          <div className={`${mobileRecordPage ? "" : "flex-1 min-h-0"} ${mobileRecordPage ? "" : (hasInnerScroll ? "overflow-hidden flex flex-col" : "overflow-auto")} ${title ? "pt-3" : ""}`}>{content}</div>
+          <div className={`${constrainHeight ? "flex-1 min-h-0" : ""} ${constrainHeight ? (hasInnerScroll ? "overflow-hidden flex flex-col" : "overflow-auto") : ""} ${title ? "pt-3" : ""}`}>{content}</div>
         </div>
       );
     }
     return (
-      <div className={`card bg-base-100 shadow ${isMobile ? "rounded-none" : ""} ${shouldFill && !mobileRecordPage ? "h-full min-h-0" : ""} flex flex-col ${mobileRecordPage ? "" : "overflow-hidden"}`}>
-        <div className={`card-body ${isMobile ? "p-4" : ""} ${mobileRecordPage ? "" : "flex-1 min-h-0"} flex flex-col ${mobileRecordPage ? "" : "overflow-hidden"}`}>
+      <div className={`card bg-base-100 shadow ${isMobile ? "rounded-none" : ""} ${shouldFill && constrainHeight ? "h-full min-h-0" : ""} flex flex-col ${constrainHeight ? "overflow-hidden" : ""}`}>
+        <div className={`card-body ${isMobile ? "p-4" : ""} ${constrainHeight ? "flex-1 min-h-0" : ""} flex flex-col ${constrainHeight ? "overflow-hidden" : ""}`}>
           {title && <div className="shrink-0 text-sm font-semibold">{title}</div>}
-          <div className={`${mobileRecordPage ? "" : "flex-1 min-h-0"} ${mobileRecordPage ? "" : (hasInnerScroll ? "overflow-hidden flex flex-col" : "overflow-auto")} ${title ? (isMobile ? "pt-3" : "pt-3") : ""}`}>{content}</div>
+          <div className={`${constrainHeight ? "flex-1 min-h-0" : ""} ${constrainHeight ? (hasInnerScroll ? "overflow-hidden flex flex-col" : "overflow-auto") : ""} ${title ? (isMobile ? "pt-3" : "pt-3") : ""}`}>{content}</div>
         </div>
       </div>
     );
@@ -436,6 +502,31 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
   return <div className="alert alert-warning">Unsupported block kind: {kind}</div>;
 }
 
+function ScopedViewModesBlock(props) {
+  const useLocalParams = props?.block?.compact === true || props?.block?.param_scope === "local";
+  const [localSearchParams, setLocalSearchParams] = useState(() => new URLSearchParams());
+
+  function handleSetLocalSearchParams(next) {
+    if (next instanceof URLSearchParams) {
+      setLocalSearchParams(new URLSearchParams(next.toString()));
+      return;
+    }
+    if (typeof next === "string") {
+      setLocalSearchParams(new URLSearchParams(next));
+      return;
+    }
+    setLocalSearchParams(new URLSearchParams());
+  }
+
+  return (
+    <ViewModesBlock
+      {...props}
+      searchParams={useLocalParams ? localSearchParams : props.searchParams}
+      setSearchParams={useLocalParams ? handleSetLocalSearchParams : props.setSearchParams}
+    />
+  );
+}
+
 function findField(manifest, entityId, fieldId) {
   const entities = Array.isArray(manifest?.entities) ? manifest.entities : [];
   const entity = entities.find((e) => e.id === entityId || e.id === `entity.${entityId}`);
@@ -548,6 +639,162 @@ function evalConditionSafe(condition, record) {
   } catch {
     return false;
   }
+}
+
+function buildStatCardShells(block) {
+  return (Array.isArray(block?.cards) ? block.cards : []).map((card) => ({
+    ...card,
+    value: card.value ?? 0,
+    error: card.error || "",
+  }));
+}
+
+function StatCardsBlock({ block, moduleId, recordContext, onNavigate }) {
+  const isMobile = useMediaQuery("(max-width: 768px)");
+  const [cards, setCards] = useState(() => buildStatCardShells(block));
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setCards(buildStatCardShells(block));
+    setError("");
+    setLoading(Array.isArray(block?.cards) && block.cards.length > 0);
+  }, [block]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      const definedCards = buildStatCardShells(block);
+      if (!definedCards.length) {
+        setCards([]);
+        setLoading(false);
+        return;
+      }
+      try {
+        setLoading(true);
+        setError("");
+        const sourceRes = await apiFetch("/system/dashboard/sources");
+        const sources = Array.isArray(sourceRes?.sources) ? sourceRes.sources : [];
+        const results = await Promise.all(
+          definedCards.map(async (card) => {
+            const source =
+              sources.find((item) => item?.entity_id === card.entity_id && item?.module_id === moduleId) ||
+              sources.find((item) => item?.entity_id === card.entity_id) ||
+              null;
+            if (!source?.source_key) {
+              return {
+                id: card.id,
+                value: null,
+                error: "Source unavailable",
+              };
+            }
+            const filter = resolveBlockRefs(card.domain, {
+              record: recordContext?.record || {},
+              recordId: recordContext?.recordId || null,
+            });
+            const response = await apiFetch("/system/dashboard/query", {
+              method: "POST",
+              body: {
+                source_key: source.source_key,
+                measure: card.measure || "count",
+                date_field: card.date_field || undefined,
+                filter: filter || undefined,
+              },
+            });
+            return {
+              id: card.id,
+              value: response?.value ?? 0,
+              error: "",
+            };
+          })
+        );
+        if (cancelled) return;
+        const valueMap = new Map(results.map((item) => [item.id, item]));
+        setCards(
+          definedCards.map((card) => ({
+            ...card,
+            value: valueMap.get(card.id)?.value ?? 0,
+            error: valueMap.get(card.id)?.error || "",
+          }))
+        );
+      } catch (err) {
+        if (cancelled) return;
+        setError(err?.message || "Failed to load dashboard cards");
+        setCards(buildStatCardShells(block));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [block, moduleId, recordContext?.record, recordContext?.recordId]);
+
+  const columns = Math.max(1, Math.min(Number(block?.columns) || 4, 4));
+  const gridClass =
+    columns >= 4
+      ? "grid-cols-1 sm:grid-cols-2 xl:grid-cols-4"
+      : columns === 3
+        ? "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"
+        : columns === 2
+          ? "grid-cols-1 sm:grid-cols-2"
+          : "grid-cols-1";
+
+  return (
+    <div className="space-y-3">
+      {block?.title ? <div className="text-sm font-semibold">{block.title}</div> : null}
+      {error ? <div className="alert alert-error">{error}</div> : null}
+      <div className={`grid ${gridClass} gap-4`}>
+        {cards.map((card) => {
+          const Icon = resolveLucideIcon(card.icon);
+          const clickable = typeof card.target === "string" && card.target && typeof onNavigate === "function";
+          const toneClass =
+            card.tone === "success"
+              ? "text-success"
+              : card.tone === "warning"
+                ? "text-warning"
+                : card.tone === "error"
+                  ? "text-error"
+                  : "text-primary";
+          const content = (
+            <div className={`card bg-base-100 border border-base-300 shadow-sm ${isMobile ? "rounded-none" : "rounded-box"} h-full`}>
+              <div className="card-body gap-2 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs uppercase tracking-wide text-base-content/60 break-words">{card.label}</div>
+                    {card.subtitle ? <div className="mt-1 text-xs text-base-content/50">{card.subtitle}</div> : null}
+                  </div>
+                  {Icon ? (
+                    <div className={`shrink-0 ${toneClass}`}>
+                      <Icon size={18} strokeWidth={2} />
+                    </div>
+                  ) : null}
+                </div>
+                <div className="text-3xl font-semibold leading-none">
+                  {loading ? <span className="loading loading-dots loading-sm" /> : formatStatCardValue(card.value, card.format)}
+                </div>
+                {card.error ? <div className="text-xs text-error">{card.error}</div> : null}
+              </div>
+            </div>
+          );
+          if (!clickable) return <div key={card.id}>{content}</div>;
+          return (
+            <button
+              key={card.id}
+              type="button"
+              className="block h-full w-full text-left"
+              onClick={() => onNavigate(card.target)}
+            >
+              {content}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function RecordScopeProvider({ entityId, recordId, children, previewMode = false }) {

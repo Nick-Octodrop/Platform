@@ -379,12 +379,12 @@ export default function App() {
   useEffect(() => {
     let active = true;
     (async () => {
-      if (!activeProjectId) {
+      if (!activeProjectId || !worker?.record_id) {
         setMaterialLogs([]);
         return;
       }
       try {
-        const logs = await getProjectMaterialLogs(activeProjectId);
+        const logs = await getProjectMaterialLogs(activeProjectId, worker.record_id);
         if (active) {
           setMaterialLogs(logs);
         }
@@ -397,7 +397,7 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, [activeProjectId]);
+  }, [activeProjectId, worker?.record_id]);
 
   async function handleLogin(event) {
     event.preventDefault();
@@ -529,7 +529,9 @@ export default function App() {
         "material_log.status": "submitted",
       };
       if (editingMaterialId) {
+        const existingLog = materialLogs.find((item) => item.record_id === editingMaterialId)?.record || {};
         await updateMaterialLog(editingMaterialId, {
+          ...existingLog,
           ...record,
           "material_log.id": editingMaterialId,
         });
@@ -543,7 +545,7 @@ export default function App() {
       setMaterialUnit(defaultUnitForMaterial("cement"));
       setEditingMaterialId("");
       setMaterialModalOpen(false);
-      setMaterialLogs(await getProjectMaterialLogs(activeProjectId));
+      setMaterialLogs(await getProjectMaterialLogs(activeProjectId, worker.record_id));
     } catch (err) {
       setError(err.message || "Impossible d'enregistrer.");
     } finally {
@@ -591,7 +593,7 @@ export default function App() {
       await deleteMaterialLog(log.record_id);
       setExpandedMaterialId((current) => (current === log.record_id ? "" : current));
       setSuccess("Materiau supprime.");
-      setMaterialLogs(await getProjectMaterialLogs(activeProjectId));
+      setMaterialLogs(await getProjectMaterialLogs(activeProjectId, worker.record_id));
     } catch (err) {
       setError(err.message || "Suppression impossible.");
     } finally {

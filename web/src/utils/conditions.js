@@ -30,6 +30,8 @@ function getByPath(data, path) {
 
 function resolveRef(ref, context) {
   if (typeof ref !== "string") return undefined;
+  if (ref === "$today") return new Date().toISOString().slice(0, 10);
+  if (ref === "$now") return new Date().toISOString();
   if (ref === "$actor") return context.actor || {};
   if (ref.startsWith("$actor.")) {
     return getByPath(context.actor || {}, ref.slice("$actor.".length));

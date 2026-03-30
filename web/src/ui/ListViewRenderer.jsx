@@ -71,6 +71,7 @@ export default function ListViewRenderer({
   onPageChange,
   onTotalItemsChange,
   showPaginationControls = true,
+  enableSelection = true,
 }) {
   if (!view) return <div className="alert">Missing list view</div>;
   const columns = view.columns || [];
@@ -275,7 +276,9 @@ export default function ListViewRenderer({
   const useVirtual = !isMobile && pagedRecords.length > 200;
   const rowHeight = 40;
   const listHeight = Math.min(520, pagedRecords.length * rowHeight + 2);
-  const gridTemplate = `2.5rem repeat(${columns.length}, minmax(140px, 1fr))`;
+  const gridTemplate = enableSelection
+    ? `2.5rem repeat(${columns.length}, minmax(140px, 1fr))`
+    : `repeat(${columns.length}, minmax(140px, 1fr))`;
 
   return (
     <div className="h-full min-h-0 flex flex-col gap-4">
@@ -399,22 +402,24 @@ export default function ListViewRenderer({
         {useVirtual ? (
           <div className="w-full">
             <div className="grid items-center gap-2 text-sm font-semibold px-3 py-2" style={{ gridTemplateColumns: gridTemplate }}>
-              <div>
-                <input
-                  className="checkbox"
-                  type="checkbox"
-                  checked={allFilteredSelected}
-                  onChange={(e) => onToggleAll?.(e.target.checked, filteredIds)}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              </div>
-                {columns.map((col) => (
-                  <div
-                    key={col.field_id}
-                    className={fieldIndex[col.field_id]?.type === "uuid" ? "font-mono text-xs truncate max-w-[16rem]" : ""}
-                  >
-                    {resolveFieldLabel(col, fieldIndex)}
-                  </div>
+              {enableSelection && (
+                <div>
+                  <input
+                    className="checkbox"
+                    type="checkbox"
+                    checked={allFilteredSelected}
+                    onChange={(e) => onToggleAll?.(e.target.checked, filteredIds)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </div>
+              )}
+              {columns.map((col) => (
+                <div
+                  key={col.field_id}
+                  className={fieldIndex[col.field_id]?.type === "uuid" ? "font-mono text-xs truncate max-w-[16rem]" : ""}
+                >
+                  {resolveFieldLabel(col, fieldIndex)}
+                </div>
               ))}
             </div>
             <VirtualList
@@ -434,15 +439,17 @@ export default function ListViewRenderer({
                     style={{ ...style, gridTemplateColumns: data.gridTemplate }}
                     onClick={() => data.onSelectRow?.(row)}
                   >
-                    <div>
-                      <input
-                        className="checkbox"
-                        type="checkbox"
-                        checked={Boolean(selected)}
-                        onChange={(e) => data.onToggleSelect?.(rowId, e.target.checked)}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    </div>
+                    {enableSelection && (
+                      <div>
+                        <input
+                          className="checkbox"
+                          type="checkbox"
+                          checked={Boolean(selected)}
+                          onChange={(e) => data.onToggleSelect?.(rowId, e.target.checked)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </div>
+                    )}
                     {data.columns.map((col) => {
                       const value = formatCellValue(row, col);
                       const isId = fieldIndex[col.field_id]?.type === "uuid";
@@ -465,15 +472,17 @@ export default function ListViewRenderer({
           <table className={`table table-hover ${tableClassName} min-w-max`.trim()}>
             <thead className="[&_th]:border-b-0">
               <tr>
-                <th className="w-10 border-b-0">
-                  <input
-                    className="checkbox"
-                    type="checkbox"
-                    checked={allFilteredSelected}
-                    onChange={(e) => onToggleAll?.(e.target.checked, filteredIds)}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                </th>
+                {enableSelection && (
+                  <th className="w-10 border-b-0">
+                    <input
+                      className="checkbox"
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      onChange={(e) => onToggleAll?.(e.target.checked, filteredIds)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </th>
+                )}
                 {columns.map((col) => (
                   <th
                     key={col.field_id}
@@ -494,15 +503,17 @@ export default function ListViewRenderer({
                     className={`cursor-pointer hover:bg-base-200 ${selected ? "active" : ""}`}
                     onClick={() => onSelectRow?.(row)}
                   >
-                    <td>
-                      <input
-                        className="checkbox"
-                        type="checkbox"
-                        checked={selected}
-                        onChange={(e) => onToggleSelect?.(rowId, e.target.checked)}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    </td>
+                    {enableSelection && (
+                      <td>
+                        <input
+                          className="checkbox"
+                          type="checkbox"
+                          checked={selected}
+                          onChange={(e) => onToggleSelect?.(rowId, e.target.checked)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </td>
+                    )}
                     {columns.map((col) => {
                       const value = formatCellValue(row, col);
                       const isId = fieldIndex[col.field_id]?.type === "uuid";

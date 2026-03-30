@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from datetime import datetime, timezone
 
 
 ALLOWED_OPS = {
@@ -38,6 +39,10 @@ def _get_by_path(data: dict, path: str) -> Any:
 def _resolve_ref(ref: str, context: dict) -> Any:
     if not isinstance(ref, str):
         return None
+    if ref == "$today":
+        return datetime.now().date().isoformat()
+    if ref == "$now":
+        return datetime.now(timezone.utc).isoformat()
     if ref == "$actor":
         return context.get("actor", {})
     if ref.startswith("$actor."):

@@ -107,6 +107,49 @@ function findWorkflow(manifest, entityId) {
   return workflows.find((wf) => wf?.entity && matchEntityId(entityId, wf.entity)) || null;
 }
 
+const PENDING_MATERIAL_GATE_KEY = "octo.pendingMaterialBeforeClockOut";
+
+function readPendingMaterialGate() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_MATERIAL_GATE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writePendingMaterialGate(payload) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(PENDING_MATERIAL_GATE_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function clearPendingMaterialGate() {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(PENDING_MATERIAL_GATE_KEY);
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function buildMaterialLogDefaultsFromTimeEntry(record = {}) {
+  return {
+    "material_log.project_id": record["time_entry.project_id"] ?? null,
+    "material_log.site_id": record["time_entry.site_id"] ?? null,
+    "material_log.work_item_id": record["time_entry.work_item_id"] ?? null,
+    "material_log.log_date": record["time_entry.entry_date"] ?? null,
+    "material_log.entered_by_worker_id": record["time_entry.worker_id"] ?? null,
+    "material_log.status": "draft",
+  };
+}
+
 function resolveActionLabel(action, manifest, views) {
   if (!action || typeof action !== "object") return "Action";
   if (action.label) return action.label;
@@ -807,6 +850,25 @@ export default function AppShell({
       ? resolveTemplateRefs(action.patch, contextRecordDraft || {})
       : action?.patch;
     const skipConfirm = Boolean(runtimeContext?.skipConfirm);
+    const skipMaterialGate = Boolean(runtimeContext?.skipMaterialGate);
+    const isTimeEntryCloseAction =
+      action?.id === "action.time_entry_close" &&
+      resolveEntityFullId(manifest, action?.entity_id) === "entity.time_entry";
+    if (isMobile && !skipMaterialGate && isTimeEntryCloseAction && contextRecordId) {
+      const materialLogForm =
+        resolveEntityDefaultFormPage(appDef?.defaults, "entity.material_log") ||
+        (getFormViewId(manifest, "entity.material_log") ? `view:${getFormViewId(manifest, "entity.material_log")}` : null);
+      if (materialLogForm) {
+        writePendingMaterialGate({
+          timeEntryId: contextRecordId,
+          timeEntryDraft: contextRecordDraft || {},
+          materialDraft: buildMaterialLogDefaultsFromTimeEntry(contextRecordDraft || {}),
+        });
+        pushToast("info", "Log material before clocking out");
+        setTarget(materialLogForm, { preserveParams: true });
+        return { kind: "navigate", target: materialLogForm, gated: true };
+      }
+    }
     if (!skipConfirm && action.confirm && typeof action.confirm === "object") {
       const title = action.confirm.title || "Confirm";
       const body = action.confirm.body || "Are you sure?";
@@ -1168,9 +1230,10 @@ export default function AppShell({
     Array.isArray(activePage?.content) &&
     activePage.content.some((block) => block?.kind === "record")
   );
+  const mobilePageLayout = Boolean(isMobile && active?.type === "page");
 
   return (
-    <div className={mobileRecordPage ? "flex flex-col min-h-full" : "flex flex-col h-full min-h-0 overflow-hidden"}>
+    <div className={mobilePageLayout ? "flex flex-col min-h-full" : "flex flex-col h-full min-h-0 overflow-hidden"}>
       {errorBanner && <div className="alert alert-error mb-3">{errorBanner}</div>}
       {previewMode && previewAllowNav && previewNavItems.length > 0 && (
         <div className="mb-3">
@@ -1205,9 +1268,9 @@ export default function AppShell({
         </div>
       )}
 
-      <div className={mobileRecordPage ? "" : "flex-1 min-h-0 overflow-hidden flex flex-col"}>
+      <div className={mobilePageLayout ? "" : "flex-1 min-h-0 overflow-hidden flex flex-col"}>
         {active.type === "page" && activePage && (
-          <div className={mobileRecordPage ? "" : "flex-1 min-h-0 overflow-hidden"}>
+          <div className={mobilePageLayout ? "" : "flex-1 min-h-0 overflow-hidden"}>
             <ContentBlocksRenderer
               blocks={activePage.content || []}
               renderView={renderView}
@@ -1852,6 +1915,20 @@ function AppView({
   }, [kind, recordEntityId, effectiveRecordId, recordContext, previewMode, previewStore?.version, bootstrapVersion, bootstrap, view?.id, bootstrapLoading]);
 
   useEffect(() => {
+    if (kind !== "form" || effectiveRecordId || recordEntityId !== "entity.material_log") return;
+    const pending = readPendingMaterialGate();
+    if (!pending?.timeEntryId || !pending?.materialDraft || typeof pending.materialDraft !== "object") return;
+    setDraft((prev) => {
+      const current = prev && typeof prev === "object" ? prev : {};
+      return { ...pending.materialDraft, ...current };
+    });
+    setInitialDraft((prev) => {
+      const current = prev && typeof prev === "object" ? prev : {};
+      return { ...pending.materialDraft, ...current };
+    });
+  }, [kind, effectiveRecordId, recordEntityId]);
+
+  useEffect(() => {
     if (typeof onSelectionChange === "function") {
       onSelectionChange(selectedIds);
     }
@@ -1921,7 +1998,7 @@ function AppView({
           const created = previewStore.upsert(recordEntityId, null, payload);
           const newId = created?.record_id;
           if (newId) {
-            const formTarget = normalizeTarget(appDefaults?.entity_form_page);
+            const formTarget = normalizeTarget(resolveEntityDefaultFormPage(appDefaults, recordEntityId));
             if (formTarget) {
               onNavigate(formTarget, { recordId: newId, preserveParams: true });
             } else {
@@ -1944,8 +2021,34 @@ function AppView({
           body: JSON.stringify(payload),
         });
         const newId = res.record_id;
+        const pendingMaterialGate =
+          recordEntityId === "entity.material_log" && !effectiveRecordId ? readPendingMaterialGate() : null;
+        if (pendingMaterialGate?.timeEntryId) {
+          const closeAction = actionsMap?.get("action.time_entry_close");
+          let closeResult = null;
+          if (closeAction) {
+            closeResult = await onRunAction?.(closeAction, {
+              recordId: pendingMaterialGate.timeEntryId,
+              recordDraft: pendingMaterialGate.timeEntryDraft || {},
+              skipConfirm: true,
+              skipMaterialGate: true,
+            });
+          }
+          clearPendingMaterialGate();
+          const timeEntryFormTarget = normalizeTarget(resolveEntityDefaultFormPage(appDefaults, "entity.time_entry"));
+          if (timeEntryFormTarget) {
+            onNavigate(timeEntryFormTarget, { recordId: pendingMaterialGate.timeEntryId, preserveParams: true });
+          }
+          if (closeResult) {
+            pushToast("success", "Material logged and time entry closed");
+          } else {
+            pushToast("success", "Material logged. Finish clock-out on the time entry.");
+          }
+          setInitialDraft(payload);
+          return;
+        }
         if (newId) {
-          const formTarget = normalizeTarget(appDefaults?.entity_form_page);
+          const formTarget = normalizeTarget(resolveEntityDefaultFormPage(appDefaults, recordEntityId));
           if (formTarget) {
             onNavigate(formTarget, { recordId: newId, preserveParams: true });
           } else {

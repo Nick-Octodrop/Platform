@@ -11400,6 +11400,40 @@ def _studio2_completeness_check(manifest: dict) -> list[dict]:
             target = ent_defaults.get(key)
             if isinstance(target, str) and target.startswith("page:"):
                 reachable_pages.add(target.replace("page:", "", 1))
+    actions = manifest.get("actions") if isinstance(manifest.get("actions"), list) else []
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        target = action.get("target")
+        if isinstance(target, str) and target.startswith("page:"):
+            reachable_pages.add(target.replace("page:", "", 1))
+
+    def _collect_block_page_targets(blocks):
+        if not isinstance(blocks, list):
+            return
+        for block in blocks:
+            if not isinstance(block, dict):
+                continue
+            if block.get("kind") == "stat_cards":
+                for card in block.get("cards") or []:
+                    if isinstance(card, dict):
+                        target = card.get("target")
+                        if isinstance(target, str) and target.startswith("page:"):
+                            reachable_pages.add(target.replace("page:", "", 1))
+            if isinstance(block.get("content"), list):
+                _collect_block_page_targets(block.get("content"))
+            if isinstance(block.get("tabs"), list):
+                for tab in block.get("tabs") or []:
+                    if isinstance(tab, dict) and isinstance(tab.get("content"), list):
+                        _collect_block_page_targets(tab.get("content"))
+            if isinstance(block.get("items"), list):
+                for item in block.get("items") or []:
+                    if isinstance(item, dict) and isinstance(item.get("content"), list):
+                        _collect_block_page_targets(item.get("content"))
+
+    for page in pages:
+        if isinstance(page, dict) and isinstance(page.get("content"), list):
+            _collect_block_page_targets(page.get("content"))
     for pid in page_ids:
         if pid not in reachable_pages:
             issues.append({"code": "INCOMPLETE_ORPHAN_PAGE", "message": "page not reachable from nav/home", "path": "/pages", "detail": {"page": pid}})
@@ -19859,7 +19893,7 @@ def _ai_semantic_plan_from_model(
         "Return strict JSON with this schema keys: "
         "{module_id,affected_modules,proposed_changes,required_questions,required_question_meta,assumptions,risk_flags,advisories,plan_v1}. "
         "plan_v1 is required and must use keys: "
-        "{version,intent,summary,requested_scope,modules,changes,sections,clarifications,assumptions,risks,noop_notes,operation_families,primary_operation_family,needs_clarification}. "
+        "{version,intent,summary,requested_scope,modules,changes,sections,clarifications,assumptions,risks,noop_notes,operation_families,primary_operation_family,needs_clarification,architecture_decisions,first_delivery_slice}. "
         "requested_scope must use {requested_modules,missing_modules}. "
         "clarifications must use {items,meta}. "
         "Each module item should use {module_id,module_label,status}. "
@@ -23145,53 +23179,8 @@ def _ai_plan_detail_sections(plan: dict, context: dict) -> list[dict]:
     dependencies: list[str] = []
     views: list[str] = []
     sandbox_checks: list[str] = []
-    architecture: list[str] = []
-
-    if planner_intent in {"preview_only_plan", "preview_only_noop"} and not ops:
-        request_summary = render_context.get("request_summary") if isinstance(render_context.get("request_summary"), str) else ""
-        tracks = [item for item in _ai_preview_roadmap_tracks(request_summary) if isinstance(item, str) and item.strip()]
-        requested_labels, _missing_labels = _ai_plan_requested_scope_labels(plan)
-        preview_module_index = {
-            artifact.get("artifact_id"): {"manifest": artifact.get("manifest")}
-            for artifact in (render_context.get("full_selected_artifacts") or [])
-            if isinstance(artifact, dict)
-            and artifact.get("artifact_type") == "module"
-            and isinstance(artifact.get("artifact_id"), str)
-            and isinstance(artifact.get("manifest"), dict)
-        }
-        inferred_modules = _ai_preview_track_modules(request_summary, preview_module_index)
-        module_labels = [
-            _ai_plan_module_label(module_id, render_context)
-            for module_id in inferred_modules
-            if isinstance(module_id, str) and module_id
-        ]
-        module_labels = _ai_dedupe_scope_labels(module_labels)
-        if len(module_labels) >= 3 or len(tracks) >= 4:
-            architecture.append("Treat this as a coordinated multi-module workspace, not one oversized module.")
-        elif len(module_labels) == 1:
-            architecture.append(f"Keep the first rollout centred on {module_labels[0]} as the main module.")
-        elif isinstance(planner_state.get("module_name"), str) and planner_state.get("module_name").strip():
-            architecture.append(f"Start with one strong module for {planner_state.get('module_name').strip()} before splitting anything further.")
-
-        reverse_map: dict[str, list[str]] = {}
-        for track, module_candidates in _ai_preview_track_module_map().items():
-            for module_id in module_candidates:
-                reverse_map.setdefault(module_id, [])
-                if track not in reverse_map[module_id]:
-                    reverse_map[module_id].append(track)
-        for module_id in inferred_modules[:4]:
-            if not isinstance(module_id, str) or not module_id:
-                continue
-            owned_tracks = [track for track in reverse_map.get(module_id, []) if track in tracks]
-            if not owned_tracks:
-                continue
-            module_label = _ai_plan_module_label(module_id, render_context)
-            architecture.append(f"{module_label}: cover {_ai_join_human_list(owned_tracks[:4])}.")
-        if not architecture and requested_labels:
-            if len(requested_labels) > 1:
-                architecture.append(f"Split the draft plan across {_ai_join_human_list(requested_labels[:6])} rather than forcing everything into one module.")
-            elif len(requested_labels) == 1:
-                architecture.append(f"Use {requested_labels[0]} as the primary module boundary for the first draft.")
+    architecture = _ai_plan_architecture_decisions(plan, render_context)
+    first_delivery = _ai_plan_first_delivery_slice(plan, render_context)
 
     for op in ops:
         op_name = op.get("op")
@@ -23450,6 +23439,7 @@ def _ai_plan_detail_sections(plan: dict, context: dict) -> list[dict]:
     sections: list[dict] = []
     for key, title, items in (
         ("architecture", "Recommended module architecture", architecture),
+        ("first_delivery", "First delivery slice", first_delivery),
         ("fields", "Fields", fields),
         ("placement", "Placement", placement),
         ("workflow_actions", "Workflow & actions", workflow_actions),
@@ -23465,6 +23455,133 @@ def _ai_plan_detail_sections(plan: dict, context: dict) -> list[dict]:
         if deduped:
             sections.append({"key": key, "title": title, "items": deduped[:6]})
     return sections
+
+
+def _ai_plan_architecture_decisions(plan: dict, context: dict) -> list[str]:
+    render_context = _ai_context_with_planned_modules(plan, context)
+    planner_state = plan.get("planner_state") if isinstance(plan.get("planner_state"), dict) else {}
+    planner_intent = planner_state.get("intent") if isinstance(planner_state.get("intent"), str) else ""
+    request_summary = render_context.get("request_summary") if isinstance(render_context.get("request_summary"), str) else ""
+    preview_meta = _ai_preview_plan_metadata(plan, render_context)
+    tracks = [item for item in (preview_meta.get("tracks") or []) if isinstance(item, str) and item.strip()]
+    requested_labels, missing_labels = _ai_plan_requested_scope_labels(plan)
+    planned_labels = _ai_dedupe_scope_labels(
+        [
+            _ai_plan_module_label(item.get("artifact_id"), render_context)
+            for item in (plan.get("affected_artifacts") or [])
+            if isinstance(item, dict)
+            and item.get("artifact_type") == "module"
+            and isinstance(item.get("artifact_id"), str)
+            and item.get("artifact_id")
+        ]
+    )
+    preview_module_index = {
+        artifact.get("artifact_id"): {"manifest": artifact.get("manifest")}
+        for artifact in (render_context.get("full_selected_artifacts") or [])
+        if isinstance(artifact, dict)
+        and artifact.get("artifact_type") == "module"
+        and isinstance(artifact.get("artifact_id"), str)
+        and isinstance(artifact.get("manifest"), dict)
+    }
+    inferred_modules = _ai_preview_track_modules(request_summary, preview_module_index)
+    inferred_labels = _ai_dedupe_scope_labels(
+        [
+            _ai_plan_module_label(module_id, render_context)
+            for module_id in inferred_modules
+            if isinstance(module_id, str) and module_id
+        ]
+    )
+    module_labels = _ai_dedupe_scope_labels([*planned_labels, *inferred_labels, *requested_labels])
+    decisions: list[str] = []
+
+    if planner_intent in {"preview_only_plan", "preview_only_noop"}:
+        if len(module_labels) >= 3 or len(tracks) >= 4:
+            decisions.append("Treat this as a coordinated multi-module workspace, not one oversized module.")
+        elif planned_labels and not missing_labels and len(planned_labels) == 1:
+            decisions.append(f"Extend {planned_labels[0]} first instead of creating a parallel module too early.")
+        elif planned_labels and missing_labels:
+            decisions.append(
+                f"Reuse existing {_ai_join_human_list(planned_labels[:4])} where it fits, and add {_ai_join_human_list(missing_labels[:4])} only where the capability does not fit cleanly."
+            )
+        elif len(missing_labels) > 1:
+            decisions.append(f"Split the draft plan across {_ai_join_human_list(missing_labels[:6])} rather than forcing everything into one module.")
+        elif len(missing_labels) == 1:
+            decisions.append(f"Start with one strong new module for {missing_labels[0]} before splitting anything further.")
+        elif len(requested_labels) == 1:
+            decisions.append(f"Use {requested_labels[0]} as the primary module boundary for the first draft.")
+
+        reverse_map: dict[str, list[str]] = {}
+        for track, module_candidates in _ai_preview_track_module_map().items():
+            for module_id in module_candidates:
+                reverse_map.setdefault(module_id, [])
+                if track not in reverse_map[module_id]:
+                    reverse_map[module_id].append(track)
+        for module_id in inferred_modules[:4]:
+            if not isinstance(module_id, str) or not module_id:
+                continue
+            owned_tracks = [track for track in reverse_map.get(module_id, []) if track in tracks]
+            if not owned_tracks:
+                continue
+            module_label = _ai_plan_module_label(module_id, render_context)
+            decisions.append(f"{module_label}: cover {_ai_join_human_list(owned_tracks[:4])}.")
+
+    if planner_intent == "create_module":
+        module_name = planner_state.get("module_name") if isinstance(planner_state.get("module_name"), str) and planner_state.get("module_name").strip() else None
+        if isinstance(module_name, str) and module_name:
+            decisions.append(f"Start with one strong module for {module_name.strip()} before splitting anything further.")
+        design_spec = _ai_plan_design_spec(plan)
+        experience = design_spec.get("experience") if isinstance(design_spec, dict) and isinstance(design_spec.get("experience"), dict) else {}
+        interfaces = [item for item in (experience.get("interfaces") or []) if isinstance(item, str) and item.strip()]
+        if interfaces:
+            decisions.append(f"Keep the first version centred on the core record and workflow, then layer in {', '.join(interfaces[:3])} once the base module is stable.")
+
+    return _ai_dedupe_text_list(decisions)
+
+
+def _ai_plan_first_delivery_slice(plan: dict, context: dict) -> list[str]:
+    render_context = _ai_context_with_planned_modules(plan, context)
+    planner_state = plan.get("planner_state") if isinstance(plan.get("planner_state"), dict) else {}
+    planner_intent = planner_state.get("intent") if isinstance(planner_state.get("intent"), str) else ""
+    preview_meta = _ai_preview_plan_metadata(plan, render_context)
+    tracks = [item for item in (preview_meta.get("tracks") or []) if isinstance(item, str) and item.strip()]
+    groups = _ai_preview_rollout_groups(tracks)
+    requested_labels, missing_labels = _ai_plan_requested_scope_labels(plan)
+    planned_labels = _ai_dedupe_scope_labels(
+        [
+            _ai_plan_module_label(item.get("artifact_id"), render_context)
+            for item in (plan.get("affected_artifacts") or [])
+            if isinstance(item, dict)
+            and item.get("artifact_type") == "module"
+            and isinstance(item.get("artifact_id"), str)
+            and item.get("artifact_id")
+        ]
+    )
+    lines: list[str] = []
+
+    if groups:
+        first_group = groups[0]
+        if first_group:
+            lines.append(f"Phase 1: deliver {_ai_join_human_list(first_group)} first.")
+        if len(groups) > 1:
+            later = [item for group in groups[1:] for item in group]
+            if later:
+                lines.append(f"Hold {_ai_join_human_list(later[:6])} for later phases once the first handoff is stable.")
+
+    if planner_intent == "create_module" and not lines:
+        module_name = planner_state.get("module_name") if isinstance(planner_state.get("module_name"), str) and planner_state.get("module_name").strip() else "the new module"
+        lines.append(f"Phase 1: land the core {module_name} record, workflow, and starter views before any downstream automations or templates.")
+
+    if planner_intent in {"preview_only_plan", "preview_only_noop"} and not lines:
+        if planned_labels and missing_labels:
+            lines.append(f"Phase 1: extend {_ai_join_human_list(planned_labels[:4])} first, then add {_ai_join_human_list(missing_labels[:4])} once the handoff is working.")
+        elif len(planned_labels) == 1:
+            lines.append(f"Phase 1: make the main changes in {planned_labels[0]} before touching downstream modules.")
+        elif len(missing_labels) == 1:
+            lines.append(f"Phase 1: define the core workflow and key records in {missing_labels[0]} before adding supporting surfaces.")
+        elif len(requested_labels) > 1:
+            lines.append(f"Phase 1: prove the main handoff across {_ai_join_human_list(requested_labels[:3])} before broadening the rollout.")
+
+    return _ai_dedupe_text_list(lines)
 
 
 def _ai_plan_design_spec(plan: dict) -> dict | None:
@@ -23611,6 +23728,8 @@ def _ai_plan_v1_base(plan: dict, context: dict) -> dict:
     blueprint_items = _ai_design_spec_blueprint_items(design_spec)
     if blueprint_items:
         sections.insert(0, {"key": "module_blueprint", "title": "Module Blueprint", "items": blueprint_items})
+    architecture_decisions = _ai_plan_architecture_decisions(plan, render_context)
+    first_delivery_slice = _ai_plan_first_delivery_slice(plan, render_context)
     requested_labels, missing_labels = _ai_plan_requested_scope_labels(plan)
     return {
         "version": "1",
@@ -23625,6 +23744,8 @@ def _ai_plan_v1_base(plan: dict, context: dict) -> dict:
             "requested_modules": requested_labels,
             "missing_modules": missing_labels,
         },
+        "architecture_decisions": architecture_decisions,
+        "first_delivery_slice": first_delivery_slice,
         "summary": summary,
         "modules": modules,
         "changes": changes,
@@ -23723,6 +23844,12 @@ def _ai_merge_plan_v1(raw_plan_v1: dict | None, fallback: dict) -> dict:
             cleaned = [item.strip() for item in value if isinstance(item, str) and item.strip()]
             if cleaned:
                 merged[key] = cleaned
+    for key in ("architecture_decisions", "first_delivery_slice"):
+        value = raw_plan_v1.get(key)
+        if isinstance(value, list):
+            cleaned = [item.strip() for item in value if isinstance(item, str) and item.strip()]
+            if cleaned:
+                merged[key] = _ai_dedupe_text_list(cleaned)
 
     clarifications = raw_plan_v1.get("clarifications")
     if isinstance(clarifications, dict):
@@ -27837,6 +27964,7 @@ async def system_dashboard_query(request: Request) -> dict:
     limit = body.get("limit") if isinstance(body, dict) else 2000
     q = body.get("q") if isinstance(body, dict) else None
     source_filter = body.get("filter") if isinstance(body, dict) else None
+    actor_ctx = _actor_domain_context(actor)
     sources = _collect_interface_sources(request, "dashboardable")
     source = _find_source_by_key(sources, source_key)
     if not source:
@@ -27850,7 +27978,7 @@ async def system_dashboard_query(request: Request) -> dict:
     fields: list[str] = []
     if isinstance(group_by, str) and group_by:
         fields.append(group_by)
-    if isinstance(measure, str) and measure.startswith("sum:"):
+    if isinstance(measure, str) and (measure.startswith("sum:") or measure.startswith("count_distinct:")):
         fields.append(measure.split(":", 1)[1])
     if isinstance(date_field_effective, str):
         fields.append(date_field_effective)
@@ -27873,15 +28001,22 @@ async def system_dashboard_query(request: Request) -> dict:
                 continue
         if isinstance(source_filter, dict):
             try:
-                if not eval_condition(source_filter, {"record": record}):
+                if not eval_condition(source_filter, {"record": record, "actor": actor_ctx}):
                     continue
             except Exception:
                 continue
         filtered.append(item)
     effective_measure = measure if isinstance(measure, str) and measure else "count"
-    measure_field = effective_measure.split(":", 1)[1] if effective_measure.startswith("sum:") else None
+    measure_field = None
+    measure_kind = "count"
+    if effective_measure.startswith("sum:"):
+        measure_kind = "sum"
+        measure_field = effective_measure.split(":", 1)[1]
+    elif effective_measure.startswith("count_distinct:"):
+        measure_kind = "count_distinct"
+        measure_field = effective_measure.split(":", 1)[1]
     if not isinstance(group_by, str) or not group_by:
-        if measure_field:
+        if measure_kind == "sum" and measure_field:
             total = 0.0
             for item in filtered:
                 record = item.get("record") or {}
@@ -27897,6 +28032,20 @@ async def system_dashboard_query(request: Request) -> dict:
                     "count": len(filtered),
                 }
             )
+        if measure_kind == "count_distinct" and measure_field:
+            unique_values = {
+                str((item.get("record") or {}).get(measure_field)).strip()
+                for item in filtered
+                if (item.get("record") or {}).get(measure_field) not in (None, "")
+            }
+            return _ok_response(
+                {
+                    "source": source,
+                    "measure": effective_measure,
+                    "value": len(unique_values),
+                    "count": len(filtered),
+                }
+            )
         return _ok_response(
             {
                 "source": source,
@@ -27905,18 +28054,25 @@ async def system_dashboard_query(request: Request) -> dict:
             }
         )
     groups: dict[str, float] = {}
+    distinct_groups: dict[str, set[str]] = {}
     for item in filtered:
         record = item.get("record") or {}
         key = record.get(group_by)
         key_text = str(key) if key is not None else ""
-        if measure_field:
+        if measure_kind == "sum" and measure_field:
             try:
                 value = float(record.get(measure_field) or 0)
             except Exception:
                 value = 0.0
             groups[key_text] = groups.get(key_text, 0.0) + value
+        elif measure_kind == "count_distinct" and measure_field:
+            raw_value = record.get(measure_field)
+            if raw_value not in (None, ""):
+                distinct_groups.setdefault(key_text, set()).add(str(raw_value))
         else:
             groups[key_text] = groups.get(key_text, 0.0) + 1.0
+    if measure_kind == "count_distinct":
+        groups = {key: float(len(values)) for key, values in distinct_groups.items()}
     output = [{"key": key, "value": value} for key, value in groups.items()]
     output.sort(key=lambda row: row.get("value", 0), reverse=True)
     return _ok_response(

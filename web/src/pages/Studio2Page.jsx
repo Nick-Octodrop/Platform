@@ -306,6 +306,7 @@ function findUnsupportedBlocks(manifest) {
     "view",
     "stack",
     "grid",
+    "stat_cards",
     "tabs",
     "text",
     "container",
