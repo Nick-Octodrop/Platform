@@ -120,7 +120,7 @@ export default function ContentBlocksRenderer({ blocks, renderView, recordId, se
   const safeBlocks = Array.isArray(blocks) ? blocks : [];
   const isMobile = useMediaQuery("(max-width: 768px)");
   const mobileRecordPage = isMobile && (safeBlocks.some((block) => block?.kind === "record") || Boolean(recordContext?.recordId) || Boolean(recordId));
-  const fullHeight = !isMobile && !mobileRecordPage && (hasViewModes(safeBlocks) || hasFillHeight(safeBlocks));
+  const fullHeight = !mobileRecordPage && (hasViewModes(safeBlocks) || hasFillHeight(safeBlocks));
   const inherited = useContext(RecordScopeContext);
   const baseContext = inherited || recordContext || (recordId ? { entityId: null, recordId, record: null, setRecord: () => {} } : null);
   const { hasCapability } = useAccessContext();
@@ -174,7 +174,7 @@ export default function ContentBlocksRenderer({ blocks, renderView, recordId, se
 function BlockRenderer({ block, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, recordContext, onNavigate, onRunAction, onConfirm, onPrompt, onLookupCreate, externalRefreshTick = 0, previewMode = false, bootstrap, bootstrapVersion, bootstrapLoading, canWriteRecords }) {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const mobileRecordPage = isMobile && Boolean(recordContext?.recordId || recordId);
-  const constrainHeight = !isMobile && !mobileRecordPage;
+  const constrainHeight = !mobileRecordPage && (!isMobile || blockPrefersFill(block));
   if (!block || typeof block !== "object") {
     return <div className="alert alert-warning">Invalid block</div>;
   }
@@ -252,7 +252,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
 
   if (kind === "stack") {
     return (
-      <div className={`flex flex-col ${gapClass(block.gap)}`}>
+      <div className={`${constrainHeight ? "h-full min-h-0" : ""} flex flex-col ${gapClass(block.gap)}`}>
         <ContentBlocksRenderer blocks={block.content} renderView={renderView} recordId={recordId} searchParams={searchParams} setSearchParams={setSearchParams} manifest={manifest} moduleId={moduleId} actionsMap={actionsMap} onNavigate={onNavigate} onRunAction={onRunAction} onConfirm={onConfirm} onPrompt={onPrompt} onLookupCreate={onLookupCreate} externalRefreshTick={externalRefreshTick} previewMode={previewMode} bootstrap={bootstrap} bootstrapVersion={bootstrapVersion} bootstrapLoading={bootstrapLoading} canWriteRecords={canWriteRecords} />
       </div>
     );

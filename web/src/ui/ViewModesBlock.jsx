@@ -606,12 +606,12 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
   }
 
   return (
-    <div className="h-full min-h-0">
-      <div className="h-full min-h-0">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-full min-h-0 flex-col">
         {moveError ? (
           <div className="alert alert-warning mb-3 py-2 text-sm">{moveError}</div>
         ) : null}
-        <div className="h-full min-h-0 overflow-x-auto overflow-y-hidden pb-2">
+        <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden pb-2">
           <div className="flex h-full min-h-0 gap-4 min-w-max">
             {groupKeys.map((groupKey) => (
               <div
@@ -2772,7 +2772,7 @@ export default function ViewModesBlock({
   }
 
   return (
-    <div className={`flex flex-col ${compact ? "gap-3" : "gap-4"} ${compactMobile ? "" : "h-full min-h-0 overflow-hidden"}`}>
+    <div className={`flex flex-col ${compact ? "gap-3" : "gap-4"} h-full min-h-0 overflow-hidden`}>
       {!compact && (
         <div className={isMobile ? "flex flex-wrap items-center justify-between gap-3 relative z-30 shrink-0" : "grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 relative z-30 shrink-0"}>
           <div className="flex items-center gap-2 min-w-0">
@@ -3278,9 +3278,9 @@ export default function ViewModesBlock({
         </div>
       )}
 
-      <div className={`${compactMobile ? "relative z-0" : `flex-1 min-h-0 relative z-0 ${activeMode === "calendar" ? "overflow-hidden" : "overflow-auto"}`}`}>
+      <div className={`flex-1 min-h-0 relative z-0 ${activeMode === "calendar" ? "overflow-hidden" : "overflow-auto"}`}>
         {activeView && activeViewKind === "list" && showListMode && (
-          <div className={compactMobile ? "" : "h-full min-h-0"}>
+          <div className="h-full min-h-0">
             <ListViewRenderer
               view={activeView}
               fieldIndex={fieldIndex}
@@ -3327,7 +3327,7 @@ export default function ViewModesBlock({
         )}
 
         {activeView && activeViewKind === "kanban" && showKanbanMode && (
-          <div className={compactMobile ? "" : "h-full min-h-0"}>
+          <div className="h-full min-h-0">
             <KanbanView
               view={activeView}
               entityDef={entityDef}
@@ -3347,7 +3347,7 @@ export default function ViewModesBlock({
         )}
 
         {activeView && activeViewKind === "calendar" && showCalendarMode && (
-          <div className={compactMobile ? "" : "h-full min-h-0 overflow-hidden"}>
+          <div className="h-full min-h-0 overflow-hidden">
             <CalendarView
               view={activeView}
               records={records}
@@ -3364,13 +3364,13 @@ export default function ViewModesBlock({
         )}
 
         {showGraphMode && (
-          <div className={compactMobile ? "min-h-[16rem]" : "h-full min-h-0"}>
+          <div className="h-full min-h-0">
             <GraphView data={presentedGraphData} type={graphType} />
           </div>
         )}
 
         {activeMode === "pivot" && (
-          <div className={compactMobile ? "min-h-[16rem]" : "h-full min-h-0"}>
+          <div className="h-full min-h-0">
             <PivotView data={presentedPivotData} measure={pivotMeasure} />
           </div>
         )}

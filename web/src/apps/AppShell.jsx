@@ -1240,7 +1240,7 @@ export default function AppShell({
   const mobilePageLayout = Boolean(isMobile && active?.type === "page");
 
   return (
-    <div className={mobilePageLayout ? "flex flex-col min-h-full" : "flex flex-col h-full min-h-0 overflow-hidden"}>
+    <div className={mobilePageLayout ? "flex h-full min-h-full flex-col overflow-hidden" : "flex flex-col h-full min-h-0 overflow-hidden"}>
       {errorBanner && <div className="alert alert-error mb-3">{errorBanner}</div>}
       {previewMode && previewAllowNav && previewNavItems.length > 0 && (
         <div className="mb-3">
@@ -1275,9 +1275,9 @@ export default function AppShell({
         </div>
       )}
 
-      <div className={mobilePageLayout ? "" : "flex-1 min-h-0 overflow-hidden flex flex-col"}>
+      <div className={mobilePageLayout ? "flex-1 h-full min-h-0 overflow-hidden flex flex-col" : "flex-1 min-h-0 overflow-hidden flex flex-col"}>
         {active.type === "page" && activePage && (
-          <div className={mobilePageLayout ? "" : "flex-1 min-h-0 overflow-hidden"}>
+          <div className={mobilePageLayout ? "flex-1 h-full min-h-0 overflow-hidden" : "flex-1 min-h-0 overflow-hidden"}>
             <ContentBlocksRenderer
               blocks={activePage.content || []}
               renderView={renderView}
