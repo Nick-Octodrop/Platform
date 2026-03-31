@@ -22,7 +22,7 @@ import {
   Table2,
   Upload,
 } from "lucide-react";
-import { apiFetch } from "../api.js";
+import { apiFetch, deleteRecord, subscribeRecordMutations } from "../api.js";
 import { supabase } from "../supabase.js";
 import ListViewRenderer from "./ListViewRenderer.jsx";
 import PaginationControls from "../components/PaginationControls.jsx";
@@ -1993,6 +1993,49 @@ export default function ViewModesBlock({
       .catch(() => setRecords([]));
   }, [activeView, entityFullId, searchText, searchFields, domain, groupByParam, previewMode, entityDef, refreshTick, externalRefreshTick, bootstrap, bootstrapVersion, bootstrapLoading, block, recordScope, waitingForInitialParams]);
 
+  useEffect(() => {
+    if (previewMode) return undefined;
+    return subscribeRecordMutations((detail) => {
+      if (!detail || detail.entityId !== entityFullId) return;
+      const ids = Array.isArray(detail.recordIds)
+        ? detail.recordIds.map((value) => String(value || "")).filter(Boolean)
+        : detail.recordId
+          ? [String(detail.recordId)]
+          : [];
+      const nextRecord = detail.record && typeof detail.record === "object" ? detail.record : null;
+      if (detail.operation === "delete" && ids.length > 0) {
+        const idSet = new Set(ids);
+        setRecords((prev) =>
+          (Array.isArray(prev) ? prev : []).filter((row) => !idSet.has(String(row?.record_id || row?.record?.id || "")))
+        );
+        setSelectedIds((prev) => prev.filter((id) => !idSet.has(String(id || ""))));
+        return;
+      }
+      if ((detail.operation === "update" || detail.operation === "action") && ids.length > 0 && nextRecord) {
+        const targetId = ids[0];
+        setRecords((prev) =>
+          (Array.isArray(prev) ? prev : []).map((row) => {
+            const rowId = String(row?.record_id || row?.record?.id || "");
+            if (rowId !== targetId) return row;
+            return {
+              ...row,
+              record: { ...(row?.record || {}), ...nextRecord },
+            };
+          })
+        );
+        return;
+      }
+      if (detail.operation === "create" && ids.length > 0 && nextRecord) {
+        const targetId = ids[0];
+        setRecords((prev) => {
+          const rows = Array.isArray(prev) ? prev : [];
+          if (rows.some((row) => String(row?.record_id || row?.record?.id || "") === targetId)) return rows;
+          return [{ record_id: targetId, record: nextRecord }, ...rows];
+        });
+      }
+    });
+  }, [previewMode, entityFullId]);
+
   const [graphData, setGraphData] = useState([]);
   useEffect(() => {
     if (!activeView || previewMode) return;
@@ -2345,9 +2388,15 @@ export default function ViewModesBlock({
       body: `Delete ${selectedIds.length} record(s)?`,
     });
     if (!ok) return;
-    Promise.all(selectedIds.map((rid) => apiFetch(`/records/${entityFullId}/${rid}`, { method: "DELETE" })))
-      .then(() => setSelectedIds([]))
-      .catch(() => {});
+    const deletingIds = [...selectedIds];
+    const deletingSet = new Set(deletingIds);
+    setRecords((prev) =>
+      (Array.isArray(prev) ? prev : []).filter((row) => !deletingSet.has(row?.record_id || row?.record?.id))
+    );
+    setSelectedIds([]);
+    Promise.all(deletingIds.map((rid) => deleteRecord(entityFullId, rid)))
+      .then(() => setRefreshTick((v) => v + 1))
+      .catch(() => setRefreshTick((v) => v + 1));
   }
 
   function resolveActionLabel(action) {

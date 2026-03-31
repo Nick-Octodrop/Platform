@@ -14731,10 +14731,12 @@ def _run_transform_record_action(
         {
             "action_id": action_id,
             "kind": "transform_record",
-            "entity_id": source_found[1].get("id"),
+            "entity_id": target_found[1].get("id"),
             "record_id": target_id,
+            "record": _automation_record_snapshot(target_record, target_found[1]),
             "source_record_id": source_id,
             "source_record_ids": source_record_ids,
+            "source_entity_id": source_found[1].get("id"),
             "target_entity_id": target_found[1].get("id"),
             "changed_fields": sorted((target_record or {}).keys()),
             "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
@@ -15124,6 +15126,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
             return _error_response("ACTION_INVALID", "selected_ids is required", "selected_ids", status=400)
         updated_count = 0
         updated_ids = []
+        last_updated_record = None
         for record_id in selected_ids:
             if not isinstance(record_id, str):
                 continue
@@ -15148,6 +15151,8 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
             updated_count += 1
             updated_ids.append(record_id)
             after_record = updated_record.get("record") if isinstance(updated_record, dict) else None
+            if isinstance(after_record, dict):
+                last_updated_record = after_record
             changed = _changed_fields(before_record or {}, after_record or {})
             activity_cfg = _activity_view_config(found[2], entity_def.get("id"))
             if isinstance(after_record, dict) and isinstance(before_record, dict) and isinstance(activity_cfg, dict):
@@ -15237,7 +15242,8 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                 "action_id": action_id,
                 "kind": kind,
                 "entity_id": entity_def.get("id"),
-                "record_id": None,
+                "record_id": updated_ids[0] if len(updated_ids) == 1 else None,
+                "record": _automation_record_snapshot(last_updated_record, entity_def) if len(updated_ids) == 1 and isinstance(last_updated_record, dict) else None,
                 "record_ids": updated_ids,
                 "changed_fields": list(patch.keys()) if isinstance(patch, dict) else [],
                 "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
@@ -15245,7 +15251,17 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
             },
             action_id=action_id,
         )
-        return _ok_response({"result": {"updated": updated_count}})
+        return _ok_response(
+            {
+                "result": {
+                    "updated": updated_count,
+                    "entity_id": entity_def.get("id"),
+                    "record_id": updated_ids[0] if len(updated_ids) == 1 else None,
+                    "record_ids": updated_ids,
+                    "record": last_updated_record if len(updated_ids) == 1 and isinstance(last_updated_record, dict) else None,
+                }
+            }
+        )
 
     return _error_response("ACTION_INVALID", "Unhandled action kind", "kind", status=400)
 

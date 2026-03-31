@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { apiFetch, compileManifest, getActiveWorkspaceId, getManifest, getPageBootstrap } from "../api";
+import { apiFetch, compileManifest, deleteRecord, getActiveWorkspaceId, getManifest, getPageBootstrap, runManifestAction, subscribeRecordMutations } from "../api";
 import { realtimeEnabled, supabase } from "../supabase";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import FormViewRenderer from "../ui/FormViewRenderer.jsx";
@@ -298,6 +298,7 @@ export default function AppShell({
   const [bootstrapVersion, setBootstrapVersion] = useState(0);
   const [workspaceKey, setWorkspaceKey] = useState(() => getActiveWorkspaceId());
   const realtimeDebounceRef = useRef(null);
+  const mutationDebounceRef = useRef(null);
   const [errorFlash, setErrorFlash] = useState(null);
   const [errorFlashUntil, setErrorFlashUntil] = useState(0);
   const errorFlashTimerRef = useRef(null);
@@ -677,6 +678,25 @@ export default function AppShell({
     };
   }, []);
 
+  useEffect(() => {
+    if (previewMode) return undefined;
+    const unsubscribe = subscribeRecordMutations(() => {
+      if (mutationDebounceRef.current) {
+        clearTimeout(mutationDebounceRef.current);
+      }
+      mutationDebounceRef.current = setTimeout(() => {
+        setRefreshTick((v) => v + 1);
+        setViewModesRefreshTick((v) => v + 1);
+      }, 75);
+    });
+    return () => {
+      if (mutationDebounceRef.current) {
+        clearTimeout(mutationDebounceRef.current);
+      }
+      unsubscribe();
+    };
+  }, [previewMode]);
+
   function setTarget(next, opts = {}) {
     // Prevent "create new record" navigation for read-only users.
     // Opening existing records passes `opts.recordId`, so it is unaffected.
@@ -916,17 +936,10 @@ export default function AppShell({
           return { updated: true };
         }
       }
-      const res = await apiFetch("/actions/run", {
-        method: "POST",
-        body: JSON.stringify({
-          module_id: moduleId,
-          action_id: action.id,
-          context: {
-            record_id: contextRecordId,
-            record_draft: contextRecordDraft,
-            selected_ids: contextSelectedIds,
-          },
-        }),
+      const res = await runManifestAction(moduleId, action.id, {
+        record_id: contextRecordId,
+        record_draft: contextRecordDraft,
+        selected_ids: contextSelectedIds,
       });
       const result = res.result || {};
       const actionKind = action.kind;
@@ -1862,6 +1875,51 @@ function AppView({
     }
   }, [kind, recordEntityId, refreshTick, listFieldIds, previewMode, previewStore?.version, bootstrapVersion, bootstrap, view?.id, bootstrapLoading]);
 
+  useEffect(() => {
+    if (kind !== "list" || previewMode) return undefined;
+    return subscribeRecordMutations((detail) => {
+      if (!detail || !entitiesMatch(detail.entityId, recordEntityId)) return;
+      const ids = Array.isArray(detail.recordIds)
+        ? detail.recordIds.map((value) => String(value || "")).filter(Boolean)
+        : detail.recordId
+          ? [String(detail.recordId)]
+          : [];
+      const nextRecord = detail.record && typeof detail.record === "object" ? detail.record : null;
+      if (detail.operation === "delete" && ids.length > 0) {
+        const idSet = new Set(ids);
+        setRecords((prev) =>
+          Array.isArray(prev) ? prev.filter((row) => !idSet.has(String(row?.record_id || row?.record?.id || ""))) : prev
+        );
+        setSelectedIds((prev) => prev.filter((id) => !idSet.has(String(id || ""))));
+        return;
+      }
+      if ((detail.operation === "update" || detail.operation === "action") && ids.length > 0 && nextRecord) {
+        const targetId = ids[0];
+        setRecords((prev) =>
+          Array.isArray(prev)
+            ? prev.map((row) => {
+                const rowId = String(row?.record_id || row?.record?.id || "");
+                if (rowId !== targetId) return row;
+                return {
+                  ...row,
+                  record: { ...(row?.record || {}), ...nextRecord },
+                };
+              })
+            : prev
+        );
+        return;
+      }
+      if (detail.operation === "create" && ids.length > 0 && nextRecord) {
+        const targetId = ids[0];
+        setRecords((prev) => {
+          const rows = Array.isArray(prev) ? prev : [];
+          if (rows.some((row) => String(row?.record_id || row?.record?.id || "") === targetId)) return rows;
+          return [{ record_id: targetId, record: nextRecord }, ...rows];
+        });
+      }
+    });
+  }, [kind, previewMode, recordEntityId]);
+
   const effectiveRecordId = recordContext?.recordId || recordId;
 
   useEffect(() => {
@@ -2338,14 +2396,17 @@ function AppView({
       if (!onConfirm) return;
       const ok = await onConfirm({ title: "Delete records", body: `Delete ${selectedIds.length} record(s)?` });
       if (!ok) return;
+      const deletingIds = [...selectedIds];
+      setRecords((prev) => prev.filter((row) => !deletingIds.includes(row.record_id)));
+      setSelectedIds([]);
       try {
         await Promise.all(
-          selectedIds.map((rid) => apiFetch(`/records/${recordEntityId}/${rid}`, { method: "DELETE" }))
+          deletingIds.map((rid) => deleteRecord(recordEntityId, rid))
         );
-        pushToast({ type: "success", message: `Deleted ${selectedIds.length} record(s)` });
-        setSelectedIds([]);
+        pushToast({ type: "success", message: `Deleted ${deletingIds.length} record(s)` });
         onRefresh?.();
       } catch (err) {
+        onRefresh?.();
         pushToast({ type: "error", message: err?.message || "Bulk delete failed" });
       }
     }

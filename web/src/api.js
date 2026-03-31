@@ -32,6 +32,7 @@ const draftCache = new Map();
 const draftCacheTs = new Map();
 const draftInFlight = new Map();
 const DRAFT_TTL_MS = 30000;
+const RECORD_MUTATION_EVENT = "octo:records-mutated";
 
 const REQUEST_POLICIES = [
   { pattern: /^\/modules$/, methods: ["GET"], ttl: 30000 },
@@ -107,6 +108,70 @@ function invalidateRecordCache(entityId, recordId = null) {
   }
   invalidateRequestPrefix(`/records/${entityId}`);
   invalidateRequestPrefix(`/page/bootstrap`);
+}
+
+function emitRecordMutation(detail) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(RECORD_MUTATION_EVENT, {
+      detail: {
+        workspaceId: getActiveWorkspaceId() || "",
+        ...(detail || {}),
+      },
+    }),
+  );
+}
+
+export function subscribeRecordMutations(listener) {
+  if (typeof window === "undefined" || typeof listener !== "function") return () => {};
+  const handler = (event) => listener(event?.detail || {});
+  window.addEventListener(RECORD_MUTATION_EVENT, handler);
+  return () => window.removeEventListener(RECORD_MUTATION_EVENT, handler);
+}
+
+function emitMutationForResponse(path, method, data) {
+  if (method === "GET") return;
+  if (path.startsWith("/records/")) {
+    const parts = path.split("/").filter(Boolean);
+    const entityId = parts[1] || "";
+    const recordId = parts.length > 2 ? parts[2] : (data?.record_id || data?.record?.id || null);
+    const record = data?.record && typeof data.record === "object" ? data.record : null;
+    emitRecordMutation({
+      source: "ui",
+      operation:
+        method === "POST"
+          ? "create"
+          : method === "PUT" || method === "PATCH"
+            ? "update"
+            : method === "DELETE"
+              ? "delete"
+              : method.toLowerCase(),
+      entityId,
+      recordId: recordId || null,
+      recordIds: recordId ? [recordId] : [],
+      record,
+      path,
+      broad: false,
+    });
+    return;
+  }
+  if (path.startsWith("/actions/")) {
+    const result = data?.result || {};
+    const entityId = result?.entity_id || "";
+    const recordId = result?.record_id || null;
+    const record = result?.record && typeof result.record === "object" ? result.record : null;
+    emitRecordMutation({
+      source: "ui",
+      operation: "action",
+      entityId,
+      recordId,
+      recordIds: recordId ? [recordId] : [],
+      record,
+      path,
+      actionId: result?.action_id || null,
+      broad: true,
+    });
+  }
 }
 
 function formatApiErrorPath(path) {
@@ -262,6 +327,7 @@ export async function apiFetch(path, options = {}) {
             modulesCacheTs = 0;
             invalidateRequestPrefix("/modules");
           }
+          emitMutationForResponse(path, method, data);
         }
         return data;
       })
@@ -279,6 +345,41 @@ export async function apiFetch(path, options = {}) {
       console.debug(`[perf] ${trace} ${status ?? "ERR"} ${ms}ms`);
     }
   }
+}
+
+export async function createRecord(entityId, payload, options = {}) {
+  return apiFetch(`/records/${entityId}`, {
+    ...options,
+    method: "POST",
+    body: typeof payload === "string" ? payload : JSON.stringify(payload || {}),
+  });
+}
+
+export async function updateRecord(entityId, recordId, payload, options = {}) {
+  return apiFetch(`/records/${entityId}/${recordId}`, {
+    ...options,
+    method: "PUT",
+    body: typeof payload === "string" ? payload : JSON.stringify(payload || {}),
+  });
+}
+
+export async function deleteRecord(entityId, recordId, options = {}) {
+  return apiFetch(`/records/${entityId}/${recordId}`, {
+    ...options,
+    method: "DELETE",
+  });
+}
+
+export async function runManifestAction(moduleId, actionId, context = {}, options = {}) {
+  return apiFetch("/actions/run", {
+    ...options,
+    method: "POST",
+    body: JSON.stringify({
+      module_id: moduleId,
+      action_id: actionId,
+      context,
+    }),
+  });
 }
 
 export function getActiveWorkspaceId() {

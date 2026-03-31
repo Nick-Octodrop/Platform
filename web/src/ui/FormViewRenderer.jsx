@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { MoreHorizontal } from "lucide-react";
 import { renderField, setFieldValue, getFieldValue } from "./field_renderers.jsx";
-import { apiFetch } from "../api.js";
+import { apiFetch, createRecord, deleteRecord, updateRecord } from "../api.js";
 import { evalCondition } from "../utils/conditions.js";
 import { applyComputedFields } from "../utils/computedFields.js";
 import Tabs from "../components/Tabs.jsx";
@@ -843,10 +843,7 @@ function InlineLineItemsTable({
       )
     );
     try {
-      await apiFetch(`/records/${childEntityId}/${recordId}`, {
-        method: "PUT",
-        body: JSON.stringify({ [fieldId]: value }),
-      });
+      await updateRecord(childEntityId, recordId, { [fieldId]: value });
       await fetchRows();
       await onRefreshParent?.();
     } catch {
@@ -856,7 +853,7 @@ function InlineLineItemsTable({
 
   async function deleteRow(recordId) {
     try {
-      await apiFetch(`/records/${childEntityId}/${recordId}`, { method: "DELETE" });
+      await deleteRecord(childEntityId, recordId);
       setRows((prev) => prev.filter((row) => row.record_id !== recordId));
       await onRefreshParent?.();
     } catch {
@@ -905,10 +902,7 @@ function InlineLineItemsTable({
     }
     if (descriptionField && !payload[descriptionField]) payload[descriptionField] = option.label || "";
     try {
-      const created = await apiFetch(`/records/${childEntityId}`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      const created = await createRecord(childEntityId, payload);
       const createdId = created?.record_id;
       if (createdId) {
         setLookupCache((prev) => ({ ...prev, [createdId]: option.label || option.value }));
