@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import os
 import smtplib
 import uuid
@@ -44,6 +45,24 @@ class PostmarkProvider(EmailProvider):
             "TextBody": message.get("body_text"),
             "ReplyTo": message.get("reply_to"),
         }
+        attachments_payload = []
+        for attachment in message.get("attachments") or []:
+            if not isinstance(attachment, dict):
+                continue
+            data = attachment.get("data")
+            if isinstance(data, str):
+                data = data.encode("utf-8")
+            if not isinstance(data, (bytes, bytearray)):
+                continue
+            attachments_payload.append(
+                {
+                    "Name": attachment.get("filename") or "attachment",
+                    "ContentType": attachment.get("mime_type") or "application/octet-stream",
+                    "Content": base64.b64encode(bytes(data)).decode("ascii"),
+                }
+            )
+        if attachments_payload:
+            payload["Attachments"] = attachments_payload
         headers = {"X-Postmark-Server-Token": api_token}
         resp = httpx.post("https://api.postmarkapp.com/email", json=payload, headers=headers, timeout=30)
         if resp.status_code >= 400:
@@ -88,6 +107,24 @@ class SmtpProvider(EmailProvider):
         msg.set_content(message.get("body_text") or "")
         if message.get("body_html"):
             msg.add_alternative(message.get("body_html"), subtype="html")
+        for attachment in message.get("attachments") or []:
+            if not isinstance(attachment, dict):
+                continue
+            data = attachment.get("data")
+            if isinstance(data, str):
+                data = data.encode("utf-8")
+            if not isinstance(data, (bytes, bytearray)):
+                continue
+            mime_type = str(attachment.get("mime_type") or "application/octet-stream")
+            maintype, _, subtype = mime_type.partition("/")
+            if not maintype or not subtype:
+                maintype, subtype = "application", "octet-stream"
+            msg.add_attachment(
+                bytes(data),
+                maintype=maintype,
+                subtype=subtype,
+                filename=attachment.get("filename") or "attachment",
+            )
 
         if security == "ssl":
             with smtplib.SMTP_SSL(host, port, timeout=30) as server:

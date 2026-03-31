@@ -1,6 +1,8 @@
 import os
 import sys
 import unittest
+import json
+from pathlib import Path
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 SRC = os.path.join(ROOT, "src")
@@ -9,7 +11,7 @@ if ROOT not in sys.path:
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
-from app.manifest_validate import validate_manifest
+from app.manifest_validate import validate_manifest, validate_manifest_raw
 from app.manifest_normalize import normalize_manifest
 
 
@@ -144,6 +146,42 @@ class TestManifestV13(unittest.TestCase):
         errors, _ = validate_manifest(manifest)
         self.assertTrue(any(e["code"] == "MANIFEST_ACTION_INVALID" for e in errors))
 
+    def test_transform_record_selection_mode_and_selected_scope_validate(self):
+        manifest = base_manifest()
+        manifest["transformations"] = [
+            {
+                "key": "selected_work_to_work",
+                "source_entity_id": "entity.work_item",
+                "target_entity_id": "entity.work_item",
+                "field_mappings": [{"to": "work.title", "from": "work.title"}],
+                "child_mappings": [
+                    {
+                        "source_entity_id": "entity.work_item",
+                        "source_scope": "selected_records",
+                        "target_entity_id": "entity.work_item",
+                        "target_link_field": "work.parent_id",
+                        "field_mappings": [{"to": "work.title", "from": "work.title"}],
+                    }
+                ],
+                "validation": {
+                    "require_uniform_fields": ["work.title"],
+                    "selected_record_domain": {"op": "exists", "field": "work.title"},
+                },
+            }
+        ]
+        manifest["entities"][0]["fields"].append({"id": "work.parent_id", "type": "string"})
+        manifest["actions"] = [
+            {
+                "id": "action.transform",
+                "kind": "transform_record",
+                "entity_id": "entity.work_item",
+                "selection_mode": "selected_records",
+                "transformation_key": "selected_work_to_work",
+            }
+        ]
+        errors, _ = validate_manifest(manifest)
+        self.assertEqual(errors, [])
+
     def test_interfaces_schedulable_documentable_dashboardable_validation(self):
         manifest = base_manifest()
         manifest["entities"][0]["fields"].extend(
@@ -209,6 +247,31 @@ class TestManifestV13(unittest.TestCase):
         manifest["depends_on"] = {"required": [{"module": "contacts", "version": "foo"}]}
         errors, _ = validate_manifest(manifest)
         self.assertTrue(any(e["code"] == "MANIFEST_DEPENDS_ON_INVALID_VERSION" for e in errors))
+
+    def test_octodrop_work_management_manifest_validates_with_grouped_invoice_flow(self):
+        manifest = json.loads((Path(ROOT) / "octodrop_modules" / "work_management" / "work_management.json").read_text(encoding="utf-8"))
+        _normalized, errors, _warnings = validate_manifest_raw(manifest, expected_module_id="work_management")
+        self.assertEqual(errors, [])
+
+    def test_octodrop_billing_manifest_validates_without_single_time_entry_transform(self):
+        manifest_path = Path(ROOT) / "octodrop_modules" / "billing" / "billing.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        _normalized, errors, _warnings = validate_manifest_raw(manifest, expected_module_id="billing")
+        self.assertEqual(errors, [])
+        invoice_fields = {
+            field.get("id")
+            for entity in (manifest.get("entities") or [])
+            if isinstance(entity, dict) and entity.get("id") == "entity.billing_invoice"
+            for field in (entity.get("fields") or [])
+            if isinstance(field, dict)
+        }
+        self.assertNotIn("billing_invoice.source_time_entry_id", invoice_fields)
+        action_ids = {
+            action.get("id")
+            for action in (manifest.get("actions") or [])
+            if isinstance(action, dict)
+        }
+        self.assertNotIn("action.billing_invoice_create_from_time_entry", action_ids)
 
 
 if __name__ == "__main__":

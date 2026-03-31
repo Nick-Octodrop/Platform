@@ -12,6 +12,8 @@ Issue = Dict[str, Any]
 
 
 ALLOWED_FIELD_TYPES = {"string", "text", "number", "bool", "date", "datetime", "enum", "uuid", "lookup", "tags", "attachments", "user", "users"}
+ALLOWED_FIELD_FORMAT_KINDS = {"plain", "currency", "percent", "measurement", "duration"}
+ALLOWED_FIELD_FORMAT_KEYS = {"kind", "currency", "currency_field", "unit", "unit_field", "precision"}
 ALLOWED_V1_TOP_KEYS = {
     "manifest_version",
     "module",
@@ -105,7 +107,10 @@ ALLOWED_WORKFLOW_STATE_KEYS = {"id", "label", "order", "required_fields"}
 ALLOWED_WORKFLOW_TRANSITION_KEYS = {"from", "to", "label"}
 ALLOWED_CONDITION_OPS = {"eq", "neq", "gt", "gte", "lt", "lte", "in", "contains", "exists", "and", "or", "not"}
 ALLOWED_CONDITION_KEYS = {"op", "field", "value", "left", "right", "conditions", "condition"}
-ALLOWED_V1_ACTION_KEYS = {"id", "kind", "label", "target", "entity_id", "defaults", "patch", "transformation_key", "enabled_when", "visible_when", "confirm", "modal_id"}
+ALLOWED_COMPUTE_KEYS = {"expression", "aggregate", "persist"}
+ALLOWED_COMPUTE_AGGREGATE_KEYS = {"op", "measure", "entity", "field", "where"}
+ALLOWED_COMPUTE_AGGREGATE_OPS = {"sum", "count", "min", "max", "avg"}
+ALLOWED_V1_ACTION_KEYS = {"id", "kind", "label", "target", "entity_id", "defaults", "patch", "transformation_key", "selection_mode", "enabled_when", "visible_when", "confirm", "modal_id"}
 ALLOWED_V1_VIEW_HEADER_KEYS = {"title_field", "primary_actions", "secondary_actions", "search", "filters", "bulk_actions", "save_mode", "open_record_target", "auto_save", "auto_save_debounce_ms", "statusbar", "tabs"}
 ALLOWED_V1_VIEW_HEADER_ACTION_KEYS = {"action_id", "kind", "label", "target", "enabled_when", "visible_when", "confirm", "modal_id"}
 ALLOWED_V1_MODAL_KEYS = {"id", "title", "description", "entity_id", "fields", "defaults", "actions"}
@@ -188,6 +193,7 @@ ALLOWED_V1_TRANSFORMATION_CHILD_KEYS = {
     "target_entity_id",
     "source_link_field",
     "target_link_field",
+    "source_scope",
     "field_mappings",
 }
 ALLOWED_V1_TRANSFORMATION_LINK_KEYS = {"source_to_target", "target_to_source"}
@@ -195,7 +201,13 @@ ALLOWED_V1_TRANSFORMATION_SOURCE_UPDATE_KEYS = {"patch"}
 ALLOWED_V1_TRANSFORMATION_ACTIVITY_KEYS = {"enabled", "event_type", "targets"}
 ALLOWED_V1_TRANSFORMATION_FEED_KEYS = {"enabled", "message", "targets"}
 ALLOWED_V1_TRANSFORMATION_HOOK_KEYS = {"emit_events"}
-ALLOWED_V1_TRANSFORMATION_VALIDATION_KEYS = {"require_source_fields", "require_child_records", "prevent_if_target_linked"}
+ALLOWED_V1_TRANSFORMATION_VALIDATION_KEYS = {
+    "require_source_fields",
+    "require_child_records",
+    "prevent_if_target_linked",
+    "require_uniform_fields",
+    "selected_record_domain",
+}
 
 
 def _issue(code: str, message: str, path: str | None = None, detail: dict | None = None) -> Issue:
@@ -249,6 +261,49 @@ def _validate_condition_operand(value: Any, path: str, errors: list[Issue]) -> N
             errors.append(_issue("MANIFEST_CONDITION_REF_INVALID", "ref must be a string", f"{path}.ref"))
 
 
+def _validate_field_format(field: dict, path: str, errors: list[Issue]) -> None:
+    fmt = _get(field, "format")
+    if fmt is None:
+        return
+    if not isinstance(fmt, dict):
+        errors.append(_issue("MANIFEST_FIELD_FORMAT_INVALID", "field.format must be an object", path))
+        return
+    _reject_unknown_keys(errors, fmt, ALLOWED_FIELD_FORMAT_KEYS, path)
+    ftype = _get(field, "type")
+    if ftype != "number":
+        errors.append(_issue("MANIFEST_FIELD_FORMAT_INVALID", "field.format is only supported on number fields", path))
+        return
+
+    kind = _get(fmt, "kind")
+    if kind is not None:
+        if not isinstance(kind, str) or kind not in ALLOWED_FIELD_FORMAT_KINDS:
+            errors.append(
+                _issue(
+                    "MANIFEST_FIELD_FORMAT_INVALID",
+                    "field.format.kind must be one of plain|currency|percent|measurement|duration",
+                    f"{path}.kind",
+                )
+            )
+
+    precision = _get(fmt, "precision")
+    if precision is not None and (not isinstance(precision, int) or precision < 0 or precision > 6):
+        errors.append(_issue("MANIFEST_FIELD_FORMAT_INVALID", "field.format.precision must be an integer between 0 and 6", f"{path}.precision"))
+
+    currency = _get(fmt, "currency")
+    currency_field = _get(fmt, "currency_field")
+    if currency is not None and (not isinstance(currency, str) or len(currency.strip()) != 3):
+        errors.append(_issue("MANIFEST_FIELD_FORMAT_INVALID", "field.format.currency must be a 3-letter currency code", f"{path}.currency"))
+    if currency_field is not None and not isinstance(currency_field, str):
+        errors.append(_issue("MANIFEST_FIELD_FORMAT_INVALID", "field.format.currency_field must be a string", f"{path}.currency_field"))
+
+    unit = _get(fmt, "unit")
+    unit_field = _get(fmt, "unit_field")
+    if unit is not None and not isinstance(unit, str):
+        errors.append(_issue("MANIFEST_FIELD_FORMAT_INVALID", "field.format.unit must be a string", f"{path}.unit"))
+    if unit_field is not None and not isinstance(unit_field, str):
+        errors.append(_issue("MANIFEST_FIELD_FORMAT_INVALID", "field.format.unit_field must be a string", f"{path}.unit_field"))
+
+
 def _validate_condition(condition: Any, path: str, errors: list[Issue], depth: int = 0) -> None:
     if depth > MAX_CONDITION_DEPTH:
         errors.append(_issue("MANIFEST_CONDITION_DEPTH", "condition is nested too deeply", path))
@@ -290,6 +345,45 @@ def _validate_condition(condition: Any, path: str, errors: list[Issue], depth: i
         errors.append(_issue("MANIFEST_CONDITION_FIELD_INVALID", "condition.field must be a string", f"{path}.field"))
     if op != "exists" and "value" not in condition:
         errors.append(_issue("MANIFEST_CONDITION_VALUE_INVALID", "condition.value is required", f"{path}.value"))
+
+
+def _validate_compute_spec(compute: Any, path: str, errors: list[Issue], warnings: list[Issue]) -> None:
+    if not isinstance(compute, dict):
+        errors.append(_issue("MANIFEST_FIELD_COMPUTE_INVALID", "field.compute must be an object", path))
+        return
+    _reject_unknown_keys(errors, compute, ALLOWED_COMPUTE_KEYS, path)
+    has_expression = "expression" in compute
+    has_aggregate = isinstance(_get(compute, "aggregate"), dict)
+    if has_expression == has_aggregate:
+        errors.append(_issue("MANIFEST_FIELD_COMPUTE_INVALID", "field.compute must define exactly one of expression or aggregate", path))
+    persist = _get(compute, "persist")
+    if persist is not None and not isinstance(persist, bool):
+        warnings.append(_issue("MANIFEST_FIELD_COMPUTE_INVALID", "field.compute.persist should be boolean", f"{path}.persist"))
+    aggregate = _get(compute, "aggregate")
+    if aggregate is not None:
+        if not isinstance(aggregate, dict):
+            errors.append(_issue("MANIFEST_FIELD_COMPUTE_INVALID", "field.compute.aggregate must be an object", f"{path}.aggregate"))
+            return
+        _reject_unknown_keys(errors, aggregate, ALLOWED_COMPUTE_AGGREGATE_KEYS, f"{path}.aggregate")
+        op = _get(aggregate, "op") or _get(aggregate, "measure")
+        if not isinstance(op, str) or op not in ALLOWED_COMPUTE_AGGREGATE_OPS:
+            errors.append(
+                _issue(
+                    "MANIFEST_FIELD_COMPUTE_INVALID",
+                    "field.compute.aggregate.op must be one of allowed aggregate ops",
+                    f"{path}.aggregate.op",
+                    {"allowed": sorted(ALLOWED_COMPUTE_AGGREGATE_OPS)},
+                )
+            )
+        entity = _get(aggregate, "entity")
+        if not isinstance(entity, str) or not entity:
+            errors.append(_issue("MANIFEST_FIELD_COMPUTE_INVALID", "field.compute.aggregate.entity is required", f"{path}.aggregate.entity"))
+        field = _get(aggregate, "field")
+        if op != "count" and (not isinstance(field, str) or not field):
+            errors.append(_issue("MANIFEST_FIELD_COMPUTE_INVALID", "field.compute.aggregate.field is required unless op=count", f"{path}.aggregate.field"))
+        where = _get(aggregate, "where")
+        if where is not None:
+            _validate_condition(where, f"{path}.aggregate.where", errors)
 
 
 def _validate_view_header_actions(
@@ -779,6 +873,12 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
             readonly = _get(field, "readonly")
             if readonly is not None and not isinstance(readonly, bool):
                 warnings.append(_issue("MANIFEST_FIELD_READONLY_INVALID", "field.readonly should be boolean", f"{fpath}.readonly"))
+            _validate_field_format(field, f"{fpath}.format", errors)
+            compute = _get(field, "compute")
+            if compute is not None:
+                _validate_compute_spec(compute, f"{fpath}.compute", errors, warnings)
+                if readonly is not True:
+                    warnings.append(_issue("MANIFEST_FIELD_COMPUTE_READONLY_RECOMMENDED", "computed fields should usually be readonly", f"{fpath}.readonly"))
 
             ui = _get(field, "ui")
             if ui is not None:
@@ -804,7 +904,7 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
                         allowed = [opt.get("value") if isinstance(opt, dict) else opt for opt in options]
                         if default not in allowed:
                             errors.append(_issue("MANIFEST_FIELD_DEFAULT_INVALID", "field.default must be one of enum options", f"{fpath}.default"))
-            if required and readonly and default is None and not _get(field, "system"):
+            if required and readonly and default is None and not _get(field, "system") and compute is None:
                 errors.append(_issue("MANIFEST_FIELD_REQUIRED_READONLY_INVALID", "readonly required fields must define default or be system", f"{fpath}.readonly"))
             if ftype == "enum":
                 options = _get(field, "options") or _get(field, "values")
@@ -938,7 +1038,13 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
                             errors.append(_issue("MANIFEST_TRANSFORMATION_CHILD_INVALID", "child mapping must be object", cpath))
                             continue
                         _reject_unknown_keys(errors, child, ALLOWED_V1_TRANSFORMATION_CHILD_KEYS, cpath)
-                        for required_key in ("source_entity_id", "target_entity_id", "source_link_field", "target_link_field"):
+                        source_scope = _get(child, "source_scope")
+                        if source_scope is not None and source_scope not in {"selected_records"}:
+                            errors.append(_issue("MANIFEST_TRANSFORMATION_CHILD_INVALID", "source_scope must be selected_records when provided", f"{cpath}.source_scope"))
+                        required_keys = ["source_entity_id", "target_entity_id", "target_link_field"]
+                        if source_scope != "selected_records":
+                            required_keys.append("source_link_field")
+                        for required_key in required_keys:
                             value = _get(child, required_key)
                             if not isinstance(value, str) or not value:
                                 errors.append(_issue("MANIFEST_TRANSFORMATION_CHILD_INVALID", f"{required_key} is required", f"{cpath}.{required_key}"))
@@ -1009,6 +1115,16 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
                     prevent_if_target_linked = _get(validation, "prevent_if_target_linked")
                     if prevent_if_target_linked is not None and not isinstance(prevent_if_target_linked, bool):
                         errors.append(_issue("MANIFEST_TRANSFORMATION_VALIDATION_INVALID", "validation.prevent_if_target_linked must be boolean", f"{tpath}.validation.prevent_if_target_linked"))
+                    require_uniform_fields = _get(validation, "require_uniform_fields")
+                    if require_uniform_fields is not None:
+                        if not isinstance(require_uniform_fields, list) or not all(isinstance(fid, str) and fid for fid in require_uniform_fields):
+                            errors.append(_issue("MANIFEST_TRANSFORMATION_VALIDATION_INVALID", "validation.require_uniform_fields must be list of strings", f"{tpath}.validation.require_uniform_fields"))
+                    selected_record_domain = _get(validation, "selected_record_domain")
+                    if selected_record_domain is not None:
+                        if not is_v12:
+                            errors.append(_issue("MANIFEST_TRANSFORMATION_VALIDATION_INVALID", "validation.selected_record_domain requires manifest_version >= 1.2", f"{tpath}.validation.selected_record_domain"))
+                        else:
+                            _validate_condition(selected_record_domain, f"{tpath}.validation.selected_record_domain", errors)
 
     interfaces = _get(manifest, "interfaces")
     if interfaces is not None:
@@ -1201,6 +1317,9 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
                 entity_id = _get(action, "entity_id")
                 if entity_id is not None and not isinstance(entity_id, str):
                     errors.append(_issue("MANIFEST_ACTION_INVALID", "action.entity_id must be a string when provided", f"{apath}.entity_id"))
+                selection_mode = _get(action, "selection_mode")
+                if selection_mode is not None and selection_mode not in {"selected_records"}:
+                    errors.append(_issue("MANIFEST_ACTION_INVALID", "selection_mode must be selected_records when provided", f"{apath}.selection_mode"))
             if kind == "create_record":
                 defaults = _get(action, "defaults")
                 if defaults is not None and not isinstance(defaults, dict):

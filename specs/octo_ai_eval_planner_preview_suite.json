@@ -105,6 +105,41 @@
     ]
   },
   {
+    "name": "preview_contacts_delete_roblux_noop",
+    "level": 1,
+    "tags": [
+      "preview_contract",
+      "noop",
+      "contacts_change"
+    ],
+    "session": {
+      "title": "preview_contacts_delete_roblux_noop",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Delete the roblux field from the Contacts module.",
+        "expect": {
+          "ok": true,
+          "question_required": false,
+          "assistant_text_contains": [
+            "No changes are needed right now."
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ],
+          "affected_modules_include": [
+            "contacts"
+          ]
+        }
+      }
+    ]
+  },
+  {
     "name": "preview_upgrade_contacts_latest_style",
     "level": 2,
     "tags": [
@@ -365,6 +400,45 @@
     ]
   },
   {
+    "name": "preview_jobs_emergency_required_fields",
+    "level": 5,
+    "tags": [
+      "preview_contract",
+      "conditional_forms",
+      "form_layout",
+      "jobs_change"
+    ],
+    "session": {
+      "title": "preview_jobs_emergency_required_fields",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Jobs, if the job type is Emergency, show After Hours Contact and Callout Reason fields and make them required.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Jobs",
+            "After Hours Contact",
+            "Callout Reason"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ],
+          "affected_modules_include": [
+            "jobs"
+          ]
+        }
+      }
+    ]
+  },
+  {
     "name": "preview_create_training_compliance_human_name",
     "level": 1,
     "tags": [
@@ -392,6 +466,45 @@
             "training_compliance",
             "candidate_operations",
             "artifact_id"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_contacts_status_action_wording_variant",
+    "level": 3,
+    "tags": [
+      "preview_contract",
+      "workflow_actions",
+      "contacts_change",
+      "status_update"
+    ],
+    "session": {
+      "title": "preview_contacts_status_action_wording_variant",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "In Contacts, create a Contacted status and make the action buttons obvious so staff can move records into that status from the form.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Contacts",
+            "Contacted",
+            "action buttons"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ],
+          "affected_modules_include": [
+            "contacts"
           ]
         }
       }
@@ -2644,6 +2757,42 @@
     ]
   },
   {
+    "name": "preview_real_world_construction_operations_dashboard",
+    "level": 6,
+    "tags": [
+      "preview_contract",
+      "dashboards_reporting",
+      "dashboard",
+      "reporting",
+      "real_world",
+      "business_construction"
+    ],
+    "session": {
+      "title": "preview_real_world_construction_operations_dashboard",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Improve the Construction operations dashboard so supervisors can see workers on site today, total labour hours today, materials logged today, total cost today, cost breakdown, recent time entries, and today\u2019s material logs.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
     "name": "preview_real_world_sales_conversion_dashboard",
     "level": 6,
     "tags": [
@@ -2932,6 +3081,78 @@
     ]
   },
   {
+    "name": "preview_real_world_clockify_replacement_time_billing_suite",
+    "level": 7,
+    "tags": [
+      "preview_contract",
+      "cross_module_rollouts",
+      "workspace_graph",
+      "cross_module",
+      "real_world",
+      "business_internal_ops"
+    ],
+    "session": {
+      "title": "preview_real_world_clockify_replacement_time_billing_suite",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Plan a minimal internal time tracking and invoicing suite that reuses Contacts, adds only Work Management and Billing, avoids kernel timer infrastructure, tracks billable time with normal records, creates invoices from billable time, and generates invoice PDFs.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_vendor_approvals_conditions_and_automation",
+    "level": 7,
+    "tags": [
+      "preview_contract",
+      "cross_module_rollouts",
+      "workspace_graph",
+      "cross_module",
+      "real_world",
+      "business_procurement"
+    ],
+    "session": {
+      "title": "preview_real_world_vendor_approvals_conditions_and_automation",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a Vendor Approvals app called Vendor Approvals with a lifecycle for draft, approved, and rejected vendors, make Review Notes required when the record is rejected, show Contract End Date only for approved vendors, and include a draft approval notification automation.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
     "name": "preview_real_world_property_inspection_rollout",
     "level": 7,
     "tags": [
@@ -2951,6 +3172,42 @@
     "steps": [
       {
         "chat": "Build a property inspection flow across Contacts, Site Visits, Documents, and Maintenance so inspections, photos, defects, and follow-up work all stay linked.",
+        "expect": {
+          "ok": true,
+          "question_required": true,
+          "question_id": "confirm_plan",
+          "assistant_text_contains": [
+            "Planned changes:"
+          ],
+          "assistant_text_not_contains": [
+            "candidate_operations",
+            "artifact_id",
+            "manifest"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_real_world_compliance_rollout_with_pdf_and_reminders",
+    "level": 7,
+    "tags": [
+      "preview_contract",
+      "cross_module_rollouts",
+      "workspace_graph",
+      "cross_module",
+      "real_world",
+      "business_compliance"
+    ],
+    "session": {
+      "title": "preview_real_world_compliance_rollout_with_pdf_and_reminders",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Plan a contractor compliance rollout that reuses Contacts, adds Compliance and Renewals, sends expiry reminders automatically, and generates an approval pack PDF. Show the phased plan first.",
         "expect": {
           "ok": true,
           "question_required": true,

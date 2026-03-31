@@ -422,6 +422,14 @@
       "prompt": "Build a Jobs dashboard showing jobs by status, jobs by technician, overdue jobs, and completed jobs this week."
     },
     {
+      "id": "construction_operations_dashboard",
+      "category": "dashboards_reporting",
+      "business_type": "construction",
+      "situation_type": "dashboard",
+      "surfaces": ["views", "dashboards", "reporting"],
+      "prompt": "Improve the Construction operations dashboard so supervisors can see workers on site today, total labour hours today, materials logged today, total cost today, cost breakdown, recent time entries, and today’s material logs."
+    },
+    {
       "id": "sales_conversion_dashboard",
       "category": "dashboards_reporting",
       "business_type": "sales",
@@ -486,12 +494,36 @@
       "prompt": "Set up a project handover process that links Sales, Jobs, Calendar, and Documents so operations has everything before work starts."
     },
     {
+      "id": "clockify_replacement_time_billing_suite",
+      "category": "cross_module_rollouts",
+      "business_type": "internal_ops",
+      "situation_type": "requirements_brief",
+      "surfaces": ["cross_module", "workflow", "documents", "templates", "reporting"],
+      "prompt": "Plan a minimal internal time tracking and invoicing suite that reuses Contacts, adds only Work Management and Billing, avoids kernel timer infrastructure, tracks billable time with normal records, creates invoices from billable time, and generates invoice PDFs."
+    },
+    {
+      "id": "vendor_approvals_conditions_and_automation",
+      "category": "cross_module_rollouts",
+      "business_type": "procurement",
+      "situation_type": "create_module",
+      "surfaces": ["create_module", "workflow", "conditions", "automations"],
+      "prompt": "Create a Vendor Approvals app called Vendor Approvals with a lifecycle for draft, approved, and rejected vendors, make Review Notes required when the record is rejected, show Contract End Date only for approved vendors, and include a draft approval notification automation."
+    },
+    {
       "id": "property_inspection_rollout",
       "category": "cross_module_rollouts",
       "business_type": "property",
       "situation_type": "cross_module",
       "surfaces": ["cross_module", "workflow", "documents", "attachments"],
       "prompt": "Build a property inspection flow across Contacts, Site Visits, Documents, and Maintenance so inspections, photos, defects, and follow-up work all stay linked."
+    },
+    {
+      "id": "compliance_rollout_with_pdf_and_reminders",
+      "category": "cross_module_rollouts",
+      "business_type": "compliance",
+      "situation_type": "requirements_brief",
+      "surfaces": ["cross_module", "workflow", "automations", "templates", "documents"],
+      "prompt": "Plan a contractor compliance rollout that reuses Contacts, adds Compliance and Renewals, sends expiry reminders automatically, and generates an approval pack PDF. Show the phased plan first."
     }
   ]
 }

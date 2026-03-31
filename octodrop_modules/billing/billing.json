@@ -1,0 +1,1294 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "billing",
+    "key": "billing",
+    "name": "Billing",
+    "version": "0.1.0",
+    "description": "Minimal internal invoice management for turning approved billable time into invoice drafts and document output.",
+    "category": "Finance",
+    "icon_key": "lucide:FileText"
+  },
+  "depends_on": {
+    "required": [
+      {
+        "module": "contacts",
+        "version": ">=1.0.0"
+      },
+      {
+        "module": "work_management",
+        "version": ">=0.1.0"
+      }
+    ]
+  },
+  "app": {
+    "home": "page:billing_invoice.list_page",
+    "defaults": {
+      "entity_home_page": "page:billing_invoice.list_page",
+      "entity_form_page": "page:billing_invoice.form_page",
+      "entities": {
+        "entity.billing_invoice": {
+          "entity_home_page": "page:billing_invoice.list_page",
+          "entity_form_page": "page:billing_invoice.form_page"
+        },
+        "entity.billing_invoice_line": {
+          "entity_home_page": "page:billing_invoice_line.list_page",
+          "entity_form_page": "page:billing_invoice_line.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Billing",
+        "mode": "inline",
+        "items": [
+          {
+            "label": "Invoices",
+            "to": "page:billing_invoice.list_page"
+          },
+          {
+            "label": "Draft Invoices",
+            "to": "page:billing_invoice.drafts_page"
+          },
+          {
+            "label": "Sent Invoices",
+            "to": "page:billing_invoice.sent_page"
+          },
+          {
+            "label": "Paid Invoices",
+            "to": "page:billing_invoice.paid_page"
+          }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.billing_invoice",
+      "display_field": "billing_invoice.invoice_number",
+      "fields": [
+        {
+          "id": "billing_invoice.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "billing_invoice.invoice_number",
+          "type": "string",
+          "label": "Invoice Number",
+          "required": true
+        },
+        {
+          "id": "billing_invoice.contact_id",
+          "type": "lookup",
+          "label": "Client",
+          "entity": "entity.contact",
+          "display_field": "contact.name",
+          "required": true
+        },
+        {
+          "id": "billing_invoice.issue_date",
+          "type": "date",
+          "label": "Issue Date",
+          "required": true
+        },
+        {
+          "id": "billing_invoice.due_date",
+          "type": "date",
+          "label": "Due Date"
+        },
+        {
+          "id": "billing_invoice.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "draft",
+          "options": [
+            {
+              "value": "draft",
+              "label": "Draft"
+            },
+            {
+              "value": "sent",
+              "label": "Sent"
+            },
+            {
+              "value": "paid",
+              "label": "Paid"
+            },
+            {
+              "value": "cancelled",
+              "label": "Cancelled"
+            }
+          ]
+        },
+        {
+          "id": "billing_invoice.currency_code",
+          "type": "enum",
+          "label": "Currency",
+          "default": "NZD",
+          "options": [
+            { "value": "NZD", "label": "New Zealand Dollar (NZD)" },
+            { "value": "AUD", "label": "Australian Dollar (AUD)" },
+            { "value": "USD", "label": "US Dollar (USD)" },
+            { "value": "CAD", "label": "Canadian Dollar (CAD)" },
+            { "value": "EUR", "label": "Euro (EUR)" },
+            { "value": "GBP", "label": "British Pound (GBP)" },
+            { "value": "CHF", "label": "Swiss Franc (CHF)" },
+            { "value": "JPY", "label": "Japanese Yen (JPY)" },
+            { "value": "CNY", "label": "Chinese Yuan (CNY)" },
+            { "value": "HKD", "label": "Hong Kong Dollar (HKD)" },
+            { "value": "SGD", "label": "Singapore Dollar (SGD)" },
+            { "value": "INR", "label": "Indian Rupee (INR)" },
+            { "value": "AED", "label": "UAE Dirham (AED)" },
+            { "value": "SAR", "label": "Saudi Riyal (SAR)" },
+            { "value": "ZAR", "label": "South African Rand (ZAR)" },
+            { "value": "SEK", "label": "Swedish Krona (SEK)" },
+            { "value": "NOK", "label": "Norwegian Krone (NOK)" },
+            { "value": "DKK", "label": "Danish Krone (DKK)" },
+            { "value": "BRL", "label": "Brazilian Real (BRL)" },
+            { "value": "MXN", "label": "Mexican Peso (MXN)" }
+          ]
+        },
+        {
+          "id": "billing_invoice.subtotal",
+          "type": "number",
+          "label": "Subtotal",
+          "default": 0,
+          "readonly": true,
+          "format": {
+            "kind": "currency",
+            "currency_field": "billing_invoice.currency_code",
+            "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.billing_invoice_line",
+              "field": "billing_invoice_line.amount",
+              "where": {
+                "op": "eq",
+                "field": "billing_invoice_line.invoice_id",
+                "value": {
+                  "ref": "$parent.id"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "billing_invoice.tax_rate",
+          "type": "number",
+          "label": "Tax Rate (%)",
+          "default": 0,
+          "format": {
+            "kind": "percent",
+            "precision": 2
+          }
+        },
+        {
+          "id": "billing_invoice.tax",
+          "type": "number",
+          "label": "Tax",
+          "default": 0,
+          "readonly": true,
+          "format": {
+            "kind": "currency",
+            "currency_field": "billing_invoice.currency_code",
+            "precision": 2
+          },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "div",
+                  "args": [
+                    {
+                      "op": "mul",
+                      "args": [
+                        {
+                          "ref": "billing_invoice.subtotal"
+                        },
+                        {
+                          "ref": "billing_invoice.tax_rate"
+                        }
+                      ]
+                    },
+                    100
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "billing_invoice.total",
+          "type": "number",
+          "label": "Total",
+          "default": 0,
+          "readonly": true,
+          "format": {
+            "kind": "currency",
+            "currency_field": "billing_invoice.currency_code",
+            "precision": 2
+          },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "add",
+                  "args": [
+                    {
+                      "ref": "billing_invoice.subtotal"
+                    },
+                    {
+                      "ref": "billing_invoice.tax"
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "billing_invoice.notes",
+          "type": "text",
+          "label": "Notes"
+        },
+        {
+          "id": "billing_invoice.payment_details",
+          "type": "text",
+          "label": "Payment Details"
+        },
+        {
+          "id": "billing_invoice.attachments",
+          "type": "attachments",
+          "label": "Attachments"
+        },
+        {
+          "id": "billing_invoice.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    },
+    {
+      "id": "entity.billing_invoice_line",
+      "display_field": "billing_invoice_line.description",
+      "fields": [
+        {
+          "id": "billing_invoice_line.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "billing_invoice_line.invoice_id",
+          "type": "lookup",
+          "label": "Invoice",
+          "entity": "entity.billing_invoice",
+          "display_field": "billing_invoice.invoice_number",
+          "required": true
+        },
+        {
+          "id": "billing_invoice_line.time_entry_id",
+          "type": "lookup",
+          "label": "Time Entry",
+          "entity": "entity.work_time_entry",
+          "display_field": "work_time_entry.entry_date"
+        },
+        {
+          "id": "billing_invoice_line.project_id",
+          "type": "lookup",
+          "label": "Project",
+          "entity": "entity.work_project",
+          "display_field": "work_project.name"
+        },
+        {
+          "id": "billing_invoice_line.task_id",
+          "type": "lookup",
+          "label": "Task",
+          "entity": "entity.work_task",
+          "display_field": "work_task.name"
+        },
+        {
+          "id": "billing_invoice_line.description",
+          "type": "string",
+          "label": "Description",
+          "required": true
+        },
+        {
+          "id": "billing_invoice_line.currency_code",
+          "type": "enum",
+          "label": "Currency",
+          "default": "NZD",
+          "options": [
+            { "value": "NZD", "label": "New Zealand Dollar (NZD)" },
+            { "value": "AUD", "label": "Australian Dollar (AUD)" },
+            { "value": "USD", "label": "US Dollar (USD)" },
+            { "value": "CAD", "label": "Canadian Dollar (CAD)" },
+            { "value": "EUR", "label": "Euro (EUR)" },
+            { "value": "GBP", "label": "British Pound (GBP)" },
+            { "value": "CHF", "label": "Swiss Franc (CHF)" },
+            { "value": "JPY", "label": "Japanese Yen (JPY)" },
+            { "value": "CNY", "label": "Chinese Yuan (CNY)" },
+            { "value": "HKD", "label": "Hong Kong Dollar (HKD)" },
+            { "value": "SGD", "label": "Singapore Dollar (SGD)" },
+            { "value": "INR", "label": "Indian Rupee (INR)" },
+            { "value": "AED", "label": "UAE Dirham (AED)" },
+            { "value": "SAR", "label": "Saudi Riyal (SAR)" },
+            { "value": "ZAR", "label": "South African Rand (ZAR)" },
+            { "value": "SEK", "label": "Swedish Krona (SEK)" },
+            { "value": "NOK", "label": "Norwegian Krone (NOK)" },
+            { "value": "DKK", "label": "Danish Krone (DKK)" },
+            { "value": "BRL", "label": "Brazilian Real (BRL)" },
+            { "value": "MXN", "label": "Mexican Peso (MXN)" }
+          ]
+        },
+        {
+          "id": "billing_invoice_line.quantity_hours",
+          "type": "number",
+          "label": "Quantity Hours",
+          "default": 0,
+          "format": {
+            "kind": "duration",
+            "unit": "hrs",
+            "precision": 2
+          }
+        },
+        {
+          "id": "billing_invoice_line.rate",
+          "type": "number",
+          "label": "Rate",
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency_field": "billing_invoice_line.currency_code",
+            "precision": 2
+          }
+        },
+        {
+          "id": "billing_invoice_line.amount",
+          "type": "number",
+          "label": "Amount",
+          "default": 0,
+          "readonly": true,
+          "format": {
+            "kind": "currency",
+            "currency_field": "billing_invoice_line.currency_code",
+            "precision": 2
+          },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    {
+                      "ref": "billing_invoice_line.quantity_hours"
+                    },
+                    {
+                      "ref": "billing_invoice_line.rate"
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "billing_invoice_line.notes",
+          "type": "text",
+          "label": "Notes"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "from": "billing_invoice.contact_id",
+      "to": "contact.id",
+      "label_field": "contact.name"
+    },
+    {
+      "from": "billing_invoice_line.invoice_id",
+      "to": "billing_invoice.id",
+      "label_field": "billing_invoice.invoice_number"
+    },
+    {
+      "from": "billing_invoice_line.time_entry_id",
+      "to": "work_time_entry.id",
+      "label_field": "work_time_entry.entry_date"
+    },
+    {
+      "from": "billing_invoice_line.project_id",
+      "to": "work_project.id",
+      "label_field": "work_project.name"
+    },
+    {
+      "from": "billing_invoice_line.task_id",
+      "to": "work_task.id",
+      "label_field": "work_task.name"
+    }
+  ],
+  "workflows": [
+    {
+      "id": "billing_invoice_status_workflow",
+      "entity": "entity.billing_invoice",
+      "status_field": "billing_invoice.status",
+      "states": [
+        {
+          "id": "draft",
+          "label": "Draft"
+        },
+        {
+          "id": "sent",
+          "label": "Sent"
+        },
+        {
+          "id": "paid",
+          "label": "Paid"
+        },
+        {
+          "id": "cancelled",
+          "label": "Cancelled"
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "action.billing_refresh",
+      "kind": "refresh",
+      "label": "Refresh"
+    },
+    {
+      "id": "action.billing_invoice_new",
+      "kind": "open_form",
+      "label": "+ New Invoice",
+      "target": "billing_invoice.form"
+    },
+    {
+      "id": "action.billing_invoice_line_new",
+      "kind": "open_form",
+      "label": "+ New Line",
+      "target": "billing_invoice_line.form"
+    },
+    {
+      "id": "action.billing_invoice_generate_pdf",
+      "kind": "refresh",
+      "label": "Generate PDF",
+      "entity_id": "entity.billing_invoice",
+      "enabled_when": {
+        "op": "not",
+        "condition": {
+          "op": "eq",
+          "field": "billing_invoice.status",
+          "value": "cancelled"
+        }
+      },
+      "visible_when": {
+        "op": "not",
+        "condition": {
+          "op": "eq",
+          "field": "billing_invoice.status",
+          "value": "cancelled"
+        }
+      }
+    },
+    {
+      "id": "action.billing_invoice_email_invoice",
+      "kind": "refresh",
+      "label": "Email Invoice",
+      "entity_id": "entity.billing_invoice",
+      "enabled_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "billing_invoice.status",
+          "value": [
+            "paid",
+            "cancelled"
+          ]
+        }
+      },
+      "visible_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "billing_invoice.status",
+          "value": [
+            "paid",
+            "cancelled"
+          ]
+        }
+      },
+      "confirm": {
+        "title": "Email invoice?",
+        "body": "Billing automation will email the latest generated invoice PDF to the linked client."
+      }
+    },
+    {
+      "id": "action.billing_invoice_mark_sent",
+      "kind": "update_record",
+      "label": "Mark Sent",
+      "entity_id": "entity.billing_invoice",
+      "patch": {
+        "billing_invoice.status": "sent"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "billing_invoice.status",
+        "value": "draft"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "billing_invoice.status",
+        "value": "draft"
+      }
+    },
+    {
+      "id": "action.billing_invoice_mark_paid",
+      "kind": "update_record",
+      "label": "Mark Paid",
+      "entity_id": "entity.billing_invoice",
+      "patch": {
+        "billing_invoice.status": "paid"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "billing_invoice.status",
+        "value": "sent"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "billing_invoice.status",
+        "value": "sent"
+      }
+    },
+    {
+      "id": "action.billing_invoice_revert_draft",
+      "kind": "update_record",
+      "label": "Revert To Draft",
+      "entity_id": "entity.billing_invoice",
+      "patch": {
+        "billing_invoice.status": "draft"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "billing_invoice.status",
+        "value": "sent"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "billing_invoice.status",
+        "value": "sent"
+      }
+    },
+    {
+      "id": "action.billing_invoice_cancel",
+      "kind": "update_record",
+      "label": "Cancel",
+      "entity_id": "entity.billing_invoice",
+      "patch": {
+        "billing_invoice.status": "cancelled"
+      },
+      "enabled_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "billing_invoice.status",
+          "value": [
+            "paid",
+            "cancelled"
+          ]
+        }
+      },
+      "visible_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "billing_invoice.status",
+          "value": [
+            "paid",
+            "cancelled"
+          ]
+        }
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "id": "billing.record.invoice.created",
+      "event": "record.created",
+      "entity_id": "entity.billing_invoice"
+    },
+    {
+      "id": "billing.record.invoice.updated",
+      "event": "record.updated",
+      "entity_id": "entity.billing_invoice"
+    },
+    {
+      "id": "billing.record.invoice_line.created",
+      "event": "record.created",
+      "entity_id": "entity.billing_invoice_line"
+    },
+    {
+      "id": "billing.record.invoice_line.updated",
+      "event": "record.updated",
+      "entity_id": "entity.billing_invoice_line"
+    },
+    {
+      "id": "billing.workflow.invoice.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.billing_invoice",
+      "status_field": "billing_invoice.status"
+    },
+    {
+      "id": "billing.action.invoice.generate_pdf.clicked",
+      "event": "action.clicked",
+      "action_id": "action.billing_invoice_generate_pdf"
+    },
+    {
+      "id": "billing.action.invoice.email_invoice.clicked",
+      "event": "action.clicked",
+      "action_id": "action.billing_invoice_email_invoice"
+    }
+  ],
+  "views": [
+    {
+      "id": "billing_invoice.list",
+      "kind": "list",
+      "entity": "entity.billing_invoice",
+      "columns": [
+        {
+          "field_id": "billing_invoice.invoice_number"
+        },
+        {
+          "field_id": "billing_invoice.contact_id"
+        },
+        {
+          "field_id": "billing_invoice.issue_date"
+        },
+        {
+          "field_id": "billing_invoice.due_date"
+        },
+        {
+          "field_id": "billing_invoice.subtotal"
+        },
+        {
+          "field_id": "billing_invoice.tax"
+        },
+        {
+          "field_id": "billing_invoice.total"
+        },
+        {
+          "field_id": "billing_invoice.status"
+        }
+      ],
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.billing_invoice_new"
+          }
+        ],
+        "open_record_target": "page:billing_invoice.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search invoices...",
+          "fields": [
+            "billing_invoice.invoice_number",
+            "billing_invoice.notes"
+          ]
+        },
+        "filters": [
+          {
+            "id": "draft",
+            "label": "Draft",
+            "domain": {
+              "op": "eq",
+              "field": "billing_invoice.status",
+              "value": "draft"
+            }
+          },
+          {
+            "id": "sent",
+            "label": "Sent",
+            "domain": {
+              "op": "eq",
+              "field": "billing_invoice.status",
+              "value": "sent"
+            }
+          },
+          {
+            "id": "paid",
+            "label": "Paid",
+            "domain": {
+              "op": "eq",
+              "field": "billing_invoice.status",
+              "value": "paid"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "billing_invoice.graph",
+      "kind": "graph",
+      "entity": "entity.billing_invoice",
+      "default": {
+        "type": "bar",
+        "group_by": "billing_invoice.status",
+        "measure": "sum:billing_invoice.total"
+      }
+    },
+    {
+      "id": "billing_invoice.form",
+      "kind": "form",
+      "entity": "entity.billing_invoice",
+      "sections": [
+        {
+          "id": "invoice",
+          "title": "Invoice",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "billing_invoice.invoice_number",
+            "billing_invoice.contact_id",
+            "billing_invoice.issue_date",
+            "billing_invoice.due_date",
+            "billing_invoice.status",
+            "billing_invoice.currency_code",
+            "billing_invoice.tax_rate",
+            "billing_invoice.subtotal",
+            "billing_invoice.tax",
+            "billing_invoice.total"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": [
+            "billing_invoice.notes",
+            "billing_invoice.payment_details",
+            "billing_invoice.attachments"
+          ]
+        },
+        {
+          "id": "lines_related",
+          "title": "Invoice Lines",
+          "fields": []
+        }
+      ],
+      "header": {
+        "statusbar": {
+          "field_id": "billing_invoice.status"
+        },
+        "secondary_actions": [
+          {
+            "action_id": "action.billing_invoice_generate_pdf"
+          },
+          {
+            "action_id": "action.billing_invoice_email_invoice"
+          },
+          {
+            "action_id": "action.billing_invoice_mark_sent"
+          },
+          {
+            "action_id": "action.billing_invoice_mark_paid"
+          },
+          {
+            "action_id": "action.billing_invoice_revert_draft"
+          },
+          {
+            "action_id": "action.billing_invoice_cancel"
+          }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "invoice_tab",
+          "tabs": [
+            {
+              "id": "invoice_tab",
+              "label": "Invoice",
+              "sections": [
+                "invoice"
+              ]
+            },
+            {
+              "id": "lines_tab",
+              "label": "Lines",
+              "sections": [
+                "lines_related"
+              ],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "entity_id": "entity.billing_invoice_line",
+                  "target": "view:billing_invoice_line.list",
+                  "record_domain": {
+                    "op": "eq",
+                    "field": "billing_invoice_line.invoice_id",
+                    "value": {
+                      "ref": "$record.id"
+                    }
+                  },
+                  "create_modal": true,
+                  "create_defaults": {
+                    "billing_invoice_line.invoice_id": {
+                      "ref": "$record.id"
+                    },
+                    "billing_invoice_line.currency_code": {
+                      "ref": "$record.billing_invoice.currency_code"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "id": "notes_tab",
+              "label": "Notes",
+              "sections": [
+                "notes"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "billing_invoice_line.list",
+      "kind": "list",
+      "entity": "entity.billing_invoice_line",
+      "columns": [
+        {
+          "field_id": "billing_invoice_line.invoice_id"
+        },
+        {
+          "field_id": "billing_invoice_line.time_entry_id"
+        },
+        {
+          "field_id": "billing_invoice_line.project_id"
+        },
+        {
+          "field_id": "billing_invoice_line.task_id"
+        },
+        {
+          "field_id": "billing_invoice_line.description"
+        },
+        {
+          "field_id": "billing_invoice_line.quantity_hours"
+        },
+        {
+          "field_id": "billing_invoice_line.rate"
+        },
+        {
+          "field_id": "billing_invoice_line.amount"
+        }
+      ],
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.billing_invoice_line_new"
+          }
+        ],
+        "open_record_target": "page:billing_invoice_line.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search invoice lines...",
+          "fields": [
+            "billing_invoice_line.description",
+            "billing_invoice_line.notes"
+          ]
+        }
+      }
+    },
+    {
+      "id": "billing_invoice_line.form",
+      "kind": "form",
+      "entity": "entity.billing_invoice_line",
+      "sections": [
+        {
+          "id": "line",
+          "title": "Line",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "billing_invoice_line.invoice_id",
+            "billing_invoice_line.time_entry_id",
+            "billing_invoice_line.project_id",
+            "billing_invoice_line.task_id",
+            "billing_invoice_line.description",
+            "billing_invoice_line.currency_code",
+            "billing_invoice_line.quantity_hours",
+            "billing_invoice_line.rate",
+            "billing_invoice_line.amount"
+          ]
+        },
+        {
+          "id": "line_notes",
+          "title": "Notes",
+          "fields": [
+            "billing_invoice_line.notes"
+          ]
+        }
+      ],
+      "header": {
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "line_tab",
+          "tabs": [
+            {
+              "id": "line_tab",
+              "label": "Line",
+              "sections": [
+                "line"
+              ]
+            },
+            {
+              "id": "line_notes_tab",
+              "label": "Notes",
+              "sections": [
+                "line_notes"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "billing_invoice.list_page",
+      "title": "Invoices",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.billing_invoice_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.billing_invoice",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:billing_invoice.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:billing_invoice.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:billing_invoice.list",
+                  "default_group_by": "billing_invoice.contact_id"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "billing_invoice.drafts_page",
+      "title": "Draft Invoices",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.billing_invoice",
+              "default_mode": "list",
+              "record_domain": {
+                "op": "eq",
+                "field": "billing_invoice.status",
+                "value": "draft"
+              },
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:billing_invoice.list"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "billing_invoice.sent_page",
+      "title": "Sent Invoices",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.billing_invoice",
+              "default_mode": "list",
+              "record_domain": {
+                "op": "eq",
+                "field": "billing_invoice.status",
+                "value": "sent"
+              },
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:billing_invoice.list"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "billing_invoice.paid_page",
+      "title": "Paid Invoices",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.billing_invoice",
+              "default_mode": "list",
+              "record_domain": {
+                "op": "eq",
+                "field": "billing_invoice.status",
+                "value": "paid"
+              },
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:billing_invoice.list"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "billing_invoice.form_page",
+      "title": "Invoice",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.billing_invoice",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:billing_invoice.form"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.billing_invoice",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "billing_invoice_line.list_page",
+      "title": "Invoice Lines",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.billing_invoice_line_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.billing_invoice_line",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:billing_invoice_line.list"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:billing_invoice_line.list",
+                  "default_group_by": "billing_invoice_line.invoice_id"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "billing_invoice_line.form_page",
+      "title": "Invoice Line",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.billing_invoice_line",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:billing_invoice_line.form"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.billing_invoice_line",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "interfaces": {
+    "documentable": [
+      {
+        "entity_id": "entity.billing_invoice",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "billing_invoice.attachments",
+        "title_field": "billing_invoice.invoice_number",
+        "category_field": "billing_invoice.status",
+        "date_field": "billing_invoice.issue_date",
+        "record_label_field": "billing_invoice.invoice_number",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
+      }
+    ],
+    "dashboardable": [
+      {
+        "entity_id": "entity.billing_invoice",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "billing_invoice.issue_date",
+        "measures": [
+          "count",
+          "sum:billing_invoice.total"
+        ],
+        "group_bys": [
+          "billing_invoice.status",
+          "billing_invoice.contact_id"
+        ],
+        "default_widgets": [
+          {
+            "id": "invoice_totals",
+            "type": "group",
+            "title": "Invoice Totals by Status",
+            "group_by": "billing_invoice.status",
+            "measure": "sum:billing_invoice.total"
+          }
+        ]
+      }
+    ]
+  }
+}

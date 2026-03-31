@@ -7,6 +7,7 @@ import sys
 import time
 import traceback
 import uuid
+import importlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -54,9 +55,9 @@ from app.stores_db import (
 
 
 def _get_attachment_helpers():
-    from app.attachments import delete_storage, store_bytes
+    from app.attachments import delete_storage, read_bytes, store_bytes
 
-    return store_bytes, delete_storage
+    return store_bytes, read_bytes, delete_storage
 
 
 def _get_doc_render_helpers():
@@ -67,12 +68,21 @@ def _get_doc_render_helpers():
 
 def _get_app_main():
     from app import main as app_main
+    app_env = os.getenv("APP_ENV", os.getenv("ENV", "dev")).strip().lower() or "dev"
+    if app_env == "dev":
+        importlib.invalidate_caches()
+        app_main = importlib.reload(app_main)
 
     return app_main
 
 
 def _get_entity_def_resolver():
-    from app.records_validation import find_entity_def as find_entity_def_in_registry
+    from app import records_validation
+    app_env = os.getenv("APP_ENV", os.getenv("ENV", "dev")).strip().lower() or "dev"
+    if app_env == "dev":
+        importlib.invalidate_caches()
+        records_validation = importlib.reload(records_validation)
+    find_entity_def_in_registry = records_validation.find_entity_def
 
     return find_entity_def_in_registry
 
@@ -83,6 +93,144 @@ def _now() -> datetime:
 
 def _backoff_seconds(attempt: int) -> int:
     return min(60 * (2 ** max(0, attempt - 1)), 3600)
+
+
+def _entity_id_matches(left: str | None, right: str | None) -> bool:
+    if not isinstance(left, str) or not isinstance(right, str):
+        return False
+    if left == right:
+        return True
+    if left.startswith("entity.") and left[7:] == right:
+        return True
+    if right.startswith("entity.") and right[7:] == left:
+        return True
+    return False
+
+
+def _extract_attachment_refs(value: object) -> list[dict]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        items: list[dict] = []
+        for item in value:
+            items.extend(_extract_attachment_refs(item))
+        return items
+    if isinstance(value, dict):
+        return [value]
+    if isinstance(value, str) and value:
+        return [{"id": value}]
+    return []
+
+
+def _attachment_item(attachment: dict) -> dict:
+    return {
+        "id": attachment.get("id"),
+        "filename": attachment.get("filename"),
+        "mime_type": attachment.get("mime_type"),
+        "size": attachment.get("size"),
+        "storage_key": attachment.get("storage_key"),
+    }
+
+
+def _find_documentable_attachment_field(manifest: dict | None, entity_id: str | None) -> str | None:
+    if not isinstance(manifest, dict) or not isinstance(entity_id, str) or not entity_id:
+        return None
+    interfaces = manifest.get("interfaces")
+    if not isinstance(interfaces, dict):
+        return None
+    items = interfaces.get("documentable")
+    if not isinstance(items, list):
+        return None
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if item.get("enabled") is False:
+            continue
+        if not _entity_id_matches(item.get("entity_id"), entity_id):
+            continue
+        attachment_field = item.get("attachment_field")
+        if isinstance(attachment_field, str) and attachment_field:
+            return attachment_field
+    return None
+
+
+def _sync_attachment_field(records: DbGenericRecordStore, entity_id: str, record_id: str, record_data: dict, attachment_field: str | None, attachment: dict) -> None:
+    if not isinstance(attachment_field, str) or not attachment_field:
+        return
+    existing_items = _extract_attachment_refs(record_data.get(attachment_field))
+    attachment_id = attachment.get("id")
+    if isinstance(attachment_id, str) and any(item.get("id") == attachment_id for item in existing_items if isinstance(item, dict)):
+        return
+    updated_record = dict(record_data)
+    updated_record[attachment_field] = [*existing_items, _attachment_item(attachment)]
+    records.update(entity_id, record_id, updated_record)
+
+
+def _resolve_linked_attachments(
+    attach_store: DbAttachmentStore,
+    *,
+    entity_id: str | None,
+    record_id: str | None,
+    purpose: str | None = None,
+    attachment_ids: object = None,
+    record_data: dict | None = None,
+    attachment_field: str | None = None,
+) -> list[dict]:
+    refs: list[dict] = []
+    refs.extend(_extract_attachment_refs(attachment_ids))
+    if isinstance(record_data, dict) and isinstance(attachment_field, str) and attachment_field:
+        refs.extend(_extract_attachment_refs(record_data.get(attachment_field)))
+    if isinstance(entity_id, str) and entity_id and isinstance(record_id, str) and record_id and isinstance(purpose, str) and purpose:
+        for link in attach_store.list_links(entity_id, record_id, purpose):
+            if isinstance(link, dict) and link.get("attachment_id"):
+                refs.append({"id": link.get("attachment_id")})
+    resolved: list[dict] = []
+    seen: set[str] = set()
+    for ref in refs:
+        if not isinstance(ref, dict):
+            continue
+        attachment_id = ref.get("id") or ref.get("attachment_id")
+        if not isinstance(attachment_id, str) or not attachment_id or attachment_id in seen:
+            continue
+        attachment = attach_store.get_attachment(attachment_id)
+        if not isinstance(attachment, dict):
+            continue
+        seen.add(attachment_id)
+        resolved.append(attachment)
+    return resolved
+
+
+def _load_outbox_attachments(outbox: dict, org_id: str) -> list[dict]:
+    if not isinstance(outbox, dict):
+        return []
+    _, read_bytes, _ = _get_attachment_helpers()
+    attach_store = DbAttachmentStore()
+    resolved: list[dict] = []
+    for item in outbox.get("attachments_json") or []:
+        if not isinstance(item, dict):
+            continue
+        attachment = None
+        attachment_id = item.get("attachment_id")
+        if isinstance(attachment_id, str) and attachment_id:
+            attachment = attach_store.get_attachment(attachment_id)
+        if not isinstance(attachment, dict):
+            attachment = item
+        storage_key = attachment.get("storage_key")
+        if not isinstance(storage_key, str) or not storage_key:
+            continue
+        try:
+            data = read_bytes(org_id, storage_key)
+        except Exception:
+            continue
+        resolved.append(
+            {
+                "id": attachment.get("id") or attachment_id,
+                "filename": attachment.get("filename") or item.get("filename") or "attachment",
+                "mime_type": attachment.get("mime_type") or item.get("mime_type") or "application/octet-stream",
+                "data": data,
+            }
+        )
+    return resolved
 
 
 def _handle_email_send(job: dict, org_id: str) -> None:
@@ -110,6 +258,7 @@ def _handle_email_send(job: dict, org_id: str) -> None:
             "subject": outbox.get("subject"),
             "body_html": outbox.get("body_html"),
             "body_text": outbox.get("body_text"),
+            "attachments": _load_outbox_attachments(outbox, org_id),
         },
         connection,
         connection.get("secret_ref"),
@@ -127,7 +276,7 @@ def _handle_email_send(job: dict, org_id: str) -> None:
 
 def _handle_doc_generate(job: dict, org_id: str) -> None:
     render_html, render_pdf, normalize_margins = _get_doc_render_helpers()
-    store_bytes, _ = _get_attachment_helpers()
+    store_bytes, _, _ = _get_attachment_helpers()
     app_main = _get_app_main()
     find_entity_def_in_registry = _get_entity_def_resolver()
     doc_store = DbDocTemplateStore()
@@ -157,11 +306,12 @@ def _handle_doc_generate(job: dict, org_id: str) -> None:
     )
     entity_def = found[1] if found else None
     record_data = record.get("record") or {}
-    context = {
-        "record": app_main._enrich_template_record(record_data, entity_def),
-        "entity_id": entity_id,
-        **app_main._branding_context_for_org(org_id),
-    }
+    context = app_main._build_template_render_context(
+        record_data,
+        entity_def,
+        entity_id,
+        app_main._branding_context_for_org(org_id),
+    )
     html = render_html(template.get("html") or "", context)
     filename_pattern = template.get("filename_pattern") or template.get("name") or "document"
     filename = render_template(filename_pattern, context, strict=True)
@@ -215,6 +365,8 @@ def _handle_doc_generate(job: dict, org_id: str) -> None:
                 "purpose": purpose,
             }
         )
+    attachment_field = _find_documentable_attachment_field(found[2] if isinstance(found, tuple) and len(found) >= 3 else None, entity_id)
+    _sync_attachment_field(records, entity_id, record_id, record_data, attachment_field, attachment)
 
 
 def _handle_attachments_cleanup(job: dict, org_id: str) -> None:
@@ -493,6 +645,7 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
 
     if action_id == "system.send_email":
         app_main = _get_app_main()
+        attach_store = DbAttachmentStore()
         email_store = DbEmailStore()
         conn_store = DbConnectionStore()
         connection = None
@@ -526,13 +679,26 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
         if not subject:
             raise RuntimeError("Email subject required")
         if isinstance(subject, str) and "{{" in subject:
-            subject = render_template(subject, context, strict=True)
+            # Background email jobs should degrade gracefully if a stored template
+            # references a field path that no longer exists.
+            subject = render_template(subject, context, strict=False)
         body_html = inputs.get("body_html") or (template.get("body_html") if template else None)
         body_text = inputs.get("body_text") or (template.get("body_text") if template else None)
         if body_html:
-            body_html = render_template(body_html, context, strict=True)
+            body_html = render_template(body_html, context, strict=False)
         if body_text:
-            body_text = render_template(body_text, context, strict=True)
+            body_text = render_template(body_text, context, strict=False)
+        attachment_entity_id = inputs.get("attachment_entity_id") or entity_id
+        attachment_record_id = inputs.get("attachment_record_id") or record_id
+        attachments = _resolve_linked_attachments(
+            attach_store,
+            entity_id=attachment_entity_id,
+            record_id=attachment_record_id,
+            purpose=inputs.get("attachment_purpose"),
+            attachment_ids=inputs.get("attachment_ids"),
+            record_data=record_data,
+            attachment_field=inputs.get("attachment_field_id"),
+        )
         recipients = _resolve_recipients(inputs, context, enriched_record, entity_id, entity_def)
         if not recipients:
             raise RuntimeError("Email recipients not resolved")
@@ -548,6 +714,16 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
                 "body_text": body_text,
                 "status": "queued",
                 "template_id": inputs.get("template_id"),
+                "attachments_json": [
+                    {
+                        "attachment_id": attachment.get("id"),
+                        "filename": attachment.get("filename"),
+                        "mime_type": attachment.get("mime_type"),
+                        "storage_key": attachment.get("storage_key"),
+                    }
+                    for attachment in attachments
+                    if isinstance(attachment, dict)
+                ],
             }
         )
         job = job_store.enqueue(

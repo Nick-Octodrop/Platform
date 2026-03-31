@@ -1,0 +1,30 @@
+{
+  "automation": {
+    "name": "Octodrop Billing - Generate Invoice PDF",
+    "description": "When a user clicks Generate PDF on an invoice, queue document generation for the invoice template and attach the rendered PDF back to the invoice.",
+    "trigger": {
+      "kind": "event",
+      "event_types": [
+        "billing.action.invoice.generate_pdf.clicked"
+      ],
+      "filters": []
+    },
+    "steps": [
+      {
+        "id": "generate_invoice_pdf",
+        "kind": "action",
+        "action_id": "system.generate_document",
+        "inputs": {
+          "template_id": "REPLACE_WITH_INVOICE_DOC_TEMPLATE_ID",
+          "entity_id": {
+            "var": "trigger.entity_id"
+          },
+          "record_id": {
+            "var": "trigger.record_id"
+          },
+          "purpose": "invoice_pdf"
+        }
+      }
+    ]
+  }
+}

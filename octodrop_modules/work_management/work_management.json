@@ -1,0 +1,2448 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "work_management",
+    "key": "work_management",
+    "name": "Work Management",
+    "version": "0.1.0",
+    "description": "Minimal internal project, task, and time-entry operations for replacing day-to-day Clockify usage.",
+    "category": "Operations",
+    "icon_key": "lucide:Clock3"
+  },
+  "depends_on": {
+    "required": [
+      {
+        "module": "contacts",
+        "version": ">=1.0.0"
+      }
+    ]
+  },
+  "app": {
+    "home": "page:work_management.dashboard_page",
+    "defaults": {
+      "entity_home_page": "page:work_project.list_page",
+      "entity_form_page": "page:work_project.form_page",
+      "entities": {
+        "entity.work_project": {
+          "entity_home_page": "page:work_project.list_page",
+          "entity_form_page": "page:work_project.form_page"
+        },
+        "entity.work_task": {
+          "entity_home_page": "page:work_task.list_page",
+          "entity_form_page": "page:work_task.form_page"
+        },
+        "entity.work_time_entry": {
+          "entity_home_page": "page:work_time_entry.list_page",
+          "entity_form_page": "page:work_time_entry.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Work Management",
+        "mode": "inline",
+        "items": [
+          {
+            "label": "Dashboard",
+            "to": "page:work_management.dashboard_page"
+          },
+          {
+            "label": "Projects",
+            "to": "page:work_project.list_page"
+          },
+          {
+            "label": "Tasks",
+            "to": "page:work_task.list_page"
+          },
+          {
+            "label": "Today",
+            "to": "page:work_time_entry.today_page"
+          },
+          {
+            "label": "This Week",
+            "to": "page:work_time_entry.week_page"
+          },
+          {
+            "label": "Time Entries",
+            "to": "page:work_time_entry.list_page"
+          },
+          {
+            "label": "Billable Entries",
+            "to": "page:work_time_entry.billable_page"
+          },
+          {
+            "label": "Reports",
+            "to": "page:work_management.reports_page"
+          }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.work_project",
+      "display_field": "work_project.name",
+      "fields": [
+        {
+          "id": "work_project.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "work_project.name",
+          "type": "string",
+          "label": "Project Name",
+          "required": true
+        },
+        {
+          "id": "work_project.code",
+          "type": "string",
+          "label": "Code"
+        },
+        {
+          "id": "work_project.client_contact_id",
+          "type": "lookup",
+          "label": "Client",
+          "entity": "entity.contact",
+          "display_field": "contact.name",
+          "required": true
+        },
+        {
+          "id": "work_project.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "planned",
+          "options": [
+            {
+              "value": "planned",
+              "label": "Planned"
+            },
+            {
+              "value": "active",
+              "label": "Active"
+            },
+            {
+              "value": "on_hold",
+              "label": "On Hold"
+            },
+            {
+              "value": "completed",
+              "label": "Completed"
+            },
+            {
+              "value": "cancelled",
+              "label": "Cancelled"
+            }
+          ]
+        },
+        {
+          "id": "work_project.start_date",
+          "type": "date",
+          "label": "Start Date"
+        },
+        {
+          "id": "work_project.end_date",
+          "type": "date",
+          "label": "End Date",
+          "required_when": {
+            "op": "eq",
+            "field": "work_project.status",
+            "value": "completed"
+          }
+        },
+        {
+          "id": "work_project.billing_type",
+          "type": "enum",
+          "label": "Billing Type",
+          "default": "hourly",
+          "options": [
+            {
+              "value": "hourly",
+              "label": "Hourly"
+            },
+            {
+              "value": "fixed_fee",
+              "label": "Fixed Fee"
+            },
+            {
+              "value": "internal",
+              "label": "Internal"
+            }
+          ]
+        },
+        {
+          "id": "work_project.default_hourly_rate",
+          "type": "number",
+          "label": "Default Hourly Rate",
+          "default": 0
+        },
+        {
+          "id": "work_project.notes",
+          "type": "text",
+          "label": "Notes"
+        },
+        {
+          "id": "work_project.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    },
+    {
+      "id": "entity.work_task",
+      "display_field": "work_task.name",
+      "fields": [
+        {
+          "id": "work_task.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "work_task.name",
+          "type": "string",
+          "label": "Task Name",
+          "required": true
+        },
+        {
+          "id": "work_task.project_id",
+          "type": "lookup",
+          "label": "Project",
+          "entity": "entity.work_project",
+          "display_field": "work_project.name",
+          "required": true
+        },
+        {
+          "id": "work_task.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "todo",
+          "options": [
+            {
+              "value": "todo",
+              "label": "To Do"
+            },
+            {
+              "value": "in_progress",
+              "label": "In Progress"
+            },
+            {
+              "value": "blocked",
+              "label": "Blocked"
+            },
+            {
+              "value": "done",
+              "label": "Done"
+            },
+            {
+              "value": "cancelled",
+              "label": "Cancelled"
+            }
+          ]
+        },
+        {
+          "id": "work_task.assignee",
+          "type": "user",
+          "label": "Assignee"
+        },
+        {
+          "id": "work_task.billable_default",
+          "type": "bool",
+          "label": "Billable By Default",
+          "default": true
+        },
+        {
+          "id": "work_task.rate_override",
+          "type": "number",
+          "label": "Rate Override"
+        },
+        {
+          "id": "work_task.description",
+          "type": "text",
+          "label": "Description"
+        },
+        {
+          "id": "work_task.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    },
+    {
+      "id": "entity.work_time_entry",
+      "display_field": "work_time_entry.entry_date",
+      "fields": [
+        {
+          "id": "work_time_entry.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "work_time_entry.entry_date",
+          "type": "date",
+          "label": "Entry Date",
+          "required": true
+        },
+        {
+          "id": "work_time_entry.user_id",
+          "type": "user",
+          "label": "User",
+          "required": true
+        },
+        {
+          "id": "work_time_entry.contact_id",
+          "type": "lookup",
+          "label": "Client",
+          "entity": "entity.contact",
+          "display_field": "contact.name",
+          "required": true
+        },
+        {
+          "id": "work_time_entry.project_id",
+          "type": "lookup",
+          "label": "Project",
+          "entity": "entity.work_project",
+          "display_field": "work_project.name",
+          "required": true
+        },
+        {
+          "id": "work_time_entry.task_id",
+          "type": "lookup",
+          "label": "Task",
+          "entity": "entity.work_task",
+          "display_field": "work_task.name"
+        },
+        {
+          "id": "work_time_entry.description",
+          "type": "text",
+          "label": "Description",
+          "required_when": {
+            "op": "and",
+            "conditions": [
+              {
+                "op": "eq",
+                "field": "work_time_entry.billable",
+                "value": true
+              },
+              {
+                "op": "in",
+                "field": "work_time_entry.status",
+                "value": [
+                  "approved",
+                  "invoiced"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "work_time_entry.start_time",
+          "type": "datetime",
+          "label": "Start Time",
+          "required": true
+        },
+        {
+          "id": "work_time_entry.end_time",
+          "type": "datetime",
+          "label": "End Time",
+          "required_when": {
+            "op": "in",
+            "field": "work_time_entry.status",
+            "value": [
+              "approved",
+              "invoiced"
+            ]
+          }
+        },
+        {
+          "id": "work_time_entry.duration_hours",
+          "type": "number",
+          "label": "Duration Hours",
+          "default": 0
+        },
+        {
+          "id": "work_time_entry.billable",
+          "type": "bool",
+          "label": "Billable",
+          "default": true
+        },
+        {
+          "id": "work_time_entry.hourly_rate",
+          "type": "number",
+          "label": "Hourly Rate",
+          "default": 0
+        },
+        {
+          "id": "work_time_entry.amount",
+          "type": "number",
+          "label": "Amount",
+          "default": 0
+        },
+        {
+          "id": "work_time_entry.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "draft",
+          "options": [
+            {
+              "value": "draft",
+              "label": "Draft"
+            },
+            {
+              "value": "approved",
+              "label": "Approved"
+            },
+            {
+              "value": "invoiced",
+              "label": "Invoiced"
+            },
+            {
+              "value": "cancelled",
+              "label": "Cancelled"
+            }
+          ]
+        },
+        {
+          "id": "work_time_entry.notes",
+          "type": "text",
+          "label": "Notes"
+        },
+        {
+          "id": "work_time_entry.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "from": "work_project.client_contact_id",
+      "to": "contact.id",
+      "label_field": "contact.name"
+    },
+    {
+      "from": "work_task.project_id",
+      "to": "work_project.id",
+      "label_field": "work_project.name"
+    },
+    {
+      "from": "work_time_entry.contact_id",
+      "to": "contact.id",
+      "label_field": "contact.name"
+    },
+    {
+      "from": "work_time_entry.project_id",
+      "to": "work_project.id",
+      "label_field": "work_project.name"
+    },
+    {
+      "from": "work_time_entry.task_id",
+      "to": "work_task.id",
+      "label_field": "work_task.name"
+    }
+  ],
+  "workflows": [
+    {
+      "id": "work_project_status_workflow",
+      "entity": "entity.work_project",
+      "status_field": "work_project.status",
+      "states": [
+        {
+          "id": "planned",
+          "label": "Planned"
+        },
+        {
+          "id": "active",
+          "label": "Active"
+        },
+        {
+          "id": "on_hold",
+          "label": "On Hold"
+        },
+        {
+          "id": "completed",
+          "label": "Completed"
+        },
+        {
+          "id": "cancelled",
+          "label": "Cancelled"
+        }
+      ]
+    },
+    {
+      "id": "work_task_status_workflow",
+      "entity": "entity.work_task",
+      "status_field": "work_task.status",
+      "states": [
+        {
+          "id": "todo",
+          "label": "To Do"
+        },
+        {
+          "id": "in_progress",
+          "label": "In Progress"
+        },
+        {
+          "id": "blocked",
+          "label": "Blocked"
+        },
+        {
+          "id": "done",
+          "label": "Done"
+        },
+        {
+          "id": "cancelled",
+          "label": "Cancelled"
+        }
+      ]
+    },
+    {
+      "id": "work_time_entry_status_workflow",
+      "entity": "entity.work_time_entry",
+      "status_field": "work_time_entry.status",
+      "states": [
+        {
+          "id": "draft",
+          "label": "Draft"
+        },
+        {
+          "id": "approved",
+          "label": "Approved"
+        },
+        {
+          "id": "invoiced",
+          "label": "Invoiced"
+        },
+        {
+          "id": "cancelled",
+          "label": "Cancelled"
+        }
+      ]
+    }
+  ],
+  "transformations": [
+    {
+      "key": "work_time_entries_to_invoice",
+      "source_entity_id": "entity.work_time_entry",
+      "target_entity_id": "entity.billing_invoice",
+      "field_mappings": {
+        "billing_invoice.invoice_number": {
+          "ref": "$source.id"
+        },
+        "billing_invoice.contact_id": {
+          "from": "work_time_entry.contact_id"
+        },
+        "billing_invoice.issue_date": {
+          "ref": "$today"
+        },
+        "billing_invoice.status": {
+          "value": "draft"
+        },
+        "billing_invoice.subtotal": {
+          "ref": "$selection.sum.work_time_entry.amount"
+        },
+        "billing_invoice.tax": {
+          "value": 0
+        },
+        "billing_invoice.total": {
+          "ref": "$selection.sum.work_time_entry.amount"
+        }
+      },
+      "child_mappings": [
+        {
+          "source_entity_id": "entity.work_time_entry",
+          "source_scope": "selected_records",
+          "target_entity_id": "entity.billing_invoice_line",
+          "target_link_field": "billing_invoice_line.invoice_id",
+          "field_mappings": {
+            "billing_invoice_line.time_entry_id": {
+              "ref": "$source.id"
+            },
+            "billing_invoice_line.project_id": {
+              "from": "work_time_entry.project_id"
+            },
+            "billing_invoice_line.task_id": {
+              "from": "work_time_entry.task_id"
+            },
+            "billing_invoice_line.description": {
+              "from": "work_time_entry.description"
+            },
+            "billing_invoice_line.quantity_hours": {
+              "from": "work_time_entry.duration_hours"
+            },
+            "billing_invoice_line.rate": {
+              "from": "work_time_entry.hourly_rate"
+            },
+            "billing_invoice_line.amount": {
+              "from": "work_time_entry.amount"
+            },
+            "billing_invoice_line.notes": {
+              "from": "work_time_entry.notes"
+            }
+          }
+        }
+      ],
+      "source_update": {
+        "patch": {
+          "work_time_entry.status": "invoiced"
+        }
+      },
+      "feed": {
+        "enabled": true,
+        "message": "Created draft invoice {target.id} from selected approved billable time entries.",
+        "targets": [
+          "target"
+        ]
+      },
+      "hooks": {
+        "emit_events": [
+          "billing.invoice_draft_created_from_time_entries"
+        ]
+      },
+      "validation": {
+        "require_source_fields": [
+          "work_time_entry.contact_id",
+          "work_time_entry.description"
+        ],
+        "require_child_records": true,
+        "require_uniform_fields": [
+          "work_time_entry.contact_id"
+        ],
+        "selected_record_domain": {
+          "op": "and",
+          "conditions": [
+            {
+              "op": "eq",
+              "field": "work_time_entry.billable",
+              "value": true
+            },
+            {
+              "op": "eq",
+              "field": "work_time_entry.status",
+              "value": "approved"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "actions": [
+    {
+      "id": "action.work_management_refresh",
+      "kind": "refresh",
+      "label": "Refresh"
+    },
+    {
+      "id": "action.work_project_new",
+      "kind": "open_form",
+      "label": "+ New Project",
+      "target": "work_project.form"
+    },
+    {
+      "id": "action.work_task_new",
+      "kind": "open_form",
+      "label": "+ New Task",
+      "target": "work_task.form"
+    },
+    {
+      "id": "action.work_time_entry_new",
+      "kind": "open_form",
+      "label": "+ New Time Entry",
+      "target": "work_time_entry.form"
+    },
+    {
+      "id": "action.work_project_start",
+      "kind": "update_record",
+      "label": "Start Project",
+      "entity_id": "entity.work_project",
+      "patch": {
+        "work_project.status": "active"
+      },
+      "enabled_when": {
+        "op": "in",
+        "field": "work_project.status",
+        "value": [
+          "planned",
+          "on_hold"
+        ]
+      },
+      "visible_when": {
+        "op": "in",
+        "field": "work_project.status",
+        "value": [
+          "planned",
+          "on_hold"
+        ]
+      }
+    },
+    {
+      "id": "action.work_project_hold",
+      "kind": "update_record",
+      "label": "Put On Hold",
+      "entity_id": "entity.work_project",
+      "patch": {
+        "work_project.status": "on_hold"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "work_project.status",
+        "value": "active"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "work_project.status",
+        "value": "active"
+      }
+    },
+    {
+      "id": "action.work_project_complete",
+      "kind": "update_record",
+      "label": "Complete",
+      "entity_id": "entity.work_project",
+      "patch": {
+        "work_project.status": "completed"
+      },
+      "enabled_when": {
+        "op": "in",
+        "field": "work_project.status",
+        "value": [
+          "active",
+          "on_hold"
+        ]
+      },
+      "visible_when": {
+        "op": "in",
+        "field": "work_project.status",
+        "value": [
+          "active",
+          "on_hold"
+        ]
+      }
+    },
+    {
+      "id": "action.work_project_cancel",
+      "kind": "update_record",
+      "label": "Cancel",
+      "entity_id": "entity.work_project",
+      "patch": {
+        "work_project.status": "cancelled"
+      },
+      "enabled_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "work_project.status",
+          "value": [
+            "completed",
+            "cancelled"
+          ]
+        }
+      },
+      "visible_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "work_project.status",
+          "value": [
+            "completed",
+            "cancelled"
+          ]
+        }
+      }
+    },
+    {
+      "id": "action.work_task_start",
+      "kind": "update_record",
+      "label": "Start",
+      "entity_id": "entity.work_task",
+      "patch": {
+        "work_task.status": "in_progress"
+      },
+      "enabled_when": {
+        "op": "in",
+        "field": "work_task.status",
+        "value": [
+          "todo",
+          "blocked"
+        ]
+      },
+      "visible_when": {
+        "op": "in",
+        "field": "work_task.status",
+        "value": [
+          "todo",
+          "blocked"
+        ]
+      }
+    },
+    {
+      "id": "action.work_task_block",
+      "kind": "update_record",
+      "label": "Block",
+      "entity_id": "entity.work_task",
+      "patch": {
+        "work_task.status": "blocked"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "work_task.status",
+        "value": "in_progress"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "work_task.status",
+        "value": "in_progress"
+      }
+    },
+    {
+      "id": "action.work_task_done",
+      "kind": "update_record",
+      "label": "Mark Done",
+      "entity_id": "entity.work_task",
+      "patch": {
+        "work_task.status": "done"
+      },
+      "enabled_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "work_task.status",
+          "value": [
+            "done",
+            "cancelled"
+          ]
+        }
+      },
+      "visible_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "work_task.status",
+          "value": [
+            "done",
+            "cancelled"
+          ]
+        }
+      }
+    },
+    {
+      "id": "action.work_task_reopen",
+      "kind": "update_record",
+      "label": "Reopen",
+      "entity_id": "entity.work_task",
+      "patch": {
+        "work_task.status": "in_progress"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "work_task.status",
+        "value": "done"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "work_task.status",
+        "value": "done"
+      }
+    },
+    {
+      "id": "action.work_task_cancel",
+      "kind": "update_record",
+      "label": "Cancel",
+      "entity_id": "entity.work_task",
+      "patch": {
+        "work_task.status": "cancelled"
+      },
+      "enabled_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "work_task.status",
+          "value": [
+            "done",
+            "cancelled"
+          ]
+        }
+      },
+      "visible_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "work_task.status",
+          "value": [
+            "done",
+            "cancelled"
+          ]
+        }
+      }
+    },
+    {
+      "id": "action.work_time_entry_approve",
+      "kind": "update_record",
+      "label": "Approve",
+      "entity_id": "entity.work_time_entry",
+      "patch": {
+        "work_time_entry.status": "approved"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "work_time_entry.status",
+        "value": "draft"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "work_time_entry.status",
+        "value": "draft"
+      }
+    },
+    {
+      "id": "action.work_time_entry_mark_invoiced",
+      "kind": "update_record",
+      "label": "Mark Invoiced",
+      "entity_id": "entity.work_time_entry",
+      "patch": {
+        "work_time_entry.status": "invoiced"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "work_time_entry.status",
+        "value": "approved"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "work_time_entry.status",
+        "value": "approved"
+      }
+    },
+    {
+      "id": "action.work_time_entry_create_invoice_draft",
+      "kind": "transform_record",
+      "label": "Create Draft Invoice",
+      "entity_id": "entity.work_time_entry",
+      "selection_mode": "selected_records",
+      "transformation_key": "work_time_entries_to_invoice",
+      "confirm": {
+        "title": "Create draft invoice?",
+        "body": "Create one draft invoice from the selected approved billable time entries and open it?"
+      }
+    },
+    {
+      "id": "action.work_time_entry_revert_to_draft",
+      "kind": "update_record",
+      "label": "Revert To Draft",
+      "entity_id": "entity.work_time_entry",
+      "patch": {
+        "work_time_entry.status": "draft"
+      },
+      "enabled_when": {
+        "op": "in",
+        "field": "work_time_entry.status",
+        "value": [
+          "approved",
+          "cancelled"
+        ]
+      },
+      "visible_when": {
+        "op": "in",
+        "field": "work_time_entry.status",
+        "value": [
+          "approved",
+          "cancelled"
+        ]
+      }
+    },
+    {
+      "id": "action.work_time_entry_cancel",
+      "kind": "update_record",
+      "label": "Cancel",
+      "entity_id": "entity.work_time_entry",
+      "patch": {
+        "work_time_entry.status": "cancelled"
+      },
+      "enabled_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "work_time_entry.status",
+          "value": [
+            "cancelled",
+            "invoiced"
+          ]
+        }
+      },
+      "visible_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "work_time_entry.status",
+          "value": [
+            "cancelled",
+            "invoiced"
+          ]
+        }
+      }
+    },
+    {
+      "id": "action.work_time_entry_bulk_approve",
+      "kind": "bulk_update",
+      "label": "Approve",
+      "entity_id": "entity.work_time_entry",
+      "patch": {
+        "work_time_entry.status": "approved"
+      }
+    },
+    {
+      "id": "action.work_time_entry_bulk_mark_invoiced",
+      "kind": "bulk_update",
+      "label": "Mark Invoiced",
+      "entity_id": "entity.work_time_entry",
+      "patch": {
+        "work_time_entry.status": "invoiced"
+      }
+    },
+    {
+      "id": "action.work_time_entry_bulk_cancel",
+      "kind": "bulk_update",
+      "label": "Cancel",
+      "entity_id": "entity.work_time_entry",
+      "patch": {
+        "work_time_entry.status": "cancelled"
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "id": "work_management.record.work_project.created",
+      "event": "record.created",
+      "entity_id": "entity.work_project"
+    },
+    {
+      "id": "work_management.record.work_project.updated",
+      "event": "record.updated",
+      "entity_id": "entity.work_project"
+    },
+    {
+      "id": "work_management.record.work_task.created",
+      "event": "record.created",
+      "entity_id": "entity.work_task"
+    },
+    {
+      "id": "work_management.record.work_task.updated",
+      "event": "record.updated",
+      "entity_id": "entity.work_task"
+    },
+    {
+      "id": "work_management.record.work_time_entry.created",
+      "event": "record.created",
+      "entity_id": "entity.work_time_entry"
+    },
+    {
+      "id": "work_management.record.work_time_entry.updated",
+      "event": "record.updated",
+      "entity_id": "entity.work_time_entry"
+    },
+    {
+      "id": "work_management.workflow.project.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.work_project",
+      "status_field": "work_project.status"
+    },
+    {
+      "id": "work_management.workflow.task.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.work_task",
+      "status_field": "work_task.status"
+    },
+    {
+      "id": "work_management.workflow.time_entry.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.work_time_entry",
+      "status_field": "work_time_entry.status"
+    },
+    {
+      "id": "work_management.action.time_entry.create_invoice_draft.clicked",
+      "event": "action.clicked",
+      "action_id": "action.work_time_entry_create_invoice_draft"
+    }
+  ],
+  "views": [
+    {
+      "id": "work_project.list",
+      "kind": "list",
+      "entity": "entity.work_project",
+      "columns": [
+        {
+          "field_id": "work_project.name"
+        },
+        {
+          "field_id": "work_project.code"
+        },
+        {
+          "field_id": "work_project.client_contact_id"
+        },
+        {
+          "field_id": "work_project.status"
+        },
+        {
+          "field_id": "work_project.billing_type"
+        },
+        {
+          "field_id": "work_project.default_hourly_rate"
+        },
+        {
+          "field_id": "work_project.start_date"
+        },
+        {
+          "field_id": "work_project.end_date"
+        }
+      ],
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.work_project_new"
+          }
+        ],
+        "open_record_target": "page:work_project.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search projects...",
+          "fields": [
+            "work_project.name",
+            "work_project.code",
+            "work_project.notes"
+          ]
+        },
+        "filters": [
+          {
+            "id": "active",
+            "label": "Active",
+            "domain": {
+              "op": "eq",
+              "field": "work_project.status",
+              "value": "active"
+            }
+          },
+          {
+            "id": "on_hold",
+            "label": "On Hold",
+            "domain": {
+              "op": "eq",
+              "field": "work_project.status",
+              "value": "on_hold"
+            }
+          },
+          {
+            "id": "completed",
+            "label": "Completed",
+            "domain": {
+              "op": "eq",
+              "field": "work_project.status",
+              "value": "completed"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "work_project.kanban",
+      "kind": "kanban",
+      "entity": "entity.work_project",
+      "card": {
+        "title_field": "work_project.name",
+        "subtitle_fields": [
+          "work_project.code",
+          "work_project.client_contact_id"
+        ],
+        "badge_fields": [
+          "work_project.status",
+          "work_project.billing_type"
+        ]
+      }
+    },
+    {
+      "id": "work_project.calendar",
+      "kind": "calendar",
+      "entity": "entity.work_project",
+      "calendar": {
+        "title_field": "work_project.name",
+        "date_start": "work_project.start_date",
+        "date_end": "work_project.end_date",
+        "color_field": "work_project.status",
+        "default_scale": "month"
+      }
+    },
+    {
+      "id": "work_project.graph",
+      "kind": "graph",
+      "entity": "entity.work_project",
+      "default": {
+        "type": "bar",
+        "group_by": "work_project.status",
+        "measure": "count"
+      }
+    },
+    {
+      "id": "work_project.form",
+      "kind": "form",
+      "entity": "entity.work_project",
+      "sections": [
+        {
+          "id": "general",
+          "title": "Project",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "work_project.name",
+            "work_project.code",
+            "work_project.client_contact_id",
+            "work_project.status",
+            "work_project.start_date",
+            "work_project.end_date",
+            "work_project.billing_type",
+            "work_project.default_hourly_rate"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": [
+            "work_project.notes"
+          ]
+        },
+        {
+          "id": "tasks_related",
+          "title": "Tasks",
+          "fields": []
+        },
+        {
+          "id": "time_entries_related",
+          "title": "Time Entries",
+          "fields": []
+        }
+      ],
+      "header": {
+        "statusbar": {
+          "field_id": "work_project.status"
+        },
+        "secondary_actions": [
+          {
+            "action_id": "action.work_project_start"
+          },
+          {
+            "action_id": "action.work_project_hold"
+          },
+          {
+            "action_id": "action.work_project_complete"
+          },
+          {
+            "action_id": "action.work_project_cancel"
+          }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "project_tab",
+          "tabs": [
+            {
+              "id": "project_tab",
+              "label": "Project",
+              "sections": [
+                "general"
+              ]
+            },
+            {
+              "id": "notes_tab",
+              "label": "Notes",
+              "sections": [
+                "notes"
+              ]
+            },
+            {
+              "id": "tasks_tab",
+              "label": "Tasks",
+              "sections": [
+                "tasks_related"
+              ],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "entity_id": "entity.work_task",
+                  "target": "view:work_task.list",
+                  "record_domain": {
+                    "op": "eq",
+                    "field": "work_task.project_id",
+                    "value": {
+                      "ref": "$record.id"
+                    }
+                  },
+                  "create_modal": true,
+                  "create_defaults": {
+                    "work_task.project_id": {
+                      "ref": "$record.id"
+                    },
+                    "work_task.status": "todo",
+                    "work_task.billable_default": true
+                  }
+                }
+              ]
+            },
+            {
+              "id": "time_entries_tab",
+              "label": "Time Entries",
+              "sections": [
+                "time_entries_related"
+              ],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "entity_id": "entity.work_time_entry",
+                  "target": "view:work_time_entry.list",
+                  "record_domain": {
+                    "op": "eq",
+                    "field": "work_time_entry.project_id",
+                    "value": {
+                      "ref": "$record.id"
+                    }
+                  },
+                  "create_modal": true,
+                  "create_defaults": {
+                    "work_time_entry.project_id": {
+                      "ref": "$record.id"
+                    },
+                    "work_time_entry.contact_id": {
+                      "ref": "$record.work_project.client_contact_id"
+                    },
+                    "work_time_entry.billable": true,
+                    "work_time_entry.status": "draft",
+                    "work_time_entry.hourly_rate": {
+                      "ref": "$record.work_project.default_hourly_rate"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "work_task.list",
+      "kind": "list",
+      "entity": "entity.work_task",
+      "columns": [
+        {
+          "field_id": "work_task.name"
+        },
+        {
+          "field_id": "work_task.project_id"
+        },
+        {
+          "field_id": "work_task.status"
+        },
+        {
+          "field_id": "work_task.assignee"
+        },
+        {
+          "field_id": "work_task.billable_default"
+        },
+        {
+          "field_id": "work_task.rate_override"
+        }
+      ],
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.work_task_new"
+          }
+        ],
+        "open_record_target": "page:work_task.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search tasks...",
+          "fields": [
+            "work_task.name",
+            "work_task.description"
+          ]
+        },
+        "filters": [
+          {
+            "id": "open",
+            "label": "Open",
+            "domain": {
+              "op": "not",
+              "condition": {
+                "op": "in",
+                "field": "work_task.status",
+                "value": [
+                  "done",
+                  "cancelled"
+                ]
+              }
+            }
+          },
+          {
+            "id": "done",
+            "label": "Done",
+            "domain": {
+              "op": "eq",
+              "field": "work_task.status",
+              "value": "done"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "work_task.kanban",
+      "kind": "kanban",
+      "entity": "entity.work_task",
+      "card": {
+        "title_field": "work_task.name",
+        "subtitle_fields": [
+          "work_task.project_id",
+          "work_task.assignee"
+        ],
+        "badge_fields": [
+          "work_task.status",
+          "work_task.billable_default"
+        ]
+      }
+    },
+    {
+      "id": "work_task.graph",
+      "kind": "graph",
+      "entity": "entity.work_task",
+      "default": {
+        "type": "bar",
+        "group_by": "work_task.status",
+        "measure": "count"
+      }
+    },
+    {
+      "id": "work_task.form",
+      "kind": "form",
+      "entity": "entity.work_task",
+      "sections": [
+        {
+          "id": "details",
+          "title": "Task",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "work_task.name",
+            "work_task.project_id",
+            "work_task.status",
+            "work_task.assignee",
+            "work_task.billable_default",
+            "work_task.rate_override"
+          ]
+        },
+        {
+          "id": "description",
+          "title": "Description",
+          "fields": [
+            "work_task.description"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": {
+          "field_id": "work_task.status"
+        },
+        "secondary_actions": [
+          {
+            "action_id": "action.work_task_start"
+          },
+          {
+            "action_id": "action.work_task_block"
+          },
+          {
+            "action_id": "action.work_task_done"
+          },
+          {
+            "action_id": "action.work_task_reopen"
+          },
+          {
+            "action_id": "action.work_task_cancel"
+          }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "details_tab",
+          "tabs": [
+            {
+              "id": "details_tab",
+              "label": "Task",
+              "sections": [
+                "details"
+              ]
+            },
+            {
+              "id": "description_tab",
+              "label": "Description",
+              "sections": [
+                "description"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "work_time_entry.list",
+      "kind": "list",
+      "entity": "entity.work_time_entry",
+      "columns": [
+        {
+          "field_id": "work_time_entry.entry_date"
+        },
+        {
+          "field_id": "work_time_entry.user_id"
+        },
+        {
+          "field_id": "work_time_entry.contact_id"
+        },
+        {
+          "field_id": "work_time_entry.project_id"
+        },
+        {
+          "field_id": "work_time_entry.task_id"
+        },
+        {
+          "field_id": "work_time_entry.duration_hours"
+        },
+        {
+          "field_id": "work_time_entry.billable"
+        },
+        {
+          "field_id": "work_time_entry.hourly_rate"
+        },
+        {
+          "field_id": "work_time_entry.amount"
+        },
+        {
+          "field_id": "work_time_entry.status"
+        }
+      ],
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.work_time_entry_new"
+          }
+        ],
+        "bulk_actions": [
+          {
+            "action_id": "action.work_time_entry_create_invoice_draft"
+          },
+          {
+            "action_id": "action.work_time_entry_bulk_approve"
+          },
+          {
+            "action_id": "action.work_time_entry_bulk_mark_invoiced"
+          },
+          {
+            "action_id": "action.work_time_entry_bulk_cancel"
+          }
+        ],
+        "open_record_target": "page:work_time_entry.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search time entries...",
+          "fields": [
+            "work_time_entry.description",
+            "work_time_entry.notes"
+          ]
+        },
+        "filters": [
+          {
+            "id": "draft",
+            "label": "Draft",
+            "domain": {
+              "op": "eq",
+              "field": "work_time_entry.status",
+              "value": "draft"
+            }
+          },
+          {
+            "id": "approved",
+            "label": "Approved",
+            "domain": {
+              "op": "eq",
+              "field": "work_time_entry.status",
+              "value": "approved"
+            }
+          },
+          {
+            "id": "invoiced",
+            "label": "Invoiced",
+            "domain": {
+              "op": "eq",
+              "field": "work_time_entry.status",
+              "value": "invoiced"
+            }
+          },
+          {
+            "id": "billable",
+            "label": "Billable",
+            "domain": {
+              "op": "eq",
+              "field": "work_time_entry.billable",
+              "value": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "work_time_entry.calendar",
+      "kind": "calendar",
+      "entity": "entity.work_time_entry",
+      "calendar": {
+        "title_field": "work_time_entry.description",
+        "date_start": "work_time_entry.start_time",
+        "date_end": "work_time_entry.end_time",
+        "color_field": "work_time_entry.project_id",
+        "default_scale": "week"
+      }
+    },
+    {
+      "id": "work_time_entry.hours_graph",
+      "kind": "graph",
+      "entity": "entity.work_time_entry",
+      "default": {
+        "type": "bar",
+        "group_by": "work_time_entry.project_id",
+        "measure": "sum:work_time_entry.duration_hours"
+      }
+    },
+    {
+      "id": "work_time_entry.amount_graph",
+      "kind": "graph",
+      "entity": "entity.work_time_entry",
+      "default": {
+        "type": "bar",
+        "group_by": "work_time_entry.contact_id",
+        "measure": "sum:work_time_entry.amount"
+      }
+    },
+    {
+      "id": "work_time_entry.form",
+      "kind": "form",
+      "entity": "entity.work_time_entry",
+      "sections": [
+        {
+          "id": "details",
+          "title": "Time Entry",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "work_time_entry.entry_date",
+            "work_time_entry.user_id",
+            "work_time_entry.contact_id",
+            "work_time_entry.project_id",
+            "work_time_entry.task_id",
+            "work_time_entry.billable",
+            "work_time_entry.status",
+            "work_time_entry.start_time",
+            "work_time_entry.end_time",
+            "work_time_entry.duration_hours",
+            "work_time_entry.hourly_rate",
+            "work_time_entry.amount"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": [
+            "work_time_entry.description",
+            "work_time_entry.notes"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": {
+          "field_id": "work_time_entry.status"
+        },
+        "secondary_actions": [
+          {
+            "action_id": "action.work_time_entry_approve"
+          },
+          {
+            "action_id": "action.work_time_entry_mark_invoiced"
+          },
+          {
+            "action_id": "action.work_time_entry_revert_to_draft"
+          },
+          {
+            "action_id": "action.work_time_entry_cancel"
+          }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "details_tab",
+          "tabs": [
+            {
+              "id": "details_tab",
+              "label": "Details",
+              "sections": [
+                "details"
+              ]
+            },
+            {
+              "id": "notes_tab",
+              "label": "Notes",
+              "sections": [
+                "notes"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "work_management.dashboard_page",
+      "title": "Work Dashboard",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.work_time_entry_new"
+          },
+          {
+            "action_id": "action.work_project_new"
+          },
+          {
+            "action_id": "action.work_task_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "stat_cards",
+          "columns": 4,
+          "cards": [
+            {
+              "id": "hours_today",
+              "label": "Hours Today",
+              "subtitle": "Entry date = today",
+              "entity_id": "entity.work_time_entry",
+              "measure": "sum:work_time_entry.duration_hours",
+              "date_field": "work_time_entry.entry_date",
+              "domain": {
+                "op": "eq",
+                "field": "work_time_entry.entry_date",
+                "value": {
+                  "ref": "$today"
+                }
+              },
+              "icon": "lucide:Clock3",
+              "tone": "primary",
+              "format": "hours",
+              "target": "page:work_time_entry.today_page"
+            },
+            {
+              "id": "draft_entries",
+              "label": "Draft Entries",
+              "subtitle": "Needs review",
+              "entity_id": "entity.work_time_entry",
+              "measure": "count",
+              "domain": {
+                "op": "eq",
+                "field": "work_time_entry.status",
+                "value": "draft"
+              },
+              "icon": "lucide:ClipboardList",
+              "tone": "warning",
+              "format": "number",
+              "target": "page:work_time_entry.list_page"
+            },
+            {
+              "id": "approved_billable_hours",
+              "label": "Approved Billable Hours",
+              "subtitle": "Ready to invoice",
+              "entity_id": "entity.work_time_entry",
+              "measure": "sum:work_time_entry.duration_hours",
+              "domain": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "work_time_entry.billable",
+                    "value": true
+                  },
+                  {
+                    "op": "eq",
+                    "field": "work_time_entry.status",
+                    "value": "approved"
+                  }
+                ]
+              },
+              "icon": "lucide:BadgeDollarSign",
+              "tone": "success",
+              "format": "hours",
+              "target": "page:work_time_entry.billable_page"
+            },
+            {
+              "id": "uninvoiced_billable_amount",
+              "label": "Uninvoiced Billable Amount",
+              "subtitle": "Approved only",
+              "entity_id": "entity.work_time_entry",
+              "measure": "sum:work_time_entry.amount",
+              "domain": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "work_time_entry.billable",
+                    "value": true
+                  },
+                  {
+                    "op": "eq",
+                    "field": "work_time_entry.status",
+                    "value": "approved"
+                  }
+                ]
+              },
+              "icon": "lucide:WalletCards",
+              "tone": "error",
+              "format": "currency",
+              "target": "page:work_time_entry.billable_page"
+            }
+          ]
+        },
+        {
+          "kind": "grid",
+          "columns": 12,
+          "gap": "md",
+          "items": [
+            {
+              "span": 7,
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "card",
+                  "title": "Today",
+                  "content": [
+                    {
+                      "kind": "view_modes",
+                      "entity_id": "entity.work_time_entry",
+                      "compact": true,
+                      "page_size": 8,
+                      "param_scope": "local",
+                      "default_mode": "list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "work_time_entry.entry_date",
+                        "value": {
+                          "ref": "$today"
+                        }
+                      },
+                      "modes": [
+                        {
+                          "mode": "list",
+                          "target": "view:work_time_entry.list"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "span": 5,
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "card",
+                  "title": "Open Tasks",
+                  "content": [
+                    {
+                      "kind": "view_modes",
+                      "entity_id": "entity.work_task",
+                      "compact": true,
+                      "page_size": 8,
+                      "param_scope": "local",
+                      "default_mode": "list",
+                      "record_domain": {
+                        "op": "not",
+                        "condition": {
+                          "op": "in",
+                          "field": "work_task.status",
+                          "value": [
+                            "done",
+                            "cancelled"
+                          ]
+                        }
+                      },
+                      "modes": [
+                        {
+                          "mode": "list",
+                          "target": "view:work_task.list"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "work_project.list_page",
+      "title": "Projects",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.work_project_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.work_project",
+              "default_mode": "kanban",
+              "modes": [
+                {
+                  "mode": "kanban",
+                  "target": "view:work_project.kanban",
+                  "default_group_by": "work_project.status"
+                },
+                {
+                  "mode": "list",
+                  "target": "view:work_project.list"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:work_project.calendar"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:work_project.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:work_project.list",
+                  "default_group_by": "work_project.status"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "work_project.form_page",
+      "title": "Project",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.work_project",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:work_project.form"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.work_project",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "work_task.list_page",
+      "title": "Tasks",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.work_task_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.work_task",
+              "default_mode": "kanban",
+              "modes": [
+                {
+                  "mode": "kanban",
+                  "target": "view:work_task.kanban",
+                  "default_group_by": "work_task.status"
+                },
+                {
+                  "mode": "list",
+                  "target": "view:work_task.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:work_task.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:work_task.list",
+                  "default_group_by": "work_task.project_id"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "work_task.form_page",
+      "title": "Task",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.work_task",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:work_task.form"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.work_task",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "work_time_entry.list_page",
+      "title": "Time Entries",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.work_time_entry_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.work_time_entry",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:work_time_entry.list"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:work_time_entry.calendar"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:work_time_entry.hours_graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:work_time_entry.list",
+                  "default_group_by": "work_time_entry.project_id"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "work_time_entry.today_page",
+      "title": "Today",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.work_time_entry_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "title": "Today's Entries",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.work_time_entry",
+              "default_mode": "list",
+              "record_domain": {
+                "op": "eq",
+                "field": "work_time_entry.entry_date",
+                "value": {
+                  "ref": "$today"
+                }
+              },
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:work_time_entry.list"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:work_time_entry.calendar"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "work_time_entry.week_page",
+      "title": "This Week",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.work_time_entry_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "title": "Week View",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.work_time_entry",
+              "default_mode": "calendar",
+              "modes": [
+                {
+                  "mode": "calendar",
+                  "target": "view:work_time_entry.calendar"
+                },
+                {
+                  "mode": "list",
+                  "target": "view:work_time_entry.list"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "work_time_entry.billable_page",
+      "title": "Billable Entries",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.work_time_entry",
+              "default_mode": "list",
+              "record_domain": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "work_time_entry.billable",
+                    "value": true
+                  },
+                  {
+                    "op": "not",
+                    "condition": {
+                      "op": "eq",
+                      "field": "work_time_entry.status",
+                      "value": "cancelled"
+                    }
+                  }
+                ]
+              },
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:work_time_entry.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:work_time_entry.amount_graph"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "work_time_entry.form_page",
+      "title": "Time Entry",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.work_time_entry",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:work_time_entry.form"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.work_time_entry",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "work_management.reports_page",
+      "title": "Reports",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "grid",
+          "columns": 12,
+          "gap": "md",
+          "items": [
+            {
+              "span": 6,
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "card",
+                  "title": "Hours By Project",
+                  "content": [
+                    {
+                      "kind": "view_modes",
+                      "entity_id": "entity.work_time_entry",
+                      "default_mode": "graph",
+                      "modes": [
+                        {
+                          "mode": "graph",
+                          "target": "view:work_time_entry.hours_graph"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "span": 6,
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "card",
+                  "title": "Billable Amount By Client",
+                  "content": [
+                    {
+                      "kind": "view_modes",
+                      "entity_id": "entity.work_time_entry",
+                      "default_mode": "graph",
+                      "modes": [
+                        {
+                          "mode": "graph",
+                          "target": "view:work_time_entry.amount_graph"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "interfaces": {
+    "dashboardable": [
+      {
+        "entity_id": "entity.work_project",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "work_project.start_date",
+        "measures": [
+          "count"
+        ],
+        "group_bys": [
+          "work_project.status",
+          "work_project.billing_type",
+          "work_project.client_contact_id"
+        ],
+        "default_widgets": [
+          {
+            "id": "projects_by_status",
+            "type": "group",
+            "title": "Projects by Status",
+            "group_by": "work_project.status",
+            "measure": "count"
+          }
+        ]
+      },
+      {
+        "entity_id": "entity.work_time_entry",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "work_time_entry.entry_date",
+        "measures": [
+          "count",
+          "sum:work_time_entry.duration_hours",
+          "sum:work_time_entry.amount"
+        ],
+        "group_bys": [
+          "work_time_entry.project_id",
+          "work_time_entry.contact_id",
+          "work_time_entry.status"
+        ],
+        "default_widgets": [
+          {
+            "id": "hours_by_project",
+            "type": "group",
+            "title": "Hours by Project",
+            "group_by": "work_time_entry.project_id",
+            "measure": "sum:work_time_entry.duration_hours"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -2244,8 +2244,8 @@ class DbEmailStore:
                 """
                 insert into email_outbox (
                   org_id, "to", cc, bcc, from_email, reply_to, subject,
-                  body_html, body_text, status, provider_message_id, last_error, template_id, created_at, sent_at
-                ) values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),%s)
+                  body_html, body_text, status, provider_message_id, last_error, template_id, attachments_json, created_at, sent_at
+                ) values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),%s)
                 returning *
                 """,
                 [
@@ -2262,6 +2262,7 @@ class DbEmailStore:
                     record.get("provider_message_id"),
                     record.get("last_error"),
                     record.get("template_id"),
+                    json.dumps(record.get("attachments_json") or []),
                     record.get("sent_at"),
                 ],
                 query_name="email_outbox.insert",

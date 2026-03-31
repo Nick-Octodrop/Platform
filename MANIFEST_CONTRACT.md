@@ -300,6 +300,147 @@ Rules:
 - `enum` must define `options` (non‑empty list).
 - `lookup` should specify `entity` or be resolvable via `relations`.
 
+### Computed fields (v1.3)
+
+Number and other fields may declare manifest-driven computed values.
+
+Expression compute:
+```json
+{
+  "id": "invoice.total",
+  "type": "number",
+  "readonly": true,
+  "compute": {
+    "expression": {
+      "op": "round",
+      "args": [
+        {
+          "op": "add",
+          "args": [
+            { "ref": "invoice.subtotal" },
+            { "ref": "invoice.tax" }
+          ]
+        },
+        2
+      ]
+    }
+  }
+}
+```
+
+Aggregate compute:
+```json
+{
+  "id": "invoice.subtotal",
+  "type": "number",
+  "readonly": true,
+  "compute": {
+    "aggregate": {
+      "op": "sum",
+      "entity": "entity.invoice_line",
+      "field": "invoice_line.amount",
+      "where": {
+        "op": "eq",
+        "field": "invoice_line.invoice_id",
+        "value": { "ref": "$parent.id" }
+      }
+    }
+  }
+}
+```
+
+Rules:
+- `compute` is optional and must be an object.
+- Supported compute modes:
+  - `compute.expression`
+  - `compute.aggregate`
+- Computed fields are recomputed by the shared engine; modules should not hardcode the same logic in custom UI code.
+- Computed fields are commonly `readonly: true`, especially when they derive from other inputs.
+- Expression refs resolve against the current draft/record and may use:
+  - direct field ids like `"invoice.subtotal"`
+  - `$current.<field>`
+  - `$record.<field>`
+  - `$parent.<field>` (primarily inside aggregate `where`)
+- Expression ops currently supported:
+  - arithmetic: `add`, `sub`, `mul`, `div`, `mod`, `min`, `max`, `abs`, `neg`, `round`, `ceil`, `floor`
+  - logic/comparison: `and`, `or`, `not`, `eq`, `neq`, `gt`, `gte`, `lt`, `lte`
+  - value helpers: `coalesce`, `if`
+- Aggregate ops currently supported:
+  - `sum`, `avg`, `min`, `max`, `count`
+- Aggregate specs require:
+  - `entity`
+  - `op`
+  - `field` for all aggregate ops except `count`
+- Aggregate `where` uses the normal condition DSL and evaluates child rows as `$current` / `$record`, with the parent row available as `$parent`.
+
+Authoring guidance:
+- Prefer canonical numeric storage with computed derivations for totals, taxes, discounts, margins, durations, and rollups.
+- Do not store symbols or formatted text inside computed numeric fields.
+- Keep formulas declarative in manifests so the same behavior works in forms, lists, automations, and documents.
+
+### Number formatting semantics (v1.3)
+
+Numeric fields may declare display semantics via `format`.
+
+```json
+{
+  "id": "invoice.total",
+  "type": "number",
+  "format": {
+    "kind": "currency",
+    "currency_field": "invoice.currency_code",
+    "precision": 2
+  }
+}
+```
+
+```json
+{
+  "id": "product.weight",
+  "type": "number",
+  "format": {
+    "kind": "measurement",
+    "unit": "kg",
+    "precision": 3
+  }
+}
+```
+
+Supported format keys:
+- `kind`
+- `currency`
+- `currency_field`
+- `unit`
+- `unit_field`
+- `precision`
+
+Supported `format.kind` values:
+- `plain`
+- `currency`
+- `percent`
+- `measurement`
+- `duration`
+
+Rules:
+- `format` is optional and currently applies to `type: "number"` fields.
+- Formatting changes presentation only; stored values remain raw canonical values.
+- `currency_field` / `unit_field` allow per-record formatting metadata.
+- `currency` / `unit` provide static fallback metadata.
+- `precision` controls rendered decimal places.
+
+Authoring guidance:
+- Money:
+  - store numeric values only
+  - store currency code separately when it can vary per record
+  - prefer `currency_field` for invoices, quotes, expenses, and rates
+- Percent:
+  - store the business value consistently across the module (for example `10` for 10%)
+  - use `format.kind: "percent"` for display
+- Measurements and durations:
+  - store raw numeric values
+  - use `unit` / `unit_field` for labels like `kg`, `m`, `hrs`, `days`
+- Documents, forms, and lists should all rely on the shared formatting engine instead of hand-built symbols or suffixes.
+
 ### Field UI (v1.2)
 ```json
 "ui": { "widget": "steps" }
@@ -365,6 +506,7 @@ Template refs in `defaults` / `patch`:
 - Actions may include `modal_id` to open a manifest-defined modal before follow-up actions run.
 - `transform_record` actions must include `transformation_key`.
 - `transform_record.entity_id` (when present) must match the transformation `source_entity_id`.
+- `transform_record.selection_mode` may be `"selected_records"` when the action should consume list-view selections instead of a single `record_id`.
 
 Page header actions can reference actions:
 ```json
@@ -513,12 +655,16 @@ Rules:
 - `child_mappings[]` supports parent-child conversion via current lookup conventions:
   - `source_link_field`: child→source parent field
   - `target_link_field`: child→target parent field
+- `child_mappings[].source_scope` may be `"selected_records"` to copy directly from the selected source rows instead of loading linked child records.
 - `link_fields.source_to_target` writes target id back to the source record.
 - `link_fields.target_to_source` writes source id to the target record.
 - `source_update.patch` applies a patch to source after target creation (for status changes, etc.).
 - `validation.require_source_fields` enforces source prerequisites.
 - `validation.require_child_records` can block transforms with zero matching source children.
 - `validation.prevent_if_target_linked` can block duplicate transforms when source already linked.
+- `validation.require_uniform_fields` can require selected source rows to share the same field values before a grouped transform runs.
+- `validation.selected_record_domain` can validate each selected source row with the condition DSL.
+- Transform refs also support `$today`, `$now`, and `$selection.sum.<field_id>` for grouped target values.
 - `hooks.emit_events[]` publishes custom events for downstream automations.
 
 Reference expressions for transformation mappings:

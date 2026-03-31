@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import SamplePicker from "./SamplePicker.jsx";
-import { API_URL } from "../../api.js";
+import { API_URL, getActiveWorkspaceId } from "../../api.js";
 import { supabase } from "../../supabase.js";
 import { apiFetch } from "../../api.js";
 import CodeTextarea from "../../components/CodeTextarea.jsx";
@@ -455,8 +455,12 @@ function DocPreviewTab({
       try {
         const session = (await supabase.auth.getSession()).data.session;
         const token = session?.access_token;
+        const workspaceId = previewState?.workspace_id || getActiveWorkspaceId();
         const res = await fetch(`${API_URL}/attachments/${previewState.attachment_id}/download`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(workspaceId ? { "X-Workspace-Id": workspaceId } : {}),
+          },
         });
         if (!res.ok) {
           setPreviewUrl("");
@@ -476,7 +480,7 @@ function DocPreviewTab({
         URL.revokeObjectURL(revokedUrl);
       }
     };
-  }, [previewState?.attachment_id]);
+  }, [previewState?.attachment_id, previewState?.workspace_id]);
 
   return (
     <div className="h-full flex flex-col gap-4">

@@ -1560,6 +1560,7 @@ export default function ViewModesBlock({
   const [clientFilters, setClientFilters] = useState([]);
   const [savedFilters, setSavedFilters] = useState([]);
   const [prefs, setPrefs] = useState(null);
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
   const [listPage, setListPage] = useState(0);
   const [listTotalItems, setListTotalItems] = useState(0);
@@ -1791,6 +1792,20 @@ export default function ViewModesBlock({
     () => buildDomain(activeFilter, clientFilters, recordDomain),
     [activeFilter, clientFilters, recordDomain]
   );
+  const pendingDefaultMode = !forceListOnly && !modeParam && Boolean(defaultMode);
+  const pendingDefaultFilter =
+    !forceListOnly &&
+    !filterParam &&
+    clientFilters.length === 0 &&
+    Boolean(prefs?.default_filter_id || prefs?.default_filter_key || block?.default_filter_id);
+  const pendingDefaultGroup =
+    !forceListOnly &&
+    !groupByParam &&
+    Boolean(prefs?.default_group_by || activeModeDef?.default_group_by || block?.default_group_by);
+  const waitingForInitialParams =
+    !previewMode &&
+    !forceListOnly &&
+    (!prefsLoaded || pendingDefaultMode || pendingDefaultFilter || pendingDefaultGroup);
 
   useEffect(() => {
     if (previewMode || !entityFullId) return;
@@ -1800,10 +1815,12 @@ export default function ViewModesBlock({
         const session = (await supabase.auth.getSession()).data.session;
         if (!session?.access_token) {
           prefsLoadedRef.current = true;
+          if (mounted) setPrefsLoaded(true);
           return;
         }
       } catch {
         prefsLoadedRef.current = true;
+        if (mounted) setPrefsLoaded(true);
         return;
       }
       apiFetch(`/filters/${entityFullId}`)
@@ -1817,9 +1834,11 @@ export default function ViewModesBlock({
           if (!mounted) return;
           setPrefs(res.prefs || {});
           prefsLoadedRef.current = true;
+          setPrefsLoaded(true);
         })
         .catch(() => {
           prefsLoadedRef.current = true;
+          if (mounted) setPrefsLoaded(true);
         });
     }
     loadPrefs();
@@ -1897,10 +1916,16 @@ export default function ViewModesBlock({
 
   useEffect(() => {
     if (!activeView || previewMode) return;
+    if (waitingForInitialParams) return;
     const viewKind = activeView.kind || activeView.type;
     if (viewKind === "graph" || activeMode === "pivot") return;
     const bootstrapList = bootstrap?.list;
+    const allowBootstrapList =
+      !domain &&
+      !searchText &&
+      !groupByParam;
     const bootstrapMatches =
+      allowBootstrapList &&
       bootstrapList &&
       bootstrap?.viewId === activeView?.id &&
       bootstrapList?.entity_id === entityFullId &&
@@ -1924,6 +1949,15 @@ export default function ViewModesBlock({
       const cols = Array.isArray(activeView.columns) ? activeView.columns : [];
       for (const c of cols) {
         if (c?.field_id) listFields.push(c.field_id);
+        const field = fieldIndex?.[c?.field_id];
+        if (field?.type === "number" && field?.format) {
+          if (typeof field.format.currency_field === "string" && field.format.currency_field) {
+            listFields.push(field.format.currency_field);
+          }
+          if (typeof field.format.unit_field === "string" && field.format.unit_field) {
+            listFields.push(field.format.unit_field);
+          }
+        }
       }
     }
     if (viewKind === "kanban") {
@@ -1957,11 +1991,12 @@ export default function ViewModesBlock({
         setSelectedIds([]);
       })
       .catch(() => setRecords([]));
-  }, [activeView, entityFullId, searchText, searchFields, domain, groupByParam, previewMode, entityDef, refreshTick, externalRefreshTick, bootstrap, bootstrapVersion, bootstrapLoading, block, recordScope]);
+  }, [activeView, entityFullId, searchText, searchFields, domain, groupByParam, previewMode, entityDef, refreshTick, externalRefreshTick, bootstrap, bootstrapVersion, bootstrapLoading, block, recordScope, waitingForInitialParams]);
 
   const [graphData, setGraphData] = useState([]);
   useEffect(() => {
     if (!activeView || previewMode) return;
+    if (waitingForInitialParams) return;
     const viewKind = activeView.kind || activeView.type;
     if (viewKind !== "graph") return;
     const groupBy = graphGroupBy;
@@ -1981,7 +2016,7 @@ export default function ViewModesBlock({
         setGraphData(res.groups || []);
       })
       .catch(() => setGraphData([]));
-  }, [activeView, entityFullId, searchText, searchFields, domain, graphGroupBy, graphMeasure, previewMode, refreshTick, externalRefreshTick]);
+  }, [activeView, entityFullId, searchText, searchFields, domain, graphGroupBy, graphMeasure, previewMode, refreshTick, externalRefreshTick, waitingForInitialParams]);
 
   const [groupLookupLabels, setGroupLookupLabels] = useState({});
   const [groupMemberLabels, setGroupMemberLabels] = useState({});
@@ -1989,6 +2024,7 @@ export default function ViewModesBlock({
   const [pivotData, setPivotData] = useState(null);
   useEffect(() => {
     if (!entityFullId || previewMode) return;
+    if (waitingForInitialParams) return;
     if (activeMode !== "pivot") return;
     if (!pivotRowGroupBy) {
       setPivotData(null);
@@ -2006,7 +2042,7 @@ export default function ViewModesBlock({
         setPivotData(res || null);
       })
       .catch(() => setPivotData(null));
-  }, [activeMode, entityFullId, pivotRowGroupBy, pivotColGroupBy, pivotMeasure, searchText, searchFields, domain, previewMode, refreshTick, externalRefreshTick]);
+  }, [activeMode, entityFullId, pivotRowGroupBy, pivotColGroupBy, pivotMeasure, searchText, searchFields, domain, previewMode, refreshTick, externalRefreshTick, waitingForInitialParams]);
 
   const groupedFieldValues = useMemo(() => {
     const out = [];
@@ -2320,6 +2356,11 @@ export default function ViewModesBlock({
     if (action.kind === "update_record") return "Save";
     if (action.kind === "refresh") return "Refresh";
     return "Action";
+  }
+
+  function runBulkAction(action) {
+    if (!action) return;
+    onRunAction?.(action, { selectedIds });
   }
 
   const bulkActions = useMemo(() => {
@@ -2979,7 +3020,7 @@ export default function ViewModesBlock({
                           <li key={action.id || action.label}>
                             <button
                               onClick={() => {
-                                onRunAction?.(action);
+                                runBulkAction(action);
                                 setSettingsMenuOpen(false);
                               }}
                             >
@@ -3924,7 +3965,7 @@ export default function ViewModesBlock({
                       type="button"
                       className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
                       onClick={() => {
-                        onRunAction?.(action);
+                        runBulkAction(action);
                         setMobileMenuSheet("");
                       }}
                     >

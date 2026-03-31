@@ -487,6 +487,7 @@ class MemoryEmailStore:
         item.setdefault("id", str(uuid.uuid4()))
         item.setdefault("status", "queued")
         item.setdefault("created_at", _now())
+        item.setdefault("attachments_json", [])
         self._outbox[item["id"]] = item
         return copy.deepcopy(item)
 

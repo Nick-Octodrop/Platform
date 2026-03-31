@@ -205,6 +205,86 @@
     "level": 5
   },
   {
+    "name": "create_vendor_approvals_with_conditions_and_automation",
+    "tags": [
+      "create_module",
+      "conditions",
+      "automation",
+      "workflow",
+      "real_world"
+    ],
+    "session": {
+      "title": "create_vendor_approvals_with_conditions_and_automation",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Create a vendor approvals app called Vendor Approvals with draft, approved, and rejected statuses, make Review Notes required when the record is rejected, show Contract End Date only when the vendor is approved, and include a draft approval notification automation."
+      },
+      {
+        "answer_if_question": {
+          "question_id": "module_target",
+          "text": "Vendor Approvals"
+        }
+      },
+      {
+        "answer_if_question": {
+          "question_id": "confirm_plan",
+          "text": "Approved."
+        }
+      },
+      {
+        "generate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "draft"
+        }
+      },
+      {
+        "validate_patchset": true,
+        "expect": {
+          "ok": true,
+          "patchset_status": "validated",
+          "validation_ok": true,
+          "manifest_expect": {
+            "min_useful_field_count": 8,
+            "view_kinds_include": [
+              "list",
+              "form",
+              "kanban"
+            ],
+            "min_action_count": 2,
+            "min_workflow_state_count": 3,
+            "statusbar_required": true,
+            "min_trigger_count": 1,
+            "field_labels_include": [
+              "Review Notes",
+              "Contract End Date"
+            ]
+          },
+          "preview_expect": {
+            "text_contains": [
+              "automation",
+              "workflow",
+              "status"
+            ],
+            "field_labels_include": [
+              "Review Notes",
+              "Contract End Date"
+            ],
+            "view_kinds_include": [
+              "list",
+              "form"
+            ]
+          }
+        }
+      }
+    ],
+    "level": 5
+  },
+  {
     "name": "cross_module_quote_approval_creates_job",
     "tags": [
       "cross_module",
@@ -7027,6 +7107,39 @@
           "ok": true,
           "patchset_status": "validated",
           "validation_ok": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "preview_compliance_rollout_with_pdf_and_reminders",
+    "tags": [
+      "preview",
+      "cross_module",
+      "automation",
+      "template",
+      "truthfulness"
+    ],
+    "session": {
+      "title": "preview_compliance_rollout_with_pdf_and_reminders",
+      "scope_mode": "auto",
+      "selected_artifact_type": "none",
+      "selected_artifact_key": ""
+    },
+    "steps": [
+      {
+        "chat": "Plan a contractor compliance rollout that reuses Contacts, adds Compliance and Renewals, sends expiry reminders automatically, and generates an approval pack PDF. Show the phased plan first.",
+        "expect": {
+          "ok": true,
+          "preview_expect": {
+            "text_contains": [
+              "Contacts",
+              "Compliance",
+              "Renewals",
+              "PDF",
+              "reminder"
+            ]
+          }
         }
       }
     ]

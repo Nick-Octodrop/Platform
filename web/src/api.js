@@ -109,6 +109,38 @@ function invalidateRecordCache(entityId, recordId = null) {
   invalidateRequestPrefix(`/page/bootstrap`);
 }
 
+function formatApiErrorPath(path) {
+  if (!path || typeof path !== "string") return "";
+  const selectedFieldMatch = path.match(/^selected_ids\[(\d+)\]\.(.+)$/);
+  if (selectedFieldMatch) {
+    const rowNumber = Number.parseInt(selectedFieldMatch[1], 10) + 1;
+    const fieldPath = selectedFieldMatch[2];
+    return `${fieldPath} (selected row ${rowNumber})`;
+  }
+  const selectedRowMatch = path.match(/^selected_ids\[(\d+)\]$/);
+  if (selectedRowMatch) {
+    const rowNumber = Number.parseInt(selectedRowMatch[1], 10) + 1;
+    return `selected row ${rowNumber}`;
+  }
+  return path;
+}
+
+function formatApiErrorMessage(message, path, code) {
+  const baseMessage = typeof message === "string" && message.trim() ? message.trim() : "Request failed";
+  const formattedPath = formatApiErrorPath(path);
+  if (code === "ACTION_INVALID" && path === "selected_ids") {
+    return "Select at least one record first";
+  }
+  if (!formattedPath) return baseMessage;
+  if (code === "TRANSFORMATION_SOURCE_REQUIRED") {
+    return `Missing required source field: ${formattedPath}`;
+  }
+  if (baseMessage.toLowerCase().includes(formattedPath.toLowerCase())) {
+    return baseMessage;
+  }
+  return `${baseMessage}: ${formattedPath}`;
+}
+
 export function compileManifest(manifest) {
   const entities = Array.isArray(manifest?.entities) ? manifest.entities : [];
   const views = Array.isArray(manifest?.views) ? manifest.views : [];
@@ -198,10 +230,12 @@ export async function apiFetch(path, options = {}) {
         if (!response.ok) {
           const code = data?.errors?.[0]?.code;
           const message = data?.errors?.[0]?.message || data?.error || data?.message || "Request failed";
-          const err = new Error(message);
+          const path = data?.errors?.[0]?.path;
+          const err = new Error(formatApiErrorMessage(message, path, code));
           err.code = code;
           err.detail = data?.errors?.[0]?.detail;
-          err.path = data?.errors?.[0]?.path;
+          err.path = path;
+          err.rawMessage = message;
           err.status = response.status;
           if (Array.isArray(data?.errors)) err.errors = data.errors;
           if (Array.isArray(data?.warnings)) err.warnings = data.warnings;

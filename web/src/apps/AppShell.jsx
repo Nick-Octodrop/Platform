@@ -12,6 +12,7 @@ import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { PRIMARY_BUTTON, PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_BUTTON_XS } from "../components/buttonStyles.js";
 import { buildRouteWithQuery, buildTargetRoute, resolveAppTarget, resolveRouteTarget } from "./appShellUtils.js";
 import { evalCondition } from "../utils/conditions.js";
+import { applyComputedFields } from "../utils/computedFields.js";
 import { useAccessContext } from "../access.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 
@@ -624,10 +625,16 @@ export default function AppShell({
     if (createModal.initialValue && createModal.displayField) {
       nextDraft[createModal.displayField] = createModal.initialValue;
     }
-    setCreateDraft(nextDraft);
-    setCreateInitialDraft(nextDraft);
+    const modalFieldIndex = buildFieldIndex(
+      createModal?.manifest || manifest,
+      createModal?.compiled || compiled,
+      createModal?.entityId || null
+    );
+    const computedDraft = applyComputedFields(modalFieldIndex || {}, nextDraft);
+    setCreateDraft(computedDraft);
+    setCreateInitialDraft(computedDraft);
     setCreateShowValidation(false);
-  }, [createModal]);
+  }, [createModal, manifest, compiled]);
 
   useEffect(() => {
     if (previewMode) {
@@ -1366,7 +1373,7 @@ export default function AppShell({
                     displayField={createEntityDef?.display_field}
                     autoSaveState="idle"
                     hasRecord={false}
-                    onChange={(next) => setCreateDraft(next)}
+                    onChange={(next) => setCreateDraft(applyComputedFields(createFieldIndex || {}, next))}
                     onSave={handleCreateSave}
                     onDiscard={() => closeCreateModal(null)}
                     isDirty={createIsDirty}
@@ -1465,16 +1472,27 @@ function AppView({
   const viewEntity = rawViewEntity || fallbackEntity;
   const entityFullId = resolveEntityFullId(manifest, viewEntity);
   const recordEntityId = recordContext?.entityId || entityFullId;
-  const fieldIndex = buildFieldIndex(manifest, compiled, entityFullId);
+  const fieldIndex = useMemo(() => buildFieldIndex(manifest, compiled, entityFullId), [manifest, compiled, entityFullId]);
+  const applyDraftComputed = useCallback((next) => applyComputedFields(fieldIndex, next || {}), [fieldIndex]);
   const entityDef = useMemo(() => (manifest?.entities || []).find((e) => e.id === entityFullId), [manifest, entityFullId]);
   const displayField = entityDef?.display_field;
   const listFieldIds = useMemo(() => {
     if (kind !== "list") return [];
     const cols = Array.isArray(view?.columns) ? view.columns : [];
     const ids = cols.map((c) => c.field_id).filter(Boolean);
+    for (const col of cols) {
+      const field = fieldIndex[col?.field_id];
+      if (field?.type !== "number" || !field?.format) continue;
+      if (typeof field.format.currency_field === "string" && field.format.currency_field) {
+        ids.push(field.format.currency_field);
+      }
+      if (typeof field.format.unit_field === "string" && field.format.unit_field) {
+        ids.push(field.format.unit_field);
+      }
+    }
     if (displayField) ids.push(displayField);
     return Array.from(new Set(ids));
-  }, [kind, view, displayField]);
+  }, [kind, view, displayField, fieldIndex]);
   const filterableFields = useMemo(() => {
     if (!entityDef || !Array.isArray(entityDef.fields)) return [];
     return entityDef.fields
@@ -1715,7 +1733,12 @@ function AppView({
       // Run through the action pipeline so action.clicked triggers are emitted.
       if (onRunAction) {
         try {
-          await onRunAction(action, { skipConfirm: true });
+          await onRunAction(action, {
+            recordId: effectiveRecordId,
+            recordDraft: draft || {},
+            selectedIds,
+            skipConfirm: true,
+          });
         } catch (err) {
           console.warn("action_run_failed", err);
         }
@@ -1784,7 +1807,12 @@ function AppView({
         });
       return;
     }
-    onRunAction?.(action, { skipConfirm: true });
+    onRunAction?.(action, {
+      recordId: effectiveRecordId,
+      recordDraft: draft || {},
+      selectedIds,
+      skipConfirm: true,
+    });
   }
 
   useEffect(() => {
@@ -1840,6 +1868,10 @@ function AppView({
     setActiveManifestModal(null);
   }, [view?.id, effectiveRecordId]);
 
+  const contextEntityId = recordContext?.entityId || null;
+  const contextRecordLoading = Boolean(recordContext?.recordLoading);
+  const contextRecordError = recordContext?.recordError || null;
+
   useEffect(() => {
     if (kind === "form") {
       setShowValidation(false);
@@ -1851,15 +1883,16 @@ function AppView({
       }
       if (previewMode && previewStore) {
         const entry = previewStore.get(recordEntityId, effectiveRecordId);
-        const next = entry?.record || {};
+        const next = applyDraftComputed(entry?.record || {});
         setDraft(next);
         setInitialDraft(next);
         setState({ status: "ok", error: null });
         return;
       }
       if (previewMode) {
-        setDraft(recordContext?.record || {});
-        setInitialDraft(recordContext?.record || {});
+        const next = applyDraftComputed(recordContext?.record || {});
+        setDraft(next);
+        setInitialDraft(next);
         setState({ status: "ok", error: null });
         return;
       }
@@ -1871,7 +1904,7 @@ function AppView({
         bootstrapRecord?.record_id === effectiveRecordId &&
         bootstrapUsedRef.current.form !== bootstrapVersion;
       if (bootstrapMatches) {
-        const next = bootstrapRecord?.record || {};
+        const next = applyDraftComputed(bootstrapRecord?.record || {});
         setDraft(next);
         setInitialDraft(next);
         setState({ status: "ok", error: null });
@@ -1882,17 +1915,17 @@ function AppView({
         setState({ status: "running", error: null });
         return;
       }
-      const hasContext = Boolean(recordContext?.entityId);
+      const hasContext = Boolean(contextEntityId);
       if (hasContext) {
-        if (recordContext.recordLoading) {
+        if (contextRecordLoading) {
           setState({ status: "running", error: null });
           return;
         }
-        if (recordContext.recordError) {
-          setState({ status: "error", error: recordContext.recordError });
+        if (contextRecordError) {
+          setState({ status: "error", error: contextRecordError });
           return;
         }
-        const next = recordContext.record || {};
+        const next = applyDraftComputed(recordContext?.record || {});
         setDraft(next);
         setInitialDraft(next);
         setState({ status: "ok", error: null });
@@ -1901,7 +1934,7 @@ function AppView({
       setState({ status: "running", error: null });
       apiFetch(`/records/${recordEntityId}/${effectiveRecordId}`)
         .then((res) => {
-          const next = res.record || {};
+          const next = applyDraftComputed(res.record || {});
           setDraft(next);
           setInitialDraft(next);
           setState({ status: "ok", error: null });
@@ -1912,7 +1945,7 @@ function AppView({
           setState({ status: "error", error: msg });
         });
     }
-  }, [kind, recordEntityId, effectiveRecordId, recordContext, previewMode, previewStore?.version, bootstrapVersion, bootstrap, view?.id, bootstrapLoading]);
+  }, [kind, recordEntityId, effectiveRecordId, contextEntityId, contextRecordLoading, contextRecordError, previewMode, previewStore?.version, bootstrapVersion, bootstrap, view?.id, bootstrapLoading, applyDraftComputed]);
 
   useEffect(() => {
     if (kind !== "form" || effectiveRecordId || recordEntityId !== "entity.material_log") return;
@@ -2009,12 +2042,14 @@ function AppView({
           pushToast("success", "Created (local preview)");
         }
       } else if (effectiveRecordId) {
-        await apiFetch(`/records/${recordEntityId}/${effectiveRecordId}`, {
+        const res = await apiFetch(`/records/${recordEntityId}/${effectiveRecordId}`, {
           method: "PUT",
           body: JSON.stringify(payload),
         });
+        const savedRecord = applyDraftComputed(res?.record || payload);
+        setDraft(savedRecord);
+        setInitialDraft(savedRecord);
         pushToast("success", "Saved");
-        setInitialDraft(payload);
       } else {
         const res = await apiFetch(`/records/${recordEntityId}`, {
           method: "POST",
@@ -2081,6 +2116,18 @@ function AppView({
       return true;
     }
   }, [draft, initialDraft]);
+
+  const refreshCurrentRecord = useCallback(async () => {
+    if (!recordEntityId || !effectiveRecordId || previewMode) return;
+    try {
+      const res = await apiFetch(`/records/${recordEntityId}/${effectiveRecordId}`);
+      const next = applyDraftComputed(res?.record || {});
+      setDraft(next);
+      setInitialDraft(next);
+    } catch {
+      // Keep the current draft if the parent refetch fails.
+    }
+  }, [recordEntityId, effectiveRecordId, previewMode, applyDraftComputed]);
 
   async function handleDiscard() {
     if (!effectiveRecordId) {
@@ -2158,9 +2205,19 @@ function AppView({
                     value,
                     (next) =>
                       setActiveManifestModal((prev) =>
-                        prev ? { ...prev, draft: setFieldValue(prev.draft || {}, fieldId, next), error: "" } : prev
+                        prev
+                          ? {
+                              ...prev,
+                              draft: applyComputedFields(
+                                prev.fieldIndex || {},
+                                setFieldValue(prev.draft || {}, fieldId, next)
+                              ),
+                              error: "",
+                            }
+                          : prev
                       ),
-                    modalReadonly
+                    modalReadonly,
+                    activeManifestModal.draft || {}
                   )}
                 </fieldset>
               );
@@ -2552,7 +2609,7 @@ function AppView({
               displayField={entityDef?.display_field}
               autoSaveState={autoSaveState}
               hasRecord={Boolean(effectiveRecordId)}
-              onChange={(next) => setDraft(next)}
+              onChange={(next) => setDraft(applyDraftComputed(next))}
               onSave={handleSave}
               onDiscard={handleDiscard}
               isDirty={isDirty}
@@ -2568,6 +2625,7 @@ function AppView({
               previewMode={previewMode && !previewAllowNav}
               canCreateLookup={(lookupEntityId) => canWriteRecords && Boolean(canCreateLookup?.(lookupEntityId))}
               onLookupCreate={onLookupCreate}
+              onRefreshRecord={refreshCurrentRecord}
               renderBlocks={(blocks, nestedRecordContext = null) => (
                 <ContentBlocksRenderer
                   blocks={blocks}

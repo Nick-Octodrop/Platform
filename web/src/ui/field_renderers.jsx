@@ -1,4 +1,5 @@
 import React from "react";
+import { getFieldInputAffixes } from "../utils/fieldFormatting.js";
 
 export function getFieldValue(record, fieldId) {
   if (!record) return "";
@@ -65,7 +66,7 @@ function normalizeEnumOptions(options) {
   }).filter(Boolean);
 }
 
-export function renderField(field, value, onChange, readonly) {
+export function renderField(field, value, onChange, readonly, record = null) {
   const common = {
     className: "input input-bordered w-full",
     disabled: readonly || field.readonly,
@@ -169,22 +170,44 @@ export function renderField(field, value, onChange, readonly) {
       );
     }
     case "number":
-      return (
-        <input
-          {...common}
-          type="number"
-          value={value ?? ""}
-          onChange={(e) => {
-            const next = e.target.value;
-            if (next === "") {
-              onChange("");
-              return;
-            }
-            const parsed = Number(next);
-            onChange(Number.isNaN(parsed) ? "" : parsed);
-          }}
-        />
-      );
+      {
+        const { prefix, suffix, align } = getFieldInputAffixes(field, record);
+        const leftPad = prefix ? `${Math.max(3.2, prefix.length * 0.6 + 1.4)}rem` : undefined;
+        const rightPad = suffix ? `${Math.max(3.2, suffix.length * 0.6 + 1.4)}rem` : undefined;
+        return (
+          <div className="relative">
+            {prefix ? (
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm opacity-60 pointer-events-none">
+                {prefix}
+              </span>
+            ) : null}
+            <input
+              {...common}
+              type="number"
+              className={`${common.className} ${align}`.trim()}
+              style={{
+                paddingLeft: leftPad,
+                paddingRight: rightPad,
+              }}
+              value={value ?? ""}
+              onChange={(e) => {
+                const next = e.target.value;
+                if (next === "") {
+                  onChange("");
+                  return;
+                }
+                const parsed = Number(next);
+                onChange(Number.isNaN(parsed) ? "" : parsed);
+              }}
+            />
+            {suffix ? (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm opacity-60 pointer-events-none">
+                {suffix}
+              </span>
+            ) : null}
+          </div>
+        );
+      }
     case "tags":
       return (
         <input

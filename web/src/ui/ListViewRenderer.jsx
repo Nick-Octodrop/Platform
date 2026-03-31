@@ -4,6 +4,7 @@ import { getFieldValue } from "./field_renderers.jsx";
 import { resolveFieldLabel } from "../utils/labels.js";
 import { formatDateLike } from "../utils/dateTime.js";
 import { evalCondition } from "../utils/conditions.js";
+import { formatFieldValue } from "../utils/fieldFormatting.js";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import { apiFetch } from "../api.js";
 import PaginationControls from "../components/PaginationControls.jsx";
@@ -202,6 +203,9 @@ export default function ListViewRenderer({
         return values.every((userId) => isUuidLike(userId)) ? "" : values.join(", ");
       }
       return values.map((userId) => memberLabels[userId] || (isUuidLike(userId) ? "" : userId)).filter(Boolean).join(", ");
+    }
+    if (field?.type === "number") {
+      return formatFieldValue(field, rawValue, row.record || {});
     }
     return String(formatDateLike(rawValue, { fieldType: field?.type, fieldId: col.field_id }));
   };

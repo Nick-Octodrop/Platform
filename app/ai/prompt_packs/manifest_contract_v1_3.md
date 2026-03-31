@@ -4,8 +4,26 @@ Manifest Contract v1.3 (Studio2)
 - Reject unknown keys at any level.
 - module.id must be stable and match module_id.
 - entities/views/pages/actions/relations must follow v1.3 contract.
-- actions kinds allowlisted: navigate, open_form, refresh, create_record, update_record, bulk_update.
+- actions kinds allowlisted: navigate, open_form, refresh, create_record, update_record, bulk_update, transform_record.
 - actions/header actions may include `modal_id` to open top-level `modals[]`.
 - top-level `modals[]` can render fields and run modal actions (`action_id` or inline).
 - form sections may use `line_editor` (or `line_editors` fallback on form view) for inline child-table editing.
 - UI composition rules for v1.3 apply (containers define surfaces; views are flat).
+- Field types allowlisted: `string`, `text`, `number`, `bool`, `date`, `datetime`, `enum`, `uuid`, `lookup`, `tags`, `attachments`.
+- Number fields may include `format` for shared display semantics. Use:
+  - `{"kind":"currency","currency":"NZD","precision":2}`
+  - `{"kind":"currency","currency_field":"invoice.currency_code","precision":2}`
+  - `{"kind":"percent","precision":2}`
+  - `{"kind":"measurement","unit":"kg","precision":3}`
+  - `{"kind":"duration","unit":"hrs","precision":2}`
+- `format.kind` allowlist: `plain`, `currency`, `percent`, `measurement`, `duration`.
+- `format` affects display only. Never store `$`, `%`, `kg`, `hrs`, or similar symbols in raw record values.
+- Fields may include manifest-driven `compute`.
+- Supported compute shapes:
+  - `{"expression": {...}}`
+  - `{"aggregate": {"op":"sum|avg|min|max|count","entity":"entity.child","field":"child.amount","where": {...}}}`
+- Expression refs may use direct field ids plus `$current.<field>`, `$record.<field>`, and `$parent.<field>`.
+- Expression ops supported: `add`, `sub`, `mul`, `div`, `mod`, `min`, `max`, `abs`, `neg`, `round`, `ceil`, `floor`, `coalesce`, `and`, `or`, `not`, `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `if`.
+- Aggregate `where` uses the standard condition DSL, with child row context as current/record and parent row available as `$parent`.
+- Prefer computed fields for totals, taxes, line amounts, rollups, and derived metrics instead of hand-coded UI behavior.
+- Prefer canonical numeric storage plus manifest formatting metadata for ERP-style money, units of measure, and durations.

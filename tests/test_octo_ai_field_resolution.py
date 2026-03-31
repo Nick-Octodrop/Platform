@@ -1,4 +1,5 @@
 import os
+import json
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,6 +21,11 @@ from app.main import (  # noqa: E402
     _AI_ENTITY_SESSION,
     _AI_ENTITY_SNAPSHOT,
     _ai_answer_restarts_request,
+    _ai_page_block_digest,
+    _ai_page_semantic_summary,
+    _ai_module_semantic_summary,
+    _ai_module_brief_for_semantic_planner,
+    _ai_relevant_references,
     _ai_build_structured_plan,
     _ai_collect_answer_hints,
     _ai_detect_planning_mode,
@@ -55,6 +61,190 @@ from app.main import (  # noqa: E402
 
 
 class TestOctoAiFieldResolution(unittest.TestCase):
+    def test_page_semantic_summary_highlights_dashboard_elements(self) -> None:
+        summary = _ai_page_semantic_summary(
+            {
+                "id": "construction.dashboard_page",
+                "title": "Operations Dashboard",
+                "layout": "single",
+                "content": [
+                    {
+                        "kind": "stat_cards",
+                        "cards": [
+                            {
+                                "id": "workers_on_site_today",
+                                "label": "Workers On Site Today",
+                                "entity_id": "entity.time_entry",
+                                "measure": "count_distinct:time_entry.worker_id",
+                            },
+                            {
+                                "id": "materials_logged_today",
+                                "label": "Materials Logged Today",
+                                "entity_id": "entity.material_log",
+                                "measure": "count",
+                                "target": "page:construction.material_report_page",
+                            },
+                        ],
+                    },
+                    {
+                        "kind": "container",
+                        "title": "Cost Breakdown",
+                        "variant": "card",
+                        "content": [
+                            {
+                                "kind": "view_modes",
+                                "entity_id": "entity.construction_expense",
+                                "default_mode": "graph",
+                                "modes": [{"mode": "graph", "target": "view:construction_cost_summary.graph"}],
+                            }
+                        ],
+                    },
+                ],
+            }
+        )
+
+        self.assertIn("Operations Dashboard", summary)
+        self.assertIn("Workers On Site Today", summary)
+        self.assertIn("Materials Logged Today", summary)
+        self.assertIn("Cost Breakdown", summary)
+        self.assertIn("material report page", summary)
+
+    def test_page_block_digest_captures_dashboard_surfaces(self) -> None:
+        digest = _ai_page_block_digest(
+            [
+                {
+                    "kind": "stat_cards",
+                    "cards": [
+                        {
+                            "id": "materials_logged_today",
+                            "label": "Materials Logged Today",
+                            "entity_id": "entity.material_log",
+                            "measure": "count",
+                            "target": "page:construction.material_report_page",
+                        }
+                    ],
+                },
+                {
+                    "kind": "container",
+                    "title": "Cost Breakdown",
+                    "variant": "card",
+                    "content": [
+                        {
+                            "kind": "view_modes",
+                            "entity_id": "entity.construction_expense",
+                            "default_mode": "graph",
+                            "modes": [{"mode": "graph", "target": "view:construction_cost_summary.graph"}],
+                        }
+                    ],
+                },
+            ]
+        )
+
+        self.assertIn("stat_cards", digest["block_kinds"])
+        self.assertIn("container", digest["block_kinds"])
+        self.assertEqual(digest["stat_cards"][0]["label"], "Materials Logged Today")
+        self.assertIn("construction.material_report_page", digest["linked_pages"])
+        self.assertEqual(digest["view_modes"][0]["entity_id"], "entity.construction_expense")
+        self.assertIn("graph", digest["view_modes"][0]["modes"])
+        self.assertEqual(digest["containers"][0]["title"], "Cost Breakdown")
+
+    def test_module_semantic_summary_mentions_dashboard_signals(self) -> None:
+        manifest = {
+            "module": {
+                "id": "construction",
+                "key": "construction",
+                "name": "Construction",
+                "description": "Unified construction management for projects and daily site operations.",
+            },
+            "entities": [
+                {"id": "entity.construction_project"},
+                {"id": "entity.material_log"},
+            ],
+            "pages": [
+                {
+                    "id": "construction.dashboard_page",
+                    "title": "Operations Dashboard",
+                    "layout": "single",
+                    "content": [
+                        {
+                            "kind": "stat_cards",
+                            "cards": [
+                                {
+                                    "id": "labour_hours_today",
+                                    "label": "Total Labour Hours Today",
+                                    "entity_id": "entity.time_entry",
+                                    "measure": "sum:time_entry.hours_worked",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+
+        summary = _ai_module_semantic_summary("construction", manifest)
+
+        self.assertIn("Construction", summary)
+        self.assertIn("Unified construction management", summary)
+        self.assertIn("construction project", summary)
+        self.assertIn("Operations Dashboard", summary)
+        self.assertIn("Total Labour Hours Today", summary)
+
+    def test_module_brief_includes_page_block_digest_for_dashboard_pages(self) -> None:
+        manifest = {
+            "module": {"id": "construction", "key": "construction", "name": "Construction"},
+            "entities": [],
+            "views": [],
+            "pages": [
+                {
+                    "id": "construction.dashboard_page",
+                    "title": "Operations Dashboard",
+                    "layout": "single",
+                    "content": [
+                        {
+                            "kind": "stat_cards",
+                            "cards": [
+                                {
+                                    "id": "labour_hours_today",
+                                    "label": "Total Labour Hours Today",
+                                    "entity_id": "entity.time_entry",
+                                    "measure": "sum:time_entry.hours_worked",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "actions": [],
+        }
+
+        brief = _ai_module_brief_for_semantic_planner("construction", manifest)
+
+        self.assertEqual(brief["pages"][0]["id"], "construction.dashboard_page")
+        self.assertEqual(
+            brief["pages"][0]["page_block_digest"]["stat_cards"][0]["label"],
+            "Total Labour Hours Today",
+        )
+        self.assertIn("Construction", brief["semantic_summary"])
+        self.assertIn("Total Labour Hours Today", brief["pages"][0]["semantic_summary"])
+
+    def test_relevant_references_include_construction_module_doc_for_dashboard_query(self) -> None:
+        manifest_path = Path("manifests/construction_ops_v3/construction.json")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        module_index = {"construction": {"manifest": manifest}}
+
+        references = _ai_relevant_references(
+            "construction dashboard materials logged today cost breakdown daily reports",
+            ["construction"],
+            module_index,
+            limit=10,
+        )
+
+        self.assertTrue(
+            any(item.get("kind") == "module_doc" and "construction_ops_v3/README.md" in str(item.get("path")) for item in references),
+            references,
+        )
+
     def test_detect_planning_mode_prefers_preview_then_create_then_workspace(self) -> None:
         self.assertEqual(
             _ai_detect_planning_mode("preview this change", create_module_intent=True, preview_only=True),
@@ -178,6 +368,9 @@ class TestOctoAiFieldResolution(unittest.TestCase):
             [item["module_id"] for item in context["workspace_modules"][:3]],
             ["jobs", "invoices", "contacts"],
         )
+        self.assertIn("semantic_summary", context["workspace_modules"][0])
+        self.assertTrue(context["workspace_modules"][0]["semantic_summary"])
+        self.assertIn("semantic_summary", context["workspace_kernel_digest"]["modules"][0])
         self.assertNotIn("tasks", context["workspace_context_scope"]["context_modules"][:3])
 
     def test_ops_workspace_prefers_real_sandbox_workspace_for_active_session(self) -> None:
@@ -1272,6 +1465,47 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertEqual(structured["primary_operation_family"], "data_model_change")
         self.assertFalse(structured["needs_clarification"])
 
+    def test_structured_plan_adds_cross_module_family_for_multi_module_ops(self) -> None:
+        structured = _ai_build_structured_plan(
+            {
+                "required_questions": [],
+                "required_question_meta": None,
+                "assumptions": [],
+                "risk_flags": [],
+                "affected_artifacts": [
+                    {"artifact_type": "module", "artifact_id": "contacts"},
+                    {"artifact_type": "module", "artifact_id": "jobs"},
+                ],
+                "proposed_changes": [
+                    {
+                        "op": "add_field",
+                        "artifact_type": "module",
+                        "artifact_id": "contacts",
+                        "field": {"label": "Priority", "type": "string"},
+                    },
+                    {
+                        "op": "add_field",
+                        "artifact_type": "module",
+                        "artifact_id": "jobs",
+                        "field": {"label": "Priority", "type": "string"},
+                    },
+                ],
+                "planner_state": {"intent": "multi_request"},
+            },
+            {
+                "full_selected_artifacts": [
+                    {"artifact_type": "module", "artifact_id": "contacts", "manifest": {"module": {"name": "Contacts"}}},
+                    {"artifact_type": "module", "artifact_id": "jobs", "manifest": {"module": {"name": "Jobs"}}},
+                ],
+            },
+        )
+
+        self.assertEqual(
+            structured["operation_families"],
+            ["data_model_change", "cross_module_change"],
+        )
+        self.assertEqual(structured["primary_operation_family"], "data_model_change")
+
     def test_structured_plan_marks_clarification_state(self) -> None:
         structured = _ai_build_structured_plan(
             {
@@ -1307,6 +1541,7 @@ class TestOctoAiFieldResolution(unittest.TestCase):
 
         self.assertEqual(structured["operation_families"], ["template_change"])
         self.assertEqual(structured["primary_operation_family"], "template_change")
+        self.assertEqual(main._ai_preview_automation_lines(message), [])
 
     def test_structured_plan_keeps_integration_family_for_preview_only_request(self) -> None:
         message = "Set up Xero sync so approved Contacts and Invoices can be sent across, but only when the accounting fields are complete."
@@ -1587,6 +1822,18 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         )
 
         self.assertEqual(labels, ["Sales", "Jobs", "Calendar", "Documents"])
+
+    def test_extract_requested_module_labels_handles_explicit_module_list_and_shared_reuse(self) -> None:
+        labels = main._ai_extract_requested_module_labels(
+            "Reuse the shared contacts module for client records.\n\n"
+            "Build only 2 custom modules:\n\n"
+            "work_management\n"
+            "billing\n\n"
+            "Module 1: work_management\n"
+            "Module 2: billing\n"
+        )
+
+        self.assertEqual(labels, ["Contacts", "Work Management", "Billing"])
 
     def test_extract_field_labels_stays_generic_across_modules(self) -> None:
         labels = _ai_extract_field_labels("Remove the fields VIP Level and Legacy Code from the Jobs module.")
@@ -2262,6 +2509,571 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertEqual(valid_ops, [])
         self.assertTrue(any(error.get("code") == "CREATE_MODULE_QUALITY" for error in errors))
 
+    def test_workflow_transitions_cover_adjacent_publishing_states(self) -> None:
+        transitions = main._ai_workflow_transitions_for_states(["draft", "testing", "approved", "published"])
+
+        self.assertTrue(any(item.get("from") == "draft" and item.get("to") == "testing" and item.get("label") == "Start Testing" for item in transitions))
+        self.assertTrue(any(item.get("from") == "testing" and item.get("to") == "approved" and item.get("label") == "Approve" for item in transitions))
+        self.assertTrue(any(item.get("from") == "approved" and item.get("to") == "published" and item.get("label") == "Publish" for item in transitions))
+
+    def test_create_module_quality_requires_lifecycle_buttons_across_longer_status_path(self) -> None:
+        manifest = {
+            "module": {"id": "policy_studio", "key": "policy_studio", "name": "Policy Studio"},
+            "entities": [
+                {
+                    "id": "entity.policy",
+                    "display_field": "policy.name",
+                    "fields": [
+                        {"id": "policy.id", "type": "uuid", "label": "ID"},
+                        {"id": "policy.name", "type": "string", "label": "Policy Name"},
+                        {
+                            "id": "policy.status",
+                            "type": "enum",
+                            "label": "Status",
+                            "options": [
+                                {"label": "Draft", "value": "draft"},
+                                {"label": "Testing", "value": "testing"},
+                                {"label": "Approved", "value": "approved"},
+                                {"label": "Published", "value": "published"},
+                            ],
+                        },
+                        {"id": "policy.owner_id", "type": "user", "label": "Owner"},
+                        {"id": "policy.category", "type": "string", "label": "Category"},
+                        {"id": "policy.audience", "type": "string", "label": "Audience"},
+                        {"id": "policy.review_cycle_days", "type": "number", "label": "Review Cycle Days"},
+                        {"id": "policy.effective_date", "type": "date", "label": "Effective Date"},
+                        {"id": "policy.publish_date", "type": "date", "label": "Publish Date"},
+                        {"id": "policy.version_number", "type": "number", "label": "Version Number"},
+                        {"id": "policy.summary", "type": "text", "label": "Summary"},
+                        {"id": "policy.created_at", "type": "datetime", "label": "Created At"},
+                    ],
+                }
+            ],
+            "views": [
+                {"id": "policy.list", "kind": "list", "entity": "entity.policy", "columns": [{"field_id": "policy.name"}]},
+                {"id": "policy.form", "kind": "form", "entity": "entity.policy", "sections": [
+                    {"id": "main", "title": "Policy", "fields": ["policy.name", "policy.status", "policy.owner_id", "policy.category", "policy.audience"]},
+                    {"id": "governance", "title": "Governance", "fields": ["policy.review_cycle_days", "policy.effective_date", "policy.publish_date"]},
+                ]},
+                {"id": "policy.kanban", "kind": "kanban", "entity": "entity.policy"},
+            ],
+            "pages": [
+                {"id": "policy.list_page", "title": "Policy Studio", "layout": "single", "content": []},
+                {"id": "policy.form_page", "title": "Policy", "layout": "single", "content": []},
+            ],
+            "workflows": [
+                {
+                    "id": "workflow.policy_status",
+                    "entity": "entity.policy",
+                    "status_field": "policy.status",
+                    "states": [
+                        {"id": "draft", "label": "Draft"},
+                        {"id": "testing", "label": "Testing"},
+                        {"id": "approved", "label": "Approved"},
+                        {"id": "published", "label": "Published"},
+                    ],
+                }
+            ],
+            "actions": [
+                {"id": "action.policy_start_testing", "kind": "update_record", "label": "Start Testing", "entity_id": "entity.policy"},
+                {"id": "action.policy_approve", "kind": "update_record", "label": "Approve", "entity_id": "entity.policy"},
+            ],
+        }
+
+        report = main._ai_module_manifest_quality_report("policy_studio", manifest, family="operations")
+
+        self.assertFalse(report["ok"])
+        self.assertTrue(any("workflow action buttons" in issue for issue in report["issues"]))
+
+    def test_new_module_scaffold_builds_adjacent_status_buttons_for_publishing_flow(self) -> None:
+        manifest = main._ai_build_new_module_scaffold(
+            "policy_studio",
+            "Policy Studio",
+            "Create a policy publishing app called Policy Studio with draft, testing, approved, and published statuses, plus action buttons for testing, approving, and publishing policies.",
+        )
+
+        workflows = [item for item in (manifest.get("workflows") or []) if isinstance(item, dict)]
+        self.assertTrue(workflows)
+        states = [item.get("id") for item in (workflows[0].get("states") or []) if isinstance(item, dict)]
+        self.assertIn("draft", states)
+        self.assertIn("testing", states)
+        self.assertIn("approved", states)
+        self.assertIn("published", states)
+
+        action_labels = [
+            action.get("label")
+            for action in (manifest.get("actions") or [])
+            if isinstance(action, dict) and action.get("kind") == "update_record"
+        ]
+        self.assertIn("Start Testing", action_labels)
+        self.assertIn("Approve", action_labels)
+        self.assertIn("Publish", action_labels)
+
+        form_view = next(
+            (
+                view
+                for view in (manifest.get("views") or [])
+                if isinstance(view, dict) and view.get("kind") == "form"
+            ),
+            {},
+        )
+        header = form_view.get("header") if isinstance(form_view.get("header"), dict) else {}
+        self.assertEqual((header.get("statusbar") or {}).get("field_id"), "policy_studio.status")
+        secondary_action_ids = [
+            item.get("action_id")
+            for item in (header.get("secondary_actions") or [])
+            if isinstance(item, dict) and isinstance(item.get("action_id"), str)
+        ]
+        self.assertTrue(any(action_id.endswith("start_testing") for action_id in secondary_action_ids))
+        self.assertTrue(any(action_id.endswith("approve") for action_id in secondary_action_ids))
+        self.assertTrue(any(action_id.endswith("publish") for action_id in secondary_action_ids))
+
+    def test_normalize_module_design_spec_preserves_generic_related_entities(self) -> None:
+        normalized = main._ai_normalize_module_design_spec(
+            "project_hub",
+            "Project Hub",
+            "Create a project workspace with update logs.",
+            {
+                "family": "operations",
+                "entity_slug": "project_hub",
+                "entity_label": "Project",
+                "nav_label": "Projects",
+                "primary_label": "Project Name",
+                "statuses": ["draft", "active", "completed"],
+                "fields": [
+                    {"id": "project_hub.name", "type": "string", "label": "Project Name"},
+                    {"id": "project_hub.status", "type": "enum", "label": "Status", "options": ["draft", "active", "completed"]},
+                    {"id": "project_hub.owner_id", "type": "user", "label": "Owner"},
+                    {"id": "project_hub.start_date", "type": "date", "label": "Start Date"},
+                ],
+                "related_entities": [
+                    {
+                        "entity_slug": "project_update",
+                        "entity_label": "Project Update",
+                        "nav_label": "Updates",
+                        "related_title": "Updates",
+                        "related_tab_label": "Updates",
+                        "fields": [
+                            {"id": "project_update.update_date", "type": "date", "label": "Update Date"},
+                            {"id": "project_update.summary", "type": "text", "label": "Summary"},
+                        ],
+                    }
+                ],
+            },
+        )
+
+        related_entities = [item for item in (normalized.get("related_entities") or []) if isinstance(item, dict)]
+        self.assertEqual(len(related_entities), 1)
+        related = related_entities[0]
+        self.assertEqual(related.get("entity_slug"), "project_update")
+        field_ids = [field.get("id") for field in (related.get("fields") or []) if isinstance(field, dict)]
+        self.assertIn("project_update.name", field_ids)
+        self.assertIn("project_update.project_hub_id", field_ids)
+        self.assertIn("project_update.update_date", field_ids)
+
+    def test_build_rich_module_scaffold_adds_related_entity_tabs_from_design_spec(self) -> None:
+        design_spec = main._ai_normalize_module_design_spec(
+            "project_hub",
+            "Project Hub",
+            "Create a project workspace with update logs.",
+            {
+                "family": "operations",
+                "entity_slug": "project_hub",
+                "entity_label": "Project",
+                "nav_label": "Projects",
+                "primary_label": "Project Name",
+                "statuses": ["draft", "active", "completed"],
+                "fields": [
+                    {"id": "project_hub.name", "type": "string", "label": "Project Name"},
+                    {"id": "project_hub.status", "type": "enum", "label": "Status", "options": ["draft", "active", "completed"]},
+                    {"id": "project_hub.owner_id", "type": "user", "label": "Owner"},
+                    {"id": "project_hub.start_date", "type": "date", "label": "Start Date"},
+                    {"id": "project_hub.summary", "type": "text", "label": "Summary"},
+                ],
+                "related_entities": [
+                    {
+                        "entity_slug": "project_update",
+                        "entity_label": "Project Update",
+                        "nav_label": "Updates",
+                        "related_title": "Updates",
+                        "related_tab_label": "Updates",
+                        "related_tab_id": "updates_tab",
+                        "fields": [
+                            {"id": "project_update.update_date", "type": "date", "label": "Update Date"},
+                            {"id": "project_update.summary", "type": "text", "label": "Summary"},
+                        ],
+                    }
+                ],
+            },
+        )
+
+        manifest, _, _ = main._ai_build_rich_module_scaffold(
+            "project_hub",
+            "Project Hub",
+            "Create a project workspace with update logs.",
+            design_spec=design_spec,
+        )
+
+        entity_ids = [entity.get("id") for entity in (manifest.get("entities") or []) if isinstance(entity, dict)]
+        self.assertIn("entity.project_hub", entity_ids)
+        self.assertIn("entity.project_update", entity_ids)
+
+        relation_pairs = [
+            (relation.get("from"), relation.get("to"))
+            for relation in (manifest.get("relations") or [])
+            if isinstance(relation, dict)
+        ]
+        self.assertIn(("entity.project_update", "entity.project_hub"), relation_pairs)
+
+        defaults = ((((manifest.get("app") or {}).get("defaults") or {}).get("entities") or {}))
+        self.assertIn("entity.project_update", defaults)
+
+        primary_form = next(
+            (
+                view
+                for view in (manifest.get("views") or [])
+                if isinstance(view, dict) and view.get("id") == "project_hub.form"
+            ),
+            {},
+        )
+        tabs = (((primary_form.get("header") or {}).get("tabs") or {}).get("tabs") or [])
+        updates_tab = next((tab for tab in tabs if isinstance(tab, dict) and tab.get("id") == "updates_tab"), {})
+        related_list = ((updates_tab.get("content") or [None])[0]) if isinstance(updates_tab, dict) else None
+        self.assertEqual((related_list or {}).get("kind"), "related_list")
+        self.assertEqual((related_list or {}).get("entity_id"), "entity.project_update")
+
+    def test_normalize_module_design_spec_preserves_field_conditions(self) -> None:
+        normalized = main._ai_normalize_module_design_spec(
+            "vendor_approvals",
+            "Vendor Approvals",
+            "Create a vendor approvals app with conditional review notes and active contract dates.",
+            {
+                "family": "operations",
+                "entity_slug": "vendor_approval",
+                "entity_label": "Vendor Approval",
+                "nav_label": "Vendor Approvals",
+                "primary_label": "Vendor Name",
+                "statuses": ["draft", "active", "rejected", "approved"],
+                "fields": [
+                    {"id": "vendor_approval.name", "type": "string", "label": "Vendor Name"},
+                    {"id": "vendor_approval.status", "type": "enum", "label": "Status", "options": ["draft", "active", "rejected", "approved"]},
+                    {"id": "vendor_approval.owner_id", "type": "user", "label": "Owner"},
+                    {"id": "vendor_approval.contract_end_date", "type": "date", "label": "Contract End Date", "visible_when": {"op": "eq", "field": "status", "value": "active"}},
+                    {"id": "vendor_approval.review_notes", "type": "text", "label": "Review Notes", "required_when": {"op": "eq", "field": "vendor_approval.status", "value": "rejected"}},
+                ],
+            },
+        )
+
+        fields_by_id = {
+            field.get("id"): field
+            for field in (normalized.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        }
+        self.assertEqual(
+            fields_by_id["vendor_approval.contract_end_date"].get("visible_when"),
+            {"op": "eq", "field": "vendor_approval.status", "value": "active"},
+        )
+        self.assertEqual(
+            fields_by_id["vendor_approval.review_notes"].get("required_when"),
+            {"op": "eq", "field": "vendor_approval.status", "value": "rejected"},
+        )
+
+    def test_build_design_automation_candidate_ops_from_design_spec(self) -> None:
+        design_spec = main._ai_normalize_module_design_spec(
+            "vendor_approvals",
+            "Vendor Approvals",
+            "Create a vendor approvals app with approval notifications.",
+            {
+                "family": "operations",
+                "entity_slug": "vendor_approval",
+                "entity_label": "Vendor Approval",
+                "nav_label": "Vendor Approvals",
+                "primary_label": "Vendor Name",
+                "statuses": ["draft", "approved", "rejected"],
+                "fields": [
+                    {"id": "vendor_approval.name", "type": "string", "label": "Vendor Name"},
+                    {"id": "vendor_approval.status", "type": "enum", "label": "Status", "options": ["draft", "approved", "rejected"]},
+                    {"id": "vendor_approval.owner_id", "type": "user", "label": "Owner"},
+                    {"id": "vendor_approval.owner_email", "type": "string", "label": "Owner Email"},
+                    {"id": "vendor_approval.request_date", "type": "date", "label": "Request Date"},
+                    {"id": "vendor_approval.contract_end_date", "type": "date", "label": "Contract End Date"},
+                    {"id": "vendor_approval.compliance_complete", "type": "bool", "label": "Compliance Complete"},
+                    {"id": "vendor_approval.review_notes", "type": "text", "label": "Review Notes"},
+                    {"id": "vendor_approval.summary", "type": "text", "label": "Summary"},
+                ],
+                "automation_intents": [
+                    {
+                        "id": "approved_notification",
+                        "label": "Approved Notification",
+                        "kind": "status_notification",
+                        "channel": "email",
+                        "status_values": ["approved"],
+                        "recipient": "$record.owner_email",
+                        "delay_seconds": 3600,
+                    }
+                ],
+            },
+        )
+
+        manifest, _, normalized_spec = main._ai_build_rich_module_scaffold(
+            "vendor_approvals",
+            "Vendor Approvals",
+            "Create a vendor approvals app with approval notifications.",
+            design_spec=design_spec,
+        )
+        automation_ops = main._ai_build_design_automation_candidate_ops("vendor_approvals", manifest, normalized_spec)
+
+        self.assertEqual(len(automation_ops), 1)
+        automation_op = automation_ops[0]
+        self.assertEqual(automation_op.get("op"), "create_automation_record")
+        automation = automation_op.get("automation") or {}
+        self.assertEqual((automation.get("trigger") or {}).get("event_types"), ["workflow.status_changed"])
+        filters = (automation.get("trigger") or {}).get("filters") or []
+        self.assertTrue(any(isinstance(item, dict) and item.get("path") == "to" and item.get("value") == "approved" for item in filters))
+        steps = automation.get("steps") or []
+        self.assertEqual(steps[0].get("kind"), "delay")
+        self.assertEqual(steps[1].get("action_id"), "system.send_email")
+        self.assertEqual((steps[1].get("inputs") or {}).get("to"), "{{ record.owner_email }}")
+
+    def test_preflight_candidate_ops_accepts_create_module_with_automation_record(self) -> None:
+        design_spec = main._ai_normalize_module_design_spec(
+            "vendor_approvals",
+            "Vendor Approvals",
+            "Create a vendor approvals app with conditional notes and approval notifications.",
+            {
+                "family": "operations",
+                "entity_slug": "vendor_approval",
+                "entity_label": "Vendor Approval",
+                "nav_label": "Vendor Approvals",
+                "primary_label": "Vendor Name",
+                "statuses": ["draft", "approved", "rejected"],
+                "fields": [
+                    {"id": "vendor_approval.name", "type": "string", "label": "Vendor Name"},
+                    {"id": "vendor_approval.status", "type": "enum", "label": "Status", "options": ["draft", "approved", "rejected"]},
+                    {"id": "vendor_approval.owner_id", "type": "user", "label": "Owner"},
+                    {"id": "vendor_approval.owner_email", "type": "string", "label": "Owner Email"},
+                    {"id": "vendor_approval.request_date", "type": "date", "label": "Request Date"},
+                    {"id": "vendor_approval.contract_end_date", "type": "date", "label": "Contract End Date", "visible_when": {"op": "eq", "field": "status", "value": "approved"}},
+                    {"id": "vendor_approval.compliance_complete", "type": "bool", "label": "Compliance Complete"},
+                    {"id": "vendor_approval.review_notes", "type": "text", "label": "Review Notes", "required_when": {"op": "eq", "field": "status", "value": "rejected"}},
+                    {"id": "vendor_approval.summary", "type": "text", "label": "Summary"},
+                ],
+                "automation_intents": [
+                    {
+                        "id": "approved_notification",
+                        "label": "Approved Notification",
+                        "kind": "status_notification",
+                        "channel": "email",
+                        "status_values": ["approved"],
+                        "recipient": "$record.owner_email",
+                    }
+                ],
+            },
+        )
+        manifest, _, normalized_spec = main._ai_build_rich_module_scaffold(
+            "vendor_approvals",
+            "Vendor Approvals",
+            "Create a vendor approvals app with conditional notes and approval notifications.",
+            design_spec=design_spec,
+        )
+        automation_ops = main._ai_build_design_automation_candidate_ops("vendor_approvals", manifest, normalized_spec)
+
+        valid_ops, errors = _ai_preflight_candidate_ops(
+            {},
+            [
+                {
+                    "op": "create_module",
+                    "artifact_type": "module",
+                    "artifact_id": "vendor_approvals",
+                    "manifest": manifest,
+                    "design_spec": normalized_spec,
+                },
+                *automation_ops,
+            ],
+        )
+
+        self.assertEqual(errors, [])
+        self.assertIn("create_module", [op.get("op") for op in valid_ops])
+        self.assertIn("create_automation_record", [op.get("op") for op in valid_ops])
+
+    def test_structured_plan_includes_create_module_conditions_and_automation_intents(self) -> None:
+        design_spec = main._ai_normalize_module_design_spec(
+            "vendor_approvals",
+            "Vendor Approvals",
+            "Create a vendor approvals app with conditional notes and approval notifications.",
+            {
+                "family": "operations",
+                "entity_slug": "vendor_approval",
+                "entity_label": "Vendor Approval",
+                "nav_label": "Vendor Approvals",
+                "primary_label": "Vendor Name",
+                "statuses": ["draft", "approved", "rejected"],
+                "fields": [
+                    {"id": "vendor_approval.name", "type": "string", "label": "Vendor Name"},
+                    {"id": "vendor_approval.status", "type": "enum", "label": "Status", "options": ["draft", "approved", "rejected"]},
+                    {"id": "vendor_approval.owner_id", "type": "user", "label": "Owner"},
+                    {"id": "vendor_approval.review_notes", "type": "text", "label": "Review Notes", "required_when": {"op": "eq", "field": "status", "value": "rejected"}},
+                    {"id": "vendor_approval.summary", "type": "text", "label": "Summary"},
+                    {"id": "vendor_approval.request_date", "type": "date", "label": "Request Date"},
+                    {"id": "vendor_approval.contract_end_date", "type": "date", "label": "Contract End Date"},
+                    {"id": "vendor_approval.owner_email", "type": "string", "label": "Owner Email"},
+                ],
+                "automation_intents": [
+                    {
+                        "id": "approved_notification",
+                        "label": "Approved Notification",
+                        "kind": "status_notification",
+                        "channel": "email",
+                        "status_values": ["approved"],
+                        "recipient": "$record.owner_email",
+                    }
+                ],
+            },
+        )
+        manifest, _, normalized_spec = main._ai_build_rich_module_scaffold(
+            "vendor_approvals",
+            "Vendor Approvals",
+            "Create a vendor approvals app with conditional notes and approval notifications.",
+            design_spec=design_spec,
+        )
+
+        structured = _ai_build_structured_plan(
+            {
+                "planner_state": {"intent": "create_module", "module_name": "Vendor Approvals"},
+                "affected_artifacts": [{"artifact_type": "module", "artifact_id": "vendor_approvals"}],
+                "proposed_changes": [
+                    {
+                        "op": "create_module",
+                        "artifact_type": "module",
+                        "artifact_id": "vendor_approvals",
+                        "manifest": manifest,
+                        "design_spec": normalized_spec,
+                    }
+                ],
+                "required_questions": ["Confirm this plan?"],
+                "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan"},
+            },
+            {},
+        )
+
+        sections = {item["key"]: item["items"] for item in structured["sections"]}
+        self.assertIn(
+            "Vendor Approvals: 'Review Notes' required when Status is 'rejected'.",
+            sections["conditions"],
+        )
+        self.assertIn(
+            "Vendor Approvals: automation intents include Approved Notification.",
+            sections["automations"],
+        )
+        self.assertEqual(
+            structured["operation_families"],
+            ["create_module", "automation_change"],
+        )
+
+    def test_build_rich_module_scaffold_adds_core_triggers_from_structure(self) -> None:
+        design_spec = main._ai_normalize_module_design_spec(
+            "policy_studio",
+            "Policy Studio",
+            "Create a policy publishing workspace.",
+            {
+                "family": "operations",
+                "entity_slug": "policy",
+                "entity_label": "Policy",
+                "nav_label": "Policies",
+                "primary_label": "Policy Name",
+                "statuses": ["draft", "approved", "published"],
+                "fields": [
+                    {"id": "policy.name", "type": "string", "label": "Policy Name"},
+                    {"id": "policy.status", "type": "enum", "label": "Status", "options": ["draft", "approved", "published"]},
+                    {"id": "policy.owner_id", "type": "user", "label": "Owner"},
+                    {"id": "policy.publish_date", "type": "date", "label": "Publish Date"},
+                    {"id": "policy.summary", "type": "text", "label": "Summary"},
+                ],
+            },
+        )
+
+        manifest, _, _ = main._ai_build_rich_module_scaffold(
+            "policy_studio",
+            "Policy Studio",
+            "Create a policy publishing workspace.",
+            design_spec=design_spec,
+        )
+
+        trigger_ids = [
+            trigger.get("id")
+            for trigger in (manifest.get("triggers") or [])
+            if isinstance(trigger, dict) and isinstance(trigger.get("id"), str)
+        ]
+        self.assertIn("policy_studio.record.created", trigger_ids)
+        self.assertIn("policy_studio.record.updated", trigger_ids)
+        self.assertIn("policy_studio.workflow.status_changed", trigger_ids)
+
+    def test_module_manifest_quality_requires_triggers_for_workflow_modules(self) -> None:
+        manifest = {
+            "module": {"id": "policy_studio", "key": "policy_studio", "name": "Policy Studio"},
+            "entities": [
+                {
+                    "id": "entity.policy",
+                    "display_field": "policy.name",
+                    "fields": [
+                        {"id": "policy.id", "type": "uuid", "label": "ID"},
+                        {"id": "policy.name", "type": "string", "label": "Policy Name"},
+                        {
+                            "id": "policy.status",
+                            "type": "enum",
+                            "label": "Status",
+                            "options": [
+                                {"label": "Draft", "value": "draft"},
+                                {"label": "Approved", "value": "approved"},
+                                {"label": "Published", "value": "published"},
+                            ],
+                        },
+                        {"id": "policy.owner_id", "type": "user", "label": "Owner"},
+                        {"id": "policy.summary", "type": "text", "label": "Summary"},
+                        {"id": "policy.publish_date", "type": "date", "label": "Publish Date"},
+                        {"id": "policy.version_number", "type": "number", "label": "Version Number"},
+                        {"id": "policy.created_at", "type": "datetime", "label": "Created At"},
+                    ],
+                }
+            ],
+            "views": [
+                {"id": "policy.list", "kind": "list", "entity": "entity.policy", "columns": [{"field_id": "policy.name"}]},
+                {"id": "policy.form", "kind": "form", "entity": "entity.policy", "sections": [
+                    {"id": "main", "title": "Policy", "fields": ["policy.name", "policy.status", "policy.owner_id", "policy.summary"]},
+                    {"id": "schedule", "title": "Schedule", "fields": ["policy.publish_date", "policy.version_number"]},
+                ]},
+                {"id": "policy.kanban", "kind": "kanban", "entity": "entity.policy"},
+                {"id": "policy.calendar", "kind": "calendar", "entity": "entity.policy"},
+            ],
+            "pages": [
+                {"id": "policy.list_page", "title": "Policy Studio", "layout": "single", "content": []},
+                {"id": "policy.form_page", "title": "Policy", "layout": "single", "content": []},
+                {"id": "policy.calendar_page", "title": "Policy Calendar", "layout": "single", "content": []},
+            ],
+            "workflows": [
+                {
+                    "id": "workflow.policy_status",
+                    "entity": "entity.policy",
+                    "status_field": "policy.status",
+                    "states": [
+                        {"id": "draft", "label": "Draft"},
+                        {"id": "approved", "label": "Approved"},
+                        {"id": "published", "label": "Published"},
+                    ],
+                }
+            ],
+            "actions": [
+                {"id": "action.policy_approve", "kind": "update_record", "label": "Approve", "entity_id": "entity.policy"},
+                {"id": "action.policy_publish", "kind": "update_record", "label": "Publish", "entity_id": "entity.policy"},
+            ],
+            "triggers": [],
+        }
+
+        report = main._ai_module_manifest_quality_report("policy_studio", manifest, family="operations")
+
+        self.assertFalse(report["ok"])
+        self.assertTrue(any("trigger surfaces" in issue for issue in report["issues"]))
+
     def test_plan_from_message_follow_up_workflow_action_request_prefers_pending_new_module_over_selected_module(self) -> None:
         pending_manifest = {
             "module": {"id": "cooking", "key": "cooking", "name": "Cooking"},
@@ -2632,6 +3444,29 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("Approved Categories", field_labels)
         self.assertIn("Review Notes", field_labels)
 
+    def test_generate_module_design_spec_skips_model_for_low_complexity_starter_brief(self) -> None:
+        prompt = "Create a Holiday Planner module to manage upcoming trips, travellers, booking dates, budgets, suppliers, and notes. Call it Holiday Planner."
+
+        with (
+            patch.object(main, "USE_AI", True),
+            patch.object(main, "_openai_configured", lambda: True),
+            patch.object(
+                main,
+                "_openai_chat_completion",
+                side_effect=AssertionError("model-backed design should be skipped for this starter create-module brief"),
+            ),
+        ):
+            design_spec = main._ai_generate_module_design_spec("holiday_planner", "Holiday Planner", prompt)
+
+        self.assertEqual(design_spec.get("family"), "planning")
+        self.assertEqual(design_spec.get("design_source"), "deterministic_fallback")
+        field_labels = [field.get("label") for field in (design_spec.get("fields") or []) if isinstance(field, dict)]
+        self.assertIn("Start Date", field_labels)
+        self.assertIn("End Date", field_labels)
+        self.assertIn("Participants", field_labels)
+        self.assertIn("Supplier", field_labels)
+        self.assertIn("calendar", [view for view in ((design_spec.get("experience") or {}).get("views") or []) if isinstance(view, str)])
+
     def test_plan_from_message_vendor_compliance_keeps_requested_fields_in_preview(self) -> None:
         prompt = "Create a Vendor Compliance module for insurance expiry, safety docs, onboarding status, approved categories, and review notes."
 
@@ -2672,6 +3507,569 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("Onboarding Status", text)
         self.assertIn("Approved Categories", text)
         self.assertIn("Review Notes", text)
+
+    def test_plan_from_message_holiday_planner_create_module_skips_model_design_request(self) -> None:
+        prompt = "Create a Holiday Planner module to manage upcoming trips, travellers, booking dates, budgets, suppliers, and notes. Call it Holiday Planner."
+
+        with (
+            patch.object(main, "USE_AI", True),
+            patch.object(main, "_openai_configured", lambda: True),
+            patch.object(
+                main,
+                "_openai_chat_completion",
+                side_effect=AssertionError("model-backed design should not be needed for this starter create-module brief"),
+            ),
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+        ):
+            plan, derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                prompt,
+                answer_hints={},
+            )
+
+        self.assertEqual(derived.get("status"), "waiting_input")
+        self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
+        create_op = next(op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict) and op.get("op") == "create_module")
+        self.assertEqual(create_op.get("artifact_id"), "holiday_planner")
+        manifest = create_op.get("manifest") or {}
+        entity = next((item for item in (manifest.get("entities") or []) if isinstance(item, dict)), {})
+        field_labels = [field.get("label") for field in (entity.get("fields") or []) if isinstance(field, dict)]
+        self.assertIn("Participants", field_labels)
+        self.assertIn("Supplier", field_labels)
+
+    def test_extract_new_module_name_keeps_compound_business_name_with_generic_noun(self) -> None:
+        prompt = "Create a Job Hazard Analysis module to record hazards, controls, responsible people, review dates, and signoff before work starts."
+
+        self.assertEqual(main._ai_extract_new_module_name(prompt), "Job Hazard Analysis")
+        self.assertEqual(main._ai_extract_requested_new_module_labels(prompt, [], {}), ["Job Hazard Analysis"])
+        self.assertEqual(main._ai_detect_new_module_family("Job Hazard Analysis", prompt), "safety")
+
+    def test_generate_module_design_spec_skips_model_for_job_hazard_analysis_starter_brief(self) -> None:
+        prompt = "Create a Job Hazard Analysis module to record hazards, controls, responsible people, review dates, and signoff before work starts."
+
+        with (
+            patch.object(main, "USE_AI", True),
+            patch.object(main, "_openai_configured", lambda: True),
+            patch.object(
+                main,
+                "_openai_chat_completion",
+                side_effect=AssertionError("model-backed design should be skipped for this safety assessment starter brief"),
+            ),
+        ):
+            design_spec = main._ai_generate_module_design_spec("job_hazard_analysis", "Job Hazard Analysis", prompt)
+
+        self.assertEqual(design_spec.get("family"), "safety")
+        self.assertEqual(design_spec.get("design_source"), "deterministic_fallback")
+        field_labels = [field.get("label") for field in (design_spec.get("fields") or []) if isinstance(field, dict)]
+        self.assertIn("Hazard Description", field_labels)
+        self.assertIn("Controls", field_labels)
+        self.assertIn("Responsible Person", field_labels)
+        self.assertIn("Review Date", field_labels)
+
+    def test_plan_from_message_job_hazard_analysis_create_module_stays_in_confirm_plan_flow(self) -> None:
+        prompt = "Create a Job Hazard Analysis module to record hazards, controls, responsible people, review dates, and signoff before work starts."
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+            patch.object(main, "_openai_configured", lambda: False),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                prompt,
+                answer_hints={},
+            )
+
+        self.assertEqual(derived.get("status"), "waiting_input")
+        self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
+        self.assertEqual((plan.get("planner_state") or {}).get("intent"), "create_module")
+        self.assertEqual((plan.get("planner_state") or {}).get("module_name"), "Job Hazard Analysis")
+        create_op = next(op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict) and op.get("op") == "create_module")
+        self.assertEqual(create_op.get("artifact_id"), "job_hazard_analysis")
+
+        text = _ai_plan_assistant_text(plan, {"request_summary": prompt, "full_selected_artifacts": []})
+        self.assertIn("Create a new module 'Job Hazard Analysis'.", text)
+        self.assertIn("Planned changes:", text)
+        self.assertNotIn("What should the new module be called?", text)
+
+    def test_build_create_module_dependency_ops_adds_required_dependency_for_external_lookup(self) -> None:
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.contact",
+                    "fields": [
+                        {"id": "contact.id", "type": "uuid", "label": "ID"},
+                        {"id": "contact.name", "type": "string", "label": "Name"},
+                    ],
+                }
+            ],
+            "views": [],
+        }
+        module_index = {
+            "contacts": {
+                "module_key": "contacts",
+                "version": "1.0.0",
+                "manifest": contacts_manifest,
+            }
+        }
+        design_spec = main._ai_normalize_module_design_spec(
+            "client_projects",
+            "Client Projects",
+            "Create a client projects module linked to contacts.",
+            {
+                "family": "operations",
+                "entity_slug": "client_project",
+                "entity_label": "Client Project",
+                "nav_label": "Client Projects",
+                "primary_label": "Project Name",
+                "statuses": ["draft", "active", "completed"],
+                "fields": [
+                    {"id": "client_project.name", "type": "string", "label": "Project Name"},
+                    {
+                        "id": "client_project.client_contact_id",
+                        "type": "lookup",
+                        "label": "Client",
+                        "entity": "entity.contact",
+                        "display_field": "contact.name",
+                    },
+                    {"id": "client_project.status", "type": "enum", "label": "Status", "options": ["draft", "active", "completed"]},
+                    {"id": "client_project.start_date", "type": "date", "label": "Start Date"},
+                    {"id": "client_project.notes", "type": "text", "label": "Notes"},
+                ],
+            },
+        )
+        manifest, _, normalized_spec = main._ai_build_rich_module_scaffold(
+            "client_projects",
+            "Client Projects",
+            "Create a client projects module linked to contacts.",
+            design_spec=design_spec,
+        )
+
+        dependency_ops = main._ai_build_create_module_dependency_ops("client_projects", manifest, module_index)
+
+        self.assertEqual(
+            dependency_ops,
+            [
+                {
+                    "op": "update_dependency",
+                    "artifact_type": "module",
+                    "artifact_id": "client_projects",
+                    "kind": "required",
+                    "dependency": {"module": "contacts", "version": ">=1.0.0"},
+                }
+            ],
+        )
+        self.assertTrue(any(isinstance(item, dict) for item in (normalized_spec.get("fields") or [])))
+
+    def test_plan_from_message_create_module_includes_dependency_ops_for_shared_lookup_modules(self) -> None:
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.contact",
+                    "fields": [
+                        {"id": "contact.id", "type": "uuid", "label": "ID"},
+                        {"id": "contact.name", "type": "string", "label": "Name"},
+                    ],
+                }
+            ],
+            "views": [],
+        }
+        module_index = {
+            "contacts": {
+                "module_key": "contacts",
+                "version": "1.0.0",
+                "manifest": contacts_manifest,
+            }
+        }
+        design_spec = main._ai_normalize_module_design_spec(
+            "client_projects",
+            "Client Projects",
+            "Create a client projects module linked to contacts.",
+            {
+                "family": "operations",
+                "entity_slug": "client_project",
+                "entity_label": "Client Project",
+                "nav_label": "Client Projects",
+                "primary_label": "Project Name",
+                "statuses": ["draft", "active", "completed"],
+                "fields": [
+                    {"id": "client_project.name", "type": "string", "label": "Project Name"},
+                    {
+                        "id": "client_project.client_contact_id",
+                        "type": "lookup",
+                        "label": "Client",
+                        "entity": "entity.contact",
+                        "display_field": "contact.name",
+                    },
+                    {"id": "client_project.status", "type": "enum", "label": "Status", "options": ["draft", "active", "completed"]},
+                    {"id": "client_project.start_date", "type": "date", "label": "Start Date"},
+                    {"id": "client_project.notes", "type": "text", "label": "Notes"},
+                ],
+            },
+        )
+        manifest, _, normalized_spec = main._ai_build_rich_module_scaffold(
+            "client_projects",
+            "Client Projects",
+            "Create a client projects module linked to contacts.",
+            design_spec=design_spec,
+        )
+        package = {
+            "manifest": manifest,
+            "family": "operations",
+            "design_spec": normalized_spec,
+            "quality": {"ok": True, "strengths": [], "issues": []},
+            "automation_ops": [],
+        }
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+            patch.object(main, "_ai_build_new_module_package", lambda *_args, **_kwargs: package),
+        ):
+            plan, derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                "Create a Client Projects module called Client Projects.",
+                answer_hints={},
+            )
+
+        self.assertEqual(derived.get("affected_modules"), ["client_projects"])
+        self.assertEqual(
+            [op.get("op") for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)],
+            ["create_module", "update_dependency"],
+        )
+        dependency_op = next(
+            op
+            for op in (plan.get("candidate_operations") or [])
+            if isinstance(op, dict) and op.get("op") == "update_dependency"
+        )
+        self.assertEqual((dependency_op.get("dependency") or {}).get("module"), "contacts")
+        text = _ai_plan_assistant_text(
+            plan,
+            {
+                "request_summary": "Create a Client Projects module called Client Projects.",
+                "full_selected_artifacts": [
+                    {"artifact_type": "module", "artifact_id": "contacts", "manifest": contacts_manifest},
+                ],
+            },
+        )
+        self.assertIn("Contacts", text)
+
+    def test_extract_requested_new_module_labels_skips_reused_existing_modules(self) -> None:
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.contact",
+                    "fields": [
+                        {"id": "contact.id", "type": "uuid", "label": "ID"},
+                        {"id": "contact.name", "type": "string", "label": "Name"},
+                    ],
+                }
+            ],
+            "views": [],
+        }
+        module_index = {"contacts": {"manifest": contacts_manifest}}
+
+        labels = main._ai_extract_requested_new_module_labels(
+            "Reuse the shared contacts module for client records.\n\n"
+            "Build only 2 custom modules:\n\n"
+            "work_management\n"
+            "billing\n\n"
+            "Create them now.",
+            ["contacts"],
+            module_index,
+        )
+
+        self.assertEqual(labels, ["Work Management", "Billing"])
+
+    def test_extract_requested_new_module_labels_reads_named_module_sections(self) -> None:
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.contact",
+                    "fields": [
+                        {"id": "contact.id", "type": "uuid", "label": "ID"},
+                        {"id": "contact.name", "type": "string", "label": "Name"},
+                    ],
+                }
+            ],
+            "views": [],
+        }
+        module_index = {"contacts": {"manifest": contacts_manifest}}
+
+        labels = main._ai_extract_requested_new_module_labels(
+            "Create two new modules for this workflow.\n\n"
+            "Contacts:\n"
+            "- Reuse the existing contacts module for client records.\n\n"
+            "Work Management:\n"
+            "- Track projects, tasks, and time entries.\n"
+            "- Add an approved-hours reminder automation.\n\n"
+            "Billing module:\n"
+            "- Create invoices from approved work.\n"
+            "- Include an invoice PDF template with totals and payment details.\n",
+            ["contacts"],
+            module_index,
+        )
+
+        self.assertEqual(labels, ["Work Management", "Billing"])
+
+    def test_create_module_bundle_scopes_named_module_sections_before_packaging(self) -> None:
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.contact",
+                    "fields": [
+                        {"id": "contact.id", "type": "uuid", "label": "ID"},
+                        {"id": "contact.name", "type": "string", "label": "Name"},
+                    ],
+                }
+            ],
+            "views": [],
+        }
+        module_index = {
+            "contacts": {
+                "module_key": "contacts",
+                "version": "1.0.0",
+                "manifest": contacts_manifest,
+            }
+        }
+        captured_messages: dict[str, str] = {}
+
+        def _package_for(module_id: str, module_name: str, scoped_message: str) -> dict:
+            captured_messages[module_id] = scoped_message
+            manifest = {
+                "module": {"id": module_id, "key": module_id, "name": module_name, "version": "0.1.0"},
+                "entities": [
+                    {
+                        "id": f"entity.{module_id}",
+                        "fields": [
+                            {"id": f"{module_id}.id", "type": "uuid", "label": "ID"},
+                            {"id": f"{module_id}.name", "type": "string", "label": "Name"},
+                        ],
+                    }
+                ],
+                "views": [],
+                "pages": [],
+                "actions": [],
+                "relations": [],
+            }
+            automation_ops = []
+            if "approved-hours reminder automation" in scoped_message.lower():
+                automation_ops.append(
+                    {
+                        "op": "create_automation_record",
+                        "artifact_type": "automation",
+                        "artifact_id": f"ai_auto_{module_id}_approved_hours",
+                        "automation": {"name": f"{module_name} Approved Hours Reminder"},
+                    }
+                )
+            return {
+                "manifest": manifest,
+                "family": "operations",
+                "design_spec": {"family": "operations"},
+                "quality": {},
+                "automation_ops": automation_ops,
+            }
+
+        with patch.object(main, "_ai_build_new_module_package", side_effect=_package_for):
+            bundle = main._ai_build_create_module_bundle(
+                "Create two new modules for this workflow.\n\n"
+                "Contacts:\n"
+                "- Reuse the existing contacts module for client records.\n\n"
+                "Work Management:\n"
+                "- Track projects, tasks, and time entries.\n"
+                "- Add an approved-hours reminder automation.\n\n"
+                "Billing module:\n"
+                "- Create invoices from approved work.\n"
+                "- Include an invoice PDF template with totals and payment details.\n",
+                ["contacts"],
+                module_index,
+            )
+
+        self.assertIsNotNone(bundle)
+        self.assertIn("approved-hours reminder automation", captured_messages["work_management"].lower())
+        self.assertNotIn("invoice pdf template", captured_messages["work_management"].lower())
+        self.assertIn("invoice pdf template", captured_messages["billing"].lower())
+        self.assertNotIn("approved-hours reminder automation", captured_messages["billing"].lower())
+        automation_ops = [
+            op
+            for op in (bundle.get("candidate_ops") or [])
+            if isinstance(op, dict) and op.get("op") == "create_automation_record"
+        ]
+        self.assertEqual([op.get("artifact_id") for op in automation_ops], ["ai_auto_work_management_approved_hours"])
+
+    def test_plan_from_message_create_module_decomposes_explicit_missing_module_list(self) -> None:
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.contact",
+                    "fields": [
+                        {"id": "contact.id", "type": "uuid", "label": "ID"},
+                        {"id": "contact.name", "type": "string", "label": "Name"},
+                    ],
+                }
+            ],
+            "views": [],
+        }
+        module_index = {
+            "contacts": {
+                "module_key": "contacts",
+                "version": "1.0.0",
+                "manifest": contacts_manifest,
+            }
+        }
+
+        def _package_for(module_id: str, module_name: str, _message: str) -> dict:
+            if module_id == "work_management":
+                raw_spec = {
+                    "family": "operations",
+                    "entity_slug": "work_project",
+                    "entity_label": "Project",
+                    "nav_label": "Projects",
+                    "primary_label": "Project Name",
+                    "statuses": ["draft", "active", "completed"],
+                    "fields": [
+                        {"id": "work_project.name", "type": "string", "label": "Project Name"},
+                        {
+                            "id": "work_project.client_contact_id",
+                            "type": "lookup",
+                            "label": "Client",
+                            "entity": "entity.contact",
+                            "display_field": "contact.name",
+                        },
+                        {"id": "work_project.status", "type": "enum", "label": "Status", "options": ["draft", "active", "completed"]},
+                        {"id": "work_project.start_date", "type": "date", "label": "Start Date"},
+                        {"id": "work_project.default_hourly_rate", "type": "number", "label": "Default Rate"},
+                        {"id": "work_project.notes", "type": "text", "label": "Notes"},
+                    ],
+                    "related_entities": [
+                        {
+                            "slug": "work_time_entry",
+                            "label": "Time Entry",
+                            "tab_label": "Time Entries",
+                            "fields": [
+                                {"id": "work_time_entry.entry_date", "type": "date", "label": "Entry Date"},
+                                {
+                                    "id": "work_time_entry.project_id",
+                                    "type": "lookup",
+                                    "label": "Project",
+                                    "entity": "entity.work_project",
+                                    "display_field": "work_project.name",
+                                },
+                                {"id": "work_time_entry.duration_hours", "type": "number", "label": "Duration Hours"},
+                                {"id": "work_time_entry.status", "type": "enum", "label": "Status", "options": ["draft", "approved", "invoiced"]},
+                                {"id": "work_time_entry.notes", "type": "text", "label": "Notes"},
+                            ],
+                        }
+                    ],
+                }
+            elif module_id == "billing":
+                raw_spec = {
+                    "family": "finance",
+                    "entity_slug": "invoice",
+                    "entity_label": "Invoice",
+                    "nav_label": "Invoices",
+                    "primary_label": "Invoice Number",
+                    "statuses": ["draft", "sent", "paid"],
+                    "fields": [
+                        {"id": "invoice.invoice_number", "type": "string", "label": "Invoice Number"},
+                        {
+                            "id": "invoice.contact_id",
+                            "type": "lookup",
+                            "label": "Client",
+                            "entity": "entity.contact",
+                            "display_field": "contact.name",
+                        },
+                        {
+                            "id": "invoice.time_entry_id",
+                            "type": "lookup",
+                            "label": "Time Entry",
+                            "entity": "entity.work_time_entry",
+                            "display_field": "work_time_entry.entry_date",
+                        },
+                        {"id": "invoice.issue_date", "type": "date", "label": "Issue Date"},
+                        {"id": "invoice.total", "type": "number", "label": "Total"},
+                        {"id": "invoice.status", "type": "enum", "label": "Status", "options": ["draft", "sent", "paid"]},
+                        {"id": "invoice.notes", "type": "text", "label": "Notes"},
+                    ],
+                }
+            else:
+                raise AssertionError(module_id)
+
+            design_spec = main._ai_normalize_module_design_spec(module_id, module_name, _message, raw_spec)
+            manifest, family, normalized_spec = main._ai_build_rich_module_scaffold(
+                module_id,
+                module_name,
+                _message,
+                design_spec=design_spec,
+            )
+            quality = main._ai_module_manifest_quality_report(module_id, manifest, family=family, design_spec=normalized_spec)
+            return {
+                "manifest": manifest,
+                "family": family,
+                "design_spec": normalized_spec,
+                "quality": quality,
+                "automation_ops": [],
+            }
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+            patch.object(main, "_ai_build_new_module_package", side_effect=_package_for),
+        ):
+            plan, derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                "We want a minimal internal suite.\n\n"
+                "Reuse the shared contacts module for client records.\n\n"
+                "Build only 2 custom modules:\n\n"
+                "work_management\n"
+                "billing\n\n"
+                "Create them now.",
+                answer_hints={},
+            )
+
+        self.assertEqual((plan.get("planner_state") or {}).get("intent"), "create_module")
+        self.assertEqual((plan.get("planner_state") or {}).get("module_ids"), ["work_management", "billing"])
+        self.assertEqual(derived.get("affected_modules"), ["work_management", "billing"])
+        create_ops = [
+            op
+            for op in (plan.get("candidate_operations") or [])
+            if isinstance(op, dict) and op.get("op") == "create_module"
+        ]
+        self.assertEqual([op.get("artifact_id") for op in create_ops], ["work_management", "billing"])
+        dependency_ops = [
+            op
+            for op in (plan.get("candidate_operations") or [])
+            if isinstance(op, dict) and op.get("op") == "update_dependency"
+        ]
+        self.assertEqual(
+            {
+                (
+                    op.get("artifact_id"),
+                    ((op.get("dependency") or {}).get("module")),
+                )
+                for op in dependency_ops
+            },
+            {
+                ("work_management", "contacts"),
+                ("billing", "contacts"),
+                ("billing", "work_management"),
+            },
+        )
+        self.assertFalse(any(op.get("artifact_id") == "contacts" for op in create_ops))
 
     def test_generate_module_design_spec_for_commerce_tracking_brief_uses_reporting_fields(self) -> None:
         prompt = (
@@ -6582,6 +7980,271 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("Set up the requested Xero integration.", text)
         self.assertIn("Keep the integration flow so approved Contacts and Invoices can be sent across, but only when the accounting fields are complete.", text)
 
+    def test_automation_preview_request_populates_structured_automation_details(self) -> None:
+        jobs_manifest = {
+            "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
+            "entities": [{"id": "entity.job", "fields": [{"id": "job.title", "label": "Title", "type": "string"}]}],
+            "views": [],
+        }
+        sales_manifest = {
+            "module": {"id": "sales", "key": "sales", "name": "Quotes"},
+            "entities": [{"id": "entity.quote", "fields": [{"id": "quote.title", "label": "Title", "type": "string"}]}],
+            "views": [],
+        }
+        module_index = {"jobs": {"manifest": jobs_manifest}, "sales": {"manifest": sales_manifest}}
+        message = "When a Quote is approved, automatically create a Job, copy the customer and site details across, and notify the coordinator."
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={},
+            )
+
+        structured = _ai_build_structured_plan(
+            plan,
+            {
+                "request_summary": message,
+                "full_selected_artifacts": [
+                    {"artifact_type": "module", "artifact_id": "sales", "manifest": sales_manifest},
+                    {"artifact_type": "module", "artifact_id": "jobs", "manifest": jobs_manifest},
+                ],
+            },
+        )
+
+        self.assertIn("automation_change", structured["operation_families"])
+        self.assertTrue(any("automatic workflow" in item["summary"] for item in structured["changes"]))
+        sections = {item["key"]: item["items"] for item in structured["sections"]}
+        self.assertIn("automations", sections)
+        self.assertIn("Add an automatic workflow that runs when a Quote is approved.", sections["automations"])
+        self.assertIn("Notify the coordinator automatically.", sections["automations"])
+
+    def test_template_preview_request_populates_structured_template_details(self) -> None:
+        message = "Create a Holiday Itinerary PDF template with traveller details, travel dates, bookings, flights, hotels, and activity notes."
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={},
+            )
+
+        structured = _ai_build_structured_plan(
+            plan,
+            {
+                "request_summary": message,
+                "full_selected_artifacts": [],
+            },
+        )
+
+        self.assertIn("template_change", structured["operation_families"])
+        self.assertEqual(structured["summary"], "Create the Holiday Itinerary PDF template.")
+        self.assertTrue(any("Holiday Itinerary PDF template" in item["summary"] for item in structured["changes"]))
+        sections = {item["key"]: item["items"] for item in structured["sections"]}
+        self.assertIn("templates", sections)
+        self.assertIn("Create the Holiday Itinerary PDF template.", sections["templates"])
+        self.assertIn("Include traveller details, travel dates, bookings, flights, hotels, and activity notes.", sections["templates"])
+
+    def test_integration_preview_request_populates_structured_integration_and_condition_details(self) -> None:
+        message = "Set up Xero sync so approved Contacts and Invoices can be sent across, but only when the accounting fields are complete."
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={},
+            )
+
+        structured = _ai_build_structured_plan(
+            plan,
+            {
+                "request_summary": message,
+                "full_selected_artifacts": [],
+            },
+        )
+
+        self.assertIn("integration_change", structured["operation_families"])
+        self.assertEqual(structured["summary"], "Set up the requested Xero integration.")
+        self.assertTrue(any("Xero integration" in item["summary"] for item in structured["changes"]))
+        sections = {item["key"]: item["items"] for item in structured["sections"]}
+        self.assertIn("dependencies", sections)
+        self.assertIn("Set up the requested Xero integration.", sections["dependencies"])
+        self.assertIn("conditions", sections)
+        self.assertIn("Only send approved records across.", sections["conditions"])
+        self.assertIn("Only send records across when the accounting fields are complete.", sections["conditions"])
+
+    def test_automation_preview_request_uses_specific_summary_instead_of_generic_rollout(self) -> None:
+        message = "When a Quote is approved, automatically create a Job, copy the customer and site details across, and notify the coordinator."
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={},
+            )
+
+        structured = _ai_build_structured_plan(
+            plan,
+            {
+                "request_summary": message,
+                "full_selected_artifacts": [],
+            },
+        )
+
+        self.assertEqual(structured["summary"], "Add an automatic workflow that runs when a Quote is approved.")
+
+    def test_preview_contract_request_populates_structured_validation_section(self) -> None:
+        message = "For Invoices and Quotes, walk me through the sandbox, validation, and rollback plan before you build anything."
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={},
+            )
+
+        structured = _ai_build_structured_plan(
+            plan,
+            {
+                "request_summary": message,
+                "full_selected_artifacts": [],
+            },
+        )
+
+        sections = {item["key"]: item["items"] for item in structured["sections"]}
+        self.assertIn("validation", sections)
+        self.assertIn("sandbox first: keep this as a draft plan so nothing touches the live workspace yet.", sections["validation"])
+        self.assertIn("validation: check the change in the sandbox before you approve it.", sections["validation"])
+        self.assertIn("rollback: keep the current module snapshots so the rollout can be reversed safely if staff struggle with the new flow.", sections["validation"])
+
+    def test_dispatch_sandbox_preview_request_builds_plan_without_scope_label_crash(self) -> None:
+        message = (
+            "Build a dispatch system for field work, but explain the sandbox, preview, validation, "
+            "and rollout steps before anything is applied to my live workspace."
+        )
+        plan = {
+            "planner_state": {"intent": "preview_only_plan"},
+            "affected_artifacts": [],
+            "proposed_changes": [],
+        }
+
+        structured = _ai_build_structured_plan(
+            plan,
+            {
+                "request_summary": message,
+                "full_selected_artifacts": [],
+            },
+        )
+        text = _ai_plan_assistant_text(
+            plan,
+            {
+                "request_summary": message,
+                "full_selected_artifacts": [],
+            },
+        )
+
+        self.assertIn("sandbox", text.lower())
+        self.assertIn("validation", text.lower())
+        self.assertTrue(structured["summary"])
+        sections = {item["key"]: item["items"] for item in structured["sections"]}
+        self.assertIn("validation", sections)
+        self.assertIn("sandbox first: keep this as a draft plan so nothing touches the live workspace yet.", sections["validation"])
+
+    def test_preview_contract_field_request_skips_semantic_model_when_preview_plan_is_enough(self) -> None:
+        jobs_manifest = {
+            "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
+            "entities": [
+                {
+                    "id": "entity.job",
+                    "fields": [
+                        {"id": "job.id", "type": "uuid", "label": "ID"},
+                        {"id": "job.title", "type": "string", "label": "Title"},
+                        {
+                            "id": "job.job_type",
+                            "type": "enum",
+                            "label": "Job Type",
+                            "options": [
+                                {"value": "standard", "label": "Standard"},
+                                {"value": "emergency", "label": "Emergency"},
+                            ],
+                        },
+                    ],
+                }
+            ],
+            "views": [],
+        }
+        module_index = {"jobs": {"manifest": jobs_manifest}}
+        message = "In Jobs, if the job type is Emergency, show After Hours Contact and Callout Reason fields and make them required."
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
+            patch.object(
+                main,
+                "_ai_semantic_plan_from_model",
+                side_effect=AssertionError("semantic model should not run for preview-only field requests"),
+            ),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={},
+            )
+
+        self.assertEqual((plan.get("planner_state") or {}).get("intent"), "preview_only_plan")
+        self.assertEqual(plan.get("required_questions"), ["Confirm this plan?"])
+
+    def test_preview_contract_field_request_keeps_field_wording_without_automation_drift(self) -> None:
+        message = "In Jobs, if the job type is Emergency, show After Hours Contact and Callout Reason fields and make them required."
+
+        text = _ai_plan_assistant_text(
+            {
+                "required_questions": ["Confirm this plan?"],
+                "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan"},
+                "assumptions": [],
+                "risk_flags": [],
+                "advisories": [],
+                "affected_artifacts": [],
+                "proposed_changes": [],
+                "planner_state": {"intent": "preview_only_plan"},
+            },
+            {
+                "request_summary": message,
+                "full_selected_artifacts": [],
+            },
+        )
+
+        self.assertIn("Add fields for After Hours Contact and Callout Reason.", text)
+        self.assertIn("Show After Hours Contact and Callout Reason only when the job type is Emergency.", text)
+        self.assertIn("Make After Hours Contact and Callout Reason required when the job type is Emergency.", text)
+        self.assertNotIn("Add an automatic workflow", text)
+
     def test_dashboard_preview_request_lists_dashboard_and_metrics(self) -> None:
         jobs_manifest = {
             "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
@@ -6651,6 +8314,42 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("Build the staff training dashboard.", text)
         self.assertIn("Show expired certificates, upcoming renewals, and completion by team.", text)
         self.assertIn("draft patchset for sandbox validation", text)
+        self.assertNotIn("Which module should receive this change?", text)
+
+    def test_dashboard_preview_improve_wording_without_exact_module_match_stays_in_confirm_plan_flow(self) -> None:
+        message = (
+            "Improve the Construction operations dashboard so supervisors can see workers on site today, "
+            "total labour hours today, materials logged today, total cost today, cost breakdown, recent time entries, "
+            "and today's material logs."
+        )
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={},
+            )
+
+        self.assertEqual(derived.get("affected_modules"), [])
+        self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
+        self.assertEqual((plan.get("planner_state") or {}).get("intent"), "preview_only_plan")
+
+        text = _ai_plan_assistant_text(
+            plan,
+            {
+                "request_summary": message,
+                "full_selected_artifacts": [],
+            },
+        )
+
+        self.assertIn("Planned changes:", text)
+        self.assertIn("Construction operations dashboard", text)
+        self.assertIn("workers on site today", text)
         self.assertNotIn("Which module should receive this change?", text)
 
     def test_workspace_graph_preview_keeps_approval_and_conditional_wording(self) -> None:
@@ -7099,6 +8798,77 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertTrue(
             any(item.startswith("Phase 1: extend Contacts first, then add Compliance") for item in structured["first_delivery_slice"])
         )
+
+    def test_clockify_replacement_brief_prefers_reuse_minimal_modules_and_existing_platform_patterns(self) -> None:
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts"},
+            "entities": [],
+            "views": [],
+        }
+        module_index = {"contacts": {"manifest": contacts_manifest}}
+        message = (
+            "We want to build a minimal internal time tracking + invoicing suite in Octodrop so we can replace Clockify for our own company workflow.\n\n"
+            "Architecture decision\n\n"
+            "Reuse the shared contacts module for client records.\n\n"
+            "Build only 2 custom modules:\n\n"
+            "work_management\n"
+            "billing\n\n"
+            "Important platform rule\n\n"
+            "For v1, do not introduce kernel-level timer infrastructure.\n\n"
+            "Build order\n\n"
+            "Implement in this order:\n\n"
+            "reuse shared contacts\n"
+            "build work_management\n"
+            "build billing\n"
+            "build invoice PDF template\n"
+            "build invoice creation flow from selected billable time entries\n\n"
+            "Show me the draft plan first."
+        )
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={},
+            )
+
+        self.assertEqual((plan.get("planner_state") or {}).get("intent"), "preview_only_plan")
+        self.assertEqual((plan.get("planner_state") or {}).get("requested_module_labels"), ["Contacts", "Work Management", "Billing"])
+        self.assertEqual((plan.get("planner_state") or {}).get("missing_module_labels"), ["Work Management", "Billing"])
+        self.assertEqual(derived.get("affected_modules"), ["contacts"])
+
+        structured = _ai_build_structured_plan(
+            plan,
+            {
+                "request_summary": message,
+                "full_selected_artifacts": [
+                    {"artifact_type": "module", "artifact_id": "contacts", "manifest": contacts_manifest},
+                ],
+            },
+        )
+
+        self.assertTrue(
+            any("Reuse existing Contacts" in item and "Work Management" in item and "Billing" in item for item in structured["architecture_decisions"])
+        )
+        self.assertTrue(
+            any("kernel or runtime infrastructure" in item for item in structured["architecture_decisions"])
+        )
+        self.assertTrue(
+            any(item.startswith("Phase 1: start with reuse shared contacts and build Work Management") for item in structured["first_delivery_slice"])
+        )
+        self.assertTrue(
+            any(item.startswith("Phase 2: follow with build Billing") for item in structured["first_delivery_slice"])
+        )
+        self.assertEqual(
+            structured["operation_families"],
+            ["create_module", "cross_module_change", "template_change"],
+        )
+        self.assertEqual(structured["primary_operation_family"], "create_module")
 
     def test_create_module_structured_plan_adds_first_delivery_slice(self) -> None:
         plan = {
@@ -8850,6 +10620,54 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("Planned changes:", text)
         self.assertIn("Holiday Itinerary PDF template", text)
         self.assertIn("traveller details", text)
+        self.assertNotIn("Which module should receive this change?", text)
+
+    def test_create_module_prompt_with_module_typo_overrides_generic_module_question(self) -> None:
+        message = (
+            "hi, can you create me a really good mobule for managing my cooking recipes, "
+            "we need to add ingredients as line items, full recipe details and images of "
+            "the recipe for my upcoming cook book. call it Cooking."
+        )
+
+        semantic_question = {
+            "candidate_ops": [],
+            "questions": ["Which module should receive this change?"],
+            "question_meta": {"id": "module_target", "kind": "text", "prompt": "Which module should receive this change?"},
+            "assumptions": ["No explicit module match found; planner remained workspace-aware but conservative."],
+            "risk_flags": [],
+            "advisories": [],
+            "affected_modules": [],
+            "plan_v1": None,
+        }
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: semantic_question),
+        ):
+            plan, derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={},
+            )
+
+        create_ops = [op for op in (plan.get("proposed_changes") or []) if isinstance(op, dict) and op.get("op") == "create_module"]
+        self.assertEqual(len(create_ops), 1)
+        self.assertEqual(create_ops[0].get("artifact_id"), "cooking")
+        self.assertEqual(derived.get("affected_modules"), ["cooking"])
+        self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
+
+        text = _ai_plan_assistant_text(
+            plan,
+            {
+                "request_summary": message,
+                "full_selected_artifacts": [],
+            },
+        )
+
+        self.assertIn("Cooking", text)
+        self.assertIn("draft patchset for sandbox validation", text)
         self.assertNotIn("Which module should receive this change?", text)
 
     def test_missing_named_module_stays_missing_even_when_workspace_has_attachment_modules(self) -> None:

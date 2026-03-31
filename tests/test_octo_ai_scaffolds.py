@@ -50,6 +50,15 @@ class TestOctoAiScaffolds(unittest.TestCase):
         self.assertTrue(_ai_is_create_module_request(prompt))
         self.assertEqual(_ai_extract_new_module_name(prompt), "Cooking")
 
+    def test_extract_module_name_accepts_common_module_typo(self) -> None:
+        prompt = (
+            "hi, can you create me a really good mobule for managing my cooking recipes, "
+            "we need to add ingredients as line items, full recipe details and images of "
+            "the recipe for my upcoming cook book. call it Cooking."
+        )
+        self.assertTrue(_ai_is_create_module_request(prompt))
+        self.assertEqual(_ai_extract_new_module_name(prompt), "Cooking")
+
     def test_extract_module_name_uses_rename_target_in_followup(self) -> None:
         self.assertEqual(_ai_extract_new_module_name("change me a cooking to Cooking"), "Cooking")
 

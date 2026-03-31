@@ -635,6 +635,7 @@ export default function AutomationEditorPage({ user }) {
                             const label = (f?.label || "").toLowerCase();
                             return id.includes("email") || label.includes("email");
                           });
+                          const attachmentFields = fields.filter((f) => f?.type === "attachments");
                           const lookupFields = fields.filter((f) => f?.type === "lookup");
                           const selectedLookupIdsRaw = step.inputs?.to_lookup_field_ids;
                           const selectedLookupIds = Array.isArray(selectedLookupIdsRaw)
@@ -712,6 +713,57 @@ export default function AutomationEditorPage({ user }) {
                           <span className="label-text">Record (optional)</span>
                           <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} />
                           <span className="label label-text-alt opacity-50">Optional record for merge fields (paste ID or use trigger).</span>
+                        </label>
+                        <label className="form-control md:col-span-4">
+                          <span className="label-text">Attachment purpose (optional)</span>
+                          <input
+                            className="input input-bordered"
+                            value={step.inputs?.attachment_purpose || ""}
+                            onChange={(e) => updateStepInput(index, "attachment_purpose", e.target.value)}
+                            placeholder="invoice_pdf"
+                          />
+                          <span className="label label-text-alt opacity-50">Attach linked files with this purpose from the selected record.</span>
+                        </label>
+                        <label className="form-control md:col-span-4">
+                          <span className="label-text">Attachment entity (optional)</span>
+                          <select
+                            className="select select-bordered"
+                            value={step.inputs?.attachment_entity_id || ""}
+                            onChange={(e) => updateStepInput(index, "attachment_entity_id", e.target.value)}
+                          >
+                            <option value="">Use email entity</option>
+                            {entityOptions.map((ent) => (
+                              <option key={ent.id} value={ent.id}>
+                                {ent.label || ent.id}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="form-control md:col-span-4">
+                          <span className="label-text">Attachment record (optional)</span>
+                          <input
+                            className="input input-bordered"
+                            list="automation-record-hints"
+                            value={step.inputs?.attachment_record_id || ""}
+                            onChange={(e) => updateStepInput(index, "attachment_record_id", e.target.value)}
+                            placeholder="{{trigger.record_id}}"
+                          />
+                        </label>
+                        <label className="form-control md:col-span-12">
+                          <span className="label-text">Attachment field (optional)</span>
+                          <select
+                            className="select select-bordered"
+                            value={step.inputs?.attachment_field_id || ""}
+                            onChange={(e) => updateStepInput(index, "attachment_field_id", e.target.value)}
+                          >
+                            <option value="">No record attachment field</option>
+                            {attachmentFields.map((field) => (
+                              <option key={field.id} value={field.id}>
+                                {field.label || field.id}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="label label-text-alt opacity-50">Optional extra source if files already live in an attachments field on the record.</span>
                         </label>
                         <label className="form-control md:col-span-12">
                           <span className="label-text">Manual email recipients (comma separated)</span>

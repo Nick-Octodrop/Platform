@@ -6,6 +6,7 @@ import { useModuleStore } from "../state/moduleStore.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { loadEntityIndex } from "../data/entityIndex.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
+import { applyComputedFields } from "../utils/computedFields.js";
 
 export default function EntityCreatePage({ entityId }) {
   const params = useParams();
@@ -134,7 +135,7 @@ export default function EntityCreatePage({ entityId }) {
           recordId={null}
           fieldIndex={fieldIndex}
           record={draft}
-          onChange={(next) => setDraft(next)}
+          onChange={(next) => setDraft(applyComputedFields(fieldIndex, next))}
           onSave={handleSave}
           readonly={false}
           showValidation={showValidation}

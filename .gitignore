@@ -36,6 +36,7 @@ db-migration/
 *.dump
 *.sql.gz
 perf_results.log
+storage/octo_ai_eval/
 
 # Runtime/temp files
 *.log

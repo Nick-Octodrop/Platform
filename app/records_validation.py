@@ -175,6 +175,8 @@ def validate_record_payload(entity: dict, data: dict, for_create: bool, workflow
     if for_create:
         data = _apply_defaults(field_by_id, data)
         for field_id, field in field_by_id.items():
+            if isinstance(field.get("compute"), dict):
+                continue
             if field.get("required"):
                 val = data.get(field_id)
                 if _is_blank_value(val):
@@ -197,12 +199,17 @@ def validate_record_payload(entity: dict, data: dict, for_create: bool, workflow
             _add_error("INVALID_STATUS", f"{status_field} must be one of {states}", path=status_field)
         required_by_state = _workflow_required_fields(workflow, status_value)
         for field_id in required_by_state:
+            field = field_by_id.get(field_id) or {}
+            if isinstance(field.get("compute"), dict):
+                continue
             val = data.get(field_id)
             if _is_blank_value(val):
                 _add_error("REQUIRED_FIELD", f"Missing required field for status {status_value}: {field_id}", path=field_id)
 
     if not for_create:
         for field_id, field in field_by_id.items():
+            if isinstance(field.get("compute"), dict):
+                continue
             required_when = field.get("required_when")
             if required_when:
                 try:

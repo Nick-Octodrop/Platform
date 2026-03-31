@@ -8,6 +8,7 @@ import { useModuleStore } from "../state/moduleStore.jsx";
 import { getDevMode, subscribeDevMode } from "../dev/devMode.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { useAccessContext } from "../access.js";
+import { applyComputedFields } from "../utils/computedFields.js";
 
 export default function EntityRecordPage() {
   const { entity, id } = useParams();
@@ -60,7 +61,6 @@ export default function EntityRecordPage() {
       try {
         const res = await apiFetch(`/records/${entity}/${id}`);
         setRecord(res.record);
-        setDraft(res.record);
         const manifestRes = await getManifest(selected.moduleId);
         setManifestHash(manifestRes.manifest_hash || null);
         const compiled = manifestRes.compiled;
@@ -74,6 +74,7 @@ export default function EntityRecordPage() {
           for (const f of entityDef?.fields || []) indexMap[f.id] = f;
         }
         setFieldIndex(indexMap);
+        setDraft(applyComputedFields(indexMap, res.record));
         setError(null);
         if (!resolvedView) {
           setManifestError("FORM_VIEW_MISSING");
@@ -186,7 +187,7 @@ export default function EntityRecordPage() {
           recordId={id}
           fieldIndex={fieldIndex}
           record={draft}
-          onChange={(next) => setDraft(next)}
+          onChange={(next) => setDraft(applyComputedFields(fieldIndex, next))}
           onSave={handleSave}
           readonly={!canWriteRecords}
           showValidation={showValidation}

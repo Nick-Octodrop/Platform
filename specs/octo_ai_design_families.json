@@ -224,6 +224,32 @@
       {"suffix": "certificate_reference", "type": "string", "label": "Certificate Reference"}
     ]
   },
+  "safety": {
+    "icon_key": "lucide:Shield",
+    "minimum_business_fields": 8,
+    "default_module_name": "Safety Assessments",
+    "detect_any": ["job hazard analysis", "hazard analysis", "hazard assessment", "risk assessment", "safe work method"],
+    "detect_all": [["hazard", "controls"], ["hazard", "signoff"], ["risk", "signoff"]],
+    "primary_label": "Assessment Title",
+    "summary_template": "{module_name} with hazard identification, controls, review dates, and safety signoff.",
+    "statuses": [
+      {"value": "draft", "label": "Draft"},
+      {"value": "under_review", "label": "Under Review"},
+      {"value": "approved", "label": "Approved"},
+      {"value": "archived", "label": "Archived"}
+    ],
+    "fields": [
+      {"suffix": "activity_scope", "type": "string", "label": "Activity"},
+      {"suffix": "work_area", "type": "string", "label": "Work Area"},
+      {"suffix": "hazard_description", "type": "text", "label": "Hazard Description"},
+      {"suffix": "controls", "type": "text", "label": "Controls"},
+      {"suffix": "responsible_person", "type": "string", "label": "Responsible Person"},
+      {"suffix": "review_date", "type": "date", "label": "Review Date"},
+      {"suffix": "signoff_required", "type": "bool", "label": "Signoff Required"},
+      {"suffix": "notes", "type": "text", "label": "Notes"},
+      {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
+    ]
+  },
   "incident": {
     "icon_key": "lucide:ShieldAlert",
     "minimum_business_fields": 8,

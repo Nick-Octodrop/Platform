@@ -1,0 +1,56 @@
+{
+  "automation": {
+    "name": "Octodrop Billing - Email Invoice",
+    "description": "When a user clicks Email Invoice, send the latest generated invoice PDF to the linked client and mark the invoice sent.",
+    "trigger": {
+      "kind": "event",
+      "event_types": [
+        "billing.action.invoice.email_invoice.clicked"
+      ],
+      "filters": []
+    },
+    "steps": [
+      {
+        "id": "send_invoice_email",
+        "kind": "action",
+        "action_id": "system.send_email",
+        "inputs": {
+          "entity_id": {
+            "var": "trigger.entity_id"
+          },
+          "record_id": {
+            "var": "trigger.record_id"
+          },
+          "attachment_entity_id": {
+            "var": "trigger.entity_id"
+          },
+          "attachment_record_id": {
+            "var": "trigger.record_id"
+          },
+          "attachment_purpose": "invoice_pdf",
+          "to_lookup_specs": [
+            {
+              "lookup_field": "billing_invoice.contact_id",
+              "entity_id": "entity.contact",
+              "email_field": "contact.email"
+            }
+          ],
+          "subject": "Invoice {{ trigger.record.fields['invoice_number'] if trigger.record.fields['invoice_number'] is defined else trigger.record_id }}",
+          "body_html": "<p>Hi {{ trigger.record.fields['contact_name'] if trigger.record.fields['contact_name'] is defined else (trigger.record.fields['contact_id_label'] if trigger.record.fields['contact_id_label'] is defined else 'there') }},</p><p>Please find invoice <strong>{{ trigger.record.fields['invoice_number'] if trigger.record.fields['invoice_number'] is defined else trigger.record_id }}</strong> attached.</p><p>Thanks,<br>Octodrop</p>",
+          "body_text": "Hi {{ trigger.record.fields['contact_name'] if trigger.record.fields['contact_name'] is defined else (trigger.record.fields['contact_id_label'] if trigger.record.fields['contact_id_label'] is defined else 'there') }},\n\nPlease find invoice {{ trigger.record.fields['invoice_number'] if trigger.record.fields['invoice_number'] is defined else trigger.record_id }} attached.\n\nThanks,\nOctodrop"
+        }
+      },
+      {
+        "id": "mark_invoice_sent",
+        "kind": "action",
+        "module_id": "billing",
+        "action_id": "action.billing_invoice_mark_sent",
+        "inputs": {
+          "record_id": {
+            "var": "trigger.record_id"
+          }
+        }
+      }
+    ]
+  }
+}

@@ -43,6 +43,13 @@ function resolveRef(ref, context) {
   if (ref.startsWith("$record.")) {
     return getByPath(context.record || {}, ref.slice("$record.".length));
   }
+  if (ref.startsWith("$current.")) {
+    return getByPath(context.current || {}, ref.slice("$current.".length));
+  }
+  if (ref === "$parent") return context.parent || {};
+  if (ref.startsWith("$parent.")) {
+    return getByPath(context.parent || {}, ref.slice("$parent.".length));
+  }
   if (ref.startsWith("$candidate.")) {
     return getByPath(context.candidate || {}, ref.slice("$candidate.".length));
   }

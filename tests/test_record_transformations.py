@@ -139,6 +139,122 @@ class TestRecordTransformations(unittest.TestCase):
         main.registry.set_enabled(module_id, True, actor=None, reason="test")
         main._cache_invalidate("registry_list")
 
+    def _install_group_invoice_manifest(self, module_id: str) -> None:
+        manifest = {
+            "manifest_version": "1.3",
+            "module": {"id": module_id, "name": "Grouped Invoice Transform"},
+            "entities": [
+                {
+                    "id": "entity.time_entry",
+                    "display_field": "time_entry.description",
+                    "fields": [
+                        {"id": "time_entry.contact_id", "type": "string", "required": True},
+                        {"id": "time_entry.description", "type": "string"},
+                        {"id": "time_entry.amount", "type": "number"},
+                        {"id": "time_entry.billable", "type": "bool"},
+                        {
+                            "id": "time_entry.status",
+                            "type": "enum",
+                            "required": True,
+                            "options": [
+                                {"label": "Draft", "value": "draft"},
+                                {"label": "Approved", "value": "approved"},
+                                {"label": "Invoiced", "value": "invoiced"},
+                            ],
+                        },
+                    ],
+                },
+                {
+                    "id": "entity.invoice",
+                    "display_field": "invoice.number",
+                    "fields": [
+                        {"id": "invoice.number", "type": "string", "required": True},
+                        {"id": "invoice.contact_id", "type": "string", "required": True},
+                        {"id": "invoice.issue_date", "type": "date", "required": True},
+                        {"id": "invoice.subtotal", "type": "number"},
+                        {"id": "invoice.total", "type": "number"},
+                        {
+                            "id": "invoice.status",
+                            "type": "enum",
+                            "required": True,
+                            "options": [
+                                {"label": "Draft", "value": "draft"},
+                                {"label": "Sent", "value": "sent"},
+                            ],
+                        },
+                    ],
+                },
+                {
+                    "id": "entity.invoice_line",
+                    "display_field": "invoice_line.description",
+                    "fields": [
+                        {"id": "invoice_line.invoice_id", "type": "lookup", "entity": "entity.invoice", "display_field": "invoice.number", "required": True},
+                        {"id": "invoice_line.time_entry_id", "type": "string"},
+                        {"id": "invoice_line.description", "type": "string", "required": True},
+                        {"id": "invoice_line.amount", "type": "number"},
+                    ],
+                },
+            ],
+            "transformations": [
+                {
+                    "key": "selected_time_entries_to_invoice",
+                    "source_entity_id": "entity.time_entry",
+                    "target_entity_id": "entity.invoice",
+                    "field_mappings": {
+                        "invoice.number": {"ref": "$source.id"},
+                        "invoice.contact_id": {"from": "time_entry.contact_id"},
+                        "invoice.issue_date": {"ref": "$today"},
+                        "invoice.subtotal": {"ref": "$selection.sum.time_entry.amount"},
+                        "invoice.total": {"ref": "$selection.sum.time_entry.amount"},
+                        "invoice.status": {"value": "draft"},
+                    },
+                    "child_mappings": [
+                        {
+                            "source_entity_id": "entity.time_entry",
+                            "source_scope": "selected_records",
+                            "target_entity_id": "entity.invoice_line",
+                            "target_link_field": "invoice_line.invoice_id",
+                            "field_mappings": {
+                                "invoice_line.time_entry_id": {"ref": "$source.id"},
+                                "invoice_line.description": {"from": "time_entry.description"},
+                                "invoice_line.amount": {"from": "time_entry.amount"},
+                            },
+                        }
+                    ],
+                    "source_update": {"patch": {"time_entry.status": "invoiced"}},
+                    "validation": {
+                        "require_source_fields": ["time_entry.contact_id", "time_entry.description"],
+                        "require_child_records": True,
+                        "require_uniform_fields": ["time_entry.contact_id"],
+                        "selected_record_domain": {
+                            "op": "and",
+                            "conditions": [
+                                {"op": "eq", "field": "time_entry.billable", "value": True},
+                                {"op": "eq", "field": "time_entry.status", "value": "approved"},
+                            ],
+                        },
+                    },
+                }
+            ],
+            "actions": [
+                {
+                    "id": "action.time_entry_create_invoice",
+                    "kind": "transform_record",
+                    "entity_id": "entity.time_entry",
+                    "label": "Create Draft Invoice",
+                    "selection_mode": "selected_records",
+                    "transformation_key": "selected_time_entries_to_invoice",
+                }
+            ],
+            "views": [],
+            "pages": [],
+            "workflows": [],
+        }
+        main.store.init_module(module_id, manifest, actor={"id": "test"})
+        main.registry.register(module_id, "Grouped Invoice Transform", actor=None)
+        main.registry.set_enabled(module_id, True, actor=None, reason="test")
+        main._cache_invalidate("registry_list")
+
     def test_quote_to_job_transform(self):
         module_id = f"quote_to_job_{uuid.uuid4().hex[:8]}"
         self._install_manifest(module_id)
@@ -219,6 +335,113 @@ class TestRecordTransformations(unittest.TestCase):
         ).json()
         self.assertFalse(duplicate_run.get("ok"), duplicate_run)
         self.assertEqual((duplicate_run.get("errors") or [{}])[0].get("code"), "TRANSFORMATION_ALREADY_LINKED")
+
+    def test_selected_records_transform_creates_one_invoice_with_multiple_lines(self):
+        module_id = f"grouped_invoice_{uuid.uuid4().hex[:8]}"
+        self._install_group_invoice_manifest(module_id)
+        client = TestClient(main.app)
+
+        first = client.post(
+            "/records/entity.time_entry",
+            json={"record": {"time_entry.contact_id": "contact-1", "time_entry.description": "Design", "time_entry.amount": 125, "time_entry.billable": True, "time_entry.status": "approved"}},
+        ).json()
+        second = client.post(
+            "/records/entity.time_entry",
+            json={"record": {"time_entry.contact_id": "contact-1", "time_entry.description": "Build", "time_entry.amount": 175, "time_entry.billable": True, "time_entry.status": "approved"}},
+        ).json()
+        self.assertTrue(first.get("ok"), first)
+        self.assertTrue(second.get("ok"), second)
+
+        run_body = client.post(
+            "/actions/run",
+            json={
+                "module_id": module_id,
+                "action_id": "action.time_entry_create_invoice",
+                "context": {"selected_ids": [first["record_id"], second["record_id"]]},
+            },
+        ).json()
+        self.assertTrue(run_body.get("ok"), run_body)
+        result = run_body.get("result") or {}
+        invoice_id = result.get("record_id")
+        self.assertTrue(isinstance(invoice_id, str) and invoice_id)
+        self.assertEqual(result.get("entity_id"), "entity.invoice")
+        self.assertEqual(result.get("child_created"), 2)
+        self.assertEqual(result.get("source_record_ids"), [first["record_id"], second["record_id"]])
+
+        invoice_after = client.get(f"/records/entity.invoice/{invoice_id}").json()
+        self.assertTrue(invoice_after.get("ok"), invoice_after)
+        self.assertEqual(invoice_after["record"].get("invoice.contact_id"), "contact-1")
+        self.assertEqual(invoice_after["record"].get("invoice.subtotal"), 300)
+        self.assertEqual(invoice_after["record"].get("invoice.total"), 300)
+        self.assertEqual(invoice_after["record"].get("invoice.status"), "draft")
+
+        first_after = client.get(f"/records/entity.time_entry/{first['record_id']}").json()
+        second_after = client.get(f"/records/entity.time_entry/{second['record_id']}").json()
+        self.assertEqual(first_after["record"].get("time_entry.status"), "invoiced")
+        self.assertEqual(second_after["record"].get("time_entry.status"), "invoiced")
+
+        invoice_lines = client.get("/records/entity.invoice_line").json()
+        self.assertTrue(invoice_lines.get("ok"), invoice_lines)
+        scoped_lines = [
+            row
+            for row in invoice_lines.get("records", [])
+            if isinstance(row, dict)
+            and isinstance(row.get("record"), dict)
+            and row.get("record", {}).get("invoice_line.invoice_id") == invoice_id
+        ]
+        self.assertEqual(len(scoped_lines), 2)
+
+    def test_selected_records_transform_requires_uniform_fields(self):
+        module_id = f"grouped_invoice_{uuid.uuid4().hex[:8]}"
+        self._install_group_invoice_manifest(module_id)
+        client = TestClient(main.app)
+
+        first = client.post(
+            "/records/entity.time_entry",
+            json={"record": {"time_entry.contact_id": "contact-1", "time_entry.description": "Design", "time_entry.amount": 125, "time_entry.billable": True, "time_entry.status": "approved"}},
+        ).json()
+        second = client.post(
+            "/records/entity.time_entry",
+            json={"record": {"time_entry.contact_id": "contact-2", "time_entry.description": "Build", "time_entry.amount": 175, "time_entry.billable": True, "time_entry.status": "approved"}},
+        ).json()
+
+        run_body = client.post(
+            "/actions/run",
+            json={
+                "module_id": module_id,
+                "action_id": "action.time_entry_create_invoice",
+                "context": {"selected_ids": [first["record_id"], second["record_id"]]},
+            },
+        ).json()
+        self.assertFalse(run_body.get("ok"), run_body)
+        self.assertEqual((run_body.get("errors") or [{}])[0].get("code"), "TRANSFORMATION_SOURCE_MISMATCH")
+
+    def test_selected_records_transform_requires_source_fields_for_each_selected_row(self):
+        module_id = f"grouped_invoice_{uuid.uuid4().hex[:8]}"
+        self._install_group_invoice_manifest(module_id)
+        client = TestClient(main.app)
+
+        first = client.post(
+            "/records/entity.time_entry",
+            json={"record": {"time_entry.contact_id": "contact-1", "time_entry.description": "Design", "time_entry.amount": 125, "time_entry.billable": True, "time_entry.status": "approved"}},
+        ).json()
+        second = client.post(
+            "/records/entity.time_entry",
+            json={"record": {"time_entry.contact_id": "contact-1", "time_entry.amount": 175, "time_entry.billable": True, "time_entry.status": "approved"}},
+        ).json()
+
+        run_body = client.post(
+            "/actions/run",
+            json={
+                "module_id": module_id,
+                "action_id": "action.time_entry_create_invoice",
+                "context": {"selected_ids": [first["record_id"], second["record_id"]]},
+            },
+        ).json()
+        self.assertFalse(run_body.get("ok"), run_body)
+        first_error = (run_body.get("errors") or [{}])[0]
+        self.assertEqual(first_error.get("code"), "TRANSFORMATION_SOURCE_REQUIRED")
+        self.assertEqual(first_error.get("path"), "selected_ids[1].time_entry.description")
 
 
 if __name__ == "__main__":

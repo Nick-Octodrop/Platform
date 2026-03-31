@@ -53,6 +53,12 @@ def _resolve_ref(ref: str, context: dict) -> Any:
         return _get_by_path(context.get("actor", {}), ref[len("$user.") :])
     if ref.startswith("$record."):
         return _get_by_path(context.get("record", {}), ref[len("$record.") :])
+    if ref.startswith("$current."):
+        return _get_by_path(context.get("current", {}), ref[len("$current.") :])
+    if ref == "$parent":
+        return context.get("parent", {})
+    if ref.startswith("$parent."):
+        return _get_by_path(context.get("parent", {}), ref[len("$parent.") :])
     if ref.startswith("$candidate."):
         return _get_by_path(context.get("candidate", {}), ref[len("$candidate.") :])
     candidate_value = _get_by_path(context.get("candidate", {}), ref)

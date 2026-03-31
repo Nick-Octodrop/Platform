@@ -227,6 +227,30 @@ def build_suite() -> list[dict]:
             ],
         },
         {
+            "name": "preview_contacts_delete_roblux_noop",
+            "level": 1,
+            "tags": ["preview_contract", "noop", "contacts_change"],
+            "session": _session("preview_contacts_delete_roblux_noop"),
+            "steps": [
+                _chat_step(
+                    "Delete the roblux field from the Contacts module.",
+                    {
+                        "ok": True,
+                        "question_required": False,
+                        "assistant_text_contains": [
+                            "No changes are needed right now.",
+                        ],
+                        "assistant_text_not_contains": [
+                            "candidate_operations",
+                            "artifact_id",
+                            "manifest",
+                        ],
+                        "affected_modules_include": ["contacts"],
+                    },
+                )
+            ],
+        },
+        {
             "name": "preview_upgrade_contacts_latest_style",
             "level": 2,
             "tags": ["preview_contract", "upgrade", "contacts_change"],
@@ -409,6 +433,33 @@ def build_suite() -> list[dict]:
             ],
         },
         {
+            "name": "preview_jobs_emergency_required_fields",
+            "level": 5,
+            "tags": ["preview_contract", "conditional_forms", "form_layout", "jobs_change"],
+            "session": _session("preview_jobs_emergency_required_fields"),
+            "steps": [
+                _chat_step(
+                    "In Jobs, if the job type is Emergency, show After Hours Contact and Callout Reason fields and make them required.",
+                    {
+                        "ok": True,
+                        "question_required": True,
+                        "question_id": "confirm_plan",
+                        "assistant_text_contains": [
+                            "Jobs",
+                            "After Hours Contact",
+                            "Callout Reason",
+                        ],
+                        "assistant_text_not_contains": [
+                            "candidate_operations",
+                            "artifact_id",
+                            "manifest",
+                        ],
+                        "affected_modules_include": ["jobs"],
+                    },
+                )
+            ],
+        },
+        {
             "name": "preview_create_training_compliance_human_name",
             "level": 1,
             "tags": ["preview_contract", "create_module", "naming"],
@@ -428,6 +479,33 @@ def build_suite() -> list[dict]:
                             "candidate_operations",
                             "artifact_id",
                         ],
+                    },
+                )
+            ],
+        },
+        {
+            "name": "preview_contacts_status_action_wording_variant",
+            "level": 3,
+            "tags": ["preview_contract", "workflow_actions", "contacts_change", "status_update"],
+            "session": _session("preview_contacts_status_action_wording_variant"),
+            "steps": [
+                _chat_step(
+                    "In Contacts, create a Contacted status and make the action buttons obvious so staff can move records into that status from the form.",
+                    {
+                        "ok": True,
+                        "question_required": True,
+                        "question_id": "confirm_plan",
+                        "assistant_text_contains": [
+                            "Contacts",
+                            "Contacted",
+                            "action buttons",
+                        ],
+                        "assistant_text_not_contains": [
+                            "candidate_operations",
+                            "artifact_id",
+                            "manifest",
+                        ],
+                        "affected_modules_include": ["contacts"],
                     },
                 )
             ],

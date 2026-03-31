@@ -3,6 +3,7 @@ import { MoreHorizontal } from "lucide-react";
 import { renderField, setFieldValue, getFieldValue } from "./field_renderers.jsx";
 import { apiFetch } from "../api.js";
 import { evalCondition } from "../utils/conditions.js";
+import { applyComputedFields } from "../utils/computedFields.js";
 import Tabs from "../components/Tabs.jsx";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_BUTTON_XS } from "../components/buttonStyles.js";
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
@@ -37,6 +38,7 @@ export default function FormViewRenderer({
   previewMode = false,
   canCreateLookup,
   onLookupCreate,
+  onRefreshRecord,
   bottomActionsMode = "inline",
   renderBlocks = null,
 }) {
@@ -110,6 +112,14 @@ export default function FormViewRenderer({
   const [mobileAttachmentSheet, setMobileAttachmentSheet] = useState(null);
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const mobileActionsRef = useRef(null);
+  const computedRecord = useMemo(
+    () => applyComputedFields(fieldIndex || {}, record || {}),
+    [fieldIndex, record]
+  );
+  const applyRecordChange = React.useCallback(
+    (nextRecord) => onChange?.(applyComputedFields(fieldIndex || {}, nextRecord || {})),
+    [onChange, fieldIndex]
+  );
 
   const missing = sectionFieldIds.find((fieldId) => !fieldIndex[fieldId]);
   if (missing) {
@@ -160,12 +170,12 @@ export default function FormViewRenderer({
       const field = fieldIndex[fieldId];
       if (field?.type === "attachments") continue;
       const requiredWhen = field?.required_when;
-      const requiredByCondition = requiredWhen ? evalCondition(requiredWhen, { record }) : false;
+      const requiredByCondition = requiredWhen ? evalCondition(requiredWhen, { record: computedRecord }) : false;
       const isRequired = field?.required || requiredByStatus.has(fieldId) || requiredByCondition;
       const visibleWhen = field?.visible_when;
-      const isVisible = visibleWhen ? evalCondition(visibleWhen, { record }) : true;
+      const isVisible = visibleWhen ? evalCondition(visibleWhen, { record: computedRecord }) : true;
       if (isRequired && !readonly) {
-        const value = getFieldValue(record, fieldId);
+        const value = getFieldValue(computedRecord, fieldId);
         const hasDefault = Object.prototype.hasOwnProperty.call(field, "default");
         const isSystem = Boolean(field.system);
         const isEmptyValue =
@@ -182,13 +192,13 @@ export default function FormViewRenderer({
       }
     }
     return errors;
-  }, [record, sectionFieldIds, fieldIndex, readonly, requiredFields, hiddenSet]);
+  }, [computedRecord, sectionFieldIds, fieldIndex, readonly, requiredFields, hiddenSet]);
 
   const saveMode = header?.save_mode || "bottom";
   const showTopSave = saveMode === "top" || saveMode === "both";
   const showBottomSave = saveMode === "bottom" || saveMode === "both";
   const saveDisabled = previewMode || !isDirty || (showValidation && Object.keys(validationErrors).length > 0);
-  const effectiveRecordId = recordId || (hasRecord ? record?.id || null : null);
+  const effectiveRecordId = recordId || (hasRecord ? computedRecord?.id || null : null);
   const isNewRecord = !effectiveRecordId;
   const autoSaveEnabled = Boolean(header?.auto_save);
   // New records cannot autosave until they have an id, so keep explicit save/discard visible.
@@ -203,17 +213,17 @@ export default function FormViewRenderer({
       : "shrink-0 flex items-center gap-2";
 
   const resolvedTitleField = header?.title_field || displayField || null;
-  const resolvedTitleValue = resolvedTitleField ? getFieldValue(record, resolvedTitleField) : null;
+  const resolvedTitleValue = resolvedTitleField ? getFieldValue(computedRecord, resolvedTitleField) : null;
   const titleText = (resolvedTitleValue && String(resolvedTitleValue).trim()) || "New";
 
   useEffect(() => {
     if (!applyDefaults || defaultsApplied || readonly) return;
-    if (!record || typeof record !== "object") return;
+    if (!computedRecord || typeof computedRecord !== "object") return;
     const updates = {};
     for (const fieldId of sectionFieldIds) {
       const field = fieldIndex[fieldId];
       if (!field || !Object.prototype.hasOwnProperty.call(field, "default")) continue;
-      const existing = getFieldValue(record, fieldId);
+      const existing = getFieldValue(computedRecord, fieldId);
       if (existing === "" || existing === null || existing === undefined) {
         updates[fieldId] = field.default;
       }
@@ -223,13 +233,13 @@ export default function FormViewRenderer({
       setDefaultsApplied(true);
       return;
     }
-    let next = { ...record };
+    let next = { ...computedRecord };
     for (const fieldId of keys) {
       next = setFieldValue(next, fieldId, updates[fieldId]);
     }
     setDefaultsApplied(true);
-    onChange(next);
-  }, [applyDefaults, defaultsApplied, readonly, record, sectionFieldIds, fieldIndex, onChange]);
+    applyRecordChange(next);
+  }, [applyDefaults, defaultsApplied, readonly, computedRecord, sectionFieldIds, fieldIndex, applyRecordChange]);
 
   const renderSections = (() => {
     if (!hasTabs) {
@@ -258,7 +268,7 @@ export default function FormViewRenderer({
       if (hiddenSet.has(fieldId)) continue;
       const field = fieldIndex[fieldId];
       const visibleWhen = field?.visible_when;
-      const isVisible = visibleWhen ? evalCondition(visibleWhen, { record }) : true;
+      const isVisible = visibleWhen ? evalCondition(visibleWhen, { record: computedRecord }) : true;
       if (isVisible) visible.push(fieldId);
     }
     return visible;
@@ -278,7 +288,7 @@ export default function FormViewRenderer({
     if (op === "exists") {
       const fieldId = condition.field;
       if (typeof fieldId === "string") {
-        const value = getFieldValue(record, fieldId);
+        const value = getFieldValue(computedRecord, fieldId);
         if (value === "" || value === null || value === undefined) {
           missing.add(fieldId);
         }
@@ -301,7 +311,7 @@ export default function FormViewRenderer({
   function actionDisabledReason(action) {
     const cond = action?.enabled_when;
     if (!cond) return null;
-    const enabled = evalCondition(cond, { record });
+    const enabled = evalCondition(cond, { record: computedRecord });
     if (enabled) return null;
     const missing = new Set();
     collectMissingFields(cond, missing);
@@ -474,7 +484,7 @@ export default function FormViewRenderer({
       )}
       {header?.statusbar?.field_id && (
         <div className="shrink-0 pt-1">
-          <StatusBar field={fieldIndex[header.statusbar.field_id]} value={getFieldValue(record, header.statusbar.field_id)} />
+          <StatusBar field={fieldIndex[header.statusbar.field_id]} value={getFieldValue(computedRecord, header.statusbar.field_id)} />
         </div>
       )}
       {hasTabs && (
@@ -516,6 +526,7 @@ export default function FormViewRenderer({
                 previewMode={previewMode}
                 onLookupCreate={onLookupCreate}
                 canCreateLookup={canCreateLookup}
+                onRefreshParent={onRefreshRecord}
               />
             ) : (() => {
               const layout = section.layout;
@@ -538,9 +549,9 @@ export default function FormViewRenderer({
                   <div className={gridClass}>
                     {activeFields.map((fieldId) => {
                     const field = fieldIndex[fieldId];
-                    const value = getFieldValue(record, fieldId);
+                    const value = getFieldValue(computedRecord, fieldId);
                     const disabledWhen = field?.disabled_when;
-                    const isDisabled = disabledWhen ? evalCondition(disabledWhen, { record }) : false;
+                    const isDisabled = disabledWhen ? evalCondition(disabledWhen, { record: computedRecord }) : false;
                     const isAttachmentField = field?.type === "attachments";
                     return (
                       <div key={fieldId}>
@@ -578,9 +589,9 @@ export default function FormViewRenderer({
                             <LookupField
                               field={field}
                               value={value}
-                              onChange={(val) => onChange(setFieldValue(record, fieldId, val))}
+                              onChange={(val) => applyRecordChange(setFieldValue(computedRecord, fieldId, val))}
                               readonly={readonly || isDisabled}
-                              record={record}
+                              record={computedRecord}
                               previewMode={previewMode}
                               canCreate={canCreateLookup}
                               onCreate={onLookupCreate}
@@ -589,7 +600,7 @@ export default function FormViewRenderer({
                             <WorkspaceUserField
                               field={field}
                               value={value}
-                              onChange={(val) => onChange(setFieldValue(record, fieldId, val))}
+                              onChange={(val) => applyRecordChange(setFieldValue(computedRecord, fieldId, val))}
                               readonly={readonly || isDisabled}
                               members={workspaceMembers}
                               loadingMembers={workspaceMembersLoading}
@@ -598,7 +609,7 @@ export default function FormViewRenderer({
                             <WorkspaceUsersField
                               field={field}
                               value={value}
-                              onChange={(val) => onChange(setFieldValue(record, fieldId, val))}
+                              onChange={(val) => applyRecordChange(setFieldValue(computedRecord, fieldId, val))}
                               readonly={readonly || isDisabled}
                               members={workspaceMembers}
                               loadingMembers={workspaceMembersLoading}
@@ -607,8 +618,9 @@ export default function FormViewRenderer({
                             renderField(
                               field,
                               value,
-                              (val) => onChange(setFieldValue(record, fieldId, val)),
-                              readonly || isDisabled
+                              (val) => applyRecordChange(setFieldValue(computedRecord, fieldId, val)),
+                              readonly || isDisabled,
+                              computedRecord
                             )
                           )}
                           {!isAttachmentField && field.help_text && <span className="label label-text-alt opacity-50">{field.help_text}</span>}
@@ -693,6 +705,7 @@ function InlineLineItemsTable({
   previewMode = false,
   onLookupCreate,
   canCreateLookup,
+  onRefreshParent,
 }) {
   const childEntityId = config?.entity_id || null;
   const parentField = config?.parent_field || null;
@@ -834,6 +847,8 @@ function InlineLineItemsTable({
         method: "PUT",
         body: JSON.stringify({ [fieldId]: value }),
       });
+      await fetchRows();
+      await onRefreshParent?.();
     } catch {
       fetchRows();
     }
@@ -843,6 +858,7 @@ function InlineLineItemsTable({
     try {
       await apiFetch(`/records/${childEntityId}/${recordId}`, { method: "DELETE" });
       setRows((prev) => prev.filter((row) => row.record_id !== recordId));
+      await onRefreshParent?.();
     } catch {
       fetchRows();
     }
@@ -901,6 +917,7 @@ function InlineLineItemsTable({
       setSearchDebounced("");
       setLookupOpen(false);
       await fetchRows();
+      await onRefreshParent?.();
     } catch (err) {
       setError(err?.message || "Failed to add line item.");
     }

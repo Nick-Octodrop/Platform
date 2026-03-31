@@ -1,0 +1,659 @@
+{% set logo_url = "" %}
+{% if company is defined and company and "logo_url" in company and company["logo_url"] %}
+  {% set logo_url = company["logo_url"] %}
+{% elif workspace is defined and workspace and "logo_url" in workspace and workspace["logo_url"] %}
+  {% set logo_url = workspace["logo_url"] %}
+{% endif %}
+
+{% set invoice_number = "Draft Invoice" %}
+{% if record is defined and record and "billing_invoice.invoice_number" in record and record["billing_invoice.invoice_number"] %}
+  {% set invoice_number = record["billing_invoice.invoice_number"] %}
+{% endif %}
+
+{% set status_label = "Draft" %}
+{% if record is defined and record and "billing_invoice.status_label" in record and record["billing_invoice.status_label"] %}
+  {% set status_label = record["billing_invoice.status_label"] %}
+{% elif record is defined and record and "billing_invoice.status" in record and record["billing_invoice.status"] %}
+  {% set status_label = record["billing_invoice.status"] %}
+{% endif %}
+
+{% set issue_date = "-" %}
+{% if record is defined and record and "billing_invoice.issue_date" in record and record["billing_invoice.issue_date"] %}
+  {% set issue_date = record["billing_invoice.issue_date"] %}
+{% endif %}
+
+{% set due_date = "-" %}
+{% if record is defined and record and "billing_invoice.due_date" in record and record["billing_invoice.due_date"] %}
+  {% set due_date = record["billing_invoice.due_date"] %}
+{% endif %}
+
+{% set contact_name = "Client" %}
+{% if record is defined and record and "billing_invoice.contact_name" in record and record["billing_invoice.contact_name"] %}
+  {% set contact_name = record["billing_invoice.contact_name"] %}
+{% elif record is defined and record and "billing_invoice.contact_id_label" in record and record["billing_invoice.contact_id_label"] %}
+  {% set contact_name = record["billing_invoice.contact_id_label"] %}
+{% endif %}
+
+{% set bill_to_street = "" %}
+{% if record is defined and record and "billing_invoice.contact_street" in record and record["billing_invoice.contact_street"] %}
+  {% set bill_to_street = record["billing_invoice.contact_street"] %}
+{% elif record is defined and record and "billing_invoice.contact_address_line_1" in record and record["billing_invoice.contact_address_line_1"] %}
+  {% set bill_to_street = record["billing_invoice.contact_address_line_1"] %}
+{% endif %}
+
+{% set bill_to_street2 = "" %}
+{% if record is defined and record and "billing_invoice.contact_street2" in record and record["billing_invoice.contact_street2"] %}
+  {% set bill_to_street2 = record["billing_invoice.contact_street2"] %}
+{% elif record is defined and record and "billing_invoice.contact_address_line_2" in record and record["billing_invoice.contact_address_line_2"] %}
+  {% set bill_to_street2 = record["billing_invoice.contact_address_line_2"] %}
+{% endif %}
+
+{% set bill_to_city = "" %}
+{% if record is defined and record and "billing_invoice.contact_city" in record and record["billing_invoice.contact_city"] %}
+  {% set bill_to_city = record["billing_invoice.contact_city"] %}
+{% endif %}
+
+{% set bill_to_state = "" %}
+{% if record is defined and record and "billing_invoice.contact_state" in record and record["billing_invoice.contact_state"] %}
+  {% set bill_to_state = record["billing_invoice.contact_state"] %}
+{% elif record is defined and record and "billing_invoice.contact_region" in record and record["billing_invoice.contact_region"] %}
+  {% set bill_to_state = record["billing_invoice.contact_region"] %}
+{% endif %}
+
+{% set bill_to_postcode = "" %}
+{% if record is defined and record and "billing_invoice.contact_postcode" in record and record["billing_invoice.contact_postcode"] %}
+  {% set bill_to_postcode = record["billing_invoice.contact_postcode"] %}
+{% endif %}
+
+{% set bill_to_country = "" %}
+{% if record is defined and record and "billing_invoice.contact_country" in record and record["billing_invoice.contact_country"] %}
+  {% set bill_to_country = record["billing_invoice.contact_country"] %}
+{% endif %}
+
+{% set bill_to_locality = "" %}
+{% if bill_to_city %}
+  {% set bill_to_locality = bill_to_city %}
+{% endif %}
+{% if bill_to_state %}
+  {% if bill_to_locality %}
+    {% set bill_to_locality = bill_to_locality ~ ", " ~ bill_to_state %}
+  {% else %}
+    {% set bill_to_locality = bill_to_state %}
+  {% endif %}
+{% endif %}
+{% if bill_to_postcode %}
+  {% if bill_to_locality %}
+    {% set bill_to_locality = bill_to_locality ~ " " ~ bill_to_postcode %}
+  {% else %}
+    {% set bill_to_locality = bill_to_postcode %}
+  {% endif %}
+{% endif %}
+
+{% set subtotal = 0 %}
+{% if record is defined and record and "billing_invoice.subtotal" in record and record["billing_invoice.subtotal"] is not none %}
+  {% set subtotal = record["billing_invoice.subtotal"] %}
+{% endif %}
+
+{% set tax_rate = 0 %}
+{% if record is defined and record and "billing_invoice.tax_rate" in record and record["billing_invoice.tax_rate"] is not none %}
+  {% set tax_rate = record["billing_invoice.tax_rate"] %}
+{% endif %}
+
+{% set tax = 0 %}
+{% if record is defined and record and "billing_invoice.tax" in record and record["billing_invoice.tax"] is not none %}
+  {% set tax = record["billing_invoice.tax"] %}
+{% endif %}
+
+{% set total = 0 %}
+{% if record is defined and record and "billing_invoice.total" in record and record["billing_invoice.total"] is not none %}
+  {% set total = record["billing_invoice.total"] %}
+{% endif %}
+
+{% set invoice_notes = "" %}
+{% if record is defined and record and "billing_invoice.notes" in record and record["billing_invoice.notes"] %}
+  {% set invoice_notes = record["billing_invoice.notes"] %}
+{% endif %}
+
+{% set payment_details = "" %}
+{% if record is defined and record and "billing_invoice.payment_details" in record and record["billing_invoice.payment_details"] %}
+  {% set payment_details = record["billing_invoice.payment_details"] %}
+{% endif %}
+{% if record is defined and record and "billing_invoice.lines" in record and record["billing_invoice.lines"] %}
+  {% set line_items = record["billing_invoice.lines"] %}
+{% elif record is defined and record and "billing_invoice_line_items" in record and record["billing_invoice_line_items"] %}
+  {% set line_items = record["billing_invoice_line_items"] %}
+{% else %}
+  {% set line_items = [] %}
+{% endif %}
+
+{% set formatted_subtotal = subtotal %}
+{% if formatted is defined and formatted and "billing_invoice.subtotal" in formatted and formatted["billing_invoice.subtotal"] %}
+  {% set formatted_subtotal = formatted["billing_invoice.subtotal"] %}
+{% endif %}
+
+{% set formatted_tax_rate = ("%.2f" % ((tax_rate|float) if tax_rate is not none and tax_rate != "" else 0)) ~ "%" %}
+{% if formatted is defined and formatted and "billing_invoice.tax_rate" in formatted and formatted["billing_invoice.tax_rate"] %}
+  {% set formatted_tax_rate = formatted["billing_invoice.tax_rate"] %}
+{% endif %}
+
+{% set formatted_tax = tax %}
+{% if formatted is defined and formatted and "billing_invoice.tax" in formatted and formatted["billing_invoice.tax"] %}
+  {% set formatted_tax = formatted["billing_invoice.tax"] %}
+{% endif %}
+
+{% set formatted_total = total %}
+{% if formatted is defined and formatted and "billing_invoice.total" in formatted and formatted["billing_invoice.total"] %}
+  {% set formatted_total = formatted["billing_invoice.total"] %}
+{% endif %}
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: 'Inter', Arial, Helvetica, sans-serif;
+    color: #172033;
+    font-size: 10px;
+    line-height: 1.4;
+    background: #ffffff;
+  }
+
+  .page {
+    width: 100%;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  .hero table,
+  .meta table,
+  .items table,
+  .bottom table,
+  .totals table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .hero {
+    padding: 18px 0 16px;
+    border-bottom: 2px solid #1b2435;
+  }
+
+  .hero-left,
+  .hero-right,
+  .meta-left,
+  .meta-right,
+  .notes-col,
+  .totals-col {
+    vertical-align: top;
+  }
+
+  .hero-left {
+    width: 40%;
+    padding-right: 18px;
+  }
+
+  .hero-right {
+    width: 60%;
+    text-align: right;
+  }
+
+  .logo {
+    display: block;
+    max-width: 210px;
+    max-height: 48px;
+    object-fit: contain;
+  }
+
+  .brand-fallback {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    color: #f27124;
+  }
+
+  .status-label {
+    color: #f27124;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .invoice-title {
+    margin: 6px 0 0;
+    font-size: 38px;
+    line-height: 1;
+    font-weight: 800;
+    letter-spacing: -0.05em;
+    color: #132238;
+  }
+
+  .invoice-number {
+    margin-top: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #5f6b7a;
+  }
+
+  .invoice-dates {
+    width: 100%;
+    max-width: 240px;
+    margin: 10px 0 0 auto;
+  }
+
+  .invoice-date-row {
+    margin-top: 8px;
+  }
+
+  .invoice-date-key {
+    color: #7a8696;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .invoice-date-val {
+    margin-top: 3px;
+    color: #132238;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .meta {
+    padding: 16px 0 0;
+  }
+
+  .meta-left {
+    width: 100%;
+    padding-right: 0;
+  }
+
+  .section-label {
+    margin-bottom: 7px;
+    color: #7a8696;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .bill-name {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+    color: #132238;
+  }
+
+  .bill-sub {
+    margin-top: 5px;
+    color: #66717f;
+  }
+
+  .bill-line {
+    margin-top: 4px;
+    color: #66717f;
+    font-size: 10px;
+    line-height: 1.35;
+  }
+
+  .items {
+    margin-top: 20px;
+  }
+
+  .items-head {
+    margin-bottom: 8px;
+  }
+
+  .items-title {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 700;
+    color: #132238;
+  }
+
+  .items-sub {
+    margin-top: 4px;
+    color: #7a8696;
+    font-size: 9px;
+  }
+
+  .items-table {
+    table-layout: fixed;
+    width: 100%;
+  }
+
+  .items-table thead {
+    display: table-header-group;
+  }
+
+  .items-table tr {
+    page-break-inside: avoid;
+  }
+
+  .items-table thead th {
+    padding: 9px 8px;
+    color: #6f7b8b;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border-bottom: 1px solid #e3d7cf;
+  }
+
+  .items-table tbody td {
+    padding: 9px 8px;
+    vertical-align: top;
+    border-bottom: 1px solid #efe7e1;
+    font-size: 10px;
+  }
+
+  .col-desc { width: 46%; text-align: left; }
+  .col-qty { width: 14%; text-align: right; }
+  .col-rate { width: 20%; text-align: right; }
+  .col-amount { width: 20%; text-align: right; }
+
+  .desc-main {
+    color: #172033;
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .desc-sub {
+    margin-top: 3px;
+    color: #7a8696;
+    font-size: 9px;
+  }
+
+  .empty td {
+    padding: 18px 8px;
+    text-align: center;
+    color: #7a8696;
+  }
+
+  .bottom {
+    margin-top: 18px;
+  }
+
+  .notes-col {
+    width: 56%;
+    padding-right: 24px;
+  }
+
+  .totals-col {
+    width: 44%;
+  }
+
+  .block {
+    margin-bottom: 14px;
+  }
+
+  .block-title {
+    margin-bottom: 7px;
+    color: #7a8696;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .block-copy {
+    color: #233142;
+    font-size: 10px;
+    white-space: pre-line;
+  }
+
+  .totals {
+    width: 100%;
+    max-width: 320px;
+    margin-left: auto;
+    table-layout: fixed;
+    border-top: 2px solid #1b2435;
+  }
+
+  .totals td {
+    padding: 7px 0;
+  }
+
+  .totals-label {
+    color: #7a8696;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .totals-value {
+    text-align: right;
+    color: #172033;
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .grand td {
+    padding-top: 12px;
+    border-top: 1px solid #e7ddd6;
+  }
+
+  .grand .totals-label {
+    color: #132238;
+  }
+
+  .grand .totals-value {
+    color: #f27124;
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+  }
+
+  .thanks {
+    margin-top: 14px;
+    color: #7a8696;
+    font-size: 9px;
+  }
+</style>
+
+<div class="page">
+  <section class="hero">
+    <table>
+      <tr>
+        <td class="hero-left">
+          {% if logo_url %}
+            <img class="logo" src="{{ logo_url }}" alt="Logo" />
+          {% else %}
+            <div class="brand-fallback">Octodrop</div>
+          {% endif %}
+        </td>
+        <td class="hero-right">
+          <div class="status-label">{{ status_label }}</div>
+          <div class="invoice-title">Invoice</div>
+          <div class="invoice-number">{{ invoice_number }}</div>
+          <div class="invoice-dates">
+            <div class="invoice-date-row">
+              <div class="invoice-date-key">Issue Date</div>
+              <div class="invoice-date-val">{{ issue_date }}</div>
+            </div>
+            <div class="invoice-date-row">
+              <div class="invoice-date-key">Due Date</div>
+              <div class="invoice-date-val">{{ due_date }}</div>
+            </div>
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <section class="meta">
+      <table>
+        <tr>
+          <td class="meta-left">
+            <div class="section-label">Bill To</div>
+            <p class="bill-name">{{ contact_name }}</p>
+            {% if record is defined and record and "billing_invoice.contact_id_label" in record and record["billing_invoice.contact_id_label"] and record["billing_invoice.contact_id_label"] != contact_name %}
+              <div class="bill-sub">{{ record["billing_invoice.contact_id_label"] }}</div>
+            {% endif %}
+            {% if bill_to_street %}
+              <div class="bill-line">{{ bill_to_street }}</div>
+            {% endif %}
+            {% if bill_to_street2 %}
+              <div class="bill-line">{{ bill_to_street2 }}</div>
+            {% endif %}
+            {% if bill_to_locality %}
+              <div class="bill-line">{{ bill_to_locality }}</div>
+            {% endif %}
+            {% if bill_to_country %}
+              <div class="bill-line">{{ bill_to_country }}</div>
+            {% endif %}
+          </td>
+        </tr>
+      </table>
+    </section>
+  </section>
+
+  <section class="items">
+    <div class="items-head">
+      <h2 class="items-title">Line Items</h2>
+      <div class="items-sub">{{ line_items|length }} item{% if line_items|length != 1 %}s{% endif %}</div>
+    </div>
+
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th class="col-desc">Description</th>
+          <th class="col-qty">Qty</th>
+          <th class="col-rate">Unit Price</th>
+          <th class="col-amount">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if line_items %}
+          {% for line in line_items %}
+            {% set description = "Invoice item" %}
+            {% if "billing_invoice_line.description" in line and line["billing_invoice_line.description"] %}
+              {% set description = line["billing_invoice_line.description"] %}
+            {% elif "description" in line and line["description"] %}
+              {% set description = line["description"] %}
+            {% endif %}
+
+            {% set project_name = "" %}
+            {% if "project_name" in line and line["project_name"] %}
+              {% set project_name = line["project_name"] %}
+            {% elif "billing_invoice_line.project_id_label" in line and line["billing_invoice_line.project_id_label"] %}
+              {% set project_name = line["billing_invoice_line.project_id_label"] %}
+            {% elif "project_id_label" in line and line["project_id_label"] %}
+              {% set project_name = line["project_id_label"] %}
+            {% endif %}
+
+            {% set task_name = "" %}
+            {% if "task_name" in line and line["task_name"] %}
+              {% set task_name = line["task_name"] %}
+            {% elif "billing_invoice_line.task_id_label" in line and line["billing_invoice_line.task_id_label"] %}
+              {% set task_name = line["billing_invoice_line.task_id_label"] %}
+            {% elif "task_id_label" in line and line["task_id_label"] %}
+              {% set task_name = line["task_id_label"] %}
+            {% endif %}
+
+            {% set time_entry_name = "" %}
+            {% if "time_entry_name" in line and line["time_entry_name"] %}
+              {% set time_entry_name = line["time_entry_name"] %}
+            {% elif "billing_invoice_line.time_entry_id_label" in line and line["billing_invoice_line.time_entry_id_label"] %}
+              {% set time_entry_name = line["billing_invoice_line.time_entry_id_label"] %}
+            {% elif "time_entry_id_label" in line and line["time_entry_id_label"] %}
+              {% set time_entry_name = line["time_entry_id_label"] %}
+            {% endif %}
+
+            {% set quantity = 0 %}
+            {% if "billing_invoice_line.quantity_hours" in line and line["billing_invoice_line.quantity_hours"] is not none %}
+              {% set quantity = line["billing_invoice_line.quantity_hours"] %}
+            {% elif "quantity_hours" in line and line["quantity_hours"] is not none %}
+              {% set quantity = line["quantity_hours"] %}
+            {% elif "hours" in line and line["hours"] is not none %}
+              {% set quantity = line["hours"] %}
+            {% endif %}
+
+            {% set rate = 0 %}
+            {% if "billing_invoice_line.rate" in line and line["billing_invoice_line.rate"] is not none %}
+              {% set rate = line["billing_invoice_line.rate"] %}
+            {% elif "rate" in line and line["rate"] is not none %}
+              {% set rate = line["rate"] %}
+            {% endif %}
+
+            {% set amount = 0 %}
+            {% if "billing_invoice_line.amount" in line and line["billing_invoice_line.amount"] is not none %}
+              {% set amount = line["billing_invoice_line.amount"] %}
+            {% elif "amount" in line and line["amount"] is not none %}
+              {% set amount = line["amount"] %}
+            {% endif %}
+
+            {% set formatted_quantity = ("%.2f" % ((quantity|float) if quantity is not none and quantity != "" else 0)) ~ " hrs" %}
+            {% set formatted_rate = "%.2f" % ((rate|float) if rate is not none and rate != "" else 0) %}
+            {% set formatted_amount = "%.2f" % ((amount|float) if amount is not none and amount != "" else 0) %}
+            <tr>
+              <td class="col-desc">
+                <div class="desc-main">{{ description }}</div>
+                {% if project_name %}
+                  <div class="desc-sub">{{ project_name }}</div>
+                {% endif %}
+                {% if task_name %}
+                  <div class="desc-sub">{{ task_name }}</div>
+                {% endif %}
+                {% if time_entry_name %}
+                  <div class="desc-sub">{{ time_entry_name }}</div>
+                {% endif %}
+              </td>
+              <td class="col-qty">{{ formatted_quantity }}</td>
+              <td class="col-rate">{{ formatted_rate }}</td>
+              <td class="col-amount">{{ formatted_amount }}</td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr class="empty">
+            <td colspan="4">No invoice lines available for this invoice.</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="bottom">
+    <table>
+      <tr>
+        <td class="notes-col">
+          {% if invoice_notes %}
+            <div class="block">
+              <div class="block-title">Notes</div>
+              <div class="block-copy">{{ invoice_notes }}</div>
+            </div>
+          {% endif %}
+
+          {% if payment_details %}
+            <div class="block">
+              <div class="block-title">Payment Details</div>
+              <div class="block-copy">{{ payment_details }}</div>
+            </div>
+          {% endif %}
+        </td>
+        <td class="totals-col">
+          <table class="totals">
+            <tr>
+              <td class="totals-label">Subtotal</td>
+              <td class="totals-value">{{ formatted_subtotal }}</td>
+            </tr>
+            <tr>
+              <td class="totals-label">Tax ({{ formatted_tax_rate }})</td>
+              <td class="totals-value">{{ formatted_tax }}</td>
+            </tr>
+            <tr class="grand">
+              <td class="totals-label">Total Amount Due</td>
+              <td class="totals-value">{{ formatted_total }}</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+
+    <div class="thanks">Thank you for your business.</div>
+  </section>
+</div>
