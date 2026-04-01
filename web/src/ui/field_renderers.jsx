@@ -1,5 +1,5 @@
 import React from "react";
-import { getFieldInputAffixes } from "../utils/fieldFormatting.js";
+import { formatFieldValue, getFieldInputAffixes } from "../utils/fieldFormatting.js";
 
 export function getFieldValue(record, fieldId) {
   if (!record) return "";
@@ -171,6 +171,18 @@ export function renderField(field, value, onChange, readonly, record = null) {
     }
     case "number":
       {
+        const isReadOnlyNumber = readonly || field.readonly;
+        if (isReadOnlyNumber) {
+          return (
+            <input
+              className="input input-bordered w-full text-right"
+              disabled
+              readOnly
+              type="text"
+              value={formatFieldValue(field, value, record)}
+            />
+          );
+        }
         const { prefix, suffix, align } = getFieldInputAffixes(field, record);
         const leftPad = prefix ? `${Math.max(3.2, prefix.length * 0.6 + 1.4)}rem` : undefined;
         const rightPad = suffix ? `${Math.max(3.2, suffix.length * 0.6 + 1.4)}rem` : undefined;
@@ -183,9 +195,12 @@ export function renderField(field, value, onChange, readonly, record = null) {
             ) : null}
             <input
               {...common}
-              type="number"
-              className={`${common.className} ${align}`.trim()}
+              type="text"
+              inputMode="decimal"
+              className={`${common.className} ${align} [appearance:textfield]`.trim()}
               style={{
+                appearance: "textfield",
+                MozAppearance: "textfield",
                 paddingLeft: leftPad,
                 paddingRight: rightPad,
               }}
@@ -196,7 +211,9 @@ export function renderField(field, value, onChange, readonly, record = null) {
                   onChange("");
                   return;
                 }
-                const parsed = Number(next);
+                const normalized = next.replace(/,/g, "").trim();
+                if (!/^-?\d*(\.\d*)?$/.test(normalized)) return;
+                const parsed = Number(normalized);
                 onChange(Number.isNaN(parsed) ? "" : parsed);
               }}
             />
