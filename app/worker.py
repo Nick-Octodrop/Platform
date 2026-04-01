@@ -1558,6 +1558,7 @@ def _run_automation(job: dict, org_id: str, automation_store: DbAutomationStore 
         raise RuntimeError("automation.run missing run_id")
     run = automation_store.get_run(run_id)
     if not run:
+        logger.error("automation_run_missing run_id=%s org_id=%s job_id=%s", run_id, org_id, job.get("id"))
         raise RuntimeError("Automation run not found")
     if run.get("status") in {"succeeded", "failed", "cancelled"}:
         return

@@ -353,11 +353,11 @@ export default function AttachmentGallery({
                 )}
 
                 <div className="absolute inset-x-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="join w-full bg-base-100 rounded-btn border border-base-300 shadow-md">
-                    <DaisyTooltip label="Preview" placement="top" className="join-item flex-1">
+                  <div className={`grid ${canDelete ? "grid-cols-3" : "grid-cols-2"} items-center justify-items-center rounded-2xl border border-base-300 bg-base-100 px-2 py-1.5 shadow-md`}>
+                    <DaisyTooltip label="Preview" placement="top">
                       <button
                         type="button"
-                        className="btn btn-ghost btn-xs w-full"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-base-content transition-colors hover:bg-base-200"
                         onClick={(event) => {
                           event.stopPropagation();
                           handleOpenPreview(attachment);
@@ -366,10 +366,10 @@ export default function AttachmentGallery({
                         <Eye className="h-3.5 w-3.5" />
                       </button>
                     </DaisyTooltip>
-                    <DaisyTooltip label="Download" placement="top" className="join-item flex-1">
+                    <DaisyTooltip label="Download" placement="top">
                       <button
                         type="button"
-                        className="btn btn-ghost btn-xs w-full"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-base-content transition-colors hover:bg-base-200"
                         onClick={(event) => {
                           event.stopPropagation();
                           handleDownload(attachment);
@@ -379,10 +379,10 @@ export default function AttachmentGallery({
                       </button>
                     </DaisyTooltip>
                     {canDelete ? (
-                      <DaisyTooltip label="Delete" placement="top" className="join-item flex-1">
+                      <DaisyTooltip label="Delete" placement="top">
                         <button
                           type="button"
-                          className="btn btn-ghost btn-xs w-full text-error"
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-error transition-colors hover:bg-error/10"
                           onClick={(event) => {
                             event.stopPropagation();
                             onDelete?.(attachment);

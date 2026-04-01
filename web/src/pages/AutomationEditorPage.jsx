@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowDown, ArrowUp, Copy, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, GripVertical, Trash2 } from "lucide-react";
 import { apiFetch } from "../api";
 import TemplateStudioShell from "./templates/TemplateStudioShell.jsx";
 import CodeTextarea from "../components/CodeTextarea.jsx";
@@ -296,6 +296,8 @@ export default function AutomationEditorPage({ user }) {
   const [webhookTestEventKey, setWebhookTestEventKey] = useState("");
   const [webhookTestProviderEventId, setWebhookTestProviderEventId] = useState("");
   const [openStepKeys, setOpenStepKeys] = useState([]);
+  const [draggedStepPath, setDraggedStepPath] = useState(null);
+  const [dragOverKey, setDragOverKey] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
@@ -303,6 +305,7 @@ export default function AutomationEditorPage({ user }) {
   const [chatLoading, setChatLoading] = useState(false);
   const [runs, setRuns] = useState([]);
   const [runsLoading, setRunsLoading] = useState(false);
+  const [runsError, setRunsError] = useState("");
   const [meta, setMeta] = useState({
     event_types: [],
     event_catalog: [],
@@ -388,11 +391,13 @@ export default function AutomationEditorPage({ user }) {
   const loadRuns = useCallback(async () => {
     if (!automationId) return;
     setRunsLoading(true);
+    setRunsError("");
     try {
       const res = await apiFetch(`/automations/${automationId}/runs`);
       setRuns(res?.runs || []);
     } catch (err) {
       setRuns([]);
+      setRunsError(err?.message || "Failed to load runs");
     }
     setRunsLoading(false);
   }, [automationId]);
@@ -664,6 +669,86 @@ export default function AutomationEditorPage({ user }) {
         [branchKey]: branchItems,
       };
     });
+  }
+
+  function getStepListAtPath(sourceSteps, listPath) {
+    const normalized = normalizeStepPath(listPath);
+    if (!normalized.length) return sourceSteps;
+    const parentPath = normalized.slice(0, -1);
+    const branchKey = normalized[normalized.length - 1];
+    if (!["then_steps", "else_steps", "steps"].includes(branchKey)) return [];
+    const parentStep = getStepAtPath(parentPath, sourceSteps);
+    return Array.isArray(parentStep?.[branchKey]) ? parentStep[branchKey] : [];
+  }
+
+  function pathsEqual(leftPath, rightPath) {
+    const left = normalizeStepPath(leftPath);
+    const right = normalizeStepPath(rightPath);
+    if (left.length !== right.length) return false;
+    return left.every((part, idx) => part === right[idx]);
+  }
+
+  function isPathPrefix(prefixPath, fullPath) {
+    const prefix = normalizeStepPath(prefixPath);
+    const full = normalizeStepPath(fullPath);
+    if (prefix.length > full.length) return false;
+    return prefix.every((part, idx) => part === full[idx]);
+  }
+
+  function moveStepToList(sourcePath, targetListPath, targetIndex) {
+    const normalizedSourcePath = normalizeStepPath(sourcePath);
+    const normalizedTargetListPath = normalizeStepPath(targetListPath);
+    if (!normalizedSourcePath.length) return;
+    if (isPathPrefix(normalizedSourcePath, normalizedTargetListPath)) return;
+
+    let nextSelectedPath = null;
+    setSteps((prev) => {
+      const stepToMove = getStepAtPath(normalizedSourcePath, prev);
+      if (!stepToMove) return prev;
+
+      const sourceListPath = normalizedSourcePath.slice(0, -1);
+      const sourceIndex = normalizedSourcePath[normalizedSourcePath.length - 1];
+      const targetList = getStepListAtPath(prev, normalizedTargetListPath);
+      const boundedTargetIndex = Math.max(0, Math.min(targetIndex, targetList.length));
+
+      let adjustedTargetIndex = boundedTargetIndex;
+      if (pathsEqual(sourceListPath, normalizedTargetListPath) && typeof sourceIndex === "number" && sourceIndex < boundedTargetIndex) {
+        adjustedTargetIndex -= 1;
+      }
+      if (pathsEqual(sourceListPath, normalizedTargetListPath) && adjustedTargetIndex === sourceIndex) {
+        nextSelectedPath = normalizedSourcePath;
+        return prev;
+      }
+
+      const nextWithoutSource = removeStepAtPath(prev, normalizedSourcePath);
+      const nextSteps = insertStepAtListPath(nextWithoutSource, normalizedTargetListPath, adjustedTargetIndex, stepToMove);
+      nextSelectedPath = [...normalizedTargetListPath, adjustedTargetIndex];
+      return nextSteps;
+    });
+
+    if (nextSelectedPath) {
+      setSelectedStepPath(nextSelectedPath);
+      setStepModalOpen(false);
+    }
+  }
+
+  function makeDropKey(listPath, insertIndex) {
+    return `${normalizeStepPath(listPath).join(".") || "root"}::${insertIndex}`;
+  }
+
+  function handleStepDragStart(path) {
+    setDraggedStepPath(normalizeStepPath(path));
+  }
+
+  function handleStepDragEnd() {
+    setDraggedStepPath(null);
+    setDragOverKey("");
+  }
+
+  function handleDropIntoList(listPath, insertIndex) {
+    if (!draggedStepPath) return;
+    moveStepToList(draggedStepPath, listPath, insertIndex);
+    handleStepDragEnd();
   }
 
   function updateStep(index, patch) {
@@ -1473,10 +1558,64 @@ export default function AutomationEditorPage({ user }) {
 
   function renderStepCards(items, pathPrefix = []) {
     if (!Array.isArray(items) || items.length === 0) {
-      return <div className="text-xs opacity-50">No steps yet.</div>;
+      const emptyDropKey = makeDropKey(pathPrefix, 0);
+      const isDropTarget = dragOverKey === emptyDropKey;
+      return (
+        <div
+          className={`rounded-box border border-dashed p-3 transition ${isDropTarget ? "border-primary bg-primary/5" : "border-base-300 bg-base-100/40"}`}
+          onDragOver={(event) => {
+            if (!draggedStepPath) return;
+            event.preventDefault();
+            setDragOverKey(emptyDropKey);
+          }}
+          onDragLeave={() => {
+            if (dragOverKey === emptyDropKey) setDragOverKey("");
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            handleDropIntoList(pathPrefix, 0);
+          }}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs opacity-60">
+              {draggedStepPath ? "Drop a step here" : "No steps yet."}
+            </div>
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              onClick={() => insertStepAfter(pathPrefix, -1)}
+            >
+              Add step
+            </button>
+          </div>
+        </div>
+      );
     }
     return (
       <div className="space-y-3">
+        {(() => {
+          const topDropKey = makeDropKey(pathPrefix, 0);
+          const isDropTarget = dragOverKey === topDropKey;
+          return (
+            <div
+              className={`rounded-box border border-dashed px-3 py-2 transition ${draggedStepPath ? "block" : "hidden"} ${isDropTarget ? "border-primary bg-primary/5" : "border-base-300 bg-base-100/30"}`}
+              onDragOver={(event) => {
+                if (!draggedStepPath) return;
+                event.preventDefault();
+                setDragOverKey(topDropKey);
+              }}
+              onDragLeave={() => {
+                if (dragOverKey === topDropKey) setDragOverKey("");
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                handleDropIntoList(pathPrefix, 0);
+              }}
+            >
+              <div className="text-xs opacity-60">Drop step here to place it first</div>
+            </div>
+          );
+        })()}
         {items.map((step, index) => {
           const path = [...pathPrefix, index];
           const isSelected = JSON.stringify(path) === JSON.stringify(selectedStepPath);
@@ -1485,9 +1624,27 @@ export default function AutomationEditorPage({ user }) {
           const nestedLoop = Array.isArray(step?.steps) ? step.steps : [];
           const canMoveUp = index > 0;
           const canMoveDown = index < items.length - 1;
+          const beforeDropKey = makeDropKey(pathPrefix, index);
+          const afterDropKey = makeDropKey(pathPrefix, index + 1);
+          const isBeforeDropTarget = dragOverKey === beforeDropKey;
+          const isAfterDropTarget = dragOverKey === afterDropKey;
           return (
             <div key={step.id || path.join(".")} className="space-y-2">
-              <div className={`rounded-box border p-4 transition ${isSelected ? "border-primary bg-primary/5 shadow-sm" : "border-base-300 bg-base-100"}`}>
+              <div
+                className={`rounded-box border p-4 transition ${isSelected ? "border-primary bg-primary/5 shadow-sm" : "border-base-300 bg-base-100"} ${isBeforeDropTarget ? "ring-2 ring-primary/40" : ""} ${draggedStepPath && pathsEqual(draggedStepPath, path) ? "opacity-60" : ""}`}
+                onDragOver={(event) => {
+                  if (!draggedStepPath) return;
+                  event.preventDefault();
+                  setDragOverKey(beforeDropKey);
+                }}
+                onDragLeave={() => {
+                  if (dragOverKey === beforeDropKey) setDragOverKey("");
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  handleDropIntoList(pathPrefix, index);
+                }}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <button
                     type="button"
@@ -1507,6 +1664,17 @@ export default function AutomationEditorPage({ user }) {
                   </button>
                   <div className="shrink-0 flex flex-col items-end gap-2">
                     <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-xs cursor-grab active:cursor-grabbing"
+                        title="Drag step"
+                        aria-label="Drag step"
+                        draggable
+                        onDragStart={() => handleStepDragStart(path)}
+                        onDragEnd={handleStepDragEnd}
+                      >
+                        <GripVertical className="h-3.5 w-3.5" />
+                      </button>
                       <button
                         type="button"
                         className="btn btn-ghost btn-xs"
@@ -1549,18 +1717,46 @@ export default function AutomationEditorPage({ user }) {
                 <div className="ml-5 space-y-3 border-l border-base-300 pl-4">
                   {nestedThen.length > 0 ? (
                     <div className="rounded-box border border-base-300 bg-base-100/60 p-3">
-                      <div className="flex items-center justify-between gap-2 mb-2">
+                      <div
+                        className={`flex items-center justify-between gap-2 mb-2 rounded-box px-2 py-2 transition ${dragOverKey === makeDropKey([...path, "then_steps"], nestedThen.length) ? "border border-primary bg-primary/5" : ""}`}
+                        onDragOver={(event) => {
+                          if (!draggedStepPath) return;
+                          event.preventDefault();
+                          setDragOverKey(makeDropKey([...path, "then_steps"], nestedThen.length));
+                        }}
+                        onDragLeave={() => {
+                          if (dragOverKey === makeDropKey([...path, "then_steps"], nestedThen.length)) setDragOverKey("");
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          handleDropIntoList([...path, "then_steps"], nestedThen.length);
+                        }}
+                      >
                         <div className="text-xs uppercase tracking-wide opacity-60">Then</div>
                         <button type="button" className="btn btn-xs btn-ghost" onClick={() => addNestedStep(path, "then_steps")}>Add step</button>
                       </div>
                       {renderStepCards(nestedThen, [...path, "then_steps"])}
                     </div>
                   ) : (
-                    <div className="rounded-box border border-dashed border-base-300 bg-base-100/40 p-3">
+                    <div
+                      className={`rounded-box border border-dashed bg-base-100/40 p-3 transition ${dragOverKey === makeDropKey([...path, "then_steps"], 0) ? "border-primary bg-primary/5" : "border-base-300"}`}
+                      onDragOver={(event) => {
+                        if (!draggedStepPath) return;
+                        event.preventDefault();
+                        setDragOverKey(makeDropKey([...path, "then_steps"], 0));
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverKey === makeDropKey([...path, "then_steps"], 0)) setDragOverKey("");
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        handleDropIntoList([...path, "then_steps"], 0);
+                      }}
+                    >
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <div className="text-[11px] uppercase tracking-wide opacity-50">Then</div>
-                          <div className="text-xs opacity-60">These steps run when the condition is true.</div>
+                          <div className="text-xs opacity-60">{draggedStepPath ? "Drop a step here to run it when true." : "These steps run when the condition is true."}</div>
                         </div>
                         <button type="button" className="btn btn-xs btn-ghost" onClick={() => addNestedStep(path, "then_steps")}>Add then step</button>
                       </div>
@@ -1568,18 +1764,46 @@ export default function AutomationEditorPage({ user }) {
                   )}
                   {nestedElse.length > 0 ? (
                     <div className="rounded-box border border-base-300 bg-base-100/60 p-3">
-                      <div className="flex items-center justify-between gap-2 mb-2">
+                      <div
+                        className={`flex items-center justify-between gap-2 mb-2 rounded-box px-2 py-2 transition ${dragOverKey === makeDropKey([...path, "else_steps"], nestedElse.length) ? "border border-primary bg-primary/5" : ""}`}
+                        onDragOver={(event) => {
+                          if (!draggedStepPath) return;
+                          event.preventDefault();
+                          setDragOverKey(makeDropKey([...path, "else_steps"], nestedElse.length));
+                        }}
+                        onDragLeave={() => {
+                          if (dragOverKey === makeDropKey([...path, "else_steps"], nestedElse.length)) setDragOverKey("");
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          handleDropIntoList([...path, "else_steps"], nestedElse.length);
+                        }}
+                      >
                         <div className="text-xs uppercase tracking-wide opacity-60">Else</div>
                         <button type="button" className="btn btn-xs btn-ghost" onClick={() => addNestedStep(path, "else_steps")}>Add step</button>
                       </div>
                       {renderStepCards(nestedElse, [...path, "else_steps"])}
                     </div>
                   ) : (
-                    <div className="rounded-box border border-dashed border-base-300 bg-base-100/40 p-3">
+                    <div
+                      className={`rounded-box border border-dashed bg-base-100/40 p-3 transition ${dragOverKey === makeDropKey([...path, "else_steps"], 0) ? "border-primary bg-primary/5" : "border-base-300"}`}
+                      onDragOver={(event) => {
+                        if (!draggedStepPath) return;
+                        event.preventDefault();
+                        setDragOverKey(makeDropKey([...path, "else_steps"], 0));
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverKey === makeDropKey([...path, "else_steps"], 0)) setDragOverKey("");
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        handleDropIntoList([...path, "else_steps"], 0);
+                      }}
+                    >
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <div className="text-[11px] uppercase tracking-wide opacity-50">Else</div>
-                          <div className="text-xs opacity-60">These steps run when the condition is false.</div>
+                          <div className="text-xs opacity-60">{draggedStepPath ? "Drop a step here to run it when false." : "These steps run when the condition is false."}</div>
                         </div>
                         <button type="button" className="btn btn-xs btn-ghost" onClick={() => addNestedStep(path, "else_steps")}>Add else step</button>
                       </div>
@@ -1590,35 +1814,72 @@ export default function AutomationEditorPage({ user }) {
 
               {step.kind === "foreach" && (
                 <div className="ml-5 rounded-box border border-base-300 bg-base-100/60 p-3 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
+                  <div
+                    className={`flex items-center justify-between gap-2 rounded-box px-2 py-2 transition ${dragOverKey === makeDropKey([...path, "steps"], nestedLoop.length) ? "border border-primary bg-primary/5" : ""}`}
+                    onDragOver={(event) => {
+                      if (!draggedStepPath) return;
+                      event.preventDefault();
+                      setDragOverKey(makeDropKey([...path, "steps"], nestedLoop.length));
+                    }}
+                    onDragLeave={() => {
+                      if (dragOverKey === makeDropKey([...path, "steps"], nestedLoop.length)) setDragOverKey("");
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      handleDropIntoList([...path, "steps"], nestedLoop.length);
+                    }}
+                  >
                     <div className="text-xs uppercase tracking-wide opacity-60">Repeat Steps</div>
                     <button type="button" className="btn btn-xs btn-ghost" onClick={() => addNestedStep(path, "steps")}>Add step</button>
                   </div>
-                  {nestedLoop.length ? renderStepCards(nestedLoop, [...path, "steps"]) : <div className="text-xs opacity-50">No repeat steps yet.</div>}
+                  {nestedLoop.length ? renderStepCards(nestedLoop, [...path, "steps"]) : (
+                    <div
+                      className={`rounded-box border border-dashed p-3 text-xs transition ${dragOverKey === makeDropKey([...path, "steps"], 0) ? "border-primary bg-primary/5" : "border-base-300 bg-base-100/30 opacity-50"}`}
+                      onDragOver={(event) => {
+                        if (!draggedStepPath) return;
+                        event.preventDefault();
+                        setDragOverKey(makeDropKey([...path, "steps"], 0));
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverKey === makeDropKey([...path, "steps"], 0)) setDragOverKey("");
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        handleDropIntoList([...path, "steps"], 0);
+                      }}
+                    >
+                      {draggedStepPath ? "Drop a step here to repeat it for each item." : "No repeat steps yet."}
+                    </div>
+                  )}
                 </div>
               )}
 
-              <div className="ml-2">
+              <div
+                className={`ml-2 rounded-box border border-dashed px-3 py-2 transition ${draggedStepPath ? "block" : "border-transparent"} ${isAfterDropTarget ? "border-primary bg-primary/5" : draggedStepPath ? "border-base-300 bg-base-100/30" : ""}`}
+                onDragOver={(event) => {
+                  if (!draggedStepPath) return;
+                  event.preventDefault();
+                  setDragOverKey(afterDropKey);
+                }}
+                onDragLeave={() => {
+                  if (dragOverKey === afterDropKey) setDragOverKey("");
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  handleDropIntoList(pathPrefix, index + 1);
+                }}
+              >
                 <button
                   type="button"
                   className="btn btn-xs btn-ghost"
                   onClick={() => insertStepAfter(pathPrefix, index)}
                 >
-                  Add step after
+                  {draggedStepPath ? "Drop here or add step" : "Add step after"}
                 </button>
               </div>
             </div>
           );
         })}
-        {items.length === 0 && (
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost justify-start"
-            onClick={() => insertStepAfter(pathPrefix, -1)}
-          >
-            Add step
-          </button>
-        )}
       </div>
     );
   }
@@ -1678,58 +1939,73 @@ export default function AutomationEditorPage({ user }) {
           </div>
         )}
 
-        <div className="rounded-box border border-base-300 bg-base-100/70 p-3">
-          <div className="text-xs uppercase tracking-wide opacity-60">How To Fill This Out</div>
-          <div className="text-sm opacity-80 mt-1">{beginnerHelp}</div>
+        <div className="rounded-box border border-base-300 bg-base-200/40">
+          <details>
+            <summary className="cursor-pointer list-none px-3 py-3 flex items-center justify-between">
+              <div>
+                <div className="text-xs uppercase tracking-wide opacity-60">How To Fill This Out</div>
+                <div className="text-xs opacity-60 mt-1">Quick help for this step.</div>
+              </div>
+              <span className="text-xs opacity-60">Show</span>
+            </summary>
+            <div className="px-3 pb-3 text-sm opacity-80">{beginnerHelp}</div>
+          </details>
         </div>
 
-        <div className="rounded-box border border-base-300 bg-base-100/70 p-3">
-          <div className="text-xs uppercase tracking-wide opacity-60">Available Data</div>
-          <div className="text-sm opacity-80 mt-1">{referenceIntro}</div>
-          <div className="mt-3 space-y-3">
-            {automationVariableSections.map((section) => (
-              <div key={section.title}>
-                <div className="text-sm font-medium">{section.title}</div>
-                <div className="text-xs opacity-60 mt-1">{section.description}</div>
-                <div className="mt-2 grid grid-cols-1 gap-2">
-                  {section.items.map((item) => {
-                    const displayValue = step.kind === "condition" ? item.path : `{{${item.path}}}`;
-                    return (
-                      <div key={`${section.title}:${item.path}`} className="rounded-box border border-base-300 bg-base-100 px-3 py-2">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="font-mono text-xs break-all">{displayValue}</div>
-                            <div className="text-xs opacity-70 mt-1">{item.description}</div>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-xs"
-                              onMouseDown={(e) => e.preventDefault()}
-                              onClick={() => insertReferenceValue(displayValue)}
-                              title="Insert into the last focused text field"
-                            >
-                              Insert
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-xs"
-                              onMouseDown={(e) => e.preventDefault()}
-                              onClick={() => copyReferenceValue(displayValue)}
-                              title="Copy reference"
-                              aria-label={`Copy ${displayValue}`}
-                            >
-                              <Copy className="h-3.5 w-3.5" />
-                            </button>
+        <div className="rounded-box border border-base-300 bg-base-200/40">
+          <details>
+            <summary className="cursor-pointer list-none px-3 py-3 flex items-center justify-between">
+              <div>
+                <div className="text-xs uppercase tracking-wide opacity-60">Available Data</div>
+                <div className="text-xs opacity-60 mt-1">{referenceIntro}</div>
+              </div>
+              <span className="text-xs opacity-60">Show refs</span>
+            </summary>
+            <div className="px-3 pb-3 space-y-3">
+              {automationVariableSections.map((section) => (
+                <div key={section.title}>
+                  <div className="text-sm font-medium">{section.title}</div>
+                  <div className="text-xs opacity-60 mt-1">{section.description}</div>
+                  <div className="mt-2 grid grid-cols-1 gap-2">
+                    {section.items.map((item) => {
+                      const displayValue = step.kind === "condition" ? item.path : `{{${item.path}}}`;
+                      return (
+                        <div key={`${section.title}:${item.path}`} className="rounded-box border border-base-300 bg-base-200/50 px-3 py-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="font-mono text-xs break-all">{displayValue}</div>
+                              <div className="text-xs opacity-70 mt-1">{item.description}</div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-xs"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => insertReferenceValue(displayValue)}
+                                title="Insert into the last focused text field"
+                              >
+                                Insert
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-xs"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => copyReferenceValue(displayValue)}
+                                title="Copy reference"
+                                aria-label={`Copy ${displayValue}`}
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </details>
         </div>
 
         <div className={wideGridClass}>
@@ -3578,137 +3854,165 @@ export default function AutomationEditorPage({ user }) {
     );
   }
 
-  const builderTab = (
-    <div className="space-y-4">
+  const builderTab = null && (
+    <div className="space-y-5">
       {error && <div className="alert alert-error">{error}</div>}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <label className="form-control">
-          <span className="label-text">Name</span>
-          <input className="input input-bordered" value={name} onChange={(e) => setName(e.target.value)} />
-        </label>
-
-        <div className="form-control">
-          <span className="label-text">Trigger type</span>
-          <select className="select select-bordered" value={triggerMode} onChange={(e) => setTriggerMode(e.target.value)}>
-            <option value="event">When an event happens</option>
-            <option value="webhook">When a webhook is received</option>
-            <option value="schedule">Run on a schedule</option>
-          </select>
-        </div>
-
-        <label className="form-control md:col-span-2">
-          <span className="label-text">Description</span>
-          <textarea className="textarea textarea-bordered" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
-        </label>
-      </div>
-
-      {triggerMode === "schedule" ? (
-        <div className="rounded-box border border-base-300 bg-base-100 p-4 space-y-3">
-          <div>
-            <div className="font-medium text-sm">Schedule</div>
-            <div className="text-xs opacity-60 mt-1">Use a simple interval first. The shared scheduler will enqueue this automation in the background.</div>
-          </div>
-          <label className="form-control max-w-xs">
-            <span className="label-text">Run every N minutes</span>
-            <input
-              className="input input-bordered"
-              inputMode="numeric"
-              value={trigger?.every_minutes ?? ""}
-              onChange={(e) => setTrigger((prev) => ({ ...(prev || {}), kind: "schedule", every_minutes: e.target.value ? Number(e.target.value) : "" }))}
-              placeholder="60"
-            />
-          </label>
-        </div>
-      ) : triggerMode === "webhook" ? (
-        <div className="rounded-box border border-base-300 bg-base-100 p-4 space-y-4">
-          <div>
-            <div className="font-medium text-sm">Webhook trigger</div>
-            <div className="text-xs opacity-60 mt-1">
-              Run this automation when an inbound integration webhook is received. You can narrow it by connection and event key.
-            </div>
-          </div>
+      <div className="rounded-2xl border border-base-300 bg-base-100 p-4 md:p-5 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <label className="form-control">
-            <span className="label-text">Connection</span>
-            <select
-              className="select select-bordered"
-              value={webhookTriggerConnectionId}
-              onChange={(e) => upsertTriggerFilter("connection_id", e.target.value)}
-            >
-              <option value="">Any connection</option>
-              {webhookConnectionOptions.map((conn) => (
-                <option key={conn.id} value={conn.id}>
-                  {conn.name || conn.id}
-                </option>
-              ))}
+            <span className="label-text">Name</span>
+            <input className="input input-bordered" value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+
+          <div className="form-control">
+            <span className="label-text">Trigger type</span>
+            <select className="select select-bordered" value={triggerMode} onChange={(e) => setTriggerMode(e.target.value)}>
+              <option value="event">When an event happens</option>
+              <option value="webhook">When a webhook is received</option>
+              <option value="schedule">Run on a schedule</option>
             </select>
-            <span className="label label-text-alt opacity-50">Optional. Leave empty to react to webhooks from any configured integration connection.</span>
-          </label>
-          <label className="form-control">
-            <span className="label-text">Event key</span>
-            <input
-              className="input input-bordered"
-              value={webhookTriggerEventKey}
-              onChange={(e) => upsertTriggerFilter("event_key", e.target.value)}
-              placeholder="invoice.created"
-            />
-            <span className="label label-text-alt opacity-50">Optional. This matches the event key stored on the inbound webhook definition.</span>
-          </label>
-          <div className="rounded-box border border-base-300 bg-base-200/40 p-3 text-xs leading-5 text-base-content/70">
-            <div className="font-medium text-sm text-base-content">Available trigger data</div>
-            <div className="mt-2">Use these paths in conditions, action inputs, and templates:</div>
-            <div className="mt-2 font-mono">trigger.connection_id</div>
-            <div className="font-mono">trigger.event_key</div>
-            <div className="font-mono">trigger.provider_event_id</div>
-            <div className="font-mono">trigger.payload</div>
-            <div className="font-mono">trigger.headers</div>
-            <div className="font-mono">trigger.signature_valid</div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="btn btn-sm btn-outline" onClick={() => setWebhookTestOpen(true)}>
-              Test webhook trigger
-            </button>
-            <div className="self-center text-xs opacity-60">Queue a sample inbound webhook against the saved automation.</div>
-          </div>
-        </div>
-      ) : (
-        <div className="form-control">
-          <span className="label-text">Trigger event</span>
-          <select
-            className="select select-bordered"
-            value={(trigger?.event_types || [])[0] || ""}
-            onChange={(e) => updateTriggerEvent(e.target.value)}
-          >
-            <option value="">Select event…</option>
-            {triggerOptions.map((group) => (
-              <optgroup key={group.label} label={group.label}>
-                {Array.isArray(group.options) &&
-                  group.options.map((evt) => {
-                    if (typeof evt === "string") {
-                      return <option key={evt} value={evt}>{evt}</option>;
-                    }
-                    const value = evt.id || "";
-                    const label = evt.label || evt.id || "";
-                    return <option key={value} value={value}>{label}</option>;
-                  })}
-              </optgroup>
-            ))}
-          </select>
-        </div>
-      )}
 
-      {(triggerMode === "event" || triggerMode === "webhook") && (
-      <div className="space-y-3">
-        <div className="rounded-box border border-base-300 bg-base-100">
-          <details className="group">
+          <label className="form-control md:col-span-2">
+            <span className="label-text">Description</span>
+            <textarea className="textarea textarea-bordered" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
+          </label>
+        </div>
+
+        <div className="rounded-box border border-base-300 bg-base-200/40 px-4 py-3">
+          <div className="text-[11px] uppercase tracking-wide opacity-50">Trigger summary</div>
+          <div className="mt-1 font-medium">{triggerSummaryText}</div>
+          <div className="mt-1 text-xs opacity-60">
+            {triggerMode === "schedule"
+              ? "This automation runs from the shared scheduler."
+              : "Keep this simple where possible. Most automations only need a trigger and a flow."}
+          </div>
+        </div>
+
+        <div className="rounded-box border border-base-300 bg-base-200/40">
+          <details>
             <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
               <div>
-                <div className="font-medium text-sm">Advanced trigger rules</div>
-                <div className="text-xs opacity-60">Optional. Use this only if the automation should run only in specific cases.</div>
+                <div className="font-medium text-sm">Trigger setup</div>
+                <div className="text-xs opacity-60">Edit the trigger only when needed. The main work happens in the flow below.</div>
               </div>
-              <span className="text-xs opacity-60 group-open:hidden">Show</span>
-              <span className="text-xs opacity-60 hidden group-open:inline">Hide</span>
+              <span className="text-xs opacity-60">Show</span>
             </summary>
             <div className="px-4 pb-4 space-y-4">
+              {triggerMode === "schedule" ? (
+                <div className="space-y-3">
+                  <div>
+                    <div className="font-medium text-sm">Schedule</div>
+                    <div className="text-xs opacity-60 mt-1">Use a simple interval first. The shared scheduler will enqueue this automation in the background.</div>
+                  </div>
+                  <label className="form-control max-w-xs">
+                    <span className="label-text">Run every N minutes</span>
+                    <input
+                      className="input input-bordered"
+                      inputMode="numeric"
+                      value={trigger?.every_minutes ?? ""}
+                      onChange={(e) => setTrigger((prev) => ({ ...(prev || {}), kind: "schedule", every_minutes: e.target.value ? Number(e.target.value) : "" }))}
+                      placeholder="60"
+                    />
+                  </label>
+                </div>
+              ) : triggerMode === "webhook" ? (
+                <div className="space-y-4">
+                  <div>
+                    <div className="font-medium text-sm">Webhook trigger</div>
+                    <div className="text-xs opacity-60 mt-1">
+                      Run this automation when an inbound integration webhook is received. Narrow it only if you need to.
+                    </div>
+                  </div>
+                  <label className="form-control">
+                    <span className="label-text">Connection</span>
+                    <select
+                      className="select select-bordered"
+                      value={webhookTriggerConnectionId}
+                      onChange={(e) => upsertTriggerFilter("connection_id", e.target.value)}
+                    >
+                      <option value="">Any connection</option>
+                      {webhookConnectionOptions.map((conn) => (
+                        <option key={conn.id} value={conn.id}>
+                          {conn.name || conn.id}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="label label-text-alt opacity-50">Optional. Leave empty to react to any configured integration connection.</span>
+                  </label>
+                  <label className="form-control">
+                    <span className="label-text">Event key</span>
+                    <input
+                      className="input input-bordered"
+                      value={webhookTriggerEventKey}
+                      onChange={(e) => upsertTriggerFilter("event_key", e.target.value)}
+                      placeholder="invoice.created"
+                    />
+                    <span className="label label-text-alt opacity-50">Optional. Only set this if the flow should run for one webhook event type.</span>
+                  </label>
+                  <details className="rounded-box border border-base-300 bg-base-200/40">
+                    <summary className="cursor-pointer list-none px-3 py-3 flex items-center justify-between">
+                      <div>
+                        <div className="font-medium text-sm">Webhook data available to the flow</div>
+                        <div className="text-xs opacity-60">Only open this if you need payload paths.</div>
+                      </div>
+                      <span className="text-xs opacity-60">Show</span>
+                    </summary>
+                    <div className="px-3 pb-3 text-xs leading-5 text-base-content/70">
+                      <div className="font-mono">trigger.connection_id</div>
+                      <div className="font-mono">trigger.event_key</div>
+                      <div className="font-mono">trigger.provider_event_id</div>
+                      <div className="font-mono">trigger.payload</div>
+                      <div className="font-mono">trigger.headers</div>
+                      <div className="font-mono">trigger.signature_valid</div>
+                    </div>
+                  </details>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" className="btn btn-sm btn-outline" onClick={() => setWebhookTestOpen(true)}>
+                      Test webhook trigger
+                    </button>
+                    <div className="self-center text-xs opacity-60">Queue a sample inbound webhook against the saved automation.</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="form-control">
+                  <span className="label-text">Trigger event</span>
+                  <select
+                    className="select select-bordered"
+                    value={(trigger?.event_types || [])[0] || ""}
+                    onChange={(e) => updateTriggerEvent(e.target.value)}
+                  >
+                    <option value="">Select event…</option>
+                    {triggerOptions.map((group) => (
+                      <optgroup key={group.label} label={group.label}>
+                        {Array.isArray(group.options) &&
+                          group.options.map((evt) => {
+                            if (typeof evt === "string") {
+                              return <option key={evt} value={evt}>{evt}</option>;
+                            }
+                            const value = evt.id || "";
+                            const label = evt.label || evt.id || "";
+                            return <option key={value} value={value}>{label}</option>;
+                          })}
+                      </optgroup>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {(triggerMode === "event" || triggerMode === "webhook") && (
+              <div className="space-y-3">
+                <div className="rounded-box border border-base-300 bg-base-200/40">
+                  <details className="group">
+                    <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+                      <div>
+                        <div className="font-medium text-sm">Advanced trigger rules</div>
+                        <div className="text-xs opacity-60">Optional. Use this only if the automation should run only in specific cases.</div>
+                      </div>
+                      <span className="text-xs opacity-60 group-[&[open]]:hidden">Show</span>
+                      <span className="text-xs opacity-60 hidden group-[&[open]]:inline">Hide</span>
+                    </summary>
+                    <div className="px-4 pb-4 space-y-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="label-text">Only run when</div>
@@ -3813,8 +4117,8 @@ export default function AutomationEditorPage({ user }) {
                     <div className="font-medium text-sm">Advanced logic</div>
                     <div className="text-xs opacity-60">Only use this if the simple rules above are not enough.</div>
                   </div>
-                  <span className="text-xs opacity-60 group-open:hidden">Show</span>
-                  <span className="text-xs opacity-60 hidden group-open:inline">Hide</span>
+                  <span className="text-xs opacity-60 group-[&[open]]:hidden">Show</span>
+                  <span className="text-xs opacity-60 hidden group-[&[open]]:inline">Hide</span>
                 </summary>
                 <div className="pt-3">
                   <label className="form-control">
@@ -3830,19 +4134,23 @@ export default function AutomationEditorPage({ user }) {
                 </div>
               </details>
             </div>
+                  </details>
+                </div>
+              </div>
+              )}
+            </div>
           </details>
         </div>
       </div>
-      )}
 
-      <div className="space-y-4">
-        <div>
-          <div className="font-medium">Flow</div>
-          <div className="text-xs opacity-60">Click a step to edit it in a focused modal. Add new steps between or after existing steps where they belong. `Then / Else` branches only appear on Condition steps.</div>
+      <div className="rounded-2xl border border-primary/30 bg-base-100 shadow-sm">
+        <div className="border-b border-primary/15 bg-primary/5 px-4 py-4 md:px-5">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-primary/70">Automation Flow</div>
+          <div className="mt-1 text-lg font-semibold">Build what happens after the trigger</div>
+          <div className="mt-1 text-xs opacity-70">Click a step to edit it in a focused modal. Add steps where they belong. `Then / Else` branches only appear on Condition steps.</div>
         </div>
-
-        <div className="space-y-3 min-w-0">
-          <div className="rounded-box border border-base-300 bg-base-100 p-4">
+        <div className="space-y-3 min-w-0 p-4 md:p-5">
+          <div className="rounded-box border border-base-300 bg-base-200/40 p-4">
             <div className="text-xs uppercase tracking-wide opacity-60">Trigger</div>
             <div className="font-medium">{triggerSummaryText}</div>
             <div className="text-xs opacity-60 mt-1">
@@ -4942,8 +5250,340 @@ export default function AutomationEditorPage({ user }) {
     </div>
   );
 
+  const setupTab = (
+    <div className="space-y-5">
+      {error && <div className="alert alert-error">{error}</div>}
+      <div className="rounded-2xl border border-base-300 bg-base-100 p-4 md:p-5 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <label className="form-control">
+            <span className="label-text">Name</span>
+            <input className="input input-bordered" value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+
+          <div className="form-control">
+            <span className="label-text">Trigger type</span>
+            <select className="select select-bordered" value={triggerMode} onChange={(e) => setTriggerMode(e.target.value)}>
+              <option value="event">When an event happens</option>
+              <option value="webhook">When a webhook is received</option>
+              <option value="schedule">Run on a schedule</option>
+            </select>
+          </div>
+
+          <label className="form-control md:col-span-2">
+            <span className="label-text">Description</span>
+            <textarea className="textarea textarea-bordered" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
+          </label>
+        </div>
+
+        <div className="rounded-box border border-base-300 bg-base-200/40 px-4 py-3">
+          <div className="text-[11px] uppercase tracking-wide opacity-50">Trigger summary</div>
+          <div className="mt-1 font-medium">{triggerSummaryText}</div>
+          <div className="mt-1 text-xs opacity-60">
+            {triggerMode === "schedule"
+              ? "This automation runs from the shared scheduler."
+              : "Keep this simple where possible. Most automations only need a trigger and a flow."}
+          </div>
+        </div>
+
+        <div className="rounded-box border border-base-300 bg-base-200/40">
+          <details open className="group">
+            <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+              <div>
+                <div className="font-medium text-sm">Trigger setup</div>
+                <div className="text-xs opacity-60">Set up what starts the automation. The actual steps live in the Flow tab.</div>
+              </div>
+              <span className="text-xs opacity-60 group-[&[open]]:hidden">Show</span>
+              <span className="text-xs opacity-60 hidden group-[&[open]]:inline">Hide</span>
+            </summary>
+            <div className="px-4 pb-4 space-y-4">
+              {triggerMode === "schedule" ? (
+                <div className="space-y-3">
+                  <div>
+                    <div className="font-medium text-sm">Schedule</div>
+                    <div className="text-xs opacity-60 mt-1">Use a simple interval first. The shared scheduler will enqueue this automation in the background.</div>
+                  </div>
+                  <label className="form-control max-w-xs">
+                    <span className="label-text">Run every N minutes</span>
+                    <input
+                      className="input input-bordered"
+                      inputMode="numeric"
+                      value={trigger?.every_minutes ?? ""}
+                      onChange={(e) => setTrigger((prev) => ({ ...(prev || {}), kind: "schedule", every_minutes: e.target.value ? Number(e.target.value) : "" }))}
+                      placeholder="60"
+                    />
+                  </label>
+                </div>
+              ) : triggerMode === "webhook" ? (
+                <div className="space-y-4">
+                  <div>
+                    <div className="font-medium text-sm">Webhook trigger</div>
+                    <div className="text-xs opacity-60 mt-1">
+                      Run this automation when an inbound integration webhook is received. Narrow it only if you need to.
+                    </div>
+                  </div>
+                  <label className="form-control">
+                    <span className="label-text">Connection</span>
+                    <select
+                      className="select select-bordered"
+                      value={webhookTriggerConnectionId}
+                      onChange={(e) => upsertTriggerFilter("connection_id", e.target.value)}
+                    >
+                      <option value="">Any connection</option>
+                      {webhookConnectionOptions.map((conn) => (
+                        <option key={conn.id} value={conn.id}>
+                          {conn.name || conn.id}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="label label-text-alt opacity-50">Optional. Leave empty to react to any configured integration connection.</span>
+                  </label>
+                  <label className="form-control">
+                    <span className="label-text">Event key</span>
+                    <input
+                      className="input input-bordered"
+                      value={webhookTriggerEventKey}
+                      onChange={(e) => upsertTriggerFilter("event_key", e.target.value)}
+                      placeholder="invoice.created"
+                    />
+                    <span className="label label-text-alt opacity-50">Optional. Only set this if the flow should run for one webhook event type.</span>
+                  </label>
+                  <details className="rounded-box border border-base-300 bg-base-200/40">
+                    <summary className="cursor-pointer list-none px-3 py-3 flex items-center justify-between">
+                      <div>
+                        <div className="font-medium text-sm">Webhook data available to the flow</div>
+                        <div className="text-xs opacity-60">Only open this if you need payload paths.</div>
+                      </div>
+                      <span className="text-xs opacity-60">Show</span>
+                    </summary>
+                    <div className="px-3 pb-3 text-xs leading-5 text-base-content/70">
+                      <div className="font-mono">trigger.connection_id</div>
+                      <div className="font-mono">trigger.event_key</div>
+                      <div className="font-mono">trigger.provider_event_id</div>
+                      <div className="font-mono">trigger.payload</div>
+                      <div className="font-mono">trigger.headers</div>
+                      <div className="font-mono">trigger.signature_valid</div>
+                    </div>
+                  </details>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" className="btn btn-sm btn-outline" onClick={() => setWebhookTestOpen(true)}>
+                      Test webhook trigger
+                    </button>
+                    <div className="self-center text-xs opacity-60">Queue a sample inbound webhook against the saved automation.</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="form-control">
+                  <span className="label-text">Trigger event</span>
+                  <select
+                    className="select select-bordered"
+                    value={(trigger?.event_types || [])[0] || ""}
+                    onChange={(e) => updateTriggerEvent(e.target.value)}
+                  >
+                    <option value="">Select event…</option>
+                    {triggerOptions.map((group) => (
+                      <optgroup key={group.label} label={group.label}>
+                        {Array.isArray(group.options) &&
+                          group.options.map((evt) => {
+                            if (typeof evt === "string") {
+                              return <option key={evt} value={evt}>{evt}</option>;
+                            }
+                            const value = evt.id || "";
+                            const label = evt.label || evt.id || "";
+                            return <option key={value} value={value}>{label}</option>;
+                          })}
+                      </optgroup>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {(triggerMode === "event" || triggerMode === "webhook") && (
+                <div className="space-y-3">
+                  <div className="rounded-box border border-base-300 bg-base-200/40">
+                    <details className="group">
+                      <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+                        <div>
+                          <div className="font-medium text-sm">Advanced trigger rules</div>
+                          <div className="text-xs opacity-60">Optional. Use this only if the automation should run only in specific cases.</div>
+                        </div>
+                        <span className="text-xs opacity-60 group-[&[open]]:hidden">Show</span>
+                        <span className="text-xs opacity-60 hidden group-[&[open]]:inline">Hide</span>
+                      </summary>
+                      <div className="px-4 pb-4 space-y-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="label-text">Only run when</div>
+                            <div className="text-xs opacity-60 mt-1">
+                              {triggerMode === "webhook"
+                                ? "Use extra rules only if connection and event key are not enough. These rules run against webhook payload data."
+                                : "Most automations can leave this empty and run whenever the trigger happens."}
+                            </div>
+                          </div>
+                          <button type="button" className="btn btn-sm" onClick={addTriggerFilter}>Add rule</button>
+                        </div>
+                        {((trigger?.filters || [])).length === 0 ? (
+                          <div className="text-xs opacity-60">
+                            {triggerMode === "webhook"
+                              ? "No extra rules yet. This automation will run whenever the selected webhook trigger matches."
+                              : "No extra rules yet. This automation will run every time the selected trigger event happens."}
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {(trigger?.filters || []).map((filt, idx) => {
+                              const op = filt?.op || "eq";
+                              const noValue = ["exists", "not_exists", "changed"].includes(op);
+                              const selectedFieldDef = triggerFieldOptionByValue.get(filt?.path || "") || null;
+                              const supportsTypedValue = !["in", "not_in"].includes(op) && !noValue;
+                              return (
+                                <div key={`trigger-filter-${idx}`} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                                  <label className="form-control md:col-span-5">
+                                    <span className="label-text">Field</span>
+                                    <input
+                                      className="input input-bordered"
+                                      list="automation-trigger-fields"
+                                      value={filt?.path || ""}
+                                      onChange={(e) => updateTriggerFilter(idx, { path: e.target.value })}
+                                      placeholder={triggerMode === "webhook" ? "payload.customer.email" : "status"}
+                                    />
+                                    <span className="label label-text-alt opacity-50">
+                                      {selectedFieldDef
+                                        ? `Field type: ${selectedFieldDef.type || "string"}`
+                                        : "Pick a suggested field or type a custom path."}
+                                    </span>
+                                  </label>
+                                  <label className="form-control md:col-span-3">
+                                    <span className="label-text">Operator</span>
+                                    <select
+                                      className="select select-bordered"
+                                      value={op}
+                                      onChange={(e) => updateTriggerFilter(idx, { op: e.target.value })}
+                                    >
+                                      <option value="eq">equals</option>
+                                      <option value="neq">not equals</option>
+                                      <option value="gt">greater than</option>
+                                      <option value="gte">greater or equal</option>
+                                      <option value="lt">less than</option>
+                                      <option value="lte">less or equal</option>
+                                      <option value="contains">contains</option>
+                                      <option value="in">in list</option>
+                                      <option value="not_in">not in list</option>
+                                      <option value="exists">exists</option>
+                                      <option value="not_exists">not exists</option>
+                                      <option value="changed">changed</option>
+                                      <option value="changed_from">changed from</option>
+                                      <option value="changed_to">changed to</option>
+                                    </select>
+                                  </label>
+                                  <label className="form-control md:col-span-3">
+                                    <span className="label-text">Value</span>
+                                    {noValue ? (
+                                      <input className="input input-bordered" disabled value="No value needed" />
+                                    ) : supportsTypedValue ? (
+                                      renderTypedValueEditor({
+                                        fieldDef: selectedFieldDef,
+                                        value: Array.isArray(filt?.value) ? filt.value.join(", ") : (filt?.value ?? ""),
+                                        onChange: (nextValue) => updateTriggerFilter(idx, { value: nextValue }),
+                                        placeholder: triggerMode === "webhook" ? "ops@example.com" : "active",
+                                      })
+                                    ) : (
+                                      <input
+                                        className="input input-bordered"
+                                        value={Array.isArray(filt?.value) ? filt.value.join(", ") : (filt?.value ?? "")}
+                                        placeholder={triggerMode === "webhook" ? "one, two" : "active, pending"}
+                                        onChange={(e) => {
+                                          const raw = e.target.value;
+                                          const value = ["in", "not_in"].includes(op)
+                                            ? raw.split(",").map((part) => part.trim()).filter(Boolean)
+                                            : raw;
+                                          updateTriggerFilter(idx, { value });
+                                        }}
+                                      />
+                                    )}
+                                  </label>
+                                  <button type="button" className="btn btn-ghost btn-sm md:col-span-1" onClick={() => removeTriggerFilter(idx)}>
+                                    Remove
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        <details className="group">
+                          <summary className="cursor-pointer list-none py-1 flex items-center justify-between">
+                            <div>
+                              <div className="font-medium text-sm">Advanced logic</div>
+                              <div className="text-xs opacity-60">Only use this if the simple rules above are not enough.</div>
+                            </div>
+                            <span className="text-xs opacity-60 group-[&[open]]:hidden">Show</span>
+                            <span className="text-xs opacity-60 hidden group-[&[open]]:inline">Hide</span>
+                          </summary>
+                          <div className="pt-3">
+                            <label className="form-control">
+                              <span className="label-text">Advanced trigger condition JSON</span>
+                              <CodeTextarea
+                                value={triggerExprText}
+                                onChange={(e) => setTriggerExprText(e.target.value)}
+                                minHeight="120px"
+                                placeholder={`{\n  "op": "and",\n  "children": []\n}`}
+                              />
+                              <span className="label label-text-alt opacity-50">Optional full condition DSL over `trigger.*` values. Leave empty unless you need advanced branching logic.</span>
+                            </label>
+                          </div>
+                        </details>
+                      </div>
+                    </details>
+                  </div>
+                </div>
+              )}
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
+  );
+
+  const flowTab = (
+    <div className="space-y-5">
+      {error && <div className="alert alert-error">{error}</div>}
+      <div className="rounded-2xl border border-primary/30 bg-base-100 shadow-sm">
+        <div className="border-b border-primary/15 bg-primary/5 px-4 py-4 md:px-5">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-primary/70">Automation Flow</div>
+          <div className="mt-1 text-lg font-semibold">Build what happens after the trigger</div>
+          <div className="mt-1 text-xs opacity-70">Click a step to edit it in a focused modal. Add steps where they belong. `Then / Else` branches only appear on Condition steps.</div>
+        </div>
+        <div className="space-y-3 min-w-0 p-4 md:p-5">
+          <div className="rounded-box border border-base-300 bg-base-200/40 p-4">
+            <div className="text-xs uppercase tracking-wide opacity-60">Trigger</div>
+            <div className="font-medium">{triggerSummaryText}</div>
+            <div className="text-xs opacity-60 mt-1">
+              {trigger?.kind === "schedule"
+                ? "Runs on the shared scheduler"
+                : triggerMode === "webhook"
+                ? [
+                    webhookTriggerConnectionId ? "Connection selected" : "Any connection",
+                    webhookTriggerEventKey ? `Event key: ${webhookTriggerEventKey}` : "Any webhook event",
+                  ].join(" • ")
+                : (trigger?.filters || []).length > 0
+                ? `${trigger.filters.length} trigger rule${trigger.filters.length === 1 ? "" : "s"}`
+                : "Runs for every matching event"}
+            </div>
+          </div>
+
+          {steps.length === 0 ? (
+            <div className="rounded-box border border-dashed border-base-300 bg-base-100 p-6 text-sm opacity-60">
+              No steps yet. Add a step to start building the flow.
+            </div>
+          ) : (
+            renderStepCards(steps)
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   const runsTab = (
     <div className="h-full min-h-0">
+      {runsError && <div className="alert alert-error mb-3 text-sm">{runsError}</div>}
       {runsLoading && <div className="text-sm opacity-60">Loading runs…</div>}
       {!runsLoading && runs.length === 0 && (
         <div className="text-sm opacity-60">No runs yet.</div>
@@ -4951,11 +5591,18 @@ export default function AutomationEditorPage({ user }) {
       {!runsLoading && runs.length > 0 && (
         <div className="space-y-2 text-xs">
           {runs.map((run) => (
-            <div key={run.id} className="flex items-center justify-between gap-2 border border-base-200 rounded-box px-3 py-2">
-              <div className="flex items-center gap-2">
-                <span className="badge badge-outline">{run.status || "run"}</span>
-                <span className="font-mono">{run.id}</span>
-                <span className="opacity-60">{formatDateTime(run.started_at || run.created_at || "", "")}</span>
+            <div key={run.id} className="flex items-start justify-between gap-3 border border-base-200 rounded-box px-3 py-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`badge ${run.status === "failed" ? "badge-error badge-outline" : "badge-outline"}`}>{run.status || "run"}</span>
+                  <span className="font-mono break-all">{run.id}</span>
+                  <span className="opacity-60">{formatDateTime(run.started_at || run.created_at || "", "")}</span>
+                </div>
+                {run.last_error ? (
+                  <div className="mt-2 text-sm text-error break-words">
+                    {run.last_error}
+                  </div>
+                ) : null}
               </div>
               <button className="btn btn-xs btn-outline" onClick={() => navigate(`/automation-runs/${run.id}`)}>
                 View
@@ -5008,11 +5655,14 @@ export default function AutomationEditorPage({ user }) {
     setWebhookTestSaving(false);
   }
 
+  const defaultAutomationTabId = automationId === "new" ? "setup" : "flow";
+
   const automationProfile = useMemo(() => ({
     kind: "automation",
-    defaultTabId: "builder",
+    defaultTabId: defaultAutomationTabId,
     rightTabs: [
-      { id: "builder", label: "Builder", render: () => builderTab },
+      { id: "setup", label: "Setup", render: () => setupTab },
+      { id: "flow", label: "Flow", render: () => flowTab },
       { id: "runs", label: "Runs", render: () => runsTab },
       { id: "json", label: "JSON", render: () => jsonTab },
     ],
@@ -5020,7 +5670,7 @@ export default function AutomationEditorPage({ user }) {
       { id: "save", label: "Save", kind: "secondary", onClick: save, disabled: saving },
       { id: "publish", label: "Publish", kind: "primary", onClick: publish, disabled: item?.status === "published" },
     ],
-  }), [builderTab, runsTab, jsonTab, save, publish, saving, item?.status]);
+  }), [defaultAutomationTabId, setupTab, flowTab, runsTab, jsonTab, save, publish, saving, item?.status]);
 
   return (
     <div className={isMobile ? "min-h-full bg-base-100 flex flex-col" : "h-full min-h-0 flex flex-col overflow-hidden"}>
@@ -5033,6 +5683,24 @@ export default function AutomationEditorPage({ user }) {
         renderLeftPane={renderLeftPane}
         renderValidationPanel={renderValidationPanel}
       />
+      {stepModalOpen && selectedStep && (
+        <div className="modal modal-open">
+          <div
+            className={`modal-box ${isMobile ? "w-full max-w-none h-dvh rounded-none" : "max-w-5xl"}`}
+            onFocusCapture={rememberFocusedField}
+          >
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h3 className="font-semibold text-lg">{stepSummaryText(selectedStep)}</h3>
+                <p className="text-sm opacity-70">{stepHelpText(selectedStep)}</p>
+              </div>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setStepModalOpen(false)}>Close</button>
+            </div>
+            {renderStepEditor(selectedStep, selectedStepPath, { showHeader: false, linear: true })}
+          </div>
+          <div className="modal-backdrop" onClick={() => setStepModalOpen(false)} />
+        </div>
+      )}
       {webhookTestOpen && (
         <div className="modal modal-open">
           <div className={`modal-box ${isMobile ? "w-full max-w-none h-dvh rounded-none" : "max-w-4xl"}`}>

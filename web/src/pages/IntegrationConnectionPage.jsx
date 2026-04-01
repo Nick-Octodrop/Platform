@@ -95,9 +95,12 @@ function SimpleModal({ title, subtitle = "", children, onClose, maxWidthClass = 
   );
 }
 
-function Section({ title, help, children }) {
+function Section({ title, help, children, tone = "default" }) {
+  const shellClass = tone === "muted"
+    ? "space-y-3 rounded-box border border-base-300 bg-base-200/40 p-4"
+    : "space-y-3 rounded-box border border-base-300 bg-base-100 p-4";
   return (
-    <section className="space-y-3 rounded-box border border-base-300 bg-base-100 p-4">
+    <section className={shellClass}>
       <div>
         <div className="font-medium">{title}</div>
         {help ? <div className="mt-1 text-sm opacity-70">{help}</div> : null}
@@ -110,7 +113,7 @@ function Section({ title, help, children }) {
 function SetupGuideStep({ icon: Icon, title, description, actionLabel = "", onAction, complete = false }) {
   const StateIcon = complete ? CheckCircle2 : Circle;
   return (
-    <div className="flex items-start gap-3 rounded-box border border-base-300 bg-base-100 p-3">
+    <div className="flex items-start gap-3 rounded-box border border-base-300 bg-base-200/60 p-3">
       <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-base-200">
         <Icon className="h-4 w-4" />
       </div>
@@ -150,7 +153,7 @@ function JsonField({ label, value, onChange, minHeight = "9rem", disabled = fals
 function TableList({ emptyLabel, columns, rows }) {
   if (!rows.length) return <div className="text-sm opacity-60">{emptyLabel}</div>;
   return (
-    <div className="overflow-x-auto rounded-box border border-base-300">
+    <div className="overflow-x-auto rounded-box border border-base-300 bg-base-200/40">
       <table className="table table-sm">
         <thead>
           <tr>
@@ -1156,7 +1159,7 @@ export default function IntegrationConnectionPage() {
               </div>
             </Section>
 
-            <Section title="Latest response" help="The request result is shown here immediately after execution. Full history is kept in Logs.">
+            <Section title="Latest response" help="The request result is shown here immediately after execution. Full history is kept in Logs." tone="muted">
               {requestResult ? <pre className="rounded-box bg-base-200 p-3 text-xs overflow-auto">{JSON.stringify(requestResult, null, 2)}</pre> : <div className="text-sm opacity-60">No request executed yet.</div>}
             </Section>
           </div>
@@ -1177,7 +1180,7 @@ export default function IntegrationConnectionPage() {
               </div>
             </Section>
 
-            <Section title="Latest sync result" help="This shows the last manual sync run from this page. Background runs and history are visible in Logs and Sync checkpoints.">
+            <Section title="Latest sync result" help="This shows the last manual sync run from this page. Background runs and history are visible in Logs and Sync checkpoints." tone="muted">
               {syncResult ? <pre className="rounded-box bg-base-200 p-3 text-xs overflow-auto">{JSON.stringify(syncResult, null, 2)}</pre> : <div className="text-sm opacity-60">No sync run yet.</div>}
             </Section>
           </div>
@@ -1414,7 +1417,7 @@ export default function IntegrationConnectionPage() {
           </div>
         ) : activeTab === "logs" ? (
           <div className="space-y-4">
-            <Section title="Request logs" help="Outbound test calls and automation-driven provider calls are stored here for troubleshooting.">
+            <Section title="Request logs" help="Outbound test calls and automation-driven provider calls are stored here for troubleshooting." tone="muted">
               <TableList
                 emptyLabel="No request logs yet."
                 columns={[
@@ -1428,7 +1431,7 @@ export default function IntegrationConnectionPage() {
               />
             </Section>
 
-            <Section title="Webhook events" help="Inbound webhook payloads are always stored first, then processed asynchronously by workers.">
+            <Section title="Webhook events" help="Inbound webhook payloads are always stored first, then processed asynchronously by workers." tone="muted">
               <TableList
                 emptyLabel="No webhook events yet."
                 columns={[
@@ -1441,7 +1444,7 @@ export default function IntegrationConnectionPage() {
               />
             </Section>
 
-            <Section title="Sync checkpoints" help="Polling integrations use checkpoints so later sync runs only process new or changed records.">
+            <Section title="Sync checkpoints" help="Polling integrations use checkpoints so later sync runs only process new or changed records." tone="muted">
               <TableList
                 emptyLabel="No checkpoints yet."
                 columns={[
@@ -1456,7 +1459,7 @@ export default function IntegrationConnectionPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            <Section title="Setup guide" help="Use this as the linear path for getting a connection ready. You usually only need the connection settings, the correct secrets, and a successful test run.">
+            <Section title="Setup guide" help="Use this as the linear path for getting a connection ready. You usually only need the connection settings, the correct secrets, and a successful test run." tone="muted">
               <div className="space-y-3">
                 {setupGuideSteps.map((step) => (
                   <SetupGuideStep key={step.title} {...step} />
@@ -1519,7 +1522,7 @@ export default function IntegrationConnectionPage() {
                       </div>
 
                       {oauthAuthorizeResult?.authorize_url ? (
-                        <div className="space-y-2 rounded-box border border-base-300 bg-base-100 p-3">
+                        <div className="space-y-2 rounded-box border border-base-300 bg-base-200/60 p-3">
                           <div className="text-sm font-medium">Authorize URL</div>
                           <textarea className="textarea textarea-bordered min-h-[7rem] text-xs" readOnly value={oauthAuthorizeResult.authorize_url} />
                           <div className="flex flex-wrap gap-2">
@@ -1588,7 +1591,7 @@ export default function IntegrationConnectionPage() {
               </div>
             </Section>
 
-            <Section title="Connection summary" help="This is the current runtime state of the connection, including provider, health, and audit timestamps.">
+            <Section title="Connection summary" help="This is the current runtime state of the connection, including provider, health, and audit timestamps." tone="muted">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <SummaryStat label="Provider" value={provider?.name || providerKey} />
                 <SummaryStat label="Auth type" value={provider?.auth_type || config?.provider_auth_type} />
@@ -1601,7 +1604,7 @@ export default function IntegrationConnectionPage() {
               </div>
             </Section>
 
-            <Section title="Latest test result" help="Use Test connection after changing config or secrets. The result here is only the latest run; full request history is in Logs.">
+            <Section title="Latest test result" help="Use Test connection after changing config or secrets. The result here is only the latest run; full request history is in Logs." tone="muted">
               {testResult ? <pre className="rounded-box bg-base-200 p-3 text-xs overflow-auto">{JSON.stringify(testResult, null, 2)}</pre> : <div className="text-sm opacity-60">No test run yet.</div>}
             </Section>
           </div>

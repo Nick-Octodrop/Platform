@@ -29,7 +29,6 @@ export default function IntegrationsPage() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [selectedIds, setSelectedIds] = useState([]);
   const [page, setPage] = useState(0);
   const [totalItems, setTotalItems] = useState(0);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -115,7 +114,6 @@ export default function IntegrationsPage() {
     if (!ok) return;
     try {
       await apiFetch(`/integrations/connections/${encodeURIComponent(id)}`, { method: "DELETE" });
-      setSelectedIds((prev) => prev.filter((itemId) => itemId !== id));
       await load();
     } catch (err) {
       setError(err?.message || "Delete failed");
@@ -192,11 +190,6 @@ export default function IntegrationsPage() {
   );
 
   const activeFilter = useMemo(() => filters.find((f) => f.id === statusFilter) || null, [filters, statusFilter]);
-  const selectedRows = useMemo(() => {
-    const map = new Map(rows.map((row) => [row.id, row]));
-    return selectedIds.map((id) => map.get(id)).filter(Boolean);
-  }, [rows, selectedIds]);
-  const singleSelected = selectedRows.length === 1 ? selectedRows[0] : null;
 
   return (
     <div className="min-h-full md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
@@ -224,30 +217,6 @@ export default function IntegrationsPage() {
               }}
               onRefresh={load}
               showSavedViews={false}
-              rightActions={
-                <>
-                  {selectedIds.length === 1 && singleSelected ? (
-                    <div className="flex items-center gap-2">
-                      <button
-                        className="btn btn-sm btn-outline"
-                        type="button"
-                        onClick={() => navigate(`/integrations/connections/${singleSelected.id}`)}
-                      >
-                        Open
-                      </button>
-                      <button
-                        className="btn btn-sm btn-outline"
-                        type="button"
-                        onClick={() => removeConnection(singleSelected.id)}
-                        disabled={singleSelected.status !== "disabled"}
-                        title={singleSelected.status !== "disabled" ? "Disable the connection before deleting it" : undefined}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  ) : null}
-                </>
-              }
               pagination={{
                 page,
                 pageSize: 25,
@@ -281,18 +250,12 @@ export default function IntegrationsPage() {
                   onPageChange={setPage}
                   onTotalItemsChange={setTotalItems}
                   showPaginationControls={false}
-                  selectedIds={selectedIds}
-                  onToggleSelect={(id, checked) => {
-                    if (!id) return;
-                    setSelectedIds((prev) => {
-                      const next = new Set(prev);
-                      if (checked) next.add(id);
-                      else next.delete(id);
-                      return Array.from(next);
-                    });
+                  enableSelection={false}
+                  onSelectRow={(row) => {
+                    const recordId = row?.record_id || row?.record?.id;
+                    if (!recordId) return;
+                    navigate(`/integrations/connections/${recordId}`);
                   }}
-                  onToggleAll={(checked, allIds) => setSelectedIds(checked ? allIds || [] : [])}
-                  onOpenRecord={(recordId) => navigate(`/integrations/connections/${recordId}`)}
                 />
               )}
             </div>
@@ -342,11 +305,11 @@ export default function IntegrationsPage() {
                     </div>
                   ) : null}
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div className="rounded-box bg-base-100 px-3 py-2">
+                    <div className="rounded-box bg-base-200/60 px-3 py-2">
                       <div className="text-xs uppercase tracking-wide opacity-60">Secrets expected</div>
                       <div className="mt-1">{createProviderSecretKeys.length ? createProviderSecretKeys.join(", ") : "No named secrets declared"}</div>
                     </div>
-                    <div className="rounded-box bg-base-100 px-3 py-2">
+                    <div className="rounded-box bg-base-200/60 px-3 py-2">
                       <div className="text-xs uppercase tracking-wide opacity-60">Next step after create</div>
                       <div className="mt-1">Configure setup, attach secrets, then test the connection.</div>
                     </div>

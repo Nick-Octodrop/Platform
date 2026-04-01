@@ -243,7 +243,7 @@ export default function SettingsApiCredentialsPage() {
 
   return (
     <div className="mx-auto flex h-full w-full max-w-6xl flex-col gap-4 p-4 md:p-6">
-      <div className="rounded-box border border-base-300 bg-base-100 p-4 md:p-5">
+      <div className="rounded-box border border-base-300 bg-base-200/40 p-4 md:p-5">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <h1 className="text-xl font-semibold">API Credentials</h1>
@@ -275,7 +275,7 @@ export default function SettingsApiCredentialsPage() {
         {error ? <div className="alert alert-error mt-4 text-sm">{error}</div> : null}
       </div>
 
-      <div className="rounded-box border border-base-300 bg-base-100">
+      <div className="rounded-box border border-base-300 bg-base-200/40">
         <div className="overflow-x-auto">
           <table className="table">
             <thead>
@@ -359,7 +359,7 @@ export default function SettingsApiCredentialsPage() {
         </div>
       </div>
 
-      <div className="rounded-box border border-base-300 bg-base-100">
+      <div className="rounded-box border border-base-300 bg-base-200/40">
         <div className="flex items-center justify-between border-b border-base-300 px-4 py-3">
           <div>
             <h2 className="text-base font-semibold">Recent External API Requests</h2>

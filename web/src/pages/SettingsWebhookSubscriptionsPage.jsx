@@ -173,7 +173,7 @@ export default function SettingsWebhookSubscriptionsPage() {
 
   return (
     <div className="mx-auto flex h-full w-full max-w-6xl flex-col gap-4 p-4 md:p-6">
-      <div className="rounded-box border border-base-300 bg-base-100 p-4 md:p-5">
+      <div className="rounded-box border border-base-300 bg-base-200/40 p-4 md:p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-xl font-semibold">Webhook Subscriptions</h1>
@@ -189,7 +189,7 @@ export default function SettingsWebhookSubscriptionsPage() {
         {error ? <div className="alert alert-error mt-4 text-sm">{error}</div> : null}
       </div>
 
-      <div className="rounded-box border border-base-300 bg-base-100 overflow-x-auto">
+      <div className="rounded-box border border-base-300 bg-base-200/40 overflow-x-auto">
         <table className="table">
           <thead>
             <tr>

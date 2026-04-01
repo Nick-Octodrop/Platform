@@ -35193,17 +35193,8 @@ async def list_automation_runs(request: Request, automation_id: str) -> dict:
     denied = _require_capability(actor, "automations.manage", "Admin role required")
     if denied:
         return denied
-    org_id = (actor or {}).get("workspace_id") or "default"
-    cache_key = f"automation_runs:{org_id}:{automation_id}"
-    cached = _resp_cache_get(cache_key)
-    if cached is not None:
-        logger.info("cache_hit=automation_runs key=%s", cache_key)
-        return cached
     items = automation_store.list_runs(automation_id=automation_id)
-    response = _ok_response({"runs": items})
-    _resp_cache_set(cache_key, response)
-    logger.info("cache_miss=automation_runs key=%s", cache_key)
-    return response
+    return _ok_response({"runs": items})
 
 
 @app.get("/automation-runs/{run_id}")
@@ -35216,7 +35207,19 @@ async def get_automation_run(request: Request, run_id: str) -> dict:
         return denied
     run = automation_store.get_run(run_id)
     if not run:
-        return _error_response("AUTOMATION_RUN_NOT_FOUND", "Run not found", "run_id", status=404)
+        logger.warning(
+            "automation_run_lookup_failed run_id=%s workspace_id=%s actor_type=%s",
+            run_id,
+            (actor or {}).get("workspace_id"),
+            (actor or {}).get("actor_type"),
+        )
+        return _error_response(
+            "AUTOMATION_RUN_NOT_FOUND",
+            "Run not found",
+            "run_id",
+            detail={"run_id": run_id, "workspace_id": (actor or {}).get("workspace_id")},
+            status=404,
+        )
     steps = automation_store.list_step_runs(run_id)
     return _ok_response({"run": run, "steps": steps})
 
