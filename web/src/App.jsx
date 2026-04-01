@@ -30,6 +30,8 @@ import SettingsPasswordPage from "./pages/SettingsPasswordPage.jsx";
 import SettingsUsersPage from "./pages/SettingsUsersPage.jsx";
 import SettingsWorkspacesPage from "./pages/SettingsWorkspacesPage.jsx";
 import SettingsSecretsPage from "./pages/SettingsSecretsPage.jsx";
+import SettingsApiCredentialsPage from "./pages/SettingsApiCredentialsPage.jsx";
+import SettingsWebhookSubscriptionsPage from "./pages/SettingsWebhookSubscriptionsPage.jsx";
 import DiagnosticsPage from "./pages/DiagnosticsPage.jsx";
 import DiagnosticsModulePage from "./pages/DiagnosticsModulePage.jsx";
 import DataExplorerPage from "./pages/DataExplorerPage.jsx";
@@ -60,6 +62,7 @@ import DesktopOnlyGate from "./components/DesktopOnlyGate.jsx";
 import OctoAiSessionsPage from "./pages/OctoAiSessionsPage.jsx";
 import OctoAiSessionDetailPage from "./pages/OctoAiSessionDetailPage.jsx";
 import OctoAiWorkspacePage from "./pages/OctoAiWorkspacePage.jsx";
+import ExternalApiDocsPage, { ExternalApiDocsRedirectPage } from "./pages/ExternalApiDocsPage.jsx";
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -327,6 +330,27 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/auth/set-password" element={<AuthSetPasswordPage user={user} />} />
+          <Route path="/ext" element={<ExternalApiDocsPage />} />
+          <Route
+            path="/ext/v1/docs"
+            element={<ExternalApiDocsRedirectPage path="/ext/v1/docs" label="Swagger UI" />}
+          />
+          <Route
+            path="/ext/v1/docs/oauth2-redirect"
+            element={<ExternalApiDocsRedirectPage path="/ext/v1/docs/oauth2-redirect" label="Swagger OAuth Redirect" />}
+          />
+          <Route
+            path="/ext/v1/redoc"
+            element={<ExternalApiDocsRedirectPage path="/ext/v1/redoc" label="ReDoc" />}
+          />
+          <Route
+            path="/ext/v1/openapi.json"
+            element={<ExternalApiDocsRedirectPage path="/ext/v1/openapi.json" label="OpenAPI JSON" />}
+          />
+          <Route
+            path="/ext/v1/guide.md"
+            element={<ExternalApiDocsRedirectPage path="/ext/v1/guide.md" label="External API Guide" />}
+          />
           <Route
             path="/*"
             element={
@@ -380,6 +404,22 @@ export default function App() {
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
                   <SettingsWorkspacesPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="settings/api-credentials"
+              element={(
+                <CapabilityRoute capability="workspace.manage_settings">
+                  <SettingsApiCredentialsPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="settings/webhook-subscriptions"
+              element={(
+                <CapabilityRoute capability="workspace.manage_settings">
+                  <SettingsWebhookSubscriptionsPage />
                 </CapabilityRoute>
               )}
             />

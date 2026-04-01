@@ -7,7 +7,7 @@ from typing import Optional
 from cryptography.fernet import Fernet, InvalidToken
 
 from app.db import fetch_one, execute, get_conn
-from app.stores_db import get_org_id
+from app.stores_db import DbConnectionSecretStore, get_org_id, reset_org_id, set_org_id
 
 
 class SecretStoreError(RuntimeError):
@@ -44,22 +44,80 @@ def decrypt_secret(token: str) -> str:
         raise SecretStoreError("Invalid secret token") from exc
 
 
-def create_secret(org_id: str, name: str | None, value: str) -> str:
+def create_secret(
+    org_id: str,
+    name: str | None,
+    value: str,
+    *,
+    provider_key: str | None = None,
+    secret_key: str | None = None,
+    status: str | None = None,
+    version: int | None = None,
+    last_rotated_at: str | None = None,
+) -> str:
     secret_enc = encrypt_secret(value)
     with get_conn() as conn:
-        row = fetch_one(
-            conn,
-            """
-            insert into secrets (org_id, name, secret_enc, created_at, updated_at)
-            values (%s, %s, %s, now(), now())
-            returning id
-            """,
-            [org_id, name, secret_enc],
-            query_name="secrets.insert",
-        )
+        try:
+            row = fetch_one(
+                conn,
+                """
+                insert into secrets (
+                  org_id, name, provider_key, secret_key, secret_enc, status, version, last_rotated_at, created_at, updated_at
+                )
+                values (%s, %s, %s, %s, %s, %s, %s, %s, now(), now())
+                returning id
+                """,
+                [org_id, name, provider_key, secret_key, secret_enc, status or "active", version or 1, last_rotated_at],
+                query_name="secrets.insert",
+            )
+        except Exception:
+            row = fetch_one(
+                conn,
+                """
+                insert into secrets (org_id, name, secret_enc, created_at, updated_at)
+                values (%s, %s, %s, now(), now())
+                returning id
+                """,
+                [org_id, name, secret_enc],
+                query_name="secrets.insert_legacy",
+            )
         if not row:
             raise SecretStoreError("Failed to create secret")
         return str(row["id"])
+
+
+def rotate_secret(secret_id: str, value: str, org_id: str | None = None) -> bool:
+    org = org_id or get_org_id()
+    secret_enc = encrypt_secret(value)
+    with get_conn() as conn:
+        try:
+            row = fetch_one(
+                conn,
+                """
+                update secrets
+                set secret_enc=%s,
+                    version=coalesce(version, 1) + 1,
+                    last_rotated_at=now(),
+                    updated_at=now()
+                where id=%s and org_id=%s
+                returning id
+                """,
+                [secret_enc, secret_id, org],
+                query_name="secrets.rotate",
+            )
+        except Exception:
+            row = fetch_one(
+                conn,
+                """
+                update secrets
+                set secret_enc=%s, updated_at=now()
+                where id=%s and org_id=%s
+                returning id
+                """,
+                [secret_enc, secret_id, org],
+                query_name="secrets.rotate_legacy",
+            )
+        return bool(row)
 
 
 def get_secret(secret_id: str, org_id: str | None = None) -> Optional[str]:
@@ -95,3 +153,23 @@ def resolve_secret(secret_ref: str | None, org_id: str, env_key: str | None = No
         return value
 
     raise SecretStoreError("Secret reference required for non-dev environments")
+
+
+def resolve_connection_secret(
+    connection_id: str | None,
+    org_id: str,
+    *,
+    secret_key: str | None = None,
+    legacy_secret_ref: str | None = None,
+    env_key: str | None = None,
+) -> str:
+    secret_ref = legacy_secret_ref
+    if connection_id:
+        token = set_org_id(org_id)
+        try:
+            mapped_secret_ref = DbConnectionSecretStore().get_secret_ref(connection_id, secret_key=secret_key)
+        finally:
+            reset_org_id(token)
+        if mapped_secret_ref:
+            secret_ref = mapped_secret_ref
+    return resolve_secret(secret_ref, org_id, env_key=env_key)

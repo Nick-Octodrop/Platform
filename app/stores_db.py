@@ -51,6 +51,10 @@ def _deepcopy(value):
     return copy.deepcopy(value)
 
 
+def _is_undefined_table(exc: Exception) -> bool:
+    return isinstance(exc, psycopg2.Error) and getattr(exc, "pgcode", "") == "42P01"
+
+
 class _TxContext:
     def __init__(self, conn, pool):
         self.conn = conn
@@ -1708,54 +1712,144 @@ class DbWorkflowStore:
 
 
 class DbSecretStore:
-    def create(self, name: str | None, secret_enc: str) -> dict:
+    def _row_to_secret(self, row: dict) -> dict:
+        return {
+            "id": row.get("id"),
+            "org_id": row.get("org_id"),
+            "name": row.get("name"),
+            "provider_key": row.get("provider_key"),
+            "secret_key": row.get("secret_key"),
+            "status": row.get("status") or "active",
+            "version": row.get("version") or 1,
+            "last_rotated_at": row.get("last_rotated_at"),
+            "created_at": row.get("created_at"),
+            "updated_at": row.get("updated_at"),
+        }
+
+    def create(
+        self,
+        name: str | None,
+        secret_enc: str,
+        *,
+        provider_key: str | None = None,
+        secret_key: str | None = None,
+        status: str | None = None,
+        version: int | None = None,
+        last_rotated_at: str | None = None,
+    ) -> dict:
         with get_conn() as conn:
-            row = fetch_one(
-                conn,
-                """
-                insert into secrets (org_id, name, secret_enc, created_at, updated_at)
-                values (%s, %s, %s, now(), now())
-                returning id, org_id, name, created_at, updated_at
-                """,
-                [get_org_id(), name, secret_enc],
-                query_name="secrets.insert",
-            )
-            return {
-                "id": row["id"],
-                "org_id": row["org_id"],
-                "name": row["name"],
-                "created_at": row["created_at"],
-                "updated_at": row["updated_at"],
-            }
+            try:
+                row = fetch_one(
+                    conn,
+                    """
+                    insert into secrets (
+                      org_id, name, provider_key, secret_key, secret_enc, status, version, last_rotated_at, created_at, updated_at
+                    )
+                    values (%s, %s, %s, %s, %s, %s, %s, %s, now(), now())
+                    returning id, org_id, name, provider_key, secret_key, status, version, last_rotated_at, created_at, updated_at
+                    """,
+                    [get_org_id(), name, provider_key, secret_key, secret_enc, status or "active", version or 1, last_rotated_at],
+                    query_name="secrets.insert",
+                )
+                return self._row_to_secret(dict(row))
+            except psycopg2.errors.UndefinedColumn:
+                row = fetch_one(
+                    conn,
+                    """
+                    insert into secrets (org_id, name, secret_enc, created_at, updated_at)
+                    values (%s, %s, %s, now(), now())
+                    returning id, org_id, name, created_at, updated_at
+                    """,
+                    [get_org_id(), name, secret_enc],
+                    query_name="secrets.insert_legacy",
+                )
+                return self._row_to_secret(dict(row))
 
     def get(self, secret_id: str) -> dict | None:
         with get_conn() as conn:
-            row = fetch_one(
-                conn,
-                """
-                select id, org_id, name, secret_enc, created_at, updated_at
-                from secrets where org_id=%s and id=%s
-                """,
-                [get_org_id(), secret_id],
-                query_name="secrets.get",
-            )
-            return dict(row) if row else None
+            try:
+                row = fetch_one(
+                    conn,
+                    """
+                    select id, org_id, name, provider_key, secret_key, secret_enc, status, version, last_rotated_at, created_at, updated_at
+                    from secrets where org_id=%s and id=%s
+                    """,
+                    [get_org_id(), secret_id],
+                    query_name="secrets.get",
+                )
+            except psycopg2.errors.UndefinedColumn:
+                row = fetch_one(
+                    conn,
+                    """
+                    select id, org_id, name, secret_enc, created_at, updated_at
+                    from secrets where org_id=%s and id=%s
+                    """,
+                    [get_org_id(), secret_id],
+                    query_name="secrets.get_legacy",
+                )
+            return self._row_to_secret(dict(row)) if row else None
 
     def list(self, limit: int = 200) -> list[dict]:
         with get_conn() as conn:
-            rows = fetch_all(
-                conn,
-                """
-                select id, org_id, name, created_at, updated_at
-                from secrets
-                where org_id=%s
-                order by created_at desc
-                limit %s
-                """,
-                [get_org_id(), max(1, min(int(limit or 200), 1000))],
-                query_name="secrets.list",
-            )
-            return [dict(r) for r in rows]
+            try:
+                rows = fetch_all(
+                    conn,
+                    """
+                    select id, org_id, name, provider_key, secret_key, status, version, last_rotated_at, created_at, updated_at
+                    from secrets
+                    where org_id=%s
+                    order by created_at desc
+                    limit %s
+                    """,
+                    [get_org_id(), max(1, min(int(limit or 200), 1000))],
+                    query_name="secrets.list",
+                )
+            except psycopg2.errors.UndefinedColumn:
+                rows = fetch_all(
+                    conn,
+                    """
+                    select id, org_id, name, created_at, updated_at
+                    from secrets
+                    where org_id=%s
+                    order by created_at desc
+                    limit %s
+                    """,
+                    [get_org_id(), max(1, min(int(limit or 200), 1000))],
+                    query_name="secrets.list_legacy",
+                )
+            return [self._row_to_secret(dict(r)) for r in rows]
+
+    def rotate(self, secret_id: str, secret_enc: str) -> dict | None:
+        with get_conn() as conn:
+            try:
+                row = fetch_one(
+                    conn,
+                    """
+                    update secrets
+                    set secret_enc=%s,
+                        version=coalesce(version, 1) + 1,
+                        last_rotated_at=now(),
+                        updated_at=now()
+                    where org_id=%s and id=%s
+                    returning id, org_id, name, provider_key, secret_key, status, version, last_rotated_at, created_at, updated_at
+                    """,
+                    [secret_enc, get_org_id(), secret_id],
+                    query_name="secrets.rotate",
+                )
+                return self._row_to_secret(dict(row)) if row else None
+            except psycopg2.errors.UndefinedColumn:
+                row = fetch_one(
+                    conn,
+                    """
+                    update secrets
+                    set secret_enc=%s, updated_at=now()
+                    where org_id=%s and id=%s
+                    returning id, org_id, name, created_at, updated_at
+                    """,
+                    [secret_enc, get_org_id(), secret_id],
+                    query_name="secrets.rotate_legacy",
+                )
+                return self._row_to_secret(dict(row)) if row else None
 
     def delete(self, secret_id: str) -> bool:
         with get_conn() as conn:
@@ -1770,6 +1864,819 @@ class DbSecretStore:
                 query_name="secrets.delete",
             )
             return bool(row)
+
+
+class DbApiCredentialStore:
+    def _row_to_credential(self, row: dict) -> dict:
+        scopes = _ensure_json(row.get("scopes_json")) if row.get("scopes_json") is not None else []
+        if not isinstance(scopes, list):
+            scopes = []
+        return {
+            "id": row.get("id"),
+            "org_id": row.get("org_id"),
+            "name": row.get("name"),
+            "key_prefix": row.get("key_prefix"),
+            "scopes": [str(item).strip() for item in scopes if isinstance(item, str) and item.strip()],
+            "status": row.get("status") or "active",
+            "created_by": row.get("created_by"),
+            "last_used_at": _to_iso(row.get("last_used_at")),
+            "expires_at": _to_iso(row.get("expires_at")),
+            "last_rotated_at": _to_iso(row.get("last_rotated_at")),
+            "revoked_at": _to_iso(row.get("revoked_at")),
+            "created_at": _to_iso(row.get("created_at")),
+            "updated_at": _to_iso(row.get("updated_at")),
+        }
+
+    def create(
+        self,
+        *,
+        name: str,
+        key_prefix: str,
+        key_hash: str,
+        scopes: list[str] | None = None,
+        status: str | None = None,
+        created_by: str | None = None,
+        expires_at: str | None = None,
+        last_rotated_at: str | None = None,
+    ) -> dict:
+        payload_scopes = [str(item).strip() for item in (scopes or []) if isinstance(item, str) and str(item).strip()]
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                insert into api_credentials (
+                  id, org_id, name, key_prefix, key_hash, scopes_json, status, created_by, expires_at, last_rotated_at, created_at, updated_at
+                )
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), now())
+                returning id, org_id, name, key_prefix, scopes_json, status, created_by, last_used_at, expires_at, last_rotated_at, revoked_at, created_at, updated_at
+                """,
+                [str(uuid.uuid4()), get_org_id(), name, key_prefix, key_hash, json.dumps(payload_scopes), status or "active", created_by, expires_at, last_rotated_at or _now()],
+                query_name="api_credentials.create",
+            )
+            return self._row_to_credential(dict(row))
+
+    def get(self, credential_id: str) -> dict | None:
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                select id, org_id, name, key_prefix, scopes_json, status, created_by, last_used_at, expires_at, last_rotated_at, revoked_at, created_at, updated_at
+                from api_credentials
+                where org_id=%s and id=%s
+                """,
+                [get_org_id(), credential_id],
+                query_name="api_credentials.get",
+            )
+            return self._row_to_credential(dict(row)) if row else None
+
+    def list(self, limit: int = 200) -> list[dict]:
+        with get_conn() as conn:
+            rows = fetch_all(
+                conn,
+                """
+                select id, org_id, name, key_prefix, scopes_json, status, created_by, last_used_at, expires_at, last_rotated_at, revoked_at, created_at, updated_at
+                from api_credentials
+                where org_id=%s
+                order by created_at desc
+                limit %s
+                """,
+                [get_org_id(), max(1, min(int(limit or 200), 1000))],
+                query_name="api_credentials.list",
+            )
+            return [self._row_to_credential(dict(row)) for row in rows]
+
+    def revoke(self, credential_id: str) -> dict | None:
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                update api_credentials
+                set status='revoked', revoked_at=now(), updated_at=now()
+                where org_id=%s and id=%s
+                returning id, org_id, name, key_prefix, scopes_json, status, created_by, last_used_at, expires_at, last_rotated_at, revoked_at, created_at, updated_at
+                """,
+                [get_org_id(), credential_id],
+                query_name="api_credentials.revoke",
+            )
+            return self._row_to_credential(dict(row)) if row else None
+
+    def rotate(self, credential_id: str, *, key_prefix: str, key_hash: str, expires_at: str | None = None) -> dict | None:
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                update api_credentials
+                set key_prefix=%s,
+                    key_hash=%s,
+                    expires_at=coalesce(%s, expires_at),
+                    last_rotated_at=now(),
+                    status='active',
+                    revoked_at=null,
+                    updated_at=now()
+                where org_id=%s and id=%s
+                returning id, org_id, name, key_prefix, scopes_json, status, created_by, last_used_at, expires_at, last_rotated_at, revoked_at, created_at, updated_at
+                """,
+                [key_prefix, key_hash, expires_at, get_org_id(), credential_id],
+                query_name="api_credentials.rotate",
+            )
+            return self._row_to_credential(dict(row)) if row else None
+
+    def get_by_key_hash_any(self, key_hash: str) -> dict | None:
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                select id, org_id, name, key_prefix, scopes_json, status, created_by, last_used_at, expires_at, last_rotated_at, revoked_at, created_at, updated_at
+                from api_credentials
+                where key_hash=%s
+                limit 1
+                """,
+                [key_hash],
+                query_name="api_credentials.get_by_key_hash_any",
+            )
+            return self._row_to_credential(dict(row)) if row else None
+
+    def touch_last_used_any(self, credential_id: str) -> None:
+        with get_conn() as conn:
+            execute(
+                conn,
+                """
+                update api_credentials
+                set last_used_at=now(), updated_at=now()
+                where id=%s
+                """,
+                [credential_id],
+                query_name="api_credentials.touch_last_used_any",
+            )
+
+
+class DbApiRequestLogStore:
+    def create(self, entry: dict) -> dict:
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                insert into api_request_logs (
+                  id, org_id, api_credential_id, method, path, status_code,
+                  duration_ms, ip_address, user_agent, created_at
+                )
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+                returning *
+                """,
+                [
+                    str(uuid.uuid4()),
+                    get_org_id(),
+                    entry.get("api_credential_id"),
+                    entry.get("method"),
+                    entry.get("path"),
+                    int(entry.get("status_code") or 0),
+                    int(entry.get("duration_ms")) if entry.get("duration_ms") is not None else None,
+                    entry.get("ip_address"),
+                    entry.get("user_agent"),
+                ],
+                query_name="api_request_logs.create",
+            )
+            return dict(row)
+
+    def list(self, credential_id: str | None = None, limit: int = 200) -> list[dict]:
+        clauses = ["org_id=%s"]
+        params: list[Any] = [get_org_id()]
+        if credential_id:
+            clauses.append("api_credential_id=%s")
+            params.append(credential_id)
+        params.append(max(1, min(int(limit or 200), 1000)))
+        where = " and ".join(clauses)
+        with get_conn() as conn:
+            rows = fetch_all(
+                conn,
+                f"""
+                select *
+                from api_request_logs
+                where {where}
+                order by created_at desc
+                limit %s
+                """,
+                params,
+                query_name="api_request_logs.list",
+            )
+            return [dict(row) for row in rows]
+
+    def count_recent(self, credential_id: str, window_seconds: int = 60) -> int:
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                select count(*)::int as total
+                from api_request_logs
+                where org_id=%s
+                  and api_credential_id=%s
+                  and created_at >= (now() - make_interval(secs => %s))
+                """,
+                [get_org_id(), credential_id, max(1, int(window_seconds or 60))],
+                query_name="api_request_logs.count_recent",
+            )
+            return int((row or {}).get("total") or 0)
+
+
+class DbExternalWebhookSubscriptionStore:
+    def create(self, record: dict) -> dict:
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                insert into external_webhook_subscriptions (
+                  id, org_id, name, target_url, event_pattern, signing_secret_id,
+                  status, headers_json, created_at, updated_at
+                )
+                values (%s, %s, %s, %s, %s, %s, %s, %s, now(), now())
+                returning *
+                """,
+                [
+                    str(uuid.uuid4()),
+                    get_org_id(),
+                    record.get("name"),
+                    record.get("target_url"),
+                    record.get("event_pattern"),
+                    record.get("signing_secret_id"),
+                    record.get("status") or "active",
+                    json.dumps(record.get("headers_json") or {}),
+                ],
+                query_name="external_webhook_subscriptions.create",
+            )
+            return dict(row)
+
+    def update(self, subscription_id: str, updates: dict) -> dict | None:
+        fields: list[str] = []
+        params: list[Any] = []
+        for key in ("name", "target_url", "event_pattern", "signing_secret_id", "status", "headers_json", "last_delivered_at", "last_status_code", "last_error"):
+            if key in updates:
+                fields.append(f"{key}=%s")
+                value = updates[key]
+                if key == "headers_json":
+                    value = json.dumps(value or {})
+                params.append(value)
+        if not fields:
+            return self.get(subscription_id)
+        params.extend([get_org_id(), subscription_id])
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                f"""
+                update external_webhook_subscriptions
+                set {', '.join(fields)}, updated_at=now()
+                where org_id=%s and id=%s
+                returning *
+                """,
+                params,
+                query_name="external_webhook_subscriptions.update",
+            )
+            return dict(row) if row else None
+
+    def get(self, subscription_id: str) -> dict | None:
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                "select * from external_webhook_subscriptions where org_id=%s and id=%s",
+                [get_org_id(), subscription_id],
+                query_name="external_webhook_subscriptions.get",
+            )
+            return dict(row) if row else None
+
+    def list(self, status: str | None = None, limit: int = 500) -> list[dict]:
+        clauses = ["org_id=%s"]
+        params: list[Any] = [get_org_id()]
+        if status:
+            clauses.append("status=%s")
+            params.append(status)
+        params.append(max(1, min(int(limit or 500), 2000)))
+        where = " and ".join(clauses)
+        with get_conn() as conn:
+            rows = fetch_all(
+                conn,
+                f"""
+                select *
+                from external_webhook_subscriptions
+                where {where}
+                order by created_at desc
+                limit %s
+                """,
+                params,
+                query_name="external_webhook_subscriptions.list",
+            )
+            return [dict(row) for row in rows]
+
+    def delete(self, subscription_id: str) -> bool:
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                delete from external_webhook_subscriptions
+                where org_id=%s and id=%s
+                returning id
+                """,
+                [get_org_id(), subscription_id],
+                query_name="external_webhook_subscriptions.delete",
+            )
+            return bool(row)
+
+
+_SYSTEM_INTEGRATION_PROVIDERS: list[dict[str, Any]] = [
+    {
+        "key": "generic_rest",
+        "name": "Generic REST API",
+        "description": "Call external REST APIs with configurable auth and mappings.",
+        "auth_type": "configurable",
+        "manifest": {
+            "capabilities": ["action.http_request", "sync.poll", "webhook.outbound"],
+            "secret_keys": ["api_key", "bearer_token", "password", "client_secret", "access_token", "refresh_token"],
+            "supported_auth_modes": ["none", "bearer", "api_key", "basic", "oauth2"],
+            "setup_schema": {
+                "fields": [
+                    {
+                        "id": "base_url",
+                        "type": "text",
+                        "label": "Base URL",
+                        "group": "connection",
+                        "help": "Base API URL for this system, for example https://api.example.com/v1.",
+                        "placeholder": "https://api.example.com/v1",
+                    },
+                    {
+                        "id": "auth_mode",
+                        "type": "select",
+                        "label": "Authentication mode",
+                        "group": "connection",
+                        "help": "Choose how this API authenticates requests.",
+                        "options": ["none", "bearer", "api_key", "basic"],
+                    },
+                    {
+                        "id": "api_key_in",
+                        "type": "select",
+                        "label": "API key location",
+                        "group": "connection",
+                        "help": "Only used when Authentication mode is API key.",
+                        "options": [
+                            {"value": "header", "label": "Header"},
+                            {"value": "query", "label": "Query string"},
+                        ],
+                        "show_when": {"field": "auth_mode", "in": ["api_key"]},
+                    },
+                    {
+                        "id": "api_key_name",
+                        "type": "text",
+                        "label": "API key field name",
+                        "group": "connection",
+                        "help": "For example X-API-Key or api_key.",
+                        "placeholder": "X-API-Key",
+                        "show_when": {"field": "auth_mode", "in": ["api_key"]},
+                    },
+                    {
+                        "id": "username",
+                        "type": "text",
+                        "label": "Username",
+                        "group": "connection",
+                        "help": "Only used when Authentication mode is Basic.",
+                        "show_when": {"field": "auth_mode", "in": ["basic"]},
+                    },
+                    {
+                        "id": "authorization_url",
+                        "type": "text",
+                        "label": "Authorization URL",
+                        "group": "connection",
+                        "help": "Browser URL used to start the OAuth2 authorization flow.",
+                        "placeholder": "https://provider.example.com/oauth/authorize",
+                        "show_when": {"field": "auth_mode", "in": ["oauth2"]},
+                    },
+                    {
+                        "id": "token_url",
+                        "type": "text",
+                        "label": "Token URL",
+                        "group": "connection",
+                        "help": "Token endpoint used to exchange authorization codes and refresh access tokens.",
+                        "placeholder": "https://provider.example.com/oauth/token",
+                        "show_when": {"field": "auth_mode", "in": ["oauth2"]},
+                    },
+                    {
+                        "id": "client_id",
+                        "type": "text",
+                        "label": "Client ID",
+                        "group": "connection",
+                        "help": "OAuth2 client identifier issued by the provider.",
+                        "show_when": {"field": "auth_mode", "in": ["oauth2"]},
+                    },
+                    {
+                        "id": "oauth_scope",
+                        "type": "text",
+                        "label": "Scopes",
+                        "group": "connection",
+                        "help": "Space-separated scopes requested during OAuth2 authorization.",
+                        "placeholder": "contacts.read contacts.write",
+                        "show_when": {"field": "auth_mode", "in": ["oauth2"]},
+                    },
+                    {
+                        "id": "oauth_audience",
+                        "type": "text",
+                        "label": "Audience",
+                        "group": "advanced",
+                        "help": "Optional audience parameter for providers that require it.",
+                        "show_when": {"field": "auth_mode", "in": ["oauth2"]},
+                    },
+                    {
+                        "id": "oauth_extra_authorize_params",
+                        "type": "json",
+                        "label": "Extra authorize parameters",
+                        "group": "advanced",
+                        "help": "Optional extra query parameters appended to the authorize URL.",
+                        "show_when": {"field": "auth_mode", "in": ["oauth2"]},
+                    },
+                    {
+                        "id": "oauth_extra_token_params",
+                        "type": "json",
+                        "label": "Extra token parameters",
+                        "group": "advanced",
+                        "help": "Optional extra parameters sent to the token endpoint.",
+                        "show_when": {"field": "auth_mode", "in": ["oauth2"]},
+                    },
+                    {
+                        "id": "oauth_token_refresh_leeway_seconds",
+                        "type": "number",
+                        "label": "Token refresh leeway seconds",
+                        "group": "advanced",
+                        "help": "Refresh access tokens slightly before they expire.",
+                        "placeholder": "120",
+                        "show_when": {"field": "auth_mode", "in": ["oauth2"]},
+                    },
+                    {
+                        "id": "default_headers",
+                        "type": "json",
+                        "label": "Default headers",
+                        "group": "advanced",
+                        "help": "Optional headers sent with every request.",
+                    },
+                    {
+                        "id": "test_request",
+                        "type": "json",
+                        "label": "Saved test request",
+                        "group": "advanced",
+                        "help": "Used by Test connection. Example: {\"method\":\"GET\",\"path\":\"/health\"}",
+                    },
+                ]
+            },
+            "sync_schema": {
+                "fields": [
+                    {
+                        "id": "schedule_enabled",
+                        "type": "boolean",
+                        "label": "Run on a schedule",
+                        "help": "Turn this on if Octodrop should poll this connection automatically in the background.",
+                    },
+                    {
+                        "id": "schedule_every_minutes",
+                        "type": "number",
+                        "label": "Run every N minutes",
+                        "help": "Simple polling interval for the shared scheduler.",
+                        "placeholder": "60",
+                    },
+                    {
+                        "id": "resource_key",
+                        "type": "text",
+                        "label": "Resource key",
+                        "help": "Short name for what this sync imports, such as contacts or invoices.",
+                        "placeholder": "contacts",
+                    },
+                    {
+                        "id": "scope_key",
+                        "type": "text",
+                        "label": "Checkpoint scope",
+                        "help": "Separate checkpoints by scope when one connection syncs more than one resource.",
+                        "placeholder": "contacts",
+                    },
+                    {
+                        "id": "request",
+                        "type": "request_builder",
+                        "label": "Sync request",
+                        "help": "The API call used to fetch the next batch.",
+                    },
+                    {
+                        "id": "items_path",
+                        "type": "text",
+                        "label": "Items path",
+                        "help": "Dot path to the array of records in the JSON response, such as items or data.records.",
+                        "placeholder": "items",
+                    },
+                    {
+                        "id": "cursor_param",
+                        "type": "text",
+                        "label": "Cursor query parameter",
+                        "help": "If set, the last checkpoint cursor is injected into this query parameter on the next run.",
+                        "placeholder": "updated_since",
+                    },
+                    {
+                        "id": "cursor_value_path",
+                        "type": "text",
+                        "label": "Next cursor path",
+                        "help": "Optional dot path to the next cursor value in the response JSON.",
+                        "placeholder": "meta.next_cursor",
+                    },
+                    {
+                        "id": "last_item_cursor_path",
+                        "type": "text",
+                        "label": "Last-item cursor path",
+                        "help": "Fallback cursor taken from the last returned item if the API does not return a separate next cursor.",
+                        "placeholder": "updated_at",
+                    },
+                    {
+                        "id": "limit_param",
+                        "type": "text",
+                        "label": "Limit query parameter",
+                        "help": "Optional query parameter name for page size, such as limit or page_size.",
+                        "placeholder": "limit",
+                    },
+                    {
+                        "id": "max_items",
+                        "type": "number",
+                        "label": "Max items per run",
+                        "help": "Optional page size injected into the limit parameter.",
+                        "placeholder": "100",
+                    },
+                    {
+                        "id": "emit_events",
+                        "type": "boolean",
+                        "label": "Emit automation events for each item",
+                        "help": "When enabled, each fetched item is emitted into the automation event stream.",
+                    },
+                ]
+            },
+        },
+    },
+    {
+        "key": "generic_webhook",
+        "name": "Generic Webhook",
+        "description": "Receive or send signed webhook events.",
+        "auth_type": "webhook_signature",
+        "manifest": {
+            "capabilities": ["webhook.inbound", "webhook.outbound", "action.http_request"],
+            "secret_keys": ["signing_secret"],
+            "setup_schema": {
+                "fields": [
+                    {
+                        "id": "endpoint_url",
+                        "type": "text",
+                        "label": "Outbound endpoint URL",
+                        "group": "connection",
+                        "help": "Used when this connection sends outbound webhooks.",
+                        "placeholder": "https://hooks.example.com/inbound",
+                    },
+                    {
+                        "id": "default_headers",
+                        "type": "json",
+                        "label": "Default headers",
+                        "group": "advanced",
+                        "help": "Optional headers sent with every webhook request.",
+                    },
+                    {
+                        "id": "test_request",
+                        "type": "json",
+                        "label": "Saved test request",
+                        "group": "advanced",
+                        "help": "Optional test payload for validating outbound webhook setup.",
+                    },
+                ]
+            },
+        },
+    },
+    {
+        "key": "smtp",
+        "name": "SMTP",
+        "description": "Send email via SMTP.",
+        "auth_type": "basic",
+        "manifest": {
+            "capabilities": ["email.send"],
+            "secret_keys": ["password"],
+        },
+    },
+    {
+        "key": "postmark",
+        "name": "Postmark",
+        "description": "Send email via Postmark.",
+        "auth_type": "api_key",
+        "manifest": {
+            "capabilities": ["email.send"],
+            "secret_keys": ["api_token"],
+        },
+    },
+    {
+        "key": "slack",
+        "name": "Slack",
+        "description": "Post messages and receive webhook events from Slack.",
+        "auth_type": "oauth2",
+        "manifest": {
+            "capabilities": ["action.post_message", "webhook.inbound"],
+            "secret_keys": ["bot_token", "signing_secret"],
+        },
+    },
+]
+
+
+class DbIntegrationProviderStore:
+    def bootstrap_system(self) -> None:
+        try:
+            with get_conn() as conn:
+                for provider in _SYSTEM_INTEGRATION_PROVIDERS:
+                    execute(
+                        conn,
+                        """
+                        insert into integration_providers (
+                          key, name, description, auth_type, manifest_json, is_system, created_at, updated_at
+                        )
+                        values (%s, %s, %s, %s, %s, true, now(), now())
+                        on conflict (key)
+                        do update set
+                          name=excluded.name,
+                          description=excluded.description,
+                          auth_type=excluded.auth_type,
+                          manifest_json=excluded.manifest_json,
+                          updated_at=now()
+                        """,
+                        [
+                            provider["key"],
+                            provider["name"],
+                            provider.get("description"),
+                            provider.get("auth_type") or "none",
+                            json.dumps(provider.get("manifest") or {}),
+                        ],
+                        query_name="integration_providers.bootstrap",
+                    )
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+
+    def list(self, include_system: bool = True) -> list[dict]:
+        self.bootstrap_system()
+        clauses: list[str] = []
+        params: list[Any] = []
+        if not include_system:
+            clauses.append("is_system=false")
+        where = f"where {' and '.join(clauses)}" if clauses else ""
+        try:
+            with get_conn() as conn:
+                rows = fetch_all(
+                    conn,
+                    f"""
+                    select id, key, name, description, auth_type, manifest_json, is_system, created_at, updated_at
+                    from integration_providers
+                    {where}
+                    order by is_system desc, name asc
+                    """,
+                    params,
+                    query_name="integration_providers.list",
+                )
+                return [dict(r) for r in rows]
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            if include_system:
+                return [
+                    {
+                        "id": None,
+                        "key": provider["key"],
+                        "name": provider["name"],
+                        "description": provider.get("description"),
+                        "auth_type": provider.get("auth_type") or "none",
+                        "manifest_json": provider.get("manifest") or {},
+                        "is_system": True,
+                        "created_at": None,
+                        "updated_at": None,
+                    }
+                    for provider in _SYSTEM_INTEGRATION_PROVIDERS
+                ]
+            return []
+
+    def get_by_key(self, key: str) -> dict | None:
+        self.bootstrap_system()
+        try:
+            with get_conn() as conn:
+                row = fetch_one(
+                    conn,
+                    """
+                    select id, key, name, description, auth_type, manifest_json, is_system, created_at, updated_at
+                    from integration_providers
+                    where key=%s
+                    """,
+                    [key],
+                    query_name="integration_providers.get_by_key",
+                )
+                return dict(row) if row else None
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            for provider in _SYSTEM_INTEGRATION_PROVIDERS:
+                if provider["key"] == key:
+                    return {
+                        "id": None,
+                        "key": provider["key"],
+                        "name": provider["name"],
+                        "description": provider.get("description"),
+                        "auth_type": provider.get("auth_type") or "none",
+                        "manifest_json": provider.get("manifest") or {},
+                        "is_system": True,
+                        "created_at": None,
+                        "updated_at": None,
+                    }
+            return None
+
+
+class DbConnectionSecretStore:
+    def replace_for_connection(self, connection_id: str, secret_refs: dict[str, str | None] | None) -> list[dict]:
+        refs = {str(k).strip(): v for k, v in (secret_refs or {}).items() if str(k).strip()}
+        try:
+            with get_conn() as conn:
+                execute(
+                    conn,
+                    """
+                    delete from integration_connection_secrets
+                    where org_id=%s and connection_id=%s
+                    """,
+                    [get_org_id(), connection_id],
+                    query_name="integration_connection_secrets.replace.delete",
+                )
+                for secret_key, secret_id in refs.items():
+                    if not secret_id:
+                        continue
+                    execute(
+                        conn,
+                        """
+                        insert into integration_connection_secrets (
+                          org_id, connection_id, secret_id, secret_key, created_at, updated_at
+                        )
+                        values (%s, %s, %s, %s, now(), now())
+                        """,
+                        [get_org_id(), connection_id, secret_id, secret_key],
+                        query_name="integration_connection_secrets.replace.insert",
+                    )
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            return []
+        return self.list_for_connection(connection_id)
+
+    def list_for_connection(self, connection_id: str) -> list[dict]:
+        try:
+            with get_conn() as conn:
+                rows = fetch_all(
+                    conn,
+                    """
+                    select id, org_id, connection_id, secret_id, secret_key, created_at, updated_at
+                    from integration_connection_secrets
+                    where org_id=%s and connection_id=%s
+                    order by secret_key asc, created_at asc
+                    """,
+                    [get_org_id(), connection_id],
+                    query_name="integration_connection_secrets.list_for_connection",
+                )
+                return [dict(r) for r in rows]
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            return []
+
+    def get_secret_ref(self, connection_id: str, secret_key: str | None = None) -> str | None:
+        clauses = ["org_id=%s", "connection_id=%s"]
+        params: list[Any] = [get_org_id(), connection_id]
+        if secret_key:
+            clauses.append("secret_key=%s")
+            params.append(secret_key)
+        sql = f"""
+            select secret_id
+            from integration_connection_secrets
+            where {' and '.join(clauses)}
+            order by case when secret_key=%s then 0 else 1 end, created_at asc
+            limit 1
+        """
+        params.append(secret_key or "")
+        try:
+            with get_conn() as conn:
+                row = fetch_one(
+                    conn,
+                    sql,
+                    params,
+                    query_name="integration_connection_secrets.get_secret_ref",
+                )
+                return str(row["secret_id"]) if row and row.get("secret_id") else None
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            return None
+
+
+def _attach_connection_secret_links(connection: dict | None) -> dict | None:
+    if not connection or not connection.get("id"):
+        return connection
+    store = DbConnectionSecretStore()
+    links = store.list_for_connection(str(connection["id"]))
+    record = dict(connection)
+    record["secret_links"] = links
+    record["secret_refs"] = {item.get("secret_key"): item.get("secret_id") for item in links if item.get("secret_key")}
+    return record
 
 
 class DbConnectionStore:
@@ -1792,12 +2699,16 @@ class DbConnectionStore:
                 ],
                 query_name="connections.insert",
             )
-            return dict(row)
+            record = dict(row)
+        secret_refs = connection.get("secret_refs")
+        if isinstance(secret_refs, dict):
+            DbConnectionSecretStore().replace_for_connection(str(record["id"]), secret_refs)
+        return _attach_connection_secret_links(record)
 
     def update(self, connection_id: str, updates: dict) -> dict | None:
         fields = []
         params = []
-        for key in ("name", "config", "secret_ref", "status"):
+        for key in ("name", "config", "secret_ref", "status", "health_status", "last_tested_at", "last_success_at", "last_error"):
             if key in updates:
                 fields.append(f"{key}=%s")
                 value = updates[key]
@@ -1818,7 +2729,10 @@ class DbConnectionStore:
                 params,
                 query_name="connections.update",
             )
-            return dict(row) if row else None
+            record = dict(row) if row else None
+        if record and "secret_refs" in updates and isinstance(updates.get("secret_refs"), dict):
+            DbConnectionSecretStore().replace_for_connection(connection_id, updates.get("secret_refs"))
+        return _attach_connection_secret_links(record)
 
     def get(self, connection_id: str) -> dict | None:
         with get_conn() as conn:
@@ -1830,7 +2744,7 @@ class DbConnectionStore:
                 [get_org_id(), connection_id],
                 query_name="connections.get",
             )
-            return dict(row) if row else None
+            return _attach_connection_secret_links(dict(row)) if row else None
 
     def list(self, connection_type: str | None = None, status: str | None = None) -> list[dict]:
         clauses = ["org_id=%s"]
@@ -1851,7 +2765,30 @@ class DbConnectionStore:
                 params,
                 query_name="connections.list",
             )
-            return [dict(r) for r in rows]
+            return [_attach_connection_secret_links(dict(r)) for r in rows]
+
+    def list_any(self, connection_type: str | None = None, status: str | None = None) -> list[dict]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if connection_type:
+            clauses.append("type=%s")
+            params.append(connection_type)
+        if status:
+            clauses.append("status=%s")
+            params.append(status)
+        where = f"where {' and '.join(clauses)}" if clauses else ""
+        with get_conn() as conn:
+            rows = fetch_all(
+                conn,
+                f"""
+                select * from connections
+                {where}
+                order by created_at desc
+                """,
+                params,
+                query_name="connections.list_any",
+            )
+            return [_attach_connection_secret_links(dict(r)) for r in rows]
 
     def get_default_email(self) -> dict | None:
         with get_conn() as conn:
@@ -1866,7 +2803,7 @@ class DbConnectionStore:
                 [get_org_id()],
                 query_name="connections.default_email",
             )
-            return dict(row) if row else None
+            return _attach_connection_secret_links(dict(row)) if row else None
 
     def delete(self, connection_id: str) -> bool:
         with get_conn() as conn:
@@ -1879,6 +2816,555 @@ class DbConnectionStore:
                 query_name="connections.delete",
             )
             return True
+
+
+class DbIntegrationMappingStore:
+    def create(self, mapping: dict) -> dict:
+        try:
+            with get_conn() as conn:
+                row = fetch_one(
+                    conn,
+                    """
+                    insert into integration_mappings (
+                      org_id, connection_id, name, source_entity, target_entity, mapping_json, created_at, updated_at
+                    )
+                    values (%s, %s, %s, %s, %s, %s, now(), now())
+                    returning *
+                    """,
+                    [
+                        get_org_id(),
+                        mapping.get("connection_id"),
+                        mapping.get("name"),
+                        mapping.get("source_entity"),
+                        mapping.get("target_entity"),
+                        json.dumps(mapping.get("mapping_json") or {}),
+                    ],
+                    query_name="integration_mappings.create",
+                )
+                return dict(row)
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            record = dict(mapping)
+            record.setdefault("id", None)
+            record.setdefault("org_id", get_org_id())
+            return record
+
+    def update(self, mapping_id: str, updates: dict) -> dict | None:
+        fields: list[str] = []
+        params: list[Any] = []
+        for key in ("connection_id", "name", "source_entity", "target_entity", "mapping_json"):
+            if key in updates:
+                fields.append(f"{key}=%s")
+                value = updates[key]
+                if key == "mapping_json":
+                    value = json.dumps(value or {})
+                params.append(value)
+        if not fields:
+            return self.get(mapping_id)
+        params.extend([get_org_id(), mapping_id])
+        try:
+            with get_conn() as conn:
+                row = fetch_one(
+                    conn,
+                    f"""
+                    update integration_mappings
+                    set {', '.join(fields)}, updated_at=now()
+                    where org_id=%s and id=%s
+                    returning *
+                    """,
+                    params,
+                    query_name="integration_mappings.update",
+                )
+                return dict(row) if row else None
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            return None
+
+    def get(self, mapping_id: str) -> dict | None:
+        try:
+            with get_conn() as conn:
+                row = fetch_one(
+                    conn,
+                    "select * from integration_mappings where org_id=%s and id=%s",
+                    [get_org_id(), mapping_id],
+                    query_name="integration_mappings.get",
+                )
+                return dict(row) if row else None
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            return None
+
+    def list(self, connection_id: str | None = None) -> list[dict]:
+        clauses = ["org_id=%s"]
+        params: list[Any] = [get_org_id()]
+        if connection_id:
+            clauses.append("connection_id=%s")
+            params.append(connection_id)
+        try:
+            with get_conn() as conn:
+                rows = fetch_all(
+                    conn,
+                    f"""
+                    select *
+                    from integration_mappings
+                    where {' and '.join(clauses)}
+                    order by created_at desc
+                    """,
+                    params,
+                    query_name="integration_mappings.list",
+                )
+                return [dict(r) for r in rows]
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            return []
+
+    def delete(self, mapping_id: str) -> bool:
+        try:
+            with get_conn() as conn:
+                execute(
+                    conn,
+                    "delete from integration_mappings where org_id=%s and id=%s",
+                    [get_org_id(), mapping_id],
+                    query_name="integration_mappings.delete",
+                )
+                return True
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            return False
+
+
+class DbIntegrationWebhookStore:
+    def create(self, webhook: dict) -> dict:
+        try:
+            with get_conn() as conn:
+                row = fetch_one(
+                    conn,
+                    """
+                    insert into integration_webhooks (
+                      org_id, connection_id, direction, event_key, endpoint_path,
+                      signing_secret_id, status, config_json, created_at, updated_at
+                    )
+                    values (%s, %s, %s, %s, %s, %s, %s, %s, now(), now())
+                    returning *
+                    """,
+                    [
+                        get_org_id(),
+                        webhook.get("connection_id"),
+                        webhook.get("direction"),
+                        webhook.get("event_key"),
+                        webhook.get("endpoint_path"),
+                        webhook.get("signing_secret_id"),
+                        webhook.get("status") or "active",
+                        json.dumps(webhook.get("config_json") or {}),
+                    ],
+                    query_name="integration_webhooks.create",
+                )
+                return dict(row)
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            record = dict(webhook)
+            record.setdefault("id", None)
+            record.setdefault("org_id", get_org_id())
+            return record
+
+    def update(self, webhook_id: str, updates: dict) -> dict | None:
+        fields: list[str] = []
+        params: list[Any] = []
+        for key in ("direction", "event_key", "endpoint_path", "signing_secret_id", "status", "config_json"):
+            if key in updates:
+                fields.append(f"{key}=%s")
+                value = updates[key]
+                if key == "config_json":
+                    value = json.dumps(value or {})
+                params.append(value)
+        if not fields:
+            return self.get(webhook_id)
+        params.extend([get_org_id(), webhook_id])
+        try:
+            with get_conn() as conn:
+                row = fetch_one(
+                    conn,
+                    f"""
+                    update integration_webhooks
+                    set {', '.join(fields)}, updated_at=now()
+                    where org_id=%s and id=%s
+                    returning *
+                    """,
+                    params,
+                    query_name="integration_webhooks.update",
+                )
+                return dict(row) if row else None
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            return None
+
+    def get(self, webhook_id: str) -> dict | None:
+        try:
+            with get_conn() as conn:
+                row = fetch_one(
+                    conn,
+                    "select * from integration_webhooks where org_id=%s and id=%s",
+                    [get_org_id(), webhook_id],
+                    query_name="integration_webhooks.get",
+                )
+                return dict(row) if row else None
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            return None
+
+    def get_any(self, webhook_id: str) -> dict | None:
+        try:
+            with get_conn() as conn:
+                row = fetch_one(
+                    conn,
+                    "select * from integration_webhooks where id=%s",
+                    [webhook_id],
+                    query_name="integration_webhooks.get_any",
+                )
+                return dict(row) if row else None
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            return None
+
+    def list(self, connection_id: str | None = None) -> list[dict]:
+        clauses = ["org_id=%s"]
+        params: list[Any] = [get_org_id()]
+        if connection_id:
+            clauses.append("connection_id=%s")
+            params.append(connection_id)
+        try:
+            with get_conn() as conn:
+                rows = fetch_all(
+                    conn,
+                    f"""
+                    select *
+                    from integration_webhooks
+                    where {' and '.join(clauses)}
+                    order by created_at desc
+                    """,
+                    params,
+                    query_name="integration_webhooks.list",
+                )
+                return [dict(r) for r in rows]
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            return []
+
+    def delete(self, webhook_id: str) -> bool:
+        try:
+            with get_conn() as conn:
+                execute(
+                    conn,
+                    "delete from integration_webhooks where org_id=%s and id=%s",
+                    [get_org_id(), webhook_id],
+                    query_name="integration_webhooks.delete",
+                )
+                return True
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            return False
+
+
+class DbIntegrationRequestLogStore:
+    def create(self, entry: dict) -> dict:
+        try:
+            with get_conn() as conn:
+                row = fetch_one(
+                    conn,
+                    """
+                    insert into integration_request_logs (
+                      org_id, connection_id, source, direction, method, url,
+                      request_headers_json, request_query_json, request_body_json, request_body_text,
+                      response_status, response_headers_json, response_body_json, response_body_text,
+                      ok, error_message, created_at
+                    )
+                    values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+                    returning *
+                    """,
+                    [
+                        get_org_id(),
+                        entry.get("connection_id"),
+                        entry.get("source") or "manual",
+                        entry.get("direction") or "outbound",
+                        entry.get("method"),
+                        entry.get("url"),
+                        json.dumps(entry.get("request_headers_json") or {}),
+                        json.dumps(entry.get("request_query_json") or {}),
+                        json.dumps(entry.get("request_body_json")) if entry.get("request_body_json") is not None else None,
+                        entry.get("request_body_text"),
+                        entry.get("response_status"),
+                        json.dumps(entry.get("response_headers_json") or {}),
+                        json.dumps(entry.get("response_body_json")) if entry.get("response_body_json") is not None else None,
+                        entry.get("response_body_text"),
+                        entry.get("ok"),
+                        entry.get("error_message"),
+                    ],
+                    query_name="integration_request_logs.create",
+                )
+                return dict(row)
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            record = dict(entry)
+            record.setdefault("id", None)
+            record.setdefault("org_id", get_org_id())
+            return record
+
+    def list(self, connection_id: str | None = None, source: str | None = None, limit: int = 200) -> list[dict]:
+        clauses = ["org_id=%s"]
+        params: list[Any] = [get_org_id()]
+        if connection_id:
+            clauses.append("connection_id=%s")
+            params.append(connection_id)
+        if source:
+            clauses.append("source=%s")
+            params.append(source)
+        params.append(max(1, min(int(limit or 200), 1000)))
+        try:
+            with get_conn() as conn:
+                rows = fetch_all(
+                    conn,
+                    f"""
+                    select *
+                    from integration_request_logs
+                    where {' and '.join(clauses)}
+                    order by created_at desc
+                    limit %s
+                    """,
+                    params,
+                    query_name="integration_request_logs.list",
+                )
+                return [dict(r) for r in rows]
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            return []
+
+
+class DbWebhookEventStore:
+    def get(self, event_id: str) -> dict | None:
+        try:
+            with get_conn() as conn:
+                row = fetch_one(
+                    conn,
+                    "select * from webhook_events where org_id=%s and id=%s",
+                    [get_org_id(), event_id],
+                    query_name="webhook_events.get",
+                )
+                return dict(row) if row else None
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            return None
+
+    def list(self, connection_id: str | None = None, status: str | None = None, limit: int = 200) -> list[dict]:
+        clauses = ["org_id=%s"]
+        params: list[Any] = [get_org_id()]
+        if connection_id:
+            clauses.append("connection_id=%s")
+            params.append(connection_id)
+        if status:
+            clauses.append("status=%s")
+            params.append(status)
+        params.append(max(1, min(int(limit or 200), 1000)))
+        try:
+            with get_conn() as conn:
+                rows = fetch_all(
+                    conn,
+                    f"""
+                    select *
+                    from webhook_events
+                    where {' and '.join(clauses)}
+                    order by received_at desc
+                    limit %s
+                    """,
+                    params,
+                    query_name="webhook_events.list",
+                )
+                return [dict(r) for r in rows]
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            return []
+
+    def create(self, event: dict) -> dict:
+        try:
+            with get_conn() as conn:
+                row = fetch_one(
+                    conn,
+                    """
+                    insert into webhook_events (
+                      org_id, connection_id, provider_event_id, event_key,
+                      headers_json, payload_json, signature_valid, status,
+                      received_at, processed_at, error_message
+                    )
+                    values (%s, %s, %s, %s, %s, %s, %s, %s, now(), %s, %s)
+                    on conflict (org_id, connection_id, provider_event_id)
+                    where provider_event_id is not null
+                    do update set
+                      headers_json=excluded.headers_json,
+                      payload_json=excluded.payload_json,
+                      signature_valid=excluded.signature_valid,
+                      status=excluded.status,
+                      processed_at=excluded.processed_at,
+                      error_message=excluded.error_message
+                    returning *
+                    """,
+                    [
+                        get_org_id(),
+                        event.get("connection_id"),
+                        event.get("provider_event_id"),
+                        event.get("event_key"),
+                        json.dumps(event.get("headers_json") or {}),
+                        json.dumps(event.get("payload_json") or {}),
+                        event.get("signature_valid"),
+                        event.get("status") or "received",
+                        event.get("processed_at"),
+                        event.get("error_message"),
+                    ],
+                    query_name="webhook_events.insert",
+                )
+                return dict(row)
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            return {
+                "id": None,
+                "org_id": get_org_id(),
+                "connection_id": event.get("connection_id"),
+                "provider_event_id": event.get("provider_event_id"),
+                "event_key": event.get("event_key"),
+                "headers_json": event.get("headers_json") or {},
+                "payload_json": event.get("payload_json") or {},
+                "signature_valid": event.get("signature_valid"),
+                "status": event.get("status") or "received",
+                "received_at": _now(),
+                "processed_at": event.get("processed_at"),
+                "error_message": event.get("error_message"),
+            }
+
+    def update_status(self, event_id: str, status: str, *, processed_at: str | None = None, error_message: str | None = None) -> dict | None:
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                update webhook_events
+                set status=%s, processed_at=%s, error_message=%s
+                where org_id=%s and id=%s
+                returning *
+                """,
+                [status, processed_at, error_message, get_org_id(), event_id],
+                query_name="webhook_events.update_status",
+            )
+            return dict(row) if row else None
+
+
+class DbSyncCheckpointStore:
+    def upsert(self, checkpoint: dict) -> dict:
+        try:
+            with get_conn() as conn:
+                row = fetch_one(
+                    conn,
+                    """
+                    insert into sync_checkpoints (
+                      org_id, connection_id, scope_key, cursor_value, cursor_json,
+                      last_synced_at, status, last_error, created_at, updated_at
+                    )
+                    values (%s, %s, %s, %s, %s, %s, %s, %s, now(), now())
+                    on conflict (org_id, connection_id, scope_key)
+                    do update set
+                      cursor_value=excluded.cursor_value,
+                      cursor_json=excluded.cursor_json,
+                      last_synced_at=excluded.last_synced_at,
+                      status=excluded.status,
+                      last_error=excluded.last_error,
+                      updated_at=now()
+                    returning *
+                    """,
+                    [
+                        get_org_id(),
+                        checkpoint.get("connection_id"),
+                        checkpoint.get("scope_key"),
+                        checkpoint.get("cursor_value"),
+                        json.dumps(checkpoint.get("cursor_json") or {}),
+                        checkpoint.get("last_synced_at"),
+                        checkpoint.get("status") or "idle",
+                        checkpoint.get("last_error"),
+                    ],
+                    query_name="sync_checkpoints.upsert",
+                )
+                return dict(row)
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            return {
+                "id": None,
+                "org_id": get_org_id(),
+                "connection_id": checkpoint.get("connection_id"),
+                "scope_key": checkpoint.get("scope_key"),
+                "cursor_value": checkpoint.get("cursor_value"),
+                "cursor_json": checkpoint.get("cursor_json") or {},
+                "last_synced_at": checkpoint.get("last_synced_at"),
+                "status": checkpoint.get("status") or "idle",
+                "last_error": checkpoint.get("last_error"),
+                "created_at": None,
+                "updated_at": None,
+            }
+
+    def get(self, connection_id: str, scope_key: str) -> dict | None:
+        try:
+            with get_conn() as conn:
+                row = fetch_one(
+                    conn,
+                    """
+                    select *
+                    from sync_checkpoints
+                    where org_id=%s and connection_id=%s and scope_key=%s
+                    """,
+                    [get_org_id(), connection_id, scope_key],
+                    query_name="sync_checkpoints.get",
+                )
+                return dict(row) if row else None
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            return None
+
+    def list(self, connection_id: str | None = None) -> list[dict]:
+        clauses = ["org_id=%s"]
+        params: list[Any] = [get_org_id()]
+        if connection_id:
+            clauses.append("connection_id=%s")
+            params.append(connection_id)
+        try:
+            with get_conn() as conn:
+                rows = fetch_all(
+                    conn,
+                    f"""
+                    select *
+                    from sync_checkpoints
+                    where {' and '.join(clauses)}
+                    order by updated_at desc
+                    """,
+                    params,
+                    query_name="sync_checkpoints.list",
+                )
+                return [dict(r) for r in rows]
+        except Exception as exc:
+            if not _is_undefined_table(exc):
+                raise
+            return []
 
 
 class DbJobStore:
@@ -1939,6 +3425,34 @@ class DbJobStore:
                 """,
                 [get_org_id(), limit, worker_id],
                 query_name="jobs.claim_batch",
+            )
+            return [dict(r) for r in rows]
+
+    def claim_batch_any(self, limit: int, worker_id: str) -> list[dict]:
+        with get_conn() as conn:
+            rows = fetch_all(
+                conn,
+                """
+                with candidates as (
+                  select id from jobs
+                  where status='queued'
+                    and run_at <= now()
+                  order by priority desc, run_at asc
+                  for update skip locked
+                  limit %s
+                )
+                update jobs j
+                set status='running',
+                    locked_at=now(),
+                    locked_by=%s,
+                    attempt=attempt+1,
+                    updated_at=now()
+                from candidates c
+                where j.id = c.id
+                returning j.*
+                """,
+                [limit, worker_id],
+                query_name="jobs.claim_batch_any",
             )
             return [dict(r) for r in rows]
 
@@ -2678,6 +4192,24 @@ class DbAutomationStore:
             )
             return [dict(r) for r in rows]
 
+    def list_any(self, status: str | None = None) -> list[dict]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if status:
+            clauses.append("status=%s")
+            params.append(status)
+        where = f"where {' and '.join(clauses)}" if clauses else ""
+        with get_conn() as conn:
+            rows = fetch_all(
+                conn,
+                f"""
+                select * from automations {where} order by updated_at desc
+                """,
+                params,
+                query_name="automations.list_any",
+            )
+            return [dict(r) for r in rows]
+
     def delete(self, automation_id: str) -> bool:
         with get_conn() as conn:
             row = execute(
@@ -2692,32 +4224,64 @@ class DbAutomationStore:
 
     def create_run(self, record: dict) -> dict:
         with get_conn() as conn:
-            row = fetch_one(
-                conn,
-                """
-                insert into automation_runs (
-                  org_id, automation_id, status, trigger_event_id, trigger_type, trigger_payload,
-                  current_step_index, created_at, updated_at, started_at, ended_at, last_error
+            try:
+                row = fetch_one(
+                    conn,
+                    """
+                    insert into automation_runs (
+                      org_id, automation_id, status, trigger_event_id, trigger_type, trigger_payload,
+                      current_step_index, created_at, updated_at, started_at, ended_at, last_error, idempotency_key
+                    )
+                    values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    on conflict (org_id, automation_id, idempotency_key)
+                    where idempotency_key is not null
+                    do update set updated_at=excluded.updated_at
+                    returning *
+                    """,
+                    [
+                        get_org_id(),
+                        record.get("automation_id"),
+                        record.get("status", "queued"),
+                        record.get("trigger_event_id"),
+                        record.get("trigger_type"),
+                        json.dumps(record.get("trigger_payload") or {}),
+                        record.get("current_step_index", 0),
+                        _now(),
+                        _now(),
+                        record.get("started_at"),
+                        record.get("ended_at"),
+                        record.get("last_error"),
+                        record.get("idempotency_key"),
+                    ],
+                    query_name="automation_runs.create",
                 )
-                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                returning *
-                """,
-                [
-                    get_org_id(),
-                    record.get("automation_id"),
-                    record.get("status", "queued"),
-                    record.get("trigger_event_id"),
-                    record.get("trigger_type"),
-                    json.dumps(record.get("trigger_payload") or {}),
-                    record.get("current_step_index", 0),
-                    _now(),
-                    _now(),
-                    record.get("started_at"),
-                    record.get("ended_at"),
-                    record.get("last_error"),
-                ],
-                query_name="automation_runs.create",
-            )
+            except psycopg2.errors.UndefinedColumn:
+                row = fetch_one(
+                    conn,
+                    """
+                    insert into automation_runs (
+                      org_id, automation_id, status, trigger_event_id, trigger_type, trigger_payload,
+                      current_step_index, created_at, updated_at, started_at, ended_at, last_error
+                    )
+                    values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    returning *
+                    """,
+                    [
+                        get_org_id(),
+                        record.get("automation_id"),
+                        record.get("status", "queued"),
+                        record.get("trigger_event_id"),
+                        record.get("trigger_type"),
+                        json.dumps(record.get("trigger_payload") or {}),
+                        record.get("current_step_index", 0),
+                        _now(),
+                        _now(),
+                        record.get("started_at"),
+                        record.get("ended_at"),
+                        record.get("last_error"),
+                    ],
+                    query_name="automation_runs.create_legacy",
+                )
             return dict(row)
 
     def update_run(self, run_id: str, updates: dict) -> dict | None:

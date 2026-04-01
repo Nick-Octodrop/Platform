@@ -2,21 +2,122 @@ import React, { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../api.js";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
+import { formatDateTime } from "../utils/dateTime.js";
+
+function SummaryStat({ label, value }) {
+  return (
+    <div>
+      <div className="text-xs uppercase tracking-wide opacity-60">{label}</div>
+      <div className="mt-1 break-words text-sm">{value || "—"}</div>
+    </div>
+  );
+}
+
+function SecretModal({
+  title,
+  confirmLabel,
+  busyLabel,
+  saving,
+  onCancel,
+  onConfirm,
+  name,
+  setName,
+  providerKey,
+  setProviderKey,
+  secretKey,
+  setSecretKey,
+  value,
+  setValue,
+  showMetadata = true,
+}) {
+  return (
+    <div className="modal modal-open">
+      <div className="modal-box max-w-xl">
+        <h3 className="font-semibold text-lg">{title}</h3>
+        <div className="mt-4 space-y-4">
+          <label className="form-control">
+            <span className="label-text text-sm">Name</span>
+            <input
+              className="input input-bordered"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Xero refresh token"
+              disabled={saving}
+            />
+          </label>
+
+          {showMetadata ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label className="form-control">
+                <span className="label-text text-sm">Provider key</span>
+                <input
+                  className="input input-bordered"
+                  value={providerKey}
+                  onChange={(e) => setProviderKey(e.target.value)}
+                  placeholder="xero"
+                  disabled={saving}
+                />
+                <span className="label-text-alt opacity-70 mt-1">Optional. Useful once one workspace stores secrets for several providers.</span>
+              </label>
+              <label className="form-control">
+                <span className="label-text text-sm">Secret key</span>
+                <input
+                  className="input input-bordered"
+                  value={secretKey}
+                  onChange={(e) => setSecretKey(e.target.value)}
+                  placeholder="refresh_token"
+                  disabled={saving}
+                />
+                <span className="label-text-alt opacity-70 mt-1">Optional slot name such as `api_token`, `client_secret`, or `signing_secret`.</span>
+              </label>
+            </div>
+          ) : null}
+
+          <label className="form-control">
+            <span className="label-text text-sm">Secret value</span>
+            <textarea
+              className="textarea textarea-bordered min-h-[8rem]"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="Enter secret value"
+              disabled={saving}
+            />
+            <span className="label-text-alt opacity-70 mt-1">Secret values are encrypted and not shown again after save.</span>
+          </label>
+        </div>
+        <div className="modal-action">
+          <button className="btn btn-ghost" type="button" onClick={onCancel} disabled={saving}>
+            Cancel
+          </button>
+          <button className="btn btn-primary" type="button" onClick={onConfirm} disabled={saving || !value.trim()}>
+            {saving ? busyLabel : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function SettingsSecretsPage() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState([]);
   const [page, setPage] = useState(0);
   const [totalItems, setTotalItems] = useState(0);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showRotateModal, setShowRotateModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [rotating, setRotating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [name, setName] = useState("");
+  const [providerKey, setProviderKey] = useState("");
+  const [secretKey, setSecretKey] = useState("");
   const [value, setValue] = useState("");
+  const [rotateValue, setRotateValue] = useState("");
 
   async function loadSecrets() {
     setLoading(true);
@@ -36,21 +137,49 @@ export default function SettingsSecretsPage() {
     loadSecrets();
   }, []);
 
+  const rows = useMemo(
+    () =>
+      (items || []).map((s) => ({
+        id: s.id,
+        name: s.name || "—",
+        provider_key: s.provider_key || "—",
+        secret_key: s.secret_key || "—",
+        status: s.status || "active",
+        version: s.version || 1,
+        last_rotated_at: s.last_rotated_at || "",
+        created_at: s.created_at || "",
+        updated_at: s.updated_at || "",
+      })),
+    [items],
+  );
+
+  const selectedRows = useMemo(() => {
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    return selectedIds.map((id) => byId.get(id)).filter(Boolean);
+  }, [rows, selectedIds]);
+  const singleSelected = selectedRows.length === 1 ? selectedRows[0] : null;
+
   async function createSecret() {
     if (creating || !value.trim()) return;
     setCreating(true);
     setError("");
+    setNotice("");
     try {
       await apiFetch("/settings/secrets", {
         method: "POST",
         body: {
           name: name.trim() || null,
-          value: value,
+          provider_key: providerKey.trim() || null,
+          secret_key: secretKey.trim() || null,
+          value,
         },
       });
       setShowCreateModal(false);
       setName("");
+      setProviderKey("");
+      setSecretKey("");
       setValue("");
+      setNotice("Secret created.");
       await loadSecrets();
     } catch (err) {
       setError(err?.message || "Failed to create secret");
@@ -59,16 +188,37 @@ export default function SettingsSecretsPage() {
     }
   }
 
+  async function rotateSelectedSecret() {
+    if (rotating || !singleSelected?.id || !rotateValue.trim()) return;
+    setRotating(true);
+    setError("");
+    setNotice("");
+    try {
+      await apiFetch(`/settings/secrets/${encodeURIComponent(singleSelected.id)}/rotate`, {
+        method: "POST",
+        body: { value: rotateValue },
+      });
+      setRotateValue("");
+      setShowRotateModal(false);
+      setNotice("Secret rotated.");
+      await loadSecrets();
+    } catch (err) {
+      setError(err?.message || "Failed to rotate secret");
+    } finally {
+      setRotating(false);
+    }
+  }
+
   async function deleteSelectedSecrets() {
     if (deleting || selectedIds.length === 0) return;
     setDeleting(true);
     setError("");
+    setNotice("");
     try {
-      await Promise.all(
-        selectedIds.map((id) => apiFetch(`/settings/secrets/${encodeURIComponent(id)}`, { method: "DELETE" })),
-      );
+      await Promise.all(selectedIds.map((id) => apiFetch(`/settings/secrets/${encodeURIComponent(id)}`, { method: "DELETE" })));
       setShowDeleteModal(false);
       setSelectedIds([]);
+      setNotice("Secret deleted.");
       await loadSecrets();
     } catch (err) {
       setError(err?.message || "Failed to delete secret(s)");
@@ -77,22 +227,14 @@ export default function SettingsSecretsPage() {
     }
   }
 
-  const rows = useMemo(
-    () => (items || []).map((s) => ({
-      id: s.id,
-      name: s.name || "—",
-      secret_id: s.id || "",
-      created_at: s.created_at || "",
-      updated_at: s.updated_at || "",
-    })),
-    [items],
-  );
-
   const listFieldIndex = useMemo(
     () => ({
       "secret.name": { id: "secret.name", label: "Name" },
-      "secret.secret_id": { id: "secret.secret_id", label: "Secret ID" },
-      "secret.created_at": { id: "secret.created_at", label: "Created" },
+      "secret.provider_key": { id: "secret.provider_key", label: "Provider" },
+      "secret.secret_key": { id: "secret.secret_key", label: "Secret Key" },
+      "secret.status": { id: "secret.status", label: "Status" },
+      "secret.version": { id: "secret.version", label: "Version" },
+      "secret.last_rotated_at": { id: "secret.last_rotated_at", label: "Last Rotated" },
       "secret.updated_at": { id: "secret.updated_at", label: "Updated" },
     }),
     [],
@@ -104,8 +246,11 @@ export default function SettingsSecretsPage() {
       kind: "list",
       columns: [
         { field_id: "secret.name" },
-        { field_id: "secret.secret_id" },
-        { field_id: "secret.created_at" },
+        { field_id: "secret.provider_key" },
+        { field_id: "secret.secret_key" },
+        { field_id: "secret.status" },
+        { field_id: "secret.version" },
+        { field_id: "secret.last_rotated_at" },
         { field_id: "secret.updated_at" },
       ],
     }),
@@ -113,15 +258,19 @@ export default function SettingsSecretsPage() {
   );
 
   const listRecords = useMemo(
-    () => rows.map((row) => ({
-      record_id: row.id,
-      record: {
-        "secret.name": row.name,
-        "secret.secret_id": row.secret_id,
-        "secret.created_at": row.created_at,
-        "secret.updated_at": row.updated_at,
-      },
-    })),
+    () =>
+      rows.map((row) => ({
+        record_id: row.id,
+        record: {
+          "secret.name": row.name,
+          "secret.provider_key": row.provider_key,
+          "secret.secret_key": row.secret_key,
+          "secret.status": row.status,
+          "secret.version": row.version,
+          "secret.last_rotated_at": row.last_rotated_at ? formatDateTime(row.last_rotated_at, "—") : "—",
+          "secret.updated_at": row.updated_at ? formatDateTime(row.updated_at, "—") : "—",
+        },
+      })),
     [rows],
   );
 
@@ -130,7 +279,18 @@ export default function SettingsSecretsPage() {
       <div className="bg-base-100 md:card md:rounded-[1.75rem] md:border md:border-base-300 md:shadow-sm md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
         <div className="p-4 md:card-body md:flex md:flex-col md:min-h-0 md:overflow-hidden">
           <div className="space-y-4 md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
-            {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
+            {error ? <div className="alert alert-error text-sm">{error}</div> : null}
+            {notice ? <div className="alert alert-success text-sm">{notice}</div> : null}
+
+            <div className="rounded-box border border-base-300 bg-base-100 p-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <SummaryStat label="Secrets" value={String(rows.length)} />
+                <SummaryStat label="Providers" value={String(new Set(rows.map((row) => row.provider_key).filter((v) => v && v !== "—")).size)} />
+                <SummaryStat label="Rotated" value={String(rows.filter((row) => row.version > 1).length)} />
+                <SummaryStat label="Active" value={String(rows.filter((row) => row.status === "active").length)} />
+              </div>
+            </div>
+
             <SystemListToolbar
               title="Secrets"
               createTooltip="New secret"
@@ -143,17 +303,20 @@ export default function SettingsSecretsPage() {
               filters={[]}
               onRefresh={loadSecrets}
               showSavedViews={false}
-              rightActions={(
+              rightActions={
                 selectedIds.length > 0 ? (
-                  <button
-                    className="btn btn-sm btn-outline btn-error"
-                    type="button"
-                    onClick={() => setShowDeleteModal(true)}
-                  >
-                    Delete
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {singleSelected ? (
+                      <button className="btn btn-sm btn-outline" type="button" onClick={() => setShowRotateModal(true)}>
+                        Rotate
+                      </button>
+                    ) : null}
+                    <button className="btn btn-sm btn-outline btn-error" type="button" onClick={() => setShowDeleteModal(true)}>
+                      Delete
+                    </button>
+                  </div>
                 ) : null
-              )}
+              }
               pagination={{
                 page,
                 pageSize: 25,
@@ -162,11 +325,18 @@ export default function SettingsSecretsPage() {
               }}
             />
 
+            <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-70">
+              Store provider credentials here and link them to integration connections by named secret slots such as `api_token`, `client_secret`, or `signing_secret`.
+            </div>
+
             <div className="md:mt-4">
               {loading ? (
                 <div className="text-sm opacity-70">Loading…</div>
               ) : rows.length === 0 ? (
-                <div className="text-sm opacity-60">No secrets yet.</div>
+                <div className="space-y-2 text-sm opacity-70">
+                  <div>No secrets yet.</div>
+                  <div>Create secrets here first, then attach them to integration connections from the connection’s `Secrets` tab.</div>
+                </div>
               ) : (
                 <ListViewRenderer
                   view={listView}
@@ -176,7 +346,7 @@ export default function SettingsSecretsPage() {
                   disableHorizontalScroll
                   tableClassName="w-full table-fixed min-w-0"
                   searchQuery={search}
-                  searchFields={["secret.name", "secret.id"]}
+                  searchFields={["secret.name", "secret.provider_key", "secret.secret_key"]}
                   filters={[]}
                   activeFilter={null}
                   clientFilters={[]}
@@ -206,54 +376,43 @@ export default function SettingsSecretsPage() {
       </div>
 
       {showCreateModal ? (
-        <div className="modal modal-open">
-          <div className="modal-box max-w-lg">
-            <h3 className="font-semibold text-lg">New Secret</h3>
-            <div className="mt-4 grid grid-cols-1 gap-3">
-              <label className="form-control">
-                <span className="label-text text-sm">Name</span>
-                <input
-                  className="input input-bordered input-sm"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="SMTP Password"
-                  disabled={creating}
-                />
-              </label>
-              <label className="form-control">
-                <span className="label-text text-sm">Secret Value</span>
-                <textarea
-                  className="textarea textarea-bordered textarea-sm min-h-[8rem]"
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  placeholder="Enter secret value"
-                  disabled={creating}
-                />
-              </label>
-              <div className="text-xs opacity-70">
-                Secret values are encrypted and not shown after creation.
-              </div>
-            </div>
-            <div className="modal-action">
-              <button
-                className="btn btn-ghost btn-sm"
-                type="button"
-                onClick={() => !creating && setShowCreateModal(false)}
-                disabled={creating}
-              >
-                Cancel
-              </button>
-              <button
-                className="btn btn-primary btn-sm"
-                type="button"
-                onClick={createSecret}
-                disabled={creating || !value.trim()}
-              >
-                Create
-              </button>
-            </div>
-          </div>
-        </div>
+        <SecretModal
+          title="New Secret"
+          confirmLabel="Create"
+          busyLabel="Creating..."
+          saving={creating}
+          onCancel={() => !creating && setShowCreateModal(false)}
+          onConfirm={createSecret}
+          name={name}
+          setName={setName}
+          providerKey={providerKey}
+          setProviderKey={setProviderKey}
+          secretKey={secretKey}
+          setSecretKey={setSecretKey}
+          value={value}
+          setValue={setValue}
+          showMetadata
+        />
+      ) : null}
+
+      {showRotateModal && singleSelected ? (
+        <SecretModal
+          title={`Rotate ${singleSelected.name}`}
+          confirmLabel="Rotate"
+          busyLabel="Rotating..."
+          saving={rotating}
+          onCancel={() => !rotating && setShowRotateModal(false)}
+          onConfirm={rotateSelectedSecret}
+          name={singleSelected.name === "—" ? "" : singleSelected.name}
+          setName={() => {}}
+          providerKey={singleSelected.provider_key === "—" ? "" : singleSelected.provider_key}
+          setProviderKey={() => {}}
+          secretKey={singleSelected.secret_key === "—" ? "" : singleSelected.secret_key}
+          setSecretKey={() => {}}
+          value={rotateValue}
+          setValue={setRotateValue}
+          showMetadata={false}
+        />
       ) : null}
 
       {showDeleteModal ? (
@@ -261,23 +420,13 @@ export default function SettingsSecretsPage() {
           <div className="modal-box max-w-md">
             <h3 className="font-semibold text-lg">Delete Secret{selectedIds.length > 1 ? "s" : ""}</h3>
             <div className="mt-3 text-sm">
-              This will remove {selectedIds.length} secret{selectedIds.length > 1 ? "s" : ""}. This cannot be undone.
+              This will remove {selectedIds.length} secret{selectedIds.length > 1 ? "s" : ""}. Connections using these secrets will need to be relinked.
             </div>
             <div className="modal-action">
-              <button
-                className="btn btn-ghost btn-sm"
-                type="button"
-                onClick={() => !deleting && setShowDeleteModal(false)}
-                disabled={deleting}
-              >
+              <button className="btn btn-ghost btn-sm" type="button" onClick={() => !deleting && setShowDeleteModal(false)} disabled={deleting}>
                 Cancel
               </button>
-              <button
-                className="btn btn-error btn-sm"
-                type="button"
-                onClick={deleteSelectedSecrets}
-                disabled={deleting}
-              >
+              <button className="btn btn-error btn-sm" type="button" onClick={deleteSelectedSecrets} disabled={deleting}>
                 {deleting ? "Deleting..." : "Delete"}
               </button>
             </div>

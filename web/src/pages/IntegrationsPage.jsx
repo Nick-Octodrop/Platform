@@ -5,16 +5,26 @@ import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 
-function providerFromType(type) {
+function providerKeyFromType(type) {
   const raw = String(type || "");
   if (!raw.startsWith("integration.")) return raw || "—";
   return raw.split(".", 2)[1] || "—";
+}
+
+function providerLabel(provider) {
+  return provider?.name || provider?.key || "Provider";
+}
+
+function providerDescription(provider) {
+  const authType = provider?.auth_type ? `Auth: ${provider.auth_type}` : null;
+  return [provider?.description, authType].filter(Boolean).join(" • ");
 }
 
 export default function IntegrationsPage() {
   const navigate = useNavigate();
 
   const [items, setItems] = useState([]);
+  const [providers, setProviders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -25,8 +35,7 @@ export default function IntegrationsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createForm, setCreateForm] = useState({
-    provider: "slack",
-    custom_provider: "",
+    provider: "",
     name: "",
   });
 
@@ -34,10 +43,20 @@ export default function IntegrationsPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await apiFetch("/integrations/connections");
-      setItems(res?.connections || []);
+      const [connectionsRes, providersRes] = await Promise.all([
+        apiFetch("/integrations/connections"),
+        apiFetch("/integrations/providers"),
+      ]);
+      setItems(Array.isArray(connectionsRes?.connections) ? connectionsRes.connections : []);
+      const providerItems = Array.isArray(providersRes?.providers) ? providersRes.providers : [];
+      setProviders(providerItems);
+      setCreateForm((prev) => ({
+        provider: prev.provider || providerItems[0]?.key || "generic_rest",
+        name: prev.name || "",
+      }));
     } catch (err) {
       setItems([]);
+      setProviders([]);
       setError(err?.message || "Failed to load integrations");
     } finally {
       setLoading(false);
@@ -48,10 +67,22 @@ export default function IntegrationsPage() {
     load();
   }, []);
 
+  const providerIndex = useMemo(() => {
+    const index = new Map();
+    for (const provider of providers || []) {
+      if (provider?.key) index.set(provider.key, provider);
+    }
+    return index;
+  }, [providers]);
+
+  const createProvider = providerIndex.get(createForm.provider) || null;
+  const createProviderManifest = createProvider?.manifest_json || {};
+  const createProviderCapabilities = Array.isArray(createProviderManifest?.capabilities) ? createProviderManifest.capabilities : [];
+  const createProviderSecretKeys = Array.isArray(createProviderManifest?.secret_keys) ? createProviderManifest.secret_keys : [];
+
   function openCreateModal() {
     setCreateForm({
-      provider: "slack",
-      custom_provider: "",
+      provider: providers[0]?.key || "generic_rest",
       name: "",
     });
     setShowCreateModal(true);
@@ -59,15 +90,14 @@ export default function IntegrationsPage() {
 
   async function createConnection() {
     if (creating) return;
-    const providerRaw = createForm.provider === "custom" ? createForm.custom_provider : createForm.provider;
-    const provider = String(providerRaw || "").trim().toLowerCase();
-    const name = createForm.name.trim();
+    const provider = String(createForm.provider || "").trim().toLowerCase();
+    const name = createForm.name.trim() || providerLabel(providerIndex.get(provider));
     if (!provider || !name) return;
     try {
       setCreating(true);
       const res = await apiFetch("/integrations/connections", {
         method: "POST",
-        body: { provider: provider.trim(), name: name.trim(), status: "active", config: {} },
+        body: { provider, name, status: "active", config: {} },
       });
       setShowCreateModal(false);
       const id = res?.connection?.id;
@@ -93,15 +123,21 @@ export default function IntegrationsPage() {
   }
 
   const rows = useMemo(
-    () => (items || []).map((c) => ({
-      id: c.id,
-      name: c.name || c.id,
-      provider: providerFromType(c.type),
-      status: c.status || "active",
-      updated_at: c.updated_at || c.created_at || "",
-      type: c.type || "",
-    })),
-    [items],
+    () =>
+      (items || []).map((c) => {
+        const providerKey = providerKeyFromType(c.type);
+        const provider = providerIndex.get(providerKey);
+        return {
+          id: c.id,
+          name: c.name || c.id,
+          provider: provider?.name || providerKey || "—",
+          status: c.status || "active",
+          health: c.health_status || "unknown",
+          updated_at: c.updated_at || c.created_at || "",
+          type: c.type || "",
+        };
+      }),
+    [items, providerIndex],
   );
 
   const listFieldIndex = useMemo(
@@ -109,8 +145,8 @@ export default function IntegrationsPage() {
       "conn.name": { id: "conn.name", label: "Name" },
       "conn.provider": { id: "conn.provider", label: "Provider" },
       "conn.status": { id: "conn.status", label: "Status" },
+      "conn.health": { id: "conn.health", label: "Health" },
       "conn.updated_at": { id: "conn.updated_at", label: "Updated" },
-      "conn.type": { id: "conn.type", label: "Type" },
     }),
     [],
   );
@@ -123,6 +159,7 @@ export default function IntegrationsPage() {
         { field_id: "conn.name" },
         { field_id: "conn.provider" },
         { field_id: "conn.status" },
+        { field_id: "conn.health" },
         { field_id: "conn.updated_at" },
       ],
     }),
@@ -130,16 +167,17 @@ export default function IntegrationsPage() {
   );
 
   const listRecords = useMemo(
-    () => rows.map((row) => ({
-      record_id: row.id,
-      record: {
-        "conn.name": row.name,
-        "conn.provider": row.provider,
-        "conn.status": row.status,
-        "conn.updated_at": row.updated_at,
-        "conn.type": row.type,
-      },
-    })),
+    () =>
+      rows.map((row) => ({
+        record_id: row.id,
+        record: {
+          "conn.name": row.name,
+          "conn.provider": row.provider,
+          "conn.status": row.status,
+          "conn.health": row.health,
+          "conn.updated_at": row.updated_at,
+        },
+      })),
     [rows],
   );
 
@@ -148,6 +186,7 @@ export default function IntegrationsPage() {
       { id: "all", label: "All", domain: null },
       { id: "active", label: "Active", domain: { op: "eq", field: "conn.status", value: "active" } },
       { id: "disabled", label: "Disabled", domain: { op: "eq", field: "conn.status", value: "disabled" } },
+      { id: "error", label: "Errors", domain: { op: "eq", field: "conn.health", value: "error" } },
     ],
     [],
   );
@@ -187,7 +226,7 @@ export default function IntegrationsPage() {
               showSavedViews={false}
               rightActions={
                 <>
-                  {selectedIds.length === 1 && singleSelected && (
+                  {selectedIds.length === 1 && singleSelected ? (
                     <div className="flex items-center gap-2">
                       <button
                         className="btn btn-sm btn-outline"
@@ -203,35 +242,10 @@ export default function IntegrationsPage() {
                         disabled={singleSelected.status !== "disabled"}
                         title={singleSelected.status !== "disabled" ? "Disable the connection before deleting it" : undefined}
                       >
-                        Delete (1)
+                        Delete
                       </button>
                     </div>
-                  )}
-                  {selectedIds.length > 1 && (
-                    <div className="flex items-center gap-2">
-                      <button
-                        className="btn btn-sm btn-outline"
-                        type="button"
-                        onClick={() => {
-                          const blocked = selectedRows.filter((row) => row.status !== "disabled");
-                          if (blocked.length > 0) {
-                            setError("Only disabled connections can be deleted.");
-                            return;
-                          }
-                          const ok = window.confirm(`Delete ${selectedIds.length} integration connection(s)?`);
-                          if (!ok) return;
-                          Promise.all(selectedIds.map((id) => apiFetch(`/integrations/connections/${encodeURIComponent(id)}`, { method: "DELETE" })))
-                            .then(() => {
-                              setSelectedIds([]);
-                              load();
-                            })
-                            .catch((err) => setError(err?.message || "Delete failed"));
-                        }}
-                      >
-                        Delete ({selectedIds.length})
-                      </button>
-                    </div>
-                  )}
+                  ) : null}
                 </>
               }
               pagination={{
@@ -247,7 +261,10 @@ export default function IntegrationsPage() {
               {loading ? (
                 <div className="text-sm opacity-70">Loading…</div>
               ) : rows.length === 0 ? (
-                <div className="text-sm opacity-60">No connections yet.</div>
+                <div className="space-y-2 text-sm opacity-70">
+                  <div>No integrations yet.</div>
+                  <div>Create a connection first, then configure secrets, webhooks, and test requests inside it.</div>
+                </div>
               ) : (
                 <ListViewRenderer
                   view={listView}
@@ -255,7 +272,7 @@ export default function IntegrationsPage() {
                   records={listRecords}
                   hideHeader
                   searchQuery={search}
-                  searchFields={["conn.name", "conn.provider", "conn.type"]}
+                  searchFields={["conn.name", "conn.provider"]}
                   filters={filters}
                   activeFilter={activeFilter}
                   clientFilters={[]}
@@ -274,87 +291,85 @@ export default function IntegrationsPage() {
                       return Array.from(next);
                     });
                   }}
-                  onToggleAll={(checked, allIds) => {
-                    setSelectedIds(checked ? allIds || [] : []);
-                  }}
-                  onSelectRow={(row) => {
-                    const id = row?.record_id;
-                    if (id) navigate(`/integrations/connections/${id}`);
-                  }}
+                  onToggleAll={(checked, allIds) => setSelectedIds(checked ? allIds || [] : [])}
+                  onOpenRecord={(recordId) => navigate(`/integrations/connections/${recordId}`)}
                 />
               )}
             </div>
           </div>
         </div>
       </div>
+
       {showCreateModal ? (
         <div className="modal modal-open">
-          <div className="modal-box max-w-lg">
+          <div className="modal-box max-w-xl">
             <h3 className="font-semibold text-lg">New Integration Connection</h3>
-            <div className="mt-4 grid grid-cols-1 gap-3">
+            <div className="mt-4 space-y-4">
+              <div className="rounded-box border border-base-300 bg-base-200/40 p-3 text-sm">
+                <div className="font-medium">How this works</div>
+                <div className="mt-1 opacity-75">
+                  Choose the provider template first. After creation you will land on the connection page to fill setup fields, attach secrets, and run a connection test.
+                </div>
+              </div>
+
               <label className="form-control">
                 <span className="label-text text-sm">Provider</span>
                 <select
-                  className="select select-bordered select-sm"
+                  className="select select-bordered"
                   value={createForm.provider}
                   onChange={(e) => setCreateForm((prev) => ({ ...prev, provider: e.target.value }))}
                   disabled={creating}
                 >
-                  <option value="slack">Slack</option>
-                  <option value="stripe">Stripe</option>
-                  <option value="zendesk">Zendesk</option>
-                  <option value="custom">Custom</option>
+                  {(providers || []).map((provider) => (
+                    <option key={provider.key} value={provider.key}>
+                      {providerLabel(provider)}
+                    </option>
+                  ))}
                 </select>
               </label>
 
-              {createForm.provider === "custom" ? (
-                <label className="form-control">
-                  <span className="label-text text-sm">Custom Provider</span>
-                  <input
-                    className="input input-bordered input-sm"
-                    value={createForm.custom_provider}
-                    onChange={(e) => setCreateForm((prev) => ({ ...prev, custom_provider: e.target.value }))}
-                    placeholder="provider-key"
-                    disabled={creating}
-                  />
-                </label>
+              {createProvider ? (
+                <div className="space-y-3 rounded-box border border-base-300 bg-base-200/40 p-3 text-sm">
+                  <div className="font-medium">{providerLabel(createProvider)}</div>
+                  <div className="mt-1 opacity-75">{providerDescription(createProvider) || "No provider description."}</div>
+                  {createProviderCapabilities.length ? (
+                    <div className="flex flex-wrap gap-2">
+                      {createProviderCapabilities.map((capability) => (
+                        <span key={capability} className="rounded-full border border-base-300 px-2 py-1 text-xs">
+                          {capability}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="rounded-box bg-base-100 px-3 py-2">
+                      <div className="text-xs uppercase tracking-wide opacity-60">Secrets expected</div>
+                      <div className="mt-1">{createProviderSecretKeys.length ? createProviderSecretKeys.join(", ") : "No named secrets declared"}</div>
+                    </div>
+                    <div className="rounded-box bg-base-100 px-3 py-2">
+                      <div className="text-xs uppercase tracking-wide opacity-60">Next step after create</div>
+                      <div className="mt-1">Configure setup, attach secrets, then test the connection.</div>
+                    </div>
+                  </div>
+                </div>
               ) : null}
 
               <label className="form-control">
                 <span className="label-text text-sm">Connection Name</span>
                 <input
-                  className="input input-bordered input-sm"
+                  className="input input-bordered"
                   value={createForm.name}
                   onChange={(e) => setCreateForm((prev) => ({ ...prev, name: e.target.value }))}
-                  placeholder="My Integration Connection"
+                  placeholder={createProvider ? providerLabel(createProvider) : "Connection name"}
                   disabled={creating}
                 />
               </label>
             </div>
-
             <div className="modal-action">
-              <button
-                className="btn btn-ghost btn-sm"
-                type="button"
-                onClick={() => !creating && setShowCreateModal(false)}
-                disabled={creating}
-              >
+              <button className="btn btn-ghost" type="button" onClick={() => !creating && setShowCreateModal(false)} disabled={creating}>
                 Cancel
               </button>
-              <button
-                className="btn btn-primary btn-sm"
-                type="button"
-                onClick={createConnection}
-                disabled={
-                  creating
-                  || !createForm.name.trim()
-                  || (
-                    createForm.provider === "custom"
-                      ? !createForm.custom_provider.trim()
-                      : !createForm.provider.trim()
-                  )
-                }
-              >
+              <button className="btn btn-primary" type="button" onClick={createConnection} disabled={creating || !createForm.provider}>
                 Create
               </button>
             </div>

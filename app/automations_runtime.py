@@ -38,6 +38,7 @@ def handle_event(automation_store: Any, job_store: Any, event: dict) -> list[dic
                     "trigger_type": event_type,
                     "trigger_payload": payload,
                     "current_step_index": 0,
+                    "idempotency_key": event.get("meta", {}).get("event_id"),
                 }
             )
             job_store.enqueue(
@@ -58,3 +59,36 @@ def handle_event(automation_store: Any, job_store: Any, event: dict) -> list[dic
         if token is not None:
             reset_org_id(token)
     return runs
+
+
+def enqueue_scheduled_automation_run(
+    automation_store: Any,
+    job_store: Any,
+    automation: dict,
+    *,
+    slot_key: str,
+    payload: dict | None = None,
+) -> dict | None:
+    if not isinstance(automation, dict) or not automation.get("id"):
+        return None
+    run = automation_store.create_run(
+        {
+            "automation_id": automation.get("id"),
+            "status": "queued",
+            "trigger_event_id": None,
+            "trigger_type": "schedule.tick",
+            "trigger_payload": payload or {},
+            "current_step_index": 0,
+            "idempotency_key": slot_key,
+        }
+    )
+    if not isinstance(run, dict) or not run.get("id"):
+        return None
+    job_store.enqueue(
+        {
+            "type": "automation.run",
+            "payload": {"run_id": run.get("id")},
+            "idempotency_key": f"automation_run:{run.get('id')}",
+        }
+    )
+    return run

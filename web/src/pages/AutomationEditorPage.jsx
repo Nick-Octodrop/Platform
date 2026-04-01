@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
 import { apiFetch } from "../api";
 import TemplateStudioShell from "./templates/TemplateStudioShell.jsx";
 import CodeTextarea from "../components/CodeTextarea.jsx";
@@ -18,8 +19,12 @@ export default function AutomationEditorPage({ user }) {
   const [item, setItem] = useState(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [trigger, setTrigger] = useState({ kind: "event", event_types: [], filters: [] });
+  const [trigger, setTrigger] = useState({ kind: "event", event_types: [], filters: [], every_minutes: 60 });
+  const [triggerExprText, setTriggerExprText] = useState("");
   const [steps, setSteps] = useState([]);
+  const [selectedStepIndex, setSelectedStepIndex] = useState(0);
+  const [selectedStepPath, setSelectedStepPath] = useState([0]);
+  const [stepModalOpen, setStepModalOpen] = useState(false);
   const [openStepKeys, setOpenStepKeys] = useState([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -62,8 +67,11 @@ export default function AutomationEditorPage({ user }) {
       setItem(automation);
       setName(automation?.name || "");
       setDescription(automation?.description || "");
-      setTrigger(automation?.trigger || { kind: "event", event_types: [], filters: [] });
+      setTrigger(automation?.trigger || { kind: "event", event_types: [], filters: [], every_minutes: 60 });
+      setTriggerExprText(automation?.trigger?.expr ? JSON.stringify(automation.trigger.expr, null, 2) : "");
       setSteps(automation?.steps || []);
+      setSelectedStepIndex(0);
+      setSelectedStepPath([0]);
       return automation;
     } catch (err) {
       setError(err?.message || "Failed to load automation");
@@ -76,16 +84,35 @@ export default function AutomationEditorPage({ user }) {
     setSaving(true);
     setError("");
     try {
+      let nextTrigger = trigger;
+      if (trigger?.kind === "event") {
+        const rawExpr = triggerExprText.trim();
+        if (rawExpr) {
+          let parsedExpr;
+          try {
+            parsedExpr = JSON.parse(rawExpr);
+          } catch {
+            throw new Error("Trigger condition JSON is invalid");
+          }
+          nextTrigger = { ...(trigger || {}), expr: parsedExpr };
+        } else if (trigger?.expr) {
+          nextTrigger = { ...(trigger || {}) };
+          delete nextTrigger.expr;
+        }
+      } else {
+        nextTrigger = { ...(trigger || {}) };
+        delete nextTrigger.expr;
+      }
       const res = await apiFetch(`/automations/${automationId}`, {
         method: "PUT",
-        body: { name, description, trigger, steps },
+        body: { name, description, trigger: nextTrigger, steps },
       });
       setItem(res?.automation || null);
     } catch (err) {
       setError(err?.message || "Failed to save automation");
     }
     setSaving(false);
-  }, [automationId, name, description, trigger, steps]);
+  }, [automationId, name, description, trigger, triggerExprText, steps]);
 
   const loadRuns = useCallback(async () => {
     if (!automationId) return;
@@ -144,14 +171,175 @@ export default function AutomationEditorPage({ user }) {
     setTrigger(next);
   }
 
+  function updateTriggerKind(kind) {
+    setTrigger((prev) => {
+      const next = { ...(prev || {}) };
+      if (kind === "schedule") {
+        next.kind = "schedule";
+        delete next.expr;
+        next.event_types = [];
+        next.filters = [];
+        next.every_minutes = Number(next.every_minutes) > 0 ? Number(next.every_minutes) : 60;
+      } else {
+        next.kind = "event";
+        next.event_types = Array.isArray(next.event_types) ? next.event_types : [];
+        next.filters = Array.isArray(next.filters) ? next.filters : [];
+      }
+      return next;
+    });
+  }
+
+  function updateTriggerFilter(index, patch) {
+    setTrigger((prev) => {
+      const filters = Array.isArray(prev?.filters) ? prev.filters : [];
+      return {
+        ...(prev || {}),
+        filters: filters.map((item, idx) => (idx === index ? { ...item, ...patch } : item)),
+      };
+    });
+  }
+
+  function addTriggerFilter() {
+    setTrigger((prev) => ({
+      ...(prev || {}),
+      filters: [
+        ...(Array.isArray(prev?.filters) ? prev.filters : []),
+        { path: "", op: "eq", value: "" },
+      ],
+    }));
+  }
+
+  function removeTriggerFilter(index) {
+    setTrigger((prev) => ({
+      ...(prev || {}),
+      filters: (Array.isArray(prev?.filters) ? prev.filters : []).filter((_, idx) => idx !== index),
+    }));
+  }
+
+  function normalizeStepPath(pathOrIndex) {
+    if (Array.isArray(pathOrIndex)) return pathOrIndex;
+    if (typeof pathOrIndex === "number") return [pathOrIndex];
+    return [];
+  }
+
+  function getStepAtPath(path, sourceSteps = steps) {
+    const normalized = normalizeStepPath(path);
+    let currentList = sourceSteps;
+    let currentStep = null;
+    let pointer = 0;
+    while (pointer < normalized.length) {
+      const idx = normalized[pointer];
+      if (!Array.isArray(currentList) || typeof idx !== "number" || idx < 0 || idx >= currentList.length) return null;
+      currentStep = currentList[idx];
+      pointer += 1;
+      if (pointer >= normalized.length) return currentStep;
+      const branchKey = normalized[pointer];
+      if (!["then_steps", "else_steps", "steps"].includes(branchKey)) return null;
+      currentList = Array.isArray(currentStep?.[branchKey]) ? currentStep[branchKey] : [];
+      pointer += 1;
+    }
+    return currentStep;
+  }
+
+  function updateStepAtPath(sourceSteps, path, updater) {
+    const normalized = normalizeStepPath(path);
+    if (!normalized.length) return sourceSteps;
+    const [head, ...rest] = normalized;
+    if (typeof head !== "number" || head < 0 || head >= sourceSteps.length) return sourceSteps;
+    return sourceSteps.map((step, idx) => {
+      if (idx !== head) return step;
+      if (rest.length === 0) {
+        return updater(step);
+      }
+      const [branchKey, ...tail] = rest;
+      if (!["then_steps", "else_steps", "steps"].includes(branchKey)) return step;
+      const branchItems = Array.isArray(step?.[branchKey]) ? step[branchKey] : [];
+      return {
+        ...step,
+        [branchKey]: updateStepAtPath(branchItems, tail, updater),
+      };
+    });
+  }
+
+  function removeStepAtPath(sourceSteps, path) {
+    const normalized = normalizeStepPath(path);
+    if (!normalized.length) return sourceSteps;
+    if (normalized.length === 1) {
+      const [head] = normalized;
+      return sourceSteps.filter((_, idx) => idx !== head);
+    }
+    const [head, branchKey, ...tail] = normalized;
+    return sourceSteps.map((step, idx) => {
+      if (idx !== head) return step;
+      const branchItems = Array.isArray(step?.[branchKey]) ? step[branchKey] : [];
+      return {
+        ...step,
+        [branchKey]: removeStepAtPath(branchItems, tail),
+      };
+    });
+  }
+
+  function moveStepAtPath(sourceSteps, path, direction) {
+    const normalized = normalizeStepPath(path);
+    if (!normalized.length) return sourceSteps;
+    if (normalized.length === 1) {
+      const [head] = normalized;
+      const target = head + direction;
+      if (target < 0 || target >= sourceSteps.length) return sourceSteps;
+      const next = [...sourceSteps];
+      const [itemToMove] = next.splice(head, 1);
+      next.splice(target, 0, itemToMove);
+      return next;
+    }
+    const [head, branchKey, ...tail] = normalized;
+    return sourceSteps.map((step, idx) => {
+      if (idx !== head) return step;
+      const branchItems = Array.isArray(step?.[branchKey]) ? step[branchKey] : [];
+      return {
+        ...step,
+        [branchKey]: moveStepAtPath(branchItems, tail, direction),
+      };
+    });
+  }
+
+  function insertStepIntoBranch(sourceSteps, containerPath, branchKey, nextStep) {
+    const normalized = normalizeStepPath(containerPath);
+    if (!normalized.length) return [...sourceSteps, nextStep];
+    return updateStepAtPath(sourceSteps, normalized, (step) => ({
+      ...step,
+      [branchKey]: [...(Array.isArray(step?.[branchKey]) ? step[branchKey] : []), nextStep],
+    }));
+  }
+
+  function insertStepAtListPath(sourceSteps, listPath, insertIndex, nextStep) {
+    const normalized = normalizeStepPath(listPath);
+    if (!normalized.length) {
+      const next = [...sourceSteps];
+      next.splice(insertIndex, 0, nextStep);
+      return next;
+    }
+    const parentPath = normalized.slice(0, -1);
+    const branchKey = normalized[normalized.length - 1];
+    if (!["then_steps", "else_steps", "steps"].includes(branchKey)) return sourceSteps;
+    return updateStepAtPath(sourceSteps, parentPath, (step) => {
+      const branchItems = Array.isArray(step?.[branchKey]) ? [...step[branchKey]] : [];
+      branchItems.splice(insertIndex, 0, nextStep);
+      return {
+        ...step,
+        [branchKey]: branchItems,
+      };
+    });
+  }
+
   function updateStep(index, patch) {
-    setSteps((prev) => prev.map((step, idx) => (idx === index ? { ...step, ...patch } : step)));
+    const stepPath = normalizeStepPath(index);
+    setSteps((prev) => updateStepAtPath(prev, stepPath, (step) => ({ ...step, ...patch })));
   }
 
   function updateStepInput(index, key, value) {
+    const stepPath = normalizeStepPath(index);
     setSteps((prev) =>
-      prev.map((step, idx) => {
-        if (idx !== index) return step;
+      updateStepAtPath(prev, stepPath, (step) => {
         const nextInputs = { ...(step.inputs || {}) };
         if (value === "" || value === null || value === undefined) {
           delete nextInputs[key];
@@ -169,27 +357,60 @@ export default function AutomationEditorPage({ user }) {
       ...prev,
       { id: newStepId, kind: "action", action_id: "system.notify", inputs: { title: "Automation", body: "" } },
     ]);
+    setSelectedStepIndex(steps.length);
+    setSelectedStepPath([steps.length]);
+    setStepModalOpen(true);
     setOpenStepKeys((prev) => Array.from(new Set([...prev, newStepId])));
   }
 
+  function insertStepAfter(listPath, afterIndex) {
+    const newStepId = `step_${Date.now()}`;
+    const nextStep = { id: newStepId, kind: "action", action_id: "system.notify", inputs: { title: "Automation", body: "" } };
+    const insertIndex = afterIndex + 1;
+    setSteps((prev) => insertStepAtListPath(prev, listPath, insertIndex, nextStep));
+    const nextPath = [...normalizeStepPath(listPath), insertIndex];
+    setSelectedStepPath(nextPath);
+    setSelectedStepIndex(insertIndex);
+    setStepModalOpen(true);
+  }
+
+  function addNestedStep(containerPath, branchKey) {
+    const newStepId = `step_${Date.now()}`;
+    const nextStep = { id: newStepId, kind: "action", action_id: "system.notify", inputs: { title: "Automation", body: "" } };
+    setSteps((prev) => insertStepIntoBranch(prev, containerPath, branchKey, nextStep));
+    const nextPath = [...normalizeStepPath(containerPath), branchKey];
+    const container = getStepAtPath(containerPath);
+    const branchItems = Array.isArray(container?.[branchKey]) ? container[branchKey] : [];
+    nextPath.push(branchItems.length);
+    setSelectedStepPath(nextPath);
+    setStepModalOpen(true);
+  }
+
   function removeStep(index) {
+    const stepPath = normalizeStepPath(index);
     setSteps((prev) => {
-      const target = prev[index];
-      const stepKey = target?.id || String(index);
+      const target = getStepAtPath(stepPath, prev);
+      const stepKey = target?.id || String(stepPath.join("."));
       setOpenStepKeys((openPrev) => openPrev.filter((k) => k !== stepKey));
-      return prev.filter((_, idx) => idx !== index);
+      setSelectedStepIndex((current) => {
+        if (prev.length <= 1) return 0;
+        if (current > stepPath[0]) return current - 1;
+        if (current === stepPath[0]) return Math.max(0, current - 1);
+        return current;
+      });
+      setSelectedStepPath([0]);
+      return removeStepAtPath(prev, stepPath);
     });
   }
 
   function moveStep(index, direction) {
-    setSteps((prev) => {
-      const target = index + direction;
-      if (target < 0 || target >= prev.length) return prev;
-      const next = [...prev];
-      const [itemToMove] = next.splice(index, 1);
-      next.splice(target, 0, itemToMove);
-      return next;
-    });
+    const stepPath = normalizeStepPath(index);
+    setSteps((prev) => moveStepAtPath(prev, stepPath, direction));
+    if (stepPath.length) {
+      const nextPath = [...stepPath];
+      nextPath[nextPath.length - 1] = Number(nextPath[nextPath.length - 1]) + direction;
+      setSelectedStepPath(nextPath);
+    }
   }
 
   function toggleStep(stepKey) {
@@ -250,6 +471,33 @@ export default function AutomationEditorPage({ user }) {
     return map;
   }, [entityOptions]);
 
+  const triggerFieldOptions = useMemo(() => {
+    const fields = [];
+    const add = (value, label) => fields.push({ value, label });
+    add("entity_id", "Entity");
+    add("record_id", "Record ID");
+    add("user_id", "User ID");
+    add("timestamp", "Timestamp");
+    add("changed_fields", "Changed fields");
+    add("from", "From status/value");
+    add("to", "To status/value");
+    add("record_id", "Record ID");
+    if (defaultConditionEntityId) {
+      const entity = entityById.get(defaultConditionEntityId);
+      const entityFields = Array.isArray(entity?.fields) ? entity.fields : [];
+      entityFields.forEach((field) => {
+        const shortId = typeof field?.id === "string" ? field.id.split(".").pop() : "";
+        const label = field?.label || field?.id;
+        if (shortId) {
+          add(`record.fields.${shortId}`, `Record: ${label}`);
+          add(`before.fields.${shortId}`, `Before: ${label}`);
+          add(`after.fields.${shortId}`, `After: ${label}`);
+        }
+      });
+    }
+    return fields;
+  }, [defaultConditionEntityId, entityById]);
+
   const memberOptions = useMemo(() => {
     if (!Array.isArray(meta.members)) return [];
     return meta.members
@@ -293,13 +541,43 @@ export default function AutomationEditorPage({ user }) {
     loadRuns();
   }, [loadRuns]);
 
+  useEffect(() => {
+    setSelectedStepIndex((current) => {
+      if (!steps.length) return 0;
+      return Math.min(current, steps.length - 1);
+    });
+  }, [steps.length]);
+
+  useEffect(() => {
+    if (!steps.length) {
+      setSelectedStepPath([]);
+      setStepModalOpen(false);
+      return;
+    }
+    if (!getStepAtPath(selectedStepPath, steps)) {
+      setSelectedStepPath([0]);
+    }
+  }, [steps, selectedStepPath]);
+
   const validationErrors = useMemo(() => {
     const errs = [];
     if (!name.trim()) errs.push("Name is required.");
-    if (!trigger?.event_types || trigger.event_types.length === 0) errs.push("Trigger event is required.");
+    if (trigger?.kind === "schedule") {
+      if (!(Number(trigger?.every_minutes) > 0)) errs.push("Schedule interval must be greater than 0 minutes.");
+    } else if (!trigger?.event_types || trigger.event_types.length === 0) {
+      errs.push("Trigger event is required.");
+    }
     if (!steps || steps.length === 0) errs.push("At least one step is required.");
     return errs;
   }, [name, trigger, steps]);
+
+  const triggerSummaryText = useMemo(() => {
+    if (trigger?.kind === "schedule") {
+      const everyMinutes = Number(trigger?.every_minutes) > 0 ? Number(trigger.every_minutes) : null;
+      return everyMinutes ? `Every ${everyMinutes} minute${everyMinutes === 1 ? "" : "s"}` : "Scheduled";
+    }
+    return triggerOptions.flatMap((group) => group.options || []).find((evt) => (typeof evt === "string" ? evt : evt.id) === selectedTriggerEventId)?.label || selectedTriggerEventId || "Select event";
+  }, [trigger, triggerOptions, selectedTriggerEventId]);
 
   const bubbleBase = "chat-bubble text-sm leading-5 max-w-[85%]";
   const userLabel = user?.email || "User";
@@ -367,6 +645,1581 @@ export default function AutomationEditorPage({ user }) {
     />
   ), [isSuperadmin, validationErrors]);
 
+  const selectedStep = getStepAtPath(selectedStepPath, steps);
+
+  const actionLabelByValue = useMemo(() => {
+    const map = new Map();
+    for (const group of actionOptions) {
+      for (const action of group.options || []) {
+        const value = group.module_id ? `${group.module_id}::${action.id}` : action.id;
+        map.set(value, action.label || action.display_id || action.id);
+        if (!group.module_id) {
+          map.set(action.id, action.label || action.display_id || action.id);
+        }
+      }
+    }
+    return map;
+  }, [actionOptions]);
+
+  function stepSummaryText(step) {
+    if (!step) return "Select a step";
+    if (step.kind === "condition") return "Condition";
+    if (step.kind === "delay") return step.target_time ? "Wait until time" : "Wait for a period";
+    const actionValue = step.module_id ? `${step.module_id}::${step.action_id}` : step.action_id || "";
+    const actionLabel = actionLabelByValue.get(actionValue) || step.action_id || "action";
+    if (step.kind === "foreach") return `Repeat ${actionLabel} over a list`;
+    return actionLabel || "Select action";
+  }
+
+  function stepHelpText(step) {
+    if (!step) return "Select a step from the flow to edit it.";
+    if (step.kind === "foreach") return "Run the selected action once for each item in a list, such as query results or selected records.";
+    if (step.kind === "condition") return "Only continue if this rule matches the trigger or prior-step data.";
+    if (step.kind === "delay") return step.target_time
+      ? "Pause this automation until a specific date and time."
+      : "Pause this automation for a relative amount of time.";
+    if (step.action_id === "system.notify") return "Send an in-app notification to one or more workspace users.";
+    if (step.action_id === "system.send_email") return "Send an email using direct addresses, record fields, related records, or a template.";
+    if (step.action_id === "system.generate_document") return "Generate a document from a template and attach it to a record.";
+    if (step.action_id === "system.create_record") return "Create a new record in any entity using dynamic values from the trigger or earlier steps.";
+    if (step.action_id === "system.update_record") return "Update an existing record by applying a patch of field changes.";
+    if (step.action_id === "system.query_records") return "Find records from an entity so later steps can branch, loop, or update them.";
+    if (step.action_id === "system.add_chatter") return "Post an activity note or comment onto a record.";
+    if (step.action_id === "system.integration_request") return "Call a configured integration connection using its provider settings and authentication.";
+    if (step.action_id === "system.integration_sync") return "Run a polling sync against a configured integration connection and optionally emit item events.";
+    if (step.action_id && !step.action_id.startsWith("system.")) return "Run a module action against a target record or selection.";
+    return "Configure what this step should do and what later steps can reuse.";
+  }
+
+  function stepDetailText(step) {
+    if (!step) return "";
+    if (step.kind === "condition") {
+      const left = step?.expr?.left?.var || "a field";
+      const op = step?.expr?.op || "eq";
+      const right = step?.expr?.right?.literal;
+      return `If ${left} ${op}${right !== undefined && right !== "" ? ` ${Array.isArray(right) ? right.join(", ") : right}` : ""}`;
+    }
+    if (step.kind === "delay") {
+      if (step.target_time) return `Until ${step.target_time}`;
+      if (step.delay_value && step.delay_unit) return `${step.delay_value} ${step.delay_unit}`;
+      if (step.seconds) return `${step.seconds} seconds`;
+    }
+    if (step.kind === "foreach") {
+      return step.over ? `Over ${typeof step.over === "string" ? step.over : "selected list"}` : "Choose a list";
+    }
+    if (step.action_id === "system.notify") {
+      const count = Array.isArray(step.inputs?.recipient_user_ids)
+        ? step.inputs.recipient_user_ids.length
+        : step.inputs?.recipient_user_id ? 1 : 0;
+      return count ? `To ${count} workspace user${count === 1 ? "" : "s"}` : "Choose recipients";
+    }
+    if (step.action_id === "system.send_email") {
+      return step.inputs?.subject || (step.inputs?.template_id ? "Uses email template" : "Set recipients and message");
+    }
+    if (step.action_id === "system.query_records") {
+      return `${step.inputs?.entity_id || "Trigger entity"}${step.inputs?.limit ? `, up to ${step.inputs.limit}` : ""}`;
+    }
+    if (step.action_id === "system.integration_request") {
+      const connectionName = connectionOptions.find((conn) => conn.id === step.inputs?.connection_id)?.name || step.inputs?.connection_id || "Choose connection";
+      const method = step.inputs?.method || "GET";
+      const target = step.inputs?.path || step.inputs?.url || "/";
+      return `${connectionName} • ${method} ${target}`;
+    }
+    if (step.action_id === "system.integration_sync") {
+      const connectionName = connectionOptions.find((conn) => conn.id === step.inputs?.connection_id)?.name || step.inputs?.connection_id || "Choose connection";
+      return `${connectionName} • ${step.inputs?.scope_key || step.inputs?.resource_key || "default scope"}`;
+    }
+    if (step.action_id === "system.create_record") {
+      return step.inputs?.entity_id || "Choose target entity";
+    }
+    if (step.action_id === "system.update_record") {
+      return step.inputs?.entity_id || "Trigger entity";
+    }
+    return "";
+  }
+
+  function renderStepCards(items, pathPrefix = []) {
+    if (!Array.isArray(items) || items.length === 0) {
+      return <div className="text-xs opacity-50">No steps yet.</div>;
+    }
+    return (
+      <div className="space-y-3">
+        {items.map((step, index) => {
+          const path = [...pathPrefix, index];
+          const isSelected = JSON.stringify(path) === JSON.stringify(selectedStepPath);
+          const nestedThen = Array.isArray(step?.then_steps) ? step.then_steps : [];
+          const nestedElse = Array.isArray(step?.else_steps) ? step.else_steps : [];
+          const nestedLoop = Array.isArray(step?.steps) ? step.steps : [];
+          const canMoveUp = index > 0;
+          const canMoveDown = index < items.length - 1;
+          return (
+            <div key={step.id || path.join(".")} className="space-y-2">
+              <div className={`rounded-box border p-4 transition ${isSelected ? "border-primary bg-primary/5 shadow-sm" : "border-base-300 bg-base-100"}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 text-left"
+                    onClick={() => {
+                      setSelectedStepPath(path);
+                      setSelectedStepIndex(index);
+                      setStepModalOpen(true);
+                    }}
+                  >
+                    <div className="text-xs uppercase tracking-wide opacity-60">Step {index + 1}</div>
+                    <div className="font-medium truncate">{stepSummaryText(step)}</div>
+                    <div className="text-xs opacity-70 mt-1">{stepDetailText(step) || stepHelpText(step)}</div>
+                    {step.kind === "condition" && (
+                      <div className="text-[11px] opacity-50 mt-1">This step can branch into `Then` and `Else` steps.</div>
+                    )}
+                  </button>
+                  <div className="shrink-0 flex flex-col items-end gap-2">
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-xs"
+                        disabled={!canMoveUp}
+                        onClick={() => moveStep(path, -1)}
+                        title="Move up"
+                        aria-label="Move step up"
+                      >
+                        <ArrowUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-xs"
+                        disabled={!canMoveDown}
+                        onClick={() => moveStep(path, 1)}
+                        title="Move down"
+                        aria-label="Move step down"
+                      >
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-xs text-error"
+                        onClick={() => removeStep(path)}
+                        title="Remove step"
+                        aria-label="Remove step"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="badge badge-outline">{step.kind}</span>
+                      {step.store_as ? <span className="text-[10px] opacity-60">var: {step.store_as}</span> : null}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {step.kind === "condition" && (
+                <div className="ml-5 space-y-3 border-l border-base-300 pl-4">
+                  {nestedThen.length > 0 ? (
+                    <div className="rounded-box border border-base-300 bg-base-100/60 p-3">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <div className="text-xs uppercase tracking-wide opacity-60">Then</div>
+                        <button type="button" className="btn btn-xs btn-ghost" onClick={() => addNestedStep(path, "then_steps")}>Add step</button>
+                      </div>
+                      {renderStepCards(nestedThen, [...path, "then_steps"])}
+                    </div>
+                  ) : (
+                    <div className="rounded-box border border-dashed border-base-300 bg-base-100/40 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-[11px] uppercase tracking-wide opacity-50">Then</div>
+                          <div className="text-xs opacity-60">These steps run when the condition is true.</div>
+                        </div>
+                        <button type="button" className="btn btn-xs btn-ghost" onClick={() => addNestedStep(path, "then_steps")}>Add then step</button>
+                      </div>
+                    </div>
+                  )}
+                  {nestedElse.length > 0 ? (
+                    <div className="rounded-box border border-base-300 bg-base-100/60 p-3">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <div className="text-xs uppercase tracking-wide opacity-60">Else</div>
+                        <button type="button" className="btn btn-xs btn-ghost" onClick={() => addNestedStep(path, "else_steps")}>Add step</button>
+                      </div>
+                      {renderStepCards(nestedElse, [...path, "else_steps"])}
+                    </div>
+                  ) : (
+                    <div className="rounded-box border border-dashed border-base-300 bg-base-100/40 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-[11px] uppercase tracking-wide opacity-50">Else</div>
+                          <div className="text-xs opacity-60">These steps run when the condition is false.</div>
+                        </div>
+                        <button type="button" className="btn btn-xs btn-ghost" onClick={() => addNestedStep(path, "else_steps")}>Add else step</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {step.kind === "foreach" && (
+                <div className="ml-5 rounded-box border border-base-300 bg-base-100/60 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs uppercase tracking-wide opacity-60">Repeat Steps</div>
+                    <button type="button" className="btn btn-xs btn-ghost" onClick={() => addNestedStep(path, "steps")}>Add step</button>
+                  </div>
+                  {nestedLoop.length ? renderStepCards(nestedLoop, [...path, "steps"]) : <div className="text-xs opacity-50">No repeat steps yet.</div>}
+                </div>
+              )}
+
+              <div className="ml-2">
+                <button
+                  type="button"
+                  className="btn btn-xs btn-ghost"
+                  onClick={() => insertStepAfter(pathPrefix, index)}
+                >
+                  Add step after
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        {items.length === 0 && (
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost justify-start"
+            onClick={() => insertStepAfter(pathPrefix, -1)}
+          >
+            Add step
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  function renderStepEditor(step, stepPath, options = {}) {
+    if (!step) {
+      return <div className="text-sm opacity-60">Select a step from the flow to edit it.</div>;
+    }
+    const showHeader = options.showHeader !== false;
+    const linear = options.linear !== false;
+    const normalizedPath = normalizeStepPath(stepPath);
+    const displayIndex = typeof normalizedPath[normalizedPath.length - 1] === "number" ? normalizedPath[normalizedPath.length - 1] : 0;
+    let index = normalizedPath;
+    const actionValue = step.module_id ? `${step.module_id}::${step.action_id}` : step.action_id || "";
+    const isActionLike = step.kind === "action" || step.kind === "foreach";
+    const standardGridClass = linear ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 md:grid-cols-2 gap-3";
+    const wideGridClass = linear ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 md:grid-cols-12 gap-3";
+    const beginnerHelp = step.kind === "condition"
+      ? "Pick the field to check, choose how to compare it, and set the value it should match. If the rule is true, the Then branch runs."
+      : step.kind === "foreach"
+        ? "Choose the list to repeat over. Each item in that list will run the nested repeat steps once."
+        : step.kind === "delay"
+          ? "Choose whether this automation should pause for a duration or wait until a specific date and time."
+          : step.action_id === "system.notify"
+            ? "Start with the essentials: who should get the notification, a title, and the message body."
+            : step.action_id === "system.send_email"
+              ? "Start with recipients and the message. Only open advanced options if you need templates, merge fields, or attachments."
+              : step.action_id === "system.integration_request"
+                ? "Choose the integration connection first, then define the request method, endpoint, and any headers, query values, or payload."
+                : step.action_id === "system.integration_sync"
+                  ? "Choose the integration connection first, then define which sync scope to run. Only open advanced options if you need to override the saved sync request."
+                : step.action_id === "system.query_records"
+                  ? "Choose which entity to search, optionally add search text, and decide how many matching records to return."
+                : step.action_id === "system.create_record"
+                  ? "Choose the entity to create in, then enter the values the new record should be created with."
+                  : step.action_id === "system.update_record"
+                    ? "Choose the record to update, then define only the field changes you want to apply."
+                    : "Fill this out from top to bottom. Start with the basic fields and only open advanced options if you need them.";
+
+    return (
+      <div className="space-y-4">
+        {showHeader && (
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-xs uppercase tracking-wide opacity-60">Step {displayIndex + 1}</div>
+              <div className="text-base font-semibold">{stepSummaryText(step)}</div>
+              <div className="text-xs opacity-60">{stepHelpText(step)}</div>
+            </div>
+            <div className="flex items-center gap-1">
+              <button type="button" className="btn btn-ghost btn-xs" disabled={displayIndex === 0} onClick={() => moveStep(normalizedPath, -1)}>Up</button>
+              <button type="button" className="btn btn-ghost btn-xs" onClick={() => moveStep(normalizedPath, 1)}>Down</button>
+              <button type="button" className="btn btn-ghost btn-xs text-error" onClick={() => removeStep(normalizedPath)}>Remove</button>
+            </div>
+          </div>
+        )}
+
+        <div className="rounded-box border border-base-300 bg-base-100/70 p-3">
+          <div className="text-xs uppercase tracking-wide opacity-60">How To Fill This Out</div>
+          <div className="text-sm opacity-80 mt-1">{beginnerHelp}</div>
+        </div>
+
+        <div className={wideGridClass}>
+          <label className="form-control md:col-span-4">
+            <span className="label-text">Kind</span>
+            <select
+              className="select select-bordered"
+              value={step.kind || "action"}
+              onChange={(e) => updateStep(index, { kind: e.target.value })}
+            >
+              <option value="action">Action</option>
+              <option value="foreach">Repeat action</option>
+              <option value="condition">Condition</option>
+              <option value="delay">Delay</option>
+            </select>
+          </label>
+
+          {isActionLike && (
+            <label className="form-control md:col-span-8">
+              <span className="label-text">Action</span>
+              <select
+                className="select select-bordered"
+                value={actionValue}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (!value) return;
+                  const nextInputs = { ...(step.inputs || {}) };
+                  if (value === "system.generate_document") {
+                    if (!nextInputs.entity_id) nextInputs.entity_id = "{{trigger.entity_id}}";
+                    if (!nextInputs.record_id) nextInputs.record_id = "{{trigger.record_id}}";
+                  }
+              if (value === "system.integration_request") {
+                if (!nextInputs.method) nextInputs.method = "GET";
+                if (!nextInputs.path) nextInputs.path = "/";
+              }
+              if (value === "system.integration_sync") {
+                if (!nextInputs.scope_key) nextInputs.scope_key = "default";
+                if (!nextInputs.method) nextInputs.method = "GET";
+                if (!nextInputs.path) nextInputs.path = "/";
+              }
+              if (value.includes("::")) {
+                    const [moduleId, actionId] = value.split("::");
+                    updateStep(index, { action_id: actionId, module_id: moduleId, inputs: nextInputs });
+                  } else {
+                    updateStep(index, { action_id: value, module_id: undefined, inputs: nextInputs });
+                  }
+                }}
+              >
+                <option value="">Select action…</option>
+                {actionOptions.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {(group.options || []).map((action) => (
+                      <option
+                        key={`${group.module_id || "system"}:${action.id}`}
+                        value={group.module_id ? `${group.module_id}::${action.id}` : action.id}
+                      >
+                        {action.display_id ? `${action.label || action.id} (${action.display_id})` : (action.label || action.id)}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+
+        {step.kind === "foreach" && (
+          <div className={wideGridClass}>
+            <label className="form-control md:col-span-6">
+              <span className="label-text">Repeat over</span>
+              <input
+                className="input input-bordered"
+                list="automation-loop-hints"
+                value={typeof step.over === "string" ? step.over : ""}
+                onChange={(e) => updateStep(index, { over: e.target.value })}
+                placeholder="{{steps.query_records.records}}"
+              />
+              <span className="label label-text-alt opacity-50">Use a trigger list, query results, or stored variable.</span>
+            </label>
+            <label className="form-control md:col-span-3">
+              <span className="label-text">Item name</span>
+              <input
+                className="input input-bordered"
+                value={step.item_name || "item"}
+                onChange={(e) => updateStep(index, { item_name: e.target.value })}
+                placeholder="item"
+              />
+            </label>
+            <label className="form-control md:col-span-3">
+              <span className="label-text">Store output as</span>
+              <input
+                className="input input-bordered"
+                value={step.store_as || ""}
+                onChange={(e) => updateStep(index, { store_as: e.target.value })}
+                placeholder="loop_results"
+              />
+            </label>
+          </div>
+        )}
+
+        {isActionLike && step.action_id === "system.notify" && (
+          <div className={standardGridClass}>
+            {(() => {
+              const selectedIds = Array.isArray(step.inputs?.recipient_user_ids)
+                ? step.inputs.recipient_user_ids
+                : step.inputs?.recipient_user_id
+                  ? [step.inputs.recipient_user_id]
+                  : [];
+              return (
+                <label className="form-control">
+                  <span className="label-text">Add recipient user</span>
+                  <select
+                    className="select select-bordered"
+                    value=""
+                    onChange={(e) => {
+                      const nextId = e.target.value;
+                      if (!nextId) return;
+                      const next = Array.from(new Set([...selectedIds, nextId]));
+                      updateStepInput(index, "recipient_user_ids", next);
+                      updateStepInput(index, "recipient_user_id", next[0] || "");
+                    }}
+                  >
+                    <option value="">Select user…</option>
+                    {memberOptions.map((member) => (
+                      <option key={member.user_id} value={member.user_id}>
+                        {member.name || member.email || member.user_email || member.user_id}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="label label-text-alt opacity-50">You can add multiple recipients.</span>
+                </label>
+              );
+            })()}
+            <label className="form-control md:col-span-2">
+              <span className="label-text">Title</span>
+              <input className="input input-bordered" value={step.inputs?.title || ""} onChange={(e) => updateStepInput(index, "title", e.target.value)} />
+            </label>
+            <label className="form-control md:col-span-2">
+              <span className="label-text">Body</span>
+              <CodeTextarea
+                value={step.inputs?.body || ""}
+                onChange={(e) => updateStepInput(index, "body", e.target.value)}
+                minHeight="140px"
+              />
+            </label>
+            {(Array.isArray(step.inputs?.recipient_user_ids)
+              ? step.inputs.recipient_user_ids
+              : step.inputs?.recipient_user_id
+                ? [step.inputs.recipient_user_id]
+                : []
+            ).length > 0 && (
+              <div className="md:col-span-2">
+                <span className="label-text">Selected recipients</span>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(Array.isArray(step.inputs?.recipient_user_ids)
+                    ? step.inputs.recipient_user_ids
+                    : step.inputs?.recipient_user_id
+                      ? [step.inputs.recipient_user_id]
+                      : []
+                  ).map((userId) => {
+                    const member = memberById.get(userId);
+                    const label = member?.name || member?.email || member?.user_email || "Unknown user";
+                    return (
+                      <span key={userId} className="badge badge-outline gap-2 py-3">
+                        {label}
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-xs"
+                          onClick={() => {
+                            const current = Array.isArray(step.inputs?.recipient_user_ids)
+                              ? step.inputs.recipient_user_ids
+                              : step.inputs?.recipient_user_id
+                                ? [step.inputs.recipient_user_id]
+                                : [];
+                            const next = current.filter((id) => id !== userId);
+                            updateStepInput(index, "recipient_user_ids", next);
+                            updateStepInput(index, "recipient_user_id", next[0] || "");
+                          }}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            <div className="md:col-span-2 rounded-box border border-base-300 bg-base-100">
+              <details className="group">
+                <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+                  <div>
+                    <div className="font-medium text-sm">Advanced options</div>
+                    <div className="text-xs opacity-60">Only set these if you want different styling or a clickable link.</div>
+                  </div>
+                  <span className="text-xs opacity-60 group-open:hidden">Show</span>
+                  <span className="text-xs opacity-60 hidden group-open:inline">Hide</span>
+                </summary>
+                <div className={`${standardGridClass} px-4 pb-4`}>
+                  <label className="form-control">
+                    <span className="label-text">Severity</span>
+                    <select className="select select-bordered" value={step.inputs?.severity || "info"} onChange={(e) => updateStepInput(index, "severity", e.target.value)}>
+                      <option value="info">Info</option>
+                      <option value="success">Success</option>
+                      <option value="warning">Warning</option>
+                      <option value="danger">Danger</option>
+                    </select>
+                  </label>
+                  <label className="form-control">
+                    <span className="label-text">Link</span>
+                    <input className="input input-bordered" value={step.inputs?.link_to || ""} onChange={(e) => updateStepInput(index, "link_to", e.target.value)} />
+                  </label>
+                </div>
+              </details>
+            </div>
+          </div>
+        )}
+
+        {isActionLike && step.action_id === "system.send_email" && (
+          <div className={wideGridClass}>
+            {(() => {
+              const selectedEntityId = step.inputs?.entity_id || triggerEventMeta?.entity_id || "";
+              const activeEntity = selectedEntityId ? entityById.get(selectedEntityId) : null;
+              const fields = Array.isArray(activeEntity?.fields) ? activeEntity.fields : [];
+              const emailFields = fields.filter((f) => {
+                const id = (f?.id || "").toLowerCase();
+                const label = (f?.label || "").toLowerCase();
+                return id.includes("email") || label.includes("email");
+              });
+              const attachmentFields = fields.filter((f) => f?.type === "attachments");
+              const lookupFields = fields.filter((f) => f?.type === "lookup");
+              const selectedLookupIdsRaw = step.inputs?.to_lookup_field_ids;
+              const selectedLookupIds = Array.isArray(selectedLookupIdsRaw)
+                ? selectedLookupIdsRaw
+                : typeof selectedLookupIdsRaw === "string"
+                  ? selectedLookupIdsRaw.split(",").map((v) => v.trim()).filter(Boolean)
+                  : (step.inputs?.to_lookup_field_id ? [step.inputs.to_lookup_field_id] : []);
+              const selectedRecordEmailFieldIds = Array.isArray(step.inputs?.to_field_ids)
+                ? step.inputs.to_field_ids
+                : (step.inputs?.to_field_id ? [step.inputs.to_field_id] : []);
+              const selectedInternalEmails = Array.isArray(step.inputs?.to_internal_emails)
+                ? step.inputs.to_internal_emails
+                : typeof step.inputs?.to_internal_emails === "string"
+                  ? step.inputs.to_internal_emails.split(",").map((v) => v.trim()).filter(Boolean)
+                  : [];
+              const primaryLookupField = selectedLookupIds[0] || step.inputs?.to_lookup_field_id || "";
+              const selectedLookupFieldDef = lookupFields.find((f) => f.id === primaryLookupField);
+              const targetEntityId = step.inputs?.to_lookup_entity_id || selectedLookupFieldDef?.entity;
+              const targetEntity = targetEntityId ? entityById.get(targetEntityId) : null;
+              const targetFields = Array.isArray(targetEntity?.fields) ? targetEntity.fields : [];
+              const targetEmailFields = targetFields.filter((f) => {
+                const id = (f?.id || "").toLowerCase();
+                const label = (f?.label || "").toLowerCase();
+                return id.includes("email") || label.includes("email");
+              });
+              const includeAttachments = Boolean(
+                step.inputs?.include_attachments
+                || step.inputs?.attachment_purpose
+                || step.inputs?.attachment_entity_id
+                || step.inputs?.attachment_record_id
+                || step.inputs?.attachment_field_id
+              );
+
+              return (
+                <>
+                  <label className="form-control md:col-span-12">
+                    <span className="label-text">Direct email addresses</span>
+                    <input className="input input-bordered" value={(step.inputs?.to || []).join(", ")} onChange={(e) => updateStepInput(index, "to", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
+                    <span className="label label-text-alt opacity-50">Optional comma-separated addresses. Leave blank if you only want to use recipients from fields or related records.</span>
+                  </label>
+                  <label className="form-control md:col-span-6">
+                    <span className="label-text">Add internal recipient</span>
+                    <select
+                      className="select select-bordered"
+                      value=""
+                      onChange={(e) => {
+                        const email = e.target.value;
+                        if (!email) return;
+                        const next = Array.from(new Set([...(selectedInternalEmails || []), email]));
+                        updateStepInput(index, "to_internal_emails", next);
+                      }}
+                    >
+                      <option value="">Select workspace member…</option>
+                      {memberOptions.map((member) => {
+                        const memberEmail = member.email || member.user_email || "";
+                        return (
+                          <option key={member.user_id} value={memberEmail} disabled={!memberEmail}>
+                            {member.name || memberEmail || member.user_id}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </label>
+                  {emailFields.length > 0 && (
+                    <label className="form-control md:col-span-6">
+                      <span className="label-text">Add record email field</span>
+                      <select
+                        className="select select-bordered"
+                        value=""
+                        onChange={(e) => {
+                          const fieldId = e.target.value;
+                          if (!fieldId) return;
+                          const next = Array.from(new Set([...(selectedRecordEmailFieldIds || []), fieldId]));
+                          updateStepInput(index, "to_field_ids", next);
+                          updateStepInput(index, "to_field_id", next[0] || "");
+                        }}
+                      >
+                        <option value="">Select email field…</option>
+                        {emailFields.map((field) => (
+                          <option key={field.id} value={field.id}>
+                            {field.label || field.id}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  {lookupFields.length > 0 && (
+                    <label className="form-control md:col-span-6">
+                      <span className="label-text">Add lookup recipient field</span>
+                      <select
+                        className="select select-bordered"
+                        value=""
+                        onChange={(e) => {
+                          const fieldId = e.target.value;
+                          if (!fieldId) return;
+                          const next = Array.from(new Set([...(selectedLookupIds || []), fieldId]));
+                          updateStepInput(index, "to_lookup_field_ids", next);
+                          updateStepInput(index, "to_lookup_field_id", next[0] || "");
+                        }}
+                      >
+                        <option value="">Select lookup field…</option>
+                        {lookupFields.map((field) => (
+                          <option key={field.id} value={field.id}>
+                            {field.label || field.id}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  {selectedLookupIds.length > 0 && targetEmailFields.length > 0 && (
+                    <label className="form-control md:col-span-6">
+                      <span className="label-text">Target email field</span>
+                      <select
+                        className="select select-bordered"
+                        value={step.inputs?.to_lookup_email_field || ""}
+                        onChange={(e) => updateStepInput(index, "to_lookup_email_field", e.target.value)}
+                      >
+                        <option value="">Auto-detect email</option>
+                        {targetEmailFields.map((field) => (
+                          <option key={field.id} value={field.id}>
+                            {field.label || field.id}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="label label-text-alt opacity-50">Only needed if the related record has more than one email field.</span>
+                    </label>
+                  )}
+                  {(selectedInternalEmails.length || selectedRecordEmailFieldIds.length || selectedLookupIds.length) > 0 && (
+                    <div className="md:col-span-12">
+                      <span className="label-text">Selected recipient sources</span>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {selectedInternalEmails.map((email) => {
+                          const match = memberOptions.find((m) => (m.email || m.user_email) === email);
+                          const label = match?.name ? `${match.name} (${email})` : email;
+                          return (
+                            <span key={`internal:${email}`} className="badge badge-outline gap-2 py-3">
+                              Internal: {label}
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-xs"
+                                onClick={() => updateStepInput(index, "to_internal_emails", selectedInternalEmails.filter((v) => v !== email))}
+                              >
+                                ×
+                              </button>
+                            </span>
+                          );
+                        })}
+                        {selectedRecordEmailFieldIds.map((fieldId) => {
+                          const field = emailFields.find((f) => f.id === fieldId);
+                          return (
+                            <span key={`record:${fieldId}`} className="badge badge-outline gap-2 py-3">
+                              Record field: {field?.label || fieldId}
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-xs"
+                                onClick={() => {
+                                  const next = selectedRecordEmailFieldIds.filter((v) => v !== fieldId);
+                                  updateStepInput(index, "to_field_ids", next);
+                                  updateStepInput(index, "to_field_id", next[0] || "");
+                                }}
+                              >
+                                ×
+                              </button>
+                            </span>
+                          );
+                        })}
+                        {selectedLookupIds.map((fieldId) => {
+                          const field = lookupFields.find((f) => f.id === fieldId);
+                          return (
+                            <span key={`lookup:${fieldId}`} className="badge badge-outline gap-2 py-3">
+                              Lookup: {field?.label || fieldId}
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-xs"
+                                onClick={() => {
+                                  const next = selectedLookupIds.filter((v) => v !== fieldId);
+                                  updateStepInput(index, "to_lookup_field_ids", next);
+                                  updateStepInput(index, "to_lookup_field_id", next[0] || "");
+                                }}
+                              >
+                                ×
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  <label className="form-control md:col-span-12">
+                    <label className="label cursor-pointer justify-start gap-3">
+                      <input
+                        type="checkbox"
+                        className="toggle toggle-sm"
+                        checked={includeAttachments}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          updateStepInput(index, "include_attachments", checked ? true : undefined);
+                          if (!checked) {
+                            updateStepInput(index, "attachment_purpose", undefined);
+                            updateStepInput(index, "attachment_entity_id", undefined);
+                            updateStepInput(index, "attachment_record_id", undefined);
+                            updateStepInput(index, "attachment_field_id", undefined);
+                          }
+                        }}
+                      />
+                      <span className="label-text">Include attachments</span>
+                    </label>
+                    <span className="label label-text-alt opacity-50">Turn this on only if the email should include generated files or attachments from a record.</span>
+                  </label>
+                  {includeAttachments && (
+                    <>
+                      <label className="form-control md:col-span-4">
+                        <span className="label-text">Attachment purpose</span>
+                        <input
+                          className="input input-bordered"
+                          value={step.inputs?.attachment_purpose || ""}
+                          onChange={(e) => updateStepInput(index, "attachment_purpose", e.target.value)}
+                          placeholder="invoice_pdf"
+                        />
+                        <span className="label label-text-alt opacity-50">Attach linked files with this purpose from the selected record.</span>
+                      </label>
+                      <label className="form-control md:col-span-4">
+                        <span className="label-text">Attachment entity</span>
+                        <select
+                          className="select select-bordered"
+                          value={step.inputs?.attachment_entity_id || ""}
+                          onChange={(e) => updateStepInput(index, "attachment_entity_id", e.target.value)}
+                        >
+                          <option value="">Use email entity</option>
+                          {entityOptions.map((ent) => (
+                            <option key={ent.id} value={ent.id}>
+                              {ent.label || ent.id}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="form-control md:col-span-4">
+                        <span className="label-text">Attachment record</span>
+                        <input
+                          className="input input-bordered"
+                          list="automation-record-hints"
+                          value={step.inputs?.attachment_record_id || ""}
+                          onChange={(e) => updateStepInput(index, "attachment_record_id", e.target.value)}
+                          placeholder="{{trigger.record_id}}"
+                        />
+                      </label>
+                      <label className="form-control md:col-span-12">
+                        <span className="label-text">Attachment field</span>
+                        <select
+                          className="select select-bordered"
+                          value={step.inputs?.attachment_field_id || ""}
+                          onChange={(e) => updateStepInput(index, "attachment_field_id", e.target.value)}
+                        >
+                          <option value="">No record attachment field</option>
+                          {attachmentFields.map((field) => (
+                            <option key={field.id} value={field.id}>
+                              {field.label || field.id}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="label label-text-alt opacity-50">Optional extra source if files already live in an attachments field on the record.</span>
+                      </label>
+                    </>
+                  )}
+                  <div className="md:col-span-12 rounded-box border border-base-300 bg-base-100">
+                    <details className="group">
+                      <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+                        <div>
+                          <div className="font-medium text-sm">Advanced email options</div>
+                          <div className="text-xs opacity-60">Connection, template, merge-record context, subject override, and recipient expression.</div>
+                        </div>
+                        <span className="text-xs opacity-60 group-open:hidden">Show</span>
+                        <span className="text-xs opacity-60 hidden group-open:inline">Hide</span>
+                      </summary>
+                      <div className={`${wideGridClass} px-4 pb-4`}>
+                        <label className="form-control md:col-span-6">
+                          <span className="label-text">Connection</span>
+                          <select
+                            className="select select-bordered"
+                            value={step.inputs?.connection_id || ""}
+                            onChange={(e) => updateStepInput(index, "connection_id", e.target.value)}
+                          >
+                            <option value="">Use default</option>
+                            {connectionOptions.map((conn) => (
+                              <option key={conn.id} value={conn.id}>
+                                {conn.name || conn.id}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="form-control md:col-span-6">
+                          <span className="label-text">Template</span>
+                          <select
+                            className="select select-bordered"
+                            value={step.inputs?.template_id || ""}
+                            onChange={(e) => updateStepInput(index, "template_id", e.target.value)}
+                          >
+                            <option value="">No template</option>
+                            {emailTemplateOptions.map((tpl) => (
+                              <option key={tpl.id} value={tpl.id}>
+                                {tpl.name || tpl.id}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="form-control md:col-span-6">
+                          <span className="label-text">Entity for merge fields</span>
+                          <select
+                            className="select select-bordered"
+                            value={step.inputs?.entity_id || ""}
+                            onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
+                          >
+                            <option value="">Use trigger entity</option>
+                            {entityOptions.map((ent) => (
+                              <option key={ent.id} value={ent.id}>
+                                {ent.label || ent.id}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="form-control md:col-span-6">
+                          <span className="label-text">Record for merge fields</span>
+                          <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} />
+                          <span className="label label-text-alt opacity-50">Optional record for merge fields, attachments, or lookup recipients.</span>
+                        </label>
+                        <label className="form-control md:col-span-12">
+                          <span className="label-text">Recipient expression</span>
+                          <input
+                            className="input input-bordered"
+                            value={step.inputs?.to_expr || ""}
+                            onChange={(e) => updateStepInput(index, "to_expr", e.target.value)}
+                            placeholder="{{ record['contact_email'] }}, ops@example.com"
+                          />
+                        </label>
+                        <label className="form-control md:col-span-12">
+                          <span className="label-text">Subject override</span>
+                          <input className="input input-bordered" value={step.inputs?.subject || ""} onChange={(e) => updateStepInput(index, "subject", e.target.value)} />
+                          <span className="label label-text-alt opacity-50">Leave blank to use the template subject.</span>
+                        </label>
+                      </div>
+                    </details>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
+
+        {isActionLike && step.action_id === "system.generate_document" && (
+          <div className={standardGridClass}>
+            <label className="form-control">
+              <span className="label-text">Template</span>
+              <select
+                className="select select-bordered"
+                value={step.inputs?.template_id || ""}
+                onChange={(e) => updateStepInput(index, "template_id", e.target.value)}
+              >
+                <option value="">Select template…</option>
+                {docTemplateOptions.map((tpl) => (
+                  <option key={tpl.id} value={tpl.id}>
+                    {tpl.name || tpl.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="form-control">
+              <span className="label-text">Purpose</span>
+              <input className="input input-bordered" value={step.inputs?.purpose || ""} onChange={(e) => updateStepInput(index, "purpose", e.target.value)} />
+              <span className="label label-text-alt opacity-50">Optional attachment purpose tag, like `handover_pdf` or `quote_pdf`.</span>
+            </label>
+            <label className="form-control">
+              <span className="label-text">Entity</span>
+              <select
+                className="select select-bordered"
+                value={step.inputs?.entity_id || ""}
+                onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
+              >
+                <option value="">Select entity…</option>
+                <option value="{{trigger.entity_id}}">Use trigger entity</option>
+                {entityOptions.map((ent) => (
+                  <option key={ent.id} value={ent.id}>
+                    {ent.label || ent.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="form-control">
+              <span className="label-text">Record</span>
+              <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} />
+              <span className="label label-text-alt opacity-50">Paste record ID or use trigger.</span>
+            </label>
+          </div>
+        )}
+
+        {isActionLike && step.action_id === "system.integration_request" && (
+          <div className={standardGridClass}>
+            <label className="form-control">
+              <span className="label-text">Connection</span>
+              <select
+                className="select select-bordered"
+                value={step.inputs?.connection_id || ""}
+                onChange={(e) => updateStepInput(index, "connection_id", e.target.value)}
+              >
+                <option value="">Select connection…</option>
+                {connectionOptions.map((conn) => (
+                  <option key={conn.id} value={conn.id}>
+                    {conn.name || conn.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="form-control">
+              <span className="label-text">Method</span>
+              <select
+                className="select select-bordered"
+                value={step.inputs?.method || "GET"}
+                onChange={(e) => updateStepInput(index, "method", e.target.value)}
+              >
+                {["GET", "POST", "PUT", "PATCH", "DELETE"].map((method) => (
+                  <option key={method} value={method}>
+                    {method}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="form-control">
+              <span className="label-text">Path</span>
+              <input
+                className="input input-bordered"
+                value={step.inputs?.path || ""}
+                onChange={(e) => updateStepInput(index, "path", e.target.value)}
+                placeholder="/contacts"
+              />
+              <span className="label label-text-alt opacity-50">Use path for provider base URLs. Leave blank if you use a full URL below.</span>
+            </label>
+            <label className="form-control">
+              <span className="label-text">Full URL override</span>
+              <input
+                className="input input-bordered"
+                value={step.inputs?.url || ""}
+                onChange={(e) => updateStepInput(index, "url", e.target.value)}
+                placeholder="https://api.example.com/custom/path"
+              />
+            </label>
+            <label className="form-control">
+              <span className="label-text">Headers JSON</span>
+              <CodeTextarea
+                value={typeof step.inputs?.headers === "string" ? step.inputs.headers : JSON.stringify(step.inputs?.headers || {}, null, 2)}
+                onChange={(e) => updateStepInput(index, "headers", e.target.value)}
+                minHeight="120px"
+              />
+            </label>
+            <label className="form-control">
+              <span className="label-text">Query JSON</span>
+              <CodeTextarea
+                value={typeof step.inputs?.query === "string" ? step.inputs.query : JSON.stringify(step.inputs?.query || {}, null, 2)}
+                onChange={(e) => updateStepInput(index, "query", e.target.value)}
+                minHeight="120px"
+              />
+            </label>
+            <label className="form-control">
+              <span className="label-text">JSON body</span>
+              <CodeTextarea
+                value={typeof step.inputs?.json === "string" ? step.inputs.json : JSON.stringify(step.inputs?.json || {}, null, 2)}
+                onChange={(e) => updateStepInput(index, "json", e.target.value)}
+                minHeight="140px"
+              />
+              <span className="label label-text-alt opacity-50">Use this for structured payloads. Leave empty and use raw body only if the endpoint does not expect JSON.</span>
+            </label>
+            <label className="form-control">
+              <span className="label-text">Raw body</span>
+              <CodeTextarea
+                value={step.inputs?.body || ""}
+                onChange={(e) => updateStepInput(index, "body", e.target.value)}
+                minHeight="120px"
+              />
+            </label>
+          </div>
+        )}
+
+        {isActionLike && step.action_id === "system.integration_sync" && (
+          <div className={standardGridClass}>
+            <label className="form-control">
+              <span className="label-text">Connection</span>
+              <select
+                className="select select-bordered"
+                value={step.inputs?.connection_id || ""}
+                onChange={(e) => updateStepInput(index, "connection_id", e.target.value)}
+              >
+                <option value="">Select connection…</option>
+                {connectionOptions.map((conn) => (
+                  <option key={conn.id} value={conn.id}>
+                    {conn.name || conn.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="form-control">
+              <span className="label-text">Checkpoint scope</span>
+              <input
+                className="input input-bordered"
+                value={step.inputs?.scope_key || ""}
+                onChange={(e) => updateStepInput(index, "scope_key", e.target.value)}
+                placeholder="contacts"
+              />
+              <span className="label label-text-alt opacity-50">Use different scopes when one connection syncs more than one resource.</span>
+            </label>
+            <label className="form-control">
+              <label className="label cursor-pointer justify-start gap-3">
+                <input
+                  type="checkbox"
+                  className="toggle toggle-sm"
+                  checked={Boolean(step.inputs?.emit_events)}
+                  onChange={(e) => updateStepInput(index, "emit_events", e.target.checked ? true : undefined)}
+                />
+                <span className="label-text">Emit item events</span>
+              </label>
+              <span className="label label-text-alt opacity-50">Turn this on if later automations should react to each returned item.</span>
+            </label>
+            <label className="form-control">
+              <label className="label cursor-pointer justify-start gap-3">
+                <input
+                  type="checkbox"
+                  className="toggle toggle-sm"
+                  checked={Boolean(step.inputs?.async)}
+                  onChange={(e) => updateStepInput(index, "async", e.target.checked ? true : undefined)}
+                />
+                <span className="label-text">Queue in background</span>
+              </label>
+              <span className="label label-text-alt opacity-50">Use this when the sync might take a while and you do not need the result immediately.</span>
+            </label>
+            <div className="rounded-box border border-base-300 bg-base-100">
+              <details className="group">
+                <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+                  <div>
+                    <div className="font-medium text-sm">Advanced sync options</div>
+                    <div className="text-xs opacity-60">Override the saved sync request or cursor settings for this automation run.</div>
+                  </div>
+                  <span className="text-xs opacity-60 group-open:hidden">Show</span>
+                  <span className="text-xs opacity-60 hidden group-open:inline">Hide</span>
+                </summary>
+                <div className={`${standardGridClass} px-4 pb-4`}>
+                  <label className="form-control">
+                    <span className="label-text">Method</span>
+                    <select
+                      className="select select-bordered"
+                      value={step.inputs?.method || "GET"}
+                      onChange={(e) => updateStepInput(index, "method", e.target.value)}
+                    >
+                      {["GET", "POST", "PUT", "PATCH", "DELETE"].map((method) => (
+                        <option key={method} value={method}>
+                          {method}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="form-control">
+                    <span className="label-text">Path</span>
+                    <input
+                      className="input input-bordered"
+                      value={step.inputs?.path || ""}
+                      onChange={(e) => updateStepInput(index, "path", e.target.value)}
+                      placeholder="/contacts"
+                    />
+                  </label>
+                  <label className="form-control">
+                    <span className="label-text">Items path</span>
+                    <input
+                      className="input input-bordered"
+                      value={step.inputs?.items_path || ""}
+                      onChange={(e) => updateStepInput(index, "items_path", e.target.value)}
+                      placeholder="items"
+                    />
+                  </label>
+                  <label className="form-control">
+                    <span className="label-text">Cursor query parameter</span>
+                    <input
+                      className="input input-bordered"
+                      value={step.inputs?.cursor_param || ""}
+                      onChange={(e) => updateStepInput(index, "cursor_param", e.target.value)}
+                      placeholder="updated_since"
+                    />
+                  </label>
+                  <label className="form-control">
+                    <span className="label-text">Next cursor path</span>
+                    <input
+                      className="input input-bordered"
+                      value={step.inputs?.cursor_value_path || ""}
+                      onChange={(e) => updateStepInput(index, "cursor_value_path", e.target.value)}
+                      placeholder="meta.next_cursor"
+                    />
+                  </label>
+                  <label className="form-control">
+                    <span className="label-text">Last item cursor path</span>
+                    <input
+                      className="input input-bordered"
+                      value={step.inputs?.last_item_cursor_path || ""}
+                      onChange={(e) => updateStepInput(index, "last_item_cursor_path", e.target.value)}
+                      placeholder="updated_at"
+                    />
+                  </label>
+                  <label className="form-control">
+                    <span className="label-text">Max items</span>
+                    <input
+                      className="input input-bordered"
+                      value={step.inputs?.max_items || ""}
+                      onChange={(e) => updateStepInput(index, "max_items", e.target.value)}
+                      placeholder="100"
+                    />
+                  </label>
+                  <label className="form-control">
+                    <span className="label-text">Headers JSON</span>
+                    <CodeTextarea
+                      value={typeof step.inputs?.headers === "string" ? step.inputs.headers : JSON.stringify(step.inputs?.headers || {}, null, 2)}
+                      onChange={(e) => updateStepInput(index, "headers", e.target.value)}
+                      minHeight="120px"
+                    />
+                  </label>
+                  <label className="form-control">
+                    <span className="label-text">Query JSON</span>
+                    <CodeTextarea
+                      value={typeof step.inputs?.query === "string" ? step.inputs.query : JSON.stringify(step.inputs?.query || {}, null, 2)}
+                      onChange={(e) => updateStepInput(index, "query", e.target.value)}
+                      minHeight="120px"
+                    />
+                  </label>
+                </div>
+              </details>
+            </div>
+          </div>
+        )}
+
+        {isActionLike && step.action_id && !step.action_id.startsWith("system.") && (
+          <div className={standardGridClass}>
+            <label className="form-control">
+              <span className="label-text">Entity</span>
+              <select
+                className="select select-bordered"
+                value={step.inputs?.entity_id || ""}
+                onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
+              >
+                <option value="">Use trigger entity</option>
+                {entityOptions.map((ent) => (
+                  <option key={ent.id} value={ent.id}>
+                    {ent.label || ent.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="form-control">
+              <span className="label-text">Record</span>
+              <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} />
+              <span className="label label-text-alt opacity-50">Paste record ID or use trigger.</span>
+            </label>
+            <label className="form-control md:col-span-2">
+              <span className="label-text">Selected records (comma)</span>
+              <input className="input input-bordered" value={(step.inputs?.selected_ids || []).join(", ")} onChange={(e) => updateStepInput(index, "selected_ids", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
+              <span className="label label-text-alt opacity-50">Comma-separated record IDs.</span>
+            </label>
+          </div>
+        )}
+
+        {isActionLike && step.action_id === "system.create_record" && (
+          <div className={standardGridClass}>
+            <label className="form-control">
+              <span className="label-text">Entity</span>
+              <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                <option value="">Select entity…</option>
+                {entityOptions.map((ent) => (
+                  <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
+                ))}
+              </select>
+            </label>
+            <label className="form-control">
+              <span className="label-text">Store output as</span>
+              <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="new_record" />
+            </label>
+            <label className="form-control md:col-span-2">
+              <span className="label-text">Values to write</span>
+              <CodeTextarea
+                value={typeof step.inputs?.values === "string" ? step.inputs.values : JSON.stringify(step.inputs?.values || {}, null, 2)}
+                onChange={(e) => updateStepInput(index, "values", e.target.value)}
+                minHeight="180px"
+                placeholder={`{\n  "field_id": "value",\n  "other_field": "{{trigger.record_id}}"\n}`}
+              />
+              <span className="label label-text-alt opacity-50">Use JSON object format. Values can include trigger or prior-step expressions.</span>
+            </label>
+          </div>
+        )}
+
+        {isActionLike && step.action_id === "system.update_record" && (
+          <div className={standardGridClass}>
+            <label className="form-control">
+              <span className="label-text">Entity</span>
+              <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                <option value="">Use trigger entity</option>
+                {entityOptions.map((ent) => (
+                  <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
+                ))}
+              </select>
+            </label>
+            <label className="form-control">
+              <span className="label-text">Record</span>
+              <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} placeholder="{{trigger.record_id}}" />
+            </label>
+            <label className="form-control">
+              <span className="label-text">Store output as</span>
+              <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="updated_record" />
+            </label>
+            <label className="form-control md:col-span-2">
+              <span className="label-text">Changes to apply</span>
+              <CodeTextarea
+                value={typeof step.inputs?.patch === "string" ? step.inputs.patch : JSON.stringify(step.inputs?.patch || {}, null, 2)}
+                onChange={(e) => updateStepInput(index, "patch", e.target.value)}
+                minHeight="180px"
+                placeholder={`{\n  "status": "approved"\n}`}
+              />
+              <span className="label label-text-alt opacity-50">Use JSON object format for the fields you want to update.</span>
+            </label>
+          </div>
+        )}
+
+        {isActionLike && step.action_id === "system.query_records" && (
+          <div className={standardGridClass}>
+            <label className="form-control">
+              <span className="label-text">Entity</span>
+              <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                <option value="">Use trigger entity</option>
+                {entityOptions.map((ent) => (
+                  <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
+                ))}
+              </select>
+            </label>
+            <label className="form-control">
+              <span className="label-text">Search text</span>
+              <input className="input input-bordered" value={step.inputs?.q || ""} onChange={(e) => updateStepInput(index, "q", e.target.value)} />
+              <span className="label label-text-alt opacity-50">Optional text search. Leave blank if you only want to use filter rules.</span>
+            </label>
+            <label className="form-control">
+              <span className="label-text">Limit</span>
+              <input className="input input-bordered" type="number" min={1} max={200} value={step.inputs?.limit || 25} onChange={(e) => updateStepInput(index, "limit", Number(e.target.value || 25))} />
+              <span className="label label-text-alt opacity-50">Only the first matching records are returned to later steps.</span>
+            </label>
+            <label className="form-control">
+              <span className="label-text">Store output as</span>
+              <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="query_results" />
+            </label>
+            <div className="md:col-span-2 rounded-box border border-base-300 bg-base-100">
+              <details className="group">
+                <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+                  <div>
+                    <div className="font-medium text-sm">Advanced query options</div>
+                    <div className="text-xs opacity-60">Only use these if the basic entity, search text, and limit are not enough.</div>
+                  </div>
+                  <span className="text-xs opacity-60 group-open:hidden">Show</span>
+                  <span className="text-xs opacity-60 hidden group-open:inline">Hide</span>
+                </summary>
+                <div className={`${standardGridClass} px-4 pb-4`}>
+                  <label className="form-control">
+                    <span className="label-text">Search fields</span>
+                    <input className="input input-bordered" value={step.inputs?.search_fields || ""} onChange={(e) => updateStepInput(index, "search_fields", e.target.value)} placeholder="field.one, field.two" />
+                    <span className="label label-text-alt opacity-50">Optional comma-separated field IDs to limit text search.</span>
+                  </label>
+                  <div />
+                  <label className="form-control md:col-span-2">
+                    <span className="label-text">Filter condition JSON</span>
+                    <CodeTextarea
+                      value={typeof step.inputs?.filter_expr === "string" ? step.inputs.filter_expr : JSON.stringify(step.inputs?.filter_expr || {}, null, 2)}
+                      onChange={(e) => updateStepInput(index, "filter_expr", e.target.value)}
+                      minHeight="140px"
+                      placeholder={`{\n  "op": "eq",\n  "field": "status",\n  "value": "open"\n}`}
+                    />
+                    <span className="label label-text-alt opacity-50">Optional advanced filter expression for exact record matching.</span>
+                  </label>
+                </div>
+              </details>
+            </div>
+          </div>
+        )}
+
+        {isActionLike && step.action_id === "system.add_chatter" && (
+            <div className={standardGridClass}>
+            <label className="form-control">
+              <span className="label-text">Entity</span>
+              <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                <option value="">Use trigger entity</option>
+                {entityOptions.map((ent) => (
+                  <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
+                ))}
+              </select>
+            </label>
+            <label className="form-control">
+              <span className="label-text">Record</span>
+              <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} placeholder="{{trigger.record_id}}" />
+            </label>
+            <label className="form-control">
+              <span className="label-text">Entry type</span>
+              <select className="select select-bordered" value={step.inputs?.entry_type || "note"} onChange={(e) => updateStepInput(index, "entry_type", e.target.value)}>
+                <option value="note">Note</option>
+                <option value="comment">Comment</option>
+                <option value="system">System</option>
+              </select>
+            </label>
+            <label className="form-control">
+              <span className="label-text">Store output as</span>
+              <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="activity_note" />
+            </label>
+            <label className="form-control md:col-span-2">
+              <span className="label-text">Body</span>
+              <CodeTextarea value={step.inputs?.body || ""} onChange={(e) => updateStepInput(index, "body", e.target.value)} minHeight="140px" />
+            </label>
+          </div>
+        )}
+
+        {step.kind === "delay" && (
+          <div className={wideGridClass}>
+            <label className="form-control md:col-span-4">
+              <span className="label-text">Delay mode</span>
+              <select
+                className="select select-bordered"
+                value={step.target_time ? "until_time" : "relative"}
+                onChange={(e) => {
+                  if (e.target.value === "until_time") {
+                    updateStep(index, { seconds: undefined, target_time: step.target_time || "" });
+                  } else {
+                    updateStep(index, { target_time: undefined, seconds: step.seconds || 60 });
+                  }
+                }}
+              >
+                <option value="relative">Wait relative time</option>
+                <option value="until_time">Wait until datetime</option>
+              </select>
+            </label>
+            {!step.target_time ? (
+              <>
+                <label className="form-control md:col-span-4">
+                  <span className="label-text">Amount</span>
+                  <input
+                    className="input input-bordered"
+                    type="number"
+                    min={0}
+                    value={step.delay_value || step.seconds || 60}
+                    onChange={(e) => {
+                      const amount = Math.max(0, Number(e.target.value || 0));
+                      const unit = step.delay_unit || "seconds";
+                      updateStep(index, { delay_value: amount, delay_unit: unit, seconds: amount * delayUnitToSeconds(unit) });
+                    }}
+                  />
+                </label>
+                <label className="form-control md:col-span-4">
+                  <span className="label-text">Unit</span>
+                  <select
+                    className="select select-bordered"
+                    value={step.delay_unit || "seconds"}
+                    onChange={(e) => {
+                      const unit = e.target.value;
+                      const amount = Number(step.delay_value || step.seconds || 60);
+                      updateStep(index, { delay_unit: unit, delay_value: amount, seconds: amount * delayUnitToSeconds(unit) });
+                    }}
+                  >
+                    <option value="seconds">Seconds</option>
+                    <option value="minutes">Minutes</option>
+                    <option value="hours">Hours</option>
+                    <option value="days">Days</option>
+                  </select>
+                </label>
+              </>
+            ) : (
+              <label className="form-control md:col-span-8">
+                <span className="label-text">Resume at</span>
+                <input
+                  className="input input-bordered"
+                  type="datetime-local"
+                  value={step.target_time ? new Date(step.target_time).toISOString().slice(0, 16) : ""}
+                  onChange={(e) => {
+                    const value = e.target.value ? new Date(e.target.value).toISOString() : "";
+                    updateStep(index, { target_time: value, seconds: undefined });
+                  }}
+                />
+              </label>
+            )}
+          </div>
+        )}
+
+        {step.kind === "condition" && (() => {
+          const expr = step.expr || { op: "eq", left: { var: "trigger.record_id" }, right: { literal: "" } };
+          const selectedEntityId = step.inputs?.entity_id || defaultConditionEntityId || "";
+          const selectedEntity = selectedEntityId ? entityById.get(selectedEntityId) : null;
+          const selectedEntityFields = Array.isArray(selectedEntity?.fields) ? selectedEntity.fields : [];
+          const leftVar = expr?.left?.var || "";
+          const op = expr?.op || "eq";
+          const rightVal = expr?.right?.literal ?? "";
+          const fieldPathPrefix = "trigger.record.fields.";
+          const fieldPathOptions = selectedEntityFields.map((field) => ({
+            value: `${fieldPathPrefix}${field.id}`,
+            label: field.label || field.id,
+            type: field.type,
+            options: field.options || [],
+          }));
+          const commonOptions = [
+            { value: "trigger.event", label: "Trigger event", type: "string", options: [] },
+            { value: "trigger.entity_id", label: "Trigger entity", type: "string", options: [] },
+            { value: "trigger.record_id", label: "Trigger record", type: "string", options: [] },
+          ];
+          const availableFieldPaths = [...commonOptions, ...fieldPathOptions];
+          const selectedFieldDef = availableFieldPaths.find((item) => item.value === leftVar) || null;
+          const isExistsOp = op === "exists" || op === "not_exists";
+          const isInListOp = op === "in" || op === "not_in";
+          const isNumericOp = ["gt", "gte", "lt", "lte"].includes(op);
+          const enumOptions = Array.isArray(selectedFieldDef?.options) ? selectedFieldDef.options : [];
+          const hasEnumOptions = enumOptions.length > 0;
+          const fieldType = selectedFieldDef?.type || "string";
+          const stopOnFalse = Boolean(step.stop_on_false);
+
+          function updateConditionValue(raw) {
+            let nextValue = raw;
+            if (isInListOp) {
+              nextValue = String(raw || "")
+                .split(",")
+                .map((part) => part.trim())
+                .filter(Boolean);
+            } else if (fieldType === "number" || isNumericOp) {
+              nextValue = raw === "" ? "" : Number(raw);
+            } else if (fieldType === "boolean") {
+              nextValue = raw === "true";
+            }
+            updateStep(index, { expr: { ...expr, right: { literal: nextValue } } });
+          }
+
+          return (
+            <div className={wideGridClass}>
+              <label className="form-control md:col-span-4">
+                <span className="label-text">Entity context</span>
+                <select
+                  className="select select-bordered"
+                  value={selectedEntityId}
+                  onChange={(e) => {
+                    updateStepInput(index, "entity_id", e.target.value);
+                    updateStep(index, { expr: { ...expr, left: { var: "trigger.record_id" } } });
+                  }}
+                >
+                  <option value="">Use trigger entity</option>
+                  {entityOptions.map((ent) => (
+                    <option key={ent.id} value={ent.id}>
+                      {ent.label || ent.id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="form-control md:col-span-4">
+                <span className="label-text">Check</span>
+                <select
+                  className="select select-bordered"
+                  value={leftVar}
+                  onChange={(e) => updateStep(index, { expr: { ...expr, left: { var: e.target.value } } })}
+                >
+                  <option value="">Select field…</option>
+                  <optgroup label="Trigger">
+                    {commonOptions.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {fieldPathOptions.length > 0 && (
+                    <optgroup label="Record fields">
+                      {fieldPathOptions.map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </label>
+              <label className="form-control md:col-span-4">
+                <span className="label-text">Compare using</span>
+                <select
+                  className="select select-bordered"
+                  value={op}
+                  onChange={(e) => updateStep(index, { expr: { ...expr, op: e.target.value } })}
+                >
+                  <option value="eq">equals</option>
+                  <option value="neq">not equals</option>
+                  <option value="gt">greater than</option>
+                  <option value="gte">greater or equal</option>
+                  <option value="lt">less than</option>
+                  <option value="lte">less or equal</option>
+                  <option value="contains">contains</option>
+                  <option value="in">is in list</option>
+                  <option value="not_in">is not in list</option>
+                  <option value="exists">exists</option>
+                  <option value="not_exists">not exists</option>
+                </select>
+              </label>
+              <label className="form-control md:col-span-12">
+                <span className="label-text">Against</span>
+                {isExistsOp ? (
+                  <input className="input input-bordered" value="No value needed for this operator" disabled />
+                ) : hasEnumOptions && !isInListOp ? (
+                  <select
+                    className="select select-bordered"
+                    value={String(rightVal ?? "")}
+                    onChange={(e) => updateConditionValue(e.target.value)}
+                  >
+                    <option value="">Select value…</option>
+                    {enumOptions.map((opt) => {
+                      const value = typeof opt === "string" ? opt : opt?.value;
+                      const label = typeof opt === "string" ? opt : opt?.label || opt?.value;
+                      if (!value) return null;
+                      return (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      );
+                    })}
+                  </select>
+                ) : fieldType === "boolean" ? (
+                  <select
+                    className="select select-bordered"
+                    value={String(Boolean(rightVal))}
+                    onChange={(e) => updateConditionValue(e.target.value)}
+                  >
+                    <option value="true">True</option>
+                    <option value="false">False</option>
+                  </select>
+                ) : (
+                  <input
+                    className="input input-bordered"
+                    type={isNumericOp || fieldType === "number" ? "number" : "text"}
+                    value={Array.isArray(rightVal) ? rightVal.join(", ") : rightVal}
+                    onChange={(e) => updateConditionValue(e.target.value)}
+                    placeholder={isInListOp ? "value1, value2, value3" : ""}
+                  />
+                )}
+                <span className="label label-text-alt opacity-50">
+                  {isInListOp ? "Use comma-separated values." : "Condition runs against trigger data."}
+                </span>
+              </label>
+            </div>
+          );
+        })()}
+      </div>
+    );
+  }
+
   const builderTab = (
     <div className="space-y-4">
       {error && <div className="alert alert-error">{error}</div>}
@@ -377,7 +2230,39 @@ export default function AutomationEditorPage({ user }) {
         </label>
 
         <div className="form-control">
-          <span className="label-text">Trigger</span>
+          <span className="label-text">Trigger type</span>
+          <select className="select select-bordered" value={trigger?.kind || "event"} onChange={(e) => updateTriggerKind(e.target.value)}>
+            <option value="event">When an event happens</option>
+            <option value="schedule">Run on a schedule</option>
+          </select>
+        </div>
+
+        <label className="form-control md:col-span-2">
+          <span className="label-text">Description</span>
+          <textarea className="textarea textarea-bordered" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
+        </label>
+      </div>
+
+      {trigger?.kind === "schedule" ? (
+        <div className="rounded-box border border-base-300 bg-base-100 p-4 space-y-3">
+          <div>
+            <div className="font-medium text-sm">Schedule</div>
+            <div className="text-xs opacity-60 mt-1">Use a simple interval first. The shared scheduler will enqueue this automation in the background.</div>
+          </div>
+          <label className="form-control max-w-xs">
+            <span className="label-text">Run every N minutes</span>
+            <input
+              className="input input-bordered"
+              inputMode="numeric"
+              value={trigger?.every_minutes ?? ""}
+              onChange={(e) => setTrigger((prev) => ({ ...(prev || {}), kind: "schedule", every_minutes: e.target.value ? Number(e.target.value) : "" }))}
+              placeholder="60"
+            />
+          </label>
+        </div>
+      ) : (
+        <div className="form-control">
+          <span className="label-text">Trigger event</span>
           <select
             className="select select-bordered"
             value={(trigger?.event_types || [])[0] || ""}
@@ -399,14 +2284,168 @@ export default function AutomationEditorPage({ user }) {
             ))}
           </select>
         </div>
+      )}
 
-        <label className="form-control md:col-span-2">
-          <span className="label-text">Description</span>
-          <textarea className="textarea textarea-bordered" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
-        </label>
+      {trigger?.kind === "event" && (
+      <div className="space-y-3">
+        <div className="rounded-box border border-base-300 bg-base-100">
+          <details className="group">
+            <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+              <div>
+                <div className="font-medium text-sm">Advanced trigger rules</div>
+                <div className="text-xs opacity-60">Optional. Use this only if the automation should run only in specific cases.</div>
+              </div>
+              <span className="text-xs opacity-60 group-open:hidden">Show</span>
+              <span className="text-xs opacity-60 hidden group-open:inline">Hide</span>
+            </summary>
+            <div className="px-4 pb-4 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="label-text">Only run when</div>
+                  <div className="text-xs opacity-60 mt-1">Most automations can leave this empty and run whenever the trigger happens.</div>
+                </div>
+                <button type="button" className="btn btn-sm" onClick={addTriggerFilter}>Add rule</button>
+              </div>
+              {((trigger?.filters || [])).length === 0 ? (
+                <div className="text-xs opacity-60">No extra rules yet. This automation will run every time the selected trigger event happens.</div>
+              ) : (
+                <div className="space-y-3">
+                  {(trigger?.filters || []).map((filt, idx) => {
+                    const op = filt?.op || "eq";
+                    const noValue = ["exists", "not_exists", "changed"].includes(op);
+                    return (
+                      <div key={`trigger-filter-${idx}`} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                        <label className="form-control md:col-span-5">
+                          <span className="label-text">Field</span>
+                          <input
+                            className="input input-bordered"
+                            list="automation-trigger-fields"
+                            value={filt?.path || ""}
+                            onChange={(e) => updateTriggerFilter(idx, { path: e.target.value })}
+                            placeholder="status"
+                          />
+                        </label>
+                        <label className="form-control md:col-span-3">
+                          <span className="label-text">Operator</span>
+                          <select
+                            className="select select-bordered"
+                            value={op}
+                            onChange={(e) => updateTriggerFilter(idx, { op: e.target.value })}
+                          >
+                            <option value="eq">equals</option>
+                            <option value="neq">not equals</option>
+                            <option value="gt">greater than</option>
+                            <option value="gte">greater or equal</option>
+                            <option value="lt">less than</option>
+                            <option value="lte">less or equal</option>
+                            <option value="contains">contains</option>
+                            <option value="in">in list</option>
+                            <option value="not_in">not in list</option>
+                            <option value="exists">exists</option>
+                            <option value="not_exists">not exists</option>
+                            <option value="changed">changed</option>
+                            <option value="changed_from">changed from</option>
+                            <option value="changed_to">changed to</option>
+                          </select>
+                        </label>
+                        <label className="form-control md:col-span-3">
+                          <span className="label-text">Value</span>
+                          <input
+                            className="input input-bordered"
+                            disabled={noValue}
+                            value={Array.isArray(filt?.value) ? filt.value.join(", ") : (filt?.value ?? "")}
+                            placeholder={noValue ? "No value needed" : "active"}
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              const value = ["in", "not_in"].includes(op)
+                                ? raw.split(",").map((part) => part.trim()).filter(Boolean)
+                                : raw;
+                              updateTriggerFilter(idx, { value });
+                            }}
+                          />
+                        </label>
+                        <button type="button" className="btn btn-ghost btn-sm md:col-span-1" onClick={() => removeTriggerFilter(idx)}>
+                          Remove
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <details className="group">
+                <summary className="cursor-pointer list-none py-1 flex items-center justify-between">
+                  <div>
+                    <div className="font-medium text-sm">Advanced logic</div>
+                    <div className="text-xs opacity-60">Only use this if the simple rules above are not enough.</div>
+                  </div>
+                  <span className="text-xs opacity-60 group-open:hidden">Show</span>
+                  <span className="text-xs opacity-60 hidden group-open:inline">Hide</span>
+                </summary>
+                <div className="pt-3">
+                  <label className="form-control">
+                    <span className="label-text">Advanced trigger condition JSON</span>
+                    <CodeTextarea
+                      value={triggerExprText}
+                      onChange={(e) => setTriggerExprText(e.target.value)}
+                      minHeight="120px"
+                      placeholder={`{\n  "op": "and",\n  "children": []\n}`}
+                    />
+                    <span className="label label-text-alt opacity-50">Optional full condition DSL over `trigger.*` values. Leave empty unless you need advanced branching logic.</span>
+                  </label>
+                </div>
+              </details>
+            </div>
+          </details>
+        </div>
       </div>
+      )}
 
       <div className="space-y-4">
+        <div>
+          <div className="font-medium">Flow</div>
+          <div className="text-xs opacity-60">Click a step to edit it in a focused modal. Add new steps between or after existing steps where they belong. `Then / Else` branches only appear on Condition steps.</div>
+        </div>
+
+        <div className="space-y-3 min-w-0">
+          <div className="rounded-box border border-base-300 bg-base-100 p-4">
+            <div className="text-xs uppercase tracking-wide opacity-60">Trigger</div>
+            <div className="font-medium">{triggerSummaryText}</div>
+            <div className="text-xs opacity-60 mt-1">
+              {trigger?.kind === "schedule"
+                ? "Runs on the shared scheduler"
+                : (trigger?.filters || []).length > 0
+                ? `${trigger.filters.length} trigger rule${trigger.filters.length === 1 ? "" : "s"}`
+                : "Runs for every matching event"}
+            </div>
+          </div>
+
+          {steps.length === 0 ? (
+            <div className="rounded-box border border-dashed border-base-300 bg-base-100 p-6 text-sm opacity-60">
+              No steps yet. Add a step to start building the flow.
+            </div>
+          ) : (
+            renderStepCards(steps)
+          )}
+        </div>
+      </div>
+
+      {stepModalOpen && selectedStep && (
+        <div className="modal modal-open">
+          <div className={`modal-box ${isMobile ? "w-full max-w-none h-dvh rounded-none" : "max-w-5xl"}`}>
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h3 className="font-semibold text-lg">{stepSummaryText(selectedStep)}</h3>
+                <p className="text-sm opacity-70">{stepHelpText(selectedStep)}</p>
+              </div>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setStepModalOpen(false)}>Close</button>
+            </div>
+            {renderStepEditor(selectedStep, selectedStepPath, { showHeader: false, linear: true })}
+          </div>
+          <div className="modal-backdrop" onClick={() => setStepModalOpen(false)} />
+        </div>
+      )}
+
+      <div className="hidden">
         <div className="flex items-center justify-between">
           <span className="label-text">Steps</span>
           <button className="btn btn-sm" onClick={addStep}>Add step</button>
@@ -414,8 +2453,11 @@ export default function AutomationEditorPage({ user }) {
         {steps.map((step, index) => {
           const stepKey = step.id || String(index);
           const actionValue = step.module_id ? `${step.module_id}::${step.action_id}` : step.action_id || "";
+          const isActionLike = step.kind === "action" || step.kind === "foreach";
           const stepSummary = step.kind === "action"
             ? (step.action_id || "Select action")
+            : step.kind === "foreach"
+              ? `Repeat ${step.action_id || "action"}`
             : step.kind === "condition"
               ? "Condition"
               : "Delay";
@@ -477,12 +2519,13 @@ export default function AutomationEditorPage({ user }) {
                       onChange={(e) => updateStep(index, { kind: e.target.value })}
                     >
                       <option value="action">Action</option>
+                      <option value="foreach">Repeat action</option>
                       <option value="condition">Condition</option>
                       <option value="delay">Delay</option>
                     </select>
                   </label>
 
-                  {step.kind === "action" && (
+                  {isActionLike && (
                     <label className="form-control md:col-span-8">
                       <span className="label-text">Action</span>
                       <select
@@ -522,7 +2565,41 @@ export default function AutomationEditorPage({ user }) {
                   )}
                 </div>
 
-                {step.kind === "action" && step.action_id === "system.notify" && (
+                {step.kind === "foreach" && (
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                    <label className="form-control md:col-span-6">
+                      <span className="label-text">Repeat over</span>
+                      <input
+                        className="input input-bordered"
+                        list="automation-loop-hints"
+                        value={typeof step.over === "string" ? step.over : ""}
+                        onChange={(e) => updateStep(index, { over: e.target.value })}
+                        placeholder="{{steps.query_records.records}}"
+                      />
+                      <span className="label label-text-alt opacity-50">Use a trigger list, query results, or stored variable.</span>
+                    </label>
+                    <label className="form-control md:col-span-3">
+                      <span className="label-text">Item name</span>
+                      <input
+                        className="input input-bordered"
+                        value={step.item_name || "item"}
+                        onChange={(e) => updateStep(index, { item_name: e.target.value })}
+                        placeholder="item"
+                      />
+                    </label>
+                    <label className="form-control md:col-span-3">
+                      <span className="label-text">Store output as</span>
+                      <input
+                        className="input input-bordered"
+                        value={step.store_as || ""}
+                        onChange={(e) => updateStep(index, { store_as: e.target.value })}
+                        placeholder="loop_results"
+                      />
+                    </label>
+                  </div>
+                )}
+
+                {isActionLike && step.action_id === "system.notify" && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {(() => {
                           const selectedIds = Array.isArray(step.inputs?.recipient_user_ids)
@@ -624,7 +2701,7 @@ export default function AutomationEditorPage({ user }) {
                   </div>
                 )}
 
-                {step.kind === "action" && step.action_id === "system.send_email" && (
+                {isActionLike && step.action_id === "system.send_email" && (
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                         {(() => {
                           const selectedEntityId = step.inputs?.entity_id || triggerEventMeta?.entity_id || "";
@@ -933,7 +3010,7 @@ export default function AutomationEditorPage({ user }) {
                       </div>
                     )}
 
-                    {step.kind === "action" && step.action_id === "system.generate_document" && (
+                    {isActionLike && step.action_id === "system.generate_document" && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <label className="form-control">
                           <span className="label-text">Template</span>
@@ -978,7 +3055,7 @@ export default function AutomationEditorPage({ user }) {
                   </div>
                 )}
 
-                    {step.kind === "action" && step.action_id && !step.action_id.startsWith("system.") && (
+                    {isActionLike && step.action_id && !step.action_id.startsWith("system.") && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <label className="form-control">
                           <span className="label-text">Entity</span>
@@ -1005,6 +3082,130 @@ export default function AutomationEditorPage({ user }) {
                           <input className="input input-bordered" value={(step.inputs?.selected_ids || []).join(", ")} onChange={(e) => updateStepInput(index, "selected_ids", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
                           <span className="label label-text-alt opacity-50">Comma-separated record IDs.</span>
                         </label>
+                  </div>
+                )}
+
+                {isActionLike && step.action_id === "system.create_record" && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label className="form-control">
+                      <span className="label-text">Entity</span>
+                      <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                        <option value="">Select entity…</option>
+                        {entityOptions.map((ent) => (
+                          <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Store output as</span>
+                      <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="new_record" />
+                    </label>
+                    <label className="form-control md:col-span-2">
+                      <span className="label-text">Values JSON</span>
+                      <CodeTextarea
+                        value={typeof step.inputs?.values === "string" ? step.inputs.values : JSON.stringify(step.inputs?.values || {}, null, 2)}
+                        onChange={(e) => updateStepInput(index, "values", e.target.value)}
+                        minHeight="180px"
+                      />
+                    </label>
+                  </div>
+                )}
+
+                {isActionLike && step.action_id === "system.update_record" && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label className="form-control">
+                      <span className="label-text">Entity</span>
+                      <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                        <option value="">Use trigger entity</option>
+                        {entityOptions.map((ent) => (
+                          <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Record</span>
+                      <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} placeholder="{{trigger.record_id}}" />
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Store output as</span>
+                      <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="updated_record" />
+                    </label>
+                    <label className="form-control md:col-span-2">
+                      <span className="label-text">Patch JSON</span>
+                      <CodeTextarea
+                        value={typeof step.inputs?.patch === "string" ? step.inputs.patch : JSON.stringify(step.inputs?.patch || {}, null, 2)}
+                        onChange={(e) => updateStepInput(index, "patch", e.target.value)}
+                        minHeight="180px"
+                      />
+                    </label>
+                  </div>
+                )}
+
+                {isActionLike && step.action_id === "system.query_records" && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label className="form-control">
+                      <span className="label-text">Entity</span>
+                      <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                        <option value="">Use trigger entity</option>
+                        {entityOptions.map((ent) => (
+                          <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Search text</span>
+                      <input className="input input-bordered" value={step.inputs?.q || ""} onChange={(e) => updateStepInput(index, "q", e.target.value)} />
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Search fields</span>
+                      <input className="input input-bordered" value={step.inputs?.search_fields || ""} onChange={(e) => updateStepInput(index, "search_fields", e.target.value)} placeholder="field.one, field.two" />
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Limit</span>
+                      <input className="input input-bordered" type="number" min={1} max={200} value={step.inputs?.limit || 25} onChange={(e) => updateStepInput(index, "limit", Number(e.target.value || 25))} />
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Store output as</span>
+                      <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="query_results" />
+                    </label>
+                    <label className="form-control md:col-span-2">
+                      <span className="label-text">Filter condition JSON</span>
+                      <CodeTextarea
+                        value={typeof step.inputs?.filter_expr === "string" ? step.inputs.filter_expr : JSON.stringify(step.inputs?.filter_expr || {}, null, 2)}
+                        onChange={(e) => updateStepInput(index, "filter_expr", e.target.value)}
+                        minHeight="140px"
+                      />
+                    </label>
+                  </div>
+                )}
+
+                {isActionLike && step.action_id === "system.add_chatter" && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label className="form-control">
+                      <span className="label-text">Entity</span>
+                      <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                        <option value="">Use trigger entity</option>
+                        {entityOptions.map((ent) => (
+                          <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Record</span>
+                      <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} placeholder="{{trigger.record_id}}" />
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Entry type</span>
+                      <input className="input input-bordered" value={step.inputs?.entry_type || "note"} onChange={(e) => updateStepInput(index, "entry_type", e.target.value)} />
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Store output as</span>
+                      <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="activity_note" />
+                    </label>
+                    <label className="form-control md:col-span-2">
+                      <span className="label-text">Body</span>
+                      <CodeTextarea value={step.inputs?.body || ""} onChange={(e) => updateStepInput(index, "body", e.target.value)} minHeight="140px" />
+                    </label>
                   </div>
                 )}
 
@@ -1271,6 +3472,18 @@ export default function AutomationEditorPage({ user }) {
       </datalist>
       <datalist id="automation-record-hints">
         <option value="{{trigger.record_id}}">Use trigger.record_id</option>
+      </datalist>
+      <datalist id="automation-loop-hints">
+        <option value="{{trigger.record_ids}}">Use trigger record IDs</option>
+        <option value="{{steps.query_records.records}}">Use records from a query step</option>
+        <option value="{{vars.query_results.records}}">Use records from a stored variable</option>
+      </datalist>
+      <datalist id="automation-trigger-fields">
+        {triggerFieldOptions.map((field) => (
+          <option key={field.value} value={field.value}>
+            {field.label}
+          </option>
+        ))}
       </datalist>
       <datalist id="automation-connections">
         {connectionOptions.map((conn) => (

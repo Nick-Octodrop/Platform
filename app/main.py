@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import re
 import sys
-import hashlib
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -16,6 +15,8 @@ from typing import Any, Callable, Dict
 from fastapi import FastAPI, Request, UploadFile, File, Form
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html, get_swagger_ui_oauth2_redirect_html
+from fastapi.openapi.utils import get_openapi
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, Response
 
@@ -54,7 +55,7 @@ import uuid
 import socket
 import difflib
 from contextlib import contextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlparse
 from dataclasses import dataclass, field
 
@@ -73,6 +74,7 @@ from app.agent_stream import (
     top_errors,
 )
 
+from app.api_credentials import generate_api_key
 from app.auth import SupabaseAuthMiddleware
 from app.db import get_db_ms, reset_db_ms, get_db_stats, get_db_query_log
 from app.manifest_validate import validate_manifest, validate_manifest_raw
@@ -135,7 +137,17 @@ from app.stores_db import (
     DbAttachmentStore,
     DbDocTemplateStore,
     DbConnectionStore,
+    DbConnectionSecretStore,
+    DbIntegrationProviderStore,
+    DbIntegrationMappingStore,
+    DbIntegrationRequestLogStore,
+    DbIntegrationWebhookStore,
+    DbApiCredentialStore,
+    DbApiRequestLogStore,
+    DbExternalWebhookSubscriptionStore,
     DbSecretStore,
+    DbSyncCheckpointStore,
+    DbWebhookEventStore,
     DbAutomationStore,
     _now,
     set_org_id,
@@ -144,8 +156,19 @@ from app.stores_db import (
     _insert_module_version,
 )
 from app.email import render_template, get_provider
+from app.integrations_runtime import (
+    build_connection_authorize_url,
+    exchange_connection_oauth_code,
+    IntegrationProviderError,
+    execute_connection_request as execute_integration_connection_request,
+    execute_connection_sync as execute_integration_connection_sync,
+    refresh_connection_oauth_tokens,
+    test_connection as test_integration_connection,
+)
+from app.webhook_signing import verify_webhook_signature as verify_signed_webhook_payload
+from app.integration_mapping_runtime import preview_integration_mapping
 from app.template_render import collect_undeclared_vars, validate_templates
-from app.secrets import create_secret, encrypt_secret, resolve_secret, SecretStoreError
+from app.secrets import create_secret, encrypt_secret, resolve_secret, rotate_secret, SecretStoreError
 from app.attachments import store_bytes, resolve_path, read_bytes, public_url, branding_bucket, using_supabase_storage, delete_storage
 from app.doc_render import render_html, render_pdf, normalize_margins
 from app.automations import match_event
@@ -179,6 +202,20 @@ app = FastAPI(title="OCTO MVP")
 _action_logger = logging.getLogger("octo.actions")
 logger = logging.getLogger("octo")
 logging.basicConfig(level=logging.INFO)
+_PUBLIC_EXT_DOC_PATHS = {
+    "/health",
+    "/ext/v1/openapi.json",
+    "/ext/v1/docs",
+    "/ext/v1/docs/oauth2-redirect",
+    "/ext/v1/redoc",
+    "/ext/v1/guide.md",
+}
+
+
+def _is_public_path(path: str | None) -> bool:
+    return isinstance(path, str) and path in _PUBLIC_EXT_DOC_PATHS
+
+
 _LOCAL_CORS_ORIGINS = {
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -263,6 +300,8 @@ DISABLE_AUTH = os.getenv("OCTO_DISABLE_AUTH", "").strip().lower() in ("1", "true
 logger.info("auth_disabled=%s supabase_url=%s supabase_aud=%s", DISABLE_AUTH, SUPABASE_URL, SUPABASE_AUD)
 ALLOWED_ACTION_KINDS = {"navigate", "open_form", "refresh", "create_record", "update_record", "bulk_update", "transform_record"}
 LEGACY_ENTITY_PREFIX = "entity."
+EXT_API_RATE_LIMIT_WINDOW_SECONDS = max(1, int(os.getenv("OCTO_EXT_API_RATE_LIMIT_WINDOW_SECONDS", "60") or "60"))
+EXT_API_RATE_LIMIT_MAX_REQUESTS = max(1, int(os.getenv("OCTO_EXT_API_RATE_LIMIT_MAX_REQUESTS", "300") or "300"))
 
 
 def _legacy_entity_id(entity_id: str) -> str | None:
@@ -477,7 +516,17 @@ if USE_DB:
     attachment_store = DbAttachmentStore()
     doc_template_store = DbDocTemplateStore()
     connection_store = DbConnectionStore()
+    connection_secret_store = DbConnectionSecretStore()
+    integration_provider_store = DbIntegrationProviderStore()
+    integration_mapping_store = DbIntegrationMappingStore()
+    integration_request_log_store = DbIntegrationRequestLogStore()
+    integration_webhook_store = DbIntegrationWebhookStore()
+    api_credential_store = DbApiCredentialStore()
+    api_request_log_store = DbApiRequestLogStore()
+    external_webhook_subscription_store = DbExternalWebhookSubscriptionStore()
     secret_store = DbSecretStore()
+    webhook_event_store = DbWebhookEventStore()
+    sync_checkpoint_store = DbSyncCheckpointStore()
     automation_store = DbAutomationStore()
 else:
     store = ManifestStore()
@@ -493,7 +542,17 @@ else:
     attachment_store = MemoryAttachmentStore()
     doc_template_store = MemoryDocTemplateStore()
     connection_store = MemoryConnectionStore()
+    connection_secret_store = None
+    integration_provider_store = None
+    integration_mapping_store = None
+    integration_request_log_store = None
+    integration_webhook_store = None
+    api_credential_store = None
+    api_request_log_store = None
+    external_webhook_subscription_store = None
     secret_store = None
+    webhook_event_store = None
+    sync_checkpoint_store = None
     automation_store = MemoryAutomationStore()
 
 actions = InMemoryActionCaller()
@@ -599,9 +658,6 @@ def _emit_triggers(
 ) -> None:
     if not isinstance(manifest, dict):
         return
-    triggers = _matching_triggers(manifest, event, entity_id, action_id, status_field)
-    if not triggers:
-        return
     module = _get_module(request, module_id)
     manifest_hash = module.get("current_hash") if isinstance(module, dict) else None
     if not isinstance(manifest_hash, str):
@@ -626,6 +682,16 @@ def _emit_triggers(
         if event in {"record.created", "record.updated"}:
             return f"{module_slug}.{event}"
         return f"{module_slug}.{event}"
+
+    namespaced_event = _derive_namespaced_event()
+    base_event_payload = {**payload, "event": event}
+    _emit_external_webhook_subscriptions(event, base_event_payload, meta)
+    if namespaced_event and namespaced_event != event:
+        _emit_external_webhook_subscriptions(namespaced_event, {**payload, "event": namespaced_event}, meta)
+
+    triggers = _matching_triggers(manifest, event, entity_id, action_id, status_field)
+    if not triggers:
+        return
 
     for trig in triggers:
         name = trig.get("id") or event
@@ -664,7 +730,65 @@ def _handle_automation_event(event: dict) -> None:
         logger.warning("automation_event_failed error=%s", exc)
 
 
+def _event_matches_pattern(event_name: str, pattern: str) -> bool:
+    candidate = str(event_name or "").strip()
+    matcher = str(pattern or "").strip()
+    if not candidate or not matcher:
+        return False
+    if matcher == "*":
+        return True
+    if matcher.endswith("*"):
+        return candidate.startswith(matcher[:-1])
+    return candidate == matcher
+
+
+def _emit_external_webhook_subscriptions(event_name: str, payload: dict, meta: dict | None = None) -> None:
+    if not external_webhook_subscription_store or not job_store:
+        return
+    try:
+        subscriptions = external_webhook_subscription_store.list(status="active", limit=1000)
+    except Exception as exc:
+        logger.warning("external_webhooks_list_failed event=%s error=%s", event_name, exc)
+        return
+    for subscription in subscriptions:
+        pattern = subscription.get("event_pattern")
+        if not isinstance(pattern, str) or not _event_matches_pattern(event_name, pattern):
+            continue
+        try:
+            job_store.enqueue(
+                {
+                    "type": "external.webhook.deliver",
+                    "payload": {
+                        "subscription_id": subscription.get("id"),
+                        "event": event_name,
+                        "payload": payload or {},
+                        "meta": meta or {},
+                    },
+                    "idempotency_key": f"external_webhook:{subscription.get('id')}:{event_name}:{uuid.uuid4()}",
+                }
+            )
+        except Exception as exc:
+            logger.warning("external_webhook_enqueue_failed subscription_id=%s event=%s error=%s", subscription.get("id"), event_name, exc)
+
+
 def _resolve_actor(request: Request) -> dict | JSONResponse:
+    api_credential = getattr(request.state, "api_credential", None)
+    if isinstance(api_credential, dict) and api_credential.get("org_id"):
+        workspace_id = str(api_credential.get("org_id"))
+        return {
+            "user_id": None,
+            "email": None,
+            "role": "api",
+            "workspace_role": "api",
+            "platform_role": "standard",
+            "workspace_id": workspace_id,
+            "workspaces": [{"workspace_id": workspace_id, "role": "api", "workspace_name": workspace_id}],
+            "claims": {},
+            "actor_type": "api_credential",
+            "api_credential_id": api_credential.get("id"),
+            "api_credential_name": api_credential.get("name"),
+            "api_scopes": api_credential.get("scopes") or [],
+        }
     user = getattr(request.state, "user", None)
     if os.getenv("OCTO_DISABLE_AUTH", "").strip().lower() in ("1", "true", "yes"):
         if not user or not user.get("id"):
@@ -781,6 +905,15 @@ _CAPABILITIES_BY_ROLE = {
     "portal": {"records.read", "records.write"},
 }
 
+_API_CREDENTIAL_SCOPES = {
+    "*",
+    "meta.read",
+    "records.read",
+    "records.write",
+    "automations.read",
+    "automations.write",
+}
+
 
 def _workspace_ids_for_actor(actor: dict | None) -> list[str]:
     seen: set[str] = set()
@@ -822,6 +955,11 @@ def _get_attachment_for_actor(actor: dict | None, attachment_id: str) -> tuple[d
 def _has_capability(actor: dict | None, capability: str) -> bool:
     if not isinstance(actor, dict):
         return False
+    scopes = actor.get("api_scopes")
+    if isinstance(scopes, list):
+        normalized = {str(item).strip() for item in scopes if isinstance(item, str) and str(item).strip()}
+        if "*" in normalized or capability in normalized:
+            return True
     if actor.get("platform_role") == "superadmin":
         return True
     role = actor.get("workspace_role") or actor.get("role") or "member"
@@ -874,6 +1012,57 @@ def _require_superadmin(actor: dict | None, message: str = "Superadmin role requ
     if not isinstance(actor, dict) or actor.get("platform_role") != "superadmin":
         return _error_response("FORBIDDEN", message, status=403)
     return None
+
+
+def _normalize_api_scopes(raw_scopes: Any) -> tuple[list[str], list[str]]:
+    if raw_scopes is None:
+        return [], []
+    if not isinstance(raw_scopes, list):
+        return [], ["scopes must be a list of scope strings"]
+    scopes: list[str] = []
+    invalid: list[str] = []
+    seen: set[str] = set()
+    for item in raw_scopes:
+        if not isinstance(item, str):
+            invalid.append(str(item))
+            continue
+        scope = item.strip()
+        if not scope or scope in seen:
+            continue
+        seen.add(scope)
+        if scope not in _API_CREDENTIAL_SCOPES:
+            invalid.append(scope)
+            continue
+        scopes.append(scope)
+    return scopes, invalid
+
+
+def _resolve_api_credential_expiry(body: dict) -> tuple[str | None, JSONResponse | None]:
+    expires_at = body.get("expires_at")
+    expires_in_days = body.get("expires_in_days")
+    if expires_at not in (None, ""):
+        if not isinstance(expires_at, str):
+            return None, _error_response("EXPIRES_AT_INVALID", "expires_at must be an ISO datetime string", "expires_at", status=400)
+        try:
+            parsed = datetime.fromisoformat(expires_at.strip().replace("Z", "+00:00")).astimezone(timezone.utc)
+        except Exception as exc:
+            return None, _error_response(
+                "EXPIRES_AT_INVALID",
+                "expires_at must be a valid ISO datetime string",
+                "expires_at",
+                detail={"error": str(exc)},
+                status=400,
+            )
+        return parsed.strftime("%Y-%m-%dT%H:%M:%SZ"), None
+    if expires_in_days not in (None, ""):
+        try:
+            days = int(expires_in_days)
+        except Exception:
+            return None, _error_response("EXPIRES_IN_DAYS_INVALID", "expires_in_days must be an integer", "expires_in_days", status=400)
+        if days <= 0:
+            return None, _error_response("EXPIRES_IN_DAYS_INVALID", "expires_in_days must be greater than zero", "expires_in_days", status=400)
+        return (datetime.now(timezone.utc) + timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ"), None
+    return None, None
 
 
 _WORKSPACE_ROLES = {"admin", "member", "readonly", "portal"}
@@ -1016,7 +1205,7 @@ def _find_auth_user_id_by_email(email: str) -> str | None:
 
 class ActorContextMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if request.method == "OPTIONS" or request.url.path in {"/health"}:
+        if request.method == "OPTIONS" or _is_public_path(request.url.path):
             return await call_next(request)
         actor = _resolve_actor(request)
         if isinstance(actor, JSONResponse):
@@ -1027,9 +1216,77 @@ class ActorContextMiddleware(BaseHTTPMiddleware):
                 return _attach_cors_headers(request, denied)
         request.state.actor = actor
         token = set_org_id(actor.get("workspace_id") or "default")
+        started_at = time.perf_counter()
+        response = None
+        api_request_logged = False
         try:
-            return await call_next(request)
+            if (
+                request.url.path.startswith("/ext/")
+                and isinstance(actor, dict)
+                and actor.get("actor_type") == "api_credential"
+                and api_request_log_store
+                and actor.get("api_credential_id")
+            ):
+                recent = api_request_log_store.count_recent(
+                    str(actor.get("api_credential_id")),
+                    window_seconds=EXT_API_RATE_LIMIT_WINDOW_SECONDS,
+                )
+                if recent >= EXT_API_RATE_LIMIT_MAX_REQUESTS:
+                    response = _error_response(
+                        "RATE_LIMITED",
+                        "External API rate limit exceeded",
+                        detail={
+                            "window_seconds": EXT_API_RATE_LIMIT_WINDOW_SECONDS,
+                            "max_requests": EXT_API_RATE_LIMIT_MAX_REQUESTS,
+                        },
+                        status=429,
+                    )
+                    try:
+                        api_request_log_store.create(
+                            {
+                                "api_credential_id": actor.get("api_credential_id"),
+                                "method": request.method,
+                                "path": request.url.path,
+                                "status_code": 429,
+                                "duration_ms": int((time.perf_counter() - started_at) * 1000),
+                                "ip_address": request.client.host if request.client else None,
+                                "user_agent": request.headers.get("user-agent"),
+                            }
+                        )
+                        api_request_logged = True
+                    except Exception:
+                        pass
+                    return _attach_cors_headers(request, response)
+            response = await call_next(request)
+            return response
         finally:
+            if (
+                request.url.path.startswith("/ext/")
+                and isinstance(actor, dict)
+                and actor.get("actor_type") == "api_credential"
+                and api_request_log_store
+                and actor.get("api_credential_id")
+                and not api_request_logged
+            ):
+                try:
+                    status_code = None
+                    try:
+                        status_code = response.status_code  # type: ignore[name-defined]
+                    except Exception:
+                        status_code = 500
+                    api_request_log_store.create(
+                        {
+                            "api_credential_id": actor.get("api_credential_id"),
+                            "method": request.method,
+                            "path": request.url.path,
+                            "status_code": int(status_code or 500),
+                            "duration_ms": int((time.perf_counter() - started_at) * 1000),
+                            "ip_address": request.client.host if request.client else None,
+                            "user_agent": request.headers.get("user-agent"),
+                        }
+                    )
+                except Exception:
+                    pass
             reset_org_id(token)
 
 
@@ -15292,12 +15549,23 @@ async def automations_meta(request: Request) -> dict:
         "record.updated",
         "workflow.status_changed",
         "action.clicked",
+        "schedule.tick",
+        "integration.webhook.received",
+        "integration.sync.completed",
+        "integration.sync.item",
+        "integration.sync.failed",
     ]
     event_catalog: list[dict] = []
     system_actions = [
         {"id": "system.notify", "label": "Send notification"},
         {"id": "system.send_email", "label": "Send email"},
         {"id": "system.generate_document", "label": "Generate document"},
+        {"id": "system.create_record", "label": "Create record"},
+        {"id": "system.update_record", "label": "Update record"},
+        {"id": "system.query_records", "label": "Query records"},
+        {"id": "system.add_chatter", "label": "Add activity note"},
+        {"id": "system.integration_request", "label": "Call integration"},
+        {"id": "system.integration_sync", "label": "Run integration sync"},
         {"id": "system.noop", "label": "No-op (test)"},
     ]
     entities: list[dict] = []
@@ -30697,6 +30965,36 @@ def _field_list(entity_def: dict | None) -> list[dict]:
     return []
 
 
+def _external_field_meta(field: dict) -> dict:
+    options = field.get("options") or field.get("values") or []
+    normalized_options: list[dict] = []
+    if isinstance(options, list):
+        for option in options:
+            if isinstance(option, dict):
+                normalized_options.append({"value": option.get("value"), "label": option.get("label")})
+            else:
+                normalized_options.append({"value": option, "label": option})
+    return {
+        "id": field.get("id"),
+        "label": field.get("label"),
+        "type": field.get("type"),
+        "required": bool(field.get("required")),
+        "readonly": bool(field.get("readonly")),
+        "entity": field.get("entity"),
+        "display_field": field.get("display_field"),
+        "options": normalized_options or None,
+    }
+
+
+def _external_entity_meta(entity_def: dict) -> dict:
+    fields = [_external_field_meta(field) for field in _field_list(entity_def)]
+    return {
+        "id": entity_def.get("id"),
+        "display_field": entity_def.get("display_field"),
+        "fields": fields,
+    }
+
+
 def _enum_label_for_value(field: dict, value: object) -> str | None:
     if value in (None, ""):
         return None
@@ -31978,6 +32276,241 @@ async def cancel_job(request: Request, job_id: str) -> dict:
 # ---- Secrets + Connections (admin) ----
 
 
+@app.get("/settings/api-credentials")
+async def list_settings_api_credentials(request: Request, limit: int = 200) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "workspace.manage_settings", "Settings permission required")
+    if denied:
+        return denied
+    if not api_credential_store or not hasattr(api_credential_store, "list"):
+        return _ok_response({"api_credentials": []})
+    items = api_credential_store.list(limit=min(limit, 1000))
+    return _ok_response({"api_credentials": items})
+
+
+@app.post("/settings/api-credentials")
+async def create_settings_api_credential(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "workspace.manage_settings", "Settings permission required")
+    if denied:
+        return denied
+    if not api_credential_store or not hasattr(api_credential_store, "create"):
+        return _error_response("NOT_SUPPORTED", "API credentials require DB-backed settings", status=400)
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    name = body.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return _error_response("NAME_REQUIRED", "name is required", "name", status=400)
+    scopes, invalid_scopes = _normalize_api_scopes(body.get("scopes"))
+    if invalid_scopes:
+        return _error_response(
+            "SCOPES_INVALID",
+            "One or more API credential scopes are invalid",
+            "scopes",
+            detail={"invalid": invalid_scopes, "allowed": sorted(_API_CREDENTIAL_SCOPES)},
+            status=400,
+        )
+    expires_at, expiry_err = _resolve_api_credential_expiry(body)
+    if expiry_err:
+        return expiry_err
+    raw_token, key_prefix, key_hash = generate_api_key()
+    item = api_credential_store.create(
+        name=name.strip(),
+        key_prefix=key_prefix,
+        key_hash=key_hash,
+        scopes=scopes,
+        created_by=(actor or {}).get("user_id"),
+        expires_at=expires_at,
+    )
+    return _ok_response({"api_credential": item, "token": raw_token}, status=201)
+
+
+@app.post("/settings/api-credentials/{credential_id}/revoke")
+async def revoke_settings_api_credential(request: Request, credential_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "workspace.manage_settings", "Settings permission required")
+    if denied:
+        return denied
+    if not api_credential_store or not hasattr(api_credential_store, "revoke"):
+        return _error_response("NOT_SUPPORTED", "API credentials require DB-backed settings", status=400)
+    item = api_credential_store.revoke(credential_id)
+    if not item:
+        return _error_response("API_CREDENTIAL_NOT_FOUND", "API credential not found", "credential_id", status=404)
+    return _ok_response({"api_credential": item})
+
+
+@app.post("/settings/api-credentials/{credential_id}/rotate")
+async def rotate_settings_api_credential(request: Request, credential_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "workspace.manage_settings", "Settings permission required")
+    if denied:
+        return denied
+    if not api_credential_store or not hasattr(api_credential_store, "rotate"):
+        return _error_response("NOT_SUPPORTED", "API credentials require DB-backed settings", status=400)
+    existing = api_credential_store.get(credential_id)
+    if not existing:
+        return _error_response("API_CREDENTIAL_NOT_FOUND", "API credential not found", "credential_id", status=404)
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        body = {}
+    expires_at, expiry_err = _resolve_api_credential_expiry(body)
+    if expiry_err:
+        return expiry_err
+    raw_token, key_prefix, key_hash = generate_api_key()
+    item = api_credential_store.rotate(
+        credential_id,
+        key_prefix=key_prefix,
+        key_hash=key_hash,
+        expires_at=expires_at,
+    )
+    if not item:
+        return _error_response("API_CREDENTIAL_NOT_FOUND", "API credential not found", "credential_id", status=404)
+    return _ok_response({"api_credential": item, "token": raw_token})
+
+
+@app.get("/settings/api-request-logs")
+async def list_settings_api_request_logs(request: Request, credential_id: str | None = None, limit: int = 200) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "workspace.manage_settings", "Settings permission required")
+    if denied:
+        return denied
+    if not api_request_log_store or not hasattr(api_request_log_store, "list"):
+        return _ok_response({"logs": []})
+    items = api_request_log_store.list(credential_id=credential_id, limit=min(limit, 1000))
+    return _ok_response({"logs": items})
+
+
+@app.get("/settings/webhook-subscriptions")
+async def list_settings_webhook_subscriptions(request: Request, status: str | None = None, limit: int = 500) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "workspace.manage_settings", "Settings permission required")
+    if denied:
+        return denied
+    if not external_webhook_subscription_store:
+        return _ok_response({"subscriptions": []})
+    items = external_webhook_subscription_store.list(status=status, limit=min(limit, 1000))
+    return _ok_response({"subscriptions": items})
+
+
+@app.post("/settings/webhook-subscriptions")
+async def create_settings_webhook_subscription(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "workspace.manage_settings", "Settings permission required")
+    if denied:
+        return denied
+    if not external_webhook_subscription_store:
+        return _error_response("NOT_SUPPORTED", "Webhook subscriptions require DB-backed settings", status=400)
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    name = body.get("name")
+    target_url = body.get("target_url")
+    event_pattern = body.get("event_pattern")
+    status = body.get("status") or "active"
+    if not isinstance(name, str) or not name.strip():
+        return _error_response("NAME_REQUIRED", "name is required", "name", status=400)
+    if not isinstance(target_url, str) or not target_url.strip():
+        return _error_response("TARGET_URL_REQUIRED", "target_url is required", "target_url", status=400)
+    if not isinstance(event_pattern, str) or not event_pattern.strip():
+        return _error_response("EVENT_PATTERN_REQUIRED", "event_pattern is required", "event_pattern", status=400)
+    if status not in {"active", "disabled"}:
+        return _error_response("STATUS_INVALID", "status must be active or disabled", "status", status=400)
+    signing_secret_id, signing_secret_err = _validated_secret_ref(body.get("signing_secret_id"))
+    if signing_secret_err:
+        return signing_secret_err
+    headers_json = body.get("headers_json")
+    if headers_json is not None and not isinstance(headers_json, dict):
+        return _error_response("HEADERS_INVALID", "headers_json must be an object", "headers_json", status=400)
+    item = external_webhook_subscription_store.create(
+        {
+            "name": name.strip(),
+            "target_url": target_url.strip(),
+            "event_pattern": event_pattern.strip(),
+            "signing_secret_id": signing_secret_id,
+            "status": status,
+            "headers_json": headers_json or {},
+        }
+    )
+    return _ok_response({"subscription": item}, status=201)
+
+
+@app.patch("/settings/webhook-subscriptions/{subscription_id}")
+async def update_settings_webhook_subscription(request: Request, subscription_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "workspace.manage_settings", "Settings permission required")
+    if denied:
+        return denied
+    if not external_webhook_subscription_store:
+        return _error_response("NOT_SUPPORTED", "Webhook subscriptions require DB-backed settings", status=400)
+    existing = external_webhook_subscription_store.get(subscription_id)
+    if not existing:
+        return _error_response("SUBSCRIPTION_NOT_FOUND", "Webhook subscription not found", "subscription_id", status=404)
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    updates: dict[str, Any] = {}
+    if "name" in body:
+        if not isinstance(body.get("name"), str) or not body.get("name").strip():
+            return _error_response("NAME_REQUIRED", "name is required", "name", status=400)
+        updates["name"] = body.get("name").strip()
+    if "target_url" in body:
+        if not isinstance(body.get("target_url"), str) or not body.get("target_url").strip():
+            return _error_response("TARGET_URL_REQUIRED", "target_url is required", "target_url", status=400)
+        updates["target_url"] = body.get("target_url").strip()
+    if "event_pattern" in body:
+        if not isinstance(body.get("event_pattern"), str) or not body.get("event_pattern").strip():
+            return _error_response("EVENT_PATTERN_REQUIRED", "event_pattern is required", "event_pattern", status=400)
+        updates["event_pattern"] = body.get("event_pattern").strip()
+    if "status" in body:
+        if body.get("status") not in {"active", "disabled"}:
+            return _error_response("STATUS_INVALID", "status must be active or disabled", "status", status=400)
+        updates["status"] = body.get("status")
+    if "signing_secret_id" in body:
+        signing_secret_id, signing_secret_err = _validated_secret_ref(body.get("signing_secret_id"))
+        if signing_secret_err:
+            return signing_secret_err
+        updates["signing_secret_id"] = signing_secret_id
+    if "headers_json" in body:
+        if body.get("headers_json") is not None and not isinstance(body.get("headers_json"), dict):
+            return _error_response("HEADERS_INVALID", "headers_json must be an object", "headers_json", status=400)
+        updates["headers_json"] = body.get("headers_json") or {}
+    item = external_webhook_subscription_store.update(subscription_id, updates)
+    return _ok_response({"subscription": item})
+
+
+@app.delete("/settings/webhook-subscriptions/{subscription_id}")
+async def delete_settings_webhook_subscription(request: Request, subscription_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "workspace.manage_settings", "Settings permission required")
+    if denied:
+        return denied
+    if not external_webhook_subscription_store:
+        return _error_response("NOT_SUPPORTED", "Webhook subscriptions require DB-backed settings", status=400)
+    deleted = external_webhook_subscription_store.delete(subscription_id)
+    if not deleted:
+        return _error_response("SUBSCRIPTION_NOT_FOUND", "Webhook subscription not found", "subscription_id", status=404)
+    return _ok_response({"deleted": True})
+
+
 @app.get("/settings/secrets")
 async def list_settings_secrets(request: Request, limit: int = 200, include_system: bool = False) -> dict:
     actor = _resolve_actor(request)
@@ -32008,14 +32541,59 @@ async def create_settings_secret(request: Request) -> dict:
         return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
     value = body.get("value")
     name = body.get("name")
+    provider_key = body.get("provider_key")
+    secret_key = body.get("secret_key")
+    status = body.get("status") or "active"
+    if provider_key is not None and (not isinstance(provider_key, str) or not provider_key.strip()):
+        return _error_response("PROVIDER_KEY_INVALID", "provider_key must be a non-empty string", "provider_key", status=400)
+    if secret_key is not None and (not isinstance(secret_key, str) or not secret_key.strip()):
+        return _error_response("SECRET_KEY_INVALID", "secret_key must be a non-empty string", "secret_key", status=400)
+    if status not in {"active", "disabled"}:
+        return _error_response("STATUS_INVALID", "status must be active or disabled", "status", status=400)
     if not isinstance(value, str) or not value.strip():
         return _error_response("SECRET_VALUE_REQUIRED", "value is required", "value", status=400)
     try:
-        secret_id = create_secret(get_org_id(), (name or None), value.strip())
+        secret_id = create_secret(
+            get_org_id(),
+            (name or None),
+            value.strip(),
+            provider_key=provider_key.strip() if isinstance(provider_key, str) and provider_key.strip() else None,
+            secret_key=secret_key.strip() if isinstance(secret_key, str) and secret_key.strip() else None,
+            status=status,
+        )
     except SecretStoreError as exc:
         return _error_response("SECRET_STORE_ERROR", str(exc), "value", status=500)
     item = secret_store.get(secret_id) if secret_store else None
     return _ok_response({"secret": item or {"id": secret_id, "name": name or None}})
+
+
+@app.post("/settings/secrets/{secret_id}/rotate")
+async def rotate_settings_secret(request: Request, secret_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "workspace.manage_settings", "Settings permission required")
+    if denied:
+        return denied
+    if not secret_store or not hasattr(secret_store, "get"):
+        return _error_response("NOT_SUPPORTED", "Secret rotation not supported", "secret_id", status=400)
+    existing = secret_store.get(secret_id)
+    if not existing:
+        return _error_response("SECRET_NOT_FOUND", "Secret not found", "secret_id", status=404)
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    value = body.get("value")
+    if not isinstance(value, str) or not value.strip():
+        return _error_response("SECRET_VALUE_REQUIRED", "value is required", "value", status=400)
+    try:
+        rotated = rotate_secret(secret_id, value.strip(), get_org_id())
+    except SecretStoreError as exc:
+        return _error_response("SECRET_STORE_ERROR", str(exc), "value", status=500)
+    if not rotated:
+        return _error_response("SECRET_NOT_FOUND", "Secret not found", "secret_id", status=404)
+    item = secret_store.get(secret_id) if secret_store else None
+    return _ok_response({"secret": item or existing})
 
 
 @app.delete("/settings/secrets/{secret_id}")
@@ -32088,6 +32666,570 @@ def _integration_provider_from_type(value: Any) -> str:
     return value.split(".", 1)[1] or ""
 
 
+def _validated_secret_refs(secret_refs: Any) -> tuple[dict[str, str] | None, dict | None]:
+    if secret_refs is None:
+        return None, None
+    if not isinstance(secret_refs, dict):
+        return None, _error_response("SECRET_REFS_INVALID", "secret_refs must be an object", "secret_refs", status=400)
+    validated: dict[str, str] = {}
+    for key, value in secret_refs.items():
+        if not isinstance(key, str) or not key.strip():
+            return None, _error_response("SECRET_REFS_INVALID", "secret_refs keys must be non-empty strings", "secret_refs", status=400)
+        secret_ref, secret_err = _validated_secret_ref(value)
+        if secret_err:
+            return None, secret_err
+        if secret_ref:
+            validated[key.strip()] = secret_ref
+    return validated, None
+
+
+def _parse_jsonish_body(raw_body: bytes) -> dict:
+    if not raw_body:
+        return {}
+    try:
+        parsed = json.loads(raw_body.decode("utf-8"))
+    except Exception:
+        return {"raw_body": raw_body.decode("utf-8", errors="replace")}
+    if isinstance(parsed, dict):
+        return parsed
+    return {"value": parsed}
+
+
+def _extract_provider_event_id(payload: dict, headers: dict[str, str]) -> str | None:
+    for key in ("x-event-id", "x-webhook-id", "x-request-id", "x-shopify-webhook-id"):
+        value = headers.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    for key in ("id", "event_id", "webhook_id", "delivery_id"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _verify_webhook_signature(raw_body: bytes, secret: str, provided: str | None, provided_timestamp: str | None = None) -> bool:
+    valid, _error = verify_signed_webhook_payload(
+        raw_body,
+        secret,
+        provided,
+        provided_timestamp=provided_timestamp,
+        allow_legacy_payload_only=True,
+    )
+    return valid
+
+
+def _log_integration_request(connection_id: str | None, result: dict, *, source: str, error_message: str | None = None) -> None:
+    if not integration_request_log_store:
+        return
+    integration_request_log_store.create(
+        {
+            "connection_id": connection_id,
+            "source": source,
+            "direction": "outbound",
+            "method": result.get("method"),
+            "url": result.get("url"),
+            "request_headers_json": result.get("request_headers") or {},
+            "request_query_json": result.get("request_query") or {},
+            "request_body_json": result.get("request_body_json"),
+            "request_body_text": result.get("request_body_text"),
+            "response_status": result.get("status_code"),
+            "response_headers_json": result.get("headers") or {},
+            "response_body_json": result.get("body_json"),
+            "response_body_text": result.get("body_text"),
+            "ok": result.get("ok"),
+            "error_message": error_message,
+        }
+    )
+
+
+def _run_integration_sync_operation(connection: dict, sync_config: dict | None, *, source: str) -> dict:
+    if not sync_checkpoint_store:
+        raise IntegrationProviderError("Sync checkpoints are unavailable")
+    connection_id = str(connection.get("id") or "")
+    if not connection_id:
+        raise IntegrationProviderError("Connection id is required")
+    connection_config = connection.get("config") if isinstance(connection.get("config"), dict) else {}
+    stored_sync = connection_config.get("sync") if isinstance(connection_config.get("sync"), dict) else {}
+    resolved_sync = {**stored_sync}
+    if isinstance(sync_config, dict):
+        if isinstance(stored_sync.get("request"), dict) or isinstance(sync_config.get("request"), dict):
+            resolved_sync["request"] = {
+                **(stored_sync.get("request") if isinstance(stored_sync.get("request"), dict) else {}),
+                **(sync_config.get("request") if isinstance(sync_config.get("request"), dict) else {}),
+            }
+        for key, value in sync_config.items():
+            if key == "request":
+                continue
+            if value is not None:
+                resolved_sync[key] = value
+    scope_key = str(resolved_sync.get("scope_key") or resolved_sync.get("resource_key") or "default").strip() or "default"
+    checkpoint = sync_checkpoint_store.get(connection_id, scope_key)
+    sync_checkpoint_store.upsert(
+        {
+            "connection_id": connection_id,
+            "scope_key": scope_key,
+            "cursor_value": checkpoint.get("cursor_value") if isinstance(checkpoint, dict) else None,
+            "cursor_json": checkpoint.get("cursor_json") if isinstance(checkpoint, dict) else {},
+            "last_synced_at": checkpoint.get("last_synced_at") if isinstance(checkpoint, dict) else None,
+            "status": "running",
+            "last_error": None,
+        }
+    )
+    now_iso = _now()
+    try:
+        result = execute_integration_connection_sync(connection, resolved_sync, get_org_id(), checkpoint=checkpoint)
+        if hasattr(connection_store, "update"):
+            connection_store.update(
+                connection_id,
+                {
+                    "health_status": "ok" if result.get("ok") else "error",
+                    "last_tested_at": now_iso,
+                    "last_success_at": now_iso if result.get("ok") else connection.get("last_success_at"),
+                    "last_error": None if result.get("ok") else f"HTTP {result.get('status_code')}",
+                },
+            )
+        if not result.get("ok"):
+            raise IntegrationProviderError(f"Integration sync failed with status {result.get('status_code')}")
+        _log_integration_request(connection_id, result, source=source)
+        checkpoint_payload = result.get("checkpoint") if isinstance(result.get("checkpoint"), dict) else {}
+        sync_checkpoint_store.upsert(
+            {
+                "connection_id": connection_id,
+                "scope_key": str(checkpoint_payload.get("scope_key") or scope_key),
+                "cursor_value": checkpoint_payload.get("cursor_value"),
+                "cursor_json": checkpoint_payload.get("cursor_json") or {},
+                "last_synced_at": now_iso,
+                "status": "idle",
+                "last_error": None,
+            }
+        )
+        return result
+    except IntegrationProviderError as exc:
+        _log_integration_request(connection_id, {"ok": False}, source=source, error_message=str(exc))
+        raise
+    except Exception as exc:
+        _log_integration_request(connection_id, {"ok": False}, source=source, error_message=str(exc))
+        if hasattr(connection_store, "update"):
+            connection_store.update(
+                connection_id,
+                {
+                    "health_status": "error",
+                    "last_tested_at": now_iso,
+                    "last_error": str(exc),
+                },
+            )
+        sync_checkpoint_store.upsert(
+            {
+                "connection_id": connection_id,
+                "scope_key": scope_key,
+                "cursor_value": checkpoint.get("cursor_value") if isinstance(checkpoint, dict) else None,
+                "cursor_json": checkpoint.get("cursor_json") if isinstance(checkpoint, dict) else {},
+                "last_synced_at": checkpoint.get("last_synced_at") if isinstance(checkpoint, dict) else None,
+                "status": "error",
+                "last_error": str(exc),
+            }
+        )
+        raise
+
+
+@app.get("/integrations/providers")
+async def list_integration_providers(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    items = integration_provider_store.list() if integration_provider_store else []
+    return _ok_response({"providers": items})
+
+
+@app.get("/integrations/mappings")
+async def list_integration_mappings(request: Request, connection_id: str | None = None) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    items = integration_mapping_store.list(connection_id=connection_id) if integration_mapping_store else []
+    return _ok_response({"mappings": items})
+
+
+@app.post("/integrations/mappings")
+async def create_integration_mapping(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    name = body.get("name")
+    source_entity = body.get("source_entity")
+    target_entity = body.get("target_entity")
+    connection_id = body.get("connection_id")
+    if not isinstance(name, str) or not name.strip():
+        return _error_response("NAME_REQUIRED", "name is required", "name", status=400)
+    if not isinstance(source_entity, str) or not source_entity.strip():
+        return _error_response("SOURCE_ENTITY_REQUIRED", "source_entity is required", "source_entity", status=400)
+    if not isinstance(target_entity, str) or not target_entity.strip():
+        return _error_response("TARGET_ENTITY_REQUIRED", "target_entity is required", "target_entity", status=400)
+    if connection_id is not None:
+        if not isinstance(connection_id, str) or not connection_id.strip() or not connection_store.get(connection_id):
+            return _error_response("CONNECTION_NOT_FOUND", "Connection not found", "connection_id", status=400)
+    mapping_json = body.get("mapping_json")
+    if mapping_json is not None and not isinstance(mapping_json, dict):
+        return _error_response("MAPPING_INVALID", "mapping_json must be an object", "mapping_json", status=400)
+    item = integration_mapping_store.create(
+        {
+            "connection_id": connection_id,
+            "name": name.strip(),
+            "source_entity": source_entity.strip(),
+            "target_entity": target_entity.strip(),
+            "mapping_json": mapping_json or {},
+        }
+    )
+    return _ok_response({"mapping": item})
+
+
+@app.get("/integrations/mappings/{mapping_id}")
+async def get_integration_mapping(request: Request, mapping_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    item = integration_mapping_store.get(mapping_id) if integration_mapping_store else None
+    if not item:
+        return _error_response("MAPPING_NOT_FOUND", "Mapping not found", "mapping_id", status=404)
+    return _ok_response({"mapping": item})
+
+
+@app.patch("/integrations/mappings/{mapping_id}")
+async def update_integration_mapping(request: Request, mapping_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    existing = integration_mapping_store.get(mapping_id) if integration_mapping_store else None
+    if not existing:
+        return _error_response("MAPPING_NOT_FOUND", "Mapping not found", "mapping_id", status=404)
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    updates: dict[str, Any] = {}
+    if "name" in body:
+        if not isinstance(body.get("name"), str) or not body.get("name").strip():
+            return _error_response("NAME_REQUIRED", "name is required", "name", status=400)
+        updates["name"] = body.get("name").strip()
+    if "source_entity" in body:
+        if not isinstance(body.get("source_entity"), str) or not body.get("source_entity").strip():
+            return _error_response("SOURCE_ENTITY_REQUIRED", "source_entity is required", "source_entity", status=400)
+        updates["source_entity"] = body.get("source_entity").strip()
+    if "target_entity" in body:
+        if not isinstance(body.get("target_entity"), str) or not body.get("target_entity").strip():
+            return _error_response("TARGET_ENTITY_REQUIRED", "target_entity is required", "target_entity", status=400)
+        updates["target_entity"] = body.get("target_entity").strip()
+    if "connection_id" in body:
+        connection_id = body.get("connection_id")
+        if connection_id is not None and (not isinstance(connection_id, str) or not connection_id.strip() or not connection_store.get(connection_id)):
+            return _error_response("CONNECTION_NOT_FOUND", "Connection not found", "connection_id", status=400)
+        updates["connection_id"] = connection_id
+    if "mapping_json" in body:
+        if body.get("mapping_json") is not None and not isinstance(body.get("mapping_json"), dict):
+            return _error_response("MAPPING_INVALID", "mapping_json must be an object", "mapping_json", status=400)
+        updates["mapping_json"] = body.get("mapping_json") or {}
+    updated = integration_mapping_store.update(mapping_id, updates) if integration_mapping_store else None
+    return _ok_response({"mapping": updated})
+
+
+@app.post("/integrations/mappings/preview")
+async def preview_mapping_endpoint(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    mapping_json = body.get("mapping_json")
+    source_record = body.get("source_record")
+    if not isinstance(mapping_json, dict):
+        return _error_response("MAPPING_INVALID", "mapping_json must be an object", "mapping_json", status=400)
+    if not isinstance(source_record, dict):
+        return _error_response("SOURCE_RECORD_INVALID", "source_record must be an object", "source_record", status=400)
+    preview = preview_integration_mapping(
+        mapping_json,
+        source_record,
+        {
+            "connection_id": body.get("connection_id"),
+            "resource_key": body.get("resource_key"),
+            "connection": body.get("connection") if isinstance(body.get("connection"), dict) else {},
+        },
+    )
+    return _ok_response({"preview": preview})
+
+
+@app.delete("/integrations/mappings/{mapping_id}")
+async def delete_integration_mapping(request: Request, mapping_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    existing = integration_mapping_store.get(mapping_id) if integration_mapping_store else None
+    if not existing:
+        return _error_response("MAPPING_NOT_FOUND", "Mapping not found", "mapping_id", status=404)
+    integration_mapping_store.delete(mapping_id)
+    return _ok_response({"deleted": True})
+
+
+@app.get("/integrations/webhooks")
+async def list_integration_webhooks(request: Request, connection_id: str | None = None) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    items = integration_webhook_store.list(connection_id=connection_id) if integration_webhook_store else []
+    return _ok_response({"webhooks": items})
+
+
+@app.post("/integrations/webhooks")
+async def create_integration_webhook(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    connection_id = body.get("connection_id")
+    direction = body.get("direction")
+    event_key = body.get("event_key")
+    if not isinstance(connection_id, str) or not connection_id.strip() or not connection_store.get(connection_id):
+        return _error_response("CONNECTION_NOT_FOUND", "Connection not found", "connection_id", status=400)
+    if direction not in {"inbound", "outbound"}:
+        return _error_response("DIRECTION_INVALID", "direction must be inbound or outbound", "direction", status=400)
+    if not isinstance(event_key, str) or not event_key.strip():
+        return _error_response("EVENT_KEY_REQUIRED", "event_key is required", "event_key", status=400)
+    signing_secret_id, signing_secret_err = _validated_secret_ref(body.get("signing_secret_id"))
+    if signing_secret_err:
+        return signing_secret_err
+    config_json = body.get("config_json")
+    if config_json is not None and not isinstance(config_json, dict):
+        return _error_response("CONFIG_INVALID", "config_json must be an object", "config_json", status=400)
+    status = body.get("status") or "active"
+    if status not in {"active", "disabled"}:
+        return _error_response("STATUS_INVALID", "status must be active or disabled", "status", status=400)
+    item = integration_webhook_store.create(
+        {
+            "connection_id": connection_id.strip(),
+            "direction": direction,
+            "event_key": event_key.strip(),
+            "endpoint_path": body.get("endpoint_path"),
+            "signing_secret_id": signing_secret_id,
+            "status": status,
+            "config_json": config_json or {},
+        }
+    )
+    return _ok_response({"webhook": item})
+
+
+@app.get("/integrations/webhooks/{webhook_id}")
+async def get_integration_webhook(request: Request, webhook_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    item = integration_webhook_store.get(webhook_id) if integration_webhook_store else None
+    if not item:
+        return _error_response("WEBHOOK_NOT_FOUND", "Webhook not found", "webhook_id", status=404)
+    return _ok_response({"webhook": item})
+
+
+@app.patch("/integrations/webhooks/{webhook_id}")
+async def update_integration_webhook(request: Request, webhook_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    item = integration_webhook_store.get(webhook_id) if integration_webhook_store else None
+    if not item:
+        return _error_response("WEBHOOK_NOT_FOUND", "Webhook not found", "webhook_id", status=404)
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    updates: dict[str, Any] = {}
+    if "direction" in body:
+        if body.get("direction") not in {"inbound", "outbound"}:
+            return _error_response("DIRECTION_INVALID", "direction must be inbound or outbound", "direction", status=400)
+        updates["direction"] = body.get("direction")
+    if "event_key" in body:
+        if not isinstance(body.get("event_key"), str) or not body.get("event_key").strip():
+            return _error_response("EVENT_KEY_REQUIRED", "event_key is required", "event_key", status=400)
+        updates["event_key"] = body.get("event_key").strip()
+    if "endpoint_path" in body:
+        updates["endpoint_path"] = body.get("endpoint_path")
+    if "status" in body:
+        if body.get("status") not in {"active", "disabled"}:
+            return _error_response("STATUS_INVALID", "status must be active or disabled", "status", status=400)
+        updates["status"] = body.get("status")
+    if "signing_secret_id" in body:
+        signing_secret_id, signing_secret_err = _validated_secret_ref(body.get("signing_secret_id"))
+        if signing_secret_err:
+            return signing_secret_err
+        updates["signing_secret_id"] = signing_secret_id
+    if "config_json" in body:
+        if body.get("config_json") is not None and not isinstance(body.get("config_json"), dict):
+            return _error_response("CONFIG_INVALID", "config_json must be an object", "config_json", status=400)
+        updates["config_json"] = body.get("config_json") or {}
+    updated = integration_webhook_store.update(webhook_id, updates) if integration_webhook_store else None
+    return _ok_response({"webhook": updated})
+
+
+@app.delete("/integrations/webhooks/{webhook_id}")
+async def delete_integration_webhook(request: Request, webhook_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    item = integration_webhook_store.get(webhook_id) if integration_webhook_store else None
+    if not item:
+        return _error_response("WEBHOOK_NOT_FOUND", "Webhook not found", "webhook_id", status=404)
+    integration_webhook_store.delete(webhook_id)
+    return _ok_response({"deleted": True})
+
+
+@app.get("/integrations/checkpoints")
+async def list_integration_checkpoints(request: Request, connection_id: str | None = None) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    items = sync_checkpoint_store.list(connection_id=connection_id) if sync_checkpoint_store else []
+    return _ok_response({"checkpoints": items})
+
+
+@app.get("/integrations/webhook-events")
+async def list_integration_webhook_events(
+    request: Request,
+    connection_id: str | None = None,
+    status: str | None = None,
+    limit: int = 200,
+) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    items = webhook_event_store.list(connection_id=connection_id, status=status, limit=limit) if webhook_event_store else []
+    return _ok_response({"events": items})
+
+
+@app.get("/integrations/request-logs")
+async def list_integration_request_logs(
+    request: Request,
+    connection_id: str | None = None,
+    source: str | None = None,
+    limit: int = 200,
+) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    items = integration_request_log_store.list(connection_id=connection_id, source=source, limit=limit) if integration_request_log_store else []
+    return _ok_response({"logs": items})
+
+
+@app.put("/integrations/connections/{connection_id}/checkpoints/{scope_key}")
+async def upsert_integration_checkpoint(request: Request, connection_id: str, scope_key: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    if not connection_store.get(connection_id):
+        return _error_response("CONNECTION_NOT_FOUND", "Connection not found", "connection_id", status=404)
+    body = await _safe_json(request)
+    if body is None:
+        body = {}
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    cursor_json = body.get("cursor_json")
+    if cursor_json is not None and not isinstance(cursor_json, dict):
+        return _error_response("CURSOR_INVALID", "cursor_json must be an object", "cursor_json", status=400)
+    status = body.get("status") or "idle"
+    if status not in {"idle", "running", "error"}:
+        return _error_response("STATUS_INVALID", "status must be idle, running, or error", "status", status=400)
+    item = sync_checkpoint_store.upsert(
+        {
+            "connection_id": connection_id,
+            "scope_key": scope_key,
+            "cursor_value": body.get("cursor_value"),
+            "cursor_json": cursor_json or {},
+            "last_synced_at": body.get("last_synced_at"),
+            "status": status,
+            "last_error": body.get("last_error"),
+        }
+    )
+    return _ok_response({"checkpoint": item})
+
+
+@app.post("/integrations/webhooks/{webhook_id}/ingest")
+async def ingest_integration_webhook(request: Request, webhook_id: str) -> Response:
+    if not integration_webhook_store or not webhook_event_store:
+        return JSONResponse(status_code=404, content={"ok": False, "error": {"code": "WEBHOOKS_UNAVAILABLE", "message": "Webhook ingestion is unavailable"}})
+    webhook = integration_webhook_store.get_any(webhook_id)
+    if not webhook or webhook.get("direction") != "inbound" or webhook.get("status") != "active":
+        return JSONResponse(status_code=404, content={"ok": False, "error": {"code": "WEBHOOK_NOT_FOUND", "message": "Webhook not found"}})
+    org_id = webhook.get("org_id") or "default"
+    raw_body = await request.body()
+    headers_json = {str(k).lower(): v for k, v in request.headers.items()}
+    payload_json = _parse_jsonish_body(raw_body)
+    provider_event_id = _extract_provider_event_id(payload_json, headers_json)
+    signature_valid = None
+    status = "received"
+    error_message = None
+    if webhook.get("signing_secret_id"):
+        try:
+            secret_value = resolve_secret(str(webhook.get("signing_secret_id")), org_id)
+            provided = headers_json.get("x-octo-signature") or headers_json.get("x-signature") or headers_json.get("x-hub-signature-256")
+            provided_timestamp = headers_json.get("x-octo-timestamp") or headers_json.get("x-signature-timestamp")
+            signature_valid = _verify_webhook_signature(raw_body, secret_value, provided, provided_timestamp=provided_timestamp)
+            if not signature_valid:
+                status = "rejected"
+                error_message = "Invalid webhook signature"
+        except Exception as exc:
+            signature_valid = False
+            status = "rejected"
+            error_message = str(exc)
+    token = set_org_id(org_id)
+    try:
+        event = webhook_event_store.create(
+            {
+                "connection_id": webhook.get("connection_id"),
+                "provider_event_id": provider_event_id,
+                "event_key": webhook.get("event_key"),
+                "headers_json": headers_json,
+                "payload_json": payload_json,
+                "signature_valid": signature_valid,
+                "status": status,
+                "error_message": error_message,
+            }
+        )
+        if status != "rejected":
+            job_store.enqueue(
+                {
+                    "type": "integration.webhook.process",
+                    "payload": {
+                        "webhook_event_id": event.get("id"),
+                        "webhook_id": webhook.get("id"),
+                        "connection_id": webhook.get("connection_id"),
+                    },
+                    "idempotency_key": f"webhook:{webhook.get('id')}:{provider_event_id or event.get('id')}",
+                    "workspace_id": org_id,
+                }
+            )
+    finally:
+        reset_org_id(token)
+    if status == "rejected":
+        return JSONResponse(status_code=401, content={"ok": False, "error": {"code": "WEBHOOK_SIGNATURE_INVALID", "message": error_message or "Invalid webhook signature"}})
+    return JSONResponse(status_code=202, content={"ok": True, "data": {"event_id": event.get("id"), "status": event.get("status")}})
+
+
 @app.get("/integrations/connections")
 async def list_integration_connections(request: Request, provider: str | None = None) -> dict:
     actor = _resolve_actor(request)
@@ -32116,17 +33258,27 @@ async def create_integration_connection(request: Request) -> dict:
         return _error_response("PROVIDER_REQUIRED", "provider is required", "provider", status=400)
     if not isinstance(name, str) or not name.strip():
         return _error_response("NAME_REQUIRED", "name is required", "name", status=400)
+    provider_key = provider.strip().lower()
+    provider_def = integration_provider_store.get_by_key(provider_key) if integration_provider_store else None
     status = body.get("status") or "active"
     if not isinstance(status, str) or status not in {"active", "disabled"}:
         return _error_response("STATUS_INVALID", "status must be active or disabled", "status", status=400)
     secret_ref, secret_err = _validated_secret_ref(body.get("secret_ref"))
     if secret_err:
         return secret_err
+    secret_refs, secret_refs_err = _validated_secret_refs(body.get("secret_refs"))
+    if secret_refs_err:
+        return secret_refs_err
     record = {
-        "type": f"integration.{provider.strip().lower()}",
+        "type": f"integration.{provider_key}",
         "name": name.strip(),
-        "config": body.get("config") if isinstance(body.get("config"), dict) else {},
+        "config": {
+            **(body.get("config") if isinstance(body.get("config"), dict) else {}),
+            "provider_key": provider_key,
+            "provider_auth_type": provider_def.get("auth_type") if provider_def else None,
+        },
         "secret_ref": secret_ref,
+        "secret_refs": secret_refs or {},
         "status": status,
     }
     conn = connection_store.create(record)
@@ -32143,6 +33295,271 @@ async def get_integration_connection(request: Request, connection_id: str) -> di
     if not item or not _is_integration_type(item.get("type")):
         return _error_response("CONNECTION_NOT_FOUND", "Connection not found", "connection_id", status=404)
     return _ok_response({"connection": item})
+
+
+@app.post("/integrations/connections/{connection_id}/test")
+async def test_integration_connection_endpoint(request: Request, connection_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    item = connection_store.get(connection_id)
+    if not item or not _is_integration_type(item.get("type")):
+        return _error_response("CONNECTION_NOT_FOUND", "Connection not found", "connection_id", status=404)
+    try:
+        result = test_integration_connection(item, get_org_id())
+        _log_integration_request(connection_id, result, source="test_connection")
+        if hasattr(connection_store, "update"):
+            now_iso = _now()
+            connection_store.update(
+                connection_id,
+                {
+                    "health_status": "ok" if result.get("ok") else "error",
+                    "last_tested_at": now_iso,
+                    "last_success_at": now_iso if result.get("ok") else item.get("last_success_at"),
+                    "last_error": None if result.get("ok") else f"HTTP {result.get('status_code')}",
+                },
+            )
+    except IntegrationProviderError as exc:
+        _log_integration_request(connection_id, {"ok": False}, source="test_connection", error_message=str(exc))
+        if hasattr(connection_store, "update"):
+            connection_store.update(
+                connection_id,
+                {
+                    "health_status": "error",
+                    "last_tested_at": _now(),
+                    "last_error": str(exc),
+                },
+            )
+        return _error_response("CONNECTION_TEST_FAILED", str(exc), "connection_id", status=400)
+    except Exception as exc:
+        _log_integration_request(connection_id, {"ok": False}, source="test_connection", error_message=str(exc))
+        if hasattr(connection_store, "update"):
+            connection_store.update(
+                connection_id,
+                {
+                    "health_status": "error",
+                    "last_tested_at": _now(),
+                    "last_error": str(exc),
+                },
+            )
+        return _error_response("CONNECTION_TEST_FAILED", str(exc), "connection_id", status=502)
+    return _ok_response({"result": result})
+
+
+@app.post("/integrations/connections/{connection_id}/oauth/authorize-url")
+async def integration_connection_oauth_authorize_url(request: Request, connection_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    item = connection_store.get(connection_id)
+    if not item or not _is_integration_type(item.get("type")):
+        return _error_response("CONNECTION_NOT_FOUND", "Connection not found", "connection_id", status=404)
+    body = await _safe_json(request)
+    if body is None:
+        body = {}
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    redirect_uri = body.get("redirect_uri")
+    state = body.get("state")
+    if not isinstance(redirect_uri, str) or not redirect_uri.strip():
+        return _error_response("REDIRECT_URI_REQUIRED", "redirect_uri is required", "redirect_uri", status=400)
+    if state is not None and (not isinstance(state, str) or not state.strip()):
+        return _error_response("STATE_INVALID", "state must be a non-empty string", "state", status=400)
+    try:
+        result = build_connection_authorize_url(item, redirect_uri.strip(), state=state.strip() if isinstance(state, str) else None)
+    except IntegrationProviderError as exc:
+        return _error_response("OAUTH_AUTHORIZE_FAILED", str(exc), "connection_id", status=400)
+    except Exception as exc:
+        return _error_response("OAUTH_AUTHORIZE_FAILED", str(exc), "connection_id", status=502)
+    return _ok_response({"result": result})
+
+
+@app.post("/integrations/connections/{connection_id}/oauth/exchange")
+async def integration_connection_oauth_exchange(request: Request, connection_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    item = connection_store.get(connection_id)
+    if not item or not _is_integration_type(item.get("type")):
+        return _error_response("CONNECTION_NOT_FOUND", "Connection not found", "connection_id", status=404)
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    code = body.get("code")
+    redirect_uri = body.get("redirect_uri")
+    if not isinstance(code, str) or not code.strip():
+        return _error_response("CODE_REQUIRED", "code is required", "code", status=400)
+    if not isinstance(redirect_uri, str) or not redirect_uri.strip():
+        return _error_response("REDIRECT_URI_REQUIRED", "redirect_uri is required", "redirect_uri", status=400)
+    try:
+        result = exchange_connection_oauth_code(item, get_org_id(), code=code.strip(), redirect_uri=redirect_uri.strip())
+        _log_integration_request(connection_id, {"ok": True, "method": "POST", "url": (item.get("config") or {}).get("token_url")}, source="oauth_exchange")
+        if hasattr(connection_store, "update"):
+            connection_store.update(
+                connection_id,
+                {
+                    "health_status": "ok",
+                    "last_tested_at": _now(),
+                    "last_success_at": _now(),
+                    "last_error": None,
+                },
+            )
+    except IntegrationProviderError as exc:
+        _log_integration_request(connection_id, {"ok": False, "method": "POST", "url": (item.get("config") or {}).get("token_url")}, source="oauth_exchange", error_message=str(exc))
+        if hasattr(connection_store, "update"):
+            connection_store.update(connection_id, {"health_status": "error", "last_tested_at": _now(), "last_error": str(exc)})
+        return _error_response("OAUTH_EXCHANGE_FAILED", str(exc), "connection_id", status=400)
+    except Exception as exc:
+        _log_integration_request(connection_id, {"ok": False, "method": "POST", "url": (item.get("config") or {}).get("token_url")}, source="oauth_exchange", error_message=str(exc))
+        if hasattr(connection_store, "update"):
+            connection_store.update(connection_id, {"health_status": "error", "last_tested_at": _now(), "last_error": str(exc)})
+        return _error_response("OAUTH_EXCHANGE_FAILED", str(exc), "connection_id", status=502)
+    return _ok_response({"result": result})
+
+
+@app.post("/integrations/connections/{connection_id}/oauth/refresh")
+async def integration_connection_oauth_refresh(request: Request, connection_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    item = connection_store.get(connection_id)
+    if not item or not _is_integration_type(item.get("type")):
+        return _error_response("CONNECTION_NOT_FOUND", "Connection not found", "connection_id", status=404)
+    try:
+        result = refresh_connection_oauth_tokens(item, get_org_id())
+        _log_integration_request(connection_id, {"ok": True, "method": "POST", "url": (item.get("config") or {}).get("token_url")}, source="oauth_refresh")
+        if hasattr(connection_store, "update"):
+            connection_store.update(
+                connection_id,
+                {
+                    "health_status": "ok",
+                    "last_tested_at": _now(),
+                    "last_success_at": _now(),
+                    "last_error": None,
+                },
+            )
+    except IntegrationProviderError as exc:
+        _log_integration_request(connection_id, {"ok": False, "method": "POST", "url": (item.get("config") or {}).get("token_url")}, source="oauth_refresh", error_message=str(exc))
+        if hasattr(connection_store, "update"):
+            connection_store.update(connection_id, {"health_status": "error", "last_tested_at": _now(), "last_error": str(exc)})
+        return _error_response("OAUTH_REFRESH_FAILED", str(exc), "connection_id", status=400)
+    except Exception as exc:
+        _log_integration_request(connection_id, {"ok": False, "method": "POST", "url": (item.get("config") or {}).get("token_url")}, source="oauth_refresh", error_message=str(exc))
+        if hasattr(connection_store, "update"):
+            connection_store.update(connection_id, {"health_status": "error", "last_tested_at": _now(), "last_error": str(exc)})
+        return _error_response("OAUTH_REFRESH_FAILED", str(exc), "connection_id", status=502)
+    return _ok_response({"result": result})
+
+
+@app.post("/integrations/connections/{connection_id}/request")
+async def execute_integration_connection_request_endpoint(request: Request, connection_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    item = connection_store.get(connection_id)
+    if not item or not _is_integration_type(item.get("type")):
+        return _error_response("CONNECTION_NOT_FOUND", "Connection not found", "connection_id", status=404)
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    request_config = {
+        "method": body.get("method") or "GET",
+        "path": body.get("path"),
+        "url": body.get("url"),
+        "headers": body.get("headers") if isinstance(body.get("headers"), dict) else {},
+        "query": body.get("query") if isinstance(body.get("query"), dict) else {},
+        "json": body.get("json"),
+        "body": body.get("body"),
+        "timeout_seconds": body.get("timeout_seconds"),
+    }
+    try:
+        result = execute_integration_connection_request(item, request_config, get_org_id())
+        _log_integration_request(connection_id, result, source="manual_request")
+    except IntegrationProviderError as exc:
+        _log_integration_request(connection_id, {"ok": False, **request_config}, source="manual_request", error_message=str(exc))
+        return _error_response("CONNECTION_REQUEST_FAILED", str(exc), "connection_id", status=400)
+    except Exception as exc:
+        _log_integration_request(connection_id, {"ok": False, **request_config}, source="manual_request", error_message=str(exc))
+        return _error_response("CONNECTION_REQUEST_FAILED", str(exc), "connection_id", status=502)
+    return _ok_response({"result": result})
+
+
+@app.post("/integrations/connections/{connection_id}/sync")
+async def run_integration_connection_sync_endpoint(request: Request, connection_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    item = connection_store.get(connection_id)
+    if not item or not _is_integration_type(item.get("type")):
+        return _error_response("CONNECTION_NOT_FOUND", "Connection not found", "connection_id", status=404)
+    body = await _safe_json(request)
+    if body is None:
+        body = {}
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    sync_config = body.get("sync") if isinstance(body.get("sync"), dict) else {}
+    for key in (
+        "scope_key",
+        "resource_key",
+        "cursor_param",
+        "cursor_value_path",
+        "last_item_cursor_path",
+        "items_path",
+        "limit_param",
+        "max_items",
+        "emit_events",
+    ):
+        if key in body:
+            sync_config[key] = body.get(key)
+    request_overrides = {}
+    for key in ("method", "path", "url", "headers", "query", "json", "body", "timeout_seconds"):
+        if key in body:
+            request_overrides[key] = body.get(key)
+    if request_overrides:
+        sync_config["request"] = request_overrides
+    if body.get("async"):
+        resolved_scope_key = str(
+            sync_config.get("scope_key")
+            or sync_config.get("resource_key")
+            or ((item.get("config") or {}).get("sync") or {}).get("scope_key")
+            or ((item.get("config") or {}).get("sync") or {}).get("resource_key")
+            or "default"
+        ).strip() or "default"
+        if sync_checkpoint_store:
+            sync_checkpoint_store.upsert(
+                {
+                    "connection_id": connection_id,
+                    "scope_key": resolved_scope_key,
+                    "status": "running",
+                    "last_error": None,
+                }
+            )
+        job = job_store.enqueue(
+            {
+                "type": "integration.sync.run",
+                "payload": {
+                    "connection_id": connection_id,
+                    "sync": sync_config,
+                    "source": "manual_sync",
+                },
+                "workspace_id": get_org_id(),
+                "idempotency_key": body.get("idempotency_key"),
+            }
+        )
+        return _ok_response({"job": job, "queued": True})
+    try:
+        result = _run_integration_sync_operation(item, sync_config, source="manual_sync")
+    except IntegrationProviderError as exc:
+        return _error_response("CONNECTION_SYNC_FAILED", str(exc), "connection_id", status=400)
+    except Exception as exc:
+        return _error_response("CONNECTION_SYNC_FAILED", str(exc), "connection_id", status=502)
+    return _ok_response({"result": result})
 
 
 @app.patch("/integrations/connections/{connection_id}")
@@ -32178,6 +33595,11 @@ async def update_integration_connection(request: Request, connection_id: str) ->
         if secret_err:
             return secret_err
         updates["secret_ref"] = secret_ref
+    if "secret_refs" in body:
+        secret_refs, secret_refs_err = _validated_secret_refs(body.get("secret_refs"))
+        if secret_refs_err:
+            return secret_refs_err
+        updates["secret_refs"] = secret_refs or {}
     updated = connection_store.update(connection_id, updates) if hasattr(connection_store, "update") else None
     if not updated:
         # fallback for older store implementations
@@ -32325,6 +33747,9 @@ async def create_email_connection(request: Request) -> dict:
     secret_ref, secret_err = _validated_secret_ref(body.get("secret_ref"))
     if secret_err:
         return secret_err
+    secret_refs, secret_refs_err = _validated_secret_refs(body.get("secret_refs"))
+    if secret_refs_err:
+        return secret_refs_err
     config = body.get("config")
     if config is not None and not isinstance(config, dict):
         return _error_response("CONFIG_INVALID", "config must be an object", "config", status=400)
@@ -32333,6 +33758,7 @@ async def create_email_connection(request: Request) -> dict:
         "name": name.strip(),
         "config": config or {},
         "secret_ref": secret_ref,
+        "secret_refs": secret_refs or {},
         "status": status,
     }
     conn = connection_store.create(record)
@@ -32388,6 +33814,11 @@ async def update_email_connection(request: Request, connection_id: str) -> dict:
         if secret_err:
             return secret_err
         updates["secret_ref"] = secret_ref
+    if "secret_refs" in body:
+        secret_refs, secret_refs_err = _validated_secret_refs(body.get("secret_refs"))
+        if secret_refs_err:
+            return secret_refs_err
+        updates["secret_refs"] = secret_refs or {}
     updated = connection_store.update(connection_id, updates) if hasattr(connection_store, "update") else None
     if not updated:
         updated = connection_store.get(connection_id)
@@ -33108,35 +34539,74 @@ def _validate_automation_payload(data: dict, for_update: bool = False) -> list[d
         if not isinstance(trigger, dict):
             errors.append(_issue("AUTOMATION_TRIGGER_INVALID", "trigger must be object", "trigger"))
         else:
-            if trigger.get("kind") != "event":
-                errors.append(_issue("AUTOMATION_TRIGGER_INVALID", "trigger.kind must be 'event'", "trigger.kind"))
-            event_types = trigger.get("event_types")
-            if not isinstance(event_types, list) or not all(isinstance(e, str) for e in event_types):
-                errors.append(_issue("AUTOMATION_TRIGGER_INVALID", "event_types must be list of strings", "trigger.event_types"))
-            filters = trigger.get("filters", [])
-            if filters is not None and not isinstance(filters, list):
-                errors.append(_issue("AUTOMATION_TRIGGER_INVALID", "filters must be list", "trigger.filters"))
+            trigger_kind = trigger.get("kind")
+            if trigger_kind not in {"event", "schedule"}:
+                errors.append(_issue("AUTOMATION_TRIGGER_INVALID", "trigger.kind must be 'event' or 'schedule'", "trigger.kind"))
+            if trigger_kind == "event":
+                event_types = trigger.get("event_types")
+                if not isinstance(event_types, list) or not all(isinstance(e, str) for e in event_types):
+                    errors.append(_issue("AUTOMATION_TRIGGER_INVALID", "event_types must be list of strings", "trigger.event_types"))
+                filters = trigger.get("filters", [])
+                if filters is not None and not isinstance(filters, list):
+                    errors.append(_issue("AUTOMATION_TRIGGER_INVALID", "filters must be list", "trigger.filters"))
+                expr = trigger.get("expr")
+                if expr is not None and not isinstance(expr, dict):
+                    errors.append(_issue("AUTOMATION_TRIGGER_INVALID", "expr must be object", "trigger.expr"))
+            if trigger_kind == "schedule":
+                every_minutes = trigger.get("every_minutes")
+                if not isinstance(every_minutes, int) or every_minutes <= 0:
+                    errors.append(_issue("AUTOMATION_TRIGGER_INVALID", "every_minutes must be a positive integer", "trigger.every_minutes"))
     if not for_update or "steps" in data:
         steps = data.get("steps")
         if not isinstance(steps, list) or not steps:
             errors.append(_issue("AUTOMATION_STEPS_REQUIRED", "steps must be non-empty list", "steps"))
         else:
-            for idx, step in enumerate(steps):
-                if not isinstance(step, dict):
-                    errors.append(_issue("AUTOMATION_STEP_INVALID", "step must be object", f"steps[{idx}]"))
-                    continue
-                kind = step.get("kind")
-                if kind not in {"action", "condition", "delay"}:
-                    errors.append(_issue("AUTOMATION_STEP_INVALID", "unsupported step kind", f"steps[{idx}].kind"))
-                if kind == "action" and not isinstance(step.get("action_id"), str):
-                    errors.append(_issue("AUTOMATION_STEP_INVALID", "action_id required", f"steps[{idx}].action_id"))
-                if kind == "condition" and not isinstance(step.get("expr"), dict):
-                    errors.append(_issue("AUTOMATION_STEP_INVALID", "expr required", f"steps[{idx}].expr"))
-                if kind == "condition" and "stop_on_false" in step and not isinstance(step.get("stop_on_false"), bool):
-                    errors.append(_issue("AUTOMATION_STEP_INVALID", "stop_on_false must be boolean", f"steps[{idx}].stop_on_false"))
-                if kind == "delay":
-                    if "seconds" not in step and "until" not in step:
-                        errors.append(_issue("AUTOMATION_STEP_INVALID", "seconds or until required", f"steps[{idx}]"))
+            def _validate_steps_list(items: list, base_path: str, *, allow_delay: bool = True) -> None:
+                for idx, step in enumerate(items):
+                    step_path = f"{base_path}[{idx}]"
+                    if not isinstance(step, dict):
+                        errors.append(_issue("AUTOMATION_STEP_INVALID", "step must be object", step_path))
+                        continue
+                    kind = step.get("kind")
+                    if kind not in {"action", "condition", "delay", "foreach"}:
+                        errors.append(_issue("AUTOMATION_STEP_INVALID", "unsupported step kind", f"{step_path}.kind"))
+                        continue
+                    if kind == "delay" and not allow_delay:
+                        errors.append(_issue("AUTOMATION_STEP_INVALID", "delay is not supported inside nested branches yet", f"{step_path}.kind"))
+                    if kind == "action" and not isinstance(step.get("action_id"), str):
+                        errors.append(_issue("AUTOMATION_STEP_INVALID", "action_id required", f"{step_path}.action_id"))
+                    if kind == "condition":
+                        if not isinstance(step.get("expr"), dict):
+                            errors.append(_issue("AUTOMATION_STEP_INVALID", "expr required", f"{step_path}.expr"))
+                        if "stop_on_false" in step and not isinstance(step.get("stop_on_false"), bool):
+                            errors.append(_issue("AUTOMATION_STEP_INVALID", "stop_on_false must be boolean", f"{step_path}.stop_on_false"))
+                        then_steps = step.get("then_steps")
+                        else_steps = step.get("else_steps")
+                        if then_steps is not None and not isinstance(then_steps, list):
+                            errors.append(_issue("AUTOMATION_STEP_INVALID", "then_steps must be list", f"{step_path}.then_steps"))
+                        if else_steps is not None and not isinstance(else_steps, list):
+                            errors.append(_issue("AUTOMATION_STEP_INVALID", "else_steps must be list", f"{step_path}.else_steps"))
+                        if isinstance(then_steps, list):
+                            _validate_steps_list(then_steps, f"{step_path}.then_steps", allow_delay=False)
+                        if isinstance(else_steps, list):
+                            _validate_steps_list(else_steps, f"{step_path}.else_steps", allow_delay=False)
+                    if kind == "delay":
+                        if "seconds" not in step and "until" not in step:
+                            errors.append(_issue("AUTOMATION_STEP_INVALID", "seconds or until required", step_path))
+                    if kind == "foreach":
+                        if "over" not in step:
+                            errors.append(_issue("AUTOMATION_STEP_INVALID", "over is required", f"{step_path}.over"))
+                        child_steps = step.get("steps")
+                        has_action = isinstance(step.get("action_id"), str)
+                        has_steps = isinstance(child_steps, list) and len(child_steps) > 0
+                        if not has_action and not has_steps:
+                            errors.append(_issue("AUTOMATION_STEP_INVALID", "foreach requires action_id or nested steps", step_path))
+                        if child_steps is not None and not isinstance(child_steps, list):
+                            errors.append(_issue("AUTOMATION_STEP_INVALID", "steps must be list", f"{step_path}.steps"))
+                        if isinstance(child_steps, list):
+                            _validate_steps_list(child_steps, f"{step_path}.steps", allow_delay=False)
+
+            _validate_steps_list(steps, "steps")
     return errors
 
 
@@ -33258,6 +34728,274 @@ async def delete_automation(request: Request, automation_id: str) -> dict:
         return _error_response("AUTOMATION_DELETE_FORBIDDEN", "Only draft/disabled automations can be deleted", "status", status=400)
     automation_store.delete(automation_id)
     return _ok_response({"deleted": True})
+
+
+def _ext_openapi_schema() -> dict:
+    if hasattr(app.state, "ext_openapi_schema") and isinstance(app.state.ext_openapi_schema, dict):
+        return app.state.ext_openapi_schema
+    routes = []
+    excluded = _PUBLIC_EXT_DOC_PATHS
+    for route in app.routes:
+        path = getattr(route, "path", None)
+        if not isinstance(path, str):
+            continue
+        if path.startswith("/ext/v1") and path not in excluded:
+            routes.append(route)
+    schema = get_openapi(
+        title="Octodrop External API",
+        version="v1",
+        description=(
+            "Public Octodrop API for external systems. "
+            "Authenticate with `X-Api-Key` and use these routes for metadata, records, "
+            "published automation execution, and signed webhook-driven integrations.\n\n"
+            "Guide: [/ext/v1/guide.md](/ext/v1/guide.md)"
+        ),
+        routes=routes,
+    )
+    schema["servers"] = [{"url": "/"}]
+    app.state.ext_openapi_schema = schema
+    return schema
+
+
+@app.get("/ext/v1/openapi.json", include_in_schema=False)
+async def ext_openapi_json() -> dict:
+    return _ext_openapi_schema()
+
+
+@app.get("/ext/v1/guide.md", include_in_schema=False)
+async def ext_external_api_guide() -> Response:
+    guide_path = ROOT / "OCTODROP_EXTERNAL_API_GUIDE.md"
+    if not guide_path.exists():
+        return Response("# External API Guide\n\nGuide file not found.\n", media_type="text/markdown", status_code=404)
+    return Response(guide_path.read_text(encoding="utf-8"), media_type="text/markdown; charset=utf-8")
+
+
+@app.get("/ext/v1/docs", include_in_schema=False)
+async def ext_swagger_ui() -> Response:
+    return get_swagger_ui_html(
+        openapi_url="/ext/v1/openapi.json",
+        title="Octodrop External API Docs",
+        oauth2_redirect_url="/ext/v1/docs/oauth2-redirect",
+    )
+
+
+@app.get("/ext/v1/docs/oauth2-redirect", include_in_schema=False)
+async def ext_swagger_ui_redirect() -> Response:
+    return get_swagger_ui_oauth2_redirect_html()
+
+
+@app.get("/ext/v1/redoc", include_in_schema=False)
+async def ext_redoc() -> Response:
+    return get_redoc_html(
+        openapi_url="/ext/v1/openapi.json",
+        title="Octodrop External API ReDoc",
+    )
+
+
+@app.get("/ext/v1/meta/entities", tags=["External API"], summary="List External Entity Metadata")
+async def ext_list_entities(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "meta.read", "External API metadata access required")
+    if denied:
+        return denied
+    entities: list[dict] = []
+    for module in _get_registry_list(request):
+        module_id = module.get("module_id")
+        manifest_hash = module.get("current_hash")
+        if not isinstance(module_id, str) or not module_id or not isinstance(manifest_hash, str) or not manifest_hash:
+            continue
+        try:
+            manifest = _get_snapshot(request, module_id, manifest_hash)
+        except Exception:
+            continue
+        module_meta = manifest.get("module") if isinstance(manifest, dict) else {}
+        for entity in (manifest.get("entities") or []):
+            if not isinstance(entity, dict) or not isinstance(entity.get("id"), str):
+                continue
+            item = _external_entity_meta(entity)
+            item["module_id"] = module_id
+            item["module_name"] = module_meta.get("name") if isinstance(module_meta, dict) else None
+            entities.append(item)
+    entities.sort(key=lambda item: (str(item.get("module_name") or ""), str(item.get("id") or "")))
+    return _ok_response({"entities": entities})
+
+
+@app.get("/ext/v1/records/{entity_id}", tags=["External API"], summary="List Records")
+async def ext_list_records(
+    request: Request,
+    entity_id: str,
+    q: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    cursor: str | None = None,
+    search_fields: str | None = None,
+    fields: str | None = None,
+    domain: str | None = None,
+) -> dict:
+    return await list_generic_records(
+        request,
+        entity_id=entity_id,
+        q=q,
+        limit=limit,
+        offset=offset,
+        cursor=cursor,
+        search_fields=search_fields,
+        fields=fields,
+        domain=domain,
+    )
+
+
+@app.post("/ext/v1/records/{entity_id}", tags=["External API"], summary="Create Record")
+async def ext_create_record(request: Request, entity_id: str) -> dict:
+    return await create_generic_record(request, entity_id)
+
+
+@app.get("/ext/v1/records/{entity_id}/{record_id}", tags=["External API"], summary="Get Record")
+async def ext_get_record(request: Request, entity_id: str, record_id: str) -> dict:
+    return await get_generic_record(request, entity_id, record_id)
+
+
+@app.put("/ext/v1/records/{entity_id}/{record_id}", tags=["External API"], summary="Replace Record")
+async def ext_put_record(request: Request, entity_id: str, record_id: str) -> dict:
+    return await update_generic_record(request, entity_id, record_id)
+
+
+@app.patch("/ext/v1/records/{entity_id}/{record_id}", tags=["External API"], summary="Patch Record")
+async def ext_patch_record(request: Request, entity_id: str, record_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "records.write", "Write access required")
+    if denied:
+        return denied
+    entity_id = _normalize_entity_id(entity_id)
+    found = _find_entity_def(request, entity_id)
+    if not found:
+        return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "entity_id", status=404)
+    existing = generic_records.get(entity_id, record_id)
+    if not existing:
+        return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
+    before_record = existing.get("record") if isinstance(existing, dict) else None
+    if not isinstance(before_record, dict):
+        return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
+    body = await _safe_json(request)
+    patch = body.get("record") if isinstance(body, dict) and "record" in body else body
+    if not isinstance(patch, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    merged = dict(before_record)
+    merged.update(patch)
+    merged.pop("id", None)
+    workflow = _find_entity_workflow(found[2], found[1].get("id"))
+    errors, clean = _validate_record_payload(found[1], merged, for_create=False, workflow=workflow)
+    lookup_errors = _validate_lookup_fields(found[1], _registry_for_request(request), lambda module_id, manifest_hash: _get_snapshot(request, module_id, manifest_hash))
+    errors.extend(lookup_errors)
+    domain_errors = _enforce_lookup_domains(found[1], clean if isinstance(clean, dict) else {})
+    errors.extend(domain_errors)
+    if errors:
+        _log_record_validation_errors(entity_id, merged, errors, workflow)
+        return _validation_response(errors, [])
+    try:
+        record = _update_record_with_computed_fields(request, entity_id, found[1], record_id, clean)
+    except Exception as exc:
+        constraint = _wrap_db_constraint_error(exc)
+        if constraint:
+            return _error_response(
+                "RECORD_WRITE_FAILED",
+                "Record update failed due to constraint",
+                "record",
+                detail=constraint.get("detail"),
+                status=400,
+            )
+        raise
+    _resp_cache_invalidate_record(entity_id, record_id)
+    _resp_cache_invalidate_entity(entity_id)
+    after_record = record.get("record") if isinstance(record, dict) else None
+    if isinstance(after_record, dict):
+        changed = _changed_fields(before_record, after_record)
+        before_snapshot = _automation_record_snapshot(before_record, found[1])
+        after_snapshot = _automation_record_snapshot(after_record, found[1])
+        _add_chatter_entry(entity_id, record_id, "system", "Record updated", getattr(request.state, "user", None))
+        _emit_triggers(
+            request,
+            found[0],
+            found[2],
+            "record.updated",
+            {
+                "entity_id": found[1].get("id"),
+                "record_id": record_id,
+                "changed_fields": changed,
+                "before": before_snapshot,
+                "after": after_snapshot,
+                "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
+                "timestamp": _now(),
+            },
+            entity_id=found[1].get("id"),
+        )
+    return _ok_response({"record": record["record"], "record_id": record["record_id"]})
+
+
+@app.get("/ext/v1/automations", tags=["External API"], summary="List Published Automations")
+async def ext_list_automations(request: Request, status: str | None = "published") -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "automations.read", "External API automation access required")
+    if denied:
+        return denied
+    effective_status = status
+    if actor.get("actor_type") == "api_credential" and not effective_status:
+        effective_status = "published"
+    items = automation_store.list(status=effective_status)
+    if actor.get("actor_type") == "api_credential":
+        items = [item for item in items if item.get("status") == "published"]
+    return _ok_response({"automations": items})
+
+
+@app.get("/ext/v1/automations/{automation_id}", tags=["External API"], summary="Get Published Automation")
+async def ext_get_automation(request: Request, automation_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "automations.read", "External API automation access required")
+    if denied:
+        return denied
+    item = automation_store.get(automation_id)
+    if not item or (actor.get("actor_type") == "api_credential" and item.get("status") != "published"):
+        return _error_response("AUTOMATION_NOT_FOUND", "Automation not found", "automation_id", status=404)
+    return _ok_response({"automation": item})
+
+
+@app.post("/ext/v1/automations/{automation_id}/runs", tags=["External API"], summary="Queue Automation Run")
+async def ext_run_automation(request: Request, automation_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "automations.write", "External API automation write access required")
+    if denied:
+        return denied
+    item = automation_store.get(automation_id)
+    if not item or (actor.get("actor_type") == "api_credential" and item.get("status") != "published"):
+        return _error_response("AUTOMATION_NOT_FOUND", "Automation not found", "automation_id", status=404)
+    body = await _safe_json(request)
+    trigger_payload = {
+        "payload": body.get("payload") if isinstance(body, dict) else None,
+        "source": "external_api",
+        "api_credential_id": actor.get("api_credential_id"),
+        "timestamp": _now(),
+    }
+    run = automation_store.create_run(
+        {
+            "automation_id": automation_id,
+            "status": "queued",
+            "trigger_type": "external.api",
+            "trigger_payload": trigger_payload,
+            "current_step_index": 0,
+        }
+    )
+    job = job_store.enqueue({"type": "automation.run", "payload": {"run_id": run.get("id")}})
+    return _ok_response({"run": run, "job": job}, status=202)
 
 
 @app.get("/automations/{automation_id}/runs")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import os
 import json
+import httpx
 import sys
 import time
 import traceback
@@ -37,21 +38,32 @@ def _load_env_file(path: Path) -> None:
 _load_env_file(ROOT / "app" / ".env")
 
 from app.email import get_provider, render_template
+from app.integration_mapping_runtime import execute_integration_mapping
+from app.integrations_runtime import execute_connection_request, execute_connection_sync
 from app.secrets import SecretStoreError
+from app.secrets import resolve_secret
 from app.stores import MemoryAutomationStore, MemoryJobStore
 from app.stores_db import (
     DbAttachmentStore,
+    DbChatterStore,
     DbConnectionStore,
     DbDocTemplateStore,
     DbEmailStore,
+    DbExternalWebhookSubscriptionStore,
     DbGenericRecordStore,
+    DbIntegrationMappingStore,
+    DbIntegrationRequestLogStore,
+    DbIntegrationWebhookStore,
     DbJobStore,
     DbNotificationStore,
     DbAutomationStore,
+    DbSyncCheckpointStore,
+    DbWebhookEventStore,
     get_org_id,
     set_org_id,
     reset_org_id,
 )
+from app.webhook_signing import build_webhook_signature_headers
 
 
 def _get_attachment_helpers():
@@ -417,6 +429,23 @@ def _resolve_inputs(inputs: dict | None, ctx: dict) -> dict:
     return {key: _resolve_value(val, ctx) for key, val in inputs.items()}
 
 
+def _resolve_step_value(value: object, ctx: dict) -> object:
+    return _resolve_value(value, ctx)
+
+
+def _coerce_iteration_items(value: object) -> list:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        records = value.get("records")
+        if isinstance(records, list):
+            return records
+        items = value.get("items")
+        if isinstance(items, list):
+            return items
+    return []
+
+
 def _coerce_list(value: object) -> list:
     if value is None:
         return []
@@ -498,6 +527,38 @@ def _find_entity_def(entity_id: str | None) -> dict | None:
     return None
 
 
+def _find_entity_context(entity_id: str | None) -> tuple[str, dict, dict] | None:
+    if not isinstance(entity_id, str) or not entity_id:
+        return None
+    app_main = _get_app_main()
+    find_entity_def_in_registry = _get_entity_def_resolver()
+
+    class _RegistryProxy:
+        def list(self):
+            return app_main.registry.list()
+
+    for candidate in _candidate_entity_ids(entity_id):
+        found = find_entity_def_in_registry(
+            _RegistryProxy(),
+            lambda module_id, manifest_hash: app_main.store.get_snapshot(module_id, manifest_hash),
+            candidate,
+        )
+        if isinstance(found, tuple) and len(found) >= 3 and isinstance(found[1], dict) and isinstance(found[2], dict):
+            return found[0], found[1], found[2]
+    return None
+
+
+def _find_existing_record(entity_id: str | None, record_id: str | None) -> tuple[str, dict] | None:
+    if not (isinstance(entity_id, str) and entity_id and isinstance(record_id, str) and record_id):
+        return None
+    store = DbGenericRecordStore()
+    for candidate in _candidate_entity_ids(entity_id):
+        record = store.get(candidate, record_id)
+        if isinstance(record, dict) and isinstance(record.get("record"), dict):
+            return candidate, record
+    return None
+
+
 def _find_field_def(entity_def: dict | None, field_id: str | None) -> dict | None:
     if not isinstance(entity_def, dict) or not isinstance(field_id, str) or not field_id:
         return None
@@ -508,6 +569,406 @@ def _find_field_def(entity_def: dict | None, field_id: str | None) -> dict | Non
         if isinstance(field, dict) and field.get("id") == field_id:
             return field
     return None
+
+
+def _system_actor() -> dict:
+    return {
+        "user_id": "system",
+        "id": "system",
+        "name": "System",
+        "email": None,
+        "workspace_role": "admin",
+        "platform_role": "superadmin",
+    }
+
+
+def _internal_request() -> object:
+    from types import SimpleNamespace
+
+    actor = _system_actor()
+    return SimpleNamespace(
+        state=SimpleNamespace(cache={}, actor=actor, user=actor),
+        headers={},
+    )
+
+
+def _coerce_json_object(value: object, field_name: str) -> dict:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except Exception as exc:
+            raise RuntimeError(f"{field_name} must be valid JSON object") from exc
+        if isinstance(parsed, dict):
+            return parsed
+    raise RuntimeError(f"{field_name} object required")
+
+
+def _emit_automation_event(event_type: str, payload: dict) -> None:
+    from event_bus import make_event
+
+    app_main = _get_app_main()
+    meta = {
+        "module_id": "__automation__",
+        "manifest_hash": "automation",
+        "actor": {"id": "system", "name": "System"},
+        "org_id": get_org_id(),
+        "trace_id": None,
+    }
+    emitted = make_event(event_type, {"event": event_type, **(payload or {})}, meta)
+    app_main._handle_automation_event(emitted)
+    try:
+        app_main._emit_external_webhook_subscriptions(event_type, {"event": event_type, **(payload or {})}, meta)
+    except Exception:
+        pass
+
+
+def _mapping_matches_resource(mapping: dict, resource_key: str | None) -> bool:
+    mapping_json = mapping.get("mapping_json") if isinstance(mapping.get("mapping_json"), dict) else {}
+    configured = mapping_json.get("resource_key")
+    if not isinstance(configured, str) or not configured.strip():
+        return True
+    actual = str(resource_key or "").strip()
+    return configured.strip() == actual
+
+
+def _apply_connection_mappings(connection: dict, *, resource_key: str | None, items: list, source: str) -> dict:
+    connection_id = str(connection.get("id") or "")
+    if not connection_id or not isinstance(items, list) or not items:
+        return {"count": 0, "created": 0, "updated": 0, "skipped": 0, "failed": 0, "results": []}
+    mapping_store = DbIntegrationMappingStore()
+    mappings = [
+        mapping
+        for mapping in (mapping_store.list(connection_id=connection_id) or [])
+        if isinstance(mapping, dict) and _mapping_matches_resource(mapping, resource_key)
+    ]
+    if not mappings:
+        return {"count": 0, "created": 0, "updated": 0, "skipped": 0, "failed": 0, "results": []}
+    results: list[dict] = []
+    created = 0
+    updated = 0
+    skipped = 0
+    failed = 0
+    for item_index, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        for mapping in mappings:
+            mapping_id = mapping.get("id")
+            try:
+                result = execute_integration_mapping(
+                    mapping,
+                    item,
+                    {
+                        "connection_id": connection_id,
+                        "resource_key": resource_key,
+                        "connection": connection,
+                        "source": source,
+                        "item_index": item_index,
+                    },
+                )
+                op = result.get("operation")
+                if op == "created":
+                    created += 1
+                elif op == "updated":
+                    updated += 1
+                elif op == "skipped":
+                    skipped += 1
+                result_payload = {
+                    "mapping_id": mapping_id,
+                    "mapping_name": mapping.get("name"),
+                    "item_index": item_index,
+                    **result,
+                }
+                results.append(result_payload)
+                _emit_automation_event(
+                    "integration.mapping.applied",
+                    {
+                        "connection_id": connection_id,
+                        "mapping_id": mapping_id,
+                        "mapping_name": mapping.get("name"),
+                        "resource_key": resource_key,
+                        "item_index": item_index,
+                        "operation": op,
+                        "target_entity": result.get("target_entity"),
+                        "record_id": result.get("record_id"),
+                        "source": source,
+                    },
+                )
+            except Exception as exc:
+                failed += 1
+                error_message = str(exc)
+                results.append(
+                    {
+                        "mapping_id": mapping_id,
+                        "mapping_name": mapping.get("name"),
+                        "item_index": item_index,
+                        "operation": "failed",
+                        "error": error_message,
+                    }
+                )
+                _emit_automation_event(
+                    "integration.mapping.failed",
+                    {
+                        "connection_id": connection_id,
+                        "mapping_id": mapping_id,
+                        "mapping_name": mapping.get("name"),
+                        "resource_key": resource_key,
+                        "item_index": item_index,
+                        "error": error_message,
+                        "source": source,
+                    },
+                )
+    return {
+        "count": len(results),
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "failed": failed,
+        "results": results,
+    }
+
+
+def _run_integration_sync(connection: dict, sync_config: dict | None, *, source: str) -> dict:
+    connection_id = str(connection.get("id") or "")
+    if not connection_id:
+        raise RuntimeError("Connection id required")
+    resolved_sync = dict(sync_config or {})
+    scope_key = str(
+        resolved_sync.get("scope_key")
+        or resolved_sync.get("resource_key")
+        or ((connection.get("config") or {}).get("sync") or {}).get("scope_key")
+        or ((connection.get("config") or {}).get("sync") or {}).get("resource_key")
+        or "default"
+    ).strip() or "default"
+    checkpoint_store = DbSyncCheckpointStore()
+    request_log_store = DbIntegrationRequestLogStore()
+    connection_store = DbConnectionStore()
+    checkpoint = checkpoint_store.get(connection_id, scope_key)
+    checkpoint_store.upsert(
+        {
+            "connection_id": connection_id,
+            "scope_key": scope_key,
+            "cursor_value": checkpoint.get("cursor_value") if isinstance(checkpoint, dict) else None,
+            "cursor_json": checkpoint.get("cursor_json") if isinstance(checkpoint, dict) else {},
+            "last_synced_at": checkpoint.get("last_synced_at") if isinstance(checkpoint, dict) else None,
+            "status": "running",
+            "last_error": None,
+        }
+    )
+    try:
+        result = execute_connection_sync(connection, resolved_sync, get_org_id(), checkpoint=checkpoint)
+        request_log_store.create(
+            {
+                "connection_id": connection_id,
+                "source": source,
+                "direction": "outbound",
+                "method": result.get("method"),
+                "url": result.get("url"),
+                "request_headers_json": result.get("request_headers") or {},
+                "request_query_json": result.get("request_query") or {},
+                "request_body_json": result.get("request_body_json"),
+                "request_body_text": result.get("request_body_text"),
+                "response_status": result.get("status_code"),
+                "response_headers_json": result.get("headers") or {},
+                "response_body_json": result.get("body_json"),
+                "response_body_text": result.get("body_text"),
+                "ok": result.get("ok"),
+                "error_message": None if result.get("ok") else f"HTTP {result.get('status_code')}",
+            }
+        )
+        if not result.get("ok"):
+            raise RuntimeError(f"Integration sync failed with status {result.get('status_code')}")
+        checkpoint_payload = result.get("checkpoint") if isinstance(result.get("checkpoint"), dict) else {}
+        synced_at = _now().strftime("%Y-%m-%dT%H:%M:%SZ")
+        checkpoint_store.upsert(
+            {
+                "connection_id": connection_id,
+                "scope_key": str(checkpoint_payload.get("scope_key") or scope_key),
+                "cursor_value": checkpoint_payload.get("cursor_value"),
+                "cursor_json": checkpoint_payload.get("cursor_json") or {},
+                "last_synced_at": synced_at,
+                "status": "idle",
+                "last_error": None,
+            }
+        )
+        connection_store.update(
+            connection_id,
+            {
+                "health_status": "ok",
+                "last_success_at": synced_at,
+                "last_error": None,
+            },
+        )
+        emit_events = bool(resolved_sync.get("emit_events") or (((connection.get("config") or {}).get("sync") or {}).get("emit_events")))
+        resource_key = result.get("resource_key") or scope_key
+        items = result.get("items") if isinstance(result.get("items"), list) else []
+        mapping_summary = _apply_connection_mappings(connection, resource_key=resource_key, items=items, source=source)
+        completed_payload = {
+            "connection_id": connection_id,
+            "scope_key": scope_key,
+            "resource_key": resource_key,
+            "item_count": len(items),
+            "next_cursor": result.get("next_cursor"),
+            "status_code": result.get("status_code"),
+            "source": source,
+            "mapping_summary": {
+                "count": mapping_summary.get("count"),
+                "created": mapping_summary.get("created"),
+                "updated": mapping_summary.get("updated"),
+                "skipped": mapping_summary.get("skipped"),
+                "failed": mapping_summary.get("failed"),
+            },
+        }
+        _emit_automation_event("integration.sync.completed", completed_payload)
+        if emit_events:
+            for item_index, item in enumerate(items):
+                item_payload = {
+                    "connection_id": connection_id,
+                    "scope_key": scope_key,
+                    "resource_key": resource_key,
+                    "item_index": item_index,
+                    "item": item,
+                    "source": source,
+                }
+                _emit_automation_event("integration.sync.item", item_payload)
+                if isinstance(resource_key, str) and resource_key.strip():
+                    _emit_automation_event(f"integration.sync.{resource_key.strip()}.item", item_payload)
+        return {**result, "mapping_summary": mapping_summary}
+    except Exception as exc:
+        error_message = str(exc)
+        checkpoint_store.upsert(
+            {
+                "connection_id": connection_id,
+                "scope_key": scope_key,
+                "cursor_value": checkpoint.get("cursor_value") if isinstance(checkpoint, dict) else None,
+                "cursor_json": checkpoint.get("cursor_json") if isinstance(checkpoint, dict) else {},
+                "last_synced_at": checkpoint.get("last_synced_at") if isinstance(checkpoint, dict) else None,
+                "status": "error",
+                "last_error": error_message,
+            }
+        )
+        connection_store.update(
+            connection_id,
+            {
+                "health_status": "error",
+                "last_tested_at": _now().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "last_error": error_message,
+            },
+        )
+        request_log_store.create(
+            {
+                "connection_id": connection_id,
+                "source": source,
+                "direction": "outbound",
+                "method": (resolved_sync.get("request") or {}).get("method"),
+                "url": (resolved_sync.get("request") or {}).get("url") or (resolved_sync.get("request") or {}).get("path"),
+                "request_headers_json": ((resolved_sync.get("request") or {}).get("headers") or {}),
+                "request_query_json": ((resolved_sync.get("request") or {}).get("query") or {}),
+                "request_body_json": (resolved_sync.get("request") or {}).get("json"),
+                "request_body_text": (resolved_sync.get("request") or {}).get("body"),
+                "ok": False,
+                "error_message": error_message,
+            }
+        )
+        _emit_automation_event(
+            "integration.sync.failed",
+            {
+                "connection_id": connection_id,
+                "scope_key": scope_key,
+                "source": source,
+                "error": error_message,
+            },
+        )
+        raise
+
+
+def _run_generic_create_record(inputs: dict, ctx: dict) -> dict:
+    app_main = _get_app_main()
+    request = _internal_request()
+    entity_id = inputs.get("entity_id") or _lookup_path(ctx, "trigger.entity_id")
+    if not isinstance(entity_id, str) or not entity_id:
+        raise RuntimeError("entity_id required")
+    entity_ctx = _find_entity_context(entity_id)
+    if not entity_ctx:
+        raise RuntimeError("Entity not found")
+    module_id, entity_def, manifest = entity_ctx
+    values = _coerce_json_object(inputs.get("values"), "values")
+    workflow = app_main._find_entity_workflow(manifest, entity_def.get("id"))
+    errors, clean = app_main._validate_record_payload(entity_def, values, for_create=True, workflow=workflow)
+    lookup_errors = app_main._validate_lookup_fields(
+        entity_def,
+        app_main._registry_for_request(request),
+        lambda mod_id, manifest_hash: app_main._get_snapshot(request, mod_id, manifest_hash),
+    )
+    errors.extend(lookup_errors)
+    domain_errors = app_main._enforce_lookup_domains(entity_def, clean if isinstance(clean, dict) else {})
+    errors.extend(domain_errors)
+    if errors:
+        raise RuntimeError(f"Record create validation failed: {errors}")
+    record = app_main._create_record_with_computed_fields(request, entity_def.get("id"), entity_def, clean)
+    record_id = record.get("record_id")
+    record_data = record.get("record") if isinstance(record, dict) else None
+    if isinstance(record_id, str):
+        app_main._add_chatter_entry(entity_def.get("id"), record_id, "system", "Record created", _system_actor())
+        if isinstance(record_data, dict):
+            app_main._activity_add_record_created_event(entity_def, record_id, record_data, actor=_system_actor())
+            snapshot = app_main._automation_record_snapshot(record_data, entity_def)
+            _emit_automation_event(
+                "record.created",
+                {
+                    "entity_id": entity_def.get("id"),
+                    "record_id": record_id,
+                    "record": snapshot,
+                    "changed_fields": sorted(record_data.keys()),
+                    "user_id": "system",
+                },
+            )
+    return {"entity_id": entity_def.get("id"), "record_id": record_id, "record": record_data}
+
+
+def _run_generic_update_record(inputs: dict, ctx: dict) -> dict:
+    app_main = _get_app_main()
+    request = _internal_request()
+    entity_id = inputs.get("entity_id") or _lookup_path(ctx, "trigger.entity_id")
+    record_id = inputs.get("record_id") or _lookup_path(ctx, "trigger.record_id")
+    if not isinstance(entity_id, str) or not entity_id:
+        raise RuntimeError("entity_id required")
+    if not isinstance(record_id, str) or not record_id:
+        raise RuntimeError("record_id required")
+    patch = _coerce_json_object(inputs.get("patch"), "patch")
+    entity_ctx = _find_entity_context(entity_id)
+    if not entity_ctx:
+        raise RuntimeError("Entity not found")
+    _, entity_def, manifest = entity_ctx
+    existing = _find_existing_record(entity_id, record_id)
+    if not existing:
+        raise RuntimeError("Record not found")
+    target_entity_id, existing_record = existing
+    before_record = existing_record.get("record") or {}
+    workflow = app_main._find_entity_workflow(manifest, entity_def.get("id"))
+    errors, updated = app_main._validate_patch_payload(entity_def, patch, before_record, workflow=workflow)
+    if errors:
+        raise RuntimeError(f"Record update validation failed: {errors}")
+    record = app_main._update_record_with_computed_fields(request, target_entity_id, entity_def, record_id, updated)
+    after_record = record.get("record") if isinstance(record, dict) else None
+    app_main._add_chatter_entry(target_entity_id, record_id, "system", "Record updated", _system_actor())
+    if isinstance(after_record, dict):
+        changed_fields = app_main._changed_fields(before_record or {}, after_record or {})
+        before_snapshot = app_main._automation_record_snapshot(before_record, entity_def)
+        after_snapshot = app_main._automation_record_snapshot(after_record, entity_def)
+        _emit_automation_event(
+            "record.updated",
+            {
+                "entity_id": entity_def.get("id"),
+                "record_id": record_id,
+                "changed_fields": changed_fields,
+                "before": before_snapshot,
+                "after": after_snapshot,
+                "user_id": "system",
+            },
+        )
+    return {"entity_id": target_entity_id, "record_id": record_id, "record": after_record}
 
 
 def _lookup_email_from_record(target_entity_id: str | None, target_record_id: str | None, email_field: str | None) -> list[str]:
@@ -611,6 +1072,60 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
         return {"ok": True}
     if action_id == "system.fail":
         raise RuntimeError("Forced failure")
+    if action_id == "system.create_record":
+        return _run_generic_create_record(inputs, ctx)
+    if action_id == "system.update_record":
+        return _run_generic_update_record(inputs, ctx)
+    if action_id == "system.query_records":
+        entity_id = inputs.get("entity_id") or _lookup_path(ctx, "trigger.entity_id")
+        if not isinstance(entity_id, str) or not entity_id:
+            raise RuntimeError("entity_id required")
+        store = DbGenericRecordStore()
+        limit = max(1, min(200, int(inputs.get("limit") or 25)))
+        offset = max(0, int(inputs.get("offset") or 0))
+        q = inputs.get("q")
+        search_fields = inputs.get("search_fields")
+        if isinstance(search_fields, str):
+            search_fields = [part.strip() for part in search_fields.split(",") if part.strip()]
+        records = store.list(entity_id, limit=limit, offset=offset, q=q if isinstance(q, str) else None, search_fields=search_fields if isinstance(search_fields, list) else None)
+        filter_expr = inputs.get("filter_expr")
+        if isinstance(filter_expr, str) and filter_expr.strip():
+            try:
+                filter_expr = json.loads(filter_expr)
+            except Exception as exc:
+                raise RuntimeError("filter_expr must be valid JSON object") from exc
+        if isinstance(filter_expr, dict):
+            filtered = []
+            for row in records:
+                record = row.get("record") if isinstance(row, dict) else None
+                if not isinstance(record, dict):
+                    continue
+                try:
+                    if eval_condition(filter_expr, {"record": record, **ctx}):
+                        filtered.append(row)
+                except Exception:
+                    continue
+            records = filtered
+        return {
+            "entity_id": entity_id,
+            "count": len(records),
+            "records": records,
+            "first": records[0] if records else None,
+        }
+    if action_id == "system.add_chatter":
+        entity_id = inputs.get("entity_id") or _lookup_path(ctx, "trigger.entity_id")
+        record_id = inputs.get("record_id") or _lookup_path(ctx, "trigger.record_id")
+        body = inputs.get("body")
+        entry_type = inputs.get("entry_type") or "note"
+        if not isinstance(entity_id, str) or not entity_id:
+            raise RuntimeError("entity_id required")
+        if not isinstance(record_id, str) or not record_id:
+            raise RuntimeError("record_id required")
+        if not isinstance(body, str) or not body.strip():
+            raise RuntimeError("body required")
+        store = DbChatterStore()
+        entry = store.add(entity_id, record_id, str(entry_type), body.strip(), _system_actor())
+        return {"entry": entry, "entity_id": entity_id, "record_id": record_id}
     if action_id == "system.notify":
         store = DbNotificationStore()
         recipients: list[str] = []
@@ -757,6 +1272,108 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
         )
         return {"job": job}
 
+    if action_id == "system.integration_request":
+        connection_id = inputs.get("connection_id")
+        if not isinstance(connection_id, str) or not connection_id:
+            raise RuntimeError("connection_id required")
+        connection = DbConnectionStore().get(connection_id)
+        if not connection:
+            raise RuntimeError("Connection not found")
+        request_config = {
+            "method": inputs.get("method") or "GET",
+            "path": inputs.get("path"),
+            "url": inputs.get("url"),
+            "headers": inputs.get("headers") or {},
+            "query": inputs.get("query") or {},
+            "json": inputs.get("json"),
+            "body": inputs.get("body"),
+            "timeout_seconds": inputs.get("timeout_seconds"),
+        }
+        try:
+            result = execute_connection_request(connection, request_config, get_org_id())
+        except Exception as exc:
+            DbIntegrationRequestLogStore().create(
+                {
+                    "connection_id": connection_id,
+                    "source": "automation",
+                    "direction": "outbound",
+                    "method": request_config.get("method"),
+                    "url": request_config.get("url") or request_config.get("path"),
+                    "request_headers_json": request_config.get("headers") or {},
+                    "request_query_json": request_config.get("query") or {},
+                    "request_body_json": request_config.get("json"),
+                    "request_body_text": request_config.get("body"),
+                    "ok": False,
+                    "error_message": str(exc),
+                }
+            )
+            raise
+        DbIntegrationRequestLogStore().create(
+            {
+                "connection_id": connection_id,
+                "source": "automation",
+                "direction": "outbound",
+                "method": result.get("method"),
+                "url": result.get("url"),
+                "request_headers_json": result.get("request_headers") or {},
+                "request_query_json": result.get("request_query") or {},
+                "request_body_json": result.get("request_body_json"),
+                "request_body_text": result.get("request_body_text"),
+                "response_status": result.get("status_code"),
+                "response_headers_json": result.get("headers") or {},
+                "response_body_json": result.get("body_json"),
+                "response_body_text": result.get("body_text"),
+                "ok": result.get("ok"),
+                "error_message": None if result.get("ok") else f"HTTP {result.get('status_code')}",
+            }
+        )
+        if not result.get("ok"):
+            raise RuntimeError(f"Integration request failed with status {result.get('status_code')}")
+        return result
+
+    if action_id == "system.integration_sync":
+        connection_id = inputs.get("connection_id")
+        if not isinstance(connection_id, str) or not connection_id:
+            raise RuntimeError("connection_id required")
+        connection = DbConnectionStore().get(connection_id)
+        if not connection:
+            raise RuntimeError("Connection not found")
+        sync_config = inputs.get("sync") if isinstance(inputs.get("sync"), dict) else {}
+        for key in (
+            "scope_key",
+            "resource_key",
+            "cursor_param",
+            "cursor_value_path",
+            "last_item_cursor_path",
+            "items_path",
+            "limit_param",
+            "max_items",
+            "emit_events",
+        ):
+            if key in inputs:
+                sync_config[key] = inputs.get(key)
+        request_config = {}
+        for key in ("method", "path", "url", "headers", "query", "json", "body", "timeout_seconds"):
+            if key in inputs:
+                request_config[key] = inputs.get(key)
+        if request_config:
+            sync_config["request"] = request_config
+        if inputs.get("async"):
+            job = job_store.enqueue(
+                {
+                    "type": "integration.sync.run",
+                    "payload": {
+                        "connection_id": connection_id,
+                        "sync": sync_config,
+                        "source": "automation",
+                    },
+                    "idempotency_key": inputs.get("idempotency_key"),
+                    "workspace_id": get_org_id(),
+                }
+            )
+            return {"job": job}
+        return _run_integration_sync(connection, sync_config, source="automation")
+
     raise RuntimeError(f"Unsupported action_id: {action_id}")
 
 
@@ -787,6 +1404,152 @@ def _handle_action(step: dict, inputs: dict, ctx: dict, job_store: DbJobStore) -
     return result.get("data") or result.get("result") or {}
 
 
+def _record_step_output(ctx: dict, step_id: str, output: dict, step: dict | None = None) -> None:
+    ctx["steps"][step_id] = output
+    ctx["last"] = output
+    store_as = step.get("store_as") if isinstance(step, dict) else None
+    if isinstance(store_as, str) and store_as:
+        ctx["vars"][store_as] = output
+
+
+def _execute_nested_steps(
+    run_id: str,
+    steps: list,
+    ctx: dict,
+    automation_store,
+    job_store,
+    *,
+    step_prefix: str,
+    sequence_state: dict,
+) -> None:
+    if not isinstance(steps, list):
+        return
+    for child_idx, child_step in enumerate(steps):
+        if not isinstance(child_step, dict):
+            raise RuntimeError(f"Invalid nested step at {step_prefix}[{child_idx}]")
+        child_id = child_step.get("id") or f"{step_prefix}_{child_idx}"
+        qualified_step_id = f"{step_prefix}.{child_id}"
+        sequence_state["value"] += 1
+        step_run = automation_store.create_step_run(
+            {
+                "run_id": run_id,
+                "step_index": sequence_state["value"],
+                "step_id": qualified_step_id,
+                "status": "running",
+                "attempt": 0,
+                "started_at": _now(),
+                "input": child_step,
+                "idempotency_key": f"{run_id}:{qualified_step_id}:0",
+            }
+        )
+        output = _execute_step_runtime(
+            child_step,
+            ctx,
+            job_store,
+            run_id=run_id,
+            automation_store=automation_store,
+            step_prefix=qualified_step_id,
+            sequence_state=sequence_state,
+            allow_delay=False,
+        )
+        automation_store.update_step_run(
+            step_run.get("id"),
+            {
+                "status": "succeeded",
+                "ended_at": _now(),
+                "output": output,
+            },
+        )
+
+
+def _execute_step_runtime(
+    step: dict,
+    ctx: dict,
+    job_store: DbJobStore,
+    *,
+    run_id: str,
+    automation_store,
+    step_prefix: str,
+    sequence_state: dict,
+    allow_delay: bool,
+) -> dict:
+    kind = step.get("kind")
+    step_id = step.get("id") or step_prefix
+    if kind == "condition":
+        expr = step.get("expr") or {}
+        result = bool(eval_condition(expr, ctx))
+        output = {"result": result, "stop_on_false": bool(step.get("stop_on_false"))}
+        _record_step_output(ctx, step_id, output, step)
+        branch_steps = step.get("then_steps") if result else step.get("else_steps")
+        if isinstance(branch_steps, list) and branch_steps:
+            _execute_nested_steps(
+                run_id,
+                branch_steps,
+                ctx,
+                automation_store,
+                job_store,
+                step_prefix=f"{step_prefix}.{'then' if result else 'else'}",
+                sequence_state=sequence_state,
+            )
+        return output
+    if kind == "delay":
+        if not allow_delay:
+            raise RuntimeError("Delay steps are not supported inside nested branches yet")
+        seconds = step.get("seconds")
+        until = step.get("until")
+        delay_seconds = None
+        if isinstance(seconds, (int, float)):
+            delay_seconds = max(0, int(seconds))
+        elif isinstance(until, str):
+            target = datetime.fromisoformat(until.replace("Z", "+00:00"))
+            delay_seconds = max(0, int((target - _now_dt()).total_seconds()))
+        if delay_seconds is None:
+            raise RuntimeError("Invalid delay step")
+        output = {"delay_seconds": delay_seconds}
+        _record_step_output(ctx, step_id, output, step)
+        return output
+    if kind == "action":
+        inputs = _resolve_inputs(step.get("inputs"), ctx)
+        inputs["idempotency_key"] = f"{run_id}:{step_prefix}:0"
+        output = _handle_action(step, inputs, ctx, job_store)
+        _record_step_output(ctx, step_id, output, step)
+        return output
+    if kind == "foreach":
+        over_value = _resolve_step_value(step.get("over"), ctx)
+        items = _coerce_iteration_items(over_value)
+        if not isinstance(items, list):
+            raise RuntimeError("Loop source must resolve to a list")
+        item_name = step.get("item_name") if isinstance(step.get("item_name"), str) and step.get("item_name") else "item"
+        child_steps = step.get("steps") if isinstance(step.get("steps"), list) else None
+        results = []
+        total = len(items)
+        for item_index, item in enumerate(items):
+            loop_ctx = dict(ctx)
+            loop_ctx[item_name] = item
+            if item_name != "item":
+                loop_ctx["item"] = item
+            loop_ctx["loop"] = {"index": item_index, "number": item_index + 1, "count": total, "item": item}
+            if child_steps:
+                _execute_nested_steps(
+                    run_id,
+                    child_steps,
+                    loop_ctx,
+                    automation_store,
+                    job_store,
+                    step_prefix=f"{step_prefix}.loop_{item_index + 1}",
+                    sequence_state=sequence_state,
+                )
+                results.append({"item": item, "last": loop_ctx.get("last")})
+            else:
+                inputs = _resolve_inputs(step.get("inputs"), loop_ctx)
+                inputs["idempotency_key"] = f"{run_id}:{step_prefix}:{item_index}"
+                results.append(_handle_action(step, inputs, loop_ctx, job_store))
+        output = {"count": len(results), "results": results}
+        _record_step_output(ctx, step_id, output, step)
+        return output
+    raise RuntimeError(f"Unsupported step kind: {kind}")
+
+
 def _run_automation(job: dict, org_id: str, automation_store: DbAutomationStore | MemoryAutomationStore | None = None, job_store: DbJobStore | MemoryJobStore | None = None) -> None:
     automation_store = automation_store or DbAutomationStore()
     job_store = job_store or DbJobStore()
@@ -807,7 +1570,8 @@ def _run_automation(job: dict, org_id: str, automation_store: DbAutomationStore 
         automation_store.update_run(run_id, {"status": "failed", "last_error": "Invalid steps"})
         return
 
-    ctx = {"trigger": run.get("trigger_payload") or {}}
+    ctx = {"trigger": run.get("trigger_payload") or {}, "steps": {}, "vars": {}, "last": None}
+    sequence_state = {"value": -1}
     current_index = int(run.get("current_step_index") or 0)
     if run.get("status") != "running":
         automation_store.update_run(run_id, {"status": "running", "started_at": _now()})
@@ -841,37 +1605,37 @@ def _run_automation(job: dict, org_id: str, automation_store: DbAutomationStore 
         )
         try:
             kind = step.get("kind")
+            sequence_state["value"] = max(sequence_state["value"], idx)
+            output = _execute_step_runtime(
+                step,
+                ctx,
+                job_store,
+                run_id=run_id,
+                automation_store=automation_store,
+                step_prefix=step_id,
+                sequence_state=sequence_state,
+                allow_delay=True,
+            )
             if kind == "condition":
-                expr = step.get("expr") or {}
-                result = bool(eval_condition(expr, ctx))
-                goto = step.get("if_true_goto") if result else step.get("if_false_goto")
+                goto = step.get("if_true_goto") if output.get("result") else step.get("if_false_goto")
                 stop_on_false = bool(step.get("stop_on_false"))
                 automation_store.update_step_run(
                     step_run.get("id"),
                     {
                         "status": "succeeded",
                         "ended_at": _now(),
-                        "output": {"result": result, "stop_on_false": stop_on_false},
+                        "output": output,
                     },
                 )
                 if isinstance(goto, int) and 0 <= goto < len(steps):
                     automation_store.update_run(run_id, {"current_step_index": goto})
                     return
-                if not result and stop_on_false:
+                if not output.get("result") and stop_on_false:
                     automation_store.update_run(run_id, {"status": "succeeded", "ended_at": _now(), "current_step_index": idx + 1})
                     return
             elif kind == "delay":
-                seconds = step.get("seconds")
-                until = step.get("until")
-                delay_seconds = None
-                if isinstance(seconds, (int, float)):
-                    delay_seconds = max(0, int(seconds))
-                elif isinstance(until, str):
-                    target = datetime.fromisoformat(until.replace("Z", "+00:00"))
-                    delay_seconds = max(0, int((target - _now_dt()).total_seconds()))
-                if delay_seconds is None:
-                    raise RuntimeError("Invalid delay step")
-                automation_store.update_step_run(step_run.get("id"), {"status": "succeeded", "ended_at": _now(), "output": {"delay_seconds": delay_seconds}})
+                delay_seconds = int(output.get("delay_seconds") or 0)
+                automation_store.update_step_run(step_run.get("id"), {"status": "succeeded", "ended_at": _now(), "output": output})
                 next_index = idx + 1
                 automation_store.update_run(run_id, {"status": "queued", "current_step_index": next_index})
                 job_store.enqueue(
@@ -884,13 +1648,8 @@ def _run_automation(job: dict, org_id: str, automation_store: DbAutomationStore 
                     }
                 )
                 return
-            elif kind == "action":
-                inputs = _resolve_inputs(step.get("inputs"), ctx)
-                inputs["idempotency_key"] = idempotency_key
-                output = _handle_action(step, inputs, ctx, job_store)
-                automation_store.update_step_run(step_run.get("id"), {"status": "succeeded", "ended_at": _now(), "output": output})
             else:
-                raise RuntimeError(f"Unsupported step kind: {kind}")
+                automation_store.update_step_run(step_run.get("id"), {"status": "succeeded", "ended_at": _now(), "output": output})
         except Exception as exc:
             retry_policy = step.get("retry_policy") or {}
             max_attempts = int(retry_policy.get("max_attempts") or 0)
@@ -920,6 +1679,115 @@ def _now_dt() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _handle_integration_webhook_process(job: dict, org_id: str) -> None:
+    payload = job.get("payload") or {}
+    event_id = payload.get("webhook_event_id")
+    webhook_id = payload.get("webhook_id")
+    if not isinstance(event_id, str) or not event_id:
+        raise RuntimeError("Missing webhook_event_id")
+    event_store = DbWebhookEventStore()
+    webhook_store = DbIntegrationWebhookStore()
+    event = event_store.get(event_id)
+    if not event:
+        raise RuntimeError("Webhook event not found")
+    webhook = webhook_store.get(webhook_id) if isinstance(webhook_id, str) and webhook_id else None
+    payload_json = event.get("payload_json") or {}
+    headers_json = event.get("headers_json") or {}
+    event_key = event.get("event_key") or (webhook.get("event_key") if isinstance(webhook, dict) else None) or "received"
+    base_payload = {
+        "event": "integration.webhook.received",
+        "connection_id": event.get("connection_id"),
+        "webhook_id": webhook_id,
+        "provider_event_id": event.get("provider_event_id"),
+        "event_key": event_key,
+        "headers": headers_json,
+        "payload": payload_json,
+        "signature_valid": event.get("signature_valid"),
+    }
+    _emit_automation_event("integration.webhook.received", base_payload)
+    if isinstance(event_key, str) and event_key.strip():
+        _emit_automation_event(f"integration.webhook.{event_key.strip()}", base_payload)
+    event_store.update_status(
+        event_id,
+        "processed",
+        processed_at=_now_dt().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
+
+
+def _handle_integration_sync_run(job: dict, org_id: str) -> None:
+    payload = job.get("payload") or {}
+    connection_id = payload.get("connection_id")
+    if not isinstance(connection_id, str) or not connection_id:
+        raise RuntimeError("Missing connection_id")
+    connection = DbConnectionStore().get(connection_id)
+    if not connection:
+        raise RuntimeError("Connection not found")
+    sync_config = payload.get("sync") if isinstance(payload.get("sync"), dict) else {}
+    source = str(payload.get("source") or "worker_sync")
+    _run_integration_sync(connection, sync_config, source=source)
+
+
+def _handle_external_webhook_deliver(job: dict, org_id: str) -> None:
+    payload = job.get("payload") or {}
+    subscription_id = payload.get("subscription_id")
+    if not isinstance(subscription_id, str) or not subscription_id:
+        raise RuntimeError("Missing subscription_id")
+    store = DbExternalWebhookSubscriptionStore()
+    subscription = store.get(subscription_id)
+    if not subscription:
+        raise RuntimeError("External webhook subscription not found")
+    if subscription.get("status") != "active":
+        return
+    target_url = str(subscription.get("target_url") or "").strip()
+    if not target_url:
+        raise RuntimeError("Webhook subscription target_url is required")
+    event_name = str(payload.get("event") or "").strip() or "unknown"
+    body_json = {
+        "event": event_name,
+        "payload": payload.get("payload") or {},
+        "meta": payload.get("meta") or {},
+        "sent_at": _now_dt().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    body_bytes = json.dumps(body_json, separators=(",", ":")).encode("utf-8")
+    headers = {"Content-Type": "application/json", "X-Octo-Event": event_name}
+    stored_headers = subscription.get("headers_json")
+    if isinstance(stored_headers, str):
+        try:
+            stored_headers = json.loads(stored_headers)
+        except Exception:
+            stored_headers = {}
+    if isinstance(stored_headers, dict):
+        for key, value in stored_headers.items():
+            if key and value is not None:
+                headers[str(key)] = str(value)
+    signing_secret_id = subscription.get("signing_secret_id")
+    if isinstance(signing_secret_id, str) and signing_secret_id:
+        secret = resolve_secret(signing_secret_id, org_id)
+        headers.update(build_webhook_signature_headers(body_bytes, secret))
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            response = client.post(target_url, content=body_bytes, headers=headers)
+        store.update(
+            subscription_id,
+            {
+                "last_delivered_at": _now_dt().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "last_status_code": response.status_code,
+                "last_error": None if response.status_code < 400 else (response.text[:500] if isinstance(response.text, str) else "Webhook delivery failed"),
+            },
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(f"Webhook delivery failed with status {response.status_code}")
+    except Exception as exc:
+        store.update(
+            subscription_id,
+            {
+                "last_status_code": None,
+                "last_error": str(exc),
+            },
+        )
+        raise
+
+
 def _run_job(job: dict) -> None:
     org_id = job.get("org_id")
     if not org_id:
@@ -934,6 +1802,12 @@ def _run_job(job: dict) -> None:
             _run_automation(job, org_id)
         elif job.get("type") == "attachments.cleanup":
             _handle_attachments_cleanup(job, org_id)
+        elif job.get("type") == "integration.webhook.process":
+            _handle_integration_webhook_process(job, org_id)
+        elif job.get("type") == "integration.sync.run":
+            _handle_integration_sync_run(job, org_id)
+        elif job.get("type") == "external.webhook.deliver":
+            _handle_external_webhook_deliver(job, org_id)
         else:
             raise RuntimeError(f"Unknown job type: {job.get('type')}")
     finally:
@@ -942,17 +1816,21 @@ def _run_job(job: dict) -> None:
 
 def main() -> None:
     worker_id = os.getenv("WORKER_ID", str(uuid.uuid4()))
-    org_id = os.getenv("WORKER_ORG_ID") or os.getenv("OCTO_WORKER_ORG_ID", "default")
+    scoped_org_id = os.getenv("WORKER_ORG_ID") or os.getenv("OCTO_WORKER_ORG_ID") or ""
     poll_ms = int(os.getenv("WORKER_POLL_MS", "1000"))
     batch_size = int(os.getenv("WORKER_BATCH", "5"))
     job_store = DbJobStore()
+    shared_mode = not bool(scoped_org_id.strip())
 
     while True:
-        token = set_org_id(org_id)
-        try:
-            jobs = job_store.claim_batch(batch_size, worker_id)
-        finally:
-            reset_org_id(token)
+        if shared_mode:
+            jobs = job_store.claim_batch_any(batch_size, worker_id)
+        else:
+            token = set_org_id(scoped_org_id)
+            try:
+                jobs = job_store.claim_batch(batch_size, worker_id)
+            finally:
+                reset_org_id(token)
 
         if not jobs:
             time.sleep(poll_ms / 1000)

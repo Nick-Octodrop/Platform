@@ -32,18 +32,57 @@ def _matches_filter(payload: dict, filt: dict) -> bool:
         return value == target
     if op == "neq":
         return value != target
+    if op == "gt":
+        return isinstance(value, (int, float)) and isinstance(target, (int, float)) and value > target
+    if op == "gte":
+        return isinstance(value, (int, float)) and isinstance(target, (int, float)) and value >= target
+    if op == "lt":
+        return isinstance(value, (int, float)) and isinstance(target, (int, float)) and value < target
+    if op == "lte":
+        return isinstance(value, (int, float)) and isinstance(target, (int, float)) and value <= target
     if op == "in":
         if not isinstance(target, list):
             return False
         return value in target
+    if op == "not_in":
+        if not isinstance(target, list):
+            return False
+        return value not in target
     if op == "exists":
         return value is not None
+    if op == "not_exists":
+        return value is None
     if op == "contains":
         if isinstance(value, list):
             return target in value
         if isinstance(value, str) and isinstance(target, str):
             return target in value
         return False
+    if op == "changed":
+        changed_fields = payload.get("changed_fields")
+        if isinstance(changed_fields, list):
+            return path in changed_fields or path.split(".")[-1] in changed_fields
+        before_val = _get_path(payload.get("before") or {}, path)
+        after_val = _get_path(payload.get("after") or {}, path)
+        return before_val != after_val
+    if op == "changed_to":
+        changed_fields = payload.get("changed_fields")
+        short_path = path.split(".")[-1]
+        if isinstance(changed_fields, list) and path not in changed_fields and short_path not in changed_fields:
+            return False
+        after_val = _get_path(payload.get("after") or {}, path)
+        if after_val is None and short_path != path:
+            after_val = _get_path(payload.get("after") or {}, short_path)
+        return after_val == target
+    if op == "changed_from":
+        changed_fields = payload.get("changed_fields")
+        short_path = path.split(".")[-1]
+        if isinstance(changed_fields, list) and path not in changed_fields and short_path not in changed_fields:
+            return False
+        before_val = _get_path(payload.get("before") or {}, path)
+        if before_val is None and short_path != path:
+            before_val = _get_path(payload.get("before") or {}, short_path)
+        return before_val == target
     return False
 
 
@@ -56,6 +95,13 @@ def match_event(trigger: dict, event_type: str, payload: dict) -> bool:
     event_types = trigger.get("event_types")
     if not isinstance(event_types, list) or event_type not in event_types:
         return False
+    expr = trigger.get("expr")
+    if isinstance(expr, dict):
+        try:
+            if not bool(eval_condition(expr, {"trigger": payload, "payload": payload})):
+                return False
+        except Exception:
+            return False
     filters = trigger.get("filters") or []
     if not isinstance(filters, list):
         return False

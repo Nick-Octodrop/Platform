@@ -9,7 +9,7 @@ from email.message import EmailMessage
 
 import httpx
 
-from app.secrets import resolve_secret
+from app.secrets import resolve_connection_secret
 from app.template_render import render_template as render_jinja
 
 
@@ -29,7 +29,13 @@ class EmailProvider:
 class PostmarkProvider(EmailProvider):
     def send(self, message: dict, connection: dict, secret_ref: str | None, org_id: str) -> dict:
         env_key = "POSTMARK_API_TOKEN"
-        api_token = resolve_secret(secret_ref, org_id, env_key=env_key)
+        api_token = resolve_connection_secret(
+            str(connection.get("id") or "") or None,
+            org_id,
+            secret_key="api_token",
+            legacy_secret_ref=secret_ref,
+            env_key=env_key,
+        )
         from_email = message.get("from_email") or connection.get("config", {}).get("from_email")
         from_name = connection.get("config", {}).get("from_name")
         if not from_email:
@@ -77,7 +83,16 @@ class SmtpProvider(EmailProvider):
         port = int(config.get("port") or 587)
         security = (config.get("security") or "starttls").strip().lower()
         username = (config.get("username") or "").strip()
-        password = resolve_secret(secret_ref, org_id, env_key="SMTP_PASSWORD") if secret_ref else (config.get("password") or "")
+        if secret_ref or connection.get("id"):
+            password = resolve_connection_secret(
+                str(connection.get("id") or "") or None,
+                org_id,
+                secret_key="password",
+                legacy_secret_ref=secret_ref,
+                env_key="SMTP_PASSWORD",
+            )
+        else:
+            password = config.get("password") or ""
         from_email = message.get("from_email") or config.get("from_email")
         from_name = config.get("from_name")
 

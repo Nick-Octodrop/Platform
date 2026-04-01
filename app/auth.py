@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import httpx
@@ -15,9 +16,20 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from app.api_credentials import hash_api_key
+from app.stores_db import DbApiCredentialStore
+
 
 _JWKS_CACHE: Dict[str, Any] = {"keys": None, "fetched_at": 0.0, "ttl": 600.0}
 _LOCAL_ORIGIN_RE = re.compile(r"^http://(localhost|127\.0\.0\.1):\d+$")
+_PUBLIC_PATHS = {
+    "/health",
+    "/ext/v1/openapi.json",
+    "/ext/v1/docs",
+    "/ext/v1/docs/oauth2-redirect",
+    "/ext/v1/redoc",
+    "/ext/v1/guide.md",
+}
 
 
 def _attach_local_cors(request: Request, response: JSONResponse) -> JSONResponse:
@@ -48,6 +60,23 @@ def _get_bearer_token(request: Request) -> Optional[str]:
     if not auth.startswith("Bearer "):
         return None
     return auth.split(" ", 1)[1].strip() or None
+
+
+def _get_api_key(request: Request) -> Optional[str]:
+    raw = request.headers.get("X-Api-Key", "")
+    value = raw.strip() if isinstance(raw, str) else ""
+    return value or None
+
+
+def _is_expired(credential: dict) -> bool:
+    value = credential.get("expires_at")
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00")).astimezone(timezone.utc)
+    except Exception:
+        return False
+    return parsed <= datetime.now(timezone.utc)
 
 
 def _verify_jwt(token: str, jwks_url: str, issuer: str, audience: Optional[str]) -> dict:
@@ -86,13 +115,54 @@ class SupabaseAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         if request.method == "OPTIONS":
             return await call_next(request)
-        if request.url.path in {"/health"}:
+        if request.url.path in _PUBLIC_PATHS:
             return await call_next(request)
+
+        if request.url.path.startswith("/ext/"):
+            api_key = _get_api_key(request)
+            if api_key:
+                credential = DbApiCredentialStore().get_by_key_hash_any(hash_api_key(api_key))
+                if not credential or credential.get("status") != "active" or _is_expired(credential):
+                    logger = logging.getLogger("octo.auth")
+                    logger.warning("auth_invalid_api_key path=%s", request.url.path)
+                    return _attach_local_cors(
+                        request,
+                        JSONResponse(
+                            {
+                                "ok": False,
+                                "errors": [
+                                    {
+                                        "code": "AUTH_INVALID_API_KEY",
+                                        "message": "Invalid API key",
+                                        "path": "X-Api-Key",
+                                        "detail": None,
+                                    }
+                                ],
+                                "warnings": [],
+                            },
+                            status_code=401,
+                        ),
+                    )
+                request.state.api_credential = credential
+                request.state.user = None
+                request.state.auth_ms = (time.perf_counter() - start) * 1000
+                try:
+                    DbApiCredentialStore().touch_last_used_any(str(credential.get("id")))
+                except Exception:
+                    pass
+                return await call_next(request)
 
         token = _get_bearer_token(request)
         if not token:
             logger = logging.getLogger("octo.auth")
             logger.warning("auth_missing_token path=%s", request.url.path)
+            code = "AUTH_MISSING_TOKEN"
+            message = "Missing bearer token"
+            path = "Authorization"
+            if request.url.path.startswith("/ext/"):
+                code = "AUTH_MISSING_API_KEY"
+                message = "Missing API key"
+                path = "X-Api-Key"
             return _attach_local_cors(
                 request,
                 JSONResponse(
@@ -100,9 +170,9 @@ class SupabaseAuthMiddleware(BaseHTTPMiddleware):
                     "ok": False,
                     "errors": [
                         {
-                            "code": "AUTH_MISSING_TOKEN",
-                            "message": "Missing bearer token",
-                            "path": "Authorization",
+                            "code": code,
+                            "message": message,
+                            "path": path,
                             "detail": None,
                         }
                     ],
