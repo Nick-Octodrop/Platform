@@ -30,7 +30,7 @@ export function ExternalApiDocsRedirectPage({ path, label }) {
   }, [url]);
 
   return (
-    <div className="min-h-screen bg-base-200 px-4 py-10 text-base-content">
+    <div className="h-screen overflow-y-auto bg-base-200 px-4 py-10 text-base-content">
       <div className="mx-auto max-w-2xl rounded-2xl border border-base-300 bg-base-100 p-6 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-base-content/50">External API</p>
         <h1 className="mt-2 text-2xl font-semibold">{label || "Redirecting"}</h1>
@@ -101,7 +101,7 @@ export default function ExternalApiDocsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-base-200 px-4 py-10 text-base-content">
+    <div className="h-screen overflow-y-auto bg-base-200 px-4 py-10 text-base-content">
       <div className="mx-auto max-w-4xl space-y-6">
         <div className="rounded-3xl border border-base-300 bg-base-100 p-6 shadow-sm sm:p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-base-content/50">Octodrop External API</p>
