@@ -1,20 +1,282 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Trash2 } from "lucide-react";
 import { apiFetch } from "../api";
 import TemplateStudioShell from "./templates/TemplateStudioShell.jsx";
 import CodeTextarea from "../components/CodeTextarea.jsx";
 import ValidationPanel from "../components/ValidationPanel.jsx";
+import { useToast } from "../components/Toast.jsx";
 import AgentChatInput from "../ui/AgentChatInput.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
 import { useAccessContext } from "../access.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 
+function AutomationLookupValueInput({ fieldDef, value, onChange, placeholder = "" }) {
+  const [options, setOptions] = useState([]);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [opened, setOpened] = useState(false);
+  const [selectedLabel, setSelectedLabel] = useState("");
+  const containerRef = useRef(null);
+  const entityId = fieldDef?.entity || null;
+  const labelField = fieldDef?.display_field || null;
+
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(search), 250);
+    return () => clearTimeout(handle);
+  }, [search]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadOptions() {
+      if (!entityId || !opened) return;
+      setLoading(true);
+      try {
+        const res = await apiFetch(`/lookup/${entityId}/options`, {
+          method: "POST",
+          body: JSON.stringify({
+            q: (debouncedSearch || "").trim() || null,
+            limit: 20,
+            domain: fieldDef?.domain || null,
+            record_context: {},
+          }),
+        });
+        const records = Array.isArray(res?.records) ? res.records : [];
+        const nextOptions = records.map((item) => {
+          const record = item?.record || {};
+          const recordId = item?.record_id || record?.id;
+          const label = (labelField && record?.[labelField]) || item?.label || recordId || "—";
+          return { value: recordId, label };
+        }).filter((item) => item.value);
+        if (!cancelled) setOptions(nextOptions);
+      } catch {
+        if (!cancelled) setOptions([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    loadOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [entityId, labelField, debouncedSearch, opened, fieldDef?.domain]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSelectedLabel() {
+      if (!entityId || !value) {
+        setSelectedLabel("");
+        return;
+      }
+      const match = options.find((opt) => opt.value === value);
+      if (match) {
+        setSelectedLabel(match.label || "");
+        return;
+      }
+      try {
+        const res = await apiFetch(`/records/${entityId}/${value}`);
+        const record = res?.record || res;
+        const label = (labelField && record?.[labelField]) || record?.id || value;
+        if (!cancelled) setSelectedLabel(label);
+      } catch {
+        if (!cancelled) setSelectedLabel(String(value));
+      }
+    }
+    loadSelectedLabel();
+    return () => {
+      cancelled = true;
+    };
+  }, [entityId, value, options, labelField]);
+
+  useEffect(() => {
+    function handleOutside(event) {
+      if (!containerRef.current?.contains(event.target)) {
+        setOpened(false);
+      }
+    }
+    if (!opened) return undefined;
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [opened]);
+
+  const inputValue = opened ? search : search || selectedLabel || String(value || "");
+
+  function handleSelect(option) {
+    setSelectedLabel(option.label || "");
+    setSearch(option.label || "");
+    setOpened(false);
+    onChange(option.value);
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div className="relative">
+        <input
+          className="input input-bordered w-full pr-10"
+          value={inputValue}
+          onChange={(e) => setSearch(e.target.value)}
+          onFocus={() => {
+            setOpened(true);
+            setSearch("");
+          }}
+          placeholder={placeholder || "Search records..."}
+        />
+        {Boolean(value) && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-xs absolute right-2 top-1/2 h-6 min-h-6 -translate-y-1/2 px-1"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              setSelectedLabel("");
+              setSearch("");
+              onChange("");
+            }}
+          >
+            ×
+          </button>
+        )}
+      </div>
+      {opened && (
+        <div className="absolute z-30 mt-1 flex max-h-64 w-full flex-col overflow-hidden rounded-box border border-base-300 bg-base-100 shadow">
+          <ul className="menu menu-compact menu-vertical block w-full flex-1 overflow-y-auto">
+            {loading && <li className="menu-title"><span>Loading…</span></li>}
+            {!loading && options.length === 0 && <li className="menu-title"><span>No results</span></li>}
+            {options.map((option) => (
+              <li key={option.value}>
+                <button type="button" className={option.value === value ? "active" : ""} onClick={() => handleSelect(option)}>
+                  {option.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AutomationUsersValueInput({ members = [], value, onChange, placeholder = "" }) {
+  const [opened, setOpened] = useState(false);
+  const [search, setSearch] = useState("");
+  const containerRef = useRef(null);
+
+  const normalizedMembers = useMemo(
+    () => (Array.isArray(members) ? members : []).map((member) => ({
+      user_id: member?.user_id,
+      label: member?.name || member?.email || member?.user_email || member?.user_id || "Unknown user",
+      search: `${member?.name || ""} ${member?.email || ""} ${member?.user_email || ""} ${member?.user_id || ""}`.trim().toLowerCase(),
+    })).filter((member) => member.user_id),
+    [members]
+  );
+
+  const selectedIds = useMemo(() => {
+    if (Array.isArray(value)) return value.filter(Boolean);
+    const raw = String(value || "").trim();
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.filter(Boolean);
+    } catch {
+      return raw.split(",").map((part) => part.trim()).filter(Boolean);
+    }
+    return [];
+  }, [value]);
+
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const normalizedSearch = search.trim().toLowerCase();
+  const filtered = useMemo(() => {
+    const available = normalizedMembers.filter((member) => !selectedSet.has(member.user_id));
+    if (!normalizedSearch) return available.slice(0, 25);
+    return available.filter((member) => member.search.includes(normalizedSearch)).slice(0, 25);
+  }, [normalizedMembers, normalizedSearch, selectedSet]);
+
+  useEffect(() => {
+    function handleOutside(event) {
+      if (!containerRef.current?.contains(event.target)) {
+        setOpened(false);
+      }
+    }
+    if (!opened) return undefined;
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [opened]);
+
+  const selectedMembers = useMemo(
+    () => selectedIds.map((id) => normalizedMembers.find((member) => member.user_id === id) || { user_id: id, label: id }),
+    [normalizedMembers, selectedIds]
+  );
+
+  function writeIds(nextIds) {
+    onChange(JSON.stringify(nextIds, null, 2));
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div
+        className="input input-bordered w-full min-h-[3rem] h-auto pr-2 flex flex-wrap gap-1 items-center"
+        onClick={() => setOpened(true)}
+      >
+        {selectedMembers.map((member) => (
+          <span key={member.user_id} className="badge badge-outline gap-1">
+            {member.label}
+            <button
+              type="button"
+              className="opacity-70 hover:opacity-100"
+              onClick={(event) => {
+                event.stopPropagation();
+                writeIds(selectedIds.filter((id) => id !== member.user_id));
+              }}
+              aria-label={`Remove ${member.label}`}
+              title={`Remove ${member.label}`}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          className="flex-1 min-w-[7rem] bg-transparent outline-none"
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setOpened(true);
+          }}
+          onFocus={() => setOpened(true)}
+          placeholder={selectedMembers.length > 0 ? "Add another user..." : (placeholder || "Search workspace users...")}
+        />
+      </div>
+      {opened && (
+        <div className="absolute z-30 mt-1 w-full rounded-box border border-base-300 bg-base-100 shadow">
+          <ul className="menu menu-compact menu-vertical w-full max-h-60 overflow-y-auto">
+            {filtered.length === 0 && <li className="menu-title"><span>No matches</span></li>}
+            {filtered.map((member) => (
+              <li key={member.user_id}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    writeIds([...selectedIds, member.user_id]);
+                    setSearch("");
+                    setOpened(true);
+                  }}
+                >
+                  {member.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AutomationEditorPage({ user }) {
   const { automationId } = useParams();
   const navigate = useNavigate();
   const { isSuperadmin } = useAccessContext();
+  const { pushToast } = useToast();
   const isMobile = useMediaQuery("(max-width: 768px)");
+  const lastFocusedFieldRef = useRef(null);
 
   const [item, setItem] = useState(null);
   const [name, setName] = useState("");
@@ -25,6 +287,14 @@ export default function AutomationEditorPage({ user }) {
   const [selectedStepIndex, setSelectedStepIndex] = useState(0);
   const [selectedStepPath, setSelectedStepPath] = useState([0]);
   const [stepModalOpen, setStepModalOpen] = useState(false);
+  const [webhookTestOpen, setWebhookTestOpen] = useState(false);
+  const [webhookTestSaving, setWebhookTestSaving] = useState(false);
+  const [webhookTestError, setWebhookTestError] = useState("");
+  const [webhookTestPayloadText, setWebhookTestPayloadText] = useState("{\n  \n}");
+  const [webhookTestHeadersText, setWebhookTestHeadersText] = useState("{\n  \n}");
+  const [webhookTestConnectionId, setWebhookTestConnectionId] = useState("");
+  const [webhookTestEventKey, setWebhookTestEventKey] = useState("");
+  const [webhookTestProviderEventId, setWebhookTestProviderEventId] = useState("");
   const [openStepKeys, setOpenStepKeys] = useState([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -44,6 +314,7 @@ export default function AutomationEditorPage({ user }) {
     email_templates: [],
     doc_templates: [],
   });
+  const EMAIL_CONNECTION_TYPES = new Set(["smtp", "postmark"]);
 
   const loadMeta = useCallback(async () => {
     setError("");
@@ -150,9 +421,52 @@ export default function AutomationEditorPage({ user }) {
       const res = await apiFetch(`/automations/${automationId}/export`);
       const payload = res?.automation || {};
       await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      pushToast("success", "Automation JSON copied");
     } catch (err) {
       setError(err?.message || "Failed to export");
     }
+  }
+
+  async function copyReferenceValue(value) {
+    try {
+      await navigator.clipboard.writeText(value);
+      pushToast("success", "Reference copied");
+    } catch {
+      pushToast("error", "Copy failed");
+    }
+  }
+
+  function isInsertableField(target) {
+    if (!target || target.readOnly || target.disabled) return false;
+    const tagName = String(target.tagName || "").toLowerCase();
+    if (tagName === "textarea") return true;
+    if (tagName !== "input") return false;
+    const type = String(target.type || "text").toLowerCase();
+    return ["", "text", "search", "email", "url", "tel"].includes(type);
+  }
+
+  function rememberFocusedField(event) {
+    const target = event?.target;
+    if (isInsertableField(target)) {
+      lastFocusedFieldRef.current = target;
+    }
+  }
+
+  function insertReferenceValue(value) {
+    const field = lastFocusedFieldRef.current;
+    if (!isInsertableField(field)) {
+      pushToast("error", "Click into a text field first");
+      return;
+    }
+    const currentValue = String(field.value ?? "");
+    const start = typeof field.selectionStart === "number" ? field.selectionStart : currentValue.length;
+    const end = typeof field.selectionEnd === "number" ? field.selectionEnd : currentValue.length;
+    const nextValue = `${currentValue.slice(0, start)}${value}${currentValue.slice(end)}`;
+    field.focus();
+    field.value = nextValue;
+    field.setSelectionRange?.(start + value.length, start + value.length);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    pushToast("success", "Reference inserted");
   }
 
   async function deleteAutomation() {
@@ -169,6 +483,27 @@ export default function AutomationEditorPage({ user }) {
   function updateTriggerEvent(eventType) {
     const next = { ...(trigger || {}), kind: "event", event_types: eventType ? [eventType] : [] };
     setTrigger(next);
+  }
+
+  function setTriggerMode(mode) {
+    if (mode === "schedule") {
+      updateTriggerKind("schedule");
+      return;
+    }
+    if (mode === "webhook") {
+      setTrigger((prev) => {
+        const next = {
+          ...(prev || {}),
+          kind: "event",
+          event_types: ["integration.webhook.received"],
+          filters: Array.isArray(prev?.filters) ? prev.filters : [],
+        };
+        delete next.expr;
+        return next;
+      });
+      return;
+    }
+    updateTriggerKind("event");
   }
 
   function updateTriggerKind(kind) {
@@ -452,6 +787,16 @@ export default function AutomationEditorPage({ user }) {
   }, [meta]);
 
   const selectedTriggerEventId = (trigger?.event_types || [])[0] || "";
+  const triggerMode = useMemo(() => {
+    if (trigger?.kind === "schedule") return "schedule";
+    if (
+      selectedTriggerEventId === "integration.webhook.received" ||
+      selectedTriggerEventId.startsWith("integration.webhook.")
+    ) {
+      return "webhook";
+    }
+    return "event";
+  }, [trigger?.kind, selectedTriggerEventId]);
   const triggerEventMeta = useMemo(() => {
     const catalog = Array.isArray(meta.event_catalog) ? meta.event_catalog : [];
     return catalog.find((evt) => evt?.id === selectedTriggerEventId) || null;
@@ -482,6 +827,17 @@ export default function AutomationEditorPage({ user }) {
     add("from", "From status/value");
     add("to", "To status/value");
     add("record_id", "Record ID");
+    if (triggerMode === "webhook") {
+      add("connection_id", "Webhook: Connection ID");
+      add("webhook_id", "Webhook: Webhook ID");
+      add("provider_event_id", "Webhook: Provider Event ID");
+      add("event_key", "Webhook: Event Key");
+      add("signature_valid", "Webhook: Signature Valid");
+      add("payload", "Webhook: Payload object");
+      add("payload.customer.email", "Webhook: Payload field example");
+      add("headers", "Webhook: Headers object");
+      add("headers.x-request-id", "Webhook: Header example");
+    }
     if (defaultConditionEntityId) {
       const entity = entityById.get(defaultConditionEntityId);
       const entityFields = Array.isArray(entity?.fields) ? entity.fields : [];
@@ -496,7 +852,320 @@ export default function AutomationEditorPage({ user }) {
       });
     }
     return fields;
-  }, [defaultConditionEntityId, entityById]);
+  }, [defaultConditionEntityId, entityById, triggerMode]);
+
+  const automationVariableSections = useMemo(() => {
+    const triggerItems = triggerMode === "webhook"
+      ? [
+          { path: "trigger.connection_id", description: "The integration connection that received the webhook." },
+          { path: "trigger.event_key", description: "The webhook event key, such as invoice.created." },
+          { path: "trigger.provider_event_id", description: "The provider's event identifier if one was supplied." },
+          { path: "trigger.signature_valid", description: "Whether the inbound webhook signature passed verification." },
+          { path: "trigger.payload", description: "The full webhook payload object." },
+          { path: "trigger.payload.customer.email", description: "Example nested payload path you can adapt to your provider." },
+          { path: "trigger.headers", description: "The inbound webhook headers object." },
+          { path: "trigger.headers.x-request-id", description: "Example header path you can adapt to your provider." },
+        ]
+      : trigger?.kind === "schedule"
+        ? [
+            { path: "trigger.event", description: "The scheduled event name for this automation run." },
+            { path: "trigger.scheduled_for", description: "The scheduled execution time for this run." },
+            { path: "trigger.slot_key", description: "The scheduler slot key used for idempotency." },
+          ]
+        : [
+            { path: "trigger.event", description: "The event that started this automation." },
+            { path: "trigger.entity_id", description: "The entity tied to the trigger event." },
+            { path: "trigger.record_id", description: "The record ID tied to the trigger event." },
+            { path: "trigger.user_id", description: "The user involved in the triggering event, when available." },
+            { path: "trigger.changed_fields", description: "The fields that changed for update-style events." },
+            { path: "trigger.before", description: "The previous values snapshot, when the event includes one." },
+            { path: "trigger.after", description: "The new values snapshot, when the event includes one." },
+          ];
+
+    return [
+      {
+        title: "Trigger data",
+        description:
+          triggerMode === "webhook"
+            ? "These values come from the inbound webhook that started the automation."
+            : trigger?.kind === "schedule"
+              ? "These values come from the scheduler that queued this automation."
+              : "These values come from the event that started this automation.",
+        items: triggerItems,
+      },
+      {
+        title: "Earlier step outputs",
+        description: "Use these to reuse values returned by earlier steps in the same flow.",
+        items: [
+          { path: "last", description: "The most recent step output." },
+          { path: "steps.query_records.records", description: "Example path for a named step output." },
+          { path: "vars.query_results", description: "Example path for a step saved with Store output as." },
+        ],
+      },
+      {
+        title: "Loop data",
+        description: "These are available inside repeat steps only.",
+        items: [
+          { path: "item", description: "The current item in the loop." },
+          { path: "loop.index", description: "The zero-based index of the current loop item." },
+          { path: "loop.count", description: "The number of items being repeated over." },
+        ],
+      },
+    ];
+  }, [trigger?.kind, triggerMode]);
+
+  function parseJsonObjectInput(value) {
+    if (typeof value === "string") {
+      const raw = value.trim();
+      if (!raw) return {};
+      try {
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  }
+
+  function stringifyJsonObjectInput(value) {
+    return JSON.stringify(parseJsonObjectInput(value), null, 2);
+  }
+
+  function formatEditableValue(value) {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "string") return value;
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
+    return JSON.stringify(value);
+  }
+
+  function parseEditableValue(raw) {
+    const text = String(raw ?? "");
+    const trimmed = text.trim();
+    if (!trimmed) return "";
+    if (trimmed === "true") return true;
+    if (trimmed === "false") return false;
+    if (trimmed === "null") return null;
+    if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
+    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]")) || (trimmed.startsWith('"') && trimmed.endsWith('"'))) {
+      try {
+        return JSON.parse(trimmed);
+      } catch {
+        return text;
+      }
+    }
+    return text;
+  }
+
+  function objectEntriesForEditor(value) {
+    const parsed = parseJsonObjectInput(value);
+    return Object.entries(parsed).map(([fieldId, fieldValue]) => ({
+      fieldId,
+      value: formatEditableValue(fieldValue),
+    }));
+  }
+
+  function writeObjectEntries(index, inputKey, rows) {
+    const nextObject = {};
+    for (const row of rows) {
+      const fieldId = String(row?.fieldId || "").trim();
+      if (!fieldId) continue;
+      nextObject[fieldId] = parseEditableValue(row?.value ?? "");
+    }
+    updateStepInput(index, inputKey, JSON.stringify(nextObject, null, 2));
+  }
+
+  function parseFilterRows(value) {
+    let expr = value;
+    if (typeof expr === "string") {
+      const raw = expr.trim();
+      if (!raw) return [];
+      try {
+        expr = JSON.parse(raw);
+      } catch {
+        return [];
+      }
+    }
+    if (!expr || typeof expr !== "object" || Array.isArray(expr)) return [];
+    const toRow = (cond) => {
+      if (!cond || typeof cond !== "object") return null;
+      const op = cond.op || "eq";
+      const leftVar = cond?.left?.var;
+      if (typeof leftVar !== "string" || !leftVar) return null;
+      if (op === "exists" || op === "not_exists") {
+        return { path: leftVar, op, value: "" };
+      }
+      if (!("right" in cond)) return null;
+      const literal = cond?.right?.literal;
+      return { path: leftVar, op, value: Array.isArray(literal) ? literal.join(", ") : formatEditableValue(literal) };
+    };
+    if (expr.op === "and" && Array.isArray(expr.children)) {
+      const rows = expr.children.map(toRow).filter(Boolean);
+      return rows;
+    }
+    const single = toRow(expr);
+    return single ? [single] : [];
+  }
+
+  function buildFilterExprFromRows(rows) {
+    const nextRows = rows
+      .map((row) => ({
+        path: String(row?.path || "").trim(),
+        op: String(row?.op || "eq").trim() || "eq",
+        value: row?.value ?? "",
+      }))
+      .filter((row) => row.path);
+    if (!nextRows.length) return "";
+    const conditions = nextRows.map((row) => {
+      if (row.op === "exists" || row.op === "not_exists") {
+        return { op: row.op, left: { var: row.path } };
+      }
+      const value = row.op === "in" || row.op === "not_in"
+        ? String(row.value || "").split(",").map((part) => part.trim()).filter(Boolean).map(parseEditableValue)
+        : parseEditableValue(row.value);
+      return {
+        op: row.op,
+        left: { var: row.path },
+        right: { literal: value },
+      };
+    });
+    return JSON.stringify(
+      conditions.length === 1 ? conditions[0] : { op: "and", children: conditions },
+      null,
+      2
+    );
+  }
+
+  function normalizeFieldOptions(options) {
+    if (!Array.isArray(options)) return [];
+    return options
+      .map((option) => {
+        if (typeof option === "string") return { value: option, label: option };
+        if (option && typeof option === "object") {
+          const value = option.value ?? option.id ?? option.key;
+          const label = option.label ?? option.value ?? option.id ?? option.key;
+          return value ? { value, label } : null;
+        }
+        return null;
+      })
+      .filter(Boolean);
+  }
+
+  function getFieldShortId(fieldId) {
+    if (typeof fieldId !== "string" || !fieldId) return "";
+    return fieldId.split(".").pop() || fieldId;
+  }
+
+  function findEntityField(fields, fieldRef) {
+    if (!Array.isArray(fields) || typeof fieldRef !== "string" || !fieldRef) return null;
+    const normalized = fieldRef.replace(/^record\./, "");
+    const shortId = getFieldShortId(normalized);
+    return (
+      fields.find((field) => field?.id === normalized)
+      || fields.find((field) => getFieldShortId(field?.id) === shortId)
+      || null
+    );
+  }
+
+  function shouldUseTextInput(rawValue) {
+    const value = String(rawValue ?? "");
+    return value.includes("{{") || value.includes("}}");
+  }
+
+  function renderTypedValueEditor({ fieldDef, value, onChange, placeholder = "" }) {
+    const rawValue = String(value ?? "");
+    const fieldType = String(fieldDef?.type || "string").toLowerCase();
+    const dynamicText = shouldUseTextInput(rawValue);
+    const enumOptions = normalizeFieldOptions(fieldDef?.options);
+
+    if (fieldType === "enum" && !dynamicText) {
+      return (
+        <select className="select select-bordered" value={rawValue} onChange={(e) => onChange(e.target.value)}>
+          <option value="">Select value…</option>
+          {enumOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if ((fieldType === "bool" || fieldType === "boolean") && !dynamicText) {
+      return (
+        <select className="select select-bordered" value={rawValue} onChange={(e) => onChange(e.target.value)}>
+          <option value="">Select value…</option>
+          <option value="true">True</option>
+          <option value="false">False</option>
+        </select>
+      );
+    }
+
+    if (fieldType === "user" && !dynamicText) {
+      return (
+        <select className="select select-bordered" value={rawValue} onChange={(e) => onChange(e.target.value)}>
+          <option value="">Select user…</option>
+          {memberOptions.map((member) => (
+            <option key={member.user_id} value={member.user_id}>
+              {member.name || member.email || member.user_email || member.user_id}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (fieldType === "users" && !dynamicText) {
+      return (
+        <AutomationUsersValueInput
+          members={memberOptions}
+          value={rawValue}
+          onChange={onChange}
+          placeholder={placeholder || "Search workspace users..."}
+        />
+      );
+    }
+
+    if (fieldType === "lookup" && !dynamicText && fieldDef?.entity) {
+      return (
+        <AutomationLookupValueInput
+          fieldDef={fieldDef}
+          value={rawValue}
+          onChange={onChange}
+          placeholder={placeholder || "Search records..."}
+        />
+      );
+    }
+
+    if (fieldType === "date" && !dynamicText) {
+      return <input className="input input-bordered" type="date" value={rawValue} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />;
+    }
+
+    if (fieldType === "datetime" && !dynamicText) {
+      return <input className="input input-bordered" type="datetime-local" value={rawValue} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />;
+    }
+
+    if (fieldType === "number" && !dynamicText) {
+      return <input className="input input-bordered" type="number" value={rawValue} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />;
+    }
+
+    if (fieldType === "enum" && dynamicText) {
+      const datalistId = `automation-enum-options-${String(fieldDef?.id || "field").replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+      return (
+        <>
+          <input className="input input-bordered" list={datalistId} value={rawValue} onChange={(e) => onChange(e.target.value)} placeholder={placeholder || "{{trigger.value}}"} />
+          <datalist id={datalistId}>
+            {enumOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </datalist>
+        </>
+      );
+    }
+
+    return <input className="input input-bordered" value={rawValue} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />;
+  }
 
   const memberOptions = useMemo(() => {
     if (!Array.isArray(meta.members)) return [];
@@ -521,6 +1190,48 @@ export default function AutomationEditorPage({ user }) {
     if (!Array.isArray(meta.connections)) return [];
     return meta.connections.slice().sort((a, b) => (a.name || a.id || "").localeCompare(b.name || b.id || ""));
   }, [meta.connections]);
+
+  const emailConnectionOptions = useMemo(
+    () => connectionOptions.filter((conn) => EMAIL_CONNECTION_TYPES.has(String(conn?.type || "").trim().toLowerCase())),
+    [connectionOptions]
+  );
+
+  const integrationConnectionOptions = useMemo(
+    () => connectionOptions.filter((conn) => !EMAIL_CONNECTION_TYPES.has(String(conn?.type || "").trim().toLowerCase())),
+    [connectionOptions]
+  );
+
+  const webhookConnectionOptions = useMemo(
+    () => integrationConnectionOptions,
+    [integrationConnectionOptions]
+  );
+
+  const webhookTriggerConnectionId = useMemo(() => {
+    const filters = Array.isArray(trigger?.filters) ? trigger.filters : [];
+    const match = filters.find((item) => item?.path === "connection_id" && item?.op === "eq");
+    return typeof match?.value === "string" ? match.value : "";
+  }, [trigger?.filters]);
+
+  const webhookTriggerEventKey = useMemo(() => {
+    const filters = Array.isArray(trigger?.filters) ? trigger.filters : [];
+    const match = filters.find((item) => item?.path === "event_key" && item?.op === "eq");
+    return typeof match?.value === "string" ? match.value : "";
+  }, [trigger?.filters]);
+
+  function upsertTriggerFilter(path, value, op = "eq") {
+    setTrigger((prev) => {
+      const filters = Array.isArray(prev?.filters) ? [...prev.filters] : [];
+      const nextFilters = filters.filter((item) => item?.path !== path);
+      const normalized = typeof value === "string" ? value.trim() : value;
+      if (normalized !== "" && normalized !== null && normalized !== undefined) {
+        nextFilters.push({ path, op, value: normalized });
+      }
+      return {
+        ...(prev || {}),
+        filters: nextFilters,
+      };
+    });
+  }
 
   const emailTemplateOptions = useMemo(() => {
     if (!Array.isArray(meta.email_templates)) return [];
@@ -559,6 +1270,15 @@ export default function AutomationEditorPage({ user }) {
     }
   }, [steps, selectedStepPath]);
 
+  useEffect(() => {
+    if (triggerMode !== "webhook") {
+      setWebhookTestOpen(false);
+      return;
+    }
+    setWebhookTestConnectionId(webhookTriggerConnectionId || "");
+    setWebhookTestEventKey(webhookTriggerEventKey || "");
+  }, [triggerMode, webhookTriggerConnectionId, webhookTriggerEventKey]);
+
   const validationErrors = useMemo(() => {
     const errs = [];
     if (!name.trim()) errs.push("Name is required.");
@@ -576,8 +1296,14 @@ export default function AutomationEditorPage({ user }) {
       const everyMinutes = Number(trigger?.every_minutes) > 0 ? Number(trigger.every_minutes) : null;
       return everyMinutes ? `Every ${everyMinutes} minute${everyMinutes === 1 ? "" : "s"}` : "Scheduled";
     }
+    if (triggerMode === "webhook") {
+      const connectionName =
+        webhookConnectionOptions.find((conn) => conn.id === webhookTriggerConnectionId)?.name || webhookTriggerConnectionId || "any connection";
+      const eventKey = webhookTriggerEventKey || "any webhook event";
+      return `${connectionName} • ${eventKey}`;
+    }
     return triggerOptions.flatMap((group) => group.options || []).find((evt) => (typeof evt === "string" ? evt : evt.id) === selectedTriggerEventId)?.label || selectedTriggerEventId || "Select event";
-  }, [trigger, triggerOptions, selectedTriggerEventId]);
+  }, [trigger, triggerMode, triggerOptions, selectedTriggerEventId, webhookConnectionOptions, webhookTriggerConnectionId, webhookTriggerEventKey]);
 
   const bubbleBase = "chat-bubble text-sm leading-5 max-w-[85%]";
   const userLabel = user?.email || "User";
@@ -903,6 +1629,9 @@ export default function AutomationEditorPage({ user }) {
     const isActionLike = step.kind === "action" || step.kind === "foreach";
     const standardGridClass = linear ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 md:grid-cols-2 gap-3";
     const wideGridClass = linear ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 md:grid-cols-12 gap-3";
+    const referenceIntro = step.kind === "condition"
+      ? "Condition rules use plain paths like `trigger.event_key` or `trigger.payload.customer.email`."
+      : "Paste refs like `{{trigger.event_key}}` into inputs, message bodies, and JSON fields.";
     const beginnerHelp = step.kind === "condition"
       ? "Pick the field to check, choose how to compare it, and set the value it should match. If the rule is true, the Then branch runs."
       : step.kind === "foreach"
@@ -945,6 +1674,55 @@ export default function AutomationEditorPage({ user }) {
         <div className="rounded-box border border-base-300 bg-base-100/70 p-3">
           <div className="text-xs uppercase tracking-wide opacity-60">How To Fill This Out</div>
           <div className="text-sm opacity-80 mt-1">{beginnerHelp}</div>
+        </div>
+
+        <div className="rounded-box border border-base-300 bg-base-100/70 p-3">
+          <div className="text-xs uppercase tracking-wide opacity-60">Available Data</div>
+          <div className="text-sm opacity-80 mt-1">{referenceIntro}</div>
+          <div className="mt-3 space-y-3">
+            {automationVariableSections.map((section) => (
+              <div key={section.title}>
+                <div className="text-sm font-medium">{section.title}</div>
+                <div className="text-xs opacity-60 mt-1">{section.description}</div>
+                <div className="mt-2 grid grid-cols-1 gap-2">
+                  {section.items.map((item) => {
+                    const displayValue = step.kind === "condition" ? item.path : `{{${item.path}}}`;
+                    return (
+                      <div key={`${section.title}:${item.path}`} className="rounded-box border border-base-300 bg-base-100 px-3 py-2">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="font-mono text-xs break-all">{displayValue}</div>
+                            <div className="text-xs opacity-70 mt-1">{item.description}</div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-xs"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => insertReferenceValue(displayValue)}
+                              title="Insert into the last focused text field"
+                            >
+                              Insert
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-xs"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => copyReferenceValue(displayValue)}
+                              title="Copy reference"
+                              aria-label={`Copy ${displayValue}`}
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className={wideGridClass}>
@@ -1457,7 +2235,7 @@ export default function AutomationEditorPage({ user }) {
                             onChange={(e) => updateStepInput(index, "connection_id", e.target.value)}
                           >
                             <option value="">Use default</option>
-                            {connectionOptions.map((conn) => (
+                            {emailConnectionOptions.map((conn) => (
                               <option key={conn.id} value={conn.id}>
                                 {conn.name || conn.id}
                               </option>
@@ -1578,7 +2356,7 @@ export default function AutomationEditorPage({ user }) {
                 onChange={(e) => updateStepInput(index, "connection_id", e.target.value)}
               >
                 <option value="">Select connection…</option>
-                {connectionOptions.map((conn) => (
+                {integrationConnectionOptions.map((conn) => (
                   <option key={conn.id} value={conn.id}>
                     {conn.name || conn.id}
                   </option>
@@ -1664,7 +2442,7 @@ export default function AutomationEditorPage({ user }) {
                 onChange={(e) => updateStepInput(index, "connection_id", e.target.value)}
               >
                 <option value="">Select connection…</option>
-                {connectionOptions.map((conn) => (
+                {integrationConnectionOptions.map((conn) => (
                   <option key={conn.id} value={conn.id}>
                     {conn.name || conn.id}
                   </option>
@@ -1837,121 +2615,419 @@ export default function AutomationEditorPage({ user }) {
         )}
 
         {isActionLike && step.action_id === "system.create_record" && (
-          <div className={standardGridClass}>
-            <label className="form-control">
-              <span className="label-text">Entity</span>
-              <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
-                <option value="">Select entity…</option>
-                {entityOptions.map((ent) => (
-                  <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
-                ))}
-              </select>
-            </label>
-            <label className="form-control">
-              <span className="label-text">Store output as</span>
-              <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="new_record" />
-            </label>
-            <label className="form-control md:col-span-2">
-              <span className="label-text">Values to write</span>
-              <CodeTextarea
-                value={typeof step.inputs?.values === "string" ? step.inputs.values : JSON.stringify(step.inputs?.values || {}, null, 2)}
-                onChange={(e) => updateStepInput(index, "values", e.target.value)}
-                minHeight="180px"
-                placeholder={`{\n  "field_id": "value",\n  "other_field": "{{trigger.record_id}}"\n}`}
-              />
-              <span className="label label-text-alt opacity-50">Use JSON object format. Values can include trigger or prior-step expressions.</span>
-            </label>
-          </div>
+          (() => {
+            const selectedEntityId = step.inputs?.entity_id || "";
+            const selectedEntity = selectedEntityId ? entityById.get(selectedEntityId) : null;
+            const selectedEntityFields = Array.isArray(selectedEntity?.fields) ? selectedEntity.fields : [];
+            const fieldDatalistId = `automation-step-fields-${normalizedPath.join("-") || "root"}-create`;
+            const rows = objectEntriesForEditor(step.inputs?.values);
+            return (
+              <div className={standardGridClass}>
+                <label className="form-control">
+                  <span className="label-text">Entity</span>
+                  <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                    <option value="">Select entity…</option>
+                    {entityOptions.map((ent) => (
+                      <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-control">
+                  <span className="label-text">Store output as</span>
+                  <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="new_record" />
+                </label>
+                <div className="md:col-span-2 rounded-box border border-base-300 bg-base-100/70 p-3 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-sm">Field values</div>
+                      <div className="text-xs opacity-60 mt-1">Fill out the record one field at a time. Use Insert on the refs above when a value should come from the trigger or an earlier step.</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-ghost"
+                      onClick={() => writeObjectEntries(index, "values", [...rows, { fieldId: "", value: "" }])}
+                    >
+                      Add field
+                    </button>
+                  </div>
+                  {rows.length === 0 ? (
+                    <div className="text-xs opacity-60">No field values yet.</div>
+                  ) : (
+                    <div className="space-y-3">
+                      {rows.map((row, rowIndex) => {
+                        const nextRows = rows.slice();
+                        const fieldDef = findEntityField(selectedEntityFields, row.fieldId);
+                        return (
+                          <div key={`create-value-${rowIndex}`} className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                            <label className="form-control">
+                              <span className="label-text">Field</span>
+                              <input
+                                className="input input-bordered"
+                                list={fieldDatalistId}
+                                value={row.fieldId}
+                                onChange={(e) => {
+                                  nextRows[rowIndex] = { ...row, fieldId: e.target.value };
+                                  writeObjectEntries(index, "values", nextRows);
+                                }}
+                                placeholder="field_id"
+                              />
+                            </label>
+                            <label className="form-control">
+                              <span className="label-text">Value</span>
+                              {renderTypedValueEditor({
+                                fieldDef,
+                                value: row.value,
+                                onChange: (nextValue) => {
+                                  nextRows[rowIndex] = { ...row, value: nextValue };
+                                  writeObjectEntries(index, "values", nextRows);
+                                },
+                                placeholder: "{{trigger.record_id}}",
+                              })}
+                              <span className="label label-text-alt opacity-50">
+                                {fieldDef
+                                  ? `Field type: ${fieldDef.type || "string"}`
+                                  : "Pick a field first to get a type-aware value input."}
+                              </span>
+                            </label>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm text-error self-end"
+                              onClick={() => writeObjectEntries(index, "values", rows.filter((_, idx) => idx !== rowIndex))}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <datalist id={fieldDatalistId}>
+                    {selectedEntityFields.map((field) => (
+                      <option key={field.id} value={field.id}>
+                        {field.label || field.id}
+                      </option>
+                    ))}
+                  </datalist>
+                  <details className="group rounded-box border border-base-300 bg-base-100">
+                    <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+                      <div>
+                        <div className="font-medium text-sm">Advanced values JSON</div>
+                        <div className="text-xs opacity-60">Use this only if you need nested objects or a shape that is easier to paste as raw JSON.</div>
+                      </div>
+                      <span className="text-xs opacity-60 group-open:hidden">Show</span>
+                      <span className="text-xs opacity-60 hidden group-open:inline">Hide</span>
+                    </summary>
+                    <div className="px-4 pb-4">
+                      <label className="form-control">
+                        <span className="label-text">Values JSON</span>
+                        <CodeTextarea
+                          value={stringifyJsonObjectInput(step.inputs?.values)}
+                          onChange={(e) => updateStepInput(index, "values", e.target.value)}
+                          minHeight="180px"
+                          placeholder={`{\n  "field_id": "value",\n  "other_field": "{{trigger.record_id}}"\n}`}
+                        />
+                      </label>
+                    </div>
+                  </details>
+                </div>
+              </div>
+            );
+          })()
         )}
 
         {isActionLike && step.action_id === "system.update_record" && (
-          <div className={standardGridClass}>
-            <label className="form-control">
-              <span className="label-text">Entity</span>
-              <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
-                <option value="">Use trigger entity</option>
-                {entityOptions.map((ent) => (
-                  <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
-                ))}
-              </select>
-            </label>
-            <label className="form-control">
-              <span className="label-text">Record</span>
-              <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} placeholder="{{trigger.record_id}}" />
-            </label>
-            <label className="form-control">
-              <span className="label-text">Store output as</span>
-              <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="updated_record" />
-            </label>
-            <label className="form-control md:col-span-2">
-              <span className="label-text">Changes to apply</span>
-              <CodeTextarea
-                value={typeof step.inputs?.patch === "string" ? step.inputs.patch : JSON.stringify(step.inputs?.patch || {}, null, 2)}
-                onChange={(e) => updateStepInput(index, "patch", e.target.value)}
-                minHeight="180px"
-                placeholder={`{\n  "status": "approved"\n}`}
-              />
-              <span className="label label-text-alt opacity-50">Use JSON object format for the fields you want to update.</span>
-            </label>
-          </div>
+          (() => {
+            const selectedEntityId = step.inputs?.entity_id || "";
+            const selectedEntity = selectedEntityId ? entityById.get(selectedEntityId) : null;
+            const selectedEntityFields = Array.isArray(selectedEntity?.fields) ? selectedEntity.fields : [];
+            const fieldDatalistId = `automation-step-fields-${normalizedPath.join("-") || "root"}-update`;
+            const rows = objectEntriesForEditor(step.inputs?.patch);
+            return (
+              <div className={standardGridClass}>
+                <label className="form-control">
+                  <span className="label-text">Entity</span>
+                  <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                    <option value="">Use trigger entity</option>
+                    {entityOptions.map((ent) => (
+                      <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-control">
+                  <span className="label-text">Record</span>
+                  <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} placeholder="{{trigger.record_id}}" />
+                </label>
+                <label className="form-control">
+                  <span className="label-text">Store output as</span>
+                  <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="updated_record" />
+                </label>
+                <div className="md:col-span-2 rounded-box border border-base-300 bg-base-100/70 p-3 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-sm">Field changes</div>
+                      <div className="text-xs opacity-60 mt-1">Only add the fields you want to change. Anything you leave out is untouched.</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-ghost"
+                      onClick={() => writeObjectEntries(index, "patch", [...rows, { fieldId: "", value: "" }])}
+                    >
+                      Add change
+                    </button>
+                  </div>
+                  {rows.length === 0 ? (
+                    <div className="text-xs opacity-60">No changes yet.</div>
+                  ) : (
+                    <div className="space-y-3">
+                      {rows.map((row, rowIndex) => {
+                        const nextRows = rows.slice();
+                        const fieldDef = findEntityField(selectedEntityFields, row.fieldId);
+                        return (
+                          <div key={`update-patch-${rowIndex}`} className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                            <label className="form-control">
+                              <span className="label-text">Field</span>
+                              <input
+                                className="input input-bordered"
+                                list={fieldDatalistId}
+                                value={row.fieldId}
+                                onChange={(e) => {
+                                  nextRows[rowIndex] = { ...row, fieldId: e.target.value };
+                                  writeObjectEntries(index, "patch", nextRows);
+                                }}
+                                placeholder="field_id"
+                              />
+                            </label>
+                            <label className="form-control">
+                              <span className="label-text">New value</span>
+                              {renderTypedValueEditor({
+                                fieldDef,
+                                value: row.value,
+                                onChange: (nextValue) => {
+                                  nextRows[rowIndex] = { ...row, value: nextValue };
+                                  writeObjectEntries(index, "patch", nextRows);
+                                },
+                                placeholder: "{{trigger.record_id}}",
+                              })}
+                              <span className="label label-text-alt opacity-50">
+                                {fieldDef
+                                  ? `Field type: ${fieldDef.type || "string"}`
+                                  : "Pick a field first to get a type-aware value input."}
+                              </span>
+                            </label>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm text-error self-end"
+                              onClick={() => writeObjectEntries(index, "patch", rows.filter((_, idx) => idx !== rowIndex))}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <datalist id={fieldDatalistId}>
+                    {selectedEntityFields.map((field) => (
+                      <option key={field.id} value={field.id}>
+                        {field.label || field.id}
+                      </option>
+                    ))}
+                  </datalist>
+                  <details className="group rounded-box border border-base-300 bg-base-100">
+                    <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+                      <div>
+                        <div className="font-medium text-sm">Advanced patch JSON</div>
+                        <div className="text-xs opacity-60">Use this only if you need nested objects or want to paste a prepared patch object.</div>
+                      </div>
+                      <span className="text-xs opacity-60 group-open:hidden">Show</span>
+                      <span className="text-xs opacity-60 hidden group-open:inline">Hide</span>
+                    </summary>
+                    <div className="px-4 pb-4">
+                      <label className="form-control">
+                        <span className="label-text">Patch JSON</span>
+                        <CodeTextarea
+                          value={stringifyJsonObjectInput(step.inputs?.patch)}
+                          onChange={(e) => updateStepInput(index, "patch", e.target.value)}
+                          minHeight="180px"
+                          placeholder={`{\n  "status": "approved"\n}`}
+                        />
+                      </label>
+                    </div>
+                  </details>
+                </div>
+              </div>
+            );
+          })()
         )}
 
         {isActionLike && step.action_id === "system.query_records" && (
-          <div className={standardGridClass}>
-            <label className="form-control">
-              <span className="label-text">Entity</span>
-              <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
-                <option value="">Use trigger entity</option>
-                {entityOptions.map((ent) => (
-                  <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
-                ))}
-              </select>
-            </label>
-            <label className="form-control">
-              <span className="label-text">Search text</span>
-              <input className="input input-bordered" value={step.inputs?.q || ""} onChange={(e) => updateStepInput(index, "q", e.target.value)} />
-              <span className="label label-text-alt opacity-50">Optional text search. Leave blank if you only want to use filter rules.</span>
-            </label>
-            <label className="form-control">
-              <span className="label-text">Limit</span>
-              <input className="input input-bordered" type="number" min={1} max={200} value={step.inputs?.limit || 25} onChange={(e) => updateStepInput(index, "limit", Number(e.target.value || 25))} />
-              <span className="label label-text-alt opacity-50">Only the first matching records are returned to later steps.</span>
-            </label>
-            <label className="form-control">
-              <span className="label-text">Store output as</span>
-              <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="query_results" />
-            </label>
-            <div className="md:col-span-2 rounded-box border border-base-300 bg-base-100">
-              <details className="group">
-                <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
-                  <div>
-                    <div className="font-medium text-sm">Advanced query options</div>
-                    <div className="text-xs opacity-60">Only use these if the basic entity, search text, and limit are not enough.</div>
+          (() => {
+            const selectedEntityId = step.inputs?.entity_id || defaultConditionEntityId || "";
+            const selectedEntity = selectedEntityId ? entityById.get(selectedEntityId) : null;
+            const selectedEntityFields = Array.isArray(selectedEntity?.fields) ? selectedEntity.fields : [];
+            const fieldDatalistId = `automation-step-fields-${normalizedPath.join("-") || "root"}-query`;
+            const filterRows = parseFilterRows(step.inputs?.filter_expr);
+            return (
+              <div className={standardGridClass}>
+                <label className="form-control">
+                  <span className="label-text">Entity</span>
+                  <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                    <option value="">Use trigger entity</option>
+                    {entityOptions.map((ent) => (
+                      <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-control">
+                  <span className="label-text">Search text</span>
+                  <input className="input input-bordered" value={step.inputs?.q || ""} onChange={(e) => updateStepInput(index, "q", e.target.value)} />
+                  <span className="label label-text-alt opacity-50">Optional text search. Leave blank if you only want to use filter rules.</span>
+                </label>
+                <label className="form-control">
+                  <span className="label-text">Limit</span>
+                  <input className="input input-bordered" type="number" min={1} max={200} value={step.inputs?.limit || 25} onChange={(e) => updateStepInput(index, "limit", Number(e.target.value || 25))} />
+                  <span className="label label-text-alt opacity-50">Only the first matching records are returned to later steps.</span>
+                </label>
+                <label className="form-control">
+                  <span className="label-text">Store output as</span>
+                  <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="query_results" />
+                </label>
+                <div className="md:col-span-2 rounded-box border border-base-300 bg-base-100/70 p-3 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-sm">Quick filters</div>
+                      <div className="text-xs opacity-60 mt-1">Add simple rules to narrow down records. These compile into the same advanced filter JSON behind the scenes.</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-ghost"
+                      onClick={() => updateStepInput(index, "filter_expr", buildFilterExprFromRows([...filterRows, { path: "", op: "eq", value: "" }]))}
+                    >
+                      Add rule
+                    </button>
                   </div>
-                  <span className="text-xs opacity-60 group-open:hidden">Show</span>
-                  <span className="text-xs opacity-60 hidden group-open:inline">Hide</span>
-                </summary>
-                <div className={`${standardGridClass} px-4 pb-4`}>
-                  <label className="form-control">
-                    <span className="label-text">Search fields</span>
-                    <input className="input input-bordered" value={step.inputs?.search_fields || ""} onChange={(e) => updateStepInput(index, "search_fields", e.target.value)} placeholder="field.one, field.two" />
-                    <span className="label label-text-alt opacity-50">Optional comma-separated field IDs to limit text search.</span>
-                  </label>
-                  <div />
-                  <label className="form-control md:col-span-2">
-                    <span className="label-text">Filter condition JSON</span>
-                    <CodeTextarea
-                      value={typeof step.inputs?.filter_expr === "string" ? step.inputs.filter_expr : JSON.stringify(step.inputs?.filter_expr || {}, null, 2)}
-                      onChange={(e) => updateStepInput(index, "filter_expr", e.target.value)}
-                      minHeight="140px"
-                      placeholder={`{\n  "op": "eq",\n  "field": "status",\n  "value": "open"\n}`}
-                    />
-                    <span className="label label-text-alt opacity-50">Optional advanced filter expression for exact record matching.</span>
-                  </label>
+                  {filterRows.length === 0 ? (
+                    <div className="text-xs opacity-60">No quick filters yet.</div>
+                  ) : (
+                    <div className="space-y-3">
+                      {filterRows.map((row, rowIndex) => {
+                        const nextRows = filterRows.slice();
+                        const fieldDef = findEntityField(selectedEntityFields, row.path);
+                        return (
+                          <div key={`query-filter-${rowIndex}`} className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_180px_minmax(0,1fr)_auto]">
+                            <label className="form-control">
+                              <span className="label-text">Field path</span>
+                              <input
+                                className="input input-bordered"
+                                list={fieldDatalistId}
+                                value={row.path}
+                                onChange={(e) => {
+                                  nextRows[rowIndex] = { ...row, path: e.target.value };
+                                  updateStepInput(index, "filter_expr", buildFilterExprFromRows(nextRows));
+                                }}
+                                placeholder="record.status"
+                              />
+                            </label>
+                            <label className="form-control">
+                              <span className="label-text">Operator</span>
+                              <select
+                                className="select select-bordered"
+                                value={row.op || "eq"}
+                                onChange={(e) => {
+                                  nextRows[rowIndex] = { ...row, op: e.target.value };
+                                  updateStepInput(index, "filter_expr", buildFilterExprFromRows(nextRows));
+                                }}
+                              >
+                                <option value="eq">equals</option>
+                                <option value="neq">not equals</option>
+                                <option value="gt">greater than</option>
+                                <option value="gte">greater or equal</option>
+                                <option value="lt">less than</option>
+                                <option value="lte">less or equal</option>
+                                <option value="contains">contains</option>
+                                <option value="in">in list</option>
+                                <option value="not_in">not in list</option>
+                                <option value="exists">exists</option>
+                                <option value="not_exists">not exists</option>
+                              </select>
+                            </label>
+                            <label className="form-control">
+                              <span className="label-text">Value</span>
+                              {row.op === "exists" || row.op === "not_exists" ? (
+                                <input className="input input-bordered" disabled value="No value needed" />
+                              ) : (
+                                renderTypedValueEditor({
+                                  fieldDef,
+                                  value: row.value,
+                                  onChange: (nextValue) => {
+                                    nextRows[rowIndex] = { ...row, value: nextValue };
+                                    updateStepInput(index, "filter_expr", buildFilterExprFromRows(nextRows));
+                                  },
+                                  placeholder: row.op === "in" || row.op === "not_in" ? "open, pending" : "open",
+                                })
+                              )}
+                              <span className="label label-text-alt opacity-50">
+                                {fieldDef
+                                  ? `Field type: ${fieldDef.type || "string"}`
+                                  : "Use record.field_name format to get a type-aware value input."}
+                              </span>
+                            </label>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm text-error self-end"
+                              onClick={() => updateStepInput(index, "filter_expr", buildFilterExprFromRows(filterRows.filter((_, idx) => idx !== rowIndex)))}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <datalist id={fieldDatalistId}>
+                    <option value="record.id">Record ID</option>
+                    {selectedEntityFields.map((field) => {
+                      const shortId = typeof field.id === "string" ? field.id.split(".").pop() : field.id;
+                      const value = shortId ? `record.${shortId}` : "";
+                      if (!value) return null;
+                      return (
+                        <option key={field.id} value={value}>
+                          {field.label || field.id}
+                        </option>
+                      );
+                    })}
+                  </datalist>
+                  <details className="group rounded-box border border-base-300 bg-base-100">
+                    <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+                      <div>
+                        <div className="font-medium text-sm">Advanced query options</div>
+                        <div className="text-xs opacity-60">Use this for search field limits or a more complex filter expression than the quick rules above can represent.</div>
+                      </div>
+                      <span className="text-xs opacity-60 group-open:hidden">Show</span>
+                      <span className="text-xs opacity-60 hidden group-open:inline">Hide</span>
+                    </summary>
+                    <div className={`${standardGridClass} px-4 pb-4`}>
+                      <label className="form-control">
+                        <span className="label-text">Search fields</span>
+                        <input className="input input-bordered" value={step.inputs?.search_fields || ""} onChange={(e) => updateStepInput(index, "search_fields", e.target.value)} placeholder="field.one, field.two" />
+                        <span className="label label-text-alt opacity-50">Optional comma-separated field IDs to limit text search.</span>
+                      </label>
+                      <div />
+                      <label className="form-control md:col-span-2">
+                        <span className="label-text">Filter condition JSON</span>
+                        <CodeTextarea
+                          value={typeof step.inputs?.filter_expr === "string" ? step.inputs.filter_expr : JSON.stringify(step.inputs?.filter_expr || {}, null, 2)}
+                          onChange={(e) => updateStepInput(index, "filter_expr", e.target.value)}
+                          minHeight="140px"
+                          placeholder={`{\n  "op": "eq",\n  "left": { "var": "record.status" },\n  "right": { "literal": "open" }\n}`}
+                        />
+                      </label>
+                    </div>
+                  </details>
                 </div>
-              </details>
-            </div>
-          </div>
+              </div>
+            );
+          })()
         )}
 
         {isActionLike && step.action_id === "system.add_chatter" && (
@@ -2231,8 +3307,9 @@ export default function AutomationEditorPage({ user }) {
 
         <div className="form-control">
           <span className="label-text">Trigger type</span>
-          <select className="select select-bordered" value={trigger?.kind || "event"} onChange={(e) => updateTriggerKind(e.target.value)}>
+          <select className="select select-bordered" value={triggerMode} onChange={(e) => setTriggerMode(e.target.value)}>
             <option value="event">When an event happens</option>
+            <option value="webhook">When a webhook is received</option>
             <option value="schedule">Run on a schedule</option>
           </select>
         </div>
@@ -2243,7 +3320,7 @@ export default function AutomationEditorPage({ user }) {
         </label>
       </div>
 
-      {trigger?.kind === "schedule" ? (
+      {triggerMode === "schedule" ? (
         <div className="rounded-box border border-base-300 bg-base-100 p-4 space-y-3">
           <div>
             <div className="font-medium text-sm">Schedule</div>
@@ -2259,6 +3336,57 @@ export default function AutomationEditorPage({ user }) {
               placeholder="60"
             />
           </label>
+        </div>
+      ) : triggerMode === "webhook" ? (
+        <div className="rounded-box border border-base-300 bg-base-100 p-4 space-y-4">
+          <div>
+            <div className="font-medium text-sm">Webhook trigger</div>
+            <div className="text-xs opacity-60 mt-1">
+              Run this automation when an inbound integration webhook is received. You can narrow it by connection and event key.
+            </div>
+          </div>
+          <label className="form-control">
+            <span className="label-text">Connection</span>
+            <select
+              className="select select-bordered"
+              value={webhookTriggerConnectionId}
+              onChange={(e) => upsertTriggerFilter("connection_id", e.target.value)}
+            >
+              <option value="">Any connection</option>
+              {webhookConnectionOptions.map((conn) => (
+                <option key={conn.id} value={conn.id}>
+                  {conn.name || conn.id}
+                </option>
+              ))}
+            </select>
+            <span className="label label-text-alt opacity-50">Optional. Leave empty to react to webhooks from any configured integration connection.</span>
+          </label>
+          <label className="form-control">
+            <span className="label-text">Event key</span>
+            <input
+              className="input input-bordered"
+              value={webhookTriggerEventKey}
+              onChange={(e) => upsertTriggerFilter("event_key", e.target.value)}
+              placeholder="invoice.created"
+            />
+            <span className="label label-text-alt opacity-50">Optional. This matches the event key stored on the inbound webhook definition.</span>
+          </label>
+          <div className="rounded-box border border-base-300 bg-base-200/40 p-3 text-xs leading-5 text-base-content/70">
+            <div className="font-medium text-sm text-base-content">Available trigger data</div>
+            <div className="mt-2">Use these paths in conditions, action inputs, and templates:</div>
+            <div className="mt-2 font-mono">trigger.connection_id</div>
+            <div className="font-mono">trigger.event_key</div>
+            <div className="font-mono">trigger.provider_event_id</div>
+            <div className="font-mono">trigger.payload</div>
+            <div className="font-mono">trigger.headers</div>
+            <div className="font-mono">trigger.signature_valid</div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="btn btn-sm btn-outline" onClick={() => setWebhookTestOpen(true)}>
+              Test webhook trigger
+            </button>
+            <div className="self-center text-xs opacity-60">Queue a sample inbound webhook against the saved automation.</div>
+          </div>
         </div>
       ) : (
         <div className="form-control">
@@ -2286,7 +3414,7 @@ export default function AutomationEditorPage({ user }) {
         </div>
       )}
 
-      {trigger?.kind === "event" && (
+      {(triggerMode === "event" || triggerMode === "webhook") && (
       <div className="space-y-3">
         <div className="rounded-box border border-base-300 bg-base-100">
           <details className="group">
@@ -2302,12 +3430,20 @@ export default function AutomationEditorPage({ user }) {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="label-text">Only run when</div>
-                  <div className="text-xs opacity-60 mt-1">Most automations can leave this empty and run whenever the trigger happens.</div>
+                  <div className="text-xs opacity-60 mt-1">
+                    {triggerMode === "webhook"
+                      ? "Use extra rules only if connection and event key are not enough. These rules run against webhook payload data."
+                      : "Most automations can leave this empty and run whenever the trigger happens."}
+                  </div>
                 </div>
                 <button type="button" className="btn btn-sm" onClick={addTriggerFilter}>Add rule</button>
               </div>
               {((trigger?.filters || [])).length === 0 ? (
-                <div className="text-xs opacity-60">No extra rules yet. This automation will run every time the selected trigger event happens.</div>
+                <div className="text-xs opacity-60">
+                  {triggerMode === "webhook"
+                    ? "No extra rules yet. This automation will run whenever the selected webhook trigger matches."
+                    : "No extra rules yet. This automation will run every time the selected trigger event happens."}
+                </div>
               ) : (
                 <div className="space-y-3">
                   {(trigger?.filters || []).map((filt, idx) => {
@@ -2322,7 +3458,7 @@ export default function AutomationEditorPage({ user }) {
                             list="automation-trigger-fields"
                             value={filt?.path || ""}
                             onChange={(e) => updateTriggerFilter(idx, { path: e.target.value })}
-                            placeholder="status"
+                            placeholder={triggerMode === "webhook" ? "payload.customer.email" : "status"}
                           />
                         </label>
                         <label className="form-control md:col-span-3">
@@ -2354,7 +3490,7 @@ export default function AutomationEditorPage({ user }) {
                             className="input input-bordered"
                             disabled={noValue}
                             value={Array.isArray(filt?.value) ? filt.value.join(", ") : (filt?.value ?? "")}
-                            placeholder={noValue ? "No value needed" : "active"}
+                            placeholder={noValue ? "No value needed" : triggerMode === "webhook" ? "ops@example.com" : "active"}
                             onChange={(e) => {
                               const raw = e.target.value;
                               const value = ["in", "not_in"].includes(op)
@@ -2413,6 +3549,11 @@ export default function AutomationEditorPage({ user }) {
             <div className="text-xs opacity-60 mt-1">
               {trigger?.kind === "schedule"
                 ? "Runs on the shared scheduler"
+                : triggerMode === "webhook"
+                ? [
+                    webhookTriggerConnectionId ? "Connection selected" : "Any connection",
+                    webhookTriggerEventKey ? `Event key: ${webhookTriggerEventKey}` : "Any webhook event",
+                  ].join(" • ")
                 : (trigger?.filters || []).length > 0
                 ? `${trigger.filters.length} trigger rule${trigger.filters.length === 1 ? "" : "s"}`
                 : "Runs for every matching event"}
@@ -2431,7 +3572,10 @@ export default function AutomationEditorPage({ user }) {
 
       {stepModalOpen && selectedStep && (
         <div className="modal modal-open">
-          <div className={`modal-box ${isMobile ? "w-full max-w-none h-dvh rounded-none" : "max-w-5xl"}`}>
+          <div
+            className={`modal-box ${isMobile ? "w-full max-w-none h-dvh rounded-none" : "max-w-5xl"}`}
+            onFocusCapture={rememberFocusedField}
+          >
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
                 <h3 className="font-semibold text-lg">{stepSummaryText(selectedStep)}</h3>
@@ -2749,7 +3893,7 @@ export default function AutomationEditorPage({ user }) {
                             onChange={(e) => updateStepInput(index, "connection_id", e.target.value)}
                           >
                             <option value="">Use default</option>
-                            {connectionOptions.map((conn) => (
+                            {emailConnectionOptions.map((conn) => (
                               <option key={conn.id} value={conn.id}>
                                 {conn.name || conn.id}
                               </option>
@@ -3472,11 +4616,25 @@ export default function AutomationEditorPage({ user }) {
       </datalist>
       <datalist id="automation-record-hints">
         <option value="{{trigger.record_id}}">Use trigger.record_id</option>
+        <option value="{{last.id}}">Use the last step's ID output</option>
+        <option value="{{vars.created_record.id}}">Use a stored record ID</option>
+        {triggerMode === "webhook" && (
+          <>
+            <option value="{{trigger.payload.id}}">Use webhook payload id</option>
+            <option value="{{trigger.payload.record_id}}">Use webhook payload record_id</option>
+          </>
+        )}
       </datalist>
       <datalist id="automation-loop-hints">
         <option value="{{trigger.record_ids}}">Use trigger record IDs</option>
         <option value="{{steps.query_records.records}}">Use records from a query step</option>
         <option value="{{vars.query_results.records}}">Use records from a stored variable</option>
+        {triggerMode === "webhook" && (
+          <>
+            <option value="{{trigger.payload.items}}">Use items from webhook payload</option>
+            <option value="{{trigger.payload.records}}">Use records from webhook payload</option>
+          </>
+        )}
       </datalist>
       <datalist id="automation-trigger-fields">
         {triggerFieldOptions.map((field) => (
@@ -3545,6 +4703,36 @@ export default function AutomationEditorPage({ user }) {
     </div>
   );
 
+  async function runWebhookTest() {
+    if (!automationId) return;
+    setWebhookTestSaving(true);
+    setWebhookTestError("");
+    try {
+      const rawPayload = webhookTestPayloadText.trim();
+      const rawHeaders = webhookTestHeadersText.trim();
+      const payload = rawPayload ? JSON.parse(rawPayload) : {};
+      const headers = rawHeaders ? JSON.parse(rawHeaders) : {};
+      const res = await apiFetch(`/automations/${automationId}/test-trigger`, {
+        method: "POST",
+        body: {
+          event_type: "integration.webhook.received",
+          connection_id: webhookTestConnectionId || undefined,
+          event_key: webhookTestEventKey || undefined,
+          provider_event_id: webhookTestProviderEventId || undefined,
+          headers,
+          payload,
+        },
+      });
+      setWebhookTestOpen(false);
+      await loadRuns();
+      const runId = res?.run?.id;
+      if (runId) navigate(`/automation-runs/${runId}`);
+    } catch (err) {
+      setWebhookTestError(err?.message || "Failed to queue webhook test");
+    }
+    setWebhookTestSaving(false);
+  }
+
   const automationProfile = useMemo(() => ({
     kind: "automation",
     defaultTabId: "builder",
@@ -3570,6 +4758,80 @@ export default function AutomationEditorPage({ user }) {
         renderLeftPane={renderLeftPane}
         renderValidationPanel={renderValidationPanel}
       />
+      {webhookTestOpen && (
+        <div className="modal modal-open">
+          <div className={`modal-box ${isMobile ? "w-full max-w-none h-dvh rounded-none" : "max-w-4xl"}`}>
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold">Test webhook trigger</h3>
+                <p className="text-sm opacity-70">Queue a test run using a sample inbound webhook event against the saved automation.</p>
+              </div>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setWebhookTestOpen(false)}>
+                Close
+              </button>
+            </div>
+            <div className="space-y-4">
+              {webhookTestError ? <div className="alert alert-error text-sm">{webhookTestError}</div> : null}
+              <label className="form-control">
+                <span className="label-text">Connection</span>
+                <select className="select select-bordered" value={webhookTestConnectionId} onChange={(e) => setWebhookTestConnectionId(e.target.value)}>
+                  <option value="">Any connection</option>
+                  {webhookConnectionOptions.map((conn) => (
+                    <option key={conn.id} value={conn.id}>
+                      {conn.name || conn.id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="form-control">
+                <span className="label-text">Event key</span>
+                <input
+                  className="input input-bordered"
+                  value={webhookTestEventKey}
+                  onChange={(e) => setWebhookTestEventKey(e.target.value)}
+                  placeholder="invoice.created"
+                />
+              </label>
+              <label className="form-control">
+                <span className="label-text">Provider event ID</span>
+                <input
+                  className="input input-bordered"
+                  value={webhookTestProviderEventId}
+                  onChange={(e) => setWebhookTestProviderEventId(e.target.value)}
+                  placeholder="evt_12345"
+                />
+              </label>
+              <label className="form-control">
+                <span className="label-text">Headers JSON</span>
+                <CodeTextarea value={webhookTestHeadersText} onChange={(e) => setWebhookTestHeadersText(e.target.value)} minHeight="140px" />
+              </label>
+              <label className="form-control">
+                <span className="label-text">Payload JSON</span>
+                <CodeTextarea value={webhookTestPayloadText} onChange={(e) => setWebhookTestPayloadText(e.target.value)} minHeight="220px" />
+                <span className="label label-text-alt opacity-50">This becomes `trigger.payload` in the automation context.</span>
+              </label>
+              <div className="rounded-box border border-base-300 bg-base-200/40 p-3 text-xs leading-5 text-base-content/70">
+                <div className="font-medium text-sm text-base-content">What this test creates</div>
+                <div className="mt-2 font-mono">trigger.connection_id = selected connection</div>
+                <div className="font-mono">trigger.event_key = entered event key</div>
+                <div className="font-mono">trigger.provider_event_id = entered provider event id</div>
+                <div className="font-mono">trigger.headers = headers JSON</div>
+                <div className="font-mono">trigger.payload = payload JSON</div>
+                <div className="font-mono">trigger.event = integration.webhook.received</div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button type="button" className="btn btn-ghost" onClick={() => setWebhookTestOpen(false)} disabled={webhookTestSaving}>
+                  Cancel
+                </button>
+                <button type="button" className="btn btn-primary" onClick={runWebhookTest} disabled={webhookTestSaving}>
+                  {webhookTestSaving ? "Queueing..." : "Run test"}
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="modal-backdrop" onClick={() => setWebhookTestOpen(false)} />
+        </div>
+      )}
     </div>
   );
 }

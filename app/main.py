@@ -594,18 +594,65 @@ async def db_ping() -> dict:
     return {"ok": True, "ms": round(elapsed_ms, 2)}
 
 
-def _error_response(code: str, message: str, path: str | None = None, detail: dict | None = None, status: int = 400) -> JSONResponse:
+def _error_response(
+    code: str,
+    message: str,
+    path: str | None = None,
+    detail: dict | None = None,
+    status: int = 400,
+    headers: dict | None = None,
+) -> JSONResponse:
     body = {
         "ok": False,
         "errors": [{"code": code, "message": message, "path": path, "detail": detail}],
         "warnings": [],
     }
-    return JSONResponse(jsonable_encoder(body), status_code=status)
+    return JSONResponse(jsonable_encoder(body), status_code=status, headers=headers)
 
 
-def _ok_response(payload: dict, warnings: list | None = None, status: int = 200) -> JSONResponse:
+def _ok_response(payload: dict, warnings: list | None = None, status: int = 200, headers: dict | None = None) -> JSONResponse:
     body = {"ok": True, **payload, "errors": [], "warnings": warnings or []}
-    return JSONResponse(jsonable_encoder(body), status_code=status)
+    return JSONResponse(jsonable_encoder(body), status_code=status, headers=headers)
+
+
+def _ext_api_pagination_meta(*, limit: int, offset: int = 0, next_cursor: str | None = None) -> dict:
+    return {
+        "limit": limit,
+        "offset": offset,
+        "next_cursor": next_cursor,
+        "has_more": bool(next_cursor),
+    }
+
+
+def _ext_api_paginate(items: list[dict], *, limit: int = 50, offset: int = 0, cursor: str | None = None) -> tuple[list[dict], dict]:
+    limit_cap = max(1, min(int(limit or 50), 200))
+    if isinstance(cursor, str) and cursor.strip():
+        try:
+            offset_val = max(0, int(cursor.strip()))
+        except Exception:
+            raise ValueError("cursor must be an integer offset")
+    else:
+        offset_val = max(0, int(offset or 0))
+    sliced = items[offset_val : offset_val + limit_cap]
+    next_cursor = str(offset_val + limit_cap) if len(items) > offset_val + limit_cap else None
+    return sliced, _ext_api_pagination_meta(limit=limit_cap, offset=offset_val, next_cursor=next_cursor)
+
+
+def _set_ext_api_rate_limit_headers(
+    response: Response | None,
+    *,
+    remaining: int,
+    limited: bool = False,
+    window_seconds: int | None = None,
+) -> None:
+    if response is None:
+        return
+    window = max(1, int(window_seconds or EXT_API_RATE_LIMIT_WINDOW_SECONDS))
+    response.headers["X-RateLimit-Limit"] = str(EXT_API_RATE_LIMIT_MAX_REQUESTS)
+    response.headers["X-RateLimit-Remaining"] = str(max(0, remaining))
+    response.headers["X-RateLimit-Window-Seconds"] = str(window)
+    if limited:
+        response.headers["Retry-After"] = str(window)
 
 
 def _issue(code: str, message: str, path: str | None = None) -> dict:
@@ -1219,6 +1266,7 @@ class ActorContextMiddleware(BaseHTTPMiddleware):
         started_at = time.perf_counter()
         response = None
         api_request_logged = False
+        ext_api_recent_requests = None
         try:
             if (
                 request.url.path.startswith("/ext/")
@@ -1231,6 +1279,7 @@ class ActorContextMiddleware(BaseHTTPMiddleware):
                     str(actor.get("api_credential_id")),
                     window_seconds=EXT_API_RATE_LIMIT_WINDOW_SECONDS,
                 )
+                ext_api_recent_requests = recent
                 if recent >= EXT_API_RATE_LIMIT_MAX_REQUESTS:
                     response = _error_response(
                         "RATE_LIMITED",
@@ -1240,6 +1289,12 @@ class ActorContextMiddleware(BaseHTTPMiddleware):
                             "max_requests": EXT_API_RATE_LIMIT_MAX_REQUESTS,
                         },
                         status=429,
+                    )
+                    _set_ext_api_rate_limit_headers(
+                        response,
+                        remaining=0,
+                        limited=True,
+                        window_seconds=EXT_API_RATE_LIMIT_WINDOW_SECONDS,
                     )
                     try:
                         api_request_log_store.create(
@@ -1260,6 +1315,22 @@ class ActorContextMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
             return response
         finally:
+            if (
+                request.url.path.startswith("/ext/")
+                and isinstance(actor, dict)
+                and actor.get("actor_type") == "api_credential"
+                and response is not None
+            ):
+                consumed = 1
+                if isinstance(response, Response) and response.status_code == 429:
+                    consumed = 0
+                recent_count = ext_api_recent_requests if isinstance(ext_api_recent_requests, int) else 0
+                _set_ext_api_rate_limit_headers(
+                    response,
+                    remaining=EXT_API_RATE_LIMIT_MAX_REQUESTS - recent_count - consumed,
+                    limited=bool(isinstance(response, Response) and response.status_code == 429),
+                    window_seconds=EXT_API_RATE_LIMIT_WINDOW_SECONDS,
+                )
             if (
                 request.url.path.startswith("/ext/")
                 and isinstance(actor, dict)
@@ -15666,11 +15737,6 @@ async def automations_meta(request: Request) -> dict:
     workspace_id = actor.get("workspace_id")
     members = list_workspace_members(workspace_id) if isinstance(workspace_id, str) and workspace_id else []
     connections = connection_store.list() if connection_store else []
-    # Only expose email-capable connections in automation email pickers.
-    connections = [
-        c for c in (connections or [])
-        if c.get("type") in {"smtp", "postmark"}
-    ]
     email_templates = email_store.list_templates() if email_store else []
     doc_templates = doc_template_store.list() if doc_template_store else []
     response = _ok_response(
@@ -30653,7 +30719,10 @@ async def list_generic_records(
                 slim["id"] = record.get("id")
             trimmed.append({"record_id": item.get("record_id"), "record": slim})
         items = trimmed
-    payload = {"records": items}
+    payload = {
+        "records": items,
+        "pagination": _ext_api_pagination_meta(limit=limit_cap, offset=offset_val, next_cursor=next_cursor),
+    }
     if next_cursor:
         payload["next_cursor"] = next_cursor
     response = _ok_response(payload)
@@ -34713,6 +34782,89 @@ async def disable_automation(request: Request, automation_id: str) -> dict:
     return _ok_response({"automation": item})
 
 
+@app.post("/automations/{automation_id}/test-trigger")
+async def test_automation_trigger(request: Request, automation_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "automations.manage", "Admin role required")
+    if denied:
+        return denied
+    automation = automation_store.get(automation_id)
+    if not automation:
+        return _error_response("AUTOMATION_NOT_FOUND", "Automation not found", "automation_id", status=404)
+    body = await _safe_json(request)
+    if body is None:
+        body = {}
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+
+    trigger = automation.get("trigger") or {}
+    if (trigger.get("kind") or "event") != "event":
+        return _error_response("AUTOMATION_TEST_UNSUPPORTED", "Only event-triggered automations can be tested this way", "trigger.kind", status=400)
+
+    event_types = trigger.get("event_types") if isinstance(trigger.get("event_types"), list) else []
+    requested_event_type = body.get("event_type")
+    if requested_event_type not in (None, "") and not isinstance(requested_event_type, str):
+        return _error_response("EVENT_TYPE_INVALID", "event_type must be a string", "event_type", status=400)
+    event_type = requested_event_type.strip() if isinstance(requested_event_type, str) and requested_event_type.strip() else (
+        event_types[0] if event_types else None
+    )
+    if not isinstance(event_type, str) or not event_type:
+        return _error_response("EVENT_TYPE_REQUIRED", "event_type is required", "event_type", status=400)
+
+    payload_in = body.get("payload")
+    if payload_in is not None and not isinstance(payload_in, dict):
+        return _error_response("PAYLOAD_INVALID", "payload must be an object", "payload", status=400)
+    payload = dict(payload_in or {})
+    payload["event"] = event_type
+
+    if event_type == "integration.webhook.received" or event_type.startswith("integration.webhook."):
+        headers = body.get("headers")
+        if headers is not None and not isinstance(headers, dict):
+            return _error_response("HEADERS_INVALID", "headers must be an object", "headers", status=400)
+        if headers is not None:
+            payload["headers"] = headers
+        if "connection_id" in body:
+            if body.get("connection_id") not in (None, "") and not isinstance(body.get("connection_id"), str):
+                return _error_response("CONNECTION_INVALID", "connection_id must be a string", "connection_id", status=400)
+            if isinstance(body.get("connection_id"), str) and body.get("connection_id").strip():
+                payload["connection_id"] = body.get("connection_id").strip()
+        if "webhook_id" in body:
+            if body.get("webhook_id") not in (None, "") and not isinstance(body.get("webhook_id"), str):
+                return _error_response("WEBHOOK_ID_INVALID", "webhook_id must be a string", "webhook_id", status=400)
+            if isinstance(body.get("webhook_id"), str) and body.get("webhook_id").strip():
+                payload["webhook_id"] = body.get("webhook_id").strip()
+        if "provider_event_id" in body:
+            if body.get("provider_event_id") not in (None, "") and not isinstance(body.get("provider_event_id"), str):
+                return _error_response("PROVIDER_EVENT_ID_INVALID", "provider_event_id must be a string", "provider_event_id", status=400)
+            if isinstance(body.get("provider_event_id"), str) and body.get("provider_event_id").strip():
+                payload["provider_event_id"] = body.get("provider_event_id").strip()
+        if "event_key" in body:
+            if body.get("event_key") not in (None, "") and not isinstance(body.get("event_key"), str):
+                return _error_response("EVENT_KEY_INVALID", "event_key must be a string", "event_key", status=400)
+            if isinstance(body.get("event_key"), str) and body.get("event_key").strip():
+                payload["event_key"] = body.get("event_key").strip()
+
+    run = automation_store.create_run(
+        {
+            "automation_id": automation_id,
+            "status": "queued",
+            "trigger_event_id": None,
+            "trigger_type": event_type,
+            "trigger_payload": {
+                **payload,
+                "source": "test_trigger",
+                "tested_by": (actor or {}).get("user_id"),
+                "tested_at": _now(),
+            },
+            "current_step_index": 0,
+        }
+    )
+    job = job_store.enqueue({"type": "automation.run", "payload": {"run_id": run.get("id")}})
+    return _ok_response({"run": run, "job": job}, status=202)
+
+
 @app.delete("/automations/{automation_id}")
 async def delete_automation(request: Request, automation_id: str) -> dict:
     actor = _resolve_actor(request)
@@ -34793,7 +34945,12 @@ async def ext_redoc() -> Response:
 
 
 @app.get("/ext/v1/meta/entities", tags=["External API"], summary="List External Entity Metadata")
-async def ext_list_entities(request: Request) -> dict:
+async def ext_list_entities(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    cursor: str | None = None,
+) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
@@ -34819,7 +34976,14 @@ async def ext_list_entities(request: Request) -> dict:
             item["module_name"] = module_meta.get("name") if isinstance(module_meta, dict) else None
             entities.append(item)
     entities.sort(key=lambda item: (str(item.get("module_name") or ""), str(item.get("id") or "")))
-    return _ok_response({"entities": entities})
+    try:
+        page, pagination = _ext_api_paginate(entities, limit=limit, offset=offset, cursor=cursor)
+    except ValueError as exc:
+        return _error_response("CURSOR_INVALID", str(exc), "cursor", status=400)
+    payload = {"entities": page, "pagination": pagination}
+    if pagination.get("next_cursor"):
+        payload["next_cursor"] = pagination.get("next_cursor")
+    return _ok_response(payload)
 
 
 @app.get("/ext/v1/records/{entity_id}", tags=["External API"], summary="List Records")
@@ -34937,7 +35101,13 @@ async def ext_patch_record(request: Request, entity_id: str, record_id: str) -> 
 
 
 @app.get("/ext/v1/automations", tags=["External API"], summary="List Published Automations")
-async def ext_list_automations(request: Request, status: str | None = "published") -> dict:
+async def ext_list_automations(
+    request: Request,
+    status: str | None = "published",
+    limit: int = 50,
+    offset: int = 0,
+    cursor: str | None = None,
+) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
@@ -34950,7 +35120,14 @@ async def ext_list_automations(request: Request, status: str | None = "published
     items = automation_store.list(status=effective_status)
     if actor.get("actor_type") == "api_credential":
         items = [item for item in items if item.get("status") == "published"]
-    return _ok_response({"automations": items})
+    try:
+        page, pagination = _ext_api_paginate(items, limit=limit, offset=offset, cursor=cursor)
+    except ValueError as exc:
+        return _error_response("CURSOR_INVALID", str(exc), "cursor", status=400)
+    payload = {"automations": page, "pagination": pagination}
+    if pagination.get("next_cursor"):
+        payload["next_cursor"] = pagination.get("next_cursor")
+    return _ok_response(payload)
 
 
 @app.get("/ext/v1/automations/{automation_id}", tags=["External API"], summary="Get Published Automation")

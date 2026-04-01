@@ -19,8 +19,11 @@ Notes:
 
 - API credentials are workspace-scoped.
 - API credentials can be scoped to metadata, records, and automation access.
+- API credentials are static keys, not OAuth access tokens.
+- There are no refresh tokens for external API callers.
 - Expired or revoked keys return `401`.
 - Rate-limited requests return `429`.
+- Keys can be rotated or given an expiry time from the API Credentials settings page.
 
 ## Public Docs
 
@@ -36,7 +39,7 @@ Available public docs endpoints:
 List entities and fields:
 
 ```bash
-curl https://your-octodrop.example.com/ext/v1/meta/entities \
+curl "https://your-octodrop.example.com/ext/v1/meta/entities?limit=50" \
   -H "X-Api-Key: octo_live_..."
 ```
 
@@ -48,6 +51,12 @@ This returns:
 - field labels
 - field types
 - enum options where relevant
+
+Metadata list pagination params:
+
+- `limit`
+- `offset`
+- `cursor`
 
 ## Records API
 
@@ -67,6 +76,12 @@ Supported query params:
 - `search_fields`
 - `fields`
 - `domain`
+
+Record list responses include:
+
+- `records`
+- `pagination`
+- optional `next_cursor`
 
 ### Get one record
 
@@ -125,9 +140,15 @@ curl -X PATCH https://your-octodrop.example.com/ext/v1/records/entity.constructi
 ### List published automations
 
 ```bash
-curl https://your-octodrop.example.com/ext/v1/automations \
+curl "https://your-octodrop.example.com/ext/v1/automations?limit=50" \
   -H "X-Api-Key: octo_live_..."
 ```
+
+Automation list pagination params:
+
+- `limit`
+- `offset`
+- `cursor`
 
 ### Get one published automation
 
@@ -256,9 +277,51 @@ Failure:
 
 ## Current Limits
 
-- API credentials are rate-limited
-- current limits are enforced server-side per credential
+- API credentials are rate-limited per credential
+- default server limit is `300 requests per 60 seconds`
+- limits can be changed server-side with:
+  - `OCTO_EXT_API_RATE_LIMIT_WINDOW_SECONDS`
+  - `OCTO_EXT_API_RATE_LIMIT_MAX_REQUESTS`
+- responses include:
+  - `X-RateLimit-Limit`
+  - `X-RateLimit-Remaining`
+  - `X-RateLimit-Window-Seconds`
+- rate-limited responses also include:
+  - `Retry-After`
 - record writes still go through the same manifest validation rules as the main app
+
+## Pagination Contract
+
+List endpoints use a shared pattern:
+
+- `limit`
+- `offset`
+- `cursor`
+
+Responses include:
+
+```json
+{
+  "ok": true,
+  "records": [],
+  "pagination": {
+    "limit": 50,
+    "offset": 0,
+    "next_cursor": "50",
+    "has_more": true
+  },
+  "next_cursor": "50",
+  "errors": [],
+  "warnings": []
+}
+```
+
+Notes:
+
+- `limit` defaults to `50`
+- current hard cap is `200`
+- `cursor` is currently an integer offset token
+- `next_cursor` is omitted when there are no more results
 
 ## Recommended Integration Pattern
 
