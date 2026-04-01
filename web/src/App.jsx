@@ -14,10 +14,8 @@ import {
   DEFAULT_BRAND_COLORS,
   getInitialUiDensity,
   getInitialTheme,
-  normalizeUiDensity,
   setBrandColors,
   setTheme,
-  setUiDensity,
 } from "./theme/theme.js";
 import { apiFetch, getActiveWorkspaceId, getUiPrefs, setActiveWorkspaceId } from "./api.js";
 import LoginPage from "./pages/LoginPage.jsx";
@@ -91,6 +89,11 @@ export default function App() {
 
   useEffect(() => {
     applyUiDensity(getInitialUiDensity());
+    if (typeof window === "undefined" || !window.matchMedia) return undefined;
+    const media = window.matchMedia("(max-width: 639px)");
+    const handleChange = () => applyUiDensity(getInitialUiDensity());
+    media.addEventListener?.("change", handleChange);
+    return () => media.removeEventListener?.("change", handleChange);
   }, []);
 
   useEffect(() => {
@@ -166,9 +169,7 @@ export default function App() {
         if (nextTheme) {
           setTheme(nextTheme);
         }
-        // Keep local preference as fallback so navigation/reload does not unexpectedly drop to "sm".
-        const nextUiDensity = normalizeUiDensity(userPrefs?.ui_density || workspace?.ui_density || getInitialUiDensity());
-        setUiDensity(nextUiDensity);
+        applyUiDensity(getInitialUiDensity());
       } catch {
         // ignore
       }

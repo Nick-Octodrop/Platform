@@ -67,8 +67,10 @@ export function normalizeUiDensity(value) {
 }
 
 export function getInitialUiDensity() {
-  const stored = localStorage.getItem(UI_DENSITY_KEY);
-  return normalizeUiDensity(stored || DEFAULT_UI_DENSITY);
+  if (typeof window !== "undefined" && window.matchMedia?.("(max-width: 639px)").matches) {
+    return "sm";
+  }
+  return DEFAULT_UI_DENSITY;
 }
 
 export function getBrandColors() {
@@ -148,14 +150,15 @@ export function setTheme(theme) {
 }
 
 export function applyUiDensity(density) {
-  const normalized = normalizeUiDensity(density);
+  const normalized =
+    typeof window !== "undefined" && window.matchMedia?.("(max-width: 639px)").matches
+      ? "sm"
+      : "md";
   const root = document.documentElement;
   root.classList.remove("ui-density-sm", "ui-density-md");
   root.classList.add(`ui-density-${normalized}`);
 }
 
 export function setUiDensity(density) {
-  const normalized = normalizeUiDensity(density);
-  localStorage.setItem(UI_DENSITY_KEY, normalized);
-  applyUiDensity(normalized);
+  applyUiDensity(density);
 }

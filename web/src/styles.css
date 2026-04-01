@@ -9,6 +9,18 @@ html, body, #root {
 html {
   font-size: 14px;
   -webkit-text-size-adjust: 100%;
+  --octo-field-font-size: 0.95rem;
+  --octo-field-line-height: 1.25rem;
+}
+
+html.ui-density-sm {
+  --octo-field-font-size: 0.95rem;
+  --octo-field-line-height: 1.25rem;
+}
+
+html.ui-density-md {
+  --octo-field-font-size: 0.95rem;
+  --octo-field-line-height: 1.25rem;
 }
 
 body {
@@ -26,7 +38,7 @@ body {
   .select,
   .textarea,
   .file-input {
-    font-size: 16px !important;
+    font-size: 0.95rem !important;
   }
 }
 
@@ -85,79 +97,11 @@ body {
     @apply menu-sm;
   }
 
-  html.ui-density-md .btn:not(.btn-xs):not(.btn-sm):not(.btn-lg) {
-    @apply text-sm min-h-10 h-10 px-4;
-  }
-
-  html.ui-density-md .input {
-    min-height: 2.5rem;
-    height: 2.5rem;
-    font-size: 0.95rem;
-    padding-left: 0.75rem;
-    padding-right: 0.75rem;
-  }
-
-  html.ui-density-md .select {
-    min-height: 2.5rem;
-    height: 2.5rem;
-    font-size: 0.95rem;
-    padding-left: 0.75rem;
-    padding-right: 2rem;
-  }
-
-  html.ui-density-md .textarea:not(.code-textarea) {
-    font-size: 0.95rem;
-    padding: 0.625rem 0.75rem;
-  }
-
-  html.ui-density-md .btn.btn-sm:not(.p-0):not(.btn-square):not(.btn-circle) {
-    @apply text-sm min-h-10 h-10 px-4;
-  }
-
-  /* Scale button glyphs in md density so icon controls visually match larger inputs/buttons. */
-  html.ui-density-md .btn.btn-sm svg {
-    width: 1.1rem;
-    height: 1.1rem;
-  }
-
   .icon-btn-sm {
     min-height: 2rem;
     height: 2rem;
     width: 2rem;
     min-width: 2rem;
-  }
-
-  html.ui-density-md .icon-btn-sm {
-    min-height: 2.5rem;
-    height: 2.5rem;
-    width: 2.5rem;
-    min-width: 2.5rem;
-    padding-left: 0;
-    padding-right: 0;
-  }
-
-  html.ui-density-md .pagination-page-indicator {
-    min-height: 2.5rem;
-    height: 2.5rem;
-    padding-left: 0.75rem;
-    padding-right: 0.75rem;
-    font-size: 0.95rem;
-  }
-
-  html.ui-density-md .file-input {
-    min-height: 2.5rem;
-    height: 2.5rem;
-    font-size: 0.95rem;
-  }
-
-  html.ui-density-md .checkbox {
-    width: 1.2rem;
-    height: 1.2rem;
-  }
-
-  html.ui-density-md .toggle {
-    width: 2.75rem;
-    height: 1.45rem;
   }
 
   .toggle {
@@ -207,5 +151,84 @@ body {
   .no-scrollbar::-webkit-scrollbar {
     width: 0;
     height: 0;
+  }
+}
+
+@media (min-width: 640px) {
+  html.ui-density-md .btn:not(.btn-xs):not(.btn-sm):not(.btn-lg) {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    min-height: 2.5rem;
+    height: 2.5rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  html.ui-density-md .input {
+    min-height: 2.5rem;
+    height: 2.5rem;
+    font-size: 0.95rem;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  html.ui-density-md .select {
+    min-height: 2.5rem;
+    height: 2.5rem;
+    font-size: 0.95rem;
+    padding-left: 0.75rem;
+    padding-right: 2rem;
+  }
+
+  html.ui-density-md .textarea:not(.code-textarea) {
+    font-size: 0.95rem;
+    padding: 0.625rem 0.75rem;
+  }
+
+  html.ui-density-md .btn.btn-sm:not(.p-0):not(.btn-square):not(.btn-circle) {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    min-height: 2.5rem;
+    height: 2.5rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  html.ui-density-md .btn.btn-sm svg {
+    width: 1.1rem;
+    height: 1.1rem;
+  }
+
+  html.ui-density-md .icon-btn-sm {
+    min-height: 2.5rem;
+    height: 2.5rem;
+    width: 2.5rem;
+    min-width: 2.5rem;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  html.ui-density-md .pagination-page-indicator {
+    min-height: 2.5rem;
+    height: 2.5rem;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+    font-size: 0.95rem;
+  }
+
+  html.ui-density-md .file-input {
+    min-height: 2.5rem;
+    height: 2.5rem;
+    font-size: 0.95rem;
+  }
+
+  html.ui-density-md .checkbox {
+    width: 1.2rem;
+    height: 1.2rem;
+  }
+
+  html.ui-density-md .toggle {
+    width: 2.75rem;
+    height: 1.45rem;
   }
 }

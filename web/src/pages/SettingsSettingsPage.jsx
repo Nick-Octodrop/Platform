@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { clearCaches, getUiPrefs, setUiPrefs } from "../api";
 import { useModuleStore } from "../state/moduleStore.jsx";
 import { useToast } from "../components/Toast.jsx";
-import { getInitialTheme, getInitialUiDensity, normalizeUiDensity, setTheme, setUiDensity } from "../theme/theme.js";
+import { getInitialTheme, setTheme } from "../theme/theme.js";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import { supabase } from "../supabase";
 
@@ -35,7 +35,6 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
   const [activeTab, setActiveTab] = useState(initialTab);
 
   const [theme, setThemeState] = useState(() => normalizeTheme(getInitialTheme()));
-  const [uiDensity, setUiDensityState] = useState(() => normalizeUiDensity(getInitialUiDensity()));
   const { actions } = useModuleStore();
   const { pushToast } = useToast();
 
@@ -79,9 +78,7 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
         const res = await getUiPrefs();
         if (!mounted) return;
         const userPrefs = res?.user || {};
-        const workspacePrefs = res?.workspace || {};
         const nextTheme = normalizeTheme(userPrefs?.theme || getInitialTheme());
-        const nextUiDensity = normalizeUiDensity(userPrefs?.ui_density || workspacePrefs?.ui_density || getInitialUiDensity());
         const prefFirst = String(userPrefs?.first_name || "").trim();
         const prefLast = String(userPrefs?.last_name || "").trim();
         const prefPhone = String(userPrefs?.phone || "").trim();
@@ -91,13 +88,6 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
           // If the stored theme is not supported anymore, normalize it and persist.
           if (userPrefs?.theme && normalizeTheme(userPrefs.theme) !== userPrefs.theme) {
             setUiPrefs({ user: { theme: nextTheme } }).catch(() => {});
-          }
-        }
-        if (nextUiDensity) {
-          setUiDensityState(nextUiDensity);
-          setUiDensity(nextUiDensity);
-          if (userPrefs?.ui_density && normalizeUiDensity(userPrefs.ui_density) !== userPrefs.ui_density) {
-            setUiPrefs({ user: { ui_density: nextUiDensity } }).catch(() => {});
           }
         }
         if (prefFirst || prefLast || prefPhone) {
@@ -126,19 +116,6 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
     }, 300);
     return () => clearTimeout(timeout);
   }, [theme]);
-
-  useEffect(() => {
-    const normalized = normalizeUiDensity(uiDensity);
-    if (normalized !== uiDensity) {
-      setUiDensityState(normalized);
-      return;
-    }
-    setUiDensity(normalized);
-    const timeout = setTimeout(() => {
-      setUiPrefs({ user: { ui_density: normalized } }).catch(() => {});
-    }, 300);
-    return () => clearTimeout(timeout);
-  }, [uiDensity]);
 
   function goTab(nextId) {
     const next = normalizeTabId(nextId);
@@ -228,24 +205,6 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
                 onChange={(e) => setThemeState(e.target.checked ? "dark" : "light")}
               />
             </label>
-          </Section>
-          <Section title="Field Size" description="Choose compact (sm) or comfortable (md) UI controls across the app.">
-            <div className="join">
-              <button
-                type="button"
-                className={`btn join-item ${uiDensity === "sm" ? "btn-primary" : "btn-outline"}`}
-                onClick={() => setUiDensityState("sm")}
-              >
-                Small
-              </button>
-              <button
-                type="button"
-                className={`btn join-item ${uiDensity === "md" ? "btn-primary" : "btn-outline"}`}
-                onClick={() => setUiDensityState("md")}
-              >
-                Medium
-              </button>
-            </div>
           </Section>
         </div>
       )}

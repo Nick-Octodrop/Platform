@@ -1,6 +1,11 @@
 import React from "react";
 import { formatFieldValue, getFieldInputAffixes } from "../utils/fieldFormatting.js";
 
+const FIELD_TEXT_STYLE = {
+  fontSize: "var(--octo-field-font-size, 0.95rem)",
+  lineHeight: "var(--octo-field-line-height, 1.25rem)",
+};
+
 export function getFieldValue(record, fieldId) {
   if (!record) return "";
   if (fieldId.endsWith(".id")) return record.id || "";
@@ -37,9 +42,9 @@ function AutoTextarea({ value, onChange, disabled }) {
   return (
     <textarea
       ref={ref}
-      className="textarea textarea-bordered w-full py-3 leading-5"
+      className="textarea textarea-bordered w-full py-3"
       rows={1}
-      style={{ minHeight: "3rem", maxHeight: "18rem", overflowY: "hidden", resize: "vertical" }}
+      style={{ ...FIELD_TEXT_STYLE, minHeight: "3rem", maxHeight: "18rem", overflowY: "hidden", resize: "vertical" }}
       disabled={disabled}
       value={value}
       onInput={resize}
@@ -70,6 +75,7 @@ export function renderField(field, value, onChange, readonly, record = null) {
   const common = {
     className: "input input-bordered w-full",
     disabled: readonly || field.readonly,
+    style: FIELD_TEXT_STYLE,
   };
 
   switch (field.type) {
@@ -121,6 +127,7 @@ export function renderField(field, value, onChange, readonly, record = null) {
           <label
             tabIndex={0}
             className="input input-bordered w-full flex items-center justify-between cursor-pointer"
+            style={FIELD_TEXT_STYLE}
             aria-disabled={isDisabled}
           >
             <span className="truncate">{selectedLabel}</span>
@@ -179,6 +186,7 @@ export function renderField(field, value, onChange, readonly, record = null) {
               disabled
               readOnly
               type="text"
+              style={FIELD_TEXT_STYLE}
               value={formatFieldValue(field, value, record)}
             />
           );

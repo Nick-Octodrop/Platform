@@ -1189,12 +1189,15 @@ function WorkspaceUserField({ field, value, onChange, readonly, members, loading
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search workspace user..."
           disabled={readonly || field.readonly}
-          onFocus={() => setOpened(true)}
+          onFocus={() => {
+            setOpened(true);
+            setSearch("");
+          }}
         />
         {Boolean(selectedId) && !readonly && !field.readonly && (
           <button
             type="button"
-            className={`${SOFT_BUTTON_XS} absolute right-2 top-1/2 -translate-y-1/2`}
+            className="btn btn-ghost btn-xs btn-circle absolute right-2 top-1/2 z-10 h-7 min-h-7 w-7 min-w-7 -translate-y-1/2 bg-transparent p-0 text-base-content/75 hover:bg-transparent hover:text-base-content"
             onClick={() => {
               setSearch("");
               setOpened(false);
@@ -1203,13 +1206,13 @@ function WorkspaceUserField({ field, value, onChange, readonly, members, loading
             aria-label="Clear selection"
             title="Clear"
           >
-            ✕
+            <span className="text-sm font-medium leading-none">×</span>
           </button>
         )}
       </div>
       {opened && !isMobile && (
         <div className="absolute z-30 mt-1 w-full rounded-box border border-base-400 bg-base-100 shadow">
-          <ul className="menu menu-compact max-h-64 overflow-auto">
+          <ul className="menu menu-compact menu-vertical w-full max-h-[15rem] overflow-y-auto overflow-x-hidden">
             {loadingMembers && <li className="menu-title"><span>Loading workspace users…</span></li>}
             {!loadingMembers && normalizedMembers.length === 0 && (
               <li className="menu-title"><span>No workspace users found</span></li>
@@ -1383,7 +1386,7 @@ function WorkspaceUsersField({ field, value, onChange, readonly, members, loadin
       </div>
       {opened && !isMobile && (
         <div className="absolute z-30 mt-1 w-full rounded-box border border-base-400 bg-base-100 shadow">
-          <ul className="menu menu-compact max-h-64 overflow-auto">
+          <ul className="menu menu-compact menu-vertical w-full max-h-[15rem] overflow-y-auto overflow-x-hidden">
             {loadingMembers && <li className="menu-title"><span>Loading workspace users…</span></li>}
             {!loadingMembers && normalizedMembers.length === 0 && (
               <li className="menu-title"><span>No workspace users found</span></li>
@@ -1480,16 +1483,12 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
     async function loadOptions() {
       if (!entityId) return;
       if (previewMode) return;
+      if (!opened) return;
       const trimmed = (debouncedSearch || "").trim();
-      if (!opened && trimmed.length < 2) return;
-      if (trimmed.length < 2) {
-        setOptions([]);
-        return;
-      }
       const requestKey = JSON.stringify({
         entityId,
         fieldId: field?.id || null,
-        q: debouncedSearch || "",
+        q: trimmed || null,
         domain: field?.domain || null,
         recordContextKey,
       });
@@ -1505,7 +1504,7 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
         const res = await apiFetch(`/lookup/${entityId}/options`, {
           method: "POST",
           body: JSON.stringify({
-            q: debouncedSearch || null,
+            q: trimmed || null,
             limit: 50,
             domain: field.domain || null,
             record_context: recordContext,
@@ -1622,13 +1621,13 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
           disabled={readonly || field.readonly}
           onFocus={() => {
             setOpened(true);
-            setSearch(search || "");
+            setSearch("");
           }}
         />
         {Boolean(value) && !readonly && !field.readonly && (
           <button
             type="button"
-            className={`${SOFT_BUTTON_XS} absolute right-2 top-1/2 -translate-y-1/2`}
+            className="btn btn-ghost btn-xs btn-circle absolute right-2 top-1/2 z-10 h-7 min-h-7 w-7 min-w-7 -translate-y-1/2 bg-transparent p-0 text-base-content/75 hover:bg-transparent hover:text-base-content"
             onClick={() => {
               setSearch("");
               setSelectedLabel("");
@@ -1637,19 +1636,16 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
             aria-label="Clear selection"
             title="Clear"
           >
-            ✕
+            <span className="text-sm font-medium leading-none">×</span>
           </button>
         )}
       </div>
       {showOptions && !isMobile && (
-        <div className="absolute z-30 mt-1 w-full rounded-box border border-base-400 bg-base-100 shadow">
-          <ul className="menu menu-compact max-h-64 overflow-auto">
+        <div className="absolute z-30 mt-1 flex max-h-[18rem] w-full flex-col overflow-hidden rounded-box border border-base-400 bg-base-100 shadow">
+          <ul className="menu menu-compact menu-vertical block w-full flex-1 overflow-y-auto overflow-x-hidden whitespace-normal">
             {loading && <li className="menu-title"><span>Loading…</span></li>}
-            {!loading && search.trim().length < 2 && (
-              <li className="menu-title"><span>Type to search…</span></li>
-            )}
-            {!loading && search.trim().length >= 2 && options.length === 0 && (
-              <li className="menu-title"><span>No results</span></li>
+            {!loading && options.length === 0 && (
+              <li className="menu-title"><span>{search.trim() ? "No results" : "No records found"}</span></li>
             )}
             {options.map((opt) => (
               <li key={opt.value}>
@@ -1662,30 +1658,34 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
                 </button>
               </li>
             ))}
-            {allowCreate && (
-              <li className="border-t border-base-400 mt-1 pt-1">
-                <button
-                  type="button"
-                  disabled={typeof onCreate !== "function"}
-                  onClick={async () => {
-                    if (typeof onCreate !== "function") return;
-                    const result = await onCreate({
-                      entityId: field?.entity,
-                      displayField: field?.display_field,
-                      initialValue: search.trim() || "",
-                    });
-                    if (result?.record_id) {
-                      setSelectedLabel(result.label || "");
-                      setSearch(result.label || "");
-                      onChange(result.record_id);
-                    }
-                  }}
-                >
-                  + Create new
-                </button>
-              </li>
-            )}
           </ul>
+          {allowCreate && (
+            <div className="shrink-0 border-t border-base-400 p-1">
+              <ul className="menu menu-compact menu-vertical block w-full">
+                <li>
+                  <button
+                    type="button"
+                    disabled={typeof onCreate !== "function"}
+                    onClick={async () => {
+                      if (typeof onCreate !== "function") return;
+                      const result = await onCreate({
+                        entityId: field?.entity,
+                        displayField: field?.display_field,
+                        initialValue: search.trim() || "",
+                      });
+                      if (result?.record_id) {
+                        setSelectedLabel(result.label || "");
+                        setSearch(result.label || "");
+                        onChange(result.record_id);
+                      }
+                    }}
+                  >
+                    + Create new
+                  </button>
+                </li>
+              </ul>
+            </div>
+          )}
         </div>
       )}
       {showOptions && isMobile && (
@@ -1715,11 +1715,8 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
             <div className="mt-3 flex-1 min-h-0 overflow-auto">
               <ul className="menu menu-compact">
                 {loading && <li className="menu-title"><span>Loading…</span></li>}
-                {!loading && search.trim().length < 2 && (
-                  <li className="menu-title"><span>Type to search…</span></li>
-                )}
-                {!loading && search.trim().length >= 2 && options.length === 0 && (
-                  <li className="menu-title"><span>No results</span></li>
+                {!loading && options.length === 0 && (
+                  <li className="menu-title"><span>{search.trim() ? "No results" : "No records found"}</span></li>
                 )}
                 {options.map((opt) => (
                   <li key={opt.value}>
