@@ -1,0 +1,13 @@
+app = "octodrop-platform-scheduler"
+primary_region = "syd"
+
+[build]
+  dockerfile = "Dockerfile.worker"
+
+[processes]
+  app = "python -m app.scheduler"
+
+[[vm]]
+  memory = "512mb"
+  cpus = 1
+  memory_mb = 512

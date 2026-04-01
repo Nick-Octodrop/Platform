@@ -34950,6 +34950,7 @@ async def ext_redoc() -> Response:
     return get_redoc_html(
         openapi_url="/ext/v1/openapi.json",
         title="Octodrop External API ReDoc",
+        redoc_js_url="https://cdn.jsdelivr.net/npm/redoc@2/bundles/redoc.standalone.js",
     )
 
 
