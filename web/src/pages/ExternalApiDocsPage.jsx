@@ -81,6 +81,12 @@ export default function ExternalApiDocsPage() {
         description: "Human-readable quickstart with auth, records, automations, and webhooks.",
         url: buildDocUrl("/ext/v1/guide.md"),
       },
+      {
+        id: "events",
+        label: "Event Catalog",
+        description: "Public webhook event names, payload envelope, and example event shapes for subscribers.",
+        url: buildDocUrl("/ext/v1/events.md"),
+      },
     ],
     [],
   );

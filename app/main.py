@@ -34900,7 +34900,8 @@ def _ext_openapi_schema() -> dict:
             "Public Octodrop API for external systems. "
             "Authenticate with `X-Api-Key` and use these routes for metadata, records, "
             "published automation execution, and signed webhook-driven integrations.\n\n"
-            "Guide: [/ext/v1/guide.md](/ext/v1/guide.md)"
+            "Guide: [/ext/v1/guide.md](/ext/v1/guide.md)\n\n"
+            "Event Catalog: [/ext/v1/events.md](/ext/v1/events.md)"
         ),
         routes=routes,
     )
@@ -34920,6 +34921,14 @@ async def ext_external_api_guide() -> Response:
     if not guide_path.exists():
         return Response("# External API Guide\n\nGuide file not found.\n", media_type="text/markdown", status_code=404)
     return Response(guide_path.read_text(encoding="utf-8"), media_type="text/markdown; charset=utf-8")
+
+
+@app.get("/ext/v1/events.md", include_in_schema=False)
+async def ext_external_event_catalog() -> Response:
+    catalog_path = ROOT / "OCTODROP_EXTERNAL_EVENT_CATALOG.md"
+    if not catalog_path.exists():
+        return Response("# External Event Catalog\n\nCatalog file not found.\n", media_type="text/markdown", status_code=404)
+    return Response(catalog_path.read_text(encoding="utf-8"), media_type="text/markdown; charset=utf-8")
 
 
 @app.get("/ext/v1/docs", include_in_schema=False)

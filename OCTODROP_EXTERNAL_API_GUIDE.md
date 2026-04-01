@@ -33,6 +33,7 @@ Available public docs endpoints:
 - `/ext/v1/docs`
 - `/ext/v1/redoc`
 - `/ext/v1/guide.md`
+- `/ext/v1/events.md`
 
 ## Entity Metadata
 
@@ -202,6 +203,10 @@ Supported patterns:
   - `last_delivered_at`
   - `last_status_code`
   - `last_error`
+
+Public event names and example payload shapes are documented in:
+
+- `/ext/v1/events.md`
 
 ## Webhook Signing
 

@@ -29,6 +29,7 @@ _PUBLIC_PATHS = {
     "/ext/v1/docs/oauth2-redirect",
     "/ext/v1/redoc",
     "/ext/v1/guide.md",
+    "/ext/v1/events.md",
 }
 
 

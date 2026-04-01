@@ -352,6 +352,10 @@ export default function App() {
             element={<ExternalApiDocsRedirectPage path="/ext/v1/guide.md" label="External API Guide" />}
           />
           <Route
+            path="/ext/v1/events.md"
+            element={<ExternalApiDocsRedirectPage path="/ext/v1/events.md" label="External Event Catalog" />}
+          />
+          <Route
             path="/*"
             element={
               <ProtectedRoute user={user} loading={loading}>
