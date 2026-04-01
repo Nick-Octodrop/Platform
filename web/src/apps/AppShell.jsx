@@ -1288,9 +1288,21 @@ export default function AppShell({
         </div>
       )}
 
-      <div className={mobilePageLayout ? "flex-1 h-full min-h-0 overflow-hidden flex flex-col" : "flex-1 min-h-0 overflow-hidden flex flex-col"}>
+      <div
+        className={
+          mobilePageLayout
+            ? "flex-1 h-full min-h-0 flex flex-col overflow-y-auto overflow-x-hidden"
+            : "flex-1 min-h-0 overflow-hidden flex flex-col"
+        }
+      >
         {active.type === "page" && activePage && (
-          <div className={mobilePageLayout ? "flex-1 h-full min-h-0 overflow-hidden" : "flex-1 min-h-0 overflow-hidden"}>
+          <div
+            className={
+              mobilePageLayout
+                ? `flex-1 h-full min-h-0 overflow-visible`
+                : "flex-1 min-h-0 overflow-hidden"
+            }
+          >
             <ContentBlocksRenderer
               blocks={activePage.content || []}
               renderView={renderView}

@@ -120,7 +120,8 @@ export default function ContentBlocksRenderer({ blocks, renderView, recordId, se
   const safeBlocks = Array.isArray(blocks) ? blocks : [];
   const isMobile = useMediaQuery("(max-width: 768px)");
   const mobileRecordPage = isMobile && (safeBlocks.some((block) => block?.kind === "record") || Boolean(recordContext?.recordId) || Boolean(recordId));
-  const fullHeight = !mobileRecordPage && (hasViewModes(safeBlocks) || hasFillHeight(safeBlocks));
+  const singleFillBlock = safeBlocks.length === 1 && blockPrefersFill(safeBlocks[0]);
+  const fullHeight = !mobileRecordPage && (isMobile ? singleFillBlock : (hasViewModes(safeBlocks) || hasFillHeight(safeBlocks)));
   const inherited = useContext(RecordScopeContext);
   const baseContext = inherited || recordContext || (recordId ? { entityId: null, recordId, record: null, setRecord: () => {} } : null);
   const { hasCapability } = useAccessContext();
