@@ -1386,7 +1386,7 @@ export default function AppShell({
               <h3 className="font-bold text-lg">
                 Create {createEntityDef?.label || humanizeEntityId(createEntityId)}
               </h3>
-              <div className="mt-3 max-h-[70vh] overflow-auto">
+              <div className="mt-3 max-h-[70vh] overflow-y-auto overflow-x-hidden">
                 {createView ? (
                   <FormViewRenderer
                     view={createView}
