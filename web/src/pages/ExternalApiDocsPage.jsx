@@ -101,8 +101,8 @@ export default function ExternalApiDocsPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-base-content/50">Octodrop External API</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">Public developer docs</h1>
           <p className="mt-4 max-w-3xl text-sm leading-6 text-base-content/70 sm:text-base">
-            The `app.octodrop.com` host is your frontend application. The actual API docs live on the configured backend
-            API host, so this page resolves the correct URLs and links you there directly.
+            This page lists the public documentation endpoints for the Octodrop external API and resolves them against
+            the configured backend API host.
           </p>
           <div className="mt-6 rounded-2xl border border-base-300 bg-base-200/70 p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Resolved API host</p>
@@ -131,10 +131,10 @@ export default function ExternalApiDocsPage() {
         </div>
 
         <div className="rounded-2xl border border-base-300 bg-base-100 p-5 shadow-sm">
-          <h2 className="text-lg font-semibold">Why the old links bounced home</h2>
+          <h2 className="text-lg font-semibold">Routing note</h2>
           <p className="mt-2 text-sm leading-6 text-base-content/70">
-            When you opened `/ext/v1/docs` on the app host, the SPA router handled that path first and sent you back
-            into the logged-in app. The links above go to the backend API host directly instead.
+            In some deployments, the web application host and API host are different. This page links directly to the
+            backend API documentation endpoints so the correct service handles the request.
           </p>
         </div>
       </div>
