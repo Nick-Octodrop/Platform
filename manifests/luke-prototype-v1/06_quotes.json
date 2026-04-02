@@ -1,0 +1,1101 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "luke_quotes",
+    "key": "luke_quotes",
+    "name": "Quotes",
+    "version": "1.0.0",
+    "description": "Quote-first N-Light workflow prototype for Luke, from quote through order, PO, and invoicing.",
+    "category": "Prototype",
+    "icon_key": "lucide:FileCheck2"
+  },
+  "depends_on": {
+    "required": [
+      { "module": "luke_contacts", "version": ">=1.0.0" },
+      { "module": "luke_products", "version": ">=1.0.0" },
+      { "module": "luke_purchase_orders", "version": ">=1.0.0" },
+      { "module": "luke_invoices", "version": ">=1.0.0" },
+      { "module": "luke_customer_orders", "version": ">=1.0.0" }
+    ]
+  },
+  "app": {
+    "home": "page:dashboard.home_page",
+    "defaults": {
+      "entity_home_page": "page:nl_quote.list_page",
+      "entity_form_page": "page:nl_quote.form_page",
+      "entities": {
+        "entity.nl_quote": {
+          "entity_home_page": "page:nl_quote.list_page",
+          "entity_form_page": "page:nl_quote.form_page"
+        },
+        "entity.nl_quote_line": {
+          "entity_home_page": "page:nl_quote_line.list_page",
+          "entity_form_page": "page:nl_quote_line.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Luke Prototype v1",
+        "mode": "inline",
+        "items": [
+          { "label": "Home", "to": "page:dashboard.home_page" },
+          { "label": "Quotes", "to": "page:nl_quote.list_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.nl_quote",
+      "display_field": "nl_quote.quote_number",
+      "fields": [
+        { "id": "nl_quote.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "nl_quote.quote_number", "type": "string", "label": "Quote Number", "required": true },
+        {
+          "id": "nl_quote.status",
+          "type": "enum",
+          "label": "Status",
+          "required": true,
+          "default": "draft",
+          "options": [
+            { "value": "draft", "label": "Draft" },
+            { "value": "sent", "label": "Sent" },
+            { "value": "accepted", "label": "Accepted" },
+            { "value": "lost", "label": "Lost" },
+            { "value": "expired", "label": "Expired" }
+          ]
+        },
+        { "id": "nl_quote.quote_date", "type": "date", "label": "Quote Date" },
+        { "id": "nl_quote.expiry_date", "type": "date", "label": "Expiry Date" },
+        {
+          "id": "nl_quote.sales_entity",
+          "type": "enum",
+          "label": "Sales Entity",
+          "default": "NLight BV",
+          "options": [
+            { "value": "NLight BV", "label": "NLight BV" },
+            { "value": "EcoTech FZCO", "label": "EcoTech FZCO" }
+          ]
+        },
+        {
+          "id": "nl_quote.customer_id",
+          "type": "lookup",
+          "label": "Customer",
+          "entity": "entity.nl_contact",
+          "display_field": "nl_contact.name",
+          "required": true
+        },
+        { "id": "nl_quote.customer_contact_name", "type": "string", "label": "Customer Contact" },
+        { "id": "nl_quote.customer_reference", "type": "string", "label": "Customer Reference" },
+        { "id": "nl_quote.customer_order_number", "type": "string", "label": "Customer Order Number" },
+        {
+          "id": "nl_quote.currency",
+          "type": "enum",
+          "label": "Currency",
+          "default": "EUR",
+          "options": [
+            { "value": "EUR", "label": "EUR" },
+            { "value": "USD", "label": "USD" }
+          ]
+        },
+        { "id": "nl_quote.sales_owner", "type": "string", "label": "Sales Owner" },
+        { "id": "nl_quote.payment_terms", "type": "string", "label": "Payment Terms" },
+        { "id": "nl_quote.incoterm", "type": "string", "label": "Incoterm" },
+        { "id": "nl_quote.shipping_terms", "type": "string", "label": "Shipping Terms" },
+        { "id": "nl_quote.validity_notes", "type": "text", "label": "Validity Notes" },
+        { "id": "nl_quote.internal_notes", "type": "text", "label": "Internal Notes" },
+        { "id": "nl_quote.customer_notes", "type": "text", "label": "Customer Notes" },
+        { "id": "nl_quote.pdf_template_name", "type": "string", "label": "PDF Template Name" },
+        { "id": "nl_quote.linked_customer_order_id", "type": "string", "label": "Linked Customer Order ID", "readonly": true },
+        { "id": "nl_quote.linked_customer_order_number", "type": "string", "label": "Linked Customer Order", "readonly": true },
+        {
+          "id": "nl_quote.subtotal",
+          "type": "number",
+          "label": "Subtotal",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "nl_quote.currency", "precision": 2 },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.nl_quote_line",
+              "field": "nl_quote_line.line_total",
+              "where": {
+                "op": "eq",
+                "field": "nl_quote_line.quote_id",
+                "value": { "ref": "$parent.id" }
+              }
+            }
+          }
+        },
+        {
+          "id": "nl_quote.discount_total",
+          "type": "number",
+          "label": "Discount Total",
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "nl_quote.currency", "precision": 2 }
+        },
+        {
+          "id": "nl_quote.tax_total",
+          "type": "number",
+          "label": "Tax Total",
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "nl_quote.currency", "precision": 2 }
+        },
+        {
+          "id": "nl_quote.grand_total",
+          "type": "number",
+          "label": "Grand Total",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "nl_quote.currency", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "add",
+                  "args": [
+                    {
+                      "op": "sub",
+                      "args": [
+                        { "ref": "$current.nl_quote.subtotal" },
+                        { "ref": "$current.nl_quote.discount_total" }
+                      ]
+                    },
+                    { "ref": "$current.nl_quote.tax_total" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "nl_quote.estimated_buy_total",
+          "type": "number",
+          "label": "Estimated Buy Total",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.nl_quote_line",
+              "field": "nl_quote_line.buy_total",
+              "where": {
+                "op": "eq",
+                "field": "nl_quote_line.quote_id",
+                "value": { "ref": "$parent.id" }
+              }
+            }
+          }
+        },
+        {
+          "id": "nl_quote.estimated_margin_amount",
+          "type": "number",
+          "label": "Estimated Margin Amount",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "sub",
+                  "args": [
+                    { "ref": "$current.nl_quote.grand_total" },
+                    { "ref": "$current.nl_quote.estimated_buy_total" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "nl_quote.estimated_margin_percent",
+          "type": "number",
+          "label": "Estimated Margin %",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "percent", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "if",
+              "condition": { "op": "gt", "field": "nl_quote.grand_total", "value": 0 },
+              "then": {
+                "op": "round",
+                "args": [
+                  {
+                    "op": "mul",
+                    "args": [
+                      {
+                        "op": "div",
+                        "args": [
+                          { "ref": "$current.nl_quote.estimated_margin_amount" },
+                          { "ref": "$current.nl_quote.grand_total" }
+                        ]
+                      },
+                      100
+                    ]
+                  },
+                  2
+                ]
+              },
+              "else": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "entity.nl_quote_line",
+      "display_field": "nl_quote_line.description",
+      "fields": [
+        { "id": "nl_quote_line.id", "type": "uuid", "label": "ID", "readonly": true },
+        {
+          "id": "nl_quote_line.quote_id",
+          "type": "lookup",
+          "label": "Quote",
+          "entity": "entity.nl_quote",
+          "display_field": "nl_quote.quote_number",
+          "required": true
+        },
+        {
+          "id": "nl_quote_line.line_type",
+          "type": "enum",
+          "label": "Line Type",
+          "default": "catalogue",
+          "options": [
+            { "value": "catalogue", "label": "Catalogue" },
+            { "value": "custom", "label": "Custom" }
+          ]
+        },
+        {
+          "id": "nl_quote_line.product_id",
+          "type": "lookup",
+          "label": "Product",
+          "entity": "entity.nl_product",
+          "display_field": "nl_product.name"
+        },
+        { "id": "nl_quote_line.description", "type": "string", "label": "Description", "required": true },
+        {
+          "id": "nl_quote_line.uom",
+          "type": "enum",
+          "label": "UOM",
+          "default": "EA",
+          "options": [
+            { "value": "EA", "label": "Each" },
+            { "value": "SET", "label": "Set" },
+            { "value": "KIT", "label": "Kit" },
+            { "value": "LOT", "label": "Lot" }
+          ]
+        },
+        { "id": "nl_quote_line.quantity", "type": "number", "label": "Qty", "default": 1 },
+        { "id": "nl_quote_line.unit_price", "type": "number", "label": "Unit Price", "default": 0 },
+        { "id": "nl_quote_line.line_discount_percent", "type": "number", "label": "Discount %", "default": 0 },
+        {
+          "id": "nl_quote_line.line_total",
+          "type": "number",
+          "label": "Line Total",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    {
+                      "op": "mul",
+                      "args": [
+                        { "ref": "$current.nl_quote_line.quantity" },
+                        { "ref": "$current.nl_quote_line.unit_price" }
+                      ]
+                    },
+                    {
+                      "op": "sub",
+                      "args": [
+                        1,
+                        {
+                          "op": "div",
+                          "args": [
+                            { "ref": "$current.nl_quote_line.line_discount_percent" },
+                            100
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        { "id": "nl_quote_line.default_buy_price_snapshot", "type": "number", "label": "Buy Price Snapshot", "default": 0 },
+        {
+          "id": "nl_quote_line.buy_currency_snapshot",
+          "type": "enum",
+          "label": "Buy Currency Snapshot",
+          "default": "USD",
+          "options": [
+            { "value": "EUR", "label": "EUR" },
+            { "value": "USD", "label": "USD" }
+          ]
+        },
+        {
+          "id": "nl_quote_line.buy_total",
+          "type": "number",
+          "label": "Buy Total",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    { "ref": "$current.nl_quote_line.quantity" },
+                    { "ref": "$current.nl_quote_line.default_buy_price_snapshot" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "nl_quote_line.estimated_margin_amount",
+          "type": "number",
+          "label": "Estimated Margin Amount",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "sub",
+                  "args": [
+                    { "ref": "$current.nl_quote_line.line_total" },
+                    { "ref": "$current.nl_quote_line.buy_total" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "nl_quote_line.estimated_margin_percent",
+          "type": "number",
+          "label": "Estimated Margin %",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "if",
+              "condition": { "op": "gt", "field": "nl_quote_line.line_total", "value": 0 },
+              "then": {
+                "op": "round",
+                "args": [
+                  {
+                    "op": "mul",
+                    "args": [
+                      {
+                        "op": "div",
+                        "args": [
+                          { "ref": "$current.nl_quote_line.estimated_margin_amount" },
+                          { "ref": "$current.nl_quote_line.line_total" }
+                        ]
+                      },
+                      100
+                    ]
+                  },
+                  2
+                ]
+              },
+              "else": 0
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "workflows": [
+    {
+      "id": "quote_status_workflow",
+      "entity": "entity.nl_quote",
+      "status_field": "nl_quote.status",
+      "states": [
+        { "id": "draft", "label": "Draft" },
+        { "id": "sent", "label": "Sent" },
+        { "id": "accepted", "label": "Accepted" },
+        { "id": "lost", "label": "Lost" },
+        { "id": "expired", "label": "Expired" }
+      ]
+    }
+  ],
+  "transformations": [
+    {
+      "key": "quote_to_customer_order",
+      "source_entity_id": "entity.nl_quote",
+      "target_entity_id": "entity.nl_customer_order",
+      "field_mappings": {
+        "nl_customer_order.order_number": { "from": "nl_quote.customer_order_number" },
+        "nl_customer_order.customer_id": { "from": "nl_quote.customer_id" },
+        "nl_customer_order.source_quote_number": { "from": "nl_quote.quote_number" },
+        "nl_customer_order.sales_entity": { "from": "nl_quote.sales_entity" },
+        "nl_customer_order.order_date": { "ref": "$today" },
+        "nl_customer_order.currency": { "from": "nl_quote.currency" },
+        "nl_customer_order.customer_reference": { "from": "nl_quote.customer_reference" },
+        "nl_customer_order.delivery_terms": { "from": "nl_quote.shipping_terms" },
+        "nl_customer_order.notes": { "from": "nl_quote.internal_notes" },
+        "nl_customer_order.status": { "value": "draft" }
+      },
+      "child_mappings": [
+        {
+          "source_entity_id": "entity.nl_quote_line",
+          "target_entity_id": "entity.nl_customer_order_line",
+          "source_link_field": "nl_quote_line.quote_id",
+          "target_link_field": "nl_customer_order_line.customer_order_id",
+          "field_mappings": {
+            "nl_customer_order_line.product_id": { "from": "nl_quote_line.product_id" },
+            "nl_customer_order_line.description": { "from": "nl_quote_line.description" },
+            "nl_customer_order_line.uom": { "from": "nl_quote_line.uom" },
+            "nl_customer_order_line.quantity": { "from": "nl_quote_line.quantity" },
+            "nl_customer_order_line.unit_price": { "from": "nl_quote_line.unit_price" },
+            "nl_customer_order_line.unit_cost_snapshot": { "from": "nl_quote_line.default_buy_price_snapshot" },
+            "nl_customer_order_line.source_quote_line_ref": { "ref": "$source.id" }
+          }
+        }
+      ],
+      "link_fields": {
+        "source_to_target": "nl_quote.linked_customer_order_id",
+        "target_to_source": "nl_customer_order.source_quote_id"
+      },
+      "source_update": {
+        "patch": {
+          "nl_quote.status": "accepted"
+        }
+      },
+      "validation": {
+        "require_source_fields": ["nl_quote.quote_number", "nl_quote.customer_id", "nl_quote.customer_order_number"],
+        "require_child_records": true,
+        "prevent_if_target_linked": true
+      }
+    }
+  ],
+  "actions": [
+    { "id": "action.refresh", "kind": "refresh", "label": "Refresh" },
+    { "id": "action.quote_new", "kind": "open_form", "label": "New Quote", "target": "nl_quote.form" },
+    {
+      "id": "action.quote_mark_sent",
+      "kind": "update_record",
+      "entity_id": "entity.nl_quote",
+      "label": "Mark Sent",
+      "patch": { "nl_quote.status": "sent" },
+      "visible_when": { "op": "eq", "field": "nl_quote.status", "value": "draft" }
+    },
+    {
+      "id": "action.quote_accept_and_create_order",
+      "kind": "transform_record",
+      "entity_id": "entity.nl_quote",
+      "label": "Accept Quote",
+      "transformation_key": "quote_to_customer_order",
+      "visible_when": {
+        "op": "and",
+        "conditions": [
+          { "op": "eq", "field": "nl_quote.status", "value": "sent" },
+          { "op": "not", "condition": { "op": "exists", "field": "nl_quote.linked_customer_order_id" } }
+        ]
+      },
+      "confirm": {
+        "title": "Accept quote and create customer order?",
+        "body": "This will create a Customer Order and copy the quote lines."
+      }
+    },
+    {
+      "id": "action.quote_mark_lost",
+      "kind": "update_record",
+      "entity_id": "entity.nl_quote",
+      "label": "Mark Lost",
+      "patch": { "nl_quote.status": "lost" },
+      "visible_when": {
+        "op": "or",
+        "conditions": [
+          { "op": "eq", "field": "nl_quote.status", "value": "draft" },
+          { "op": "eq", "field": "nl_quote.status", "value": "sent" }
+        ]
+      }
+    },
+    {
+      "id": "action.quote_mark_expired",
+      "kind": "update_record",
+      "entity_id": "entity.nl_quote",
+      "label": "Mark Expired",
+      "patch": { "nl_quote.status": "expired" },
+      "visible_when": { "op": "eq", "field": "nl_quote.status", "value": "sent" }
+    }
+  ],
+  "views": [
+    {
+      "id": "nl_quote.list",
+      "kind": "list",
+      "entity": "entity.nl_quote",
+      "columns": [
+        { "field_id": "nl_quote.quote_number" },
+        { "field_id": "nl_quote.quote_date" },
+        { "field_id": "nl_quote.customer_id" },
+        { "field_id": "nl_quote.sales_entity" },
+        { "field_id": "nl_quote.currency" },
+        { "field_id": "nl_quote.grand_total" },
+        { "field_id": "nl_quote.status" },
+        { "field_id": "nl_quote.sales_owner" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.quote_new" }],
+        "open_record_target": "page:nl_quote.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search quotes...",
+          "fields": ["nl_quote.quote_number", "nl_quote.customer_reference", "nl_quote.sales_owner"]
+        },
+        "filters": [
+          {
+            "id": "open",
+            "label": "Open Quotes",
+            "domain": {
+              "op": "in",
+              "field": "nl_quote.status",
+              "value": ["draft", "sent"]
+            }
+          },
+          { "id": "draft", "label": "Draft Quotes", "domain": { "op": "eq", "field": "nl_quote.status", "value": "draft" } },
+          { "id": "sent", "label": "Sent Quotes", "domain": { "op": "eq", "field": "nl_quote.status", "value": "sent" } },
+          { "id": "accepted", "label": "Accepted Quotes", "domain": { "op": "eq", "field": "nl_quote.status", "value": "accepted" } },
+          { "id": "lost", "label": "Lost Quotes", "domain": { "op": "eq", "field": "nl_quote.status", "value": "lost" } }
+        ]
+      }
+    },
+    {
+      "id": "nl_quote.form",
+      "kind": "form",
+      "entity": "entity.nl_quote",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Quote",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "nl_quote.quote_number",
+            "nl_quote.status",
+            "nl_quote.customer_id",
+            "nl_quote.customer_contact_name",
+            "nl_quote.sales_entity",
+            "nl_quote.currency",
+            "nl_quote.quote_date",
+            "nl_quote.expiry_date",
+            "nl_quote.customer_reference",
+            "nl_quote.customer_order_number",
+            "nl_quote.sales_owner",
+            "nl_quote.payment_terms",
+            "nl_quote.incoterm",
+            "nl_quote.shipping_terms",
+            "nl_quote.linked_customer_order_number"
+          ]
+        },
+        {
+          "id": "lines",
+          "title": "Lines",
+          "line_editor": {
+            "entity_id": "entity.nl_quote_line",
+            "parent_field": "nl_quote_line.quote_id",
+            "item_lookup_field": "nl_quote_line.product_id",
+            "item_lookup_entity": "entity.nl_product",
+            "item_lookup_display_field": "nl_product.name",
+            "item_field_map": {
+              "nl_quote_line.description": "nl_product.description",
+              "nl_quote_line.uom": "nl_product.uom",
+              "nl_quote_line.unit_price": "nl_product.default_sales_price",
+              "nl_quote_line.default_buy_price_snapshot": "nl_product.default_buy_price",
+              "nl_quote_line.buy_currency_snapshot": "nl_product.default_purchase_currency"
+            },
+            "description_field": "nl_quote_line.description",
+            "defaults": {
+              "nl_quote_line.line_type": "catalogue",
+              "nl_quote_line.uom": "EA",
+              "nl_quote_line.quantity": 1,
+              "nl_quote_line.unit_price": 0,
+              "nl_quote_line.default_buy_price_snapshot": 0,
+              "nl_quote_line.buy_currency_snapshot": "USD"
+            },
+            "columns": [
+              { "field_id": "nl_quote_line.product_id", "label": "Product", "readonly": true },
+              { "field_id": "nl_quote_line.description", "label": "Description" },
+              { "field_id": "nl_quote_line.uom", "label": "UOM" },
+              { "field_id": "nl_quote_line.quantity", "label": "Qty", "type": "number" },
+              { "field_id": "nl_quote_line.unit_price", "label": "Unit Price", "type": "number" },
+              { "field_id": "nl_quote_line.line_discount_percent", "label": "Discount %", "type": "number" },
+              { "field_id": "nl_quote_line.line_total", "label": "Line Total", "type": "number" }
+            ]
+          }
+        },
+        {
+          "id": "totals",
+          "title": "Totals",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "nl_quote.subtotal",
+            "nl_quote.discount_total",
+            "nl_quote.tax_total",
+            "nl_quote.grand_total"
+          ]
+        },
+        {
+          "id": "profitability",
+          "title": "Profitability",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "nl_quote.estimated_buy_total",
+            "nl_quote.estimated_margin_amount",
+            "nl_quote.estimated_margin_percent"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes & Terms",
+          "fields": [
+            "nl_quote.customer_notes",
+            "nl_quote.validity_notes",
+            "nl_quote.internal_notes",
+            "nl_quote.pdf_template_name"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": { "field_id": "nl_quote.status" },
+        "secondary_actions": [
+          { "action_id": "action.quote_mark_sent" },
+          { "action_id": "action.quote_accept_and_create_order" },
+          { "action_id": "action.quote_mark_lost" },
+          { "action_id": "action.quote_mark_expired" },
+          { "action_id": "action.refresh" }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "summary",
+          "tabs": [
+            { "id": "summary", "label": "Summary", "sections": ["summary"] },
+            { "id": "lines", "label": "Lines", "sections": ["lines"] },
+            { "id": "totals", "label": "Totals", "sections": ["totals"] },
+            { "id": "profitability", "label": "Profitability", "sections": ["profitability"] },
+            { "id": "notes", "label": "Notes & Terms", "sections": ["notes"] }
+          ]
+        }
+      }
+    },
+    {
+      "id": "nl_quote.kanban",
+      "kind": "kanban",
+      "entity": "entity.nl_quote",
+      "card": {
+        "title_field": "nl_quote.quote_number",
+        "subtitle_fields": [
+          "nl_quote.customer_id",
+          "nl_quote.expiry_date"
+        ],
+        "badge_fields": [
+          "nl_quote.status",
+          "nl_quote.grand_total"
+        ]
+      }
+    },
+    {
+      "id": "nl_quote.calendar",
+      "kind": "calendar",
+      "entity": "entity.nl_quote",
+      "calendar": {
+        "title_field": "nl_quote.quote_number",
+        "date_start": "nl_quote.expiry_date",
+        "color_field": "nl_quote.sales_entity",
+        "default_scale": "month"
+      }
+    },
+    {
+      "id": "nl_quote.graph",
+      "kind": "graph",
+      "entity": "entity.nl_quote",
+      "default": {
+        "type": "bar",
+        "group_by": "nl_quote.status",
+        "measure": "sum:nl_quote.grand_total"
+      }
+    },
+    {
+      "id": "nl_quote_line.list",
+      "kind": "list",
+      "entity": "entity.nl_quote_line",
+      "columns": [
+        { "field_id": "nl_quote_line.quote_id" },
+        { "field_id": "nl_quote_line.product_id" },
+        { "field_id": "nl_quote_line.description" },
+        { "field_id": "nl_quote_line.uom" },
+        { "field_id": "nl_quote_line.quantity" },
+        { "field_id": "nl_quote_line.unit_price" },
+        { "field_id": "nl_quote_line.line_total" }
+      ],
+      "header": {
+        "open_record_target": "page:nl_quote_line.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search quote lines...",
+          "fields": ["nl_quote_line.description"]
+        }
+      }
+    },
+    {
+      "id": "nl_quote_line.form",
+      "kind": "form",
+      "entity": "entity.nl_quote_line",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Quote Line",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "nl_quote_line.quote_id",
+            "nl_quote_line.line_type",
+            "nl_quote_line.product_id",
+            "nl_quote_line.description",
+            "nl_quote_line.uom",
+            "nl_quote_line.quantity",
+            "nl_quote_line.unit_price",
+            "nl_quote_line.line_discount_percent",
+            "nl_quote_line.line_total",
+            "nl_quote_line.default_buy_price_snapshot",
+            "nl_quote_line.buy_currency_snapshot",
+            "nl_quote_line.buy_total",
+            "nl_quote_line.estimated_margin_amount",
+            "nl_quote_line.estimated_margin_percent"
+          ]
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "id": "dashboard.home_page",
+      "title": "N-Light Workflow Prototype",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.quote_new" },
+          { "action_id": "action.refresh" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "stat_cards",
+          "columns": 4,
+          "cards": [
+            {
+              "id": "open_pipeline_count",
+              "label": "Open Pipeline",
+              "subtitle": "Draft and sent quotes",
+              "entity_id": "entity.nl_quote",
+              "measure": "count",
+              "domain": {
+                "op": "in",
+                "field": "nl_quote.status",
+                "value": ["draft", "sent"]
+              },
+              "icon": "lucide:FileCheck2",
+              "tone": "primary",
+              "format": "number",
+              "target": "page:nl_quote.list_page"
+            },
+            {
+              "id": "sent_quotes",
+              "label": "Sent Quotes",
+              "subtitle": "Awaiting customer decision",
+              "entity_id": "entity.nl_quote",
+              "measure": "count",
+              "domain": {
+                "op": "eq",
+                "field": "nl_quote.status",
+                "value": "sent"
+              },
+              "icon": "lucide:Send",
+              "tone": "success",
+              "format": "number",
+              "target": "page:nl_quote.list_page"
+            },
+            {
+              "id": "ready_to_convert",
+              "label": "Ready To Convert",
+              "subtitle": "Accepted quotes awaiting order flow",
+              "entity_id": "entity.nl_quote",
+              "measure": "count",
+              "domain": {
+                "op": "eq",
+                "field": "nl_quote.status",
+                "value": "accepted"
+              },
+              "icon": "lucide:BadgeCheck",
+              "tone": "warning",
+              "format": "number",
+              "target": "page:nl_quote.list_page"
+            },
+            {
+              "id": "commercial_exceptions",
+              "label": "Exceptions",
+              "subtitle": "Lost and expired quotes",
+              "entity_id": "entity.nl_quote",
+              "measure": "count",
+              "domain": { "op": "in", "field": "nl_quote.status", "value": ["lost", "expired"] },
+              "icon": "lucide:CircleOff",
+              "tone": "accent",
+              "format": "number",
+              "target": "page:nl_quote.list_page"
+            }
+          ]
+        },
+        {
+          "kind": "container",
+          "variant": "card",
+          "title": "Quote Pipeline",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.nl_quote",
+              "compact": true,
+              "param_scope": "local",
+              "default_mode": "kanban",
+              "record_domain": {
+                "op": "in",
+                "field": "nl_quote.status",
+                "value": ["draft", "sent", "accepted"]
+              },
+              "modes": [
+                { "mode": "kanban", "target": "view:nl_quote.kanban", "default_group_by": "nl_quote.status" },
+                { "mode": "graph", "target": "view:nl_quote.graph" },
+                { "mode": "pivot", "target": "view:nl_quote.list", "default_group_by": "nl_quote.status" }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "grid",
+          "columns": 12,
+          "gap": "md",
+          "items": [
+            {
+              "span": 6,
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "card",
+                  "title": "Quote Due Dates",
+                  "content": [
+                    {
+                      "kind": "view_modes",
+                      "entity_id": "entity.nl_quote",
+                      "compact": true,
+                      "param_scope": "local",
+                      "default_mode": "calendar",
+                      "default_filter_id": "open",
+                      "modes": [
+                        { "mode": "calendar", "target": "view:nl_quote.calendar" },
+                        { "mode": "list", "target": "view:nl_quote.list" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "span": 6,
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "card",
+                  "title": "Conversion Queue",
+                  "content": [
+                    {
+                      "kind": "view_modes",
+                      "entity_id": "entity.nl_quote",
+                      "compact": true,
+                      "param_scope": "local",
+                      "default_mode": "list",
+                      "default_filter_id": "accepted",
+                      "modes": [
+                        { "mode": "list", "target": "view:nl_quote.list" },
+                        { "mode": "kanban", "target": "view:nl_quote.kanban", "default_group_by": "nl_quote.status" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "span": 12,
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "card",
+                  "title": "Commercial Exceptions",
+                  "content": [
+                    {
+                      "kind": "view_modes",
+                      "entity_id": "entity.nl_quote",
+                      "compact": true,
+                      "param_scope": "local",
+                      "record_domain": {
+                        "op": "in",
+                        "field": "nl_quote.status",
+                        "value": ["lost", "expired"]
+                      },
+                      "default_mode": "list",
+                      "default_filter_id": "lost",
+                      "modes": [
+                        { "mode": "list", "target": "view:nl_quote.list" },
+                        { "mode": "kanban", "target": "view:nl_quote.kanban", "default_group_by": "nl_quote.status" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nl_quote.list_page",
+      "title": "Quotes",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.nl_quote",
+              "default_mode": "kanban",
+              "default_filter_id": "open",
+              "modes": [
+                { "mode": "list", "target": "view:nl_quote.list" },
+                { "mode": "kanban", "target": "view:nl_quote.kanban", "default_group_by": "nl_quote.status" },
+                { "mode": "calendar", "target": "view:nl_quote.calendar" },
+                { "mode": "graph", "target": "view:nl_quote.graph" },
+                { "mode": "pivot", "target": "view:nl_quote.list", "default_group_by": "nl_quote.status" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nl_quote.form_page",
+      "title": "Quote",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.nl_quote",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "view", "target": "view:nl_quote.form" }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "chatter", "entity_id": "entity.nl_quote", "record_ref": "$record.id" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nl_quote_line.list_page",
+      "title": "Quote Lines",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.nl_quote_line",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:nl_quote_line.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nl_quote_line.form_page",
+      "title": "Quote Line",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.nl_quote_line",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                { "kind": "view", "target": "view:nl_quote_line.form" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

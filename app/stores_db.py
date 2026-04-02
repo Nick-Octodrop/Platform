@@ -1343,7 +1343,8 @@ class DbGenericRecordStore:
 
     def create(self, entity_id: str, data: dict, tenant_id: str | None = None) -> dict:
         tenant_id = tenant_id or get_org_id()
-        record_id = str(uuid.uuid4())
+        provided_id = data.get("id") if isinstance(data, dict) else None
+        record_id = str(provided_id).strip() if isinstance(provided_id, str) and str(provided_id).strip() else str(uuid.uuid4())
         record = _deepcopy(data)
         record["id"] = record_id
         with get_conn() as conn:

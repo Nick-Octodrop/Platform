@@ -28,8 +28,10 @@ import SettingsPage from "./pages/SettingsPage.jsx";
 import SettingsSettingsPage from "./pages/SettingsSettingsPage.jsx";
 import SettingsPasswordPage from "./pages/SettingsPasswordPage.jsx";
 import SettingsUsersPage from "./pages/SettingsUsersPage.jsx";
+import SettingsAccessPoliciesPage from "./pages/SettingsAccessPoliciesPage.jsx";
 import SettingsWorkspacesPage from "./pages/SettingsWorkspacesPage.jsx";
 import SettingsSecretsPage from "./pages/SettingsSecretsPage.jsx";
+import SettingsDocumentNumberingPage from "./pages/SettingsDocumentNumberingPage.jsx";
 import SettingsApiCredentialsPage from "./pages/SettingsApiCredentialsPage.jsx";
 import SettingsWebhookSubscriptionsPage from "./pages/SettingsWebhookSubscriptionsPage.jsx";
 import DiagnosticsPage from "./pages/DiagnosticsPage.jsx";
@@ -404,10 +406,26 @@ export default function App() {
               )}
             />
             <Route
+              path="settings/access-policies"
+              element={(
+                <CapabilityRoute capability="workspace.manage_members">
+                  <SettingsAccessPoliciesPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
               path="settings/workspaces"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
                   <SettingsWorkspacesPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="settings/document-numbering"
+              element={(
+                <CapabilityRoute capability="workspace.manage_settings">
+                  <SettingsDocumentNumberingPage />
                 </CapabilityRoute>
               )}
             />

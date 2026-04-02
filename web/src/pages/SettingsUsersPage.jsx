@@ -27,6 +27,7 @@ function SettingsSection({ title, description, children }) {
 export default function SettingsUsersPage() {
   const [context, setContext] = useState(null);
   const [members, setMembers] = useState([]);
+  const [accessProfiles, setAccessProfiles] = useState([]);
   const [page, setPage] = useState(0);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("member");
@@ -38,6 +39,8 @@ export default function SettingsUsersPage() {
   const [deleteAuthUser, setDeleteAuthUser] = useState(false);
   const [pendingEmailEdit, setPendingEmailEdit] = useState(null);
   const [nextEmail, setNextEmail] = useState("");
+  const [pendingProfileEdit, setPendingProfileEdit] = useState(null);
+  const [selectedProfileIds, setSelectedProfileIds] = useState([]);
   const [platformInviteEmail, setPlatformInviteEmail] = useState("");
   const [platformInviteRole, setPlatformInviteRole] = useState("standard");
 
@@ -45,9 +48,15 @@ export default function SettingsUsersPage() {
     setLoading(true);
     setError("");
     try {
-      const [ctxRes, membersRes] = await Promise.all([apiFetch("/access/context"), apiFetch("/access/members")]);
+      const ctxRes = await apiFetch("/access/context");
+      const actorCtx = ctxRes?.actor || {};
+      const nextCanManage = actorCtx?.workspace_role === "admin" || actorCtx?.platform_role === "superadmin";
+      const requests = [apiFetch("/access/members")];
+      if (nextCanManage) requests.push(apiFetch("/access/profiles"));
+      const [membersRes, profilesRes] = await Promise.all(requests);
       setContext(ctxRes || null);
       setMembers(membersRes?.members || []);
+      setAccessProfiles(profilesRes?.profiles || []);
     } catch (err) {
       setError(err?.message || "Failed to load users");
     } finally {
@@ -79,6 +88,36 @@ export default function SettingsUsersPage() {
     const map = new Map(ROLE_OPTIONS.map((r) => [r.value, r.label]));
     return (role) => map.get(role) || role || "member";
   }, []);
+
+  function openProfileModal(member) {
+    setPendingProfileEdit(member);
+    setSelectedProfileIds(Array.isArray(member?.access_profile_ids) ? member.access_profile_ids : []);
+  }
+
+  function closeProfileModal() {
+    setPendingProfileEdit(null);
+    setSelectedProfileIds([]);
+  }
+
+  async function updateProfiles(member) {
+    if (!member?.user_id) return;
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      await apiFetch(`/access/members/${member.user_id}/profiles`, {
+        method: "PATCH",
+        body: { profile_ids: selectedProfileIds },
+      });
+      await load();
+      setNotice("Access profiles updated.");
+      closeProfileModal();
+    } catch (err) {
+      setError(err?.message || "Failed to update access profiles");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function inviteMember() {
     if (!inviteEmail.trim()) return;
@@ -355,6 +394,7 @@ export default function SettingsUsersPage() {
                       <th>User</th>
                       <th>Email</th>
                       <th className="w-44">Role</th>
+                      <th>Access profiles</th>
                       <th className="w-44">Actions</th>
                     </tr>
                   </thead>
@@ -381,12 +421,33 @@ export default function SettingsUsersPage() {
                               ))}
                             </select>
                           ) : (
-                            <span>{roleLabel(member.role)}</span>
+                          <span>{roleLabel(member.role)}</span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="flex flex-wrap gap-1">
+                          {(member.access_profiles || []).length ? (
+                            member.access_profiles.map((profile) => (
+                              <span key={profile.id} className="badge badge-outline badge-sm">
+                                {profile.name || profile.id}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="opacity-60">—</span>
                           )}
-                        </td>
+                        </div>
+                      </td>
                         <td>
                           {canManage ? (
                             <div className="flex items-center gap-2">
+                              <button
+                                className="btn btn-ghost btn-xs"
+                                disabled={saving}
+                                onClick={() => openProfileModal(member)}
+                                type="button"
+                              >
+                                Access
+                              </button>
                               <button
                                 className="btn btn-ghost btn-xs"
                                 disabled={saving}
@@ -483,6 +544,55 @@ export default function SettingsUsersPage() {
             </div>
           </div>
           <div className="modal-backdrop" onClick={closeEmailModal} />
+        </div>
+      ) : null}
+
+      {pendingProfileEdit ? (
+        <div className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg">Access profiles</h3>
+            <p className="text-sm opacity-70 mt-2">
+              Assign access profiles to <span className="font-medium">{pendingProfileEdit.email || pendingProfileEdit.name || pendingProfileEdit.user_id}</span>.
+            </p>
+            <div className="mt-4 space-y-3 max-h-80 overflow-y-auto">
+              {accessProfiles.length ? (
+                accessProfiles.map((profile) => {
+                  const checked = selectedProfileIds.includes(profile.id);
+                  return (
+                    <label key={profile.id} className="flex items-start gap-3 rounded-box border border-base-300 bg-base-100 p-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="checkbox checkbox-sm mt-0.5"
+                        checked={checked}
+                        disabled={saving}
+                        onChange={(e) => {
+                          setSelectedProfileIds((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.add(profile.id);
+                            else next.delete(profile.id);
+                            return Array.from(next);
+                          });
+                        }}
+                      />
+                      <div className="min-w-0">
+                        <div className="font-medium text-sm">{profile.name || profile.id}</div>
+                        {profile.description ? <div className="text-xs opacity-70 mt-1">{profile.description}</div> : null}
+                      </div>
+                    </label>
+                  );
+                })
+              ) : (
+                <div className="text-sm opacity-70">No access profiles yet. Create them in Settings → Access Policies.</div>
+              )}
+            </div>
+            <div className="modal-action">
+              <button className="btn btn-sm" onClick={closeProfileModal} disabled={saving} type="button">Cancel</button>
+              <button className="btn btn-primary btn-sm" onClick={() => updateProfiles(pendingProfileEdit)} disabled={saving} type="button">
+                {saving ? "Saving..." : "Save access"}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop" onClick={closeProfileModal} />
         </div>
       ) : null}
     </TabbedPaneShell>

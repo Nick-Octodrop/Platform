@@ -173,6 +173,33 @@ from app.attachments import store_bytes, resolve_path, read_bytes, public_url, b
 from app.doc_render import render_html, render_pdf, normalize_margins
 from app.automations import match_event
 from app.automations_runtime import handle_event as handle_automation_event
+from app.access_policies import (
+    compile_workspace_user_access_policy,
+    create_workspace_access_profile,
+    create_workspace_access_rule,
+    delete_workspace_access_profile,
+    delete_workspace_access_rule,
+    get_workspace_access_profile,
+    invalidate_access_policy_cache,
+    list_workspace_access_assignments,
+    list_workspace_access_profiles,
+    list_workspace_access_rules,
+    list_workspace_user_access_profiles,
+    normalize_policy_rule,
+    replace_workspace_user_access_profiles,
+    update_workspace_access_profile,
+    update_workspace_access_rule,
+)
+from app.document_numbering import (
+    SequenceError,
+    assign_document_number,
+    create_document_sequence,
+    delete_document_sequence,
+    get_document_sequence,
+    list_document_sequences,
+    preview_document_number,
+    update_document_sequence,
+)
 from app.workspaces import (
     list_memberships,
     get_membership,
@@ -961,6 +988,9 @@ _API_CREDENTIAL_SCOPES = {
     "automations.write",
 }
 
+_ENTITY_ACCESS_ORDER = {"none": 0, "read": 1, "write": 2}
+_FIELD_ACCESS_ORDER = {"hidden": 0, "read": 1, "write": 2}
+
 
 def _workspace_ids_for_actor(actor: dict | None) -> list[str]:
     seen: set[str] = set()
@@ -997,6 +1027,534 @@ def _get_attachment_for_actor(actor: dict | None, attachment_id: str) -> tuple[d
         if attachment:
             return attachment, workspace_id
     return None, None
+
+
+def _invalidate_access_runtime_caches(workspace_id: str | None = None, user_id: str | None = None) -> None:
+    invalidate_access_policy_cache(workspace_id, user_id)
+    _cache_invalidate("modules")
+    _cache_invalidate("registry_list")
+    _cache_invalidate("manifest")
+    _response_cache.clear()
+
+
+def _access_policy_for_actor(actor: dict | None) -> dict:
+    if not isinstance(actor, dict):
+        return {
+            "profile_ids": [],
+            "profiles": [],
+            "module_access": {},
+            "entity_access": {},
+            "entity_scope_rules": {},
+            "field_access": {},
+            "action_access": {},
+        }
+    if actor.get("platform_role") == "superadmin":
+        return {
+            "profile_ids": [],
+            "profiles": [],
+            "module_access": {},
+            "entity_access": {},
+            "entity_scope_rules": {},
+            "field_access": {},
+            "action_access": {},
+        }
+    cached = actor.get("_access_policy")
+    if isinstance(cached, dict):
+        return cached
+    workspace_id = actor.get("workspace_id") or get_org_id()
+    user_id = actor.get("user_id")
+    policy = compile_workspace_user_access_policy(workspace_id, user_id)
+    actor["_access_policy"] = policy
+    return policy
+
+
+def _module_visible_for_actor(actor: dict | None, module_id: str) -> bool:
+    if not isinstance(module_id, str) or not module_id:
+        return False
+    policy = _access_policy_for_actor(actor)
+    decision = policy.get("module_access", {}).get(module_id)
+    if decision == "hidden":
+        return False
+    wildcard = policy.get("module_access", {}).get("*")
+    if wildcard == "hidden":
+        return False
+    return True
+
+
+def _entity_base_access_level(actor: dict | None) -> str:
+    if _has_capability(actor, "records.write"):
+        return "write"
+    if _has_capability(actor, "records.read"):
+        return "read"
+    return "none"
+
+
+def _entity_access_level_for_actor(actor: dict | None, module_id: str | None, entity_id: str | None) -> str:
+    normalized_entity = _normalize_entity_id(entity_id)
+    base_level = _entity_base_access_level(actor)
+    policy = _access_policy_for_actor(actor)
+    rule = None
+    if isinstance(normalized_entity, str):
+        rule = policy.get("entity_access", {}).get(normalized_entity)
+    if not isinstance(rule, str):
+        rule = policy.get("entity_access", {}).get("*")
+    if not isinstance(rule, str):
+        return base_level
+    if _ENTITY_ACCESS_ORDER.get(rule, -1) < _ENTITY_ACCESS_ORDER.get(base_level, -1):
+        return rule
+    return base_level
+
+
+def _record_scope_access_level_for_actor(actor: dict | None, module_id: str | None, entity_id: str | None, record: dict | None) -> str:
+    normalized_entity = _normalize_entity_id(entity_id)
+    base_level = _entity_access_level_for_actor(actor, module_id, normalized_entity)
+    if base_level == "none":
+        return "none"
+    policy = _access_policy_for_actor(actor)
+    scoped_rules = []
+    entity_scope_rules = policy.get("entity_scope_rules", {}) if isinstance(policy, dict) else {}
+    if isinstance(normalized_entity, str):
+        scoped_rules.extend(entity_scope_rules.get(normalized_entity) or [])
+    scoped_rules.extend(entity_scope_rules.get("*") or [])
+    if not scoped_rules:
+        return base_level
+    actor_ctx = _actor_domain_context(actor)
+    matched_levels: list[str] = []
+    for rule in scoped_rules:
+        if not isinstance(rule, dict):
+            continue
+        condition = rule.get("condition")
+        access_level = rule.get("access_level")
+        if not isinstance(condition, dict) or not isinstance(access_level, str):
+            continue
+        try:
+            if eval_condition(condition, {"record": record or {}, "actor": actor_ctx}):
+                matched_levels.append(access_level)
+        except Exception:
+            continue
+    if not matched_levels:
+        return "none"
+    if "none" in matched_levels:
+        scoped_level = "none"
+    elif "read" in matched_levels:
+        scoped_level = "read"
+    elif "write" in matched_levels:
+        scoped_level = "write"
+    else:
+        scoped_level = "none"
+    if _ENTITY_ACCESS_ORDER.get(scoped_level, -1) < _ENTITY_ACCESS_ORDER.get(base_level, -1):
+        return scoped_level
+    return base_level
+
+
+def _record_visible_for_actor(actor: dict | None, module_id: str | None, entity_id: str | None, record: dict | None) -> bool:
+    return _record_scope_access_level_for_actor(actor, module_id, entity_id, record) != "none"
+
+
+def _record_write_allowed_for_actor(actor: dict | None, module_id: str | None, entity_id: str | None, record: dict | None) -> bool:
+    return _record_scope_access_level_for_actor(actor, module_id, entity_id, record) == "write"
+
+
+def _filter_record_items_for_actor(actor: dict | None, module_id: str | None, entity_def: dict | None, items: list[dict] | None) -> list[dict]:
+    if not isinstance(entity_def, dict) or not isinstance(items, list):
+        return []
+    entity_id = entity_def.get("id")
+    filtered: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        record = item.get("record")
+        if not isinstance(record, dict):
+            continue
+        if not _record_visible_for_actor(actor, module_id, entity_id, record):
+            continue
+        filtered.append(
+            {
+                "record_id": item.get("record_id"),
+                "record": _mask_record_for_actor(actor, module_id, entity_def, record),
+            }
+        )
+    return filtered
+
+
+def _field_access_level_for_actor(actor: dict | None, module_id: str | None, entity_id: str | None, field_id: str | None) -> str:
+    normalized_entity = _normalize_entity_id(entity_id)
+    entity_access = _entity_access_level_for_actor(actor, module_id, normalized_entity)
+    if entity_access == "none":
+        return "hidden"
+    base_level = "write" if entity_access == "write" else "read"
+    policy = _access_policy_for_actor(actor)
+    field_rule = None
+    if isinstance(field_id, str) and field_id:
+        field_rule = policy.get("field_access", {}).get(field_id)
+        if not isinstance(field_rule, str):
+            field_rule = policy.get("field_access", {}).get(f"{normalized_entity}:{field_id}")
+    if not isinstance(field_rule, str):
+        field_rule = policy.get("field_access", {}).get("*")
+    if not isinstance(field_rule, str):
+        return base_level
+    if _FIELD_ACCESS_ORDER.get(field_rule, -1) < _FIELD_ACCESS_ORDER.get(base_level, -1):
+        return field_rule
+    return base_level
+
+
+def _action_visible_for_actor(actor: dict | None, module_id: str | None, action_id: str | None) -> bool:
+    if not isinstance(action_id, str) or not action_id:
+        return True
+    policy = _access_policy_for_actor(actor)
+    action_rules = policy.get("action_access", {})
+    for key in (f"{module_id}:{action_id}" if isinstance(module_id, str) and module_id else None, action_id, "*"):
+        if not isinstance(key, str):
+            continue
+        if action_rules.get(key) == "hidden":
+            return False
+    return True
+
+
+def _mask_record_for_actor(actor: dict | None, module_id: str | None, entity_def: dict | None, record: dict | None) -> dict | None:
+    if not isinstance(record, dict) or not isinstance(entity_def, dict):
+        return record
+    entity_id = entity_def.get("id")
+    allowed_fields: set[str] = set()
+    for field in entity_def.get("fields") or []:
+        field_id = field.get("id") if isinstance(field, dict) else None
+        if not isinstance(field_id, str) or not field_id:
+            continue
+        if _field_access_level_for_actor(actor, module_id, entity_id, field_id) == "hidden":
+            continue
+        allowed_fields.add(field_id)
+    masked = {}
+    for key, value in record.items():
+        if key == "id" or key in allowed_fields:
+            masked[key] = value
+    return masked
+
+
+def _entity_access_denied_response(actor: dict | None, module_id: str | None, entity_id: str | None, *, write: bool = False) -> JSONResponse | None:
+    access_level = _entity_access_level_for_actor(actor, module_id, entity_id)
+    if access_level == "none":
+        return _error_response("FORBIDDEN", "Entity access denied", "entity_id", status=403)
+    if write and access_level != "write":
+        return _error_response("FORBIDDEN", "Entity write access denied", "entity_id", status=403)
+    return None
+
+
+def _field_write_policy_errors(actor: dict | None, module_id: str | None, entity_def: dict | None, data: dict | None) -> list[dict]:
+    if not isinstance(entity_def, dict) or not isinstance(data, dict):
+        return []
+    entity_id = entity_def.get("id")
+    errors: list[dict] = []
+    for key in data.keys():
+        if key == "id":
+            continue
+        field_access = _field_access_level_for_actor(actor, module_id, entity_id, key)
+        if field_access != "write":
+            errors.append(
+                {
+                    "code": "FIELD_FORBIDDEN",
+                    "message": "Field is not writable for this user",
+                    "path": key,
+                    "detail": {"field_id": key, "access": field_access},
+                }
+            )
+    return errors
+
+
+def _is_admin_actor(actor: dict | None) -> bool:
+    if not isinstance(actor, dict):
+        return False
+    if actor.get("platform_role") == "superadmin":
+        return True
+    return (actor.get("workspace_role") or actor.get("role")) == "admin"
+
+
+def _document_sequences_for_entity(entity_id: str | None, *, active_only: bool = False) -> list[dict]:
+    if not isinstance(entity_id, str) or not entity_id:
+        return []
+    return [
+        item
+        for item in list_document_sequences(entity_id=entity_id, active_only=active_only)
+        if isinstance(item, dict) and item.get("number_field_id")
+    ]
+
+
+def _sequence_error_response(exc: SequenceError) -> JSONResponse:
+    return _error_response(exc.code, exc.message, exc.path, detail=exc.detail, status=exc.status)
+
+
+def _document_numbering_write_errors(actor: dict | None, entity_def: dict | None, existing_record: dict | None, data: dict | None) -> list[dict]:
+    if not isinstance(entity_def, dict) or not isinstance(data, dict):
+        return []
+    entity_id = entity_def.get("id")
+    if not isinstance(entity_id, str) or not entity_id:
+        return []
+    is_admin = _is_admin_actor(actor)
+    errors: list[dict] = []
+    for definition in _document_sequences_for_entity(entity_id):
+        field_id = definition.get("number_field_id")
+        if not isinstance(field_id, str) or field_id not in data:
+            continue
+        existing_value = existing_record.get(field_id) if isinstance(existing_record, dict) else None
+        incoming_value = data.get(field_id)
+        if incoming_value == existing_value:
+            continue
+        if definition.get("allow_admin_override") is True and is_admin:
+            continue
+        if isinstance(existing_value, str) and existing_value.strip() and definition.get("lock_after_assignment", True):
+            errors.append(
+                {
+                    "code": "NUMBER_LOCKED",
+                    "message": "Document number is locked after assignment.",
+                    "path": field_id,
+                    "detail": {"field_id": field_id, "sequence_code": definition.get("code")},
+                }
+            )
+        else:
+            errors.append(
+                {
+                    "code": "NUMBER_MANAGED",
+                    "message": "Document number is managed by the numbering engine.",
+                    "path": field_id,
+                    "detail": {"field_id": field_id, "sequence_code": definition.get("code")},
+                }
+            )
+    return errors
+
+
+def _sequence_should_assign(
+    definition: dict,
+    workflow: dict | None,
+    before_record: dict | None,
+    after_record: dict | None,
+    lifecycle_event: str,
+) -> bool:
+    if not isinstance(definition, dict) or not isinstance(after_record, dict):
+        return False
+    field_id = definition.get("number_field_id")
+    if isinstance(field_id, str) and isinstance(after_record.get(field_id), str) and after_record.get(field_id).strip():
+        return False
+    assign_on = definition.get("assign_on") or "create"
+    if assign_on == "create":
+        return lifecycle_event == "create"
+    if assign_on == "save":
+        return lifecycle_event in {"create", "save"}
+    if assign_on == "custom":
+        return False
+    status_field = workflow.get("status_field") if isinstance(workflow, dict) else None
+    if not isinstance(status_field, str):
+        return False
+    before_status = before_record.get(status_field) if isinstance(before_record, dict) else None
+    after_status = after_record.get(status_field)
+    if before_status == after_status or after_status in (None, ""):
+        return False
+    trigger_status_values = definition.get("trigger_status_values") if isinstance(definition.get("trigger_status_values"), list) else []
+    if trigger_status_values:
+        return after_status in trigger_status_values
+    normalized = str(after_status).strip().lower()
+    if assign_on == "confirm":
+        return normalized in {"confirmed", "confirm", "accepted", "approved"}
+    if assign_on == "issue":
+        return normalized in {"issued", "issue"}
+    return False
+
+
+def _apply_document_numbering_after_write(
+    request: Request,
+    entity_def: dict | None,
+    record_id: str | None,
+    before_record: dict | None,
+    after_record: dict | None,
+    actor: dict | None,
+    manifest: dict | None,
+    *,
+    lifecycle_event: str,
+) -> dict | None:
+    if not isinstance(entity_def, dict) or not isinstance(record_id, str) or not isinstance(after_record, dict):
+        return after_record
+    entity_id = entity_def.get("id")
+    if not isinstance(entity_id, str) or not entity_id:
+        return after_record
+    workflow = _find_entity_workflow(manifest, entity_id) if isinstance(manifest, dict) else None
+    assigned = False
+    next_record = dict(after_record)
+    for definition in _document_sequences_for_entity(entity_id, active_only=True):
+        if not _sequence_should_assign(definition, workflow, before_record, next_record, lifecycle_event):
+            continue
+        assigned_number = assign_document_number(
+            definition,
+            record_id,
+            next_record,
+            actor=actor,
+            event_label=definition.get("assign_on") if isinstance(definition.get("assign_on"), str) else lifecycle_event,
+        )
+        field_id = definition.get("number_field_id")
+        if isinstance(field_id, str) and assigned_number and next_record.get(field_id) != assigned_number:
+            next_record[field_id] = assigned_number
+            assigned = True
+    if not assigned:
+        return after_record
+    persisted = _update_record_with_computed_fields(request, entity_id, entity_def, record_id, next_record)
+    return persisted.get("record") if isinstance(persisted, dict) and isinstance(persisted.get("record"), dict) else next_record
+
+
+def _document_numbering_assignment_errors(
+    entity_def: dict | None,
+    before_record: dict | None,
+    after_record: dict | None,
+    manifest: dict | None,
+    *,
+    lifecycle_event: str,
+) -> list[dict]:
+    if not isinstance(entity_def, dict) or not isinstance(after_record, dict):
+        return []
+    entity_id = entity_def.get("id")
+    if not isinstance(entity_id, str) or not entity_id:
+        return []
+    workflow = _find_entity_workflow(manifest, entity_id) if isinstance(manifest, dict) else None
+    errors: list[dict] = []
+    for definition in _document_sequences_for_entity(entity_id, active_only=True):
+        if not _sequence_should_assign(definition, workflow, before_record, after_record, lifecycle_event):
+            continue
+        try:
+            preview_document_number(definition, context={"record": after_record})
+        except SequenceError as exc:
+            errors.append(
+                {
+                    "code": exc.code,
+                    "message": exc.message,
+                    "path": exc.path or definition.get("number_field_id"),
+                    "detail": exc.detail or {"sequence_code": definition.get("code")},
+                }
+            )
+    return errors
+
+
+def _filter_manifest_for_actor(manifest: dict, module_id: str, actor: dict | None) -> dict | None:
+    if not _module_visible_for_actor(actor, module_id):
+        return None
+    out = copy.deepcopy(manifest if isinstance(manifest, dict) else {})
+    entities = out.get("entities") if isinstance(out.get("entities"), list) else []
+    visible_entities: set[str] = set()
+    visible_fields: set[str] = set()
+    readonly_fields: set[str] = set()
+    filtered_entities: list[dict] = []
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+        entity_id = _normalize_entity_id(entity.get("id"))
+        entity_access = _entity_access_level_for_actor(actor, module_id, entity_id)
+        if entity_access == "none":
+            continue
+        entity_copy = copy.deepcopy(entity)
+        fields = entity_copy.get("fields") if isinstance(entity_copy.get("fields"), list) else []
+        managed_number_fields = {
+            item.get("number_field_id")
+            for item in _document_sequences_for_entity(entity_id, active_only=True)
+            if isinstance(item, dict) and isinstance(item.get("number_field_id"), str)
+        }
+        filtered_fields: list[dict] = []
+        for field in fields:
+            if not isinstance(field, dict):
+                continue
+            field_id = field.get("id")
+            if not isinstance(field_id, str) or not field_id:
+                continue
+            field_access = _field_access_level_for_actor(actor, module_id, entity_id, field_id)
+            if field_access == "hidden":
+                continue
+            field_copy = copy.deepcopy(field)
+            if field_access != "write":
+                field_copy["readonly"] = True
+                readonly_fields.add(field_id)
+            if field_id in managed_number_fields:
+                field_copy["readonly"] = True
+                readonly_fields.add(field_id)
+            visible_fields.add(field_id)
+            filtered_fields.append(field_copy)
+        entity_copy["fields"] = filtered_fields
+        filtered_entities.append(entity_copy)
+        visible_entities.add(entity_id)
+    out["entities"] = filtered_entities
+
+    filtered_views: list[dict] = []
+    visible_view_ids: set[str] = set()
+    for view in out.get("views") or []:
+        if not isinstance(view, dict):
+            continue
+        view_entity = view.get("entity") or view.get("entity_id") or view.get("entityId")
+        if isinstance(view_entity, str) and _normalize_entity_id(view_entity) not in visible_entities:
+            continue
+        view_id = view.get("id")
+        if isinstance(view_id, str):
+            visible_view_ids.add(view_id)
+        filtered_views.append(view)
+    out["views"] = filtered_views
+
+    filtered_actions: list[dict] = []
+    for action in out.get("actions") or []:
+        if not isinstance(action, dict):
+            continue
+        action_id = action.get("id")
+        if isinstance(action_id, str) and not _action_visible_for_actor(actor, module_id, action_id):
+            continue
+        filtered_actions.append(action)
+    out["actions"] = filtered_actions
+
+    app_def = out.get("app")
+    if isinstance(app_def, dict):
+        defaults = app_def.get("defaults")
+        if isinstance(defaults, dict):
+            entities_cfg = defaults.get("entities")
+            if isinstance(entities_cfg, dict):
+                next_entities_cfg = {}
+                for key, value in entities_cfg.items():
+                    if _normalize_entity_id(key) in visible_entities:
+                        next_entities_cfg[key] = value
+                defaults["entities"] = next_entities_cfg
+
+    def _filter_node(node: Any) -> Any:
+        if isinstance(node, list):
+            out_items = []
+            for item in node:
+                filtered = _filter_node(item)
+                if filtered is not None:
+                    out_items.append(filtered)
+            return out_items
+        if isinstance(node, dict):
+            field_id = node.get("field_id")
+            if isinstance(field_id, str):
+                if field_id not in visible_fields:
+                    return None
+                next_node = copy.deepcopy(node)
+                if field_id in readonly_fields:
+                    next_node["readonly"] = True
+            else:
+                next_node = copy.deepcopy(node)
+            action_id = next_node.get("action_id")
+            if isinstance(action_id, str) and not _action_visible_for_actor(actor, module_id, action_id):
+                return None
+            if next_node.get("type") == "related_list":
+                related_entity = next_node.get("entity_id") or next_node.get("entity")
+                if isinstance(related_entity, str) and _normalize_entity_id(related_entity) not in visible_entities:
+                    return None
+            for key, value in list(next_node.items()):
+                if key in {"entities", "views", "actions"}:
+                    continue
+                if isinstance(value, (list, dict)):
+                    next_node[key] = _filter_node(value)
+            view_ref = next_node.get("view_id") or next_node.get("view") or next_node.get("target")
+            if (
+                isinstance(view_ref, str)
+                and view_ref.startswith("view.")
+                and visible_view_ids
+                and view_ref not in visible_view_ids
+            ):
+                return None
+            return next_node
+        return node
+
+    out["pages"] = _filter_node(out.get("pages") or [])
+    return out
 
 
 def _has_capability(actor: dict | None, capability: str) -> bool:
@@ -2415,7 +2973,7 @@ def _read_interface_list(manifest: dict, kind: str) -> list[dict]:
     return [item for item in items if isinstance(item, dict)]
 
 
-def _collect_interface_sources(request: Request, kind: str) -> list[dict]:
+def _collect_interface_sources(request: Request, kind: str, actor: dict | None = None) -> list[dict]:
     modules = _get_registry_list(request)
     sources: list[dict] = []
     for module in modules:
@@ -2424,6 +2982,8 @@ def _collect_interface_sources(request: Request, kind: str) -> list[dict]:
         module_id = module.get("module_id")
         manifest_hash = module.get("current_hash")
         if not isinstance(module_id, str) or not isinstance(manifest_hash, str):
+            continue
+        if actor is not None and not _module_visible_for_actor(actor, module_id):
             continue
         try:
             manifest = _get_snapshot(request, module_id, manifest_hash)
@@ -2440,6 +3000,8 @@ def _collect_interface_sources(request: Request, kind: str) -> list[dict]:
                 continue
             entity_def = entity_by_id.get(entity_id) or entity_by_id.get(f"entity.{entity_id}") or entity_by_id.get(entity_id[7:] if entity_id.startswith("entity.") else entity_id)
             if not isinstance(entity_def, dict):
+                continue
+            if actor is not None and _entity_access_level_for_actor(actor, module_id, entity_id) == "none":
                 continue
             source_key = f"{module_id}:{kind}:{entity_id}:{idx}"
             sources.append(
@@ -8548,57 +9110,61 @@ def _delete_module_memory(module_id: str, actor: dict | None, reason: str, force
 
 @app.get("/modules")
 async def list_modules(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
     cached = _cache_get("modules")
-    if cached is not None:
-        return {"modules": cached}
-    modules = _get_registry_list(request)
-    for mod in modules:
-        # Fill missing display metadata from the current manifest snapshot.
-        # modules_installed stores the operational state; the manifest is the source of truth for app meta.
-        need_meta = not (
-            (isinstance(mod.get("name"), str) and mod.get("name").strip())
-            and (isinstance(mod.get("description"), str) and mod.get("description").strip())
-            and (isinstance(mod.get("category"), str) and mod.get("category").strip())
-            and (isinstance(mod.get("module_version"), str) and mod.get("module_version").strip())
-        )
-        if not need_meta:
-            continue
-        module_id = mod.get("module_id")
-        manifest_hash = mod.get("current_hash")
-        if not module_id or not manifest_hash:
-            continue
-        try:
-            manifest = _get_snapshot(request, module_id, manifest_hash)
-        except Exception:
-            continue
-        module_def = manifest.get("module") if isinstance(manifest, dict) else None
-        module_def = module_def if isinstance(module_def, dict) else {}
-        if not (isinstance(mod.get("name"), str) and mod.get("name").strip()):
-            name = _module_name_from_manifest(manifest) or module_def.get("name")
-            if isinstance(name, str) and name.strip():
-                mod["name"] = name.strip()
-        if not (isinstance(mod.get("description"), str) and mod.get("description").strip()):
-            desc = module_def.get("description")
-            if isinstance(desc, str) and desc.strip():
-                mod["description"] = desc.strip()
-        if not (isinstance(mod.get("category"), str) and mod.get("category").strip()):
-            cat = module_def.get("category")
-            if isinstance(cat, str) and cat.strip():
-                mod["category"] = cat.strip()
-        if not (isinstance(mod.get("module_version"), str) and mod.get("module_version").strip()):
-            ver = module_def.get("version")
-            if isinstance(ver, str) and ver.strip():
-                mod["module_version"] = ver.strip()
-        if not (isinstance(mod.get("icon_key"), str) and mod.get("icon_key").strip()):
-            icon_key = module_def.get("icon_key") or module_def.get("icon")
-            if isinstance(icon_key, str) and icon_key.strip():
-                mod["icon_key"] = icon_key.strip()
-        if not (isinstance(mod.get("module_key"), str) and mod.get("module_key").strip()):
-            stable_key = module_def.get("key") if isinstance(module_def.get("key"), str) else module_def.get("id")
-            if isinstance(stable_key, str) and stable_key.strip():
-                mod["module_key"] = stable_key.strip()
-    _cache_set("modules", modules)
-    return {"modules": modules}
+    modules = copy.deepcopy(cached) if cached is not None else None
+    if modules is None:
+        modules = _get_registry_list(request)
+        for mod in modules:
+            # Fill missing display metadata from the current manifest snapshot.
+            # modules_installed stores the operational state; the manifest is the source of truth for app meta.
+            need_meta = not (
+                (isinstance(mod.get("name"), str) and mod.get("name").strip())
+                and (isinstance(mod.get("description"), str) and mod.get("description").strip())
+                and (isinstance(mod.get("category"), str) and mod.get("category").strip())
+                and (isinstance(mod.get("module_version"), str) and mod.get("module_version").strip())
+            )
+            if not need_meta:
+                continue
+            module_id = mod.get("module_id")
+            manifest_hash = mod.get("current_hash")
+            if not module_id or not manifest_hash:
+                continue
+            try:
+                manifest = _get_snapshot(request, module_id, manifest_hash)
+            except Exception:
+                continue
+            module_def = manifest.get("module") if isinstance(manifest, dict) else None
+            module_def = module_def if isinstance(module_def, dict) else {}
+            if not (isinstance(mod.get("name"), str) and mod.get("name").strip()):
+                name = _module_name_from_manifest(manifest) or module_def.get("name")
+                if isinstance(name, str) and name.strip():
+                    mod["name"] = name.strip()
+            if not (isinstance(mod.get("description"), str) and mod.get("description").strip()):
+                desc = module_def.get("description")
+                if isinstance(desc, str) and desc.strip():
+                    mod["description"] = desc.strip()
+            if not (isinstance(mod.get("category"), str) and mod.get("category").strip()):
+                cat = module_def.get("category")
+                if isinstance(cat, str) and cat.strip():
+                    mod["category"] = cat.strip()
+            if not (isinstance(mod.get("module_version"), str) and mod.get("module_version").strip()):
+                ver = module_def.get("version")
+                if isinstance(ver, str) and ver.strip():
+                    mod["module_version"] = ver.strip()
+            if not (isinstance(mod.get("icon_key"), str) and mod.get("icon_key").strip()):
+                icon_key = module_def.get("icon_key") or module_def.get("icon")
+                if isinstance(icon_key, str) and icon_key.strip():
+                    mod["icon_key"] = icon_key.strip()
+            if not (isinstance(mod.get("module_key"), str) and mod.get("module_key").strip()):
+                stable_key = module_def.get("key") if isinstance(module_def.get("key"), str) else module_def.get("id")
+                if isinstance(stable_key, str) and stable_key.strip():
+                    mod["module_key"] = stable_key.strip()
+        _cache_set("modules", copy.deepcopy(modules))
+    visible_modules = [mod for mod in modules if _module_visible_for_actor(actor, mod.get("module_id"))]
+    return {"modules": visible_modules}
 
 
 def _dependency_status_for_module(module_id: str, manifest_index: dict[str, dict]) -> dict:
@@ -9056,6 +9622,11 @@ async def set_module_order(module_id: str, request: Request) -> dict:
 
 @app.get("/modules/{module_id}/manifest")
 async def get_module_manifest(module_id: str, request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    if not _module_visible_for_actor(actor, module_id):
+        return _error_response("FORBIDDEN", "Module access denied", "module_id", status=403)
     module = _get_module(request, module_id)
     if module is None:
         return _error_response("MODULE_NOT_INSTALLED", "Module not installed", "module_id", status=404)
@@ -9065,14 +9636,20 @@ async def get_module_manifest(module_id: str, request: Request) -> dict:
     cache_key = f"{get_org_id()}:{module_id}:{manifest_hash}"
     cached = _cache_get("manifest", cache_key)
     if cached is not None:
-        return _ok_response({"module_id": module_id, "manifest_hash": manifest_hash, "manifest": cached})
+        filtered_cached = _filter_manifest_for_actor(cached, module_id, actor)
+        if filtered_cached is None:
+            return _error_response("FORBIDDEN", "Module access denied", "module_id", status=403)
+        return _ok_response({"module_id": module_id, "manifest_hash": manifest_hash, "manifest": filtered_cached})
     try:
         manifest = _get_snapshot(request, module_id, manifest_hash)
     except Exception:
         return _error_response("MODULE_NOT_FOUND", "Module manifest not found", "module_id", status=404)
+    filtered_manifest = _filter_manifest_for_actor(manifest, module_id, actor)
+    if filtered_manifest is None:
+        return _error_response("FORBIDDEN", "Module access denied", "module_id", status=403)
     _get_compiled_manifest(module_id, manifest_hash, manifest)
     _cache_set("manifest", manifest, cache_key)
-    return _ok_response({"module_id": module_id, "manifest_hash": manifest_hash, "manifest": manifest})
+    return _ok_response({"module_id": module_id, "manifest_hash": manifest_hash, "manifest": filtered_manifest})
 
 
 @app.get("/page/bootstrap")
@@ -9096,6 +9673,8 @@ async def page_bootstrap(
     module, manifest = _get_installed_manifest(request, module_id)
     if module is None or manifest is None:
         return _error_response("MODULE_NOT_FOUND", "Module not found or disabled", "module_id", status=404)
+    if not _module_visible_for_actor(actor, module_id):
+        return _error_response("FORBIDDEN", "Module access denied", "module_id", status=403)
     manifest_hash = module.get("current_hash")
     if not isinstance(manifest_hash, str):
         return _error_response("MODULE_INVALID", "Module manifest hash missing", "module_id", status=400)
@@ -9112,12 +9691,15 @@ async def page_bootstrap(
     if cached is not None:
         logger.info("cache_hit=page_bootstrap key=%s", cache_key)
         return cached
-    compiled = _get_compiled_manifest(module_id, manifest_hash, manifest)
-    view_obj, page_obj = _resolve_bootstrap_view(manifest, page_id, view_id)
+    filtered_manifest = _filter_manifest_for_actor(manifest, module_id, actor)
+    if filtered_manifest is None:
+        return _error_response("FORBIDDEN", "Module access denied", "module_id", status=403)
+    compiled = _compile_manifest(filtered_manifest)
+    view_obj, page_obj = _resolve_bootstrap_view(filtered_manifest, page_id, view_id)
     if not view_obj:
-        fallback_view = _fallback_view_id_from_page_id(manifest, page_id) if not view_id else None
+        fallback_view = _fallback_view_id_from_page_id(filtered_manifest, page_id) if not view_id else None
         if fallback_view:
-            view_obj, page_obj = _resolve_bootstrap_view(manifest, page_id, fallback_view)
+            view_obj, page_obj = _resolve_bootstrap_view(filtered_manifest, page_id, fallback_view)
             if view_obj:
                 view_id = fallback_view
         if not view_obj:
@@ -9129,7 +9711,7 @@ async def page_bootstrap(
     payload: dict = {
         "module_id": module_id,
         "manifest_hash": manifest_hash,
-        "manifest": manifest,
+        "manifest": filtered_manifest,
         "compiled": compiled,
         "page": page_obj,
         "view_id": view_obj.get("id"),
@@ -9138,6 +9720,9 @@ async def page_bootstrap(
     }
 
     if kind == "list" and view_entity:
+        denied = _entity_access_denied_response(actor, module_id, view_entity, write=False)
+        if denied:
+            return denied
         columns = view_obj.get("columns") if isinstance(view_obj.get("columns"), list) else []
         field_ids = []
         for col in columns:
@@ -9170,19 +9755,28 @@ async def page_bootstrap(
         )
         if parsed_domain:
             items = _filter_records_by_domain(items, parsed_domain, {}, actor_ctx)
+        entity_found = _find_entity_def(request, view_entity)
+        filtered_items = _filter_record_items_for_actor(actor, module_id, entity_found[1] if entity_found else None, items)
         payload["list"] = {
             "entity_id": view_entity,
-            "records": items,
+            "records": filtered_items,
             "next_cursor": next_cursor,
             "columns": columns,
         }
 
     if kind == "form" and view_entity and record_id:
+        denied = _entity_access_denied_response(actor, module_id, view_entity, write=False)
+        if denied:
+            return denied
         record = generic_records.get(view_entity, record_id)
+        found_form_entity = _find_entity_def(request, view_entity)
+        raw_form_record = record.get("record") if record else None
+        if record and isinstance(raw_form_record, dict) and not _record_visible_for_actor(actor, module_id, view_entity, raw_form_record):
+            record = None
         payload["record"] = {
             "entity_id": view_entity,
             "record_id": record_id,
-            "record": record.get("record") if record else None,
+            "record": _mask_record_for_actor(actor, module_id, found_form_entity[1] if found_form_entity else None, record.get("record") if record else None),
         }
 
     response = _ok_response(payload)
@@ -14670,6 +15264,12 @@ def _run_transform_record_action(
     target_found = _find_entity_def(request, target_entity)
     if not target_found:
         return _error_response("ENTITY_NOT_FOUND", "Target entity not found or disabled", "target_entity_id", status=404)
+    denied = _entity_access_denied_response(actor, source_found[0], source_entity, write=True)
+    if denied:
+        return denied
+    denied = _entity_access_denied_response(actor, target_found[0], target_entity, write=True)
+    if denied:
+        return denied
 
     validation_cfg = transformation.get("validation") if isinstance(transformation.get("validation"), dict) else {}
     selection_mode = action.get("selection_mode") if isinstance(action.get("selection_mode"), str) else None
@@ -14694,6 +15294,10 @@ def _run_transform_record_action(
             selected_record = existing.get("record") if isinstance(existing, dict) else None
             if not isinstance(selected_record, dict):
                 return _error_response("RECORD_NOT_FOUND", "Selected source record not found", f"selected_ids[{idx}]", status=404)
+            if not _record_visible_for_actor(actor, source_found[0], source_entity, selected_record):
+                return _error_response("RECORD_NOT_FOUND", "Selected source record not found", f"selected_ids[{idx}]", status=404)
+            if not _record_write_allowed_for_actor(actor, source_found[0], source_entity, selected_record):
+                return _error_response("FORBIDDEN", "Source record write access denied", f"selected_ids[{idx}]", status=403)
             selected_rows.append({"record_id": selected_id, "record": selected_record})
     else:
         record_id = context.get("record_id") if isinstance(context, dict) else None
@@ -14703,6 +15307,10 @@ def _run_transform_record_action(
         source_id, source_record = _unwrap_store_record(source_raw)
         if not source_id or not isinstance(source_record, dict):
             return _error_response("RECORD_NOT_FOUND", "Source record not found", "record_id", status=404)
+        if not _record_visible_for_actor(actor, source_found[0], source_entity, source_record):
+            return _error_response("RECORD_NOT_FOUND", "Source record not found", "record_id", status=404)
+        if not _record_write_allowed_for_actor(actor, source_found[0], source_entity, source_record):
+            return _error_response("FORBIDDEN", "Source record write access denied", "record_id", status=403)
         selected_rows.append({"record_id": source_id, "record": source_record})
 
     source_id = selected_rows[0]["record_id"]
@@ -14812,6 +15420,9 @@ def _run_transform_record_action(
         source_child_found = _find_entity_def(request, source_child_entity)
         if not source_child_found:
             return _error_response("ENTITY_NOT_FOUND", "Source child entity not found or disabled", f"child_mappings[{child_idx}].source_entity_id", status=404)
+        denied = _entity_access_denied_response(actor, source_child_found[0], source_child_entity, write=False)
+        if denied:
+            return denied
         if source_scope == "selected_records":
             if source_child_entity != source_entity:
                 return _error_response("TRANSFORMATION_INVALID", "selected_records child mappings must use the source entity", f"child_mappings[{child_idx}].source_entity_id", status=400)
@@ -14820,7 +15431,13 @@ def _run_transform_record_action(
             if not isinstance(source_link_field, str):
                 return _error_response("TRANSFORMATION_INVALID", "child mapping source_link_field required", f"child_mappings[{child_idx}].source_link_field", status=400)
             source_items = _list_entity_records_for_transform(source_child_entity)
-            scoped = [item for item in source_items if isinstance(item.get("record"), dict) and item.get("record", {}).get(source_link_field) == source_id]
+            scoped = [
+                item
+                for item in source_items
+                if isinstance(item.get("record"), dict)
+                and item.get("record", {}).get(source_link_field) == source_id
+                and _record_visible_for_actor(actor, source_child_found[0], source_child_entity, item.get("record"))
+            ]
         total_source_child_records += len(scoped)
         child_sources.append({"def": child_def, "source_entity_id": source_child_entity, "source_records": scoped, "source_found": source_child_found})
     if validation_cfg.get("require_child_records") is True and total_source_child_records == 0 and len(child_defs) > 0:
@@ -14837,6 +15454,9 @@ def _run_transform_record_action(
     errors.extend(lookup_errors)
     domain_errors = _enforce_lookup_domains(target_found[1], clean_target if isinstance(clean_target, dict) else {})
     errors.extend(domain_errors)
+    errors.extend(_field_write_policy_errors(actor, target_found[0], target_found[1], clean_target if isinstance(clean_target, dict) else {}))
+    errors.extend(_document_numbering_write_errors(actor, target_found[1], None, clean_target if isinstance(clean_target, dict) else {}))
+    errors.extend(_document_numbering_assignment_errors(target_found[1], None, clean_target if isinstance(clean_target, dict) else {}, target_found[2], lifecycle_event="create"))
     if errors:
         _log_record_validation_errors(target_entity, target_values, errors, target_workflow)
         return _validation_response(errors, [])
@@ -14847,6 +15467,20 @@ def _run_transform_record_action(
     target_id, target_record = _unwrap_store_record(target_created if isinstance(target_created, dict) else None)
     if not target_id or not isinstance(target_record, dict):
         return _error_response("TRANSFORMATION_FAILED", "Failed to create target record", "target_entity_id", status=500)
+    try:
+        target_record = _apply_document_numbering_after_write(
+            request,
+            target_found[1],
+            target_id,
+            None,
+            target_record,
+            actor,
+            target_found[2],
+            lifecycle_event="create",
+        )
+    except SequenceError as exc:
+        generic_records.delete(target_entity, target_id)
+        return _sequence_error_response(exc)
     _resp_cache_invalidate_entity(target_entity)
     phase_ms["transform_create_target"] = (time.perf_counter() - t0) * 1000
 
@@ -14868,6 +15502,12 @@ def _run_transform_record_action(
                 generic_records.delete(ent_id, rec_id)
             generic_records.delete(target_entity, target_id)
             return _error_response("ENTITY_NOT_FOUND", "Target child entity not found or disabled", "child_mappings.target_entity_id", status=404)
+        denied = _entity_access_denied_response(actor, target_child_found[0], target_child_entity, write=True)
+        if denied:
+            for ent_id, rec_id in created_children:
+                generic_records.delete(ent_id, rec_id)
+            generic_records.delete(target_entity, target_id)
+            return denied
         child_field_mappings = _normalize_field_mappings(child_def.get("field_mappings"))
         for source_child in child_bundle["source_records"]:
             source_child_record = source_child.get("record") if isinstance(source_child.get("record"), dict) else {}
@@ -14884,6 +15524,9 @@ def _run_transform_record_action(
             child_errors.extend(child_lookup_errors)
             child_domain_errors = _enforce_lookup_domains(target_child_found[1], clean_child if isinstance(clean_child, dict) else {})
             child_errors.extend(child_domain_errors)
+            child_errors.extend(_field_write_policy_errors(actor, target_child_found[0], target_child_found[1], clean_child if isinstance(clean_child, dict) else {}))
+            child_errors.extend(_document_numbering_write_errors(actor, target_child_found[1], None, clean_child if isinstance(clean_child, dict) else {}))
+            child_errors.extend(_document_numbering_assignment_errors(target_child_found[1], None, clean_child if isinstance(clean_child, dict) else {}, target_child_found[2], lifecycle_event="create"))
             if child_errors:
                 for ent_id, rec_id in created_children:
                     generic_records.delete(ent_id, rec_id)
@@ -14891,8 +15534,25 @@ def _run_transform_record_action(
                 _log_record_validation_errors(target_child_entity, child_values, child_errors, child_workflow)
                 return _validation_response(child_errors, [])
             created_child = _create_record_with_computed_fields(request, target_child_entity, target_child_found[1], clean_child)
-            created_child_id, _ = _unwrap_store_record(created_child if isinstance(created_child, dict) else None)
+            created_child_id, created_child_record = _unwrap_store_record(created_child if isinstance(created_child, dict) else None)
             if created_child_id:
+                try:
+                    created_child_record = _apply_document_numbering_after_write(
+                        request,
+                        target_child_found[1],
+                        created_child_id,
+                        None,
+                        created_child_record if isinstance(created_child_record, dict) else clean_child,
+                        actor,
+                        target_child_found[2],
+                        lifecycle_event="create",
+                    )
+                except SequenceError as exc:
+                    for ent_id, rec_id in created_children:
+                        generic_records.delete(ent_id, rec_id)
+                    generic_records.delete(target_entity, target_id)
+                    generic_records.delete(target_child_entity, created_child_id)
+                    return _sequence_error_response(exc)
                 created_children.append((target_child_entity, created_child_id))
                 child_created_count += 1
         _resp_cache_invalidate_entity(target_child_entity)
@@ -14913,6 +15573,9 @@ def _run_transform_record_action(
             if not isinstance(row_id, str) or not isinstance(row_record, dict):
                 continue
             source_patch_errors, merged_source = _validate_patch_payload(source_found[1], source_patch, row_record, workflow=source_workflow)
+            source_patch_errors.extend(_field_write_policy_errors(actor, source_found[0], source_found[1], source_patch if isinstance(source_patch, dict) else {}))
+            source_patch_errors.extend(_document_numbering_write_errors(actor, source_found[1], row_record, merged_source if isinstance(merged_source, dict) else {}))
+            source_patch_errors.extend(_document_numbering_assignment_errors(source_found[1], row_record, merged_source if isinstance(merged_source, dict) else {}, source_found[2], lifecycle_event="save"))
             if source_patch_errors:
                 for ent_id, rec_id in created_children:
                     generic_records.delete(ent_id, rec_id)
@@ -14927,6 +15590,19 @@ def _run_transform_record_action(
             updated_source = _update_record_with_computed_fields(request, source_entity, source_found[1], row_id, merged_source)
             _, after_record = _unwrap_store_record(updated_source if isinstance(updated_source, dict) else None)
             after_record = after_record if isinstance(after_record, dict) else merged_source
+            try:
+                after_record = _apply_document_numbering_after_write(
+                    request,
+                    source_found[1],
+                    row_id,
+                    before_record,
+                    after_record,
+                    actor,
+                    source_found[2],
+                    lifecycle_event="save",
+                )
+            except SequenceError as exc:
+                return _sequence_error_response(exc)
             if row_id == source_id:
                 updated_source_record = after_record
             _resp_cache_invalidate_record(source_entity, row_id)
@@ -14974,13 +15650,30 @@ def _run_transform_record_action(
     target_to_source_field = link_fields.get("target_to_source")
     if isinstance(target_to_source_field, str) and target_to_source_field:
         target_patch_errors, merged_target = _validate_patch_payload(target_found[1], {target_to_source_field: source_id}, target_record, workflow=target_workflow)
+        target_patch_errors.extend(_field_write_policy_errors(actor, target_found[0], target_found[1], {target_to_source_field: source_id}))
+        target_patch_errors.extend(_document_numbering_write_errors(actor, target_found[1], target_record, merged_target if isinstance(merged_target, dict) else {}))
+        target_patch_errors.extend(_document_numbering_assignment_errors(target_found[1], target_record, merged_target if isinstance(merged_target, dict) else {}, target_found[2], lifecycle_event="save"))
         if target_patch_errors:
             for ent_id, rec_id in created_children:
                 generic_records.delete(ent_id, rec_id)
             generic_records.delete(target_entity, target_id)
             return _validation_response(target_patch_errors, [])
+        before_target_record = target_record if isinstance(target_record, dict) else None
         target_updated = _update_record_with_computed_fields(request, target_entity, target_found[1], target_id, merged_target)
         _, target_record = _unwrap_store_record(target_updated if isinstance(target_updated, dict) else None)
+        try:
+            target_record = _apply_document_numbering_after_write(
+                request,
+                target_found[1],
+                target_id,
+                before_target_record,
+                target_record if isinstance(target_record, dict) else merged_target,
+                actor,
+                target_found[2],
+                lifecycle_event="save",
+            )
+        except SequenceError as exc:
+            return _sequence_error_response(exc)
         _resp_cache_invalidate_record(target_entity, target_id)
         _resp_cache_invalidate_entity(target_entity)
 
@@ -15078,7 +15771,7 @@ def _run_transform_record_action(
         {
             "result": {
                 "record_id": target_id,
-                "record": target_record,
+                "record": _mask_record_for_actor(actor, target_found[0], target_found[1], target_record) if _record_visible_for_actor(actor, target_found[0], target_entity, target_record) else None,
                 "entity_id": target_entity,
                 "kind": "transform_record",
                 "transformation_key": transformation_key,
@@ -15117,6 +15810,9 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
         return _error_response("MODULE_DISABLED", "Module is disabled", "module_id", status=400)
     if manifest is None:
         return _error_response("MODULE_NOT_FOUND", "Module manifest not found", "module_id", status=404)
+    actor = getattr(request.state, "actor", None)
+    if not _module_visible_for_actor(actor, module_id):
+        return _error_response("FORBIDDEN", "Module access denied", "module_id", status=403)
 
     t0 = time.perf_counter()
     manifest_hash = module.get("current_hash") if isinstance(module, dict) else None
@@ -15127,10 +15823,11 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
     phase_ms["resolve_action"] = (time.perf_counter() - t0) * 1000
     if not action:
         return _error_response("ACTION_NOT_FOUND", "Action not found", "action_id", status=404)
+    if not _action_visible_for_actor(actor, module_id, action_id):
+        return _error_response("FORBIDDEN", "Action access denied", "action_id", status=403)
     kind = action.get("kind")
     if kind not in ALLOWED_ACTION_KINDS:
         return _error_response("ACTION_INVALID", "Action kind not allowed", "kind", status=400)
-    actor = getattr(request.state, "actor", None)
     if kind in {"create_record", "update_record", "bulk_update", "transform_record"}:
         denied = _require_capability(actor, "records.write", "Write access required")
         if denied:
@@ -15226,6 +15923,9 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
     if not found:
         return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "entity_id", status=404)
     entity_def = found[1]
+    denied = _entity_access_denied_response(actor, found[0], entity_id, write=(kind in {"create_record", "update_record", "bulk_update", "transform_record"}))
+    if denied:
+        return denied
 
     if kind == "create_record":
         t0 = time.perf_counter()
@@ -15237,6 +15937,9 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
         errors.extend(lookup_errors)
         domain_errors = _enforce_lookup_domains(entity_def, clean if isinstance(clean, dict) else {})
         errors.extend(domain_errors)
+        errors.extend(_field_write_policy_errors(actor, found[0], entity_def, clean if isinstance(clean, dict) else {}))
+        errors.extend(_document_numbering_write_errors(actor, entity_def, None, clean if isinstance(clean, dict) else {}))
+        errors.extend(_document_numbering_assignment_errors(entity_def, None, clean if isinstance(clean, dict) else {}, found[2], lifecycle_event="create"))
         if errors:
             _log_record_validation_errors(entity_id, values, errors, workflow)
             return _validation_response(errors, [])
@@ -15259,6 +15962,20 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
         created_record = record.get("record") if isinstance(record, dict) else None
         created_id = record.get("record_id") if isinstance(record, dict) else None
         if created_id and isinstance(created_record, dict):
+            try:
+                created_record = _apply_document_numbering_after_write(
+                    request,
+                    entity_def,
+                    created_id,
+                    None,
+                    created_record,
+                    actor,
+                    found[2],
+                    lifecycle_event="create",
+                )
+                record["record"] = created_record
+            except SequenceError as exc:
+                return _sequence_error_response(exc)
             _activity_add_record_created_event(entity_def, created_id, created_record, actor=getattr(request.state, "user", None))
             _activity_add_action_event(
                 entity_def.get("id"),
@@ -15307,7 +16024,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
             },
             action_id=action_id,
         )
-        return _ok_response({"result": {"record_id": record["record_id"], "record": record["record"], "entity_id": entity_id}})
+        return _ok_response({"result": {"record_id": record["record_id"], "record": _mask_record_for_actor(actor, found[0], entity_def, record["record"]), "entity_id": entity_id}})
 
     patch = action.get("patch") if isinstance(action.get("patch"), dict) else {}
     patch = _resolve_action_templates(patch, context)
@@ -15321,10 +16038,21 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
             found_entity_id = entity_id
         if not existing:
             return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
+        denied = _entity_access_denied_response(actor, found[0], found_entity_id, write=True)
+        if denied:
+            return denied
+        existing_record = existing.get("record") if isinstance(existing, dict) else None
+        if not isinstance(existing_record, dict) or not _record_visible_for_actor(actor, found[0], found_entity_id, existing_record):
+            return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
+        if not _record_write_allowed_for_actor(actor, found[0], found_entity_id, existing_record):
+            return _error_response("FORBIDDEN", "Record write access denied", "record_id", status=403)
         phase_ms["load_record"] = (time.perf_counter() - t0) * 1000
         t0 = time.perf_counter()
         workflow = _find_entity_workflow(found[2], entity_def.get("id"))
-        errors, updated = _validate_patch_payload(entity_def, patch, existing.get("record") or {}, workflow=workflow)
+        errors, updated = _validate_patch_payload(entity_def, patch, existing_record or {}, workflow=workflow)
+        errors.extend(_field_write_policy_errors(actor, found[0], entity_def, patch if isinstance(patch, dict) else {}))
+        errors.extend(_document_numbering_write_errors(actor, entity_def, existing_record, updated if isinstance(updated, dict) else {}))
+        errors.extend(_document_numbering_assignment_errors(entity_def, existing_record, updated if isinstance(updated, dict) else {}, found[2], lifecycle_event="save"))
         if errors:
             _log_record_validation_errors(entity_id, patch, errors, workflow)
             return _validation_response(errors, [])
@@ -15344,14 +16072,29 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                     status=400,
                 )
             raise
+        after_record = record.get("record") if isinstance(record, dict) else None
+        before_record = existing.get("record") if isinstance(existing, dict) else None
+        if isinstance(after_record, dict):
+            try:
+                after_record = _apply_document_numbering_after_write(
+                    request,
+                    entity_def,
+                    record_id,
+                    before_record,
+                    after_record,
+                    actor,
+                    found[2],
+                    lifecycle_event="save",
+                )
+                record["record"] = after_record
+            except SequenceError as exc:
+                return _sequence_error_response(exc)
         _add_chatter_entry(target_entity_id, record_id, "system", "Record updated", getattr(request.state, "user", None))
         _resp_cache_invalidate_record(target_entity_id, record_id)
         _resp_cache_invalidate_entity(target_entity_id)
         phase_ms["write"] = (time.perf_counter() - t0) * 1000
         phase_ms["total"] = (time.perf_counter() - action_start) * 1000
         _action_logger.info("action_perf=%s", {"action_id": action_id, "kind": kind, "ms": phase_ms})
-        after_record = record.get("record") if isinstance(record, dict) else None
-        before_record = existing.get("record") if isinstance(existing, dict) else None
         changed = _changed_fields(before_record or {}, after_record or {})
         activity_cfg = _activity_view_config(found[2], entity_def.get("id"))
         if isinstance(after_record, dict) and isinstance(before_record, dict) and isinstance(activity_cfg, dict):
@@ -15445,7 +16188,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
             },
             action_id=action_id,
         )
-        return _ok_response({"result": {"record_id": record["record_id"], "record": record["record"], "entity_id": entity_id}})
+        return _ok_response({"result": {"record_id": record["record_id"], "record": _mask_record_for_actor(actor, found[0], entity_def, record["record"]), "entity_id": entity_id}})
 
     if kind == "bulk_update":
         t0 = time.perf_counter()
@@ -15464,6 +16207,10 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
             if not existing:
                 continue
             before_record = existing.get("record") if isinstance(existing, dict) else {}
+            if not isinstance(before_record, dict) or not _record_visible_for_actor(actor, found[0], target_entity_id, before_record):
+                return _error_response("RECORD_NOT_FOUND", "Record not found", "selected_ids", status=404)
+            if not _record_write_allowed_for_actor(actor, found[0], target_entity_id, before_record):
+                return _error_response("FORBIDDEN", "Record write access denied", "selected_ids", status=403)
             updated = dict(before_record or {})
             updated.update(patch)
             workflow = _find_entity_workflow(found[2], entity_def.get("id"))
@@ -15472,6 +16219,9 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
             errors.extend(lookup_errors)
             domain_errors = _enforce_lookup_domains(entity_def, clean if isinstance(clean, dict) else {})
             errors.extend(domain_errors)
+            errors.extend(_field_write_policy_errors(actor, found[0], entity_def, patch if isinstance(patch, dict) else {}))
+            errors.extend(_document_numbering_write_errors(actor, entity_def, before_record, clean if isinstance(clean, dict) else {}))
+            errors.extend(_document_numbering_assignment_errors(entity_def, before_record, clean if isinstance(clean, dict) else {}, found[2], lifecycle_event="save"))
             if errors:
                 return _validation_response(errors, [])
             updated_record = _update_record_with_computed_fields(request, target_entity_id, entity_def, record_id, clean)
@@ -15479,6 +16229,21 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
             updated_count += 1
             updated_ids.append(record_id)
             after_record = updated_record.get("record") if isinstance(updated_record, dict) else None
+            if isinstance(after_record, dict):
+                try:
+                    after_record = _apply_document_numbering_after_write(
+                        request,
+                        entity_def,
+                        record_id,
+                        before_record,
+                        after_record,
+                        actor,
+                        found[2],
+                        lifecycle_event="save",
+                    )
+                    updated_record["record"] = after_record
+                except SequenceError as exc:
+                    return _sequence_error_response(exc)
             if isinstance(after_record, dict):
                 last_updated_record = after_record
             changed = _changed_fields(before_record or {}, after_record or {})
@@ -30085,10 +30850,16 @@ async def octo_ai_get_artifact(request: Request, artifact_type: str, artifact_ke
 
 @app.post("/lookup/{entity_id}/options")
 async def lookup_options(request: Request, entity_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
     entity_id = _normalize_entity_id(entity_id)
     found = _find_entity_def(request, entity_id)
     if not found:
         return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "entity_id", status=404)
+    denied = _entity_access_denied_response(actor, found[0], entity_id, write=False)
+    if denied:
+        return denied
     actor_ctx = _actor_domain_context(getattr(request.state, "actor", None))
     body = await _safe_json(request)
     q = body.get("q") if isinstance(body, dict) else None
@@ -30118,6 +30889,7 @@ async def lookup_options(request: Request, entity_id: str) -> dict:
         items = generic_records.list_lookup(entity_id, display_field, limit=limit_cap, q=q)
     if domain:
         items = _filter_records_by_domain(items, domain, record_context or {}, actor_ctx)
+    items = _filter_record_items_for_actor(actor, found[0], found[1], items)
     if isinstance(limit_cap, int) and limit_cap > 0:
         items = items[:limit_cap]
     response = _ok_response({"records": items})
@@ -30142,6 +30914,12 @@ async def aggregate_records(
     found = _find_entity_def(request, entity_id)
     if not found:
         return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "entity_id", status=404)
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _entity_access_denied_response(actor, found[0], entity_id, write=False)
+    if denied:
+        return denied
     if not isinstance(group_by, str) or not group_by:
         return _error_response("AGGREGATE_INVALID", "group_by is required", "group_by", status=400)
     fields_list = [f.strip() for f in search_fields.split(",")] if isinstance(search_fields, str) and search_fields.strip() else None
@@ -30157,6 +30935,7 @@ async def aggregate_records(
     items = generic_records.list(entity_id, limit=limit_cap, q=q, search_fields=fields_list)
     if parsed_domain:
         items = _filter_records_by_domain(items, parsed_domain, {}, actor_ctx)
+    items = _filter_record_items_for_actor(actor, found[0], found[1], items)
     if isinstance(limit_cap, int) and limit_cap > 0:
         items = items[:limit_cap]
     if not isinstance(measure, str) or not measure:
@@ -30200,6 +30979,12 @@ async def pivot_records(
     found = _find_entity_def(request, entity_id)
     if not found:
         return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "entity_id", status=404)
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _entity_access_denied_response(actor, found[0], entity_id, write=False)
+    if denied:
+        return denied
     if not isinstance(row_group_by, str) or not row_group_by:
         return _error_response("PIVOT_INVALID", "row_group_by is required", "row_group_by", status=400)
     fields_list = [f.strip() for f in search_fields.split(",")] if isinstance(search_fields, str) and search_fields.strip() else None
@@ -30215,6 +31000,7 @@ async def pivot_records(
     items = generic_records.list(entity_id, limit=limit_cap, q=q, search_fields=fields_list)
     if parsed_domain:
         items = _filter_records_by_domain(items, parsed_domain, {}, actor_ctx)
+    items = _filter_record_items_for_actor(actor, found[0], found[1], items)
     if isinstance(limit_cap, int) and limit_cap > 0:
         items = items[:limit_cap]
     if not isinstance(measure, str) or not measure:
@@ -30292,7 +31078,7 @@ async def system_interface_sources(request: Request, kind: str | None = None) ->
     if kind is not None and kind not in allowed_kinds:
         return _error_response("INTERFACE_INVALID", "kind must be schedulable|documentable|dashboardable", "kind", status=400)
     kinds = [kind] if isinstance(kind, str) else sorted(allowed_kinds)
-    data = {k: _collect_interface_sources(request, k) for k in kinds}
+    data = {k: _collect_interface_sources(request, k, actor) for k in kinds}
     return _ok_response({"sources": data})
 
 
@@ -30304,7 +31090,7 @@ async def system_calendar_sources(request: Request) -> dict:
     denied = _require_capability(actor, "records.read", "Read access required")
     if denied:
         return denied
-    sources = _collect_interface_sources(request, "schedulable")
+    sources = _collect_interface_sources(request, "schedulable", actor)
     return _ok_response({"sources": sources})
 
 
@@ -30331,7 +31117,7 @@ async def system_calendar_events(
     if isinstance(end, str) and end and end_dt is None:
         return _error_response("DATE_INVALID", "end must be ISO date/datetime", "end", status=400)
     limit_cap = max(1, min(int(limit or 500), 2000))
-    sources = _collect_interface_sources(request, "schedulable")
+    sources = _collect_interface_sources(request, "schedulable", actor)
     if source_key:
         selected = _find_source_by_key(sources, source_key)
         if not selected:
@@ -30342,8 +31128,12 @@ async def system_calendar_events(
     events: list[dict] = []
     for source in sources:
         entity_id = source.get("entity_id")
+        module_id = source.get("module_id")
         cfg = source.get("config") if isinstance(source.get("config"), dict) else {}
         if not isinstance(entity_id, str):
+            continue
+        found = _find_entity_def(request, entity_id)
+        if not found:
             continue
         date_start_field = cfg.get("date_start")
         title_field = cfg.get("title_field")
@@ -30356,6 +31146,7 @@ async def system_calendar_events(
                 fields.append(field_id)
         fields = list(dict.fromkeys(fields))
         items = _records_list_page_all(entity_id, fields=fields, q=q, search_fields=[title_field], cap=per_source_cap)
+        items = _filter_record_items_for_actor(actor, module_id if isinstance(module_id, str) else found[0], found[1], items)
         for item in items:
             record = item.get("record") if isinstance(item, dict) else None
             record_id = item.get("record_id") if isinstance(item, dict) else None
@@ -30406,7 +31197,7 @@ async def system_documents_sources(request: Request) -> dict:
     denied = _require_capability(actor, "records.read", "Read access required")
     if denied:
         return denied
-    sources = _collect_interface_sources(request, "documentable")
+    sources = _collect_interface_sources(request, "documentable", actor)
     return _ok_response({"sources": sources})
 
 
@@ -30425,7 +31216,7 @@ async def system_document_items(
     if denied:
         return denied
     limit_cap = max(1, min(int(limit or 500), 2000))
-    sources = _collect_interface_sources(request, "documentable")
+    sources = _collect_interface_sources(request, "documentable", actor)
     if source_key:
         selected = _find_source_by_key(sources, source_key)
         if not selected:
@@ -30436,8 +31227,12 @@ async def system_document_items(
     items_out: list[dict] = []
     for source in sources:
         entity_id = source.get("entity_id")
+        module_id = source.get("module_id")
         cfg = source.get("config") if isinstance(source.get("config"), dict) else {}
         if not isinstance(entity_id, str):
+            continue
+        found = _find_entity_def(request, entity_id)
+        if not found:
             continue
         attachment_field = cfg.get("attachment_field")
         if not isinstance(attachment_field, str) or not attachment_field:
@@ -30454,6 +31249,7 @@ async def system_document_items(
         fields = list(dict.fromkeys(fields))
         search_fields = [title_field] if isinstance(title_field, str) and title_field else None
         records = _records_list_page_all(entity_id, fields=fields, q=q, search_fields=search_fields, cap=per_source_cap)
+        records = _filter_record_items_for_actor(actor, module_id if isinstance(module_id, str) else found[0], found[1], records)
         for item in records:
             record = item.get("record") if isinstance(item, dict) else None
             record_id = item.get("record_id") if isinstance(item, dict) else None
@@ -30506,7 +31302,7 @@ async def system_dashboard_sources(request: Request) -> dict:
     denied = _require_capability(actor, "records.read", "Read access required")
     if denied:
         return denied
-    sources = _collect_interface_sources(request, "dashboardable")
+    sources = _collect_interface_sources(request, "dashboardable", actor)
     return _ok_response({"sources": sources})
 
 
@@ -30529,14 +31325,18 @@ async def system_dashboard_query(request: Request) -> dict:
     q = body.get("q") if isinstance(body, dict) else None
     source_filter = body.get("filter") if isinstance(body, dict) else None
     actor_ctx = _actor_domain_context(actor)
-    sources = _collect_interface_sources(request, "dashboardable")
+    sources = _collect_interface_sources(request, "dashboardable", actor)
     source = _find_source_by_key(sources, source_key)
     if not source:
         return _error_response("SOURCE_NOT_FOUND", "source_key not found", "source_key", status=404)
     cfg = source.get("config") if isinstance(source.get("config"), dict) else {}
     entity_id = source.get("entity_id")
+    module_id = source.get("module_id")
     if not isinstance(entity_id, str):
         return _error_response("SOURCE_INVALID", "source entity missing", "source_key", status=400)
+    found = _find_entity_def(request, entity_id)
+    if not found:
+        return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "source_key", status=404)
     limit_cap = max(1, min(int(limit or 2000), 5000))
     date_field_effective = date_field if isinstance(date_field, str) and date_field else (cfg.get("date_field") if isinstance(cfg.get("date_field"), str) else None)
     fields: list[str] = []
@@ -30548,6 +31348,7 @@ async def system_dashboard_query(request: Request) -> dict:
         fields.append(date_field_effective)
     fields = list(dict.fromkeys([f for f in fields if isinstance(f, str) and f]))
     items = _records_list_page_all(entity_id, fields=fields or None, q=q, cap=limit_cap)
+    items = _filter_record_items_for_actor(actor, module_id if isinstance(module_id, str) else found[0], found[1], items)
     start_dt = _to_datetime(start) if isinstance(start, str) and start else None
     end_dt = _to_datetime(end) if isinstance(end, str) and end else None
     filtered: list[dict] = []
@@ -30672,6 +31473,9 @@ async def list_generic_records(
     found = _find_entity_def(request, entity_id)
     if not found:
         return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "entity_id", status=404)
+    denied = _entity_access_denied_response(actor, found[0], entity_id, write=False)
+    if denied:
+        return denied
     limit_cap = limit if isinstance(limit, int) and limit > 0 else 50
     if limit_cap > 200:
         limit_cap = 200
@@ -30719,8 +31523,9 @@ async def list_generic_records(
                 slim["id"] = record.get("id")
             trimmed.append({"record_id": item.get("record_id"), "record": slim})
         items = trimmed
+    visible_items = _filter_record_items_for_actor(actor, found[0], found[1], items)
     payload = {
-        "records": items,
+        "records": visible_items,
         "pagination": _ext_api_pagination_meta(limit=limit_cap, offset=offset_val, next_cursor=next_cursor),
     }
     if next_cursor:
@@ -31356,6 +32161,9 @@ async def create_generic_record(request: Request, entity_id: str) -> dict:
     found = _find_entity_def(request, entity_id)
     if not found:
         return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "entity_id", status=404)
+    denied = _entity_access_denied_response(actor, found[0], entity_id, write=True)
+    if denied:
+        return denied
     body = await _safe_json(request)
     data = body.get("record") if isinstance(body, dict) and "record" in body else body
     workflow = _find_entity_workflow(found[2], found[1].get("id"))
@@ -31364,6 +32172,9 @@ async def create_generic_record(request: Request, entity_id: str) -> dict:
     errors.extend(lookup_errors)
     domain_errors = _enforce_lookup_domains(found[1], clean if isinstance(clean, dict) else {})
     errors.extend(domain_errors)
+    errors.extend(_field_write_policy_errors(actor, found[0], found[1], clean if isinstance(clean, dict) else {}))
+    errors.extend(_document_numbering_write_errors(actor, found[1], None, clean if isinstance(clean, dict) else {}))
+    errors.extend(_document_numbering_assignment_errors(found[1], None, clean if isinstance(clean, dict) else {}, found[2], lifecycle_event="create"))
     if errors:
         _log_record_validation_errors(entity_id, data if isinstance(data, dict) else {}, errors, workflow)
         return _validation_response(errors, [])
@@ -31380,10 +32191,24 @@ async def create_generic_record(request: Request, entity_id: str) -> dict:
                 status=400,
             )
         raise
-    _resp_cache_invalidate_entity(entity_id)
     record_id = record.get("record_id") if isinstance(record, dict) else None
     record_payload = record.get("record") if isinstance(record, dict) else None
     if record_id and isinstance(record_payload, dict):
+        try:
+            record_payload = _apply_document_numbering_after_write(
+                request,
+                found[1],
+                record_id,
+                None,
+                record_payload,
+                actor,
+                found[2],
+                lifecycle_event="create",
+            )
+        except SequenceError as exc:
+            return _sequence_error_response(exc)
+        _resp_cache_invalidate_record(entity_id, record_id)
+        _resp_cache_invalidate_entity(entity_id)
         _add_chatter_entry(entity_id, record_id, "system", "Record created", getattr(request.state, "user", None))
         _activity_add_record_created_event(found[1], record_id, record_payload, actor=getattr(request.state, "user", None))
         created_snapshot = _automation_record_snapshot(record_payload, found[1])
@@ -31402,7 +32227,7 @@ async def create_generic_record(request: Request, entity_id: str) -> dict:
             },
             entity_id=found[1].get("id"),
         )
-        return _ok_response({"record_id": record_id, "record": record_payload})
+        return _ok_response({"record_id": record_id, "record": _mask_record_for_actor(actor, found[0], found[1], record_payload)})
     if "id" in record:
         return _ok_response({"record_id": record["id"], "record": record})
     return _ok_response({"record": record})
@@ -31420,7 +32245,10 @@ async def get_generic_record(request: Request, entity_id: str, record_id: str) -
     found = _find_entity_def(request, entity_id)
     if not found:
         return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "entity_id", status=404)
-    cache_key = f"records:get:{get_org_id()}:{entity_id}:{record_id}"
+    denied = _entity_access_denied_response(actor, found[0], entity_id, write=False)
+    if denied:
+        return denied
+    cache_key = f"records:get:{get_org_id()}:{entity_id}:{record_id}:{actor.get('user_id') or ''}"
     cached = _resp_cache_get(cache_key)
     if cached is not None:
         logger.info("cache_hit=record_get key=%s", cache_key)
@@ -31431,7 +32259,9 @@ async def get_generic_record(request: Request, entity_id: str, record_id: str) -
     resolved_id, resolved_record = _unwrap_store_record(record if isinstance(record, dict) else None)
     if not isinstance(resolved_id, str) or not isinstance(resolved_record, dict):
         return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
-    response = _ok_response({"record": resolved_record, "record_id": resolved_id})
+    if not _record_visible_for_actor(actor, found[0], entity_id, resolved_record):
+        return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
+    response = _ok_response({"record": _mask_record_for_actor(actor, found[0], found[1], resolved_record), "record_id": resolved_id})
     _resp_cache_set(cache_key, response)
     logger.info("cache_miss=record_get key=%s", cache_key)
     return response
@@ -31449,6 +32279,9 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
     found = _find_entity_def(request, entity_id)
     if not found:
         return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "entity_id", status=404)
+    denied = _entity_access_denied_response(actor, found[0], entity_id, write=True)
+    if denied:
+        return denied
     body = await _safe_json(request)
     data = body.get("record") if isinstance(body, dict) and "record" in body else body
     workflow = _find_entity_workflow(found[2], found[1].get("id"))
@@ -31457,6 +32290,7 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
     errors.extend(lookup_errors)
     domain_errors = _enforce_lookup_domains(found[1], clean if isinstance(clean, dict) else {})
     errors.extend(domain_errors)
+    errors.extend(_field_write_policy_errors(actor, found[0], found[1], clean if isinstance(clean, dict) else {}))
     if errors:
         _log_record_validation_errors(entity_id, data if isinstance(data, dict) else {}, errors, workflow)
         return _validation_response(errors, [])
@@ -31464,6 +32298,18 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
     if not existing:
         return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
     before_record = existing.get("record") if isinstance(existing, dict) else None
+    if not isinstance(before_record, dict) or not _record_visible_for_actor(actor, found[0], entity_id, before_record):
+        return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
+    if not _record_write_allowed_for_actor(actor, found[0], entity_id, before_record):
+        return _error_response("FORBIDDEN", "Record write access denied", "record_id", status=403)
+    numbering_write_errors = _document_numbering_write_errors(actor, found[1], before_record, clean if isinstance(clean, dict) else {})
+    if numbering_write_errors:
+        _log_record_validation_errors(entity_id, data if isinstance(data, dict) else {}, numbering_write_errors, workflow)
+        return _validation_response(numbering_write_errors, [])
+    assignment_errors = _document_numbering_assignment_errors(found[1], before_record, clean if isinstance(clean, dict) else {}, found[2], lifecycle_event="save")
+    if assignment_errors:
+        _log_record_validation_errors(entity_id, data if isinstance(data, dict) else {}, assignment_errors, workflow)
+        return _validation_response(assignment_errors, [])
     try:
         record = _update_record_with_computed_fields(request, entity_id, found[1], record_id, clean)
     except Exception as exc:
@@ -31477,10 +32323,24 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
                 status=400,
             )
         raise
-    _resp_cache_invalidate_record(entity_id, record_id)
-    _resp_cache_invalidate_entity(entity_id)
     after_record = record.get("record") if isinstance(record, dict) else None
     if isinstance(after_record, dict) and isinstance(before_record, dict):
+        try:
+            after_record = _apply_document_numbering_after_write(
+                request,
+                found[1],
+                record_id,
+                before_record,
+                after_record,
+                actor,
+                found[2],
+                lifecycle_event="save",
+            )
+            record["record"] = after_record
+        except SequenceError as exc:
+            return _sequence_error_response(exc)
+        _resp_cache_invalidate_record(entity_id, record_id)
+        _resp_cache_invalidate_entity(entity_id)
         activity_cfg = _activity_view_config(found[2], found[1].get("id"))
         if isinstance(activity_cfg, dict) and activity_cfg.get("show_changes", True) is not False:
             tracked_fields = activity_cfg.get("tracked_fields") if isinstance(activity_cfg.get("tracked_fields"), list) else None
@@ -31545,7 +32405,7 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
                 entity_id=found[1].get("id"),
                 status_field=status_field,
             )
-    return _ok_response({"record": record["record"], "record_id": record["record_id"]})
+    return _ok_response({"record": _mask_record_for_actor(actor, found[0], found[1], record["record"]), "record_id": record["record_id"]})
 
 
 @app.delete("/records/{entity_id}/{record_id}")
@@ -31560,9 +32420,17 @@ async def delete_generic_record(request: Request, entity_id: str, record_id: str
     found = _find_entity_def(request, entity_id)
     if not found:
         return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "entity_id", status=404)
+    denied = _entity_access_denied_response(actor, found[0], entity_id, write=True)
+    if denied:
+        return denied
     existing = generic_records.get(entity_id, record_id)
     if not existing:
         return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
+    before_record = existing.get("record") if isinstance(existing, dict) else None
+    if not isinstance(before_record, dict) or not _record_visible_for_actor(actor, found[0], entity_id, before_record):
+        return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
+    if not _record_write_allowed_for_actor(actor, found[0], entity_id, before_record):
+        return _error_response("FORBIDDEN", "Record write access denied", "record_id", status=403)
     generic_records.delete(entity_id, record_id)
     _recompute_aggregate_dependents(request, entity_id)
     _resp_cache_invalidate_record(entity_id, record_id)
@@ -31582,6 +32450,15 @@ async def list_chatter(request: Request, entity_id: str, record_id: str, limit: 
     found = _find_entity_def(request, entity_id)
     if not found:
         return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "entity_id", status=404)
+    denied = _entity_access_denied_response(actor, found[0], entity_id, write=False)
+    if denied:
+        return denied
+    existing = generic_records.get(entity_id, record_id)
+    if not existing:
+        return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
+    existing_record = existing.get("record") if isinstance(existing, dict) else None
+    if not isinstance(existing_record, dict) or not _record_visible_for_actor(actor, found[0], entity_id, existing_record):
+        return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
     limit_cap = limit if isinstance(limit, int) and limit > 0 else 50
     cache_key = f"chatter:{get_org_id()}:{entity_id}:{record_id}:{limit_cap}"
     cached = _resp_cache_get(cache_key)
@@ -31616,8 +32493,14 @@ async def list_activity(
     found = _find_entity_def(request, normalized_entity)
     if not found:
         return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "entity_id", status=404)
+    denied = _entity_access_denied_response(actor, found[0], normalized_entity, write=False)
+    if denied:
+        return denied
     existing = generic_records.get(normalized_entity, record_id)
     if not existing:
+        return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
+    existing_record = existing.get("record") if isinstance(existing, dict) else None
+    if not isinstance(existing_record, dict) or not _record_visible_for_actor(actor, found[0], normalized_entity, existing_record):
         return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
     limit_cap = max(1, min(int(limit or 50), 200))
 
@@ -31960,6 +32843,7 @@ async def access_context(request: Request) -> dict:
     if actor.get("platform_role") == "superadmin":
         workspaces = list_all_workspaces()
     workspaces = _annotate_access_workspaces(workspaces, actor)
+    policy = _access_policy_for_actor(actor)
     return _ok_response(
         {
             "actor": {
@@ -31971,6 +32855,15 @@ async def access_context(request: Request) -> dict:
             },
             "workspaces": workspaces,
             "permissions": _actor_permissions(actor),
+            "policy": {
+                "profile_ids": policy.get("profile_ids", []),
+                "profiles": policy.get("profiles", []),
+                "module_access": policy.get("module_access", {}),
+                "entity_access": policy.get("entity_access", {}),
+                "entity_scope_rules": policy.get("entity_scope_rules", {}),
+                "field_access": policy.get("field_access", {}),
+                "action_access": policy.get("action_access", {}),
+            },
         }
     )
 
@@ -32029,7 +32922,28 @@ async def access_members(request: Request) -> dict:
     if isinstance(actor, JSONResponse):
         return actor
     members = list_workspace_members(actor.get("workspace_id"))
-    return _ok_response({"members": members})
+    assignments = list_workspace_access_assignments(actor.get("workspace_id"))
+    profiles_by_user: dict[str, list[dict]] = {}
+    for row in assignments:
+        user_id = row.get("user_id")
+        if not isinstance(user_id, str) or not user_id:
+            continue
+        profiles_by_user.setdefault(user_id, []).append(
+            {
+                "id": row.get("profile_id"),
+                "profile_key": row.get("profile_key"),
+                "name": row.get("name"),
+                "description": row.get("description"),
+            }
+        )
+    enriched = []
+    for member in members:
+        user_id = member.get("user_id")
+        row = dict(member)
+        row["access_profiles"] = profiles_by_user.get(user_id, [])
+        row["access_profile_ids"] = [profile.get("id") for profile in row["access_profiles"] if isinstance(profile.get("id"), str)]
+        enriched.append(row)
+    return _ok_response({"members": enriched})
 
 
 @app.post("/access/members/invite")
@@ -32081,6 +32995,7 @@ async def invite_workspace_member(request: Request) -> dict:
         )
         invite_pending = True
     members = list_workspace_members(actor.get("workspace_id"))
+    _invalidate_access_runtime_caches(actor.get("workspace_id"), invited_user_id if isinstance(invited_user_id, str) else None)
     return _ok_response(
         {
             "member": member,
@@ -32174,6 +33089,7 @@ async def update_member_role(request: Request, user_id: str) -> dict:
     if not updated:
         updated = add_workspace_member(workspace_id, user_id, role)
     members = list_workspace_members(workspace_id)
+    _invalidate_access_runtime_caches(workspace_id, user_id)
     return _ok_response({"member": updated, "members": members})
 
 
@@ -32218,6 +33134,7 @@ async def delete_member(request: Request, user_id: str) -> dict:
             add_workspace_member(workspace_id, user_id, role)
             return _error_response("DELETE_AUTH_FAILED", str(exc), "delete_auth_user", status=400)
     members = list_workspace_members(workspace_id)
+    _invalidate_access_runtime_caches(workspace_id, user_id)
     return _ok_response({"ok": True, "members": members, "auth_deleted": delete_auth_user})
 
 
@@ -32243,6 +33160,182 @@ async def update_member_email(request: Request, user_id: str) -> dict:
     return _ok_response({"ok": True, "user": result.get("user") or result, "members": members})
 
 
+@app.patch("/access/members/{user_id}/profiles")
+async def update_member_profiles(request: Request, user_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_capability(actor, "workspace.manage_members", "Admin role required")
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    profile_ids = body.get("profile_ids") if isinstance(body, dict) else None
+    if profile_ids is None:
+        profile_ids = []
+    if not isinstance(profile_ids, list):
+        return _error_response("INVALID_BODY", "profile_ids must be a list", "profile_ids", status=400)
+    try:
+        assigned = replace_workspace_user_access_profiles(actor.get("workspace_id"), user_id, profile_ids)
+    except ValueError as exc:
+        return _error_response("PROFILE_INVALID", str(exc), "profile_ids", status=400)
+    _invalidate_access_runtime_caches(actor.get("workspace_id"), user_id)
+    return _ok_response({"user_id": user_id, "access_profiles": assigned})
+
+
+@app.get("/access/profiles")
+async def access_profiles(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_capability(actor, "workspace.manage_members", "Admin role required")
+    if denied:
+        return denied
+    workspace_id = actor.get("workspace_id")
+    profiles = list_workspace_access_profiles(workspace_id)
+    for profile in profiles:
+        profile_id = profile.get("id")
+        if isinstance(profile_id, str):
+            profile["rules"] = list_workspace_access_rules(workspace_id, profile_id)
+    return _ok_response({"profiles": profiles})
+
+@app.post("/access/profiles")
+async def create_access_profile(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_capability(actor, "workspace.manage_members", "Admin role required")
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    name = (body.get("name") or "").strip()
+    if not name:
+        return _error_response("NAME_REQUIRED", "Profile name is required", "name", status=400)
+    profile = create_workspace_access_profile(
+        actor.get("workspace_id"),
+        name=name,
+        description=body.get("description"),
+        profile_key=body.get("profile_key"),
+    )
+    _invalidate_access_runtime_caches(actor.get("workspace_id"))
+    return _ok_response({"profile": profile})
+
+
+@app.patch("/access/profiles/{profile_id}")
+async def patch_access_profile(request: Request, profile_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_capability(actor, "workspace.manage_members", "Admin role required")
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    profile = update_workspace_access_profile(
+        actor.get("workspace_id"),
+        profile_id,
+        name=body.get("name") if "name" in body else None,
+        description=body.get("description") if "description" in body else None,
+        profile_key=body.get("profile_key") if "profile_key" in body else None,
+    )
+    if not profile:
+        return _error_response("PROFILE_NOT_FOUND", "Profile not found", "profile_id", status=404)
+    _invalidate_access_runtime_caches(actor.get("workspace_id"))
+    return _ok_response({"profile": profile})
+
+
+@app.delete("/access/profiles/{profile_id}")
+async def remove_access_profile(request: Request, profile_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_capability(actor, "workspace.manage_members", "Admin role required")
+    if denied:
+        return denied
+    ok = delete_workspace_access_profile(actor.get("workspace_id"), profile_id)
+    if not ok:
+        return _error_response("PROFILE_NOT_FOUND", "Profile not found", "profile_id", status=404)
+    _invalidate_access_runtime_caches(actor.get("workspace_id"))
+    return _ok_response({"deleted": True})
+
+
+@app.post("/access/profiles/{profile_id}/rules")
+async def add_access_profile_rule(request: Request, profile_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_capability(actor, "workspace.manage_members", "Admin role required")
+    if denied:
+        return denied
+    if not get_workspace_access_profile(actor.get("workspace_id"), profile_id):
+        return _error_response("PROFILE_NOT_FOUND", "Profile not found", "profile_id", status=404)
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    resource_type, access_level = normalize_policy_rule(body.get("resource_type"), body.get("access_level"))
+    if not resource_type:
+        return _error_response("RULE_INVALID", "Invalid resource_type", "resource_type", status=400)
+    if not access_level:
+        return _error_response("RULE_INVALID", "Invalid access_level", "access_level", status=400)
+    resource_id = (body.get("resource_id") or "").strip()
+    if not resource_id:
+        return _error_response("RULE_INVALID", "resource_id is required", "resource_id", status=400)
+    condition_json = body.get("condition_json") if isinstance(body.get("condition_json"), dict) else None
+    if "condition_json" in body and body.get("condition_json") is not None and not isinstance(body.get("condition_json"), dict):
+        return _error_response("RULE_INVALID", "condition_json must be an object", "condition_json", status=400)
+    rule = create_workspace_access_rule(
+        actor.get("workspace_id"),
+        profile_id,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        access_level=access_level,
+        priority=int(body.get("priority") or 100),
+        condition_json=condition_json,
+    )
+    _invalidate_access_runtime_caches(actor.get("workspace_id"))
+    return _ok_response({"rule": rule})
+
+
+@app.patch("/access/profiles/{profile_id}/rules/{rule_id}")
+async def patch_access_profile_rule(request: Request, profile_id: str, rule_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_capability(actor, "workspace.manage_members", "Admin role required")
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    resource_type = body.get("resource_type") if "resource_type" in body else None
+    access_level = body.get("access_level") if "access_level" in body else None
+    if resource_type is not None or access_level is not None:
+        normalized_type, normalized_level = normalize_policy_rule(resource_type or "", access_level or "")
+        if resource_type is not None and not normalized_type:
+            return _error_response("RULE_INVALID", "Invalid resource_type", "resource_type", status=400)
+        if access_level is not None and not normalized_level:
+            return _error_response("RULE_INVALID", "Invalid access_level", "access_level", status=400)
+        if resource_type is not None:
+            resource_type = normalized_type
+        if access_level is not None:
+            access_level = normalized_level
+    rule = update_workspace_access_rule(
+        actor.get("workspace_id"),
+        profile_id,
+        rule_id,
+        resource_type=resource_type,
+        resource_id=(body.get("resource_id") or "").strip() if "resource_id" in body else None,
+        access_level=access_level,
+        priority=int(body.get("priority")) if body.get("priority") is not None else None,
+        condition_json=body.get("condition_json") if isinstance(body.get("condition_json"), dict) else None,
+    )
+    if not rule:
+        return _error_response("RULE_NOT_FOUND", "Rule not found", "rule_id", status=404)
+    _invalidate_access_runtime_caches(actor.get("workspace_id"))
+    return _ok_response({"rule": rule})
+
+
+@app.delete("/access/profiles/{profile_id}/rules/{rule_id}")
+async def remove_access_profile_rule(request: Request, profile_id: str, rule_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_capability(actor, "workspace.manage_members", "Admin role required")
+    if denied:
+        return denied
+    ok = delete_workspace_access_rule(actor.get("workspace_id"), profile_id, rule_id)
+    if not ok:
+        return _error_response("RULE_NOT_FOUND", "Rule not found", "rule_id", status=404)
+    _invalidate_access_runtime_caches(actor.get("workspace_id"))
+    return _ok_response({"deleted": True})
+
+
 @app.patch("/access/platform-role/{user_id}")
 async def update_platform_role(request: Request, user_id: str) -> dict:
     actor = _resolve_actor(request)
@@ -32256,6 +33349,178 @@ async def update_platform_role(request: Request, user_id: str) -> dict:
         return _error_response("ROLE_INVALID", "Invalid platform role", "platform_role", status=400)
     row = set_platform_role(user_id, role)
     return _ok_response({"user": row})
+
+
+def _document_numbering_entities_meta(request: Request) -> list[dict]:
+    items: list[dict] = []
+    for module_id, manifest, entity_def in _iter_installed_entities(request):
+        entity_id = entity_def.get("id")
+        if not isinstance(entity_id, str) or not entity_id:
+            continue
+        fields_meta: list[dict] = []
+        for field in entity_def.get("fields") or []:
+            if not isinstance(field, dict):
+                continue
+            field_id = field.get("id")
+            field_type = field.get("type")
+            if not isinstance(field_id, str) or not field_id or not isinstance(field_type, str):
+                continue
+            if field_id == "id" or field_id.endswith(".id"):
+                continue
+            fields_meta.append(
+                {
+                    "id": field_id,
+                    "label": field.get("label") or field_id,
+                    "type": field_type,
+                    "readonly": field.get("readonly") is True,
+                }
+            )
+        workflow = _find_entity_workflow(manifest, entity_id)
+        status_field = workflow.get("status_field") if isinstance(workflow, dict) and isinstance(workflow.get("status_field"), str) else None
+        status_values = []
+        for state in (workflow.get("states") or []) if isinstance(workflow, dict) else []:
+            if not isinstance(state, dict):
+                continue
+            state_id = state.get("id")
+            if not isinstance(state_id, str) or not state_id:
+                continue
+            status_values.append({"id": state_id, "label": state.get("label") or state_id})
+        items.append(
+            {
+                "module_id": module_id,
+                "entity_id": entity_id,
+                "label": entity_def.get("label") or entity_id,
+                "display_field": entity_def.get("display_field"),
+                "fields": fields_meta,
+                "status_field": status_field,
+                "status_values": status_values,
+            }
+        )
+    items.sort(key=lambda item: (str(item.get("label") or ""), str(item.get("entity_id") or "")))
+    return items
+
+
+@app.get("/settings/document-numbering")
+async def list_document_numbering_settings(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "workspace.manage_settings", "Admin role required")
+    if denied:
+        return denied
+    workspace_name = next(
+        (
+            item.get("workspace_name")
+            for item in (actor.get("workspaces") or [])
+            if isinstance(item, dict) and item.get("workspace_id") == actor.get("workspace_id")
+        ),
+        None,
+    )
+    sequences = []
+    for item in list_document_sequences():
+        if not isinstance(item, dict):
+            continue
+        row = dict(item)
+        try:
+            row["next_value_preview"] = preview_document_number(
+                item,
+                context={"workspace_id": actor.get("workspace_id"), "workspace_name": workspace_name},
+            ).get("preview")
+            row["preview_error"] = None
+        except SequenceError as exc:
+            row["next_value_preview"] = None
+            row["preview_error"] = exc.message
+        sequences.append(row)
+    return _ok_response({"sequences": sequences})
+
+
+@app.get("/settings/document-numbering/meta")
+async def document_numbering_meta(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "workspace.manage_settings", "Admin role required")
+    if denied:
+        return denied
+    return _ok_response({"entities": _document_numbering_entities_meta(request)})
+
+
+@app.post("/settings/document-numbering/preview")
+async def preview_document_numbering_settings(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "workspace.manage_settings", "Admin role required")
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    workspace_name = next(
+        (
+            item.get("workspace_name")
+            for item in (actor.get("workspaces") or [])
+            if isinstance(item, dict) and item.get("workspace_id") == actor.get("workspace_id")
+        ),
+        None,
+    )
+    try:
+        preview = preview_document_number(
+            body,
+            context={"workspace_id": actor.get("workspace_id"), "workspace_name": workspace_name},
+        )
+    except SequenceError as exc:
+        return _sequence_error_response(exc)
+    return _ok_response(preview)
+
+
+@app.post("/settings/document-numbering")
+async def create_document_numbering_settings(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "workspace.manage_settings", "Admin role required")
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    try:
+        sequence = create_document_sequence(body, actor=actor)
+    except SequenceError as exc:
+        return _sequence_error_response(exc)
+    return _ok_response({"sequence": sequence})
+
+
+@app.patch("/settings/document-numbering/{sequence_id}")
+async def update_document_numbering_settings(request: Request, sequence_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "workspace.manage_settings", "Admin role required")
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    try:
+        sequence = update_document_sequence(sequence_id, body, actor=actor)
+    except SequenceError as exc:
+        return _sequence_error_response(exc)
+    if not sequence:
+        return _error_response("SEQUENCE_NOT_FOUND", "Sequence not found", "sequence_id", status=404)
+    return _ok_response({"sequence": sequence})
+
+
+@app.delete("/settings/document-numbering/{sequence_id}")
+async def delete_document_numbering_settings(request: Request, sequence_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "workspace.manage_settings", "Admin role required")
+    if denied:
+        return denied
+    existing = get_document_sequence(sequence_id)
+    if not existing:
+        return _error_response("SEQUENCE_NOT_FOUND", "Sequence not found", "sequence_id", status=404)
+    delete_document_sequence(sequence_id)
+    return _ok_response({"deleted": True, "sequence_id": sequence_id})
 
 
 # ---- Phase 1: Ops / Jobs ----
@@ -35067,6 +36332,8 @@ async def ext_patch_record(request: Request, entity_id: str, record_id: str) -> 
     errors.extend(lookup_errors)
     domain_errors = _enforce_lookup_domains(found[1], clean if isinstance(clean, dict) else {})
     errors.extend(domain_errors)
+    errors.extend(_document_numbering_write_errors(actor, found[1], before_record, clean if isinstance(clean, dict) else {}))
+    errors.extend(_document_numbering_assignment_errors(found[1], before_record, clean if isinstance(clean, dict) else {}, found[2], lifecycle_event="save"))
     if errors:
         _log_record_validation_errors(entity_id, merged, errors, workflow)
         return _validation_response(errors, [])
@@ -35083,10 +36350,24 @@ async def ext_patch_record(request: Request, entity_id: str, record_id: str) -> 
                 status=400,
             )
         raise
-    _resp_cache_invalidate_record(entity_id, record_id)
-    _resp_cache_invalidate_entity(entity_id)
     after_record = record.get("record") if isinstance(record, dict) else None
     if isinstance(after_record, dict):
+        try:
+            after_record = _apply_document_numbering_after_write(
+                request,
+                found[1],
+                record_id,
+                before_record,
+                after_record,
+                actor,
+                found[2],
+                lifecycle_event="save",
+            )
+            record["record"] = after_record
+        except SequenceError as exc:
+            return _sequence_error_response(exc)
+        _resp_cache_invalidate_record(entity_id, record_id)
+        _resp_cache_invalidate_entity(entity_id)
         changed = _changed_fields(before_record, after_record)
         before_snapshot = _automation_record_snapshot(before_record, found[1])
         after_snapshot = _automation_record_snapshot(after_record, found[1])

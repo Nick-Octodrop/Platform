@@ -1,0 +1,675 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "luke_invoices",
+    "key": "luke_invoices",
+    "name": "Invoices",
+    "version": "1.0.0",
+    "description": "Deposit, progress, final, and credit-note style billing for the N-Light prototype.",
+    "category": "Prototype",
+    "icon_key": "lucide:Receipt"
+  },
+  "depends_on": {
+    "required": [
+      { "module": "luke_contacts", "version": ">=1.0.0" },
+      { "module": "luke_products", "version": ">=1.0.0" }
+    ]
+  },
+  "app": {
+    "home": "page:nl_invoice.list_page",
+    "defaults": {
+      "entity_home_page": "page:nl_invoice.list_page",
+      "entity_form_page": "page:nl_invoice.form_page",
+      "entities": {
+        "entity.nl_invoice": {
+          "entity_home_page": "page:nl_invoice.list_page",
+          "entity_form_page": "page:nl_invoice.form_page"
+        },
+        "entity.nl_invoice_line": {
+          "entity_home_page": "page:nl_invoice_line.list_page",
+          "entity_form_page": "page:nl_invoice_line.form_page"
+        }
+      }
+    }
+  },
+  "entities": [
+    {
+      "id": "entity.nl_invoice",
+      "display_field": "nl_invoice.invoice_number",
+      "fields": [
+        { "id": "nl_invoice.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "nl_invoice.invoice_number", "type": "string", "label": "Invoice Number", "required": true },
+        {
+          "id": "nl_invoice.status",
+          "type": "enum",
+          "label": "Status",
+          "required": true,
+          "default": "draft",
+          "options": [
+            { "value": "draft", "label": "Draft" },
+            { "value": "issued", "label": "Issued" },
+            { "value": "part_paid", "label": "Part Paid" },
+            { "value": "paid", "label": "Paid" },
+            { "value": "cancelled", "label": "Cancelled" },
+            { "value": "credited", "label": "Credited" }
+          ]
+        },
+        {
+          "id": "nl_invoice.invoice_type",
+          "type": "enum",
+          "label": "Invoice Type",
+          "required": true,
+          "default": "deposit",
+          "options": [
+            { "value": "deposit", "label": "Deposit" },
+            { "value": "progress", "label": "Progress" },
+            { "value": "final", "label": "Final" },
+            { "value": "credit_note", "label": "Credit Note" }
+          ]
+        },
+        {
+          "id": "nl_invoice.customer_id",
+          "type": "lookup",
+          "label": "Customer",
+          "entity": "entity.nl_contact",
+          "display_field": "nl_contact.name",
+          "required": true
+        },
+        { "id": "nl_invoice.source_order_id", "type": "string", "label": "Source Order ID", "readonly": true },
+        { "id": "nl_invoice.source_order_number", "type": "string", "label": "Source Order", "readonly": true },
+        {
+          "id": "nl_invoice.sales_entity",
+          "type": "enum",
+          "label": "Sales Entity",
+          "default": "NLight BV",
+          "options": [
+            { "value": "NLight BV", "label": "NLight BV" },
+            { "value": "EcoTech FZCO", "label": "EcoTech FZCO" }
+          ]
+        },
+        { "id": "nl_invoice.invoice_date", "type": "date", "label": "Invoice Date" },
+        { "id": "nl_invoice.due_date", "type": "date", "label": "Due Date" },
+        {
+          "id": "nl_invoice.currency",
+          "type": "enum",
+          "label": "Currency",
+          "default": "EUR",
+          "options": [
+            { "value": "EUR", "label": "EUR" },
+            { "value": "USD", "label": "USD" }
+          ]
+        },
+        { "id": "nl_invoice.customer_reference", "type": "string", "label": "Customer Reference" },
+        { "id": "nl_invoice.notes", "type": "text", "label": "Notes" },
+        {
+          "id": "nl_invoice.source_order_total_snapshot",
+          "type": "number",
+          "label": "Order Total Snapshot",
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "nl_invoice.currency", "precision": 2 }
+        },
+        {
+          "id": "nl_invoice.deposit_percent_snapshot",
+          "type": "number",
+          "label": "Deposit % Snapshot",
+          "default": 30,
+          "format": { "kind": "percent", "precision": 2 }
+        },
+        {
+          "id": "nl_invoice.invoice_manual_total",
+          "type": "number",
+          "label": "Manual Total Override",
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "nl_invoice.currency", "precision": 2 }
+        },
+        {
+          "id": "nl_invoice.invoice_total",
+          "type": "number",
+          "label": "Invoice Total",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "nl_invoice.currency", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "if",
+              "condition": { "op": "eq", "field": "nl_invoice.invoice_type", "value": "deposit" },
+              "then": {
+                "op": "round",
+                "args": [
+                  {
+                    "op": "mul",
+                    "args": [
+                      { "ref": "$current.nl_invoice.source_order_total_snapshot" },
+                      {
+                        "op": "div",
+                        "args": [
+                          { "ref": "$current.nl_invoice.deposit_percent_snapshot" },
+                          100
+                        ]
+                      }
+                    ]
+                  },
+                  2
+                ]
+              },
+              "else": {
+                "op": "if",
+                "condition": { "op": "eq", "field": "nl_invoice.invoice_type", "value": "final" },
+                "then": {
+                  "op": "round",
+                  "args": [
+                    {
+                      "op": "sub",
+                      "args": [
+                        { "ref": "$current.nl_invoice.source_order_total_snapshot" },
+                        {
+                          "op": "mul",
+                          "args": [
+                            { "ref": "$current.nl_invoice.source_order_total_snapshot" },
+                            {
+                              "op": "div",
+                              "args": [
+                                { "ref": "$current.nl_invoice.deposit_percent_snapshot" },
+                                100
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    2
+                  ]
+                },
+                "else": {
+                  "op": "if",
+                  "condition": { "op": "eq", "field": "nl_invoice.invoice_type", "value": "credit_note" },
+                  "then": {
+                    "op": "neg",
+                    "args": [{ "ref": "$current.nl_invoice.invoice_manual_total" }]
+                  },
+                  "else": { "ref": "$current.nl_invoice.invoice_manual_total" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "nl_invoice.amount_paid",
+          "type": "number",
+          "label": "Amount Paid",
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "nl_invoice.currency", "precision": 2 }
+        },
+        {
+          "id": "nl_invoice.balance_due",
+          "type": "number",
+          "label": "Balance Due",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "nl_invoice.currency", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "sub",
+                  "args": [
+                    { "ref": "$current.nl_invoice.invoice_total" },
+                    { "ref": "$current.nl_invoice.amount_paid" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "entity.nl_invoice_line",
+      "display_field": "nl_invoice_line.description",
+      "fields": [
+        { "id": "nl_invoice_line.id", "type": "uuid", "label": "ID", "readonly": true },
+        {
+          "id": "nl_invoice_line.invoice_id",
+          "type": "lookup",
+          "label": "Invoice",
+          "entity": "entity.nl_invoice",
+          "display_field": "nl_invoice.invoice_number",
+          "required": true
+        },
+        {
+          "id": "nl_invoice_line.product_id",
+          "type": "lookup",
+          "label": "Product",
+          "entity": "entity.nl_product",
+          "display_field": "nl_product.name"
+        },
+        { "id": "nl_invoice_line.description", "type": "string", "label": "Description", "required": true },
+        {
+          "id": "nl_invoice_line.uom",
+          "type": "enum",
+          "label": "UOM",
+          "default": "EA",
+          "options": [
+            { "value": "EA", "label": "Each" },
+            { "value": "SET", "label": "Set" },
+            { "value": "KIT", "label": "Kit" },
+            { "value": "LOT", "label": "Lot" }
+          ]
+        },
+        { "id": "nl_invoice_line.quantity", "type": "number", "label": "Qty", "default": 1 },
+        { "id": "nl_invoice_line.unit_price", "type": "number", "label": "Unit Price", "default": 0 },
+        {
+          "id": "nl_invoice_line.line_total",
+          "type": "number",
+          "label": "Line Total",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    { "ref": "$current.nl_invoice_line.quantity" },
+                    { "ref": "$current.nl_invoice_line.unit_price" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "workflows": [
+    {
+      "id": "invoice_status_workflow",
+      "entity": "entity.nl_invoice",
+      "status_field": "nl_invoice.status",
+      "states": [
+        { "id": "draft", "label": "Draft" },
+        { "id": "issued", "label": "Issued" },
+        { "id": "part_paid", "label": "Part Paid" },
+        { "id": "paid", "label": "Paid" },
+        { "id": "cancelled", "label": "Cancelled" },
+        { "id": "credited", "label": "Credited" }
+      ]
+    }
+  ],
+  "actions": [
+    { "id": "action.refresh", "kind": "refresh", "label": "Refresh" },
+    { "id": "action.invoice_new", "kind": "open_form", "label": "New Invoice", "target": "nl_invoice.form" },
+    {
+      "id": "action.invoice_issue",
+      "kind": "update_record",
+      "entity_id": "entity.nl_invoice",
+      "label": "Issue Invoice",
+      "patch": { "nl_invoice.status": "issued" },
+      "visible_when": { "op": "eq", "field": "nl_invoice.status", "value": "draft" }
+    },
+    {
+      "id": "action.invoice_mark_part_paid",
+      "kind": "update_record",
+      "entity_id": "entity.nl_invoice",
+      "label": "Mark Part Paid",
+      "patch": { "nl_invoice.status": "part_paid" },
+      "visible_when": { "op": "eq", "field": "nl_invoice.status", "value": "issued" }
+    },
+    {
+      "id": "action.invoice_mark_paid",
+      "kind": "update_record",
+      "entity_id": "entity.nl_invoice",
+      "label": "Mark Paid",
+      "patch": { "nl_invoice.status": "paid" },
+      "visible_when": {
+        "op": "or",
+        "conditions": [
+          { "op": "eq", "field": "nl_invoice.status", "value": "issued" },
+          { "op": "eq", "field": "nl_invoice.status", "value": "part_paid" }
+        ]
+      }
+    },
+    {
+      "id": "action.invoice_cancel",
+      "kind": "update_record",
+      "entity_id": "entity.nl_invoice",
+      "label": "Cancel",
+      "patch": { "nl_invoice.status": "cancelled" },
+      "visible_when": {
+        "op": "or",
+        "conditions": [
+          { "op": "eq", "field": "nl_invoice.status", "value": "draft" },
+          { "op": "eq", "field": "nl_invoice.status", "value": "issued" }
+        ]
+      }
+    }
+  ],
+  "views": [
+    {
+      "id": "nl_invoice.list",
+      "kind": "list",
+      "entity": "entity.nl_invoice",
+      "columns": [
+        { "field_id": "nl_invoice.invoice_number" },
+        { "field_id": "nl_invoice.invoice_date" },
+        { "field_id": "nl_invoice.customer_id" },
+        { "field_id": "nl_invoice.invoice_type" },
+        { "field_id": "nl_invoice.source_order_number" },
+        { "field_id": "nl_invoice.currency" },
+        { "field_id": "nl_invoice.invoice_total" },
+        { "field_id": "nl_invoice.amount_paid" },
+        { "field_id": "nl_invoice.status" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.invoice_new" }],
+        "open_record_target": "page:nl_invoice.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search invoices...",
+          "fields": ["nl_invoice.invoice_number", "nl_invoice.customer_reference", "nl_invoice.source_order_number"]
+        },
+        "filters": [
+          { "id": "draft", "label": "Draft Invoices", "domain": { "op": "eq", "field": "nl_invoice.status", "value": "draft" } },
+          { "id": "issued", "label": "Issued Invoices", "domain": { "op": "eq", "field": "nl_invoice.status", "value": "issued" } },
+          { "id": "part_paid", "label": "Part Paid", "domain": { "op": "eq", "field": "nl_invoice.status", "value": "part_paid" } },
+          { "id": "paid", "label": "Paid", "domain": { "op": "eq", "field": "nl_invoice.status", "value": "paid" } },
+          { "id": "credit_notes", "label": "Credit Notes", "domain": { "op": "eq", "field": "nl_invoice.invoice_type", "value": "credit_note" } }
+        ]
+      }
+    },
+    {
+      "id": "nl_invoice.form",
+      "kind": "form",
+      "entity": "entity.nl_invoice",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Invoice",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "nl_invoice.invoice_number",
+            "nl_invoice.status",
+            "nl_invoice.customer_id",
+            "nl_invoice.invoice_type",
+            "nl_invoice.source_order_number",
+            "nl_invoice.sales_entity",
+            "nl_invoice.currency",
+            "nl_invoice.customer_reference",
+            "nl_invoice.invoice_date",
+            "nl_invoice.due_date",
+            "nl_invoice.notes"
+          ]
+        },
+        {
+          "id": "financials",
+          "title": "Payments Summary",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "nl_invoice.source_order_total_snapshot",
+            "nl_invoice.deposit_percent_snapshot",
+            "nl_invoice.invoice_manual_total",
+            "nl_invoice.invoice_total",
+            "nl_invoice.amount_paid",
+            "nl_invoice.balance_due"
+          ]
+        },
+        {
+          "id": "lines",
+          "title": "Invoice Lines",
+          "line_editor": {
+            "entity_id": "entity.nl_invoice_line",
+            "parent_field": "nl_invoice_line.invoice_id",
+            "item_lookup_field": "nl_invoice_line.product_id",
+            "item_lookup_entity": "entity.nl_product",
+            "item_lookup_display_field": "nl_product.name",
+            "item_field_map": {
+              "nl_invoice_line.description": "nl_product.description",
+              "nl_invoice_line.uom": "nl_product.uom",
+              "nl_invoice_line.unit_price": "nl_product.default_sales_price"
+            },
+            "description_field": "nl_invoice_line.description",
+            "defaults": {
+              "nl_invoice_line.uom": "EA",
+              "nl_invoice_line.quantity": 1,
+              "nl_invoice_line.unit_price": 0
+            },
+            "columns": [
+              { "field_id": "nl_invoice_line.product_id", "label": "Product", "readonly": true },
+              { "field_id": "nl_invoice_line.description", "label": "Description" },
+              { "field_id": "nl_invoice_line.uom", "label": "UOM" },
+              { "field_id": "nl_invoice_line.quantity", "label": "Qty", "type": "number" },
+              { "field_id": "nl_invoice_line.unit_price", "label": "Unit Price", "type": "number" },
+              { "field_id": "nl_invoice_line.line_total", "label": "Line Total", "type": "number" }
+            ]
+          }
+        }
+      ],
+      "header": {
+        "statusbar": { "field_id": "nl_invoice.status" },
+        "secondary_actions": [
+          { "action_id": "action.invoice_issue" },
+          { "action_id": "action.invoice_mark_part_paid" },
+          { "action_id": "action.invoice_mark_paid" },
+          { "action_id": "action.invoice_cancel" },
+          { "action_id": "action.refresh" }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "summary",
+          "tabs": [
+            { "id": "summary", "label": "Summary", "sections": ["summary"] },
+            { "id": "lines", "label": "Invoice Lines", "sections": ["lines"] },
+            { "id": "financials", "label": "Payments Summary", "sections": ["financials"] }
+          ]
+        }
+      }
+    },
+    {
+      "id": "nl_invoice.kanban",
+      "kind": "kanban",
+      "entity": "entity.nl_invoice",
+      "card": {
+        "title_field": "nl_invoice.invoice_number",
+        "subtitle_fields": [
+          "nl_invoice.customer_id",
+          "nl_invoice.due_date"
+        ],
+        "badge_fields": [
+          "nl_invoice.status",
+          "nl_invoice.invoice_total"
+        ]
+      }
+    },
+    {
+      "id": "nl_invoice.calendar",
+      "kind": "calendar",
+      "entity": "entity.nl_invoice",
+      "calendar": {
+        "title_field": "nl_invoice.invoice_number",
+        "date_start": "nl_invoice.due_date",
+        "color_field": "nl_invoice.status",
+        "default_scale": "month"
+      }
+    },
+    {
+      "id": "nl_invoice.graph",
+      "kind": "graph",
+      "entity": "entity.nl_invoice",
+      "default": {
+        "type": "bar",
+        "group_by": "nl_invoice.status",
+        "measure": "sum:nl_invoice.invoice_total"
+      }
+    },
+    {
+      "id": "nl_invoice_line.list",
+      "kind": "list",
+      "entity": "entity.nl_invoice_line",
+      "columns": [
+        { "field_id": "nl_invoice_line.invoice_id" },
+        { "field_id": "nl_invoice_line.product_id" },
+        { "field_id": "nl_invoice_line.description" },
+        { "field_id": "nl_invoice_line.uom" },
+        { "field_id": "nl_invoice_line.quantity" },
+        { "field_id": "nl_invoice_line.unit_price" },
+        { "field_id": "nl_invoice_line.line_total" }
+      ],
+      "header": {
+        "open_record_target": "page:nl_invoice_line.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search invoice lines...",
+          "fields": ["nl_invoice_line.description"]
+        }
+      }
+    },
+    {
+      "id": "nl_invoice_line.form",
+      "kind": "form",
+      "entity": "entity.nl_invoice_line",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Invoice Line",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "nl_invoice_line.invoice_id",
+            "nl_invoice_line.product_id",
+            "nl_invoice_line.description",
+            "nl_invoice_line.uom",
+            "nl_invoice_line.quantity",
+            "nl_invoice_line.unit_price",
+            "nl_invoice_line.line_total"
+          ]
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "id": "nl_invoice.list_page",
+      "title": "Invoices",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.nl_invoice",
+              "default_mode": "list",
+              "default_filter_id": "issued",
+              "modes": [
+                { "mode": "list", "target": "view:nl_invoice.list" },
+                { "mode": "kanban", "target": "view:nl_invoice.kanban", "default_group_by": "nl_invoice.status" },
+                { "mode": "calendar", "target": "view:nl_invoice.calendar" },
+                { "mode": "graph", "target": "view:nl_invoice.graph" },
+                { "mode": "pivot", "target": "view:nl_invoice.list", "default_group_by": "nl_invoice.status" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nl_invoice.form_page",
+      "title": "Invoice",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.nl_invoice",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "view", "target": "view:nl_invoice.form" }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "chatter", "entity_id": "entity.nl_invoice", "record_ref": "$record.id" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nl_invoice_line.list_page",
+      "title": "Invoice Lines",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.nl_invoice_line",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:nl_invoice_line.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nl_invoice_line.form_page",
+      "title": "Invoice Line",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.nl_invoice_line",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                { "kind": "view", "target": "view:nl_invoice_line.form" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "transformations": []
+}

@@ -1,0 +1,915 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "luke_customer_orders",
+    "key": "luke_customer_orders",
+    "name": "Customer Orders",
+    "version": "1.0.0",
+    "description": "Accepted customer business after quote approval for the N-Light prototype.",
+    "category": "Prototype",
+    "icon_key": "lucide:ClipboardList"
+  },
+  "depends_on": {
+    "required": [
+      { "module": "luke_contacts", "version": ">=1.0.0" },
+      { "module": "luke_products", "version": ">=1.0.0" },
+      { "module": "luke_purchase_orders", "version": ">=1.0.0" },
+      { "module": "luke_invoices", "version": ">=1.0.0" }
+    ]
+  },
+  "app": {
+    "home": "page:nl_customer_order.list_page",
+    "defaults": {
+      "entity_home_page": "page:nl_customer_order.list_page",
+      "entity_form_page": "page:nl_customer_order.form_page",
+      "entities": {
+        "entity.nl_customer_order": {
+          "entity_home_page": "page:nl_customer_order.list_page",
+          "entity_form_page": "page:nl_customer_order.form_page"
+        },
+        "entity.nl_customer_order_line": {
+          "entity_home_page": "page:nl_customer_order_line.list_page",
+          "entity_form_page": "page:nl_customer_order_line.form_page"
+        }
+      }
+    }
+  },
+  "entities": [
+    {
+      "id": "entity.nl_customer_order",
+      "display_field": "nl_customer_order.order_number",
+      "fields": [
+        { "id": "nl_customer_order.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "nl_customer_order.order_number", "type": "string", "label": "Order Number", "required": true },
+        {
+          "id": "nl_customer_order.status",
+          "type": "enum",
+          "label": "Status",
+          "required": true,
+          "default": "draft",
+          "options": [
+            { "value": "draft", "label": "Draft" },
+            { "value": "confirmed", "label": "Confirmed" },
+            { "value": "in_production", "label": "In Production" },
+            { "value": "shipped", "label": "Shipped" },
+            { "value": "completed", "label": "Completed" },
+            { "value": "cancelled", "label": "Cancelled" }
+          ]
+        },
+        {
+          "id": "nl_customer_order.customer_id",
+          "type": "lookup",
+          "label": "Customer",
+          "entity": "entity.nl_contact",
+          "display_field": "nl_contact.name",
+          "required": true
+        },
+        { "id": "nl_customer_order.source_quote_id", "type": "string", "label": "Source Quote ID", "readonly": true },
+        { "id": "nl_customer_order.source_quote_number", "type": "string", "label": "Source Quote", "readonly": true },
+        {
+          "id": "nl_customer_order.sales_entity",
+          "type": "enum",
+          "label": "Sales Entity",
+          "default": "NLight BV",
+          "options": [
+            { "value": "NLight BV", "label": "NLight BV" },
+            { "value": "EcoTech FZCO", "label": "EcoTech FZCO" }
+          ]
+        },
+        { "id": "nl_customer_order.order_date", "type": "date", "label": "Order Date" },
+        {
+          "id": "nl_customer_order.currency",
+          "type": "enum",
+          "label": "Currency",
+          "default": "EUR",
+          "options": [
+            { "value": "EUR", "label": "EUR" },
+            { "value": "USD", "label": "USD" }
+          ]
+        },
+        { "id": "nl_customer_order.customer_reference", "type": "string", "label": "Customer Reference" },
+        { "id": "nl_customer_order.delivery_terms", "type": "string", "label": "Delivery Terms" },
+        { "id": "nl_customer_order.shipping_destination", "type": "text", "label": "Shipping Destination" },
+        { "id": "nl_customer_order.requested_delivery_date", "type": "date", "label": "Requested Delivery Date" },
+        { "id": "nl_customer_order.notes", "type": "text", "label": "Notes" },
+        { "id": "nl_customer_order.purchase_order_number", "type": "string", "label": "Purchase Order Number" },
+        { "id": "nl_customer_order.primary_purchase_order_id", "type": "string", "label": "Primary Purchase Order ID", "readonly": true },
+        {
+          "id": "nl_customer_order.preferred_supplier_id",
+          "type": "lookup",
+          "label": "Preferred Supplier",
+          "entity": "entity.nl_contact",
+          "display_field": "nl_contact.name"
+        },
+        {
+          "id": "nl_customer_order.deposit_percent",
+          "type": "number",
+          "label": "Deposit %",
+          "default": 30,
+          "format": { "kind": "percent", "precision": 2 }
+        },
+        { "id": "nl_customer_order.deposit_invoice_number", "type": "string", "label": "Deposit Invoice Number" },
+        { "id": "nl_customer_order.deposit_invoice_id", "type": "string", "label": "Deposit Invoice ID", "readonly": true },
+        { "id": "nl_customer_order.final_invoice_number", "type": "string", "label": "Final Invoice Number" },
+        { "id": "nl_customer_order.final_invoice_id", "type": "string", "label": "Final Invoice ID", "readonly": true },
+        {
+          "id": "nl_customer_order.order_total",
+          "type": "number",
+          "label": "Order Total",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "nl_customer_order.currency", "precision": 2 },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.nl_customer_order_line",
+              "field": "nl_customer_order_line.line_total",
+              "where": {
+                "op": "eq",
+                "field": "nl_customer_order_line.customer_order_id",
+                "value": { "ref": "$parent.id" }
+              }
+            }
+          }
+        },
+        {
+          "id": "nl_customer_order.invoiced_total",
+          "type": "number",
+          "label": "Invoiced Total",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "nl_customer_order.currency", "precision": 2 },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.nl_invoice",
+              "field": "nl_invoice.invoice_total",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  { "op": "eq", "field": "nl_invoice.source_order_id", "value": { "ref": "$parent.id" } },
+                  {
+                    "op": "in",
+                    "field": "nl_invoice.status",
+                    "value": ["issued", "part_paid", "paid"]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "nl_customer_order.balance_to_invoice",
+          "type": "number",
+          "label": "Balance to Invoice",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "nl_customer_order.currency", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "sub",
+                  "args": [
+                    { "ref": "$current.nl_customer_order.order_total" },
+                    { "ref": "$current.nl_customer_order.invoiced_total" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "nl_customer_order.estimated_buy_total",
+          "type": "number",
+          "label": "Estimated Buy Total",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.nl_customer_order_line",
+              "field": "nl_customer_order_line.buy_total",
+              "where": {
+                "op": "eq",
+                "field": "nl_customer_order_line.customer_order_id",
+                "value": { "ref": "$parent.id" }
+              }
+            }
+          }
+        },
+        {
+          "id": "nl_customer_order.estimated_margin_amount",
+          "type": "number",
+          "label": "Estimated Margin Amount",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "sub",
+                  "args": [
+                    { "ref": "$current.nl_customer_order.order_total" },
+                    { "ref": "$current.nl_customer_order.estimated_buy_total" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "nl_customer_order.estimated_margin_percent",
+          "type": "number",
+          "label": "Estimated Margin %",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "percent", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "if",
+              "condition": { "op": "gt", "field": "nl_customer_order.order_total", "value": 0 },
+              "then": {
+                "op": "round",
+                "args": [
+                  {
+                    "op": "mul",
+                    "args": [
+                      {
+                        "op": "div",
+                        "args": [
+                          { "ref": "$current.nl_customer_order.estimated_margin_amount" },
+                          { "ref": "$current.nl_customer_order.order_total" }
+                        ]
+                      },
+                      100
+                    ]
+                  },
+                  2
+                ]
+              },
+              "else": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "entity.nl_customer_order_line",
+      "display_field": "nl_customer_order_line.description",
+      "fields": [
+        { "id": "nl_customer_order_line.id", "type": "uuid", "label": "ID", "readonly": true },
+        {
+          "id": "nl_customer_order_line.customer_order_id",
+          "type": "lookup",
+          "label": "Customer Order",
+          "entity": "entity.nl_customer_order",
+          "display_field": "nl_customer_order.order_number",
+          "required": true
+        },
+        {
+          "id": "nl_customer_order_line.product_id",
+          "type": "lookup",
+          "label": "Product",
+          "entity": "entity.nl_product",
+          "display_field": "nl_product.name"
+        },
+        { "id": "nl_customer_order_line.description", "type": "string", "label": "Description", "required": true },
+        {
+          "id": "nl_customer_order_line.uom",
+          "type": "enum",
+          "label": "UOM",
+          "default": "EA",
+          "options": [
+            { "value": "EA", "label": "Each" },
+            { "value": "SET", "label": "Set" },
+            { "value": "KIT", "label": "Kit" },
+            { "value": "LOT", "label": "Lot" }
+          ]
+        },
+        { "id": "nl_customer_order_line.quantity", "type": "number", "label": "Qty", "default": 1 },
+        { "id": "nl_customer_order_line.unit_price", "type": "number", "label": "Unit Price", "default": 0 },
+        {
+          "id": "nl_customer_order_line.line_total",
+          "type": "number",
+          "label": "Line Total",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    { "ref": "$current.nl_customer_order_line.quantity" },
+                    { "ref": "$current.nl_customer_order_line.unit_price" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        { "id": "nl_customer_order_line.unit_cost_snapshot", "type": "number", "label": "Unit Cost Snapshot", "default": 0 },
+        {
+          "id": "nl_customer_order_line.buy_total",
+          "type": "number",
+          "label": "Buy Total",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    { "ref": "$current.nl_customer_order_line.quantity" },
+                    { "ref": "$current.nl_customer_order_line.unit_cost_snapshot" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        { "id": "nl_customer_order_line.source_quote_line_ref", "type": "string", "label": "Source Quote Line Ref", "readonly": true }
+      ]
+    }
+  ],
+  "workflows": [
+    {
+      "id": "customer_order_status_workflow",
+      "entity": "entity.nl_customer_order",
+      "status_field": "nl_customer_order.status",
+      "states": [
+        { "id": "draft", "label": "Draft" },
+        { "id": "confirmed", "label": "Confirmed" },
+        { "id": "in_production", "label": "In Production" },
+        { "id": "shipped", "label": "Shipped" },
+        { "id": "completed", "label": "Completed" },
+        { "id": "cancelled", "label": "Cancelled" }
+      ]
+    }
+  ],
+  "transformations": [
+    {
+      "key": "customer_order_to_purchase_order",
+      "source_entity_id": "entity.nl_customer_order",
+      "target_entity_id": "entity.nl_purchase_order",
+      "field_mappings": {
+        "nl_purchase_order.po_number": { "from": "nl_customer_order.purchase_order_number" },
+        "nl_purchase_order.supplier_id": { "from": "nl_customer_order.preferred_supplier_id" },
+        "nl_purchase_order.purchasing_entity": { "value": "EcoTech FZCO" },
+        "nl_purchase_order.source_customer_order_number": { "from": "nl_customer_order.order_number" },
+        "nl_purchase_order.currency": { "value": "USD" },
+        "nl_purchase_order.po_date": { "ref": "$now" },
+        "nl_purchase_order.status": { "value": "draft" }
+      },
+      "child_mappings": [
+        {
+          "source_entity_id": "entity.nl_customer_order_line",
+          "target_entity_id": "entity.nl_purchase_order_line",
+          "source_link_field": "nl_customer_order_line.customer_order_id",
+          "target_link_field": "nl_purchase_order_line.purchase_order_id",
+          "field_mappings": {
+            "nl_purchase_order_line.product_id": { "from": "nl_customer_order_line.product_id" },
+            "nl_purchase_order_line.description": { "from": "nl_customer_order_line.description" },
+            "nl_purchase_order_line.uom": { "from": "nl_customer_order_line.uom" },
+            "nl_purchase_order_line.quantity": { "from": "nl_customer_order_line.quantity" },
+            "nl_purchase_order_line.unit_cost": { "from": "nl_customer_order_line.unit_cost_snapshot" },
+            "nl_purchase_order_line.source_order_line_ref": { "ref": "$source.id" }
+          }
+        }
+      ],
+      "link_fields": {
+        "source_to_target": "nl_customer_order.primary_purchase_order_id",
+        "target_to_source": "nl_purchase_order.source_customer_order_id"
+      },
+      "validation": {
+        "require_source_fields": ["nl_customer_order.order_number", "nl_customer_order.purchase_order_number", "nl_customer_order.preferred_supplier_id"],
+        "require_child_records": true,
+        "prevent_if_target_linked": true
+      }
+    },
+    {
+      "key": "customer_order_to_deposit_invoice",
+      "source_entity_id": "entity.nl_customer_order",
+      "target_entity_id": "entity.nl_invoice",
+      "field_mappings": {
+        "nl_invoice.invoice_number": { "from": "nl_customer_order.deposit_invoice_number" },
+        "nl_invoice.invoice_type": { "value": "deposit" },
+        "nl_invoice.customer_id": { "from": "nl_customer_order.customer_id" },
+        "nl_invoice.source_order_number": { "from": "nl_customer_order.order_number" },
+        "nl_invoice.sales_entity": { "from": "nl_customer_order.sales_entity" },
+        "nl_invoice.invoice_date": { "ref": "$today" },
+        "nl_invoice.currency": { "from": "nl_customer_order.currency" },
+        "nl_invoice.customer_reference": { "from": "nl_customer_order.customer_reference" },
+        "nl_invoice.notes": { "from": "nl_customer_order.notes" },
+        "nl_invoice.source_order_total_snapshot": { "from": "nl_customer_order.order_total" },
+        "nl_invoice.deposit_percent_snapshot": { "from": "nl_customer_order.deposit_percent" },
+        "nl_invoice.status": { "value": "draft" }
+      },
+      "link_fields": {
+        "source_to_target": "nl_customer_order.deposit_invoice_id",
+        "target_to_source": "nl_invoice.source_order_id"
+      },
+      "validation": {
+        "require_source_fields": ["nl_customer_order.order_number", "nl_customer_order.deposit_invoice_number", "nl_customer_order.customer_id"],
+        "prevent_if_target_linked": true
+      }
+    },
+    {
+      "key": "customer_order_to_final_invoice",
+      "source_entity_id": "entity.nl_customer_order",
+      "target_entity_id": "entity.nl_invoice",
+      "field_mappings": {
+        "nl_invoice.invoice_number": { "from": "nl_customer_order.final_invoice_number" },
+        "nl_invoice.invoice_type": { "value": "final" },
+        "nl_invoice.customer_id": { "from": "nl_customer_order.customer_id" },
+        "nl_invoice.source_order_number": { "from": "nl_customer_order.order_number" },
+        "nl_invoice.sales_entity": { "from": "nl_customer_order.sales_entity" },
+        "nl_invoice.invoice_date": { "ref": "$today" },
+        "nl_invoice.currency": { "from": "nl_customer_order.currency" },
+        "nl_invoice.customer_reference": { "from": "nl_customer_order.customer_reference" },
+        "nl_invoice.notes": { "from": "nl_customer_order.notes" },
+        "nl_invoice.source_order_total_snapshot": { "from": "nl_customer_order.order_total" },
+        "nl_invoice.deposit_percent_snapshot": { "from": "nl_customer_order.deposit_percent" },
+        "nl_invoice.status": { "value": "draft" }
+      },
+      "link_fields": {
+        "source_to_target": "nl_customer_order.final_invoice_id",
+        "target_to_source": "nl_invoice.source_order_id"
+      },
+      "validation": {
+        "require_source_fields": ["nl_customer_order.order_number", "nl_customer_order.final_invoice_number", "nl_customer_order.customer_id"],
+        "prevent_if_target_linked": true
+      }
+    }
+  ],
+  "actions": [
+    { "id": "action.refresh", "kind": "refresh", "label": "Refresh" },
+    { "id": "action.customer_order_new", "kind": "open_form", "label": "New Customer Order", "target": "nl_customer_order.form" },
+    {
+      "id": "action.customer_order_confirm",
+      "kind": "update_record",
+      "entity_id": "entity.nl_customer_order",
+      "label": "Confirm Order",
+      "patch": { "nl_customer_order.status": "confirmed" },
+      "visible_when": { "op": "eq", "field": "nl_customer_order.status", "value": "draft" }
+    },
+    {
+      "id": "action.customer_order_mark_in_production",
+      "kind": "update_record",
+      "entity_id": "entity.nl_customer_order",
+      "label": "Mark In Production",
+      "patch": { "nl_customer_order.status": "in_production" },
+      "visible_when": { "op": "eq", "field": "nl_customer_order.status", "value": "confirmed" }
+    },
+    {
+      "id": "action.customer_order_mark_shipped",
+      "kind": "update_record",
+      "entity_id": "entity.nl_customer_order",
+      "label": "Mark Shipped",
+      "patch": { "nl_customer_order.status": "shipped" },
+      "visible_when": { "op": "eq", "field": "nl_customer_order.status", "value": "in_production" }
+    },
+    {
+      "id": "action.customer_order_mark_completed",
+      "kind": "update_record",
+      "entity_id": "entity.nl_customer_order",
+      "label": "Mark Completed",
+      "patch": { "nl_customer_order.status": "completed" },
+      "visible_when": { "op": "eq", "field": "nl_customer_order.status", "value": "shipped" }
+    },
+    {
+      "id": "action.customer_order_cancel",
+      "kind": "update_record",
+      "entity_id": "entity.nl_customer_order",
+      "label": "Cancel Order",
+      "patch": { "nl_customer_order.status": "cancelled" },
+      "visible_when": {
+        "op": "or",
+        "conditions": [
+          { "op": "eq", "field": "nl_customer_order.status", "value": "draft" },
+          { "op": "eq", "field": "nl_customer_order.status", "value": "confirmed" },
+          { "op": "eq", "field": "nl_customer_order.status", "value": "in_production" }
+        ]
+      }
+    },
+    {
+      "id": "action.customer_order_create_purchase_order",
+      "kind": "transform_record",
+      "entity_id": "entity.nl_customer_order",
+      "label": "Create Purchase Order",
+      "transformation_key": "customer_order_to_purchase_order",
+      "visible_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "or",
+            "conditions": [
+              { "op": "eq", "field": "nl_customer_order.status", "value": "confirmed" },
+              { "op": "eq", "field": "nl_customer_order.status", "value": "in_production" }
+            ]
+          },
+          { "op": "exists", "field": "nl_customer_order.preferred_supplier_id" },
+          { "op": "exists", "field": "nl_customer_order.purchase_order_number" },
+          { "op": "not", "condition": { "op": "exists", "field": "nl_customer_order.primary_purchase_order_id" } }
+        ]
+      }
+    },
+    {
+      "id": "action.customer_order_create_deposit_invoice",
+      "kind": "transform_record",
+      "entity_id": "entity.nl_customer_order",
+      "label": "Create Deposit Invoice",
+      "transformation_key": "customer_order_to_deposit_invoice",
+      "visible_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "or",
+            "conditions": [
+              { "op": "eq", "field": "nl_customer_order.status", "value": "confirmed" },
+              { "op": "eq", "field": "nl_customer_order.status", "value": "in_production" }
+            ]
+          },
+          { "op": "exists", "field": "nl_customer_order.deposit_invoice_number" },
+          { "op": "not", "condition": { "op": "exists", "field": "nl_customer_order.deposit_invoice_id" } }
+        ]
+      }
+    },
+    {
+      "id": "action.customer_order_create_final_invoice",
+      "kind": "transform_record",
+      "entity_id": "entity.nl_customer_order",
+      "label": "Create Final Invoice",
+      "transformation_key": "customer_order_to_final_invoice",
+      "visible_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "or",
+            "conditions": [
+              { "op": "eq", "field": "nl_customer_order.status", "value": "shipped" },
+              { "op": "eq", "field": "nl_customer_order.status", "value": "completed" }
+            ]
+          },
+          { "op": "exists", "field": "nl_customer_order.final_invoice_number" },
+          { "op": "not", "condition": { "op": "exists", "field": "nl_customer_order.final_invoice_id" } }
+        ]
+      }
+    }
+  ],
+  "views": [
+    {
+      "id": "nl_customer_order.list",
+      "kind": "list",
+      "entity": "entity.nl_customer_order",
+      "columns": [
+        { "field_id": "nl_customer_order.order_number" },
+        { "field_id": "nl_customer_order.order_date" },
+        { "field_id": "nl_customer_order.customer_id" },
+        { "field_id": "nl_customer_order.source_quote_number" },
+        { "field_id": "nl_customer_order.sales_entity" },
+        { "field_id": "nl_customer_order.currency" },
+        { "field_id": "nl_customer_order.order_total" },
+        { "field_id": "nl_customer_order.status" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.customer_order_new" }],
+        "open_record_target": "page:nl_customer_order.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search customer orders...",
+          "fields": ["nl_customer_order.order_number", "nl_customer_order.customer_reference", "nl_customer_order.source_quote_number"]
+        },
+        "filters": [
+          { "id": "draft", "label": "Draft Orders", "domain": { "op": "eq", "field": "nl_customer_order.status", "value": "draft" } },
+          { "id": "confirmed", "label": "Confirmed Orders", "domain": { "op": "eq", "field": "nl_customer_order.status", "value": "confirmed" } },
+          { "id": "shipped", "label": "Shipped Orders", "domain": { "op": "eq", "field": "nl_customer_order.status", "value": "shipped" } },
+          { "id": "completed", "label": "Completed Orders", "domain": { "op": "eq", "field": "nl_customer_order.status", "value": "completed" } }
+        ]
+      }
+    },
+    {
+      "id": "nl_customer_order.form",
+      "kind": "form",
+      "entity": "entity.nl_customer_order",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Customer Order",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "nl_customer_order.order_number",
+            "nl_customer_order.status",
+            "nl_customer_order.customer_id",
+            "nl_customer_order.source_quote_number",
+            "nl_customer_order.sales_entity",
+            "nl_customer_order.currency",
+            "nl_customer_order.order_date",
+            "nl_customer_order.customer_reference",
+            "nl_customer_order.delivery_terms",
+            "nl_customer_order.shipping_destination",
+            "nl_customer_order.requested_delivery_date",
+            "nl_customer_order.notes"
+          ]
+        },
+        {
+          "id": "operations",
+          "title": "Operations",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "nl_customer_order.preferred_supplier_id",
+            "nl_customer_order.purchase_order_number",
+            "nl_customer_order.deposit_percent",
+            "nl_customer_order.deposit_invoice_number",
+            "nl_customer_order.final_invoice_number",
+            "nl_customer_order.order_total",
+            "nl_customer_order.invoiced_total",
+            "nl_customer_order.balance_to_invoice"
+          ]
+        },
+        {
+          "id": "profitability",
+          "title": "Profitability",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "nl_customer_order.estimated_buy_total",
+            "nl_customer_order.estimated_margin_amount",
+            "nl_customer_order.estimated_margin_percent"
+          ]
+        },
+        {
+          "id": "lines",
+          "title": "Order Lines",
+          "line_editor": {
+            "entity_id": "entity.nl_customer_order_line",
+            "parent_field": "nl_customer_order_line.customer_order_id",
+            "item_lookup_field": "nl_customer_order_line.product_id",
+            "item_lookup_entity": "entity.nl_product",
+            "item_lookup_display_field": "nl_product.name",
+            "item_field_map": {
+              "nl_customer_order_line.description": "nl_product.description",
+              "nl_customer_order_line.uom": "nl_product.uom",
+              "nl_customer_order_line.unit_price": "nl_product.default_sales_price",
+              "nl_customer_order_line.unit_cost_snapshot": "nl_product.default_buy_price"
+            },
+            "description_field": "nl_customer_order_line.description",
+            "defaults": {
+              "nl_customer_order_line.uom": "EA",
+              "nl_customer_order_line.quantity": 1,
+              "nl_customer_order_line.unit_price": 0,
+              "nl_customer_order_line.unit_cost_snapshot": 0
+            },
+            "columns": [
+              { "field_id": "nl_customer_order_line.product_id", "label": "Product", "readonly": true },
+              { "field_id": "nl_customer_order_line.description", "label": "Description" },
+              { "field_id": "nl_customer_order_line.uom", "label": "UOM" },
+              { "field_id": "nl_customer_order_line.quantity", "label": "Qty", "type": "number" },
+              { "field_id": "nl_customer_order_line.unit_price", "label": "Unit Price", "type": "number" },
+              { "field_id": "nl_customer_order_line.line_total", "label": "Line Total", "type": "number" }
+            ]
+          }
+        }
+      ],
+      "header": {
+        "statusbar": { "field_id": "nl_customer_order.status" },
+        "secondary_actions": [
+          { "action_id": "action.customer_order_confirm" },
+          { "action_id": "action.customer_order_mark_in_production" },
+          { "action_id": "action.customer_order_mark_shipped" },
+          { "action_id": "action.customer_order_mark_completed" },
+          { "action_id": "action.customer_order_cancel" },
+          { "action_id": "action.customer_order_create_purchase_order" },
+          { "action_id": "action.customer_order_create_deposit_invoice" },
+          { "action_id": "action.customer_order_create_final_invoice" },
+          { "action_id": "action.refresh" }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "summary",
+          "tabs": [
+            { "id": "summary", "label": "Summary", "sections": ["summary"] },
+            { "id": "lines", "label": "Order Lines", "sections": ["lines"] },
+            { "id": "profitability", "label": "Profitability", "sections": ["profitability"] },
+            { "id": "operations", "label": "Related Records", "sections": ["operations"] }
+          ]
+        }
+      }
+    },
+    {
+      "id": "nl_customer_order.kanban",
+      "kind": "kanban",
+      "entity": "entity.nl_customer_order",
+      "card": {
+        "title_field": "nl_customer_order.order_number",
+        "subtitle_fields": [
+          "nl_customer_order.customer_id",
+          "nl_customer_order.requested_delivery_date"
+        ],
+        "badge_fields": [
+          "nl_customer_order.status",
+          "nl_customer_order.order_total"
+        ]
+      }
+    },
+    {
+      "id": "nl_customer_order.calendar",
+      "kind": "calendar",
+      "entity": "entity.nl_customer_order",
+      "calendar": {
+        "title_field": "nl_customer_order.order_number",
+        "date_start": "nl_customer_order.requested_delivery_date",
+        "color_field": "nl_customer_order.status",
+        "default_scale": "month"
+      }
+    },
+    {
+      "id": "nl_customer_order.graph",
+      "kind": "graph",
+      "entity": "entity.nl_customer_order",
+      "default": {
+        "type": "bar",
+        "group_by": "nl_customer_order.status",
+        "measure": "sum:nl_customer_order.order_total"
+      }
+    },
+    {
+      "id": "nl_customer_order_line.list",
+      "kind": "list",
+      "entity": "entity.nl_customer_order_line",
+      "columns": [
+        { "field_id": "nl_customer_order_line.customer_order_id" },
+        { "field_id": "nl_customer_order_line.product_id" },
+        { "field_id": "nl_customer_order_line.description" },
+        { "field_id": "nl_customer_order_line.uom" },
+        { "field_id": "nl_customer_order_line.quantity" },
+        { "field_id": "nl_customer_order_line.unit_price" },
+        { "field_id": "nl_customer_order_line.line_total" }
+      ],
+      "header": {
+        "open_record_target": "page:nl_customer_order_line.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search order lines...",
+          "fields": ["nl_customer_order_line.description", "nl_customer_order_line.source_quote_line_ref"]
+        }
+      }
+    },
+    {
+      "id": "nl_customer_order_line.form",
+      "kind": "form",
+      "entity": "entity.nl_customer_order_line",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Order Line",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "nl_customer_order_line.customer_order_id",
+            "nl_customer_order_line.product_id",
+            "nl_customer_order_line.description",
+            "nl_customer_order_line.uom",
+            "nl_customer_order_line.quantity",
+            "nl_customer_order_line.unit_price",
+            "nl_customer_order_line.line_total",
+            "nl_customer_order_line.unit_cost_snapshot",
+            "nl_customer_order_line.buy_total",
+            "nl_customer_order_line.source_quote_line_ref"
+          ]
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "id": "nl_customer_order.list_page",
+      "title": "Customer Orders",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.nl_customer_order",
+              "default_mode": "kanban",
+              "default_filter_id": "confirmed",
+              "modes": [
+                { "mode": "list", "target": "view:nl_customer_order.list" },
+                { "mode": "kanban", "target": "view:nl_customer_order.kanban", "default_group_by": "nl_customer_order.status" },
+                { "mode": "calendar", "target": "view:nl_customer_order.calendar" },
+                { "mode": "graph", "target": "view:nl_customer_order.graph" },
+                { "mode": "pivot", "target": "view:nl_customer_order.list", "default_group_by": "nl_customer_order.status" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nl_customer_order.form_page",
+      "title": "Customer Order",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.nl_customer_order",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "view", "target": "view:nl_customer_order.form" }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "chatter", "entity_id": "entity.nl_customer_order", "record_ref": "$record.id" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nl_customer_order_line.list_page",
+      "title": "Order Lines",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.nl_customer_order_line",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:nl_customer_order_line.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nl_customer_order_line.form_page",
+      "title": "Order Line",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.nl_customer_order_line",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                { "kind": "view", "target": "view:nl_customer_order_line.form" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
