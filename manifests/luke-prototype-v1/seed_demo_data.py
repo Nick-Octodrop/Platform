@@ -363,7 +363,6 @@ SEED_SPECS = [
             "nl_quote.customer_id": {"$ref": "contact.greengrow"},
             "nl_quote.customer_contact_name": "Eva van Dijk",
             "nl_quote.customer_reference": "GG-POC-2026-01",
-            "nl_quote.customer_order_number": "CO-1001",
             "nl_quote.currency": "EUR",
             "nl_quote.sales_owner": "Luke",
             "nl_quote.payment_terms": "30% deposit, balance before shipment",
@@ -387,7 +386,6 @@ SEED_SPECS = [
             "nl_quote.customer_id": {"$ref": "contact.desert_bloom"},
             "nl_quote.customer_contact_name": "Omar Al Hadi",
             "nl_quote.customer_reference": "DBT-RFQ-44",
-            "nl_quote.customer_order_number": "CO-1002",
             "nl_quote.currency": "USD",
             "nl_quote.sales_owner": "Luke",
             "nl_quote.payment_terms": "50% deposit, 50% before dispatch",
@@ -410,7 +408,6 @@ SEED_SPECS = [
             "nl_quote.customer_id": {"$ref": "contact.volga"},
             "nl_quote.customer_contact_name": "Irina Sokolova",
             "nl_quote.customer_reference": "VOLGA-GROW-09",
-            "nl_quote.customer_order_number": "CO-1003",
             "nl_quote.currency": "EUR",
             "nl_quote.sales_owner": "Luke",
             "nl_quote.payment_terms": "30% deposit, 70% final invoice",
@@ -552,10 +549,8 @@ SEED_SPECS = [
             "nl_customer_order.shipping_destination": "Aalsmeer Trade Park 4, Aalsmeer",
             "nl_customer_order.requested_delivery_date": "2026-05-20",
             "nl_customer_order.notes": "Accepted order for scenario A.",
-            "nl_customer_order.purchase_order_number": "PO-1001",
             "nl_customer_order.preferred_supplier_id": {"$ref": "contact.shenzhen"},
-            "nl_customer_order.deposit_percent": 30,
-            "nl_customer_order.deposit_invoice_number": "INV-1001-D"
+            "nl_customer_order.deposit_percent": 30
         }
     },
     {
@@ -576,10 +571,8 @@ SEED_SPECS = [
             "nl_customer_order.shipping_destination": "Karaganda Logistics Hub, Kazakhstan",
             "nl_customer_order.requested_delivery_date": "2026-04-30",
             "nl_customer_order.notes": "Scenario C operational order.",
-            "nl_customer_order.purchase_order_number": "PO-1003",
             "nl_customer_order.preferred_supplier_id": {"$ref": "contact.guangzhou"},
-            "nl_customer_order.deposit_percent": 30,
-            "nl_customer_order.final_invoice_number": "INV-1003-F"
+            "nl_customer_order.deposit_percent": 30
         }
     },
     {

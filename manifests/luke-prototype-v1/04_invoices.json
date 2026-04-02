@@ -38,7 +38,7 @@
       "display_field": "nl_invoice.invoice_number",
       "fields": [
         { "id": "nl_invoice.id", "type": "uuid", "label": "ID", "readonly": true },
-        { "id": "nl_invoice.invoice_number", "type": "string", "label": "Invoice Number", "required": true },
+        { "id": "nl_invoice.invoice_number", "type": "string", "label": "Invoice Number", "readonly": true },
         {
           "id": "nl_invoice.status",
           "type": "enum",
@@ -557,7 +557,13 @@
       "id": "nl_invoice.list_page",
       "title": "Invoices",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.refresh" },
+          { "kind": "navigate", "label": "New Invoice", "target": "page:nl_invoice.form_page" }
+        ]
+      },
       "content": [
         {
           "kind": "container",

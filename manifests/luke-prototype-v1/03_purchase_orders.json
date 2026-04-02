@@ -38,7 +38,7 @@
       "display_field": "nl_purchase_order.po_number",
       "fields": [
         { "id": "nl_purchase_order.id", "type": "uuid", "label": "ID", "readonly": true },
-        { "id": "nl_purchase_order.po_number", "type": "string", "label": "PO Number", "required": true },
+        { "id": "nl_purchase_order.po_number", "type": "string", "label": "PO Number", "readonly": true },
         {
           "id": "nl_purchase_order.status",
           "type": "enum",
@@ -501,7 +501,13 @@
       "id": "nl_purchase_order.list_page",
       "title": "Purchase Orders",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.refresh" },
+          { "kind": "navigate", "label": "New Purchase Order", "target": "page:nl_purchase_order.form_page" }
+        ]
+      },
       "content": [
         {
           "kind": "container",

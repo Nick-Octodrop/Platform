@@ -56,6 +56,24 @@ And preview the import plan without writing records:
 python3 manifests/luke-prototype-v1/seed_demo_data.py --dry-run
 ```
 
+## Document Numbering
+
+The Luke manifests now treat the main document number fields as system-managed:
+
+- `nl_quote.quote_number`
+- `nl_customer_order.order_number`
+- `nl_purchase_order.po_number`
+- `nl_invoice.invoice_number`
+
+To have new Luke records auto-number through the shared platform engine, create numbering definitions in `Settings -> Document Numbering` after install. A sensible setup is:
+
+- Quotes: assign on `create`
+- Customer Orders: assign on `confirm`
+- Purchase Orders: assign on `create`
+- Invoices: assign on `issue`
+
+The seed script still writes explicit demo numbers for the seeded records so the prototype remains presentation-ready even before numbering rules are configured.
+
 ## Prototype Scope
 
 Included:

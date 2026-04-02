@@ -40,7 +40,7 @@
       "display_field": "nl_customer_order.order_number",
       "fields": [
         { "id": "nl_customer_order.id", "type": "uuid", "label": "ID", "readonly": true },
-        { "id": "nl_customer_order.order_number", "type": "string", "label": "Order Number", "required": true },
+        { "id": "nl_customer_order.order_number", "type": "string", "label": "Order Number", "readonly": true },
         {
           "id": "nl_customer_order.status",
           "type": "enum",
@@ -92,7 +92,6 @@
         { "id": "nl_customer_order.shipping_destination", "type": "text", "label": "Shipping Destination" },
         { "id": "nl_customer_order.requested_delivery_date", "type": "date", "label": "Requested Delivery Date" },
         { "id": "nl_customer_order.notes", "type": "text", "label": "Notes" },
-        { "id": "nl_customer_order.purchase_order_number", "type": "string", "label": "Purchase Order Number" },
         { "id": "nl_customer_order.primary_purchase_order_id", "type": "string", "label": "Primary Purchase Order ID", "readonly": true },
         {
           "id": "nl_customer_order.preferred_supplier_id",
@@ -108,9 +107,7 @@
           "default": 30,
           "format": { "kind": "percent", "precision": 2 }
         },
-        { "id": "nl_customer_order.deposit_invoice_number", "type": "string", "label": "Deposit Invoice Number" },
         { "id": "nl_customer_order.deposit_invoice_id", "type": "string", "label": "Deposit Invoice ID", "readonly": true },
-        { "id": "nl_customer_order.final_invoice_number", "type": "string", "label": "Final Invoice Number" },
         { "id": "nl_customer_order.final_invoice_id", "type": "string", "label": "Final Invoice ID", "readonly": true },
         {
           "id": "nl_customer_order.order_total",
@@ -363,7 +360,6 @@
       "source_entity_id": "entity.nl_customer_order",
       "target_entity_id": "entity.nl_purchase_order",
       "field_mappings": {
-        "nl_purchase_order.po_number": { "from": "nl_customer_order.purchase_order_number" },
         "nl_purchase_order.supplier_id": { "from": "nl_customer_order.preferred_supplier_id" },
         "nl_purchase_order.purchasing_entity": { "value": "EcoTech FZCO" },
         "nl_purchase_order.source_customer_order_number": { "from": "nl_customer_order.order_number" },
@@ -392,7 +388,7 @@
         "target_to_source": "nl_purchase_order.source_customer_order_id"
       },
       "validation": {
-        "require_source_fields": ["nl_customer_order.order_number", "nl_customer_order.purchase_order_number", "nl_customer_order.preferred_supplier_id"],
+        "require_source_fields": ["nl_customer_order.order_number", "nl_customer_order.preferred_supplier_id"],
         "require_child_records": true,
         "prevent_if_target_linked": true
       }
@@ -402,7 +398,6 @@
       "source_entity_id": "entity.nl_customer_order",
       "target_entity_id": "entity.nl_invoice",
       "field_mappings": {
-        "nl_invoice.invoice_number": { "from": "nl_customer_order.deposit_invoice_number" },
         "nl_invoice.invoice_type": { "value": "deposit" },
         "nl_invoice.customer_id": { "from": "nl_customer_order.customer_id" },
         "nl_invoice.source_order_number": { "from": "nl_customer_order.order_number" },
@@ -420,7 +415,7 @@
         "target_to_source": "nl_invoice.source_order_id"
       },
       "validation": {
-        "require_source_fields": ["nl_customer_order.order_number", "nl_customer_order.deposit_invoice_number", "nl_customer_order.customer_id"],
+        "require_source_fields": ["nl_customer_order.order_number", "nl_customer_order.customer_id"],
         "prevent_if_target_linked": true
       }
     },
@@ -429,7 +424,6 @@
       "source_entity_id": "entity.nl_customer_order",
       "target_entity_id": "entity.nl_invoice",
       "field_mappings": {
-        "nl_invoice.invoice_number": { "from": "nl_customer_order.final_invoice_number" },
         "nl_invoice.invoice_type": { "value": "final" },
         "nl_invoice.customer_id": { "from": "nl_customer_order.customer_id" },
         "nl_invoice.source_order_number": { "from": "nl_customer_order.order_number" },
@@ -447,7 +441,7 @@
         "target_to_source": "nl_invoice.source_order_id"
       },
       "validation": {
-        "require_source_fields": ["nl_customer_order.order_number", "nl_customer_order.final_invoice_number", "nl_customer_order.customer_id"],
+        "require_source_fields": ["nl_customer_order.order_number", "nl_customer_order.customer_id"],
         "prevent_if_target_linked": true
       }
     }
@@ -519,7 +513,6 @@
             ]
           },
           { "op": "exists", "field": "nl_customer_order.preferred_supplier_id" },
-          { "op": "exists", "field": "nl_customer_order.purchase_order_number" },
           { "op": "not", "condition": { "op": "exists", "field": "nl_customer_order.primary_purchase_order_id" } }
         ]
       }
@@ -540,7 +533,6 @@
               { "op": "eq", "field": "nl_customer_order.status", "value": "in_production" }
             ]
           },
-          { "op": "exists", "field": "nl_customer_order.deposit_invoice_number" },
           { "op": "not", "condition": { "op": "exists", "field": "nl_customer_order.deposit_invoice_id" } }
         ]
       }
@@ -561,7 +553,6 @@
               { "op": "eq", "field": "nl_customer_order.status", "value": "completed" }
             ]
           },
-          { "op": "exists", "field": "nl_customer_order.final_invoice_number" },
           { "op": "not", "condition": { "op": "exists", "field": "nl_customer_order.final_invoice_id" } }
         ]
       }
@@ -630,10 +621,7 @@
           "columns": 2,
           "fields": [
             "nl_customer_order.preferred_supplier_id",
-            "nl_customer_order.purchase_order_number",
             "nl_customer_order.deposit_percent",
-            "nl_customer_order.deposit_invoice_number",
-            "nl_customer_order.final_invoice_number",
             "nl_customer_order.order_total",
             "nl_customer_order.invoiced_total",
             "nl_customer_order.balance_to_invoice"
@@ -798,7 +786,13 @@
       "id": "nl_customer_order.list_page",
       "title": "Customer Orders",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.refresh" },
+          { "kind": "navigate", "label": "New Customer Order", "target": "page:nl_customer_order.form_page" }
+        ]
+      },
       "content": [
         {
           "kind": "container",
