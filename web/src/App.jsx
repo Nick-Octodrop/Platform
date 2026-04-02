@@ -29,11 +29,15 @@ import SettingsSettingsPage from "./pages/SettingsSettingsPage.jsx";
 import SettingsPasswordPage from "./pages/SettingsPasswordPage.jsx";
 import SettingsUsersPage from "./pages/SettingsUsersPage.jsx";
 import SettingsAccessPoliciesPage from "./pages/SettingsAccessPoliciesPage.jsx";
+import SettingsAccessPolicyDetailPage from "./pages/SettingsAccessPolicyDetailPage.jsx";
 import SettingsWorkspacesPage from "./pages/SettingsWorkspacesPage.jsx";
 import SettingsSecretsPage from "./pages/SettingsSecretsPage.jsx";
 import SettingsDocumentNumberingPage from "./pages/SettingsDocumentNumberingPage.jsx";
+import SettingsDocumentNumberingDetailPage from "./pages/SettingsDocumentNumberingDetailPage.jsx";
 import SettingsApiCredentialsPage from "./pages/SettingsApiCredentialsPage.jsx";
+import SettingsApiCredentialDetailPage from "./pages/SettingsApiCredentialDetailPage.jsx";
 import SettingsWebhookSubscriptionsPage from "./pages/SettingsWebhookSubscriptionsPage.jsx";
+import SettingsWebhookSubscriptionDetailPage from "./pages/SettingsWebhookSubscriptionDetailPage.jsx";
 import DiagnosticsPage from "./pages/DiagnosticsPage.jsx";
 import DiagnosticsModulePage from "./pages/DiagnosticsModulePage.jsx";
 import DataExplorerPage from "./pages/DataExplorerPage.jsx";
@@ -414,6 +418,14 @@ export default function App() {
               )}
             />
             <Route
+              path="settings/access-policies/:profileId"
+              element={(
+                <CapabilityRoute capability="workspace.manage_members">
+                  <SettingsAccessPolicyDetailPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
               path="settings/workspaces"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
@@ -430,6 +442,22 @@ export default function App() {
               )}
             />
             <Route
+              path="settings/document-numbering/new"
+              element={(
+                <CapabilityRoute capability="workspace.manage_settings">
+                  <SettingsDocumentNumberingDetailPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="settings/document-numbering/:sequenceId"
+              element={(
+                <CapabilityRoute capability="workspace.manage_settings">
+                  <SettingsDocumentNumberingDetailPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
               path="settings/api-credentials"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
@@ -438,10 +466,26 @@ export default function App() {
               )}
             />
             <Route
+              path="settings/api-credentials/:credentialId"
+              element={(
+                <CapabilityRoute capability="workspace.manage_settings">
+                  <SettingsApiCredentialDetailPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
               path="settings/webhook-subscriptions"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
                   <SettingsWebhookSubscriptionsPage />
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="settings/webhook-subscriptions/:subscriptionId"
+              element={(
+                <CapabilityRoute capability="workspace.manage_settings">
+                  <SettingsWebhookSubscriptionDetailPage />
                 </CapabilityRoute>
               )}
             />

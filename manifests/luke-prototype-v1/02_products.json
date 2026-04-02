@@ -5,8 +5,8 @@
     "key": "luke_products",
     "name": "Products",
     "version": "1.0.0",
-    "description": "N-Light product catalogue items for quoting and purchasing.",
-    "category": "Prototype",
+    "description": "Product catalogue items for quoting and purchasing.",
+    "category": "Commercial",
     "icon_key": "lucide:Package2"
   },
   "depends_on": {

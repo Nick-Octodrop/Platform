@@ -341,7 +341,7 @@ def product_specs() -> list[dict[str, Any]]:
                     "nl_product.default_buy_price": buy,
                     "nl_product.preferred_supplier_id": {"$ref": supplier_ref},
                     "nl_product.supplier_factory_reference": f"{code}-FACTORY",
-                    "nl_product.internal_notes": "Prototype catalogue item.",
+                    "nl_product.internal_notes": "Demo catalogue item.",
                     "nl_product.is_active": True
                 }
             }
@@ -364,12 +364,12 @@ SEED_SPECS = [
             "nl_quote.customer_contact_name": "Eva van Dijk",
             "nl_quote.customer_reference": "GG-POC-2026-01",
             "nl_quote.currency": "EUR",
-            "nl_quote.sales_owner": "Luke",
+            "nl_quote.sales_owner": "Account Team",
             "nl_quote.payment_terms": "30% deposit, balance before shipment",
             "nl_quote.incoterm": "FCA",
-            "nl_quote.shipping_terms": "Sea freight coordinated by N-Light",
+            "nl_quote.shipping_terms": "Sea freight coordinated by seller",
             "nl_quote.validity_notes": "Valid for 14 days.",
-            "nl_quote.internal_notes": "Accepted and converted for prototype scenario A.",
+            "nl_quote.internal_notes": "Accepted and converted for demo scenario A.",
             "nl_quote.customer_notes": "Supply for Amsterdam greenhouse expansion."
         }
     },
@@ -387,7 +387,7 @@ SEED_SPECS = [
             "nl_quote.customer_contact_name": "Omar Al Hadi",
             "nl_quote.customer_reference": "DBT-RFQ-44",
             "nl_quote.currency": "USD",
-            "nl_quote.sales_owner": "Luke",
+            "nl_quote.sales_owner": "Account Team",
             "nl_quote.payment_terms": "50% deposit, 50% before dispatch",
             "nl_quote.incoterm": "EXW",
             "nl_quote.shipping_terms": "Customer freight forwarder",
@@ -409,7 +409,7 @@ SEED_SPECS = [
             "nl_quote.customer_contact_name": "Irina Sokolova",
             "nl_quote.customer_reference": "VOLGA-GROW-09",
             "nl_quote.currency": "EUR",
-            "nl_quote.sales_owner": "Luke",
+            "nl_quote.sales_owner": "Account Team",
             "nl_quote.payment_terms": "30% deposit, 70% final invoice",
             "nl_quote.incoterm": "DAP",
             "nl_quote.shipping_terms": "Project delivery to Karaganda hub",
@@ -872,7 +872,7 @@ def patch_order_links(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Seed Luke Prototype v1 demo data.")
+    parser = argparse.ArgumentParser(description="Seed commercial workflow demo data.")
     parser.add_argument("--base-url", default=None, help="API base URL, e.g. https://app.octodrop.com")
     parser.add_argument("--token", default=None, help="Bearer token")
     parser.add_argument("--workspace-id", default=None, help="Workspace ID")

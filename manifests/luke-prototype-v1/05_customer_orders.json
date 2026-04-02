@@ -5,8 +5,8 @@
     "key": "luke_customer_orders",
     "name": "Customer Orders",
     "version": "1.0.0",
-    "description": "Accepted customer business after quote approval for the N-Light prototype.",
-    "category": "Prototype",
+    "description": "Accepted customer business after quote approval in a commercial workflow workspace.",
+    "category": "Commercial",
     "icon_key": "lucide:ClipboardList"
   },
   "depends_on": {
@@ -64,7 +64,15 @@
           "display_field": "nl_contact.name",
           "required": true
         },
-        { "id": "nl_customer_order.source_quote_id", "type": "string", "label": "Source Quote ID", "readonly": true },
+        {
+          "id": "nl_customer_order.source_quote_id",
+          "type": "lookup",
+          "label": "Source Quote",
+          "entity": "entity.nl_quote",
+          "display_field": "nl_quote.quote_number",
+          "readonly": true,
+          "visible_when": { "op": "exists", "field": "nl_customer_order.source_quote_id" }
+        },
         { "id": "nl_customer_order.source_quote_number", "type": "string", "label": "Source Quote", "readonly": true },
         {
           "id": "nl_customer_order.sales_entity",
@@ -92,7 +100,15 @@
         { "id": "nl_customer_order.shipping_destination", "type": "text", "label": "Shipping Destination" },
         { "id": "nl_customer_order.requested_delivery_date", "type": "date", "label": "Requested Delivery Date" },
         { "id": "nl_customer_order.notes", "type": "text", "label": "Notes" },
-        { "id": "nl_customer_order.primary_purchase_order_id", "type": "string", "label": "Primary Purchase Order ID", "readonly": true },
+        {
+          "id": "nl_customer_order.primary_purchase_order_id",
+          "type": "lookup",
+          "label": "Primary Purchase Order",
+          "entity": "entity.nl_purchase_order",
+          "display_field": "nl_purchase_order.po_number",
+          "readonly": true,
+          "visible_when": { "op": "exists", "field": "nl_customer_order.primary_purchase_order_id" }
+        },
         {
           "id": "nl_customer_order.preferred_supplier_id",
           "type": "lookup",
@@ -107,8 +123,24 @@
           "default": 30,
           "format": { "kind": "percent", "precision": 2 }
         },
-        { "id": "nl_customer_order.deposit_invoice_id", "type": "string", "label": "Deposit Invoice ID", "readonly": true },
-        { "id": "nl_customer_order.final_invoice_id", "type": "string", "label": "Final Invoice ID", "readonly": true },
+        {
+          "id": "nl_customer_order.deposit_invoice_id",
+          "type": "lookup",
+          "label": "Deposit Invoice",
+          "entity": "entity.nl_invoice",
+          "display_field": "nl_invoice.invoice_number",
+          "readonly": true,
+          "visible_when": { "op": "exists", "field": "nl_customer_order.deposit_invoice_id" }
+        },
+        {
+          "id": "nl_customer_order.final_invoice_id",
+          "type": "lookup",
+          "label": "Final Invoice",
+          "entity": "entity.nl_invoice",
+          "display_field": "nl_invoice.invoice_number",
+          "readonly": true,
+          "visible_when": { "op": "exists", "field": "nl_customer_order.final_invoice_id" }
+        },
         {
           "id": "nl_customer_order.order_total",
           "type": "number",
@@ -487,6 +519,10 @@
       "entity_id": "entity.nl_customer_order",
       "label": "Cancel Order",
       "patch": { "nl_customer_order.status": "cancelled" },
+      "confirm": {
+        "title": "Cancel customer order?",
+        "body": "Use this only when the order should be stopped and removed from the active fulfilment flow."
+      },
       "visible_when": {
         "op": "or",
         "conditions": [
@@ -500,8 +536,12 @@
       "id": "action.customer_order_create_purchase_order",
       "kind": "transform_record",
       "entity_id": "entity.nl_customer_order",
-      "label": "Create Purchase Order",
+      "label": "Raise Purchase Order",
       "transformation_key": "customer_order_to_purchase_order",
+      "confirm": {
+        "title": "Raise purchase order?",
+        "body": "This will create a supplier PO from the current customer order lines."
+      },
       "visible_when": {
         "op": "and",
         "conditions": [
@@ -521,8 +561,12 @@
       "id": "action.customer_order_create_deposit_invoice",
       "kind": "transform_record",
       "entity_id": "entity.nl_customer_order",
-      "label": "Create Deposit Invoice",
+      "label": "Raise Deposit Invoice",
       "transformation_key": "customer_order_to_deposit_invoice",
+      "confirm": {
+        "title": "Raise deposit invoice?",
+        "body": "This will create a draft deposit invoice linked to this customer order."
+      },
       "visible_when": {
         "op": "and",
         "conditions": [
@@ -541,8 +585,12 @@
       "id": "action.customer_order_create_final_invoice",
       "kind": "transform_record",
       "entity_id": "entity.nl_customer_order",
-      "label": "Create Final Invoice",
+      "label": "Raise Final Invoice",
       "transformation_key": "customer_order_to_final_invoice",
+      "confirm": {
+        "title": "Raise final invoice?",
+        "body": "This will create the final commercial invoice for the shipped order."
+      },
       "visible_when": {
         "op": "and",
         "conditions": [
@@ -582,10 +630,30 @@
           "fields": ["nl_customer_order.order_number", "nl_customer_order.customer_reference", "nl_customer_order.source_quote_number"]
         },
         "filters": [
+          {
+            "id": "active",
+            "label": "Active Orders",
+            "domain": {
+              "op": "in",
+              "field": "nl_customer_order.status",
+              "value": ["confirmed", "in_production", "shipped"]
+            }
+          },
           { "id": "draft", "label": "Draft Orders", "domain": { "op": "eq", "field": "nl_customer_order.status", "value": "draft" } },
           { "id": "confirmed", "label": "Confirmed Orders", "domain": { "op": "eq", "field": "nl_customer_order.status", "value": "confirmed" } },
           { "id": "shipped", "label": "Shipped Orders", "domain": { "op": "eq", "field": "nl_customer_order.status", "value": "shipped" } },
-          { "id": "completed", "label": "Completed Orders", "domain": { "op": "eq", "field": "nl_customer_order.status", "value": "completed" } }
+          { "id": "completed", "label": "Completed Orders", "domain": { "op": "eq", "field": "nl_customer_order.status", "value": "completed" } },
+          {
+            "id": "ready_to_invoice",
+            "label": "Ready To Invoice",
+            "domain": {
+              "op": "and",
+              "conditions": [
+                { "op": "in", "field": "nl_customer_order.status", "value": ["shipped", "completed"] },
+                { "op": "not", "condition": { "op": "exists", "field": "nl_customer_order.final_invoice_id" } }
+              ]
+            }
+          }
         ]
       }
     },
@@ -603,7 +671,7 @@
             "nl_customer_order.order_number",
             "nl_customer_order.status",
             "nl_customer_order.customer_id",
-            "nl_customer_order.source_quote_number",
+            "nl_customer_order.source_quote_id",
             "nl_customer_order.sales_entity",
             "nl_customer_order.currency",
             "nl_customer_order.order_date",
@@ -615,8 +683,8 @@
           ]
         },
         {
-          "id": "operations",
-          "title": "Operations",
+          "id": "commercials",
+          "title": "Commercials",
           "layout": "columns",
           "columns": 2,
           "fields": [
@@ -625,6 +693,17 @@
             "nl_customer_order.order_total",
             "nl_customer_order.invoiced_total",
             "nl_customer_order.balance_to_invoice"
+          ]
+        },
+        {
+          "id": "related",
+          "title": "Related Records",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "nl_customer_order.primary_purchase_order_id",
+            "nl_customer_order.deposit_invoice_id",
+            "nl_customer_order.final_invoice_id"
           ]
         },
         {
@@ -690,8 +769,10 @@
           "tabs": [
             { "id": "summary", "label": "Summary", "sections": ["summary"] },
             { "id": "lines", "label": "Order Lines", "sections": ["lines"] },
+            { "id": "commercials", "label": "Commercials", "sections": ["commercials"] },
+            { "id": "related", "label": "Related Records", "sections": ["related"] },
             { "id": "profitability", "label": "Profitability", "sections": ["profitability"] },
-            { "id": "operations", "label": "Related Records", "sections": ["operations"] }
+            { "id": "notes", "label": "Notes", "sections": ["summary"] }
           ]
         }
       }
@@ -795,6 +876,62 @@
       },
       "content": [
         {
+          "kind": "stat_cards",
+          "columns": 4,
+          "cards": [
+            {
+              "id": "customer_orders_confirmed_count",
+              "label": "Confirmed",
+              "subtitle": "Ready for fulfilment",
+              "entity_id": "entity.nl_customer_order",
+              "measure": "count",
+              "domain": { "op": "eq", "field": "nl_customer_order.status", "value": "confirmed" },
+              "icon": "lucide:BadgeCheck",
+              "tone": "primary",
+              "format": "number"
+            },
+            {
+              "id": "customer_orders_in_production_count",
+              "label": "In Production",
+              "subtitle": "Being prepared with suppliers",
+              "entity_id": "entity.nl_customer_order",
+              "measure": "count",
+              "domain": { "op": "eq", "field": "nl_customer_order.status", "value": "in_production" },
+              "icon": "lucide:Factory",
+              "tone": "warning",
+              "format": "number"
+            },
+            {
+              "id": "customer_orders_ready_to_invoice_count",
+              "label": "Ready To Invoice",
+              "subtitle": "Shipped or completed without final invoice",
+              "entity_id": "entity.nl_customer_order",
+              "measure": "count",
+              "domain": {
+                "op": "and",
+                "conditions": [
+                  { "op": "in", "field": "nl_customer_order.status", "value": ["shipped", "completed"] },
+                  { "op": "not", "condition": { "op": "exists", "field": "nl_customer_order.final_invoice_id" } }
+                ]
+              },
+              "icon": "lucide:ReceiptText",
+              "tone": "success",
+              "format": "number"
+            },
+            {
+              "id": "customer_orders_completed_count",
+              "label": "Completed",
+              "subtitle": "Closed customer orders",
+              "entity_id": "entity.nl_customer_order",
+              "measure": "count",
+              "domain": { "op": "eq", "field": "nl_customer_order.status", "value": "completed" },
+              "icon": "lucide:CircleCheckBig",
+              "tone": "accent",
+              "format": "number"
+            }
+          ]
+        },
+        {
           "kind": "container",
           "variant": "card",
           "content": [
@@ -802,7 +939,7 @@
               "kind": "view_modes",
               "entity_id": "entity.nl_customer_order",
               "default_mode": "kanban",
-              "default_filter_id": "confirmed",
+              "default_filter_id": "active",
               "modes": [
                 { "mode": "list", "target": "view:nl_customer_order.list" },
                 { "mode": "kanban", "target": "view:nl_customer_order.kanban", "default_group_by": "nl_customer_order.status" },

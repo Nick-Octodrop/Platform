@@ -1,5 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api.js";
+import SystemListToolbar from "../ui/SystemListToolbar.jsx";
+import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
 
 function SubscriptionModal({
@@ -40,9 +43,8 @@ function SubscriptionModal({
               className="input input-bordered"
               value={form.event_pattern}
               onChange={(e) => setForm((prev) => ({ ...prev, event_pattern: e.target.value }))}
-              placeholder="construction.* or record.updated"
+              placeholder="billing.* or record.updated"
             />
-            <span className="label-text-alt opacity-70 mt-1">Use `*` for all events, or a prefix wildcard like `billing.*`.</span>
           </label>
 
           <label className="form-control">
@@ -55,13 +57,12 @@ function SubscriptionModal({
                 </option>
               ))}
             </select>
-            <span className="label-text-alt opacity-70 mt-1">If set, deliveries include `X-Octo-Timestamp` and `X-Octo-Signature`.</span>
           </label>
 
           <label className="form-control">
             <span className="label-text text-sm">Extra Headers JSON</span>
             <textarea
-              className="textarea textarea-bordered font-mono text-xs min-h-[8rem]"
+              className="textarea textarea-bordered min-h-[8rem] font-mono text-xs"
               value={form.headers_json_text}
               onChange={(e) => setForm((prev) => ({ ...prev, headers_json_text: e.target.value }))}
             />
@@ -81,21 +82,30 @@ function SubscriptionModal({
   );
 }
 
-export default function SettingsWebhookSubscriptionsPage() {
-  const [items, setItems] = useState([]);
-  const [secrets, setSecrets] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [form, setForm] = useState({
+function emptyForm() {
+  return {
     name: "",
     target_url: "",
     event_pattern: "*",
     signing_secret_id: "",
     headers_json_text: "{}",
-  });
+  };
+}
+
+export default function SettingsWebhookSubscriptionsPage() {
+  const navigate = useNavigate();
+  const [items, setItems] = useState([]);
+  const [secrets, setSecrets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [page, setPage] = useState(0);
+  const [totalItems, setTotalItems] = useState(0);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState(emptyForm());
 
   async function load() {
     setLoading(true);
@@ -124,34 +134,29 @@ export default function SettingsWebhookSubscriptionsPage() {
     if (saving) return;
     setSaving(true);
     setError("");
-    setNotice("");
     try {
       let headersJson = {};
       try {
-        headersJson = JSON.parse(form.headers_json_text || "{}");
+        headersJson = JSON.parse(createForm.headers_json_text || "{}");
       } catch {
         throw new Error("Headers JSON must be valid JSON");
       }
-      await apiFetch("/settings/webhook-subscriptions", {
+      const response = await apiFetch("/settings/webhook-subscriptions", {
         method: "POST",
         body: {
-          name: form.name.trim(),
-          target_url: form.target_url.trim(),
-          event_pattern: form.event_pattern.trim(),
-          signing_secret_id: form.signing_secret_id || null,
+          name: createForm.name.trim(),
+          target_url: createForm.target_url.trim(),
+          event_pattern: createForm.event_pattern.trim(),
+          signing_secret_id: createForm.signing_secret_id || null,
           headers_json: headersJson,
         },
       });
       setShowCreateModal(false);
-      setForm({
-        name: "",
-        target_url: "",
-        event_pattern: "*",
-        signing_secret_id: "",
-        headers_json_text: "{}",
-      });
-      setNotice("Webhook subscription created.");
+      setCreateForm(emptyForm());
       await load();
+      if (response?.subscription?.id) {
+        navigate(`/settings/webhook-subscriptions/${response.subscription.id}`);
+      }
     } catch (err) {
       setError(err?.message || "Failed to create webhook subscription");
     } finally {
@@ -159,95 +164,157 @@ export default function SettingsWebhookSubscriptionsPage() {
     }
   }
 
-  async function deleteSubscription(id) {
-    setError("");
-    setNotice("");
-    try {
-      await apiFetch(`/settings/webhook-subscriptions/${encodeURIComponent(id)}`, { method: "DELETE" });
-      setNotice("Webhook subscription deleted.");
-      await load();
-    } catch (err) {
-      setError(err?.message || "Failed to delete webhook subscription");
-    }
-  }
+  const rows = useMemo(
+    () => (items || []).map((item) => ({
+      id: item.id,
+      name: item.name || "Untitled",
+      status: item.status || "active",
+      event_pattern: item.event_pattern || "*",
+      target_url: item.target_url || "—",
+      last_delivered_at: formatDateTime(item.last_delivered_at) || "Never",
+    })),
+    [items],
+  );
+
+  const listFieldIndex = useMemo(
+    () => ({
+      "sub.name": { id: "sub.name", label: "Name" },
+      "sub.status": { id: "sub.status", label: "Status" },
+      "sub.event_pattern": { id: "sub.event_pattern", label: "Event Pattern" },
+      "sub.target_url": { id: "sub.target_url", label: "Target URL" },
+      "sub.last_delivered_at": { id: "sub.last_delivered_at", label: "Last Delivered" },
+    }),
+    [],
+  );
+
+  const listView = useMemo(
+    () => ({
+      id: "system.settings.webhook_subscriptions.list",
+      kind: "list",
+      columns: [
+        { field_id: "sub.name" },
+        { field_id: "sub.status" },
+        { field_id: "sub.event_pattern" },
+        { field_id: "sub.target_url" },
+        { field_id: "sub.last_delivered_at" },
+      ],
+    }),
+    [],
+  );
+
+  const listRecords = useMemo(
+    () => rows.map((row) => ({
+      record_id: row.id,
+      record: {
+        "sub.name": row.name,
+        "sub.status": row.status,
+        "sub.event_pattern": row.event_pattern,
+        "sub.target_url": row.target_url,
+        "sub.last_delivered_at": row.last_delivered_at,
+      },
+    })),
+    [rows],
+  );
+
+  const filters = useMemo(
+    () => [
+      { id: "all", label: "All", domain: null },
+      { id: "active", label: "Active", domain: { op: "eq", field: "sub.status", value: "active" } },
+      { id: "disabled", label: "Disabled", domain: { op: "eq", field: "sub.status", value: "disabled" } },
+    ],
+    [],
+  );
+
+  const activeFilter = useMemo(() => filters.find((filter) => filter.id === statusFilter) || null, [filters, statusFilter]);
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-6xl flex-col gap-4 p-4 md:p-6">
-      <div className="rounded-box border border-base-300 bg-base-200/40 p-4 md:p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-semibold">Webhook Subscriptions</h1>
-            <p className="mt-1 text-sm opacity-70">
-              Send signed Octodrop events to third-party systems using async worker delivery.
-            </p>
-          </div>
-          <button type="button" className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
-            New Subscription
-          </button>
-        </div>
-        {notice ? <div className="alert alert-success mt-4 text-sm">{notice}</div> : null}
-        {error ? <div className="alert alert-error mt-4 text-sm">{error}</div> : null}
-      </div>
+    <div className="min-h-full md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
+      <div className="bg-base-100 md:card md:rounded-[1.75rem] md:border md:border-base-300 md:shadow-sm md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
+        <div className="p-4 md:card-body md:flex md:flex-col md:min-h-0 md:overflow-hidden">
+          <div className="space-y-4 md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
+            {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
+            <SystemListToolbar
+              title="Webhook Subscriptions"
+              createTooltip="New webhook"
+              onCreate={() => {
+                setCreateForm(emptyForm());
+                setShowCreateModal(true);
+              }}
+              searchValue={search}
+              onSearchChange={(value) => {
+                setSearch(value);
+                setPage(0);
+              }}
+              filters={filters}
+              onFilterChange={(id) => {
+                setStatusFilter(id);
+                setPage(0);
+              }}
+              onClearFilters={() => {
+                setStatusFilter("all");
+                setPage(0);
+              }}
+              onRefresh={load}
+              showSavedViews={false}
+              pagination={{
+                page,
+                pageSize: 25,
+                totalItems,
+                onPageChange: setPage,
+              }}
+            />
 
-      <div className="rounded-box border border-base-300 bg-base-200/40 overflow-x-auto">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Pattern</th>
-              <th>Target</th>
-              <th>Status</th>
-              <th>Last Delivered</th>
-              <th>Last Result</th>
-              <th className="text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={7} className="py-10 text-center text-sm opacity-60">Loading subscriptions...</td>
-              </tr>
-            ) : items.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="py-10 text-center text-sm opacity-60">No webhook subscriptions yet.</td>
-              </tr>
-            ) : (
-              items.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.name || "Untitled"}</td>
-                  <td className="font-mono text-xs">{item.event_pattern || "*"}</td>
-                  <td className="text-sm">{item.target_url || "—"}</td>
-                  <td>
-                    <span className={`badge badge-sm ${item.status === "active" ? "badge-success" : "badge-ghost"}`}>
-                      {item.status || "active"}
-                    </span>
-                  </td>
-                  <td className="text-sm">{formatDateTime(item.last_delivered_at) || "Never"}</td>
-                  <td className="text-sm">
-                    {item.last_error ? (
-                      <span className="text-error">{item.last_error}</span>
-                    ) : item.last_status_code ? (
-                      <span>{item.last_status_code}</span>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="text-right">
-                    <button type="button" className="btn btn-ghost btn-sm text-error" onClick={() => deleteSubscription(item.id)}>
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+            <div className="md:mt-4">
+              {loading ? (
+                <div className="text-sm opacity-70">Loading…</div>
+              ) : rows.length === 0 ? (
+                <div className="text-sm opacity-60">No webhook subscriptions yet.</div>
+              ) : (
+                <ListViewRenderer
+                  view={listView}
+                  fieldIndex={listFieldIndex}
+                  records={listRecords}
+                  hideHeader
+                  disableHorizontalScroll
+                  tableClassName="w-full table-fixed min-w-0"
+                  searchQuery={search}
+                  searchFields={["sub.name", "sub.event_pattern", "sub.target_url"]}
+                  filters={filters}
+                  activeFilter={activeFilter}
+                  clientFilters={[]}
+                  page={page}
+                  pageSize={25}
+                  onPageChange={setPage}
+                  onTotalItemsChange={setTotalItems}
+                  showPaginationControls={false}
+                  selectedIds={selectedIds}
+                  onToggleSelect={(id, checked) => {
+                    if (!id) return;
+                    setSelectedIds((prev) => {
+                      const next = new Set(prev);
+                      if (checked) next.add(id);
+                      else next.delete(id);
+                      return Array.from(next);
+                    });
+                  }}
+                  onToggleAll={(checked, allIds) => {
+                    setSelectedIds(checked ? allIds || [] : []);
+                  }}
+                  onSelectRow={(row) => {
+                    const id = row?.record_id;
+                    if (id) navigate(`/settings/webhook-subscriptions/${id}`);
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       {showCreateModal ? (
         <SubscriptionModal
-          form={form}
-          setForm={setForm}
+          form={createForm}
+          setForm={setCreateForm}
           saving={saving}
           secrets={secrets}
           onCancel={() => setShowCreateModal(false)}

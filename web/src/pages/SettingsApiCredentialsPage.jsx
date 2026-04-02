@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api.js";
+import SystemListToolbar from "../ui/SystemListToolbar.jsx";
+import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
 
 const AVAILABLE_SCOPES = [
@@ -54,7 +57,7 @@ function CredentialModal({
               placeholder="Leave blank for no expiry"
               disabled={saving}
             />
-            <span className="label-text-alt opacity-70 mt-1">Optional. Use this for vendor keys or short-lived rollout credentials.</span>
+            <span className="label-text-alt mt-1 opacity-70">Optional. Use this for vendor keys or short-lived rollout credentials.</span>
           </label>
 
           <div className="space-y-2">
@@ -76,7 +79,6 @@ function CredentialModal({
                 </label>
               ))}
             </div>
-            <div className="text-xs opacity-70">Use the smallest scope set that still lets the integration do its job.</div>
           </div>
         </div>
 
@@ -98,9 +100,7 @@ function TokenModal({ token, onClose }) {
     <div className="modal modal-open">
       <div className="modal-box max-w-2xl">
         <h3 className="text-lg font-semibold">Copy API Key Now</h3>
-        <p className="mt-1 text-sm opacity-70">
-          This is the only time the full token is shown. Store it in the destination system now.
-        </p>
+        <p className="mt-1 text-sm opacity-70">This is the only time the full token is shown. Store it now.</p>
         <textarea className="textarea textarea-bordered mt-4 min-h-[8rem] w-full font-mono text-sm" readOnly value={token} />
         <div className="modal-action">
           <button
@@ -126,22 +126,24 @@ function TokenModal({ token, onClose }) {
 }
 
 export default function SettingsApiCredentialsPage() {
+  const navigate = useNavigate();
   const [items, setItems] = useState([]);
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [page, setPage] = useState(0);
+  const [totalItems, setTotalItems] = useState(0);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState(["meta.read", "records.read"]);
   const [expiresInDays, setExpiresInDays] = useState("");
   const [createdToken, setCreatedToken] = useState("");
-  const [revokingId, setRevokingId] = useState("");
-  const [rotatingId, setRotatingId] = useState("");
+  const [createdCredentialId, setCreatedCredentialId] = useState("");
 
-  async function loadItems() {
+  async function load() {
     setLoading(true);
     setError("");
     try {
@@ -155,30 +157,14 @@ export default function SettingsApiCredentialsPage() {
     }
   }
 
-  async function loadLogs() {
-    setLoadingLogs(true);
-    try {
-      const response = await apiFetch("/settings/api-request-logs?limit=100");
-      setLogs(Array.isArray(response?.logs) ? response.logs : []);
-    } catch {
-      setLogs([]);
-    } finally {
-      setLoadingLogs(false);
-    }
-  }
-
   useEffect(() => {
-    loadItems();
-    loadLogs();
+    load();
   }, []);
-
-  const activeCount = useMemo(() => items.filter((item) => item?.status === "active").length, [items]);
 
   async function createCredential() {
     if (creating || !name.trim()) return;
     setCreating(true);
     setError("");
-    setNotice("");
     try {
       const response = await apiFetch("/settings/api-credentials", {
         method: "POST",
@@ -189,13 +175,12 @@ export default function SettingsApiCredentialsPage() {
         },
       });
       setShowCreateModal(false);
-      setCreatedToken(response?.token || "");
       setName("");
       setScopes(["meta.read", "records.read"]);
       setExpiresInDays("");
-      setNotice("API credential created.");
-      await loadItems();
-      await loadLogs();
+      setCreatedToken(response?.token || "");
+      setCreatedCredentialId(response?.api_credential?.id || "");
+      await load();
     } catch (err) {
       setError(err?.message || "Failed to create API credential");
     } finally {
@@ -203,220 +188,151 @@ export default function SettingsApiCredentialsPage() {
     }
   }
 
-  async function revokeCredential(id) {
-    if (!id || revokingId) return;
-    setRevokingId(id);
-    setError("");
-    setNotice("");
-    try {
-      await apiFetch(`/settings/api-credentials/${encodeURIComponent(id)}/revoke`, { method: "POST" });
-      setNotice("API credential revoked.");
-      await loadItems();
-      await loadLogs();
-    } catch (err) {
-      setError(err?.message || "Failed to revoke API credential");
-    } finally {
-      setRevokingId("");
-    }
-  }
+  const rows = useMemo(
+    () => (items || []).map((item) => ({
+      id: item.id,
+      name: item.name || "Untitled",
+      status: item.status || "active",
+      key_prefix: item.key_prefix || "—",
+      scopes: Array.isArray(item.scopes) ? item.scopes.join(", ") : "",
+      last_used_at: formatDateTime(item.last_used_at) || "Never",
+      expires_at: formatDateTime(item.expires_at) || "No expiry",
+    })),
+    [items],
+  );
 
-  async function rotateCredential(id) {
-    if (!id || rotatingId) return;
-    setRotatingId(id);
-    setError("");
-    setNotice("");
-    try {
-      const response = await apiFetch(`/settings/api-credentials/${encodeURIComponent(id)}/rotate`, {
-        method: "POST",
-        body: {},
-      });
-      setCreatedToken(response?.token || "");
-      setNotice("API credential rotated. Copy the new token now.");
-      await loadItems();
-      await loadLogs();
-    } catch (err) {
-      setError(err?.message || "Failed to rotate API credential");
-    } finally {
-      setRotatingId("");
-    }
-  }
+  const listFieldIndex = useMemo(
+    () => ({
+      "cred.name": { id: "cred.name", label: "Name" },
+      "cred.status": { id: "cred.status", label: "Status" },
+      "cred.key_prefix": { id: "cred.key_prefix", label: "Key Prefix" },
+      "cred.scopes": { id: "cred.scopes", label: "Scopes" },
+      "cred.last_used_at": { id: "cred.last_used_at", label: "Last Used" },
+      "cred.expires_at": { id: "cred.expires_at", label: "Expiry" },
+    }),
+    [],
+  );
+
+  const listView = useMemo(
+    () => ({
+      id: "system.settings.api_credentials.list",
+      kind: "list",
+      columns: [
+        { field_id: "cred.name" },
+        { field_id: "cred.status" },
+        { field_id: "cred.key_prefix" },
+        { field_id: "cred.scopes" },
+        { field_id: "cred.last_used_at" },
+        { field_id: "cred.expires_at" },
+      ],
+    }),
+    [],
+  );
+
+  const listRecords = useMemo(
+    () => rows.map((row) => ({
+      record_id: row.id,
+      record: {
+        "cred.name": row.name,
+        "cred.status": row.status,
+        "cred.key_prefix": row.key_prefix,
+        "cred.scopes": row.scopes,
+        "cred.last_used_at": row.last_used_at,
+        "cred.expires_at": row.expires_at,
+      },
+    })),
+    [rows],
+  );
+
+  const filters = useMemo(
+    () => [
+      { id: "all", label: "All", domain: null },
+      { id: "active", label: "Active", domain: { op: "eq", field: "cred.status", value: "active" } },
+      { id: "revoked", label: "Revoked", domain: { op: "eq", field: "cred.status", value: "revoked" } },
+    ],
+    [],
+  );
+
+  const activeFilter = useMemo(() => filters.find((filter) => filter.id === statusFilter) || null, [filters, statusFilter]);
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-6xl flex-col gap-4 p-4 md:p-6">
-      <div className="rounded-box border border-base-300 bg-base-200/40 p-4 md:p-5">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h1 className="text-xl font-semibold">API Credentials</h1>
-            <p className="mt-1 text-sm opacity-70">
-              Create scoped API keys for external systems using Octodrop’s `/ext/v1` endpoints.
-            </p>
-          </div>
-          <button type="button" className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
-            Create API Key
-          </button>
-        </div>
+    <div className="min-h-full md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
+      <div className="bg-base-100 md:card md:rounded-[1.75rem] md:border md:border-base-300 md:shadow-sm md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
+        <div className="p-4 md:card-body md:flex md:flex-col md:min-h-0 md:overflow-hidden">
+          <div className="space-y-4 md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
+            {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
+            <SystemListToolbar
+              title="API Credentials"
+              createTooltip="Create API key"
+              onCreate={() => setShowCreateModal(true)}
+              searchValue={search}
+              onSearchChange={(value) => {
+                setSearch(value);
+                setPage(0);
+              }}
+              filters={filters}
+              onFilterChange={(id) => {
+                setStatusFilter(id);
+                setPage(0);
+              }}
+              onClearFilters={() => {
+                setStatusFilter("all");
+                setPage(0);
+              }}
+              onRefresh={load}
+              showSavedViews={false}
+              pagination={{
+                page,
+                pageSize: 25,
+                totalItems,
+                onPageChange: setPage,
+              }}
+            />
 
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <div className="rounded-box bg-base-200 p-3">
-            <div className="text-xs uppercase tracking-wide opacity-60">Total Keys</div>
-            <div className="mt-1 text-lg font-semibold">{items.length}</div>
-          </div>
-          <div className="rounded-box bg-base-200 p-3">
-            <div className="text-xs uppercase tracking-wide opacity-60">Active</div>
-            <div className="mt-1 text-lg font-semibold">{activeCount}</div>
-          </div>
-          <div className="rounded-box bg-base-200 p-3">
-            <div className="text-xs uppercase tracking-wide opacity-60">Available Scopes</div>
-            <div className="mt-1 text-sm">{AVAILABLE_SCOPES.length}</div>
-          </div>
-        </div>
-
-        {notice ? <div className="alert alert-success mt-4 text-sm">{notice}</div> : null}
-        {error ? <div className="alert alert-error mt-4 text-sm">{error}</div> : null}
-      </div>
-
-      <div className="rounded-box border border-base-300 bg-base-200/40">
-        <div className="overflow-x-auto">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Prefix</th>
-                <th>Scopes</th>
-                <th>Status</th>
-                <th>Expires</th>
-                <th>Rotated</th>
-                <th>Last Used</th>
-                <th>Created</th>
-                <th className="text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+            <div className="md:mt-4">
               {loading ? (
-                <tr>
-                  <td colSpan={9} className="py-10 text-center text-sm opacity-60">
-                    Loading API credentials...
-                  </td>
-                </tr>
-              ) : items.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="py-10 text-center text-sm opacity-60">
-                    No API credentials yet.
-                  </td>
-                </tr>
+                <div className="text-sm opacity-70">Loading…</div>
+              ) : rows.length === 0 ? (
+                <div className="text-sm opacity-60">No API credentials yet.</div>
               ) : (
-                items.map((item) => (
-                  <tr key={item.id}>
-                    <td>
-                      <div className="font-medium">{item.name || "Untitled"}</div>
-                    </td>
-                    <td className="font-mono text-xs">{item.key_prefix || "—"}</td>
-                    <td>
-                      <div className="flex flex-wrap gap-1">
-                        {(item.scopes || []).length ? (
-                          item.scopes.map((scope) => (
-                            <span key={scope} className="badge badge-outline badge-sm">
-                              {scope}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-sm opacity-60">No scopes</span>
-                        )}
-                      </div>
-                    </td>
-                    <td>
-                      <span className={`badge badge-sm ${item.status === "active" ? "badge-success" : "badge-ghost"}`}>
-                        {item.status || "active"}
-                      </span>
-                    </td>
-                    <td className="text-sm">{formatDateTime(item.expires_at) || "No expiry"}</td>
-                    <td className="text-sm">{formatDateTime(item.last_rotated_at) || "—"}</td>
-                    <td className="text-sm">{formatDateTime(item.last_used_at) || "Never"}</td>
-                    <td className="text-sm">{formatDateTime(item.created_at) || "—"}</td>
-                    <td className="text-right">
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => rotateCredential(item.id)}
-                        disabled={item.status !== "active" || rotatingId === item.id}
-                      >
-                        {rotatingId === item.id ? "Rotating..." : "Rotate"}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm text-error"
-                        onClick={() => revokeCredential(item.id)}
-                        disabled={item.status !== "active" || revokingId === item.id}
-                      >
-                        {revokingId === item.id ? "Revoking..." : "Revoke"}
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                <ListViewRenderer
+                  view={listView}
+                  fieldIndex={listFieldIndex}
+                  records={listRecords}
+                  hideHeader
+                  disableHorizontalScroll
+                  tableClassName="w-full table-fixed min-w-0"
+                  searchQuery={search}
+                  searchFields={["cred.name", "cred.key_prefix", "cred.scopes"]}
+                  filters={filters}
+                  activeFilter={activeFilter}
+                  clientFilters={[]}
+                  page={page}
+                  pageSize={25}
+                  onPageChange={setPage}
+                  onTotalItemsChange={setTotalItems}
+                  showPaginationControls={false}
+                  selectedIds={selectedIds}
+                  onToggleSelect={(id, checked) => {
+                    if (!id) return;
+                    setSelectedIds((prev) => {
+                      const next = new Set(prev);
+                      if (checked) next.add(id);
+                      else next.delete(id);
+                      return Array.from(next);
+                    });
+                  }}
+                  onToggleAll={(checked, allIds) => {
+                    setSelectedIds(checked ? allIds || [] : []);
+                  }}
+                  onSelectRow={(row) => {
+                    const id = row?.record_id;
+                    if (id) navigate(`/settings/api-credentials/${id}`);
+                  }}
+                />
               )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="rounded-box border border-base-300 bg-base-200/40">
-        <div className="flex items-center justify-between border-b border-base-300 px-4 py-3">
-          <div>
-            <h2 className="text-base font-semibold">Recent External API Requests</h2>
-            <p className="text-sm opacity-70">Audit trail for `/ext/v1` requests made with API credentials.</p>
+            </div>
           </div>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={loadLogs} disabled={loadingLogs}>
-            {loadingLogs ? "Refreshing..." : "Refresh"}
-          </button>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>Credential</th>
-                <th>Request</th>
-                <th>Status</th>
-                <th>Duration</th>
-                <th>IP</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loadingLogs ? (
-                <tr>
-                  <td colSpan={6} className="py-10 text-center text-sm opacity-60">
-                    Loading request logs...
-                  </td>
-                </tr>
-              ) : logs.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-10 text-center text-sm opacity-60">
-                    No external API requests logged yet.
-                  </td>
-                </tr>
-              ) : (
-                logs.map((log) => {
-                  const credential = items.find((item) => item.id === log.api_credential_id);
-                  return (
-                    <tr key={log.id}>
-                      <td className="text-sm">{formatDateTime(log.created_at) || "—"}</td>
-                      <td className="text-sm">{credential?.name || log.api_credential_id || "Unknown"}</td>
-                      <td>
-                        <div className="font-mono text-xs">{log.method} {log.path}</div>
-                      </td>
-                      <td>
-                        <span className={`badge badge-sm ${Number(log.status_code) >= 400 ? "badge-error" : "badge-success"}`}>
-                          {log.status_code}
-                        </span>
-                      </td>
-                      <td className="text-sm">{log.duration_ms != null ? `${log.duration_ms} ms` : "—"}</td>
-                      <td className="text-sm">{log.ip_address || "—"}</td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
         </div>
       </div>
 
@@ -434,7 +350,17 @@ export default function SettingsApiCredentialsPage() {
         />
       ) : null}
 
-      {createdToken ? <TokenModal token={createdToken} onClose={() => setCreatedToken("")} /> : null}
+      {createdToken ? (
+        <TokenModal
+          token={createdToken}
+          onClose={() => {
+            setCreatedToken("");
+            if (createdCredentialId) {
+              navigate(`/settings/api-credentials/${createdCredentialId}`);
+            }
+          }}
+        />
+      ) : null}
     </div>
   );
 }

@@ -5,8 +5,8 @@
     "key": "luke_purchase_orders",
     "name": "Purchase Orders",
     "version": "1.0.0",
-    "description": "Supplier purchasing for the N-Light workflow prototype.",
-    "category": "Prototype",
+    "description": "Supplier purchasing for a commercial workflow workspace.",
+    "category": "Commercial",
     "icon_key": "lucide:Truck"
   },
   "depends_on": {
@@ -74,7 +74,15 @@
             { "value": "EcoTech FZCO", "label": "EcoTech FZCO" }
           ]
         },
-        { "id": "nl_purchase_order.source_customer_order_id", "type": "string", "label": "Source Customer Order ID", "readonly": true },
+        {
+          "id": "nl_purchase_order.source_customer_order_id",
+          "type": "lookup",
+          "label": "Source Customer Order",
+          "entity": "entity.nl_customer_order",
+          "display_field": "nl_customer_order.order_number",
+          "readonly": true,
+          "visible_when": { "op": "exists", "field": "nl_purchase_order.source_customer_order_id" }
+        },
         { "id": "nl_purchase_order.source_customer_order_number", "type": "string", "label": "Source Customer Order", "readonly": true },
         { "id": "nl_purchase_order.po_date", "type": "date", "label": "PO Date" },
         {
@@ -229,8 +237,12 @@
       "id": "action.purchase_order_mark_sent",
       "kind": "update_record",
       "entity_id": "entity.nl_purchase_order",
-      "label": "Mark Sent",
+      "label": "Send PO",
       "patch": { "nl_purchase_order.status": "sent_to_supplier" },
+      "confirm": {
+        "title": "Send purchase order?",
+        "body": "Use this when the supplier-facing PO has been issued."
+      },
       "visible_when": { "op": "eq", "field": "nl_purchase_order.status", "value": "draft" }
     },
     {
@@ -271,6 +283,10 @@
       "entity_id": "entity.nl_purchase_order",
       "label": "Close PO",
       "patch": { "nl_purchase_order.status": "closed" },
+      "confirm": {
+        "title": "Close purchase order?",
+        "body": "Use this when goods have been received and the buying side is operationally complete."
+      },
       "visible_when": { "op": "eq", "field": "nl_purchase_order.status", "value": "received" }
     },
     {
@@ -279,6 +295,10 @@
       "entity_id": "entity.nl_purchase_order",
       "label": "Cancel PO",
       "patch": { "nl_purchase_order.status": "cancelled" },
+      "confirm": {
+        "title": "Cancel purchase order?",
+        "body": "Use this only when the supplier order should be stopped and removed from the active buying flow."
+      },
       "visible_when": {
         "op": "or",
         "conditions": [
@@ -314,6 +334,15 @@
           "fields": ["nl_purchase_order.po_number", "nl_purchase_order.supplier_reference", "nl_purchase_order.source_customer_order_number"]
         },
         "filters": [
+          {
+            "id": "open",
+            "label": "Open POs",
+            "domain": {
+              "op": "in",
+              "field": "nl_purchase_order.status",
+              "value": ["draft", "sent_to_supplier", "confirmed", "in_production", "shipped", "received"]
+            }
+          },
           { "id": "draft", "label": "Draft POs", "domain": { "op": "eq", "field": "nl_purchase_order.status", "value": "draft" } },
           { "id": "sent", "label": "Sent POs", "domain": { "op": "eq", "field": "nl_purchase_order.status", "value": "sent_to_supplier" } },
           { "id": "production", "label": "In Production", "domain": { "op": "eq", "field": "nl_purchase_order.status", "value": "in_production" } },
@@ -337,7 +366,7 @@
             "nl_purchase_order.status",
             "nl_purchase_order.supplier_id",
             "nl_purchase_order.purchasing_entity",
-            "nl_purchase_order.source_customer_order_number",
+            "nl_purchase_order.source_customer_order_id",
             "nl_purchase_order.currency",
             "nl_purchase_order.po_date",
             "nl_purchase_order.supplier_reference",
@@ -510,6 +539,56 @@
       },
       "content": [
         {
+          "kind": "stat_cards",
+          "columns": 4,
+          "cards": [
+            {
+              "id": "purchase_orders_draft_count",
+              "label": "To Send",
+              "subtitle": "Draft supplier orders",
+              "entity_id": "entity.nl_purchase_order",
+              "measure": "count",
+              "domain": { "op": "eq", "field": "nl_purchase_order.status", "value": "draft" },
+              "icon": "lucide:FileClock",
+              "tone": "primary",
+              "format": "number"
+            },
+            {
+              "id": "purchase_orders_production_count",
+              "label": "In Production",
+              "subtitle": "Confirmed with supplier",
+              "entity_id": "entity.nl_purchase_order",
+              "measure": "count",
+              "domain": { "op": "eq", "field": "nl_purchase_order.status", "value": "in_production" },
+              "icon": "lucide:Factory",
+              "tone": "warning",
+              "format": "number"
+            },
+            {
+              "id": "purchase_orders_shipped_count",
+              "label": "In Transit",
+              "subtitle": "Supplier has shipped",
+              "entity_id": "entity.nl_purchase_order",
+              "measure": "count",
+              "domain": { "op": "eq", "field": "nl_purchase_order.status", "value": "shipped" },
+              "icon": "lucide:Truck",
+              "tone": "success",
+              "format": "number"
+            },
+            {
+              "id": "purchase_orders_received_count",
+              "label": "Received",
+              "subtitle": "Awaiting closeout",
+              "entity_id": "entity.nl_purchase_order",
+              "measure": "count",
+              "domain": { "op": "eq", "field": "nl_purchase_order.status", "value": "received" },
+              "icon": "lucide:PackageCheck",
+              "tone": "accent",
+              "format": "number"
+            }
+          ]
+        },
+        {
           "kind": "container",
           "variant": "card",
           "content": [
@@ -517,7 +596,7 @@
               "kind": "view_modes",
               "entity_id": "entity.nl_purchase_order",
               "default_mode": "kanban",
-              "default_filter_id": "draft",
+              "default_filter_id": "open",
               "modes": [
                 { "mode": "list", "target": "view:nl_purchase_order.list" },
                 { "mode": "kanban", "target": "view:nl_purchase_order.kanban", "default_group_by": "nl_purchase_order.status" },

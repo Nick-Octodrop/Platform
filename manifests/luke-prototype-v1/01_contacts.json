@@ -5,8 +5,8 @@
     "key": "luke_contacts",
     "name": "Contacts",
     "version": "1.0.0",
-    "description": "Customers, suppliers, and factory partners for the N-Light workflow prototype.",
-    "category": "Prototype",
+    "description": "Customers, suppliers, and factory partners for a commercial workflow workspace.",
+    "category": "Commercial",
     "icon_key": "lucide:Users"
   },
   "app": {

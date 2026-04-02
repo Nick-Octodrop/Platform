@@ -5,8 +5,8 @@
     "key": "luke_quotes",
     "name": "Quotes",
     "version": "1.0.0",
-    "description": "Quote-first N-Light workflow prototype for Luke, from quote through order, PO, and invoicing.",
-    "category": "Prototype",
+    "description": "Quote-first commercial workflow from quote through order, purchasing, and invoicing.",
+    "category": "Commercial",
     "icon_key": "lucide:FileCheck2"
   },
   "depends_on": {
@@ -36,7 +36,7 @@
     },
     "nav": [
       {
-        "group": "Luke Prototype v1",
+        "group": "Commercial Workflow",
         "mode": "inline",
         "items": [
           { "label": "Home", "to": "page:dashboard.home_page" },
@@ -99,14 +99,42 @@
           ]
         },
         { "id": "nl_quote.sales_owner", "type": "string", "label": "Sales Owner" },
+        {
+          "id": "nl_quote.follow_up_date",
+          "type": "date",
+          "label": "Follow Up Date",
+          "visible_when": {
+            "op": "in",
+            "field": "nl_quote.status",
+            "value": ["draft", "sent"]
+          }
+        },
         { "id": "nl_quote.payment_terms", "type": "string", "label": "Payment Terms" },
         { "id": "nl_quote.incoterm", "type": "string", "label": "Incoterm" },
         { "id": "nl_quote.shipping_terms", "type": "string", "label": "Shipping Terms" },
         { "id": "nl_quote.validity_notes", "type": "text", "label": "Validity Notes" },
+        {
+          "id": "nl_quote.loss_reason",
+          "type": "text",
+          "label": "Loss / Expiry Reason",
+          "visible_when": {
+            "op": "in",
+            "field": "nl_quote.status",
+            "value": ["lost", "expired"]
+          }
+        },
         { "id": "nl_quote.internal_notes", "type": "text", "label": "Internal Notes" },
         { "id": "nl_quote.customer_notes", "type": "text", "label": "Customer Notes" },
         { "id": "nl_quote.pdf_template_name", "type": "string", "label": "PDF Template Name" },
-        { "id": "nl_quote.linked_customer_order_id", "type": "string", "label": "Linked Customer Order ID", "readonly": true },
+        {
+          "id": "nl_quote.linked_customer_order_id",
+          "type": "lookup",
+          "label": "Linked Customer Order",
+          "entity": "entity.nl_customer_order",
+          "display_field": "nl_customer_order.order_number",
+          "readonly": true,
+          "visible_when": { "op": "exists", "field": "nl_quote.linked_customer_order_id" }
+        },
         { "id": "nl_quote.linked_customer_order_number", "type": "string", "label": "Linked Customer Order", "readonly": true },
         {
           "id": "nl_quote.subtotal",
@@ -495,15 +523,19 @@
       "id": "action.quote_mark_sent",
       "kind": "update_record",
       "entity_id": "entity.nl_quote",
-      "label": "Mark Sent",
+      "label": "Send Quote",
       "patch": { "nl_quote.status": "sent" },
+      "confirm": {
+        "title": "Send quote?",
+        "body": "Use this once the commercial quote has been shared with the customer."
+      },
       "visible_when": { "op": "eq", "field": "nl_quote.status", "value": "draft" }
     },
     {
       "id": "action.quote_accept_and_create_order",
       "kind": "transform_record",
       "entity_id": "entity.nl_quote",
-      "label": "Accept Quote",
+      "label": "Accept + Create Order",
       "transformation_key": "quote_to_customer_order",
       "visible_when": {
         "op": "and",
@@ -523,6 +555,10 @@
       "entity_id": "entity.nl_quote",
       "label": "Mark Lost",
       "patch": { "nl_quote.status": "lost" },
+      "confirm": {
+        "title": "Mark quote as lost?",
+        "body": "This keeps the quote in history but removes it from the active pipeline."
+      },
       "visible_when": {
         "op": "or",
         "conditions": [
@@ -537,7 +573,23 @@
       "entity_id": "entity.nl_quote",
       "label": "Mark Expired",
       "patch": { "nl_quote.status": "expired" },
+      "confirm": {
+        "title": "Mark quote as expired?",
+        "body": "Use this when the commercial validity period has passed without acceptance."
+      },
       "visible_when": { "op": "eq", "field": "nl_quote.status", "value": "sent" }
+    },
+    {
+      "id": "action.quote_reopen",
+      "kind": "update_record",
+      "entity_id": "entity.nl_quote",
+      "label": "Reopen Quote",
+      "patch": { "nl_quote.status": "draft" },
+      "visible_when": {
+        "op": "in",
+        "field": "nl_quote.status",
+        "value": ["lost", "expired"]
+      }
     }
   ],
   "views": [
@@ -576,6 +628,17 @@
           { "id": "draft", "label": "Draft Quotes", "domain": { "op": "eq", "field": "nl_quote.status", "value": "draft" } },
           { "id": "sent", "label": "Sent Quotes", "domain": { "op": "eq", "field": "nl_quote.status", "value": "sent" } },
           { "id": "accepted", "label": "Accepted Quotes", "domain": { "op": "eq", "field": "nl_quote.status", "value": "accepted" } },
+          {
+            "id": "ready_to_convert",
+            "label": "Ready To Convert",
+            "domain": {
+              "op": "and",
+              "conditions": [
+                { "op": "eq", "field": "nl_quote.status", "value": "accepted" },
+                { "op": "not", "condition": { "op": "exists", "field": "nl_quote.linked_customer_order_id" } }
+              ]
+            }
+          },
           { "id": "lost", "label": "Lost Quotes", "domain": { "op": "eq", "field": "nl_quote.status", "value": "lost" } }
         ]
       }
@@ -601,10 +664,11 @@
             "nl_quote.expiry_date",
             "nl_quote.customer_reference",
             "nl_quote.sales_owner",
+            "nl_quote.follow_up_date",
             "nl_quote.payment_terms",
             "nl_quote.incoterm",
             "nl_quote.shipping_terms",
-            "nl_quote.linked_customer_order_number"
+            "nl_quote.linked_customer_order_id"
           ]
         },
         {
@@ -672,6 +736,7 @@
           "fields": [
             "nl_quote.customer_notes",
             "nl_quote.validity_notes",
+            "nl_quote.loss_reason",
             "nl_quote.internal_notes",
             "nl_quote.pdf_template_name"
           ]
@@ -684,6 +749,7 @@
           { "action_id": "action.quote_accept_and_create_order" },
           { "action_id": "action.quote_mark_lost" },
           { "action_id": "action.quote_mark_expired" },
+          { "action_id": "action.quote_reopen" },
           { "action_id": "action.refresh" }
         ],
         "tabs": {
@@ -791,7 +857,7 @@
   "pages": [
     {
       "id": "dashboard.home_page",
-      "title": "N-Light Workflow Prototype",
+      "title": "Commercial Workflow",
       "layout": "single",
       "header": {
         "variant": "none",
@@ -844,9 +910,11 @@
               "entity_id": "entity.nl_quote",
               "measure": "count",
               "domain": {
-                "op": "eq",
-                "field": "nl_quote.status",
-                "value": "accepted"
+                "op": "and",
+                "conditions": [
+                  { "op": "eq", "field": "nl_quote.status", "value": "accepted" },
+                  { "op": "not", "condition": { "op": "exists", "field": "nl_quote.linked_customer_order_id" } }
+                ]
               },
               "icon": "lucide:BadgeCheck",
               "tone": "warning",
@@ -989,6 +1057,62 @@
         ]
       },
       "content": [
+        {
+          "kind": "stat_cards",
+          "columns": 4,
+          "cards": [
+            {
+              "id": "quote_open_count",
+              "label": "Open Quotes",
+              "subtitle": "Draft and sent pipeline",
+              "entity_id": "entity.nl_quote",
+              "measure": "count",
+              "domain": { "op": "in", "field": "nl_quote.status", "value": ["draft", "sent"] },
+              "icon": "lucide:FileCheck2",
+              "tone": "primary",
+              "format": "number"
+            },
+            {
+              "id": "quote_ready_to_convert_count",
+              "label": "Ready To Convert",
+              "subtitle": "Accepted without an order yet",
+              "entity_id": "entity.nl_quote",
+              "measure": "count",
+              "domain": {
+                "op": "and",
+                "conditions": [
+                  { "op": "eq", "field": "nl_quote.status", "value": "accepted" },
+                  { "op": "not", "condition": { "op": "exists", "field": "nl_quote.linked_customer_order_id" } }
+                ]
+              },
+              "icon": "lucide:BadgeCheck",
+              "tone": "warning",
+              "format": "number"
+            },
+            {
+              "id": "quote_sent_count",
+              "label": "Awaiting Decision",
+              "subtitle": "Sent to customer",
+              "entity_id": "entity.nl_quote",
+              "measure": "count",
+              "domain": { "op": "eq", "field": "nl_quote.status", "value": "sent" },
+              "icon": "lucide:Send",
+              "tone": "success",
+              "format": "number"
+            },
+            {
+              "id": "quote_exception_count",
+              "label": "Exceptions",
+              "subtitle": "Lost and expired",
+              "entity_id": "entity.nl_quote",
+              "measure": "count",
+              "domain": { "op": "in", "field": "nl_quote.status", "value": ["lost", "expired"] },
+              "icon": "lucide:CircleOff",
+              "tone": "accent",
+              "format": "number"
+            }
+          ]
+        },
         {
           "kind": "container",
           "variant": "card",

@@ -1,9 +1,9 @@
-# Luke Prototype v1
+# Commercial Workflow Prototype
 
-Prototype workspace target for a tailored Octodrop demo for Luke / N-Light.
+Prototype workspace target for a lightweight quote-to-order-to-purchasing-to-invoice demo.
 
-- Display label: `Luke Prototype v1`
-- Title: `N-Light Workflow Prototype`
+- Display label: `Commercial Workflow Prototype`
+- Title: `Commercial Workflow`
 - Subtitle: `Quote to Order to PO to Invoice demo`
 
 ## Modules
@@ -17,7 +17,7 @@ This prototype is split into six installable manifests:
 5. `05_customer_orders.json`
 6. `06_quotes.json`
 
-`06_quotes.json` owns the prototype dashboard/home page and the left-nav order.
+`06_quotes.json` owns the dashboard/home page and the left-nav order.
 
 ## Install
 
@@ -58,23 +58,38 @@ python3 manifests/luke-prototype-v1/seed_demo_data.py --dry-run
 
 ## Document Numbering
 
-The Luke manifests now treat the main document number fields as system-managed:
+These manifests now treat the main document number fields as system-managed:
 
 - `nl_quote.quote_number`
 - `nl_customer_order.order_number`
 - `nl_purchase_order.po_number`
 - `nl_invoice.invoice_number`
 
-To have new Luke records auto-number through the shared platform engine, create numbering definitions in `Settings -> Document Numbering` after install. A sensible setup is:
+To have new records auto-number through the shared platform engine, create numbering definitions in `Settings -> Document Numbering` after install. A sensible setup is:
 
 - Quotes: assign on `create`
 - Customer Orders: assign on `confirm`
 - Purchase Orders: assign on `create`
 - Invoices: assign on `issue`
 
+You can populate those definitions automatically with:
+
+```bash
+python3 manifests/luke-prototype-v1/setup_document_numbering.py \
+  --base-url http://localhost:8000 \
+  --token "$TOKEN" \
+  --workspace-id "$WORKSPACE_ID"
+```
+
+Or preview what it will create/update:
+
+```bash
+python3 manifests/luke-prototype-v1/setup_document_numbering.py --dry-run
+```
+
 The seed script still writes explicit demo numbers for the seeded records so the prototype remains presentation-ready even before numbering rules are configured.
 
-## Prototype Scope
+## Scope
 
 Included:
 
@@ -88,7 +103,7 @@ Included:
 - Quote to order transform
 - Order to PO transform
 - Deposit / final invoice creation from order
-- N-Light themed demo data
+- realistic commercial demo data
 
 Intentionally not included:
 
