@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 export default function CodeTextarea({
   value,
@@ -11,12 +11,25 @@ export default function CodeTextarea({
   fill = false,
 }) {
   const [scrollTop, setScrollTop] = useState(0);
+  const [autoHeight, setAutoHeight] = useState(null);
+  const textareaRef = useRef(null);
   const lines = useMemo(() => String(value || "").split("\n").length, [value]);
+
+  useEffect(() => {
+    if (fill) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "0px";
+    const nextHeight = `${Math.max(el.scrollHeight, 0)}px`;
+    el.style.height = nextHeight;
+    setAutoHeight(nextHeight);
+    setScrollTop(el.scrollTop || 0);
+  }, [value, fill]);
 
   return (
     <div
       className={`border border-base-200 rounded-box overflow-hidden bg-base-100 ${fill ? "h-full" : ""} ${className}`}
-      style={!fill ? { minHeight } : undefined}
+      style={!fill ? { minHeight, height: autoHeight || minHeight } : undefined}
     >
       <div className="flex h-full min-h-0">
         <div className="bg-base-200 text-xs text-right px-2 py-2 font-mono select-none">
@@ -25,13 +38,14 @@ export default function CodeTextarea({
           </pre>
         </div>
         <textarea
+          ref={textareaRef}
           className={`textarea textarea-bordered w-full font-mono text-xs rounded-none border-0 code-textarea ${fill ? "h-full" : ""} ${textareaClassName}`}
           value={value}
           onChange={(e) => onChange?.(e)}
           onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
           placeholder={placeholder}
           readOnly={readOnly}
-          style={!fill ? { minHeight, lineHeight: "1rem" } : { lineHeight: "1rem" }}
+          style={!fill ? { minHeight, height: autoHeight || minHeight, lineHeight: "1rem", overflow: "hidden" } : { lineHeight: "1rem" }}
         />
       </div>
     </div>

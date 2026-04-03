@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../api";
+import { useToast } from "../components/Toast.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import PaginationControls from "../components/PaginationControls.jsx";
 
@@ -25,6 +26,7 @@ function SettingsSection({ title, description, children }) {
 }
 
 export default function SettingsUsersPage() {
+  const { pushToast } = useToast();
   const [context, setContext] = useState(null);
   const [members, setMembers] = useState([]);
   const [accessProfiles, setAccessProfiles] = useState([]);
@@ -34,7 +36,6 @@ export default function SettingsUsersPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [pendingRemove, setPendingRemove] = useState(null);
   const [deleteAuthUser, setDeleteAuthUser] = useState(false);
   const [pendingEmailEdit, setPendingEmailEdit] = useState(null);
@@ -103,14 +104,13 @@ export default function SettingsUsersPage() {
     if (!member?.user_id) return;
     setSaving(true);
     setError("");
-    setNotice("");
     try {
       await apiFetch(`/access/members/${member.user_id}/profiles`, {
         method: "PATCH",
         body: { profile_ids: selectedProfileIds },
       });
       await load();
-      setNotice("Access profiles updated.");
+      pushToast("success", "Access profiles updated.");
       closeProfileModal();
     } catch (err) {
       setError(err?.message || "Failed to update access profiles");
@@ -123,7 +123,6 @@ export default function SettingsUsersPage() {
     if (!inviteEmail.trim()) return;
     setSaving(true);
     setError("");
-    setNotice("");
     try {
       const res = await apiFetch("/access/members/invite", {
         method: "POST",
@@ -134,7 +133,7 @@ export default function SettingsUsersPage() {
         },
       });
       setMembers(res?.members || []);
-      setNotice(`Invitation sent to ${inviteEmail.trim()}`);
+      pushToast("success", `Invitation sent to ${inviteEmail.trim()}`);
       setInviteEmail("");
     } catch (err) {
       setError(err?.message || "Failed to invite user");
@@ -151,13 +150,13 @@ export default function SettingsUsersPage() {
     }
     setSaving(true);
     setError("");
-    setNotice("");
     try {
       const res = await apiFetch(`/access/members/${userId}`, {
         method: "PATCH",
         body: { role },
       });
       setMembers(res?.members || []);
+      pushToast("success", "Role updated.");
     } catch (err) {
       setError(err?.message || "Failed to update role");
     } finally {
@@ -183,12 +182,11 @@ export default function SettingsUsersPage() {
     if (!member?.user_id) return;
     setSaving(true);
     setError("");
-    setNotice("");
     try {
       const query = deleteAuthUser ? "?delete_auth_user=1" : "";
       const res = await apiFetch(`/access/members/${member.user_id}${query}`, { method: "DELETE" });
       setMembers(res?.members || []);
-      setNotice(deleteAuthUser ? "User removed and auth account deleted." : "User removed from workspace.");
+      pushToast("success", deleteAuthUser ? "User removed and auth account deleted." : "User removed from workspace.");
       closeRemoveModal();
     } catch (err) {
       setError(err?.message || "Failed to remove user");
@@ -211,14 +209,13 @@ export default function SettingsUsersPage() {
     if (!member?.user_id || !nextEmail.trim()) return;
     setSaving(true);
     setError("");
-    setNotice("");
     try {
       const res = await apiFetch(`/access/members/${member.user_id}/email`, {
         method: "PATCH",
         body: { email: nextEmail.trim().toLowerCase() },
       });
       setMembers(res?.members || []);
-      setNotice("User email updated.");
+      pushToast("success", "User email updated.");
       closeEmailModal();
     } catch (err) {
       setError(err?.message || "Failed to update user email");
@@ -231,7 +228,6 @@ export default function SettingsUsersPage() {
     if (!platformInviteEmail.trim()) return;
     setSaving(true);
     setError("");
-    setNotice("");
     try {
       const res = await apiFetch("/access/platform-invite", {
         method: "POST",
@@ -240,7 +236,8 @@ export default function SettingsUsersPage() {
           platform_role: platformInviteRole,
         },
       });
-      setNotice(
+      pushToast(
+        "success",
         `Platform invite sent to ${platformInviteEmail.trim()} (${res?.email_flow || "invite"} flow). No workspace assigned until first login.`,
       );
       setPlatformInviteEmail("");
@@ -259,25 +256,11 @@ export default function SettingsUsersPage() {
 
   return (
     <TabbedPaneShell
-      title="Users & Roles"
-      subtitle="Invite workspace users and manage access roles."
       tabs={tabs}
-      mobileOverflowActions={[
-        {
-          label: "Refresh",
-          onClick: load,
-          disabled: loading || saving,
-        },
-      ]}
-      rightActions={(
-        <button className="btn btn-sm btn-ghost" type="button" disabled={loading || saving} onClick={load}>
-          Refresh
-        </button>
-      )}
+      contentContainer={true}
     >
       <div className="space-y-4">
         {error && <div className="alert alert-error text-sm">{error}</div>}
-        {notice && <div className="alert alert-success text-sm">{notice}</div>}
 
         <div className="space-y-4">
           <SettingsSection title="Invite user" description="Add someone to this workspace.">
@@ -388,21 +371,29 @@ export default function SettingsUsersPage() {
                 </div>
 
                 <div className="overflow-x-auto">
-                  <table className="table table-sm">
+                  <table className="table table-sm table-fixed w-full">
                   <thead>
                     <tr>
-                      <th>User</th>
-                      <th>Email</th>
+                      <th className="w-48">User</th>
+                      <th className="w-64">Email</th>
                       <th className="w-44">Role</th>
-                      <th>Access profiles</th>
-                      <th className="w-44">Actions</th>
+                      <th className="w-72">Access profiles</th>
+                      <th className="w-56">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                   {pagedMembers.map((member) => (
                     <tr key={member.user_id}>
-                      <td className="whitespace-nowrap">{member.name || member.user_id}</td>
-                      <td className="whitespace-nowrap">{member.email || "—"}</td>
+                      <td>
+                        <div className="truncate" title={member.name || member.user_id}>
+                          {member.name || member.user_id}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="truncate" title={member.email || "—"}>
+                          {member.email || "—"}
+                        </div>
+                      </td>
                       <td>
                         {canManage ? (
                           <select
@@ -425,10 +416,10 @@ export default function SettingsUsersPage() {
                         )}
                       </td>
                       <td>
-                        <div className="flex flex-wrap gap-1">
+                        <div className="flex flex-wrap gap-1 max-w-full">
                           {(member.access_profiles || []).length ? (
                             member.access_profiles.map((profile) => (
-                              <span key={profile.id} className="badge badge-outline badge-sm">
+                              <span key={profile.id} className="badge badge-outline badge-sm max-w-full">
                                 {profile.name || profile.id}
                               </span>
                             ))
@@ -439,7 +430,7 @@ export default function SettingsUsersPage() {
                       </td>
                         <td>
                           {canManage ? (
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <button
                                 className="btn btn-ghost btn-xs"
                                 disabled={saving}

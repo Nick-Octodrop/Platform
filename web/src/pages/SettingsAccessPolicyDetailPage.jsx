@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { apiFetch } from "../api.js";
+import { useToast } from "../components/Toast.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 
 const RESOURCE_TYPES = [
@@ -31,26 +32,23 @@ const ACCESS_LEVELS = {
   ],
 };
 
-function DetailPanel({ title, description, children, tone = "bg-base-100" }) {
+function Section({ title, description, children, tone = "bg-base-100" }) {
   return (
-    <section className={`rounded-box border border-base-300 ${tone}`}>
-      <div className="border-b border-base-300 px-4 py-3">
-        <div className="font-medium">{title}</div>
-        {description ? <div className="mt-1 text-sm opacity-70">{description}</div> : null}
-      </div>
-      <div className="p-4">{children}</div>
-    </section>
+    <div className={`rounded-box border border-base-300 p-4 ${tone}`}>
+      <div className="text-sm font-semibold">{title}</div>
+      {description ? <div className="text-sm opacity-70 mt-1">{description}</div> : null}
+      <div className="mt-4">{children}</div>
+    </div>
   );
 }
 
 export default function SettingsAccessPolicyDetailPage() {
   const { profileId } = useParams();
-  const navigate = useNavigate();
+  const { pushToast } = useToast();
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [activeTabId, setActiveTabId] = useState("details");
   const [ruleDraft, setRuleDraft] = useState({ resource_type: "module", resource_id: "", access_level: "hidden", priority: 100, condition_json_text: "" });
 
@@ -79,7 +77,6 @@ export default function SettingsAccessPolicyDetailPage() {
     if (!profile?.id || saving) return;
     setSaving(true);
     setError("");
-    setNotice("");
     try {
       await apiFetch(`/access/profiles/${profile.id}`, {
         method: "PATCH",
@@ -89,25 +86,10 @@ export default function SettingsAccessPolicyDetailPage() {
           profile_key: profile.profile_key || "",
         },
       });
-      setNotice("Access profile updated.");
+      pushToast("success", "Access profile updated.");
       await load();
     } catch (err) {
       setError(err?.message || "Failed to update access profile");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function deleteProfile() {
-    if (!profile?.id || saving) return;
-    setSaving(true);
-    setError("");
-    setNotice("");
-    try {
-      await apiFetch(`/access/profiles/${profile.id}`, { method: "DELETE" });
-      navigate("/settings/access-policies");
-    } catch (err) {
-      setError(err?.message || "Failed to delete access profile");
     } finally {
       setSaving(false);
     }
@@ -117,7 +99,6 @@ export default function SettingsAccessPolicyDetailPage() {
     if (!profile?.id || !ruleDraft.resource_id.trim()) return;
     setSaving(true);
     setError("");
-    setNotice("");
     try {
       let conditionJson = undefined;
       if (ruleDraft.resource_type === "entity" && ruleDraft.condition_json_text.trim()) {
@@ -138,7 +119,7 @@ export default function SettingsAccessPolicyDetailPage() {
         },
       });
       setRuleDraft({ resource_type: "module", resource_id: "", access_level: "hidden", priority: 100, condition_json_text: "" });
-      setNotice("Rule added.");
+      pushToast("success", "Rule added.");
       await load();
     } catch (err) {
       setError(err?.message || "Failed to add rule");
@@ -151,10 +132,9 @@ export default function SettingsAccessPolicyDetailPage() {
     if (!profile?.id || !ruleId || saving) return;
     setSaving(true);
     setError("");
-    setNotice("");
     try {
       await apiFetch(`/access/profiles/${profile.id}/rules/${ruleId}`, { method: "DELETE" });
-      setNotice("Rule deleted.");
+      pushToast("success", "Rule deleted.");
       await load();
     } catch (err) {
       setError(err?.message || "Failed to delete rule");
@@ -165,32 +145,15 @@ export default function SettingsAccessPolicyDetailPage() {
 
   return (
     <TabbedPaneShell
-      title={profile?.name || "Access Profile"}
-      subtitle="Profile-based module, entity, field, action, and scoped record access rules."
       tabs={[
         { id: "details", label: "Details" },
         { id: "rules", label: "Rules" },
       ]}
       activeTabId={activeTabId}
       onTabChange={setActiveTabId}
-      rightActions={(
-        <div className="flex items-center gap-2">
-          {activeTabId === "details" ? (
-            <button className="btn btn-sm btn-primary" type="button" onClick={saveProfile} disabled={loading || saving || !profile?.name?.trim()}>
-              Save
-            </button>
-          ) : null}
-          <button className="btn btn-sm btn-ghost" type="button" onClick={load} disabled={loading || saving}>
-            Refresh
-          </button>
-          <button className="btn btn-sm" type="button" onClick={() => navigate("/settings/access-policies")} disabled={saving}>
-            Back
-          </button>
-        </div>
-      )}
+      contentContainer={true}
     >
       {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
-      {notice ? <div className="alert alert-success text-sm mb-4">{notice}</div> : null}
 
       {loading ? (
         <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-70">Loading…</div>
@@ -198,7 +161,7 @@ export default function SettingsAccessPolicyDetailPage() {
         <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-60">Access profile not found.</div>
       ) : activeTabId === "details" ? (
         <div className="space-y-4">
-          <DetailPanel title="Profile Details" description="Names are user-facing. Keys are stable references you can reuse later.">
+          <Section title="Profile Details" description="Names are user-facing. Keys are stable references you can reuse later.">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
               <label className="form-control md:col-span-4">
                 <span className="label-text text-sm">Name</span>
@@ -227,17 +190,14 @@ export default function SettingsAccessPolicyDetailPage() {
 
             <div className="mt-4 flex flex-wrap gap-2">
               <button className="btn btn-sm btn-primary" type="button" disabled={saving || !profile.name?.trim()} onClick={saveProfile}>
-                {saving ? "Saving..." : "Save Profile"}
-              </button>
-              <button className="btn btn-sm btn-outline text-error" type="button" disabled={saving} onClick={deleteProfile}>
-                Delete Profile
+                {saving ? "Saving..." : "Save"}
               </button>
             </div>
-          </DetailPanel>
+          </Section>
         </div>
       ) : (
         <div className="space-y-4">
-          <DetailPanel title="Add Rule" description="Use exact ids such as a module id, entity id, field id, or module_id:action_id.">
+          <Section title="Add Rule" description="Use exact ids such as a module id, entity id, field id, or module_id:action_id.">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
               <label className="form-control md:col-span-3">
                 <span className="label-text text-sm">Resource type</span>
@@ -255,10 +215,14 @@ export default function SettingsAccessPolicyDetailPage() {
                     <option key={item.value} value={item.value}>{item.label}</option>
                   ))}
                 </select>
+                <span className="label label-text-alt opacity-50">Choose what kind of thing this rule controls.</span>
               </label>
               <label className="form-control md:col-span-4">
                 <span className="label-text text-sm">Resource id</span>
                 <input className="input input-bordered input-sm" value={ruleDraft.resource_id} disabled={saving} placeholder="quotes, entity.nl_quote, nl_quote.grand_total, app:action.save" onChange={(e) => setRuleDraft((prev) => ({ ...prev, resource_id: e.target.value }))} />
+                <span className="label label-text-alt opacity-50">
+                  Required. Use the exact id for the module, entity, field, or action you want this rule to apply to.
+                </span>
               </label>
               <label className="form-control md:col-span-3">
                 <span className="label-text text-sm">Access</span>
@@ -267,32 +231,35 @@ export default function SettingsAccessPolicyDetailPage() {
                     <option key={item.value} value={item.value}>{item.label}</option>
                   ))}
                 </select>
+                <span className="label label-text-alt opacity-50">Choose the access level this rule should enforce.</span>
               </label>
               <label className="form-control md:col-span-2">
                 <span className="label-text text-sm">Priority</span>
                 <input className="input input-bordered input-sm" type="number" value={ruleDraft.priority} disabled={saving} onChange={(e) => setRuleDraft((prev) => ({ ...prev, priority: Number(e.target.value || 100) }))} />
+                <span className="label label-text-alt opacity-50">Lower numbers run first. Default is 100.</span>
               </label>
-              {ruleDraft.resource_type === "entity" ? (
-                <label className="form-control md:col-span-12">
-                  <span className="label-text text-sm">Scope condition JSON</span>
-                  <textarea
-                    className="textarea textarea-bordered textarea-sm min-h-24 font-mono text-xs"
-                    value={ruleDraft.condition_json_text}
-                    disabled={saving}
-                    placeholder='Optional. Example: {"op":"eq","field":"contact.type","value":"Customer"}'
-                    onChange={(e) => setRuleDraft((prev) => ({ ...prev, condition_json_text: e.target.value }))}
-                  />
-                </label>
-              ) : null}
+              <label className="form-control md:col-span-12">
+                <span className="label-text text-sm">Scope condition JSON</span>
+                <textarea
+                  className="textarea textarea-bordered textarea-sm min-h-24 font-mono text-xs"
+                  value={ruleDraft.condition_json_text}
+                  disabled={saving}
+                  placeholder='Optional. Example: {"op":"eq","field":"contact.type","value":"Customer"}'
+                  onChange={(e) => setRuleDraft((prev) => ({ ...prev, condition_json_text: e.target.value }))}
+                />
+                <span className="label label-text-alt opacity-50">
+                  Optional. Leave blank to apply this rule everywhere the resource matches.
+                </span>
+              </label>
             </div>
             <div className="mt-4">
               <button className="btn btn-sm btn-primary" type="button" disabled={saving || !ruleDraft.resource_id.trim()} onClick={addRule}>
                 Add Rule
               </button>
             </div>
-          </DetailPanel>
+          </Section>
 
-          <DetailPanel title="Rules" description="Rules are evaluated as a restrictive overlay on top of the base workspace role.">
+          <Section title="Rules" description="Rules are evaluated as a restrictive overlay on top of the base workspace role.">
             <div className="overflow-x-auto">
               <table className="table table-sm">
                 <thead>
@@ -313,7 +280,7 @@ export default function SettingsAccessPolicyDetailPage() {
                         <td className="font-mono text-xs">{rule.resource_id}</td>
                         <td>{rule.access_level}</td>
                         <td className="max-w-xs truncate font-mono text-[11px] opacity-70">
-                          {rule.condition_json ? JSON.stringify(rule.condition_json) : <span className="opacity-40">Global</span>}
+                          {rule.condition_json ? JSON.stringify(rule.condition_json) : <span className="opacity-40">All matching records</span>}
                         </td>
                         <td>{rule.priority}</td>
                         <td className="text-right">
@@ -331,7 +298,7 @@ export default function SettingsAccessPolicyDetailPage() {
                 </tbody>
               </table>
             </div>
-          </DetailPanel>
+          </Section>
         </div>
       )}
     </TabbedPaneShell>

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { apiFetch } from "../../api.js";
 import TemplateStudioShell from "../templates/TemplateStudioShell.jsx";
@@ -8,11 +8,14 @@ import useMediaQuery from "../../hooks/useMediaQuery.js";
 export default function DocumentTemplateStudioPage({ user }) {
   const { id } = useParams();
   const isMobile = useMediaQuery("(max-width: 768px)");
+  const [pageTitle, setPageTitle] = useState("Document Template");
   const profile = useMemo(() => documentTemplateProfile, []);
 
   const loadRecord = useCallback(async (recordId) => {
     const res = await apiFetch(`/documents/templates/${recordId}`);
-    return res?.template;
+    const template = res?.template || null;
+    setPageTitle(template?.name || "Document Template");
+    return template;
   }, []);
 
   const saveRecord = useCallback(async (recordId, patch) => {
@@ -20,7 +23,9 @@ export default function DocumentTemplateStudioPage({ user }) {
       method: "POST",
       body: patch,
     });
-    return res?.template;
+    const template = res?.template || null;
+    setPageTitle(template?.name || "Document Template");
+    return template;
   }, []);
 
   const validateRecord = useCallback(async (recordId, payload) => {
@@ -34,7 +39,7 @@ export default function DocumentTemplateStudioPage({ user }) {
   return (
     <div className={isMobile ? "min-h-full bg-base-100 flex flex-col" : "h-full min-h-0 flex flex-col overflow-hidden"}>
       <TemplateStudioShell
-        title={profile.title}
+        title={pageTitle}
         recordId={id}
         user={user}
         profile={profile}
@@ -43,6 +48,7 @@ export default function DocumentTemplateStudioPage({ user }) {
         validate={validateRecord}
         preview={previewRecord}
         enableAutosave={false}
+        desktopContentClass="w-full h-full min-h-0 flex flex-col"
       />
     </div>
   );

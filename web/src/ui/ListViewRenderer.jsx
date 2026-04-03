@@ -73,6 +73,7 @@ export default function ListViewRenderer({
   onTotalItemsChange,
   showPaginationControls = true,
   enableSelection = true,
+  emptyLabel = null,
 }) {
   if (!view) return <div className="alert">Missing list view</div>;
   const columns = view.columns || [];
@@ -498,7 +499,16 @@ export default function ListViewRenderer({
               </tr>
             </thead>
             <tbody>
-              {pagedRecords.map((row) => {
+              {pagedRecords.length === 0 && emptyLabel !== null ? (
+                <tr>
+                  <td
+                    colSpan={columns.length + (enableSelection ? 1 : 0)}
+                    className="py-10 text-center text-sm opacity-60"
+                  >
+                    {emptyLabel}
+                  </td>
+                </tr>
+              ) : pagedRecords.map((row) => {
                 const rowId = getRowId(row);
                 const selected = rowId && selectedSet.has(rowId);
                 return (

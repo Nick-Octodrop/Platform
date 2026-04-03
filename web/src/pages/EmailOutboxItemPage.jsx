@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { apiFetch } from "../api.js";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import Tabs from "../components/Tabs.jsx";
@@ -7,7 +7,6 @@ import { formatDateTime } from "../utils/dateTime.js";
 
 export default function EmailOutboxItemPage() {
   const { outboxId } = useParams();
-  const navigate = useNavigate();
   const [item, setItem] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -68,48 +67,22 @@ export default function EmailOutboxItemPage() {
 
   const html = String(item?.body_html || "");
 
-  const headerStatus = item?.status || "";
   const detailTo = Array.isArray(item?.to) ? item.to.join(", ") : "";
   const detailFrom = item?.from_email || "";
 
   return (
     <TabbedPaneShell
-      title={item?.subject || "Email"}
-      subtitle={headerStatus ? `Status: ${headerStatus}` : "Email preview"}
-      mobileOverflowActions={[
-        {
-          label: "Refresh",
-          onClick: load,
-          disabled: loading,
-        },
-        {
-          label: "Back",
-          onClick: () => navigate(-1),
-        },
-      ]}
-      rightActions={(
-        <div className="flex items-center gap-2">
-          <button className="btn btn-sm btn-ghost" type="button" onClick={load} disabled={loading}>
-            Refresh
-          </button>
-          <button className="btn btn-sm" type="button" onClick={() => navigate(-1)}>
-            Back
-          </button>
-        </div>
-      )}
+      contentContainer={true}
+      contentContainerClass="h-full min-h-0 flex flex-col"
     >
-      {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
+      {error ? <div className="alert alert-error text-sm">{error}</div> : null}
+      {item?.last_error ? (
+        <div className="alert alert-error text-sm whitespace-pre-wrap">{item.last_error}</div>
+      ) : null}
 
-      <div className="rounded-box border border-base-300 bg-base-100 p-4">
-        {item?.last_error ? (
-          <div className="text-xs text-error whitespace-pre-wrap">{item.last_error}</div>
-        ) : null}
-        <div className={item?.last_error ? "mt-4" : ""}>
-          <Tabs tabs={tabs} activeId={activeTab} onChange={setActiveTab} />
-        </div>
-      </div>
+      <Tabs tabs={tabs} activeId={activeTab} onChange={setActiveTab} />
 
-      <div className="mt-4 rounded-box border border-base-300 bg-base-100 overflow-hidden min-h-[28rem]">
+      <div className="mt-4 flex-1 min-h-0 rounded-box border border-base-300 bg-base-100 overflow-hidden flex flex-col">
         {loading ? (
           <div className="p-4 text-sm opacity-70">Loading…</div>
         ) : !item ? (
@@ -118,7 +91,7 @@ export default function EmailOutboxItemPage() {
           html ? (
             <iframe
               title="Email preview"
-              className="w-full h-[70vh] bg-base-100"
+              className="w-full flex-1 min-h-0 bg-base-100"
               sandbox=""
               srcDoc={html}
             />

@@ -9,6 +9,7 @@ import { getDevMode, subscribeDevMode } from "../dev/devMode.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { useAccessContext } from "../access.js";
 import { applyComputedFields } from "../utils/computedFields.js";
+import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 
 export default function EntityRecordPage() {
   const { entity, id } = useParams();
@@ -135,64 +136,72 @@ export default function EntityRecordPage() {
   }
   if (manifestError === "NO_FORM_VIEW") {
     return (
-      <div className="card bg-base-100 shadow">
-        <div className="card-body">
-          <h3 className="card-title">No form view defined</h3>
-          <div className="text-sm opacity-70">This entity has no form view in its manifest.</div>
-          <button className="btn btn-ghost" onClick={() => navigate(`/settings/diagnostics/${encodeURIComponent(selected.moduleId)}`)}>Open diagnostics</button>
+      <div className={DESKTOP_PAGE_SHELL}>
+        <div className={DESKTOP_PAGE_SHELL_BODY}>
+          <div className="md:mt-4 rounded-box border border-base-300 bg-base-100 p-4 md:p-5">
+            <h3 className="text-lg font-semibold">No form view defined</h3>
+            <div className="mt-1 text-sm opacity-70">This entity has no form view in its manifest.</div>
+            <button className="btn btn-ghost btn-sm mt-4" onClick={() => navigate(`/settings/diagnostics/${encodeURIComponent(selected.moduleId)}`)}>Open diagnostics</button>
+          </div>
         </div>
       </div>
     );
   }
   if (manifestError === "FORM_VIEW_MISSING") {
     return (
-      <div className="card bg-base-100 shadow">
-        <div className="card-body">
-          <h3 className="card-title">Form view not found</h3>
-          <div className="text-sm opacity-70">This entity references a form view that is missing.</div>
-          <button className="btn btn-ghost" onClick={() => navigate(`/settings/diagnostics/${encodeURIComponent(selected.moduleId)}`)}>Open diagnostics</button>
+      <div className={DESKTOP_PAGE_SHELL}>
+        <div className={DESKTOP_PAGE_SHELL_BODY}>
+          <div className="md:mt-4 rounded-box border border-base-300 bg-base-100 p-4 md:p-5">
+            <h3 className="text-lg font-semibold">Form view not found</h3>
+            <div className="mt-1 text-sm opacity-70">This entity references a form view that is missing.</div>
+            <button className="btn btn-ghost btn-sm mt-4" onClick={() => navigate(`/settings/diagnostics/${encodeURIComponent(selected.moduleId)}`)}>Open diagnostics</button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-2xl font-semibold">{selected.displayName}</h2>
-        <button className="btn btn-outline" onClick={() => navigate(`/data/${entity}`)}>Back</button>
-      </div>
-      {devMode && (
-        <div className="card bg-base-100 shadow mb-4">
-          <div className="card-body">
-            <h3 className="card-title">Debug</h3>
-            <div className="text-sm opacity-70">Entity ID: {selected.entityId}</div>
-            <div className="text-sm opacity-70">Module ID: {selected.moduleId}</div>
-            <div className="text-sm opacity-70">Form View ID: {selected.formViewId || "—"}</div>
-            <div className="text-sm opacity-70">Manifest Hash: {manifestHash || "—"}</div>
-            <div className="text-sm opacity-70">Record ID: {id}</div>
-            <div className="flex gap-2 mt-2">
-              <button className="btn btn-sm btn-ghost" onClick={() => navigate(`/apps/${selected.moduleId}`)}>Open module</button>
-              <button className="btn btn-sm btn-ghost" onClick={() => navigate(`/settings/diagnostics/${encodeURIComponent(selected.moduleId)}`)}>Open diagnostics</button>
-            </div>
+    <div className={DESKTOP_PAGE_SHELL}>
+      <div className={DESKTOP_PAGE_SHELL_BODY}>
+        <div className="md:mt-4 flex flex-col gap-4 min-w-0">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-2xl font-semibold">{selected.displayName}</h2>
+            <button className="btn btn-sm" onClick={() => navigate(`/data/${entity}`)}>Back</button>
           </div>
+          {devMode && (
+            <div className="rounded-box border border-base-300 bg-base-100 p-4">
+              <h3 className="text-base font-semibold">Debug</h3>
+              <div className="mt-2 text-sm opacity-70">Entity ID: {selected.entityId}</div>
+              <div className="text-sm opacity-70">Module ID: {selected.moduleId}</div>
+              <div className="text-sm opacity-70">Form View ID: {selected.formViewId || "—"}</div>
+              <div className="text-sm opacity-70">Manifest Hash: {manifestHash || "—"}</div>
+              <div className="text-sm opacity-70">Record ID: {id}</div>
+              <div className="flex gap-2 mt-3">
+                <button className="btn btn-sm btn-ghost" onClick={() => navigate(`/apps/${selected.moduleId}`)}>Open module</button>
+                <button className="btn btn-sm btn-ghost" onClick={() => navigate(`/settings/diagnostics/${encodeURIComponent(selected.moduleId)}`)}>Open diagnostics</button>
+              </div>
+            </div>
+          )}
+          {error && <div className="alert alert-error">{error}</div>}
+          {loading && <LoadingSpinner className="min-h-[20vh]" />}
+          {viewForm && (
+            <div className="rounded-box border border-base-300 bg-base-100 p-4 md:p-5">
+              <FormViewRenderer
+                view={viewForm}
+                entityId={selected.entityId}
+                recordId={id}
+                fieldIndex={fieldIndex}
+                record={draft}
+                onChange={(next) => setDraft(applyComputedFields(fieldIndex, next))}
+                onSave={handleSave}
+                readonly={!canWriteRecords}
+                showValidation={showValidation}
+              />
+            </div>
+          )}
         </div>
-      )}
-      {error && <div className="alert alert-error mb-4">{error}</div>}
-      {loading && <LoadingSpinner className="min-h-[20vh]" />}
-      {viewForm && (
-        <FormViewRenderer
-          view={viewForm}
-          entityId={selected.entityId}
-          recordId={id}
-          fieldIndex={fieldIndex}
-          record={draft}
-          onChange={(next) => setDraft(applyComputedFields(fieldIndex, next))}
-          onSave={handleSave}
-          readonly={!canWriteRecords}
-          showValidation={showValidation}
-        />
-      )}
+      </div>
     </div>
   );
 }

@@ -2577,12 +2577,12 @@ function AppView({
         {clientFilters.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {clientFilters.map((flt, idx) => (
-              <div key={`${flt.field_id}-${idx}`} className="badge badge-outline badge-lg gap-2">
-                {flt.label || flt.field_id}: {String(flt.value)}
-                <button className={SOFT_BUTTON_XS} onClick={() => removeClientFilter(idx)}>
-                  ×
-                </button>
-              </div>
+            <div key={`${flt.field_id}-${idx}`} className="badge badge-outline badge-lg badge-dismissible">
+              {flt.label || flt.field_id}: {String(flt.value)}
+              <button className="badge-remove" onClick={() => removeClientFilter(idx)} aria-label={`Remove ${flt.label || flt.field_id}`}>
+                ×
+              </button>
+            </div>
             ))}
           </div>
         )}

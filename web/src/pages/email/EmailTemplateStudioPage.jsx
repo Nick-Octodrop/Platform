@@ -9,12 +9,15 @@ export default function EmailTemplateStudioPage({ user }) {
   const { id } = useParams();
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [connections, setConnections] = useState([]);
+  const [pageTitle, setPageTitle] = useState("Email Template");
 
   const profile = useMemo(() => emailTemplateProfile, []);
 
   const loadRecord = useCallback(async (recordId) => {
     const res = await apiFetch(`/email/templates/${recordId}`);
-    return res?.template;
+    const template = res?.template || null;
+    setPageTitle(template?.name || "Email Template");
+    return template;
   }, []);
 
   const saveRecord = useCallback(async (recordId, patch) => {
@@ -22,7 +25,9 @@ export default function EmailTemplateStudioPage({ user }) {
       method: "POST",
       body: patch,
     });
-    return res?.template;
+    const template = res?.template || null;
+    setPageTitle(template?.name || "Email Template");
+    return template;
   }, []);
 
   const validateRecord = useCallback(async (recordId, payload) => {
@@ -60,7 +65,7 @@ export default function EmailTemplateStudioPage({ user }) {
   return (
     <div className={isMobile ? "min-h-full bg-base-100 flex flex-col" : "h-full min-h-0 flex flex-col overflow-hidden"}>
       <TemplateStudioShell
-        title={profile.title}
+        title={pageTitle}
         recordId={id}
         user={user}
         profile={profile}
@@ -68,6 +73,8 @@ export default function EmailTemplateStudioPage({ user }) {
         saveRecord={saveRecord}
         validate={validateRecord}
         preview={previewRecord}
+        enableAutosave={false}
+        desktopContentClass="w-full h-full min-h-0 flex flex-col"
         extraContext={{ sendTest, connections }}
       />
     </div>

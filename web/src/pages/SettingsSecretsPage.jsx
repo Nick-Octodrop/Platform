@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../api.js";
+import { useToast } from "../components/Toast.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
+import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 
 function SummaryStat({ label, value }) {
   return (
@@ -99,10 +101,10 @@ function SecretModal({
 }
 
 export default function SettingsSecretsPage() {
+  const { pushToast } = useToast();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState([]);
   const [page, setPage] = useState(0);
@@ -163,7 +165,6 @@ export default function SettingsSecretsPage() {
     if (creating || !value.trim()) return;
     setCreating(true);
     setError("");
-    setNotice("");
     try {
       await apiFetch("/settings/secrets", {
         method: "POST",
@@ -179,7 +180,7 @@ export default function SettingsSecretsPage() {
       setProviderKey("");
       setSecretKey("");
       setValue("");
-      setNotice("Secret created.");
+      pushToast("success", "Secret created.");
       await loadSecrets();
     } catch (err) {
       setError(err?.message || "Failed to create secret");
@@ -192,7 +193,6 @@ export default function SettingsSecretsPage() {
     if (rotating || !singleSelected?.id || !rotateValue.trim()) return;
     setRotating(true);
     setError("");
-    setNotice("");
     try {
       await apiFetch(`/settings/secrets/${encodeURIComponent(singleSelected.id)}/rotate`, {
         method: "POST",
@@ -200,7 +200,7 @@ export default function SettingsSecretsPage() {
       });
       setRotateValue("");
       setShowRotateModal(false);
-      setNotice("Secret rotated.");
+      pushToast("success", "Secret rotated.");
       await loadSecrets();
     } catch (err) {
       setError(err?.message || "Failed to rotate secret");
@@ -213,12 +213,11 @@ export default function SettingsSecretsPage() {
     if (deleting || selectedIds.length === 0) return;
     setDeleting(true);
     setError("");
-    setNotice("");
     try {
       await Promise.all(selectedIds.map((id) => apiFetch(`/settings/secrets/${encodeURIComponent(id)}`, { method: "DELETE" })));
       setShowDeleteModal(false);
       setSelectedIds([]);
-      setNotice("Secret deleted.");
+      pushToast("success", selectedIds.length === 1 ? "Secret deleted." : "Secrets deleted.");
       await loadSecrets();
     } catch (err) {
       setError(err?.message || "Failed to delete secret(s)");
@@ -276,11 +275,10 @@ export default function SettingsSecretsPage() {
 
   return (
     <div className="min-h-full md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
-      <div className="bg-base-100 md:card md:rounded-[1.75rem] md:border md:border-base-300 md:shadow-sm md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
-        <div className="p-4 md:card-body md:flex md:flex-col md:min-h-0 md:overflow-hidden">
+      <div className={DESKTOP_PAGE_SHELL}>
+        <div className={DESKTOP_PAGE_SHELL_BODY}>
           <div className="space-y-4 md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {error ? <div className="alert alert-error text-sm">{error}</div> : null}
-            {notice ? <div className="alert alert-success text-sm">{notice}</div> : null}
 
             <div className="rounded-box border border-base-300 bg-base-100 p-4">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

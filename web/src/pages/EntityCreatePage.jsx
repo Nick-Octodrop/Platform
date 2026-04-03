@@ -7,6 +7,7 @@ import { useToast } from "../components/Toast.jsx";
 import { loadEntityIndex } from "../data/entityIndex.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { applyComputedFields } from "../utils/computedFields.js";
+import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 
 export default function EntityCreatePage({ entityId }) {
   const params = useParams();
@@ -122,26 +123,35 @@ export default function EntityCreatePage({ entityId }) {
   const displayName = indexEntry?.displayName || routeEntity;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-2xl font-semibold">New {displayName}</h2>
+    <div className={DESKTOP_PAGE_SHELL}>
+      <div className={DESKTOP_PAGE_SHELL_BODY}>
+        <div className="md:mt-4 flex flex-col gap-4 min-w-0">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-2xl font-semibold">New {displayName}</h2>
+            <button className="btn btn-sm" type="button" onClick={() => navigate(`/data/${routeEntity}`)}>
+              Back
+            </button>
+          </div>
+          {error && <div className="alert alert-error">{error}</div>}
+          {loading && <LoadingSpinner className="min-h-[20vh]" />}
+          {manifest && viewForm && (
+            <div className="rounded-box border border-base-300 bg-base-100 p-4 md:p-5">
+              <FormViewRenderer
+                view={viewForm}
+                entityId={routeEntity}
+                recordId={null}
+                fieldIndex={fieldIndex}
+                record={draft}
+                onChange={(next) => setDraft(applyComputedFields(fieldIndex, next))}
+                onSave={handleSave}
+                readonly={false}
+                showValidation={showValidation}
+                applyDefaults={true}
+              />
+            </div>
+          )}
+        </div>
       </div>
-      {error && <div className="alert alert-error mb-4">{error}</div>}
-      {loading && <LoadingSpinner className="min-h-[20vh]" />}
-      {manifest && viewForm && (
-        <FormViewRenderer
-          view={viewForm}
-          entityId={routeEntity}
-          recordId={null}
-          fieldIndex={fieldIndex}
-          record={draft}
-          onChange={(next) => setDraft(applyComputedFields(fieldIndex, next))}
-          onSave={handleSave}
-          readonly={false}
-          showValidation={showValidation}
-          applyDefaults={true}
-        />
-      )}
     </div>
   );
 }

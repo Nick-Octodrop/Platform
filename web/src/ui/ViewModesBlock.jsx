@@ -3317,9 +3317,13 @@ export default function ViewModesBlock({
       {clientFilters.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {clientFilters.map((flt, idx) => (
-            <div key={`${flt.field_id}-${idx}`} className="badge badge-outline badge-sm gap-2">
+            <div key={`${flt.field_id}-${idx}`} className="badge badge-outline badge-sm badge-dismissible">
               {flt.label || flt.field_id}: {String(flt.value)}
-              <button className={SOFT_BUTTON_XS} onClick={() => setClientFilters((prev) => prev.filter((_, i) => i !== idx))}>
+              <button
+                className="badge-remove"
+                onClick={() => setClientFilters((prev) => prev.filter((_, i) => i !== idx))}
+                aria-label={`Remove ${flt.label || flt.field_id}`}
+              >
                 ×
               </button>
             </div>

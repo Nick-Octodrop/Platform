@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiFetch } from "../api.js";
+import { useToast } from "../components/Toast.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 
 const SCOPE_OPTIONS = [
@@ -45,14 +46,12 @@ function emptyDraft() {
   };
 }
 
-function DetailPanel({ title, description, children, tone = "bg-base-100" }) {
+function SectionGroup({ title, description, children, className = "" }) {
   return (
-    <section className={`rounded-box border border-base-300 ${tone}`}>
-      <div className="border-b border-base-300 px-4 py-3">
-        <div className="font-medium">{title}</div>
-        {description ? <div className="mt-1 text-sm opacity-70">{description}</div> : null}
-      </div>
-      <div className="p-4">{children}</div>
+    <section className={`rounded-box border border-base-300 bg-base-100 p-4 ${className}`}>
+      <div className="text-sm font-semibold">{title}</div>
+      {description ? <div className="mt-1 text-sm opacity-70">{description}</div> : null}
+      <div className="mt-4">{children}</div>
     </section>
   );
 }
@@ -60,11 +59,11 @@ function DetailPanel({ title, description, children, tone = "bg-base-100" }) {
 export default function SettingsDocumentNumberingDetailPage() {
   const { sequenceId } = useParams();
   const navigate = useNavigate();
+  const { pushToast } = useToast();
   const isNew = !sequenceId;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [items, setItems] = useState([]);
   const [entities, setEntities] = useState([]);
   const [draft, setDraft] = useState(emptyDraft());
@@ -156,7 +155,6 @@ export default function SettingsDocumentNumberingDetailPage() {
   async function saveDraft() {
     setSaving(true);
     setError("");
-    setNotice("");
     try {
       const response = draft.id
         ? await apiFetch(`/settings/document-numbering/${encodeURIComponent(draft.id)}`, {
@@ -165,33 +163,16 @@ export default function SettingsDocumentNumberingDetailPage() {
           })
         : await apiFetch("/settings/document-numbering", {
             method: "POST",
-            body: draft,
-          });
+          body: draft,
+        });
       const saved = response?.sequence || null;
-      setNotice(draft.id ? "Sequence updated." : "Sequence created.");
+      pushToast("success", draft.id ? "Sequence updated." : "Sequence created.");
       await load();
       if (!draft.id && saved?.id) {
         navigate(`/settings/document-numbering/${saved.id}`, { replace: true });
       }
     } catch (err) {
       setError(err?.message || "Failed to save sequence");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function deleteDraft() {
-    if (!draft.id || saving) return;
-    setSaving(true);
-    setError("");
-    setNotice("");
-    try {
-      await apiFetch(`/settings/document-numbering/${encodeURIComponent(draft.id)}`, {
-        method: "DELETE",
-      });
-      navigate("/settings/document-numbering");
-    } catch (err) {
-      setError(err?.message || "Failed to delete sequence");
     } finally {
       setSaving(false);
     }
@@ -210,8 +191,8 @@ export default function SettingsDocumentNumberingDetailPage() {
 
   return (
     <TabbedPaneShell
-      title={draft.name || (isNew ? "New Sequence" : "Document Sequence")}
-      subtitle="Reusable, workspace-scoped numbering for quotes, orders, invoices, and other business records."
+      title=""
+      subtitle=""
       tabs={[
         { id: "details", label: "Details" },
         { id: "preview", label: "Preview" },
@@ -219,24 +200,9 @@ export default function SettingsDocumentNumberingDetailPage() {
       ]}
       activeTabId={activeTabId}
       onTabChange={setActiveTabId}
-      rightActions={(
-        <div className="flex items-center gap-2">
-          {activeTabId === "details" ? (
-            <button className="btn btn-sm btn-primary" type="button" disabled={loading || saving} onClick={saveDraft}>
-              Save
-            </button>
-          ) : null}
-          <button className="btn btn-sm btn-ghost" type="button" disabled={loading || saving} onClick={load}>
-            Refresh
-          </button>
-          <button className="btn btn-sm" type="button" disabled={saving} onClick={() => navigate("/settings/document-numbering")}>
-            Back
-          </button>
-        </div>
-      )}
+      contentContainer={true}
     >
       {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
-      {notice ? <div className="alert alert-success text-sm mb-4">{notice}</div> : null}
 
       {loading ? (
         <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-70">Loading…</div>
@@ -244,26 +210,28 @@ export default function SettingsDocumentNumberingDetailPage() {
         <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-60">Sequence not found.</div>
       ) : activeTabId === "details" ? (
         <div className="space-y-4">
-          <DetailPanel title={draft.id ? "Edit Sequence" : "New Sequence"} description="Use stable internal codes and business-friendly names. Changes only affect future records.">
+          <SectionGroup title="Sequence details" description="Use stable internal codes and business-friendly names. Changes only affect future records.">
             {draft.id && Number(draft.assignment_count || 0) > 0 ? (
               <div className="mb-4 rounded-box border border-warning/30 bg-warning/10 px-4 py-3 text-sm">
                 This sequence is already in use on <span className="font-semibold">{draft.assignment_count}</span> record{Number(draft.assignment_count) === 1 ? "" : "s"}.
                 Changes here only apply to future assignments. Historical document numbers are not renumbered.
               </div>
             ) : null}
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
-              <label className="form-control md:col-span-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <label className="form-control">
                 <span className="label-text text-sm">Name</span>
-                <input className="input input-bordered input-sm" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} disabled={saving} />
+                <input className="input input-bordered" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} disabled={saving} />
+                <span className="label label-text-alt opacity-50">Required. Use a clear business name like Quotes, Invoices, or Purchase Orders.</span>
               </label>
-              <label className="form-control md:col-span-4">
+              <label className="form-control">
                 <span className="label-text text-sm">Code</span>
-                <input className="input input-bordered input-sm" value={draft.code} onChange={(event) => setDraft((current) => ({ ...current, code: event.target.value }))} placeholder="sales.quote" disabled={saving} />
+                <input className="input input-bordered" value={draft.code} onChange={(event) => setDraft((current) => ({ ...current, code: event.target.value }))} placeholder="sales.quote" disabled={saving} />
+                <span className="label label-text-alt opacity-50">Required. Use a stable internal key. This is for admins, not end users.</span>
               </label>
-              <label className="form-control md:col-span-4">
+              <label className="form-control">
                 <span className="label-text text-sm">Target entity</span>
                 <select
-                  className="select select-bordered select-sm"
+                  className="select select-bordered"
                   value={draft.target_entity_id}
                   onChange={(event) => setDraft((current) => ({ ...current, target_entity_id: event.target.value, number_field_id: "", scope_field_id: "", trigger_status_values: [] }))}
                   disabled={saving}
@@ -273,13 +241,14 @@ export default function SettingsDocumentNumberingDetailPage() {
                     <option key={entity.entity_id} value={entity.entity_id}>
                       {entity.label || entity.entity_id}
                     </option>
-                  ))}
-                </select>
+                    ))}
+                  </select>
+                <span className="label label-text-alt opacity-50">Required. Choose the record type that should receive this number.</span>
               </label>
-              <label className="form-control md:col-span-4">
+              <label className="form-control">
                 <span className="label-text text-sm">Number field</span>
                 <select
-                  className="select select-bordered select-sm"
+                  className="select select-bordered"
                   value={draft.number_field_id}
                   onChange={(event) => setDraft((current) => ({ ...current, number_field_id: event.target.value }))}
                   disabled={saving || !draft.target_entity_id}
@@ -289,46 +258,52 @@ export default function SettingsDocumentNumberingDetailPage() {
                     <option key={field.id} value={field.id}>
                       {field.label}
                     </option>
-                  ))}
-                </select>
+                    ))}
+                  </select>
+                <span className="label label-text-alt opacity-50">Required. This field will store the generated document number on the record.</span>
               </label>
-              <label className="form-control md:col-span-4">
+              <label className="form-control">
                 <span className="label-text text-sm">Pattern</span>
-                <input className="input input-bordered input-sm font-mono" value={draft.pattern} onChange={(event) => setDraft((current) => ({ ...current, pattern: event.target.value }))} disabled={saving} />
+                <input className="input input-bordered font-mono" value={draft.pattern} onChange={(event) => setDraft((current) => ({ ...current, pattern: event.target.value }))} disabled={saving} />
+                <span className="label label-text-alt opacity-50">Required. Combine text and tokens like {"{YYYY}"} or {"{SEQ:4}"} to control the final format.</span>
               </label>
-              <label className="form-control md:col-span-4">
+              <label className="form-control">
                 <span className="label-text text-sm">Sort order</span>
-                <input className="input input-bordered input-sm" type="number" value={draft.sort_order} onChange={(event) => setDraft((current) => ({ ...current, sort_order: event.target.value }))} disabled={saving} />
+                <input className="input input-bordered" type="number" value={draft.sort_order} onChange={(event) => setDraft((current) => ({ ...current, sort_order: event.target.value }))} disabled={saving} />
+                <span className="label label-text-alt opacity-50">Optional. Lower numbers sort earlier when admins view these sequences.</span>
               </label>
-              <label className="form-control md:col-span-4">
+              <label className="form-control">
                 <span className="label-text text-sm">Scope</span>
-                <select className="select select-bordered select-sm" value={draft.scope_type} onChange={(event) => setDraft((current) => ({ ...current, scope_type: event.target.value, scope_field_id: event.target.value === "entity" ? current.scope_field_id : "" }))} disabled={saving}>
+                <select className="select select-bordered" value={draft.scope_type} onChange={(event) => setDraft((current) => ({ ...current, scope_type: event.target.value, scope_field_id: event.target.value === "entity" ? current.scope_field_id : "" }))} disabled={saving}>
                   {SCOPE_OPTIONS.map((item) => (
                     <option key={item.value} value={item.value}>{item.label}</option>
                   ))}
                 </select>
+                <span className="label label-text-alt opacity-50">Choose whether one counter is shared globally, per entity value, or per workspace.</span>
               </label>
-              <label className="form-control md:col-span-4">
+              <label className="form-control">
                 <span className="label-text text-sm">Reset policy</span>
-                <select className="select select-bordered select-sm" value={draft.reset_policy} onChange={(event) => setDraft((current) => ({ ...current, reset_policy: event.target.value }))} disabled={saving}>
+                <select className="select select-bordered" value={draft.reset_policy} onChange={(event) => setDraft((current) => ({ ...current, reset_policy: event.target.value }))} disabled={saving}>
                   {RESET_OPTIONS.map((item) => (
                     <option key={item.value} value={item.value}>{item.label}</option>
                   ))}
                 </select>
+                <span className="label label-text-alt opacity-50">Choose how often the sequence counter starts again.</span>
               </label>
-              <label className="form-control md:col-span-4">
+              <label className="form-control">
                 <span className="label-text text-sm">Assign on</span>
-                <select className="select select-bordered select-sm" value={draft.assign_on} onChange={(event) => setDraft((current) => ({ ...current, assign_on: event.target.value, trigger_status_values: ["confirm", "issue"].includes(event.target.value) ? current.trigger_status_values : [] }))} disabled={saving}>
+                <select className="select select-bordered" value={draft.assign_on} onChange={(event) => setDraft((current) => ({ ...current, assign_on: event.target.value, trigger_status_values: ["confirm", "issue"].includes(event.target.value) ? current.trigger_status_values : [] }))} disabled={saving}>
                   {ASSIGN_OPTIONS.map((item) => (
                     <option key={item.value} value={item.value}>{item.label}</option>
                   ))}
                 </select>
+                <span className="label label-text-alt opacity-50">Choose when the number should be assigned during the record lifecycle.</span>
               </label>
               {draft.scope_type === "entity" ? (
-                <label className="form-control md:col-span-6">
+                <label className="form-control">
                   <span className="label-text text-sm">Scope field</span>
                   <select
-                    className="select select-bordered select-sm"
+                    className="select select-bordered"
                     value={draft.scope_field_id}
                     onChange={(event) => setDraft((current) => ({ ...current, scope_field_id: event.target.value }))}
                     disabled={saving || !draft.target_entity_id}
@@ -340,15 +315,18 @@ export default function SettingsDocumentNumberingDetailPage() {
                       </option>
                     ))}
                   </select>
+                  <span className="label label-text-alt opacity-50">Required for entity scope. Records with different values in this field get separate counters.</span>
                 </label>
               ) : null}
-              <label className="form-control md:col-span-6">
+              <label className="form-control">
                 <span className="label-text text-sm">Description</span>
-                <input className="input input-bordered input-sm" value={draft.description || ""} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} disabled={saving} />
+                <input className="input input-bordered" value={draft.description || ""} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} disabled={saving} />
+                <span className="label label-text-alt opacity-50">Optional. Add a short admin note about when this sequence should be used.</span>
               </label>
-              <label className="form-control md:col-span-12">
+              <label className="form-control md:col-span-2">
                 <span className="label-text text-sm">Notes</span>
                 <textarea className="textarea textarea-bordered min-h-[6rem]" value={draft.notes || ""} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} disabled={saving} />
+                <span className="label label-text-alt opacity-50">Optional. Use this for implementation notes, migration details, or edge-case handling.</span>
               </label>
             </div>
 
@@ -368,7 +346,7 @@ export default function SettingsDocumentNumberingDetailPage() {
             </div>
 
             {assignNeedsStatuses ? (
-              <div className="mt-4 rounded-box border border-base-300 bg-base-200/40 p-3">
+              <div className="mt-4 rounded-box border border-base-300 bg-base-100 p-4">
                 <div className="text-sm font-medium">Trigger statuses</div>
                 <div className="mt-1 text-xs opacity-70">Choose the workflow statuses that should assign the number.</div>
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
@@ -390,24 +368,19 @@ export default function SettingsDocumentNumberingDetailPage() {
 
             <div className="mt-4 flex flex-wrap gap-2">
               <button className="btn btn-primary btn-sm" type="button" disabled={saving} onClick={saveDraft}>
-                {saving ? "Saving..." : draft.id ? "Save Changes" : "Create Sequence"}
+                {saving ? "Saving..." : "Save"}
               </button>
-              {draft.id ? (
-                <button className="btn btn-error btn-outline btn-sm" type="button" disabled={saving} onClick={deleteDraft}>
-                  Delete
-                </button>
-              ) : null}
             </div>
-          </DetailPanel>
+          </SectionGroup>
         </div>
       ) : activeTabId === "preview" ? (
-        <DetailPanel title="Live Preview" description="Preview uses the current counter bucket and your current workspace context." tone="bg-base-200/40">
+        <SectionGroup title="Live preview" description="Preview uses the current counter bucket and your current workspace context.">
           {preview ? <div className="rounded-box bg-base-100 px-4 py-3 font-mono text-sm">{preview}</div> : null}
           {previewError ? <div className="mt-2 text-sm text-warning">{previewError}</div> : null}
           {!preview && !previewError ? <div className="text-sm opacity-70">Complete the core fields to see a preview.</div> : null}
-        </DetailPanel>
+        </SectionGroup>
       ) : (
-        <DetailPanel title="Token Help" description="Keep patterns simple and stable. These tokens are supported in v1." tone="bg-base-200/40">
+        <SectionGroup title="Token help" description="Keep patterns simple and stable. These tokens are supported in v1.">
           <div className="grid gap-2 md:grid-cols-2">
             {[
               "{YYYY} = 2026",
@@ -425,7 +398,7 @@ export default function SettingsDocumentNumberingDetailPage() {
               </div>
             ))}
           </div>
-        </DetailPanel>
+        </SectionGroup>
       )}
     </TabbedPaneShell>
   );

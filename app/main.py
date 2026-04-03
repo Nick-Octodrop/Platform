@@ -35192,6 +35192,7 @@ async def templates_meta(request: Request) -> dict:
                 {
                     "id": ent_id,
                     "label": ent.get("label") or ent.get("name") or ent_id,
+                    "display_field": ent.get("display_field"),
                     "module_id": module_id,
                     "module_name": mod.get("name"),
                 }
@@ -35274,6 +35275,17 @@ async def update_email_template(request: Request, template_id: str) -> dict:
     if not template:
         return _error_response("TEMPLATE_NOT_FOUND", "Template not found", "template_id", status=404)
     return _ok_response({"template": template})
+
+
+@app.delete("/email/templates/{template_id}")
+async def delete_email_template(request: Request, template_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    deleted = email_store.delete_template(template_id)
+    if not deleted:
+        return _error_response("TEMPLATE_NOT_FOUND", "Template not found", "template_id", status=404)
+    return _ok_response({"deleted": True, "id": template_id})
 
 
 @app.post("/email/templates/{template_id}/validate")
@@ -35468,6 +35480,20 @@ async def get_email_outbox_item(request: Request, outbox_id: str) -> dict:
     return _ok_response({"outbox": item})
 
 
+@app.delete("/email/outbox/{outbox_id}")
+async def delete_email_outbox_item(request: Request, outbox_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "templates.manage", "Email templates permission required")
+    if denied:
+        return denied
+    deleted = email_store.delete_outbox(outbox_id)
+    if not deleted:
+        return _error_response("OUTBOX_NOT_FOUND", "Outbox item not found", "outbox_id", status=404)
+    return _ok_response({"deleted": True, "id": outbox_id})
+
+
 @app.get("/email/templates/{template_id}/history")
 async def email_template_history(request: Request, template_id: str, limit: int = 100) -> dict:
     actor = _resolve_actor(request)
@@ -35657,6 +35683,17 @@ async def get_doc_template(request: Request, template_id: str) -> dict:
     if not template:
         return _error_response("TEMPLATE_NOT_FOUND", "Template not found", "template_id", status=404)
     return _ok_response({"template": template})
+
+
+@app.delete("/documents/templates/{template_id}")
+async def delete_doc_template(request: Request, template_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    deleted = doc_template_store.delete(template_id)
+    if not deleted:
+        return _error_response("TEMPLATE_NOT_FOUND", "Template not found", "template_id", status=404)
+    return _ok_response({"deleted": True, "id": template_id})
 
 
 @app.post("/docs/templates/{template_id}/validate")

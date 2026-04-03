@@ -3683,14 +3683,15 @@ class DbEmailStore:
                 conn,
                 """
                 insert into email_templates (
-                  org_id, name, subject, body_html, body_text, variables_schema,
+                  org_id, name, description, subject, body_html, body_text, variables_schema,
                   is_active, default_connection_id, created_at, updated_at
-                ) values (%s,%s,%s,%s,%s,%s,%s,%s,now(),now())
+                ) values (%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),now())
                 returning *
                 """,
                 [
                     get_org_id(),
                     record.get("name"),
+                    record.get("description"),
                     record.get("subject"),
                     record.get("body_html"),
                     record.get("body_text"),
@@ -3705,7 +3706,7 @@ class DbEmailStore:
     def update_template(self, template_id: str, updates: dict) -> dict | None:
         fields = []
         params = []
-        for key in ("name", "subject", "body_html", "body_text", "variables_schema", "is_active", "default_connection_id"):
+        for key in ("name", "description", "subject", "body_html", "body_text", "variables_schema", "is_active", "default_connection_id"):
             if key in updates:
                 fields.append(f"{key}=%s")
                 value = updates[key]
@@ -3751,6 +3752,20 @@ class DbEmailStore:
                 query_name="email_templates.list",
             )
             return [dict(r) for r in rows]
+
+    def delete_template(self, template_id: str) -> bool:
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                delete from email_templates
+                where org_id=%s and id=%s
+                returning id
+                """,
+                [get_org_id(), template_id],
+                query_name="email_templates.delete",
+            )
+            return bool(row)
 
     def create_outbox(self, record: dict) -> dict:
         with get_conn() as conn:
@@ -3836,6 +3851,20 @@ class DbEmailStore:
                 query_name="email_outbox.get",
             )
             return dict(row) if row else None
+
+    def delete_outbox(self, outbox_id: str) -> bool:
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                delete from email_outbox
+                where org_id=%s and id=%s
+                returning id
+                """,
+                [get_org_id(), outbox_id],
+                query_name="email_outbox.delete",
+            )
+            return bool(row)
 
 
 class DbAttachmentStore:
@@ -4028,15 +4057,16 @@ class DbDocTemplateStore:
                 conn,
                 """
                 insert into doc_templates (
-                  org_id, name, format, html, filename_pattern, paper_size,
+                  org_id, name, description, format, html, filename_pattern, paper_size,
                   margin_top, margin_right, margin_bottom, margin_left,
                   header_html, footer_html, created_at, updated_at
-                ) values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),now())
+                ) values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),now())
                 returning *
                 """,
                 [
                     get_org_id(),
                     record.get("name"),
+                    record.get("description"),
                     record.get("format", "html"),
                     record.get("html"),
                     record.get("filename_pattern"),
@@ -4057,6 +4087,7 @@ class DbDocTemplateStore:
         params = []
         for key in (
             "name",
+            "description",
             "format",
             "html",
             "filename_pattern",
@@ -4110,6 +4141,20 @@ class DbDocTemplateStore:
                 query_name="doc_templates.list",
             )
             return [dict(r) for r in rows]
+
+    def delete(self, template_id: str) -> bool:
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                delete from doc_templates
+                where org_id=%s and id=%s
+                returning id
+                """,
+                [get_org_id(), template_id],
+                query_name="doc_templates.delete",
+            )
+            return bool(row)
 
 
 class DbAutomationStore:

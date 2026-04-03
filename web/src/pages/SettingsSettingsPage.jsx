@@ -179,17 +179,12 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
     []
   );
 
-  // Keep a stable page header while switching tabs so it reads as one page.
-  const pageTitle = "Profile";
-  const pageSubtitle = "Account details, password, and appearance.";
-
   return (
     <TabbedPaneShell
-      title={pageTitle}
-      subtitle={pageSubtitle}
       tabs={tabs}
       activeTabId={activeTab}
       onTabChange={goTab}
+      contentContainer={true}
     >
       {activeTab === "appearance" && (
         <div className="space-y-4">
@@ -260,7 +255,7 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2 justify-end">
+              <div className="flex flex-wrap gap-2">
                 <button className="btn btn-primary btn-sm" type="submit" disabled={profileSaving}>
                   {profileSaving ? "Saving..." : "Save changes"}
                 </button>

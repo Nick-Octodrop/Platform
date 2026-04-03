@@ -110,6 +110,10 @@ export default function NotificationsPage() {
     return legacyEntityMatch ? `/data/${legacyEntityMatch[1]}/${legacyEntityMatch[2]}` : raw;
   }
 
+  function isExternalNotificationTarget(target) {
+    return /^https?:\/\//i.test(normalizeNotificationTarget(target));
+  }
+
   return (
     <div className="card bg-base-100 shadow">
       <div className="card-body gap-4">
@@ -160,9 +164,15 @@ export default function NotificationsPage() {
                     </button>
                   )}
                   {n.link_to && (
-                    <Link className="btn btn-xs btn-ghost" to={normalizeNotificationTarget(n.link_to)}>
-                      Open
-                    </Link>
+                    isExternalNotificationTarget(n.link_to) ? (
+                      <a className="btn btn-xs btn-ghost" href={normalizeNotificationTarget(n.link_to)}>
+                        Open
+                      </a>
+                    ) : (
+                      <Link className="btn btn-xs btn-ghost" to={normalizeNotificationTarget(n.link_to)}>
+                        Open
+                      </Link>
+                    )
                   )}
                 </div>
               </div>

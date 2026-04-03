@@ -1,6 +1,51 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../api.js";
-import { SOFT_BUTTON_XS } from "../../components/buttonStyles.js";
+
+function looksLikeUuid(value) {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function resolveRecordLabel(record, recordId, selectedEntity) {
+  const labelField = selectedEntity?.display_field;
+  const fieldCandidates = [
+    labelField,
+    record?.display_name,
+    record?.full_name,
+    record?.name,
+    record?.title,
+    record?.label,
+    record?.number,
+    record?.code,
+    record?.reference,
+    record?.["workorder.number"],
+  ];
+  for (const candidate of fieldCandidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      const value = labelField && candidate === labelField ? record?.[candidate] : candidate;
+      if (typeof value === "string" && value.trim()) {
+        return value;
+      }
+    }
+  }
+  const ignoredKeys = new Set([
+    "id",
+    "record_id",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+    "_meta",
+  ]);
+  for (const [key, value] of Object.entries(record || {})) {
+    if (ignoredKeys.has(key)) continue;
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (!trimmed || looksLikeUuid(trimmed)) continue;
+    if (trimmed === recordId) continue;
+    return trimmed;
+  }
+  return recordId;
+}
 
 export default function SamplePicker({
   sample,
@@ -21,25 +66,10 @@ export default function SamplePicker({
     return entities.find((ent) => ent.id === entityId);
   }, [entities, entityId]);
 
-  const recentsKey = useMemo(() => {
-    return entityId ? `template-sample-recent:${entityId}` : null;
-  }, [entityId]);
-
-  const recents = useMemo(() => {
-    if (!recentsKey) return [];
-    try {
-      const raw = localStorage.getItem(recentsKey);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }, [recentsKey]);
-
   useEffect(() => {
     let mounted = true;
     async function run() {
-      if (!entityId || searchText.trim().length < 2) {
+      if (!entityId || !opened) {
         setResults([]);
         return;
       }
@@ -47,7 +77,7 @@ export default function SamplePicker({
       try {
         const res = await apiFetch(`/lookup/${entityId}/options`, {
           method: "POST",
-          body: { q: searchText.trim(), limit: 20 },
+          body: { q: searchText.trim() || null, limit: 20 },
         });
         if (!mounted) return;
         setResults(res?.records || []);
@@ -61,7 +91,7 @@ export default function SamplePicker({
     return () => {
       mounted = false;
     };
-  }, [entityId, searchText]);
+  }, [entityId, searchText, opened]);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,14 +100,7 @@ export default function SamplePicker({
       try {
         const res = await apiFetch(`/records/${encodeURIComponent(entityId)}/${encodeURIComponent(sample.record_id)}`);
         const rec = res?.record || {};
-        const labelField = selectedEntity?.display_field;
-        const label =
-          (labelField && rec?.[labelField]) ||
-          rec?.display_name ||
-          rec?.full_name ||
-          rec?.name ||
-          rec?.["workorder.number"] ||
-          sample.record_id;
+        const label = resolveRecordLabel(rec, sample.record_id, selectedEntity);
         if (!cancelled) setSelectedLabel(String(label || sample.record_id));
       } catch {
         if (!cancelled) setSelectedLabel(String(sample.record_id));
@@ -104,41 +127,24 @@ export default function SamplePicker({
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [opened, searchText, selectedLabel]);
 
-  function updateRecents(record) {
-    if (!recentsKey || !record) return;
-    const labelField = selectedEntity?.display_field;
-    const label = labelField
-      ? record[labelField]
-      : record.id || record.name || record.record_id;
-    const next = [
-      { record_id: record.id || record.record_id, label: label || "Record" },
-      ...recents.filter((r) => r.record_id !== (record.id || record.record_id)),
-    ].slice(0, 10);
-    localStorage.setItem(recentsKey, JSON.stringify(next));
-  }
-
   function selectRecord(record) {
     if (!record) return;
     const recordId = record.id || record.record_id;
     if (!recordId) return;
     setSample((prev) => ({ ...(prev || {}), entity_id: entityId, record_id: recordId }));
-    const labelField = selectedEntity?.display_field;
-    const label =
-      (labelField && record[labelField]) ||
-      record.display_name ||
-      record.full_name ||
-      record.name ||
-      record["workorder.number"] ||
-      recordId;
+    const label = resolveRecordLabel(record, recordId, selectedEntity);
     setSelectedLabel(label || recordId);
     setSearchText(label || recordId);
     setOpened(false);
-    updateRecents(record);
   }
+
+  const layoutClass = showEntitySelect
+    ? (rightAction ? "md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]" : "md:grid-cols-3")
+    : (rightAction ? "lg:grid-cols-[1fr_auto]" : "");
 
   return (
     <div className="space-y-3" data-sample-picker-root>
-      <div className={`grid grid-cols-1 gap-3 items-end ${showEntitySelect ? "md:grid-cols-3" : "lg:grid-cols-[1fr_auto]"}`}>
+      <div className={`grid grid-cols-1 gap-3 items-end ${layoutClass}`}>
         {showEntitySelect && (
           <label className="form-control">
             <span className="label-text">Entity</span>
@@ -156,7 +162,7 @@ export default function SamplePicker({
             </select>
           </label>
         )}
-        <label className={`form-control ${showEntitySelect ? "md:col-span-2" : ""}`}>
+        <label className={`form-control ${showEntitySelect && !rightAction ? "md:col-span-2" : ""}`}>
           <span className="label-text">Record search</span>
           <div className="relative">
             <input
@@ -165,12 +171,15 @@ export default function SamplePicker({
               value={opened ? searchText : (searchText || selectedLabel || "")}
               onChange={(e) => setSearchText(e.target.value)}
               disabled={!entityId}
-              onFocus={() => setOpened(true)}
+              onFocus={() => {
+                setOpened(true);
+                setSearchText("");
+              }}
             />
             {Boolean(sample?.record_id) && (
               <button
                 type="button"
-                className={`${SOFT_BUTTON_XS} absolute right-2 top-1/2 -translate-y-1/2`}
+                className="btn btn-ghost btn-xs btn-circle absolute right-2 top-1/2 z-10 h-7 min-h-7 w-7 min-w-7 -translate-y-1/2 bg-transparent p-0 text-base-content/75 hover:bg-transparent hover:text-base-content"
                 onClick={() => {
                   setSearchText("");
                   setSelectedLabel("");
@@ -179,29 +188,19 @@ export default function SamplePicker({
                 aria-label="Clear selection"
                 title="Clear"
               >
-                x
+                <span className="text-sm font-medium leading-none">×</span>
               </button>
             )}
             {opened && (
               <div className="absolute z-[120] mt-1 w-full rounded-box border border-base-400 bg-base-100 shadow">
                 <ul className="menu menu-compact max-h-64 overflow-auto">
                   {loading && <li className="menu-title"><span>Searching...</span></li>}
-                  {!loading && searchText.trim().length < 2 && (
-                    <li className="menu-title"><span>Type at least 2 characters...</span></li>
-                  )}
-                  {!loading && searchText.trim().length >= 2 && results.length === 0 && (
-                    <li className="menu-title"><span>No results</span></li>
+                  {!loading && results.length === 0 && (
+                    <li className="menu-title"><span>{searchText.trim() ? "No results" : "No records found"}</span></li>
                   )}
                   {results.map((item) => {
                     const record = item.record || {};
-                    const labelField = selectedEntity?.display_field;
-                    const label =
-                      (labelField && record[labelField]) ||
-                      record.display_name ||
-                      record.full_name ||
-                      record.name ||
-                      record["workorder.number"] ||
-                      item.record_id;
+                    const label = resolveRecordLabel(record, item.record_id, selectedEntity);
                     return (
                       <li key={item.record_id}>
                         <button
@@ -219,7 +218,7 @@ export default function SamplePicker({
             )}
           </div>
         </label>
-        {!showEntitySelect && rightAction}
+        {rightAction ? <div className="flex items-end">{rightAction}</div> : null}
       </div>
     </div>
   );

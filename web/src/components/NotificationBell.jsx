@@ -131,6 +131,10 @@ export default function NotificationBell() {
     const legacyEntityMatch = rawTarget.match(/^\/data\/entity\.([^/]+)\/(.+)$/i);
     const target = legacyEntityMatch ? `/data/${legacyEntityMatch[1]}/${legacyEntityMatch[2]}` : rawTarget;
     setOpen(false);
+    if (/^https?:\/\//i.test(target)) {
+      window.location.assign(target);
+      return;
+    }
     navigate(target);
   }
 

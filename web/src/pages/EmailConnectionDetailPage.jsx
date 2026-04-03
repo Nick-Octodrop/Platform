@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { apiFetch } from "../api.js";
+import { useToast } from "../components/Toast.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 
 const DEFAULT_CONFIG = {
@@ -26,14 +27,23 @@ function normalizeConfig(value) {
   };
 }
 
+function Section({ title, description, children, tone = "bg-base-100" }) {
+  return (
+    <div className={`rounded-box border border-base-300 p-4 ${tone}`}>
+      <div className="text-sm font-semibold">{title}</div>
+      {description ? <div className="text-sm opacity-70 mt-1">{description}</div> : null}
+      <div className="mt-4">{children}</div>
+    </div>
+  );
+}
+
 export default function EmailConnectionDetailPage() {
   const { connectionId } = useParams();
-  const navigate = useNavigate();
+  const { pushToast } = useToast();
   const [item, setItem] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [secrets, setSecrets] = useState([]);
 
   const [name, setName] = useState("");
@@ -46,7 +56,6 @@ export default function EmailConnectionDetailPage() {
     if (!connectionId) return;
     setLoading(true);
     setError("");
-    setNotice("");
     try {
       const res = await apiFetch(`/email/connections/${encodeURIComponent(connectionId)}`);
       const conn = res?.connection || null;
@@ -90,7 +99,6 @@ export default function EmailConnectionDetailPage() {
     if (!item?.id || saving) return;
     setSaving(true);
     setError("");
-    setNotice("");
     try {
       const body = {
         name: name.trim(),
@@ -103,9 +111,10 @@ export default function EmailConnectionDetailPage() {
         body,
       });
       setItem(res?.connection || null);
-      setNotice("Saved");
+      pushToast("success", "Saved");
     } catch (err) {
       setError(err?.message || "Save failed");
+      pushToast("error", err?.message || "Save failed");
     } finally {
       setSaving(false);
     }
@@ -113,213 +122,197 @@ export default function EmailConnectionDetailPage() {
 
   return (
     <TabbedPaneShell
-      title={item?.name || "SMTP Connection"}
-      subtitle="SMTP connection setup"
-      mobilePrimaryActions={[
-        {
-          label: "Save",
-          onClick: save,
-          disabled: loading || saving || !name.trim(),
-          className: "btn btn-primary btn-sm",
-        },
-      ]}
-      mobileOverflowActions={[
-        {
-          label: "Refresh",
-          onClick: load,
-          disabled: loading || saving,
-        },
-        {
-          label: "Back",
-          onClick: () => navigate(-1),
-          disabled: saving,
-        },
-      ]}
-      rightActions={(
-        <div className="flex items-center gap-2">
-          <button className="btn btn-sm btn-ghost" type="button" onClick={load} disabled={loading || saving}>
-            Refresh
-          </button>
-          <button className="btn btn-sm btn-primary" type="button" onClick={save} disabled={loading || saving || !name.trim()}>
-            Save
-          </button>
-          <button className="btn btn-sm" type="button" onClick={() => navigate(-1)} disabled={saving}>
-            Back
-          </button>
-        </div>
-      )}
+      contentContainer={true}
     >
       {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
-      {notice ? <div className="alert alert-success text-sm mb-4">{notice}</div> : null}
 
-      <div className="rounded-box border border-base-300 bg-base-100 overflow-hidden min-h-[22rem]">
-        {loading ? (
-          <div className="p-4 text-sm opacity-70">Loading…</div>
-        ) : !item ? (
-          <div className="p-4 text-sm opacity-60">Connection not found.</div>
-        ) : (
-          <div className="p-4 space-y-6">
-            <div>
-              <div className="text-xs font-semibold uppercase opacity-60 mb-2">Connection</div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 max-w-4xl">
-                <label className="form-control md:col-span-2">
-                  <span className="label-text text-sm">Connection Name</span>
-                  <input
-                    className="input input-bordered input-sm"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    disabled={saving}
-                  />
-                </label>
-                <label className="form-control">
-                  <span className="label-text text-sm">Status</span>
-                  <select
-                    className="select select-bordered select-sm"
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value)}
-                    disabled={saving}
-                  >
-                    <option value="active">Active</option>
-                    <option value="disabled">Disabled</option>
-                  </select>
-                </label>
-              </div>
-            </div>
-
-            <div>
-              <div className="text-xs font-semibold uppercase opacity-60 mb-2">SMTP</div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 max-w-4xl">
-                <label className="form-control md:col-span-2">
-                  <span className="label-text text-sm">SMTP Host</span>
-                  <input
-                    className="input input-bordered input-sm"
-                    value={config.host}
-                    onChange={(e) => setConfig((prev) => ({ ...prev, host: e.target.value }))}
-                    placeholder="smtp.gmail.com"
-                    disabled={saving}
-                  />
-                </label>
-                <label className="form-control">
-                  <span className="label-text text-sm">Port</span>
-                  <input
-                    className="input input-bordered input-sm"
-                    type="number"
-                    value={config.port}
-                    onChange={(e) => setConfig((prev) => ({ ...prev, port: Number(e.target.value || 0) }))}
-                    disabled={saving}
-                  />
-                </label>
-                <label className="form-control max-w-xs">
-                  <span className="label-text text-sm">Security</span>
-                  <select
-                    className="select select-bordered select-sm"
-                    value={config.security}
-                    onChange={(e) => setConfig((prev) => ({ ...prev, security: e.target.value }))}
-                    disabled={saving}
-                  >
-                    <option value="starttls">STARTTLS</option>
-                    <option value="ssl">SSL/TLS</option>
-                    <option value="none">None</option>
-                  </select>
-                </label>
-              </div>
-            </div>
-
-            <div>
-              <div className="text-xs font-semibold uppercase opacity-60 mb-2">Authentication</div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-3xl">
-                <label className="form-control md:col-span-2">
-                  <span className="label-text text-sm">Password Source</span>
-                  <select
-                    className="select select-bordered select-sm"
-                    value={authMode}
-                    onChange={(e) => setAuthMode(e.target.value)}
-                    disabled={saving}
-                  >
-                    <option value="password">Direct Password</option>
-                    <option value="secret">Saved Secret</option>
-                  </select>
-                </label>
-                <label className="form-control">
-                  <span className="label-text text-sm">Username</span>
-                  <input
-                    className="input input-bordered input-sm"
-                    value={config.username}
-                    onChange={(e) => setConfig((prev) => ({ ...prev, username: e.target.value }))}
-                    disabled={saving}
-                  />
-                </label>
-                {authMode === "secret" ? (
-                  <>
+      {loading ? (
+        <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-70">Loading…</div>
+      ) : !item ? (
+        <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-60">Connection not found.</div>
+      ) : (
+        <div className="space-y-4">
+          <Section title="Connection" description="SMTP connection setup.">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="space-y-6 md:col-start-1">
+                <div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label className="form-control md:col-span-2">
-                      <span className="label-text text-sm">Saved Secret</span>
-                      <select
-                        className="select select-bordered select-sm"
-                        value={secretRef}
-                        onChange={(e) => setSecretRef(e.target.value)}
-                        disabled={saving}
-                      >
-                        <option value="">Select a secret…</option>
-                        {secrets.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name || s.id}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="form-control md:col-span-2">
-                      <span className="label-text text-sm">Secret ID Override (optional)</span>
+                      <span className="label-text text-sm">Connection Name</span>
                       <input
-                        className="input input-bordered input-sm font-mono"
-                        value={secretRef}
-                        onChange={(e) => setSecretRef(e.target.value)}
-                        placeholder="UUID"
+                        className="input input-bordered input-sm"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
                         disabled={saving}
                       />
+                      <span className="label label-text-alt opacity-50">Required. Use a clear name like Support SMTP or Marketing Outbound.</span>
                     </label>
-                  </>
-                ) : (
-                  <label className="form-control">
-                    <span className="label-text text-sm">Password</span>
-                    <input
-                      className="input input-bordered input-sm"
-                      type="password"
-                      value={config.password}
-                      onChange={(e) => setConfig((prev) => ({ ...prev, password: e.target.value }))}
-                      placeholder="SMTP app password"
-                      disabled={saving}
-                    />
-                  </label>
-                )}
-              </div>
-            </div>
+                    <label className="form-control">
+                      <span className="label-text text-sm">Status</span>
+                      <select
+                        className="select select-bordered select-sm"
+                        value={status}
+                        onChange={(e) => setStatus(e.target.value)}
+                        disabled={saving}
+                      >
+                        <option value="active">Active</option>
+                        <option value="disabled">Disabled</option>
+                      </select>
+                      <span className="label label-text-alt opacity-50">Optional. Disable the connection without deleting it.</span>
+                    </label>
+                  </div>
+                </div>
 
-            <div>
-              <div className="text-xs font-semibold uppercase opacity-60 mb-2">Sender</div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-3xl">
-                <label className="form-control">
-                  <span className="label-text text-sm">From Email</span>
-                  <input
-                    className="input input-bordered input-sm"
-                    value={config.from_email}
-                    onChange={(e) => setConfig((prev) => ({ ...prev, from_email: e.target.value }))}
-                    disabled={saving}
-                  />
-                </label>
-                <label className="form-control">
-                  <span className="label-text text-sm">From Name</span>
-                  <input
-                    className="input input-bordered input-sm"
-                    value={config.from_name}
-                    onChange={(e) => setConfig((prev) => ({ ...prev, from_name: e.target.value }))}
-                    disabled={saving}
-                  />
-                </label>
+                <div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label className="form-control md:col-span-2">
+                      <span className="label-text text-sm">SMTP Host</span>
+                      <input
+                        className="input input-bordered input-sm"
+                        value={config.host}
+                        onChange={(e) => setConfig((prev) => ({ ...prev, host: e.target.value }))}
+                        placeholder="smtp.gmail.com"
+                        disabled={saving}
+                      />
+                      <span className="label label-text-alt opacity-50">Required. Enter the outgoing mail server host provided by your email provider.</span>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text text-sm">Port</span>
+                      <input
+                        className="input input-bordered input-sm"
+                        type="number"
+                        value={config.port}
+                        onChange={(e) => setConfig((prev) => ({ ...prev, port: Number(e.target.value || 0) }))}
+                        disabled={saving}
+                      />
+                      <span className="label label-text-alt opacity-50">Usually `587` for STARTTLS or `465` for SSL/TLS.</span>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text text-sm">Security</span>
+                      <select
+                        className="select select-bordered select-sm"
+                        value={config.security}
+                        onChange={(e) => setConfig((prev) => ({ ...prev, security: e.target.value }))}
+                        disabled={saving}
+                      >
+                        <option value="starttls">STARTTLS</option>
+                        <option value="ssl">SSL/TLS</option>
+                        <option value="none">None</option>
+                      </select>
+                      <span className="label label-text-alt opacity-50">Choose the transport security required by the server.</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label className="form-control md:col-span-2">
+                      <span className="label-text text-sm">Password Source</span>
+                      <select
+                        className="select select-bordered select-sm"
+                        value={authMode}
+                        onChange={(e) => setAuthMode(e.target.value)}
+                        disabled={saving}
+                      >
+                        <option value="password">Direct Password</option>
+                        <option value="secret">Saved Secret</option>
+                      </select>
+                      <span className="label label-text-alt opacity-50">Choose whether the SMTP password is stored directly here or pulled from Secrets.</span>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text text-sm">Username</span>
+                      <input
+                        className="input input-bordered input-sm"
+                        value={config.username}
+                        onChange={(e) => setConfig((prev) => ({ ...prev, username: e.target.value }))}
+                        disabled={saving}
+                      />
+                      <span className="label label-text-alt opacity-50">Usually the mailbox email address or SMTP username.</span>
+                    </label>
+                    {authMode === "secret" ? (
+                      <>
+                        <label className="form-control md:col-span-2">
+                          <span className="label-text text-sm">Saved Secret</span>
+                          <select
+                            className="select select-bordered select-sm"
+                            value={secretRef}
+                            onChange={(e) => setSecretRef(e.target.value)}
+                            disabled={saving}
+                          >
+                            <option value="">Select a secret…</option>
+                            {secrets.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.name || s.id}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="label label-text-alt opacity-50">Optional. Pick a stored secret instead of entering the password directly.</span>
+                        </label>
+                        <label className="form-control md:col-span-2">
+                          <span className="label-text text-sm">Secret ID Override</span>
+                          <input
+                            className="input input-bordered input-sm font-mono"
+                            value={secretRef}
+                            onChange={(e) => setSecretRef(e.target.value)}
+                            placeholder="UUID"
+                            disabled={saving}
+                          />
+                          <span className="label label-text-alt opacity-50">Optional. Use this only if you need to point at a secret id directly.</span>
+                        </label>
+                      </>
+                    ) : (
+                      <label className="form-control">
+                        <span className="label-text text-sm">Password</span>
+                        <input
+                          className="input input-bordered input-sm"
+                          type="password"
+                          value={config.password}
+                          onChange={(e) => setConfig((prev) => ({ ...prev, password: e.target.value }))}
+                          placeholder="SMTP app password"
+                          disabled={saving}
+                        />
+                        <span className="label label-text-alt opacity-50">Optional if your server does not require authentication. Otherwise use the SMTP password or app password.</span>
+                      </label>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label className="form-control">
+                      <span className="label-text text-sm">From Email</span>
+                      <input
+                        className="input input-bordered input-sm"
+                        value={config.from_email}
+                        onChange={(e) => setConfig((prev) => ({ ...prev, from_email: e.target.value }))}
+                        disabled={saving}
+                      />
+                      <span className="label label-text-alt opacity-50">Optional. Leave blank to let the provider default the sender address.</span>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text text-sm">From Name</span>
+                      <input
+                        className="input input-bordered input-sm"
+                        value={config.from_name}
+                        onChange={(e) => setConfig((prev) => ({ ...prev, from_name: e.target.value }))}
+                        disabled={saving}
+                      />
+                      <span className="label label-text-alt opacity-50">Optional display name that appears in the recipient inbox.</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button className="btn btn-sm btn-primary" type="button" onClick={save} disabled={loading || saving || !name.trim()}>
+                    {saving ? "Saving..." : "Save"}
+                  </button>
+                </div>
               </div>
+              <div className="hidden md:block" />
             </div>
-          </div>
-        )}
-      </div>
+          </Section>
+        </div>
+      )}
     </TabbedPaneShell>
   );
 }

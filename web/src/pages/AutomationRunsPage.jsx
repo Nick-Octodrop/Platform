@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { apiFetch } from "../api";
 import PaginationControls from "../components/PaginationControls.jsx";
 import useMediaQuery from "../hooks/useMediaQuery.js";
+import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 
 export default function AutomationRunsPage() {
   const { automationId } = useParams();
@@ -43,8 +44,8 @@ export default function AutomationRunsPage() {
         <Link className="btn" to={`/automations/${automationId}`}>Back</Link>
       </div>
 
-      <div className={isMobile ? "bg-base-100" : "card bg-base-100 rounded-[1.75rem] border border-base-300 shadow-sm"}>
-        <div className={isMobile ? "" : "card-body"}>
+      <div className={isMobile ? "bg-base-100" : DESKTOP_PAGE_SHELL}>
+        <div className={isMobile ? "" : DESKTOP_PAGE_SHELL_BODY}>
           {loading ? (
             <div className="text-sm opacity-70">Loading…</div>
           ) : (

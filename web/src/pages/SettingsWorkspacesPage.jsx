@@ -14,6 +14,16 @@ function normalizeTabId(value) {
   return TAB_IDS.includes(raw) ? raw : "workspaces";
 }
 
+function Section({ title, description, children }) {
+  return (
+    <div className="rounded-box border border-base-300 bg-base-100 p-4">
+      <div className="text-sm font-semibold">{title}</div>
+      {description ? <div className="text-sm opacity-70 mt-1">{description}</div> : null}
+      <div className="mt-4">{children}</div>
+    </div>
+  );
+}
+
 export default function SettingsWorkspacesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = normalizeTabId(searchParams.get("tab"));
@@ -24,7 +34,7 @@ export default function SettingsWorkspacesPage() {
   const [workspacesPage, setWorkspacesPage] = useState(0);
   const [workspacePrefs, setWorkspacePrefs] = useState({ logo_url: "", colors: { ...DEFAULT_BRAND_COLORS } });
   const [workspaceName, setWorkspaceName] = useState("");
-  const [workspaceNameSaving, setWorkspaceNameSaving] = useState(false);
+  const [brandingSaving, setBrandingSaving] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoPreviewError, setLogoPreviewError] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -101,8 +111,10 @@ export default function SettingsWorkspacesPage() {
   );
 
   useEffect(() => {
-    setWorkspaceName(activeWorkspace?.workspace_name || "");
-  }, [activeWorkspace?.workspace_id, activeWorkspace?.workspace_name]);
+    if (activeWorkspace?.workspace_id) {
+      setWorkspaceName(activeWorkspace.workspace_name || "");
+    }
+  }, [activeWorkspace?.workspace_id]);
 
   function switchWorkspace(workspaceId) {
     setActiveWorkspaceId(workspaceId);
@@ -137,18 +149,7 @@ export default function SettingsWorkspacesPage() {
     setSearchParams(nextParams, { replace: true });
   }
 
-  function Section({ title, description, children }) {
-    return (
-      <div className="rounded-box border border-base-300 bg-base-100 p-4">
-        <div className="text-sm font-semibold">{title}</div>
-        {description ? <div className="text-sm opacity-70 mt-1">{description}</div> : null}
-        <div className="mt-4">{children}</div>
-      </div>
-    );
-  }
-
-  async function saveWorkspacePrefs(next) {
-    setWorkspacePrefs(next);
+  async function persistWorkspacePrefs(next) {
     try {
       await setUiPrefs({ workspace: next });
       if (next.colors) {
@@ -179,8 +180,7 @@ export default function SettingsWorkspacesPage() {
       if (!res.ok || !data?.logo_url) {
         throw new Error(data?.errors?.[0]?.message || "Logo upload failed");
       }
-      const next = { ...workspacePrefs, logo_url: data.logo_url };
-      await saveWorkspacePrefs(next);
+      setWorkspacePrefs((prev) => ({ ...prev, logo_url: data.logo_url }));
       setLogoPreviewError(false);
       pushToast("success", "Logo uploaded");
     } catch (err) {
@@ -190,52 +190,40 @@ export default function SettingsWorkspacesPage() {
     }
   }
 
-  async function saveWorkspaceName() {
+  async function saveBranding() {
     if (!workspaceName.trim()) return;
-    setWorkspaceNameSaving(true);
+    setBrandingSaving(true);
     try {
+      const trimmedName = workspaceName.trim();
       const res = await apiFetch("/access/workspace", {
         method: "PATCH",
-        body: { name: workspaceName.trim() },
+        body: { name: trimmedName },
       });
+      await persistWorkspacePrefs(workspacePrefs);
       const nextWorkspaces = res?.workspaces || [];
       if (nextWorkspaces.length) {
         setWorkspaces(nextWorkspaces);
       } else {
         await load();
       }
+      setWorkspaceName(trimmedName);
       pushToast("success", "Workspace name updated");
     } catch (err) {
       pushToast("error", err?.message || "Failed to update workspace name");
     } finally {
-      setWorkspaceNameSaving(false);
+      setBrandingSaving(false);
     }
   }
 
   return (
     <TabbedPaneShell
-      title="Workspaces"
-      subtitle={actor.platform_role === "superadmin"
-        ? "Superadmin view: access and switch any workspace."
-        : "Switch between your workspace memberships."}
       tabs={[
         { id: "workspaces", label: "Workspaces" },
         { id: "branding", label: "Branding" },
       ]}
       activeTabId={activeTab}
       onTabChange={goTab}
-      mobileOverflowActions={[
-        {
-          label: "Refresh",
-          onClick: load,
-          disabled: loading || workspaceNameSaving || logoUploading,
-        },
-      ]}
-      rightActions={(
-        <button className="btn btn-sm btn-ghost" type="button" disabled={loading || workspaceNameSaving || logoUploading} onClick={load}>
-          Refresh
-        </button>
-      )}
+      contentContainer={true}
     >
       <div className="space-y-4">
         {error && <div className="alert alert-error text-sm">{error}</div>}
@@ -316,104 +304,113 @@ export default function SettingsWorkspacesPage() {
               <div className="alert alert-warning text-sm">Only workspace admins can edit these settings.</div>
             ) : (
               <div className="space-y-4">
-                <label className="form-control max-w-3xl">
-                  <span className="label-text text-sm">Workspace name</span>
-                  <div className="join">
-                    <input
-                      type="text"
-                      className="input input-bordered input-sm join-item w-full"
-                      value={workspaceName}
-                      placeholder="Workspace name"
-                      onChange={(e) => setWorkspaceName(e.target.value)}
-                      disabled={workspaceNameSaving}
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm join-item"
-                      disabled={workspaceNameSaving || !workspaceName.trim()}
-                      onClick={saveWorkspaceName}
-                    >
-                      {workspaceNameSaving ? "Saving..." : "Save"}
-                    </button>
-                  </div>
-                </label>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="space-y-4 md:col-start-1">
+                    <label className="form-control">
+                      <span className="label-text text-sm">Workspace name</span>
+                      <input
+                        type="text"
+                        className="input input-bordered input-sm w-full"
+                        value={workspaceName}
+                        placeholder="Workspace name"
+                        onChange={(e) => setWorkspaceName(e.target.value)}
+                        disabled={brandingSaving}
+                      />
+                    </label>
 
-                <label className="form-control max-w-3xl">
-                  <span className="label-text text-sm">Logo URL</span>
-                  <input
-                    type="url"
-                    className="input input-bordered input-sm"
-                    placeholder="https://cdn.example.com/logo.png"
-                    value={workspacePrefs.logo_url || ""}
-                    onChange={(e) => {
-                      setLogoPreviewError(false);
-                      saveWorkspacePrefs({ ...workspacePrefs, logo_url: e.target.value });
-                    }}
-                  />
-                </label>
+                    <label className="form-control">
+                      <span className="label-text text-sm">Logo URL</span>
+                      <input
+                        type="url"
+                        className="input input-bordered input-sm"
+                        placeholder="https://cdn.example.com/logo.png"
+                        value={workspacePrefs.logo_url || ""}
+                        onChange={(e) => {
+                          setLogoPreviewError(false);
+                          setWorkspacePrefs((prev) => ({ ...prev, logo_url: e.target.value }));
+                        }}
+                        disabled={brandingSaving}
+                      />
+                    </label>
 
-                <div className="flex flex-col md:flex-row md:items-center gap-3">
-                  <div className="shrink-0">
-                    <div className="text-sm opacity-70">Logo preview</div>
-                    <div className="mt-2 w-40 h-16 rounded-box border border-base-300 bg-base-200 flex items-center justify-center overflow-hidden">
-                      {workspacePrefs.logo_url && !logoPreviewError ? (
-                        <img
-                          src={workspacePrefs.logo_url}
-                          alt="Workspace logo"
-                          className="max-w-full max-h-full object-contain"
-                          onError={() => setLogoPreviewError(true)}
-                        />
-                      ) : (
-                        <div className="text-xs opacity-60 px-3 text-center">
-                          {workspacePrefs.logo_url ? "Unable to load logo" : "No logo"}
+                    <div className="space-y-3">
+                      <div>
+                        <div className="text-sm opacity-70">Logo preview</div>
+                        <div className="mt-2 w-40 h-16 rounded-box border border-base-300 bg-base-200 flex items-center justify-center overflow-hidden">
+                          {workspacePrefs.logo_url && !logoPreviewError ? (
+                            <img
+                              src={workspacePrefs.logo_url}
+                              alt="Workspace logo"
+                              className="max-w-full max-h-full object-contain"
+                              onError={() => setLogoPreviewError(true)}
+                            />
+                          ) : (
+                            <div className="text-xs opacity-60 px-3 text-center">
+                              {workspacePrefs.logo_url ? "Unable to load logo" : "No logo"}
+                            </div>
+                          )}
                         </div>
-                      )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          onClick={() => logoFileRef.current?.click()}
+                          disabled={logoUploading || brandingSaving}
+                        >
+                          {logoUploading ? "Uploading..." : "Upload logo"}
+                        </button>
+                        <input
+                          ref={logoFileRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleLogoFileChange}
+                        />
+                        {workspacePrefs.logo_url ? (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => {
+                              setLogoPreviewError(false);
+                              setWorkspacePrefs((prev) => ({ ...prev, logo_url: "" }));
+                            }}
+                            disabled={brandingSaving}
+                          >
+                            Clear logo
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="form-control">
+                        <span className="label-text text-sm">Primary</span>
+                        <input
+                          type="color"
+                          className="input input-bordered h-10"
+                          value={workspacePrefs.colors?.primary || DEFAULT_BRAND_COLORS.primary}
+                          onChange={(e) => {
+                            const colors = { ...(workspacePrefs.colors || {}), primary: e.target.value };
+                            setWorkspacePrefs((prev) => ({ ...prev, colors }));
+                          }}
+                          disabled={brandingSaving}
+                        />
+                      </label>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      className="btn btn-outline btn-sm"
-                      onClick={() => logoFileRef.current?.click()}
-                      disabled={logoUploading}
-                    >
-                      {logoUploading ? "Uploading..." : "Upload logo"}
-                    </button>
-                    <input
-                      ref={logoFileRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handleLogoFileChange}
-                    />
-                    {workspacePrefs.logo_url ? (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => {
-                          setLogoPreviewError(false);
-                          saveWorkspacePrefs({ ...workspacePrefs, logo_url: "" });
-                        }}
-                      >
-                        Clear logo
-                      </button>
-                    ) : null}
-                  </div>
+                  <div className="hidden md:block" />
                 </div>
 
-                <div className="max-w-3xl">
-                  <label className="form-control">
-                    <span className="label-text text-sm">Primary</span>
-                    <input
-                      type="color"
-                      className="input input-bordered h-10"
-                      value={workspacePrefs.colors?.primary || DEFAULT_BRAND_COLORS.primary}
-                      onChange={(e) => {
-                        const colors = { ...(workspacePrefs.colors || {}), primary: e.target.value };
-                        saveWorkspacePrefs({ ...workspacePrefs, colors });
-                      }}
-                    />
-                  </label>
+                <div>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    disabled={brandingSaving || logoUploading || !workspaceName.trim()}
+                    onClick={saveBranding}
+                  >
+                    {brandingSaving ? "Saving..." : "Save"}
+                  </button>
                 </div>
               </div>
             )}

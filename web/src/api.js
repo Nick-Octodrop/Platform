@@ -294,7 +294,7 @@ export async function apiFetch(path, options = {}) {
         data = await response.json();
         if (!response.ok) {
           const code = data?.errors?.[0]?.code;
-          const message = data?.errors?.[0]?.message || data?.error || data?.message || "Request failed";
+          const message = data?.errors?.[0]?.message || data?.error || data?.message || data?.detail || "Request failed";
           const path = data?.errors?.[0]?.path;
           const err = new Error(formatApiErrorMessage(message, path, code));
           err.code = code;

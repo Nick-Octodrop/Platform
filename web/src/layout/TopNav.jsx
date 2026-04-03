@@ -25,6 +25,7 @@ export default function TopNav({ user, onSignOut }) {
   const isSettingsPreferences = location.pathname.startsWith("/settings/preferences");
   const isSettingsPassword = location.pathname.startsWith("/settings/password");
   const isSettingsUsers = location.pathname.startsWith("/settings/users");
+  const isSettingsAccessPolicies = location.pathname.startsWith("/settings/access-policies");
   const isSettingsWorkspaces = location.pathname.startsWith("/settings/workspaces");
   const isSettingsSecrets = location.pathname.startsWith("/settings/secrets");
   const isDiagnostics = location.pathname.startsWith("/settings/diagnostics");
@@ -39,12 +40,15 @@ export default function TopNav({ user, onSignOut }) {
   const isDocsHome = location.pathname === "/settings/documents";
   const isDocsTemplates = location.pathname.startsWith("/settings/documents/templates");
   const isDocTemplateStudio = location.pathname.startsWith("/documents/templates/");
+  const isSettingsDocumentNumbering = location.pathname.startsWith("/settings/document-numbering");
   const settingsLeafLabel = isSettingsSettings || isSettingsPreferences
     ? "Profile"
     : isSettingsPassword
       ? "Password"
     : isSettingsUsers
       ? "Users"
+      : isSettingsAccessPolicies
+        ? "Access Policies"
       : isSettingsWorkspaces
         ? "Workspaces"
         : isSettingsSecrets
@@ -69,12 +73,15 @@ export default function TopNav({ user, onSignOut }) {
                               ? "Document Templates"
                                 : isDocTemplateStudio
                                   ? "Document Template"
+                                  : isSettingsDocumentNumbering
+                                    ? "Document Numbering"
                                   : "";
   const isSettingsRoute = isSettingsRoot
     || isSettingsSettings
     || isSettingsPreferences
     || isSettingsPassword
     || isSettingsUsers
+    || isSettingsAccessPolicies
     || isSettingsWorkspaces
     || isSettingsSecrets
     || isDiagnostics
@@ -86,15 +93,41 @@ export default function TopNav({ user, onSignOut }) {
     || isEmailTemplateStudio
     || isDocsHome
     || isDocsTemplates
-    || isDocTemplateStudio;
+    || isDocTemplateStudio
+    || isSettingsDocumentNumbering;
   const isNotifications = location.pathname.startsWith("/notifications");
   const isAutomations = location.pathname.startsWith("/automations");
   const isOctoAi = location.pathname.startsWith("/octo-ai");
   const isAutomationRuns = location.pathname.startsWith("/automation-runs");
+  const automationMatch = useMatch("/automations/:automationId");
+  const automationRunMatch = useMatch("/automation-runs/:runId");
+  const accessPolicyMatch = useMatch("/settings/access-policies/:profileId");
+  const emailConnectionMatch = useMatch("/settings/email/connections/:connectionId");
+  const emailTemplateMatch = useMatch("/email/templates/:templateId");
+  const emailOutboxMatch = useMatch("/settings/email-outbox/:outboxId");
+  const docTemplateMatch = useMatch("/documents/templates/:templateId");
+  const documentNumberingMatch = useMatch("/settings/document-numbering/:sequenceId");
+  const automationIdParam = automationMatch?.params?.automationId || "";
+  const automationRunIdParam = automationRunMatch?.params?.runId || "";
+  const accessPolicyIdParam = accessPolicyMatch?.params?.profileId || "";
+  const emailConnectionIdParam = emailConnectionMatch?.params?.connectionId || "";
+  const emailTemplateIdParam = emailTemplateMatch?.params?.templateId || "";
+  const emailOutboxIdParam = emailOutboxMatch?.params?.outboxId || "";
+  const docTemplateIdParam = docTemplateMatch?.params?.templateId || "";
+  const documentNumberingIdParam = documentNumberingMatch?.params?.sequenceId || "";
   const [manifest, setManifest] = useState(null);
   const [studioModules, setStudioModules] = useState([]);
   const [studioLoading, setStudioLoading] = useState(false);
   const [recordCrumbLabel, setRecordCrumbLabel] = useState("");
+  const [automationCrumbLabel, setAutomationCrumbLabel] = useState("");
+  const [automationRunCrumbLabel, setAutomationRunCrumbLabel] = useState("");
+  const [automationCrumbId, setAutomationCrumbId] = useState("");
+  const [accessPolicyCrumbLabel, setAccessPolicyCrumbLabel] = useState("");
+  const [emailConnectionCrumbLabel, setEmailConnectionCrumbLabel] = useState("");
+  const [emailTemplateCrumbLabel, setEmailTemplateCrumbLabel] = useState("");
+  const [emailOutboxCrumbLabel, setEmailOutboxCrumbLabel] = useState("");
+  const [docTemplateCrumbLabel, setDocTemplateCrumbLabel] = useState("");
+  const [documentNumberingCrumbLabel, setDocumentNumberingCrumbLabel] = useState("");
   const [mobileAppMenuOpen, setMobileAppMenuOpen] = useState(false);
   const [mobileHomeMenuOpen, setMobileHomeMenuOpen] = useState(false);
   const accountEmail = user?.email || "Account";
@@ -211,6 +244,205 @@ export default function TopNav({ user, onSignOut }) {
     };
   }, [isAppRoute, isRecordPage, recordEntityId, recordIdParam, recordTitleField]);
 
+  useEffect(() => {
+    let mounted = true;
+    async function loadAutomationCrumbs() {
+      if (automationIdParam) {
+        try {
+          const res = await apiFetch(`/automations/${automationIdParam}`);
+          if (!mounted) return;
+          const automation = res?.automation || {};
+          const label = String(automation?.name || automationIdParam || "").trim();
+          setAutomationCrumbLabel(label || "Automation");
+          setAutomationCrumbId(String(automation?.id || automationIdParam || "").trim());
+        } catch {
+          if (mounted) {
+            setAutomationCrumbLabel("Automation");
+            setAutomationCrumbId(automationIdParam);
+          }
+        }
+        setAutomationRunCrumbLabel("");
+        return;
+      }
+
+      if (automationRunIdParam) {
+        try {
+          const res = await apiFetch(`/automation-runs/${automationRunIdParam}`);
+          if (!mounted) return;
+          const run = res?.run || {};
+          const runLabel = String(run?.id || automationRunIdParam || "").trim();
+          setAutomationRunCrumbLabel(runLabel ? `Run ${runLabel.slice(0, 8)}` : "Run");
+          const parentAutomationId = String(run?.automation_id || "").trim();
+          if (parentAutomationId) {
+            setAutomationCrumbId(parentAutomationId);
+            try {
+              const automationRes = await apiFetch(`/automations/${parentAutomationId}`);
+              if (!mounted) return;
+              const automation = automationRes?.automation || {};
+              const label = String(automation?.name || parentAutomationId || "").trim();
+              setAutomationCrumbLabel(label || "Automation");
+            } catch {
+              if (mounted) setAutomationCrumbLabel("Automation");
+            }
+          } else {
+            setAutomationCrumbLabel("Automation");
+            setAutomationCrumbId("");
+          }
+        } catch {
+          if (mounted) {
+            setAutomationCrumbLabel("Automation");
+            setAutomationRunCrumbLabel("Run");
+            setAutomationCrumbId("");
+          }
+        }
+        return;
+      }
+
+      setAutomationCrumbLabel("");
+      setAutomationRunCrumbLabel("");
+      setAutomationCrumbId("");
+    }
+
+    loadAutomationCrumbs();
+    return () => {
+      mounted = false;
+    };
+  }, [automationIdParam, automationRunIdParam]);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadAccessPolicyCrumb() {
+      if (!accessPolicyIdParam) {
+        setAccessPolicyCrumbLabel("");
+        return;
+      }
+      try {
+        const res = await apiFetch("/access/profiles");
+        if (!mounted) return;
+        const profiles = Array.isArray(res?.profiles) ? res.profiles : [];
+        const profile = profiles.find((item) => String(item?.id || "") === accessPolicyIdParam);
+        setAccessPolicyCrumbLabel(String(profile?.name || accessPolicyIdParam || "").trim() || "Access Profile");
+      } catch {
+        if (mounted) setAccessPolicyCrumbLabel("Access Profile");
+      }
+    }
+    loadAccessPolicyCrumb();
+    return () => {
+      mounted = false;
+    };
+  }, [accessPolicyIdParam]);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadEmailConnectionCrumb() {
+      if (!emailConnectionIdParam) {
+        setEmailConnectionCrumbLabel("");
+        return;
+      }
+      try {
+        const res = await apiFetch(`/email/connections/${encodeURIComponent(emailConnectionIdParam)}`);
+        if (!mounted) return;
+        const connection = res?.connection || {};
+        setEmailConnectionCrumbLabel(String(connection?.name || emailConnectionIdParam || "").trim() || "Connection");
+      } catch {
+        if (mounted) setEmailConnectionCrumbLabel("Connection");
+      }
+    }
+    loadEmailConnectionCrumb();
+    return () => {
+      mounted = false;
+    };
+  }, [emailConnectionIdParam]);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadEmailTemplateCrumb() {
+      if (!emailTemplateIdParam) {
+        setEmailTemplateCrumbLabel("");
+        return;
+      }
+      try {
+        const res = await apiFetch(`/email/templates/${encodeURIComponent(emailTemplateIdParam)}`);
+        if (!mounted) return;
+        const template = res?.template || {};
+        setEmailTemplateCrumbLabel(String(template?.name || emailTemplateIdParam || "").trim() || "Email Template");
+      } catch {
+        if (mounted) setEmailTemplateCrumbLabel("Email Template");
+      }
+    }
+    loadEmailTemplateCrumb();
+    return () => {
+      mounted = false;
+    };
+  }, [emailTemplateIdParam]);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadEmailOutboxCrumb() {
+      if (!emailOutboxIdParam) {
+        setEmailOutboxCrumbLabel("");
+        return;
+      }
+      try {
+        const res = await apiFetch(`/email/outbox/${encodeURIComponent(emailOutboxIdParam)}`);
+        if (!mounted) return;
+        const outbox = res?.outbox || {};
+        setEmailOutboxCrumbLabel(String(outbox?.subject || emailOutboxIdParam || "").trim() || "Email");
+      } catch {
+        if (mounted) setEmailOutboxCrumbLabel("Email");
+      }
+    }
+    loadEmailOutboxCrumb();
+    return () => {
+      mounted = false;
+    };
+  }, [emailOutboxIdParam]);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadDocTemplateCrumb() {
+      if (!docTemplateIdParam) {
+        setDocTemplateCrumbLabel("");
+        return;
+      }
+      try {
+        const res = await apiFetch(`/documents/templates/${encodeURIComponent(docTemplateIdParam)}`);
+        if (!mounted) return;
+        const template = res?.template || {};
+        setDocTemplateCrumbLabel(String(template?.name || docTemplateIdParam || "").trim() || "Document Template");
+      } catch {
+        if (mounted) setDocTemplateCrumbLabel("Document Template");
+      }
+    }
+    loadDocTemplateCrumb();
+    return () => {
+      mounted = false;
+    };
+  }, [docTemplateIdParam]);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadDocumentNumberingCrumb() {
+      if (!documentNumberingIdParam || documentNumberingIdParam === "new") {
+        setDocumentNumberingCrumbLabel(documentNumberingIdParam === "new" ? "New Sequence" : "");
+        return;
+      }
+      try {
+        const res = await apiFetch("/settings/document-numbering");
+        if (!mounted) return;
+        const sequences = Array.isArray(res?.sequences) ? res.sequences : [];
+        const sequence = sequences.find((item) => String(item?.id || "") === documentNumberingIdParam);
+        setDocumentNumberingCrumbLabel(String(sequence?.name || documentNumberingIdParam || "").trim() || "Sequence");
+      } catch {
+        if (mounted) setDocumentNumberingCrumbLabel("Sequence");
+      }
+    }
+    loadDocumentNumberingCrumb();
+    return () => {
+      mounted = false;
+    };
+  }, [documentNumberingIdParam]);
+
   const currentPath = location.pathname;
   const navItems = useMemo(() => {
     if (!moduleId) return [];
@@ -234,6 +466,10 @@ export default function TopNav({ user, onSignOut }) {
   const studioModuleName = studioModules.find((m) => m.module_id === studioModuleId)?.name
     || (studioLoading ? "Loading…" : studioModuleId);
   const breadcrumbClass = "breadcrumbs text-xs sm:text-sm pl-1 sm:pl-2 overflow-x-auto no-scrollbar max-w-full";
+  const currentRoute = `${location.pathname}${location.search}${location.hash}`;
+  const CrumbLink = ({ to, children }) => (
+    to ? <Link to={to}>{children}</Link> : <span>{children}</span>
+  );
   const mobileAppBreadcrumb = useMemo(() => {
     if (!isAppRoute) return "";
     const appLabel = String(appName || moduleId || "App").trim();
@@ -254,7 +490,7 @@ export default function TopNav({ user, onSignOut }) {
     if (isAppsStore) return "Apps";
     if (isNotifications) return "Notifications";
     if (isAutomations) return "Automations";
-    if (isAutomationRuns) return "Run";
+    if (isAutomationRuns) return automationRunCrumbLabel || "Run";
     if (isOctoAi) return "Octo AI";
     if (isIntegrations) return "Integrations";
     if (isOps) return "Ops";
@@ -266,6 +502,7 @@ export default function TopNav({ user, onSignOut }) {
     isAppsStore,
     isAutomationRuns,
     isAutomations,
+    automationRunCrumbLabel,
     isIntegrations,
     isNotifications,
     isOctoAi,
@@ -342,9 +579,9 @@ export default function TopNav({ user, onSignOut }) {
           ) : (
           <div className={breadcrumbClass}>
             <ul>
-              <li><Link to={appendOctoAiFrameParams("/home")}>Home</Link></li>
-              <li><Link to={appendOctoAiFrameParams("/studio")}>Studio</Link></li>
-              {isStudioEditor && !isMobile && <li>{studioModuleName}</li>}
+              <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
+              <li><CrumbLink to={appendOctoAiFrameParams("/studio")}>Studio</CrumbLink></li>
+              {isStudioEditor && !isMobile && <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{studioModuleName}</CrumbLink></li>}
             </ul>
           </div>
           )
@@ -374,15 +611,11 @@ export default function TopNav({ user, onSignOut }) {
           ) : (
           <div className={breadcrumbClass}>
             <ul>
-              <li><Link to={appendOctoAiFrameParams("/home")}>Home</Link></li>
+              <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
               <li>
-                {appHomeRoute ? (
-                  <Link to={appHomeRoute}>{appName || moduleId}</Link>
-                ) : (
-                  appName || moduleId
-                )}
+                <CrumbLink to={appHomeRoute || appendOctoAiFrameParams(currentRoute)}>{appName || moduleId}</CrumbLink>
               </li>
-              {isRecordPage && !isMobile && <li>{recordCrumbLabel || "Record"}</li>}
+              {isRecordPage && !isMobile && <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{recordCrumbLabel || "Record"}</CrumbLink></li>}
             </ul>
           </div>
           )
@@ -399,8 +632,8 @@ export default function TopNav({ user, onSignOut }) {
           ) : (
           <div className={breadcrumbClass}>
             <ul>
-              <li><Link to={appendOctoAiFrameParams("/home")}>Home</Link></li>
-              <li>Apps</li>
+              <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
+              <li><CrumbLink to={appendOctoAiFrameParams("/apps")}>Apps</CrumbLink></li>
             </ul>
           </div>
           )
@@ -417,9 +650,35 @@ export default function TopNav({ user, onSignOut }) {
           ) : (
           <div className={breadcrumbClass}>
             <ul>
-              <li><Link to={appendOctoAiFrameParams("/home")}>Home</Link></li>
-              <li><Link to={appendOctoAiFrameParams("/settings")}>Settings</Link></li>
-              {settingsLeafLabel && <li>{settingsLeafLabel}</li>}
+              <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
+              <li><CrumbLink to={appendOctoAiFrameParams("/settings")}>Settings</CrumbLink></li>
+              {settingsLeafLabel && (
+                <li>
+                  <CrumbLink
+                    to={
+                      isSettingsAccessPolicies && accessPolicyIdParam
+                        ? appendOctoAiFrameParams("/settings/access-policies")
+                        : isEmailConnections && emailConnectionIdParam
+                          ? appendOctoAiFrameParams("/settings/email/connections")
+                        : isEmailTemplateStudio && emailTemplateIdParam
+                          ? appendOctoAiFrameParams("/settings/email-templates")
+                        : isEmailOutbox && emailOutboxIdParam
+                          ? appendOctoAiFrameParams("/settings/email-outbox")
+                        : isDocTemplateStudio && docTemplateIdParam
+                          ? appendOctoAiFrameParams("/settings/documents/templates")
+                        : appendOctoAiFrameParams(currentRoute)
+                    }
+                  >
+                    {settingsLeafLabel}
+                  </CrumbLink>
+                </li>
+              )}
+              {isSettingsAccessPolicies && accessPolicyIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{accessPolicyCrumbLabel || "Access Profile"}</CrumbLink></li> : null}
+              {isEmailConnections && emailConnectionIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{emailConnectionCrumbLabel || "Connection"}</CrumbLink></li> : null}
+              {isEmailTemplateStudio && emailTemplateIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{emailTemplateCrumbLabel || "Email Template"}</CrumbLink></li> : null}
+              {isEmailOutbox && emailOutboxIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{emailOutboxCrumbLabel || "Email"}</CrumbLink></li> : null}
+              {isDocTemplateStudio && docTemplateIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{docTemplateCrumbLabel || "Document Template"}</CrumbLink></li> : null}
+              {isSettingsDocumentNumbering && documentNumberingIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{documentNumberingCrumbLabel || "Sequence"}</CrumbLink></li> : null}
             </ul>
           </div>
           )
@@ -436,8 +695,8 @@ export default function TopNav({ user, onSignOut }) {
           ) : (
           <div className={breadcrumbClass}>
             <ul>
-              <li><Link to={appendOctoAiFrameParams("/home")}>Home</Link></li>
-              <li>Notifications</li>
+              <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
+              <li><CrumbLink to={appendOctoAiFrameParams("/notifications")}>Notifications</CrumbLink></li>
             </ul>
           </div>
           )
@@ -454,8 +713,9 @@ export default function TopNav({ user, onSignOut }) {
           ) : (
           <div className={breadcrumbClass}>
             <ul>
-              <li><Link to={appendOctoAiFrameParams("/home")}>Home</Link></li>
-              <li><Link to={appendOctoAiFrameParams("/automations")}>Automations</Link></li>
+              <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
+              <li><CrumbLink to={appendOctoAiFrameParams("/automations")}>Automations</CrumbLink></li>
+              {automationIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{automationCrumbLabel || "Automation"}</CrumbLink></li> : null}
             </ul>
           </div>
           )
@@ -472,8 +732,8 @@ export default function TopNav({ user, onSignOut }) {
           ) : (
           <div className={breadcrumbClass}>
             <ul>
-              <li><Link to={appendOctoAiFrameParams("/home")}>Home</Link></li>
-              <li><Link to={appendOctoAiFrameParams("/octo-ai")}>Octo AI</Link></li>
+              <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
+              <li><CrumbLink to={appendOctoAiFrameParams("/octo-ai")}>Octo AI</CrumbLink></li>
             </ul>
           </div>
           )
@@ -490,8 +750,8 @@ export default function TopNav({ user, onSignOut }) {
           ) : (
           <div className={breadcrumbClass}>
             <ul>
-              <li><Link to={appendOctoAiFrameParams("/home")}>Home</Link></li>
-              <li>Integrations</li>
+              <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
+              <li><CrumbLink to={appendOctoAiFrameParams("/integrations")}>Integrations</CrumbLink></li>
             </ul>
           </div>
           )
@@ -508,9 +768,14 @@ export default function TopNav({ user, onSignOut }) {
           ) : (
           <div className={breadcrumbClass}>
             <ul>
-              <li><Link to={appendOctoAiFrameParams("/home")}>Home</Link></li>
-              <li><Link to={appendOctoAiFrameParams("/automations")}>Automations</Link></li>
-              <li>Run</li>
+              <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
+              <li><CrumbLink to={appendOctoAiFrameParams("/automations")}>Automations</CrumbLink></li>
+              <li>
+                <CrumbLink to={automationCrumbId ? appendOctoAiFrameParams(`/automations/${automationCrumbId}`) : appendOctoAiFrameParams(currentRoute)}>
+                  {automationCrumbLabel || "Automation"}
+                </CrumbLink>
+              </li>
+              <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{automationRunCrumbLabel || "Run"}</CrumbLink></li>
             </ul>
           </div>
           )
@@ -527,8 +792,8 @@ export default function TopNav({ user, onSignOut }) {
           ) : (
           <div className={breadcrumbClass}>
             <ul>
-              <li><Link to={appendOctoAiFrameParams("/home")}>Home</Link></li>
-              <li>Ops</li>
+              <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
+              <li><CrumbLink to={appendOctoAiFrameParams("/ops")}>Ops</CrumbLink></li>
             </ul>
           </div>
           )

@@ -734,6 +734,8 @@ function InlineLineItemsTable({
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupOptions, setLookupOptions] = useState([]);
   const [lookupCache, setLookupCache] = useState({});
+  const [pendingDeleteRow, setPendingDeleteRow] = useState(null);
+  const [deletingRowId, setDeletingRowId] = useState("");
   const lookupRef = useRef(null);
 
   const fetchRows = React.useCallback(async () => {
@@ -852,12 +854,17 @@ function InlineLineItemsTable({
   }
 
   async function deleteRow(recordId) {
+    if (!recordId || deletingRowId) return;
+    setDeletingRowId(recordId);
     try {
       await deleteRecord(childEntityId, recordId);
       setRows((prev) => prev.filter((row) => row.record_id !== recordId));
+      setPendingDeleteRow(null);
       await onRefreshParent?.();
     } catch {
       fetchRows();
+    } finally {
+      setDeletingRowId("");
     }
   }
 
@@ -986,7 +993,7 @@ function InlineLineItemsTable({
                     <button
                       type="button"
                       className={SOFT_BUTTON_XS}
-                      onClick={() => deleteRow(row.record_id)}
+                      onClick={() => setPendingDeleteRow(row)}
                     >
                       Remove
                     </button>
@@ -1054,6 +1061,44 @@ function InlineLineItemsTable({
         </table>
       </div>
       {error ? <div className="px-3 pb-3 text-xs text-error">{error}</div> : null}
+      {pendingDeleteRow ? (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-md">
+            <h3 className="font-semibold text-base">Delete line item?</h3>
+            <p className="mt-2 text-sm opacity-70">
+              This will remove{" "}
+              <span className="font-medium">
+                {lookupCache[pendingDeleteRow.record_id]
+                  || pendingDeleteRow.record?.[descriptionField]
+                  || pendingDeleteRow.record?.[itemField]
+                  || "this line item"}
+              </span>
+              .
+            </p>
+            <div className="modal-action">
+              <button
+                className="btn btn-sm"
+                type="button"
+                onClick={() => setPendingDeleteRow(null)}
+                disabled={!!deletingRowId}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-sm btn-error"
+                type="button"
+                onClick={() => deleteRow(pendingDeleteRow.record_id)}
+                disabled={!!deletingRowId}
+              >
+                {deletingRowId ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+          <button className="modal-backdrop" type="button" onClick={() => setPendingDeleteRow(null)}>
+            close
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1354,12 +1399,12 @@ function WorkspaceUsersField({ field, value, onChange, readonly, members, loadin
         }}
       >
         {selectedMembers.map((member) => (
-          <span key={member.user_id} className="badge badge-outline gap-1">
+          <span key={member.user_id} className="badge badge-outline badge-dismissible">
             {member.label}
             {!readonly && !field.readonly && (
               <button
                 type="button"
-                className="opacity-70 hover:opacity-100"
+                className="badge-remove"
                 onClick={(event) => {
                   event.stopPropagation();
                   removeUser(member.user_id);

@@ -1,10 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { MoreHorizontal } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api.js";
+import { useToast } from "../components/Toast.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
+import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
+import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 
 export default function EmailOutboxPage() {
+  const { pushToast } = useToast();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -13,6 +18,8 @@ export default function EmailOutboxPage() {
   const [selectedIds, setSelectedIds] = useState([]);
   const [page, setPage] = useState(0);
   const [totalItems, setTotalItems] = useState(0);
+  const [selectionActionBusy, setSelectionActionBusy] = useState("");
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const navigate = useNavigate();
 
   async function load() {
@@ -97,10 +104,31 @@ export default function EmailOutboxPage() {
     [filters, statusFilter],
   );
 
+  async function deleteSelectedOutbox() {
+    if (!selectedIds.length || selectionActionBusy) return;
+    try {
+      setSelectionActionBusy("delete");
+      await Promise.all(selectedIds.map((id) => apiFetch(`/email/outbox/${id}`, { method: "DELETE" })));
+      setSelectedIds([]);
+      setShowDeleteModal(false);
+      pushToast("success", selectedIds.length === 1 ? "Email deleted." : "Emails deleted.");
+      await load();
+    } catch (err) {
+      const detail = err?.message || "Failed to delete emails";
+      if (err?.status === 404 || err?.status === 405) {
+        pushToast("error", `${detail}. If this endpoint was just added, restart the API server.`);
+      } else {
+        pushToast("error", detail);
+      }
+    } finally {
+      setSelectionActionBusy("");
+    }
+  }
+
   return (
     <div className="min-h-full md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
-      <div className="bg-base-100 md:card md:rounded-[1.75rem] md:border md:border-base-300 md:shadow-sm md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
-        <div className="p-4 md:card-body md:flex md:flex-col md:min-h-0 md:overflow-hidden">
+      <div className={DESKTOP_PAGE_SHELL}>
+        <div className={DESKTOP_PAGE_SHELL_BODY}>
           <div className="space-y-4 md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {error && <div className="alert alert-error text-sm mb-4">{error}</div>}
             {loading ? (
@@ -108,7 +136,7 @@ export default function EmailOutboxPage() {
             ) : (
               <div className="flex flex-col gap-4 min-w-0">
                 <SystemListToolbar
-                  title="Email Outbox"
+                  title=""
                   searchValue={search}
                   onSearchChange={(v) => {
                     setSearch(v);
@@ -132,6 +160,40 @@ export default function EmailOutboxPage() {
                     totalItems,
                     onPageChange: setPage,
                   }}
+                  rightActions={
+                    selectedIds.length > 0 ? (
+                      <div className="dropdown dropdown-end">
+                        <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </button>
+                        <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
+                          <li className="menu-title">
+                            <span>Selection</span>
+                          </li>
+                          {selectedIds.length === 1 ? (
+                            <li>
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/settings/email-outbox/${selectedIds[0]}`)}
+                              >
+                                Open email
+                              </button>
+                            </li>
+                          ) : null}
+                          <li>
+                            <button
+                              type="button"
+                              className="text-error"
+                              onClick={() => setShowDeleteModal(true)}
+                              disabled={selectionActionBusy === "delete"}
+                            >
+                              {selectedIds.length === 1 ? "Delete" : "Delete selected"}
+                            </button>
+                          </li>
+                        </ul>
+                      </div>
+                    ) : null
+                  }
                 />
 
                 {rows.length === 0 ? (
@@ -178,6 +240,44 @@ export default function EmailOutboxPage() {
           </div>
         </div>
       </div>
+      {showDeleteModal && (
+        <div className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-semibold text-lg">
+              {selectedIds.length === 1 ? "Delete email?" : `Delete ${selectedIds.length} emails?`}
+            </h3>
+            <p className="py-3 text-sm opacity-70">
+              This will permanently remove the selected outbox {selectedIds.length === 1 ? "item" : "items"}.
+            </p>
+            <div className="modal-action">
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setShowDeleteModal(false)}
+                disabled={selectionActionBusy === "delete"}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-error btn-sm"
+                onClick={deleteSelectedOutbox}
+                disabled={selectionActionBusy === "delete"}
+              >
+                {selectionActionBusy === "delete" ? "Deleting..." : (selectedIds.length === 1 ? "Delete" : "Delete selected")}
+              </button>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="modal-backdrop"
+            aria-label="Close"
+            onClick={() => {
+              if (selectionActionBusy !== "delete") setShowDeleteModal(false);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

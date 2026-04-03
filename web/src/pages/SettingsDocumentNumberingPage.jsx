@@ -1,11 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { MoreHorizontal } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api.js";
+import { useToast } from "../components/Toast.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
+import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
+import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 
 export default function SettingsDocumentNumberingPage() {
   const navigate = useNavigate();
+  const { pushToast } = useToast();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -14,6 +19,8 @@ export default function SettingsDocumentNumberingPage() {
   const [selectedIds, setSelectedIds] = useState([]);
   const [page, setPage] = useState(0);
   const [totalItems, setTotalItems] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -32,6 +39,23 @@ export default function SettingsDocumentNumberingPage() {
   useEffect(() => {
     load();
   }, []);
+
+  async function deleteSelectedSequences() {
+    if (!selectedIds.length || saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      await Promise.all(selectedIds.map((id) => apiFetch(`/settings/document-numbering/${encodeURIComponent(id)}`, { method: "DELETE" })));
+      setSelectedIds([]);
+      setShowDeleteModal(false);
+      pushToast("success", selectedIds.length === 1 ? "Sequence deleted." : "Sequences deleted.");
+      await load();
+    } catch (err) {
+      setError(err?.message || "Failed to delete sequences");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const rows = useMemo(
     () => (items || []).map((item) => ({
@@ -109,8 +133,8 @@ export default function SettingsDocumentNumberingPage() {
 
   return (
     <div className="min-h-full md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
-      <div className="bg-base-100 md:card md:rounded-[1.75rem] md:border md:border-base-300 md:shadow-sm md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
-        <div className="p-4 md:card-body md:flex md:flex-col md:min-h-0 md:overflow-hidden">
+      <div className={DESKTOP_PAGE_SHELL}>
+        <div className={DESKTOP_PAGE_SHELL_BODY}>
           <div className="space-y-4 md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
             <SystemListToolbar
@@ -131,7 +155,6 @@ export default function SettingsDocumentNumberingPage() {
                 setStatusFilter("all");
                 setPage(0);
               }}
-              onRefresh={load}
               showSavedViews={false}
               pagination={{
                 page,
@@ -139,13 +162,37 @@ export default function SettingsDocumentNumberingPage() {
                 totalItems,
                 onPageChange: setPage,
               }}
+              rightActions={
+                selectedIds.length > 0 ? (
+                  <div className="dropdown dropdown-end">
+                    <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </button>
+                    <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
+                      <li className="menu-title">
+                        <span>Selection</span>
+                      </li>
+                      {selectedIds.length === 1 ? (
+                        <li>
+                          <button type="button" onClick={() => navigate(`/settings/document-numbering/${selectedIds[0]}`)}>
+                            Open sequence
+                          </button>
+                        </li>
+                      ) : null}
+                      <li>
+                        <button type="button" className="text-error" onClick={() => setShowDeleteModal(true)} disabled={saving}>
+                          {selectedIds.length === 1 ? "Delete" : `Delete selected (${selectedIds.length})`}
+                        </button>
+                      </li>
+                    </ul>
+                  </div>
+                ) : null
+              }
             />
 
             <div className="md:mt-4">
               {loading ? (
                 <div className="text-sm opacity-70">Loading…</div>
-              ) : rows.length === 0 ? (
-                <div className="text-sm opacity-60">No numbering definitions yet.</div>
               ) : (
                 <ListViewRenderer
                   view={listView}
@@ -187,6 +234,34 @@ export default function SettingsDocumentNumberingPage() {
           </div>
         </div>
       </div>
+      {showDeleteModal ? (
+        <div className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="text-lg font-semibold">
+              {selectedIds.length === 1 ? "Delete sequence?" : `Delete ${selectedIds.length} sequences?`}
+            </h3>
+            <p className="mt-2 text-sm opacity-70">
+              This permanently deletes {selectedIds.length === 1 ? "the selected numbering sequence" : "the selected numbering sequences"}.
+            </p>
+            <div className="modal-action">
+              <button type="button" className="btn btn-ghost" onClick={() => setShowDeleteModal(false)} disabled={saving}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-error" onClick={deleteSelectedSequences} disabled={saving}>
+                {saving ? "Deleting..." : (selectedIds.length === 1 ? "Delete" : "Delete selected")}
+              </button>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="modal-backdrop"
+            aria-label="Close"
+            onClick={() => {
+              if (!saving) setShowDeleteModal(false);
+            }}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

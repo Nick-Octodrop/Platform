@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowDown, ArrowUp, Copy, GripVertical, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, GripVertical, Trash2 } from "lucide-react";
 import { apiFetch } from "../api";
 import TemplateStudioShell from "./templates/TemplateStudioShell.jsx";
+import ResponsiveDrawer from "../ui/ResponsiveDrawer.jsx";
 import CodeTextarea from "../components/CodeTextarea.jsx";
 import ValidationPanel from "../components/ValidationPanel.jsx";
 import { useToast } from "../components/Toast.jsx";
 import AgentChatInput from "../ui/AgentChatInput.jsx";
+import SystemListToolbar from "../ui/SystemListToolbar.jsx";
+import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
 import { useAccessContext } from "../access.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
@@ -218,11 +221,11 @@ function AutomationUsersValueInput({ members = [], value, onChange, placeholder 
         onClick={() => setOpened(true)}
       >
         {selectedMembers.map((member) => (
-          <span key={member.user_id} className="badge badge-outline gap-1">
+          <span key={member.user_id} className="badge badge-outline badge-dismissible">
             {member.label}
             <button
               type="button"
-              className="opacity-70 hover:opacity-100"
+              className="badge-remove"
               onClick={(event) => {
                 event.stopPropagation();
                 writeIds(selectedIds.filter((id) => id !== member.user_id));
@@ -287,6 +290,7 @@ export default function AutomationEditorPage({ user }) {
   const [selectedStepIndex, setSelectedStepIndex] = useState(0);
   const [selectedStepPath, setSelectedStepPath] = useState([0]);
   const [stepModalOpen, setStepModalOpen] = useState(false);
+  const [triggerDrawerOpen, setTriggerDrawerOpen] = useState(false);
   const [webhookTestOpen, setWebhookTestOpen] = useState(false);
   const [webhookTestSaving, setWebhookTestSaving] = useState(false);
   const [webhookTestError, setWebhookTestError] = useState("");
@@ -298,6 +302,7 @@ export default function AutomationEditorPage({ user }) {
   const [openStepKeys, setOpenStepKeys] = useState([]);
   const [draggedStepPath, setDraggedStepPath] = useState(null);
   const [dragOverKey, setDragOverKey] = useState("");
+  const suppressStepClickRef = useRef(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
@@ -306,6 +311,15 @@ export default function AutomationEditorPage({ user }) {
   const [runs, setRuns] = useState([]);
   const [runsLoading, setRunsLoading] = useState(false);
   const [runsError, setRunsError] = useState("");
+  const [runsSearch, setRunsSearch] = useState("");
+  const [runsStatusFilter, setRunsStatusFilter] = useState("all");
+  const [runsClientFilters, setRunsClientFilters] = useState([]);
+  const [runsPage, setRunsPage] = useState(0);
+  const [runsTotalItems, setRunsTotalItems] = useState(0);
+  const [editorDraftRows, setEditorDraftRows] = useState({});
+  const [jsonEditorText, setJsonEditorText] = useState("");
+  const [jsonEditorError, setJsonEditorError] = useState("");
+  const [jsonEditorDirty, setJsonEditorDirty] = useState(false);
   const [meta, setMeta] = useState({
     event_types: [],
     event_catalog: [],
@@ -318,6 +332,84 @@ export default function AutomationEditorPage({ user }) {
     doc_templates: [],
   });
   const EMAIL_CONNECTION_TYPES = new Set(["smtp", "postmark"]);
+  const automationAddButtonClass = "btn btn-sm btn-ghost shrink-0";
+
+  function buildAutomationDefinition(nextName = name, nextDescription = description, nextTrigger = trigger, nextTriggerExprText = triggerExprText, nextSteps = steps) {
+    let normalizedTrigger = nextTrigger && typeof nextTrigger === "object" && !Array.isArray(nextTrigger)
+      ? JSON.parse(JSON.stringify(nextTrigger))
+      : { kind: "event", event_types: [], filters: [], every_minutes: 60 };
+    if (normalizedTrigger.kind === "schedule") {
+      normalizedTrigger.kind = "schedule";
+      normalizedTrigger.event_types = [];
+      normalizedTrigger.filters = [];
+      normalizedTrigger.every_minutes = Number(normalizedTrigger.every_minutes) > 0 ? Number(normalizedTrigger.every_minutes) : 60;
+      delete normalizedTrigger.expr;
+    } else {
+      normalizedTrigger.kind = "event";
+      normalizedTrigger.event_types = Array.isArray(normalizedTrigger.event_types) ? normalizedTrigger.event_types.filter(Boolean) : [];
+      normalizedTrigger.filters = Array.isArray(normalizedTrigger.filters) ? normalizedTrigger.filters : [];
+      const rawExpr = String(nextTriggerExprText || "").trim();
+      if (rawExpr) {
+        try {
+          normalizedTrigger.expr = JSON.parse(rawExpr);
+        } catch {
+          delete normalizedTrigger.expr;
+        }
+      } else {
+        delete normalizedTrigger.expr;
+      }
+    }
+    return {
+      name: typeof nextName === "string" ? nextName : "",
+      description: typeof nextDescription === "string" ? nextDescription : "",
+      trigger: normalizedTrigger,
+      steps: Array.isArray(nextSteps) ? JSON.parse(JSON.stringify(nextSteps)) : [],
+    };
+  }
+
+  function applyAutomationDefinition(rawDefinition) {
+    if (!rawDefinition || typeof rawDefinition !== "object" || Array.isArray(rawDefinition)) {
+      throw new Error("Automation JSON must be an object.");
+    }
+    const nextName = typeof rawDefinition.name === "string" ? rawDefinition.name : "";
+    const nextDescription = typeof rawDefinition.description === "string" ? rawDefinition.description : "";
+    const rawTrigger = rawDefinition.trigger && typeof rawDefinition.trigger === "object" && !Array.isArray(rawDefinition.trigger)
+      ? JSON.parse(JSON.stringify(rawDefinition.trigger))
+      : { kind: "event", event_types: [], filters: [], every_minutes: 60 };
+    const nextTrigger = rawTrigger.kind === "schedule"
+      ? {
+          ...rawTrigger,
+          kind: "schedule",
+          event_types: [],
+          filters: [],
+          every_minutes: Number(rawTrigger.every_minutes) > 0 ? Number(rawTrigger.every_minutes) : 60,
+        }
+      : {
+          ...rawTrigger,
+          kind: "event",
+          event_types: Array.isArray(rawTrigger.event_types) ? rawTrigger.event_types.filter(Boolean) : [],
+          filters: Array.isArray(rawTrigger.filters) ? rawTrigger.filters : [],
+        };
+    const nextTriggerExprText = nextTrigger.kind === "event" && nextTrigger.expr
+      ? JSON.stringify(nextTrigger.expr, null, 2)
+      : "";
+    if (nextTrigger.kind !== "event") {
+      delete nextTrigger.expr;
+    }
+    const nextSteps = Array.isArray(rawDefinition.steps) ? JSON.parse(JSON.stringify(rawDefinition.steps)) : [];
+    setName(nextName);
+    setDescription(nextDescription);
+    setTrigger(nextTrigger);
+    setTriggerExprText(nextTriggerExprText);
+    setSteps(nextSteps);
+    setEditorDraftRows({});
+    setSelectedStepIndex(0);
+    setSelectedStepPath(nextSteps.length ? [0] : []);
+    setStepModalOpen(false);
+    setJsonEditorText(JSON.stringify(buildAutomationDefinition(nextName, nextDescription, nextTrigger, nextTriggerExprText, nextSteps), null, 2));
+    setJsonEditorError("");
+    setJsonEditorDirty(false);
+  }
 
   const loadMeta = useCallback(async () => {
     setError("");
@@ -342,8 +434,14 @@ export default function AutomationEditorPage({ user }) {
       setName(automation?.name || "");
       setDescription(automation?.description || "");
       setTrigger(automation?.trigger || { kind: "event", event_types: [], filters: [], every_minutes: 60 });
-      setTriggerExprText(automation?.trigger?.expr ? JSON.stringify(automation.trigger.expr, null, 2) : "");
-      setSteps(automation?.steps || []);
+      const nextTriggerExprText = automation?.trigger?.expr ? JSON.stringify(automation.trigger.expr, null, 2) : "";
+      const nextSteps = automation?.steps || [];
+      setTriggerExprText(nextTriggerExprText);
+      setSteps(nextSteps);
+      setEditorDraftRows({});
+      setJsonEditorText(JSON.stringify(buildAutomationDefinition(automation?.name || "", automation?.description || "", automation?.trigger || { kind: "event", event_types: [], filters: [], every_minutes: 60 }, nextTriggerExprText, nextSteps), null, 2));
+      setJsonEditorError("");
+      setJsonEditorDirty(false);
       setSelectedStepIndex(0);
       setSelectedStepPath([0]);
       return automation;
@@ -358,28 +456,13 @@ export default function AutomationEditorPage({ user }) {
     setSaving(true);
     setError("");
     try {
-      let nextTrigger = trigger;
-      if (trigger?.kind === "event") {
-        const rawExpr = triggerExprText.trim();
-        if (rawExpr) {
-          let parsedExpr;
-          try {
-            parsedExpr = JSON.parse(rawExpr);
-          } catch {
-            throw new Error("Trigger condition JSON is invalid");
-          }
-          nextTrigger = { ...(trigger || {}), expr: parsedExpr };
-        } else if (trigger?.expr) {
-          nextTrigger = { ...(trigger || {}) };
-          delete nextTrigger.expr;
-        }
-      } else {
-        nextTrigger = { ...(trigger || {}) };
-        delete nextTrigger.expr;
+      if (trigger?.kind === "event" && triggerExprText.trim()) {
+        JSON.parse(triggerExprText);
       }
+      const definition = buildAutomationDefinition();
       const res = await apiFetch(`/automations/${automationId}`, {
         method: "PUT",
-        body: { name, description, trigger: nextTrigger, steps },
+        body: definition,
       });
       setItem(res?.automation || null);
     } catch (err) {
@@ -432,15 +515,6 @@ export default function AutomationEditorPage({ user }) {
     }
   }
 
-  async function copyReferenceValue(value) {
-    try {
-      await navigator.clipboard.writeText(value);
-      pushToast("success", "Reference copied");
-    } catch {
-      pushToast("error", "Copy failed");
-    }
-  }
-
   function isInsertableField(target) {
     if (!target || target.readOnly || target.disabled) return false;
     const tagName = String(target.tagName || "").toLowerCase();
@@ -455,23 +529,6 @@ export default function AutomationEditorPage({ user }) {
     if (isInsertableField(target)) {
       lastFocusedFieldRef.current = target;
     }
-  }
-
-  function insertReferenceValue(value) {
-    const field = lastFocusedFieldRef.current;
-    if (!isInsertableField(field)) {
-      pushToast("error", "Click into a text field first");
-      return;
-    }
-    const currentValue = String(field.value ?? "");
-    const start = typeof field.selectionStart === "number" ? field.selectionStart : currentValue.length;
-    const end = typeof field.selectionEnd === "number" ? field.selectionEnd : currentValue.length;
-    const nextValue = `${currentValue.slice(0, start)}${value}${currentValue.slice(end)}`;
-    field.focus();
-    field.value = nextValue;
-    field.setSelectionRange?.(start + value.length, start + value.length);
-    field.dispatchEvent(new Event("input", { bubbles: true }));
-    pushToast("success", "Reference inserted");
   }
 
   async function deleteAutomation() {
@@ -508,7 +565,12 @@ export default function AutomationEditorPage({ user }) {
       });
       return;
     }
-    updateTriggerKind("event");
+    setTrigger((prev) => ({
+      ...(prev || {}),
+      kind: "event",
+      event_types: [],
+      filters: [],
+    }));
   }
 
   function updateTriggerKind(kind) {
@@ -736,13 +798,21 @@ export default function AutomationEditorPage({ user }) {
     return `${normalizeStepPath(listPath).join(".") || "root"}::${insertIndex}`;
   }
 
-  function handleStepDragStart(path) {
+  function handleStepDragStart(path, event) {
+    if (event?.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", normalizeStepPath(path).join("."));
+    }
+    suppressStepClickRef.current = true;
     setDraggedStepPath(normalizeStepPath(path));
   }
 
   function handleStepDragEnd() {
     setDraggedStepPath(null);
     setDragOverKey("");
+    setTimeout(() => {
+      suppressStepClickRef.current = false;
+    }, 0);
   }
 
   function handleDropIntoList(listPath, insertIndex) {
@@ -946,66 +1016,6 @@ export default function AutomationEditorPage({ user }) {
     return map;
   }, [triggerFieldOptions]);
 
-  const automationVariableSections = useMemo(() => {
-    const triggerItems = triggerMode === "webhook"
-      ? [
-          { path: "trigger.connection_id", description: "The integration connection that received the webhook." },
-          { path: "trigger.event_key", description: "The webhook event key, such as invoice.created." },
-          { path: "trigger.provider_event_id", description: "The provider's event identifier if one was supplied." },
-          { path: "trigger.signature_valid", description: "Whether the inbound webhook signature passed verification." },
-          { path: "trigger.payload", description: "The full webhook payload object." },
-          { path: "trigger.payload.customer.email", description: "Example nested payload path you can adapt to your provider." },
-          { path: "trigger.headers", description: "The inbound webhook headers object." },
-          { path: "trigger.headers.x-request-id", description: "Example header path you can adapt to your provider." },
-        ]
-      : trigger?.kind === "schedule"
-        ? [
-            { path: "trigger.event", description: "The scheduled event name for this automation run." },
-            { path: "trigger.scheduled_for", description: "The scheduled execution time for this run." },
-            { path: "trigger.slot_key", description: "The scheduler slot key used for idempotency." },
-          ]
-        : [
-            { path: "trigger.event", description: "The event that started this automation." },
-            { path: "trigger.entity_id", description: "The entity tied to the trigger event." },
-            { path: "trigger.record_id", description: "The record ID tied to the trigger event." },
-            { path: "trigger.user_id", description: "The user involved in the triggering event, when available." },
-            { path: "trigger.changed_fields", description: "The fields that changed for update-style events." },
-            { path: "trigger.before", description: "The previous values snapshot, when the event includes one." },
-            { path: "trigger.after", description: "The new values snapshot, when the event includes one." },
-          ];
-
-    return [
-      {
-        title: "Trigger data",
-        description:
-          triggerMode === "webhook"
-            ? "These values come from the inbound webhook that started the automation."
-            : trigger?.kind === "schedule"
-              ? "These values come from the scheduler that queued this automation."
-              : "These values come from the event that started this automation.",
-        items: triggerItems,
-      },
-      {
-        title: "Earlier step outputs",
-        description: "Use these to reuse values returned by earlier steps in the same flow.",
-        items: [
-          { path: "last", description: "The most recent step output." },
-          { path: "steps.query_records.records", description: "Example path for a named step output." },
-          { path: "vars.query_results", description: "Example path for a step saved with Store output as." },
-        ],
-      },
-      {
-        title: "Loop data",
-        description: "These are available inside repeat steps only.",
-        items: [
-          { path: "item", description: "The current item in the loop." },
-          { path: "loop.index", description: "The zero-based index of the current loop item." },
-          { path: "loop.count", description: "The number of items being repeated over." },
-        ],
-      },
-    ];
-  }, [trigger?.kind, triggerMode]);
-
   function parseJsonObjectInput(value) {
     if (typeof value === "string") {
       const raw = value.trim();
@@ -1022,6 +1032,90 @@ export default function AutomationEditorPage({ user }) {
 
   function stringifyJsonObjectInput(value) {
     return JSON.stringify(parseJsonObjectInput(value), null, 2);
+  }
+
+  function trimText(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+
+  function normalizeRouteEntityId(entityId) {
+    const raw = trimText(entityId);
+    if (!raw) return "";
+    return raw.startsWith("entity.") ? raw.slice("entity.".length) : raw;
+  }
+
+  function buildRecordLink(entityId, recordId) {
+    const routeEntityId = normalizeRouteEntityId(entityId);
+    const rawRecordId = trimText(recordId);
+    if (!routeEntityId || !rawRecordId) return "";
+    return `/data/${routeEntityId}/${rawRecordId}`;
+  }
+
+  function inferNotificationLinkConfig(inputs) {
+    const linkTo = trimText(inputs?.link_to);
+    const savedMode = trimText(inputs?.link_mode);
+    const savedEntityId = trimText(inputs?.link_entity_id);
+    const savedRecordId = trimText(inputs?.link_record_id);
+    const savedCustomUrl = trimText(inputs?.link_custom_url);
+
+    if (savedMode === "trigger_record") {
+      return { mode: "trigger_record", entityId: savedEntityId, recordId: savedRecordId, customUrl: savedCustomUrl };
+    }
+    if (savedMode === "record") {
+      return { mode: "record", entityId: savedEntityId, recordId: savedRecordId, customUrl: savedCustomUrl };
+    }
+    if (savedMode === "custom") {
+      return { mode: "custom", entityId: savedEntityId, recordId: savedRecordId, customUrl: savedCustomUrl || linkTo };
+    }
+    if (!linkTo) {
+      return { mode: "none", entityId: savedEntityId, recordId: savedRecordId, customUrl: savedCustomUrl };
+    }
+    if (linkTo === "/data/{{trigger.entity_id}}/{{trigger.record_id}}") {
+      return { mode: "trigger_record", entityId: savedEntityId, recordId: savedRecordId, customUrl: savedCustomUrl };
+    }
+    const recordMatch = linkTo.match(/^\/data\/([^/]+)\/(.+)$/i);
+    if (recordMatch) {
+      return {
+        mode: "record",
+        entityId: savedEntityId || `entity.${recordMatch[1]}`,
+        recordId: savedRecordId || recordMatch[2],
+        customUrl: savedCustomUrl,
+      };
+    }
+    return { mode: "custom", entityId: savedEntityId, recordId: savedRecordId, customUrl: savedCustomUrl || linkTo };
+  }
+
+  function updateNotificationLink(index, patch) {
+    const stepPath = normalizeStepPath(index);
+    setSteps((prev) =>
+      updateStepAtPath(prev, stepPath, (step) => {
+        const nextInputs = { ...(step.inputs || {}) };
+        for (const [key, value] of Object.entries(patch || {})) {
+          if (value === "" || value === null || value === undefined) {
+            delete nextInputs[key];
+          } else {
+            nextInputs[key] = value;
+          }
+        }
+
+        const mode = trimText(nextInputs.link_mode);
+        let nextLinkTo = "";
+        if (mode === "trigger_record") {
+          nextLinkTo = "/data/{{trigger.entity_id}}/{{trigger.record_id}}";
+        } else if (mode === "record") {
+          nextLinkTo = buildRecordLink(nextInputs.link_entity_id, nextInputs.link_record_id);
+        } else if (mode === "custom") {
+          nextLinkTo = trimText(nextInputs.link_custom_url);
+        }
+
+        if (nextLinkTo) {
+          nextInputs.link_to = nextLinkTo;
+        } else {
+          delete nextInputs.link_to;
+        }
+        return { ...step, inputs: nextInputs };
+      })
+    );
   }
 
   function formatEditableValue(value) {
@@ -1057,14 +1151,36 @@ export default function AutomationEditorPage({ user }) {
     }));
   }
 
+  function editorDraftKey(index, inputKey) {
+    const stepPath = normalizeStepPath(index);
+    return `${stepPath.join(".") || "root"}::${inputKey}`;
+  }
+
+  function readEditorDraftRows(index, inputKey, fallbackRows) {
+    const key = editorDraftKey(index, inputKey);
+    return Object.prototype.hasOwnProperty.call(editorDraftRows, key) ? editorDraftRows[key] : fallbackRows;
+  }
+
+  function clearEditorDraftRows(index, inputKey) {
+    const key = editorDraftKey(index, inputKey);
+    setEditorDraftRows((prev) => {
+      if (!Object.prototype.hasOwnProperty.call(prev, key)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }
+
   function writeObjectEntries(index, inputKey, rows) {
+    const key = editorDraftKey(index, inputKey);
+    setEditorDraftRows((prev) => ({ ...prev, [key]: rows }));
     const nextObject = {};
     for (const row of rows) {
       const fieldId = String(row?.fieldId || "").trim();
       if (!fieldId) continue;
       nextObject[fieldId] = parseEditableValue(row?.value ?? "");
     }
-    updateStepInput(index, inputKey, JSON.stringify(nextObject, null, 2));
+    updateStepInput(index, inputKey, Object.keys(nextObject).length ? JSON.stringify(nextObject, null, 2) : "");
   }
 
   function parseFilterRows(value) {
@@ -1128,6 +1244,12 @@ export default function AutomationEditorPage({ user }) {
     );
   }
 
+  function writeFilterRows(index, inputKey, rows) {
+    const key = editorDraftKey(index, inputKey);
+    setEditorDraftRows((prev) => ({ ...prev, [key]: rows }));
+    updateStepInput(index, inputKey, buildFilterExprFromRows(rows));
+  }
+
   function normalizeFieldOptions(options) {
     if (!Array.isArray(options)) return [];
     return options
@@ -1162,6 +1284,12 @@ export default function AutomationEditorPage({ user }) {
   function shouldUseTextInput(rawValue) {
     const value = String(rawValue ?? "");
     return value.includes("{{") || value.includes("}}");
+  }
+
+  function shouldUseRefSuggestions(rawValue, placeholder = "") {
+    const value = String(rawValue ?? "");
+    const hint = String(placeholder ?? "");
+    return value.includes("{{") || hint.includes("{{");
   }
 
   function renderTypedValueEditor({ fieldDef, value, onChange, placeholder = "" }) {
@@ -1256,7 +1384,15 @@ export default function AutomationEditorPage({ user }) {
       );
     }
 
-    return <input className="input input-bordered" value={rawValue} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />;
+    return (
+      <input
+        className="input input-bordered"
+        list={shouldUseRefSuggestions(rawValue, placeholder) ? "automation-ref-values" : undefined}
+        value={rawValue}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+      />
+    );
   }
 
   const memberOptions = useMemo(() => {
@@ -1371,6 +1507,12 @@ export default function AutomationEditorPage({ user }) {
     setWebhookTestEventKey(webhookTriggerEventKey || "");
   }, [triggerMode, webhookTriggerConnectionId, webhookTriggerEventKey]);
 
+  useEffect(() => {
+    if (jsonEditorDirty) return;
+    setJsonEditorText(JSON.stringify(buildAutomationDefinition(), null, 2));
+    setJsonEditorError("");
+  }, [name, description, trigger, triggerExprText, steps, jsonEditorDirty]);
+
   const validationErrors = useMemo(() => {
     const errs = [];
     if (!name.trim()) errs.push("Name is required.");
@@ -1382,6 +1524,13 @@ export default function AutomationEditorPage({ user }) {
     if (!steps || steps.length === 0) errs.push("At least one step is required.");
     return errs;
   }, [name, trigger, steps]);
+
+  const validationPanelErrors = useMemo(() => {
+    const next = [...validationErrors];
+    if (jsonEditorError) next.push(jsonEditorError);
+    if (error) next.push(error);
+    return next;
+  }, [validationErrors, jsonEditorError, error]);
 
   const triggerSummaryText = useMemo(() => {
     if (trigger?.kind === "schedule") {
@@ -1453,15 +1602,23 @@ export default function AutomationEditorPage({ user }) {
 
   const renderValidationPanel = useCallback(() => (
     <ValidationPanel
-      title="Validation"
-      errors={validationErrors}
+      title=""
+      errors={validationPanelErrors}
       warnings={[]}
       idleMessage="Validation runs automatically while you edit."
       showSuccess={true}
       showFix={isSuperadmin}
       fixDisabled
     />
-  ), [isSuperadmin, validationErrors]);
+  ), [isSuperadmin, validationPanelErrors]);
+
+  const validateRecord = useCallback(async () => ({
+    compiled_ok: validationPanelErrors.length === 0,
+    errors: validationPanelErrors.map((message) => ({ message })),
+    warnings: [],
+    undefined: [],
+    validated_at: new Date().toISOString(),
+  }), [validationPanelErrors]);
 
   const selectedStep = getStepAtPath(selectedStepPath, steps);
 
@@ -1556,7 +1713,28 @@ export default function AutomationEditorPage({ user }) {
     return "";
   }
 
+  function stepTone(step) {
+    if (!step) {
+      return {
+        card: "border-primary/25 bg-primary/5 hover:bg-primary/10",
+      };
+    }
+    return {
+      card: "border-primary/25 bg-primary/5 hover:bg-primary/10",
+    };
+  }
+
+  function stepListLabel(listPath) {
+    const normalized = normalizeStepPath(listPath);
+    const branchKey = normalized[normalized.length - 1];
+    if (branchKey === "then_steps") return "Then";
+    if (branchKey === "else_steps") return "Else";
+    if (branchKey === "steps") return "Repeat steps";
+    return "Flow";
+  }
+
   function renderStepCards(items, pathPrefix = []) {
+    const listLabel = stepListLabel(pathPrefix);
     if (!Array.isArray(items) || items.length === 0) {
       const emptyDropKey = makeDropKey(pathPrefix, 0);
       const isDropTarget = dragOverKey === emptyDropKey;
@@ -1578,7 +1756,7 @@ export default function AutomationEditorPage({ user }) {
         >
           <div className="flex items-center justify-between gap-3">
             <div className="text-xs opacity-60">
-              {draggedStepPath ? "Drop a step here" : "No steps yet."}
+              {draggedStepPath ? `Drop a step here to start ${listLabel.toLowerCase()}` : "No steps yet."}
             </div>
             <button
               type="button"
@@ -1612,52 +1790,42 @@ export default function AutomationEditorPage({ user }) {
                 handleDropIntoList(pathPrefix, 0);
               }}
             >
-              <div className="text-xs opacity-60">Drop step here to place it first</div>
+              <div className="text-xs opacity-60">{`Drop here to place it first in ${listLabel.toLowerCase()}`}</div>
             </div>
           );
         })()}
         {items.map((step, index) => {
           const path = [...pathPrefix, index];
-          const isSelected = JSON.stringify(path) === JSON.stringify(selectedStepPath);
+          const tone = stepTone(step);
           const nestedThen = Array.isArray(step?.then_steps) ? step.then_steps : [];
           const nestedElse = Array.isArray(step?.else_steps) ? step.else_steps : [];
           const nestedLoop = Array.isArray(step?.steps) ? step.steps : [];
           const canMoveUp = index > 0;
           const canMoveDown = index < items.length - 1;
-          const beforeDropKey = makeDropKey(pathPrefix, index);
           const afterDropKey = makeDropKey(pathPrefix, index + 1);
-          const isBeforeDropTarget = dragOverKey === beforeDropKey;
           const isAfterDropTarget = dragOverKey === afterDropKey;
           return (
             <div key={step.id || path.join(".")} className="space-y-2">
               <div
-                className={`rounded-box border p-4 transition ${isSelected ? "border-primary bg-primary/5 shadow-sm" : "border-base-300 bg-base-100"} ${isBeforeDropTarget ? "ring-2 ring-primary/40" : ""} ${draggedStepPath && pathsEqual(draggedStepPath, path) ? "opacity-60" : ""}`}
-                onDragOver={(event) => {
-                  if (!draggedStepPath) return;
-                  event.preventDefault();
-                  setDragOverKey(beforeDropKey);
-                }}
-                onDragLeave={() => {
-                  if (dragOverKey === beforeDropKey) setDragOverKey("");
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  handleDropIntoList(pathPrefix, index);
-                }}
+                className={`group rounded-2xl border p-4 transition-colors duration-150 cursor-grab active:cursor-grabbing ${tone.card} ${draggedStepPath && pathsEqual(draggedStepPath, path) ? "opacity-60" : ""}`}
+                draggable
+                onDragStart={(event) => handleStepDragStart(path, event)}
+                onDragEnd={handleStepDragEnd}
               >
                 <div className="flex items-start justify-between gap-3">
                   <button
                     type="button"
                     className="min-w-0 flex-1 text-left"
                     onClick={() => {
+                      if (suppressStepClickRef.current) return;
                       setSelectedStepPath(path);
                       setSelectedStepIndex(index);
                       setStepModalOpen(true);
                     }}
                   >
                     <div className="text-xs uppercase tracking-wide opacity-60">Step {index + 1}</div>
-                    <div className="font-medium truncate">{stepSummaryText(step)}</div>
-                    <div className="text-xs opacity-70 mt-1">{stepDetailText(step) || stepHelpText(step)}</div>
+                    <div className="font-semibold truncate text-base-content">{stepSummaryText(step)}</div>
+                    <div className="text-xs opacity-75 mt-1">{stepDetailText(step) || stepHelpText(step)}</div>
                     {step.kind === "condition" && (
                       <div className="text-[11px] opacity-50 mt-1">This step can branch into `Then` and `Else` steps.</div>
                     )}
@@ -1666,12 +1834,10 @@ export default function AutomationEditorPage({ user }) {
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
-                        className="btn btn-ghost btn-xs cursor-grab active:cursor-grabbing"
+                        className="btn btn-ghost btn-xs"
                         title="Drag step"
                         aria-label="Drag step"
-                        draggable
-                        onDragStart={() => handleStepDragStart(path)}
-                        onDragEnd={handleStepDragEnd}
+                        onMouseDown={(event) => event.stopPropagation()}
                       >
                         <GripVertical className="h-3.5 w-3.5" />
                       </button>
@@ -1705,10 +1871,7 @@ export default function AutomationEditorPage({ user }) {
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <span className="badge badge-outline">{step.kind}</span>
-                      {step.store_as ? <span className="text-[10px] opacity-60">var: {step.store_as}</span> : null}
-                    </div>
+                    {step.store_as ? <div className="text-[10px] opacity-60">var: {step.store_as}</div> : null}
                   </div>
                 </div>
               </div>
@@ -1869,13 +2032,17 @@ export default function AutomationEditorPage({ user }) {
                   handleDropIntoList(pathPrefix, index + 1);
                 }}
               >
-                <button
-                  type="button"
-                  className="btn btn-xs btn-ghost"
-                  onClick={() => insertStepAfter(pathPrefix, index)}
-                >
-                  {draggedStepPath ? "Drop here or add step" : "Add step after"}
-                </button>
+                {draggedStepPath ? (
+                  <div className="text-xs opacity-60">Drop here to place this step between items</div>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-ghost"
+                    onClick={() => insertStepAfter(pathPrefix, index)}
+                  >
+                    Add step after
+                  </button>
+                )}
               </div>
             </div>
           );
@@ -1897,30 +2064,12 @@ export default function AutomationEditorPage({ user }) {
     const isActionLike = step.kind === "action" || step.kind === "foreach";
     const standardGridClass = linear ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 md:grid-cols-2 gap-3";
     const wideGridClass = linear ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 md:grid-cols-12 gap-3";
-    const referenceIntro = step.kind === "condition"
-      ? "Condition rules use plain paths like `trigger.event_key` or `trigger.payload.customer.email`."
-      : "Paste refs like `{{trigger.event_key}}` into inputs, message bodies, and JSON fields.";
-    const beginnerHelp = step.kind === "condition"
-      ? "Pick the field to check, choose how to compare it, and set the value it should match. If the rule is true, the Then branch runs."
-      : step.kind === "foreach"
-        ? "Choose the list to repeat over. Each item in that list will run the nested repeat steps once."
-        : step.kind === "delay"
-          ? "Choose whether this automation should pause for a duration or wait until a specific date and time."
-          : step.action_id === "system.notify"
-            ? "Start with the essentials: who should get the notification, a title, and the message body."
-            : step.action_id === "system.send_email"
-              ? "Start with recipients and the message. Only open advanced options if you need templates, merge fields, or attachments."
-              : step.action_id === "system.integration_request"
-                ? "Choose the integration connection first, then define the request method, endpoint, and any headers, query values, or payload."
-                : step.action_id === "system.integration_sync"
-                  ? "Choose the integration connection first, then define which sync scope to run. Only open advanced options if you need to override the saved sync request."
-                : step.action_id === "system.query_records"
-                  ? "Choose which entity to search, optionally add search text, and decide how many matching records to return."
-                : step.action_id === "system.create_record"
-                  ? "Choose the entity to create in, then enter the values the new record should be created with."
-                  : step.action_id === "system.update_record"
-                    ? "Choose the record to update, then define only the field changes you want to apply."
-                    : "Fill this out from top to bottom. Start with the basic fields and only open advanced options if you need them.";
+    const sectionCardClass = "rounded-box border border-base-300 bg-base-200/40 p-4";
+    const insetCardClass = "rounded-box border border-base-300 bg-base-200/60 p-4";
+    const detailCardClass = "rounded-box border border-base-300 bg-base-100 p-4 space-y-3";
+    const builderSectionCardClass = "rounded-box border border-base-300 bg-base-200/40 p-4 space-y-3";
+    const builderAddButtonClass = automationAddButtonClass;
+    const builderRowCardClass = "rounded-box border border-base-300 bg-base-100 p-3 space-y-3";
 
     return (
       <div className="space-y-4">
@@ -1939,292 +2088,336 @@ export default function AutomationEditorPage({ user }) {
           </div>
         )}
 
-        <div className="rounded-box border border-base-300 bg-base-200/40">
-          <details>
-            <summary className="cursor-pointer list-none px-3 py-3 flex items-center justify-between">
-              <div>
-                <div className="text-xs uppercase tracking-wide opacity-60">How To Fill This Out</div>
-                <div className="text-xs opacity-60 mt-1">Quick help for this step.</div>
-              </div>
-              <span className="text-xs opacity-60">Show</span>
-            </summary>
-            <div className="px-3 pb-3 text-sm opacity-80">{beginnerHelp}</div>
-          </details>
-        </div>
-
-        <div className="rounded-box border border-base-300 bg-base-200/40">
-          <details>
-            <summary className="cursor-pointer list-none px-3 py-3 flex items-center justify-between">
-              <div>
-                <div className="text-xs uppercase tracking-wide opacity-60">Available Data</div>
-                <div className="text-xs opacity-60 mt-1">{referenceIntro}</div>
-              </div>
-              <span className="text-xs opacity-60">Show refs</span>
-            </summary>
-            <div className="px-3 pb-3 space-y-3">
-              {automationVariableSections.map((section) => (
-                <div key={section.title}>
-                  <div className="text-sm font-medium">{section.title}</div>
-                  <div className="text-xs opacity-60 mt-1">{section.description}</div>
-                  <div className="mt-2 grid grid-cols-1 gap-2">
-                    {section.items.map((item) => {
-                      const displayValue = step.kind === "condition" ? item.path : `{{${item.path}}}`;
-                      return (
-                        <div key={`${section.title}:${item.path}`} className="rounded-box border border-base-300 bg-base-200/50 px-3 py-2">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="font-mono text-xs break-all">{displayValue}</div>
-                              <div className="text-xs opacity-70 mt-1">{item.description}</div>
-                            </div>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-xs"
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={() => insertReferenceValue(displayValue)}
-                                title="Insert into the last focused text field"
-                              >
-                                Insert
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-xs"
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={() => copyReferenceValue(displayValue)}
-                                title="Copy reference"
-                                aria-label={`Copy ${displayValue}`}
-                              >
-                                <Copy className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </details>
-        </div>
-
-        <div className={wideGridClass}>
-          <label className="form-control md:col-span-4">
-            <span className="label-text">Kind</span>
-            <select
-              className="select select-bordered"
-              value={step.kind || "action"}
-              onChange={(e) => updateStep(index, { kind: e.target.value })}
-            >
-              <option value="action">Action</option>
-              <option value="foreach">Repeat action</option>
-              <option value="condition">Condition</option>
-              <option value="delay">Delay</option>
-            </select>
-          </label>
-
-          {isActionLike && (
-            <label className="form-control md:col-span-8">
-              <span className="label-text">Action</span>
+        <div className={sectionCardClass}>
+          <div className="font-medium text-sm">Step setup</div>
+          <div className="text-xs opacity-60 mt-1">Start by choosing what kind of step this is and, for actions, what it should do.</div>
+          <div className={`mt-3 ${wideGridClass}`}>
+            <label className="form-control md:col-span-4">
+              <span className="label-text">Kind</span>
               <select
                 className="select select-bordered"
-                value={actionValue}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  if (!value) return;
-                  const nextInputs = { ...(step.inputs || {}) };
-                  if (value === "system.generate_document") {
-                    if (!nextInputs.entity_id) nextInputs.entity_id = "{{trigger.entity_id}}";
-                    if (!nextInputs.record_id) nextInputs.record_id = "{{trigger.record_id}}";
-                  }
-              if (value === "system.integration_request") {
-                if (!nextInputs.method) nextInputs.method = "GET";
-                if (!nextInputs.path) nextInputs.path = "/";
-              }
-              if (value === "system.integration_sync") {
-                if (!nextInputs.scope_key) nextInputs.scope_key = "default";
-                if (!nextInputs.method) nextInputs.method = "GET";
-                if (!nextInputs.path) nextInputs.path = "/";
-              }
-              if (value.includes("::")) {
-                    const [moduleId, actionId] = value.split("::");
-                    updateStep(index, { action_id: actionId, module_id: moduleId, inputs: nextInputs });
-                  } else {
-                    updateStep(index, { action_id: value, module_id: undefined, inputs: nextInputs });
-                  }
-                }}
+                value={step.kind || "action"}
+                onChange={(e) => updateStep(index, { kind: e.target.value })}
               >
-                <option value="">Select action…</option>
-                {actionOptions.map((group) => (
-                  <optgroup key={group.label} label={group.label}>
-                    {(group.options || []).map((action) => (
-                      <option
-                        key={`${group.module_id || "system"}:${action.id}`}
-                        value={group.module_id ? `${group.module_id}::${action.id}` : action.id}
-                      >
-                        {action.display_id ? `${action.label || action.id} (${action.display_id})` : (action.label || action.id)}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
+                <option value="action">Action</option>
+                <option value="foreach">Repeat action</option>
+                <option value="condition">Condition</option>
+                <option value="delay">Delay</option>
               </select>
             </label>
-          )}
+
+            {isActionLike && (
+              <label className="form-control md:col-span-8">
+                <span className="label-text">Action</span>
+                <select
+                  className="select select-bordered"
+                  value={actionValue}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (!value) return;
+                    const nextInputs = { ...(step.inputs || {}) };
+                    if (value === "system.generate_document") {
+                      if (!nextInputs.entity_id) nextInputs.entity_id = "{{trigger.entity_id}}";
+                      if (!nextInputs.record_id) nextInputs.record_id = "{{trigger.record_id}}";
+                    }
+                    if (value === "system.integration_request") {
+                      if (!nextInputs.method) nextInputs.method = "GET";
+                      if (!nextInputs.path) nextInputs.path = "/";
+                    }
+                    if (value === "system.integration_sync") {
+                      if (!nextInputs.scope_key) nextInputs.scope_key = "default";
+                      if (!nextInputs.method) nextInputs.method = "GET";
+                      if (!nextInputs.path) nextInputs.path = "/";
+                    }
+                    if (value.includes("::")) {
+                      const [moduleId, actionId] = value.split("::");
+                      updateStep(index, { action_id: actionId, module_id: moduleId, inputs: nextInputs });
+                    } else {
+                      updateStep(index, { action_id: value, module_id: undefined, inputs: nextInputs });
+                    }
+                  }}
+                >
+                  <option value="">Select action…</option>
+                  {actionOptions.map((group) => (
+                    <optgroup key={group.label} label={group.label}>
+                      {(group.options || []).map((action) => (
+                        <option
+                          key={`${group.module_id || "system"}:${action.id}`}
+                          value={group.module_id ? `${group.module_id}::${action.id}` : action.id}
+                        >
+                          {action.display_id ? `${action.label || action.id} (${action.display_id})` : (action.label || action.id)}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
         </div>
 
         {step.kind === "foreach" && (
-          <div className={wideGridClass}>
-            <label className="form-control md:col-span-6">
-              <span className="label-text">Repeat over</span>
-              <input
-                className="input input-bordered"
-                list="automation-loop-hints"
-                value={typeof step.over === "string" ? step.over : ""}
-                onChange={(e) => updateStep(index, { over: e.target.value })}
-                placeholder="{{steps.query_records.records}}"
-              />
-              <span className="label label-text-alt opacity-50">Use a trigger list, query results, or stored variable.</span>
-            </label>
-            <label className="form-control md:col-span-3">
-              <span className="label-text">Item name</span>
-              <input
-                className="input input-bordered"
-                value={step.item_name || "item"}
-                onChange={(e) => updateStep(index, { item_name: e.target.value })}
-                placeholder="item"
-              />
-            </label>
-            <label className="form-control md:col-span-3">
-              <span className="label-text">Store output as</span>
-              <input
-                className="input input-bordered"
-                value={step.store_as || ""}
-                onChange={(e) => updateStep(index, { store_as: e.target.value })}
-                placeholder="loop_results"
-              />
-            </label>
+          <div className={sectionCardClass}>
+            <div className="font-medium text-sm">Repeat settings</div>
+            <div className="text-xs opacity-60 mt-1">Choose the list to loop over and how each repeated item should be referenced.</div>
+            <div className={`mt-3 ${wideGridClass}`}>
+              <label className="form-control md:col-span-6">
+                <span className="label-text">Repeat over</span>
+                <input
+                  className="input input-bordered"
+                  list="automation-loop-hints"
+                  value={typeof step.over === "string" ? step.over : ""}
+                  onChange={(e) => updateStep(index, { over: e.target.value })}
+                  placeholder="{{steps.query_records.records}}"
+                />
+                <span className="label-text-alt mt-1 block opacity-50">Use a trigger list, query results, or stored variable.</span>
+              </label>
+              <label className="form-control md:col-span-3">
+                <span className="label-text">Item name</span>
+                <input
+                  className="input input-bordered"
+                  value={step.item_name || "item"}
+                  onChange={(e) => updateStep(index, { item_name: e.target.value })}
+                  placeholder="item"
+                />
+              </label>
+              <label className="form-control md:col-span-3">
+                <span className="label-text">Store output as</span>
+                <input
+                  className="input input-bordered"
+                  value={step.store_as || ""}
+                  onChange={(e) => updateStep(index, { store_as: e.target.value })}
+                  placeholder="loop_results"
+                />
+              </label>
+            </div>
           </div>
         )}
 
         {isActionLike && step.action_id === "system.notify" && (
-          <div className={standardGridClass}>
+          <div className="space-y-4">
             {(() => {
               const selectedIds = Array.isArray(step.inputs?.recipient_user_ids)
                 ? step.inputs.recipient_user_ids
                 : step.inputs?.recipient_user_id
                   ? [step.inputs.recipient_user_id]
                   : [];
+              const linkConfig = inferNotificationLinkConfig(step.inputs || {});
+              const linkMode = linkConfig.mode || "none";
               return (
-                <label className="form-control">
-                  <span className="label-text">Add recipient user</span>
-                  <select
-                    className="select select-bordered"
-                    value=""
-                    onChange={(e) => {
-                      const nextId = e.target.value;
-                      if (!nextId) return;
-                      const next = Array.from(new Set([...selectedIds, nextId]));
-                      updateStepInput(index, "recipient_user_ids", next);
-                      updateStepInput(index, "recipient_user_id", next[0] || "");
-                    }}
-                  >
-                    <option value="">Select user…</option>
-                    {memberOptions.map((member) => (
-                      <option key={member.user_id} value={member.user_id}>
-                        {member.name || member.email || member.user_email || member.user_id}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="label label-text-alt opacity-50">You can add multiple recipients.</span>
-                </label>
-              );
-            })()}
-            <label className="form-control md:col-span-2">
-              <span className="label-text">Title</span>
-              <input className="input input-bordered" value={step.inputs?.title || ""} onChange={(e) => updateStepInput(index, "title", e.target.value)} />
-            </label>
-            <label className="form-control md:col-span-2">
-              <span className="label-text">Body</span>
-              <CodeTextarea
-                value={step.inputs?.body || ""}
-                onChange={(e) => updateStepInput(index, "body", e.target.value)}
-                minHeight="140px"
-              />
-            </label>
-            {(Array.isArray(step.inputs?.recipient_user_ids)
-              ? step.inputs.recipient_user_ids
-              : step.inputs?.recipient_user_id
-                ? [step.inputs.recipient_user_id]
-                : []
-            ).length > 0 && (
-              <div className="md:col-span-2">
-                <span className="label-text">Selected recipients</span>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {(Array.isArray(step.inputs?.recipient_user_ids)
-                    ? step.inputs.recipient_user_ids
-                    : step.inputs?.recipient_user_id
-                      ? [step.inputs.recipient_user_id]
-                      : []
-                  ).map((userId) => {
-                    const member = memberById.get(userId);
-                    const label = member?.name || member?.email || member?.user_email || "Unknown user";
-                    return (
-                      <span key={userId} className="badge badge-outline gap-2 py-3">
-                        {label}
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-xs"
-                          onClick={() => {
-                            const current = Array.isArray(step.inputs?.recipient_user_ids)
-                              ? step.inputs.recipient_user_ids
-                              : step.inputs?.recipient_user_id
-                                ? [step.inputs.recipient_user_id]
-                                : [];
-                            const next = current.filter((id) => id !== userId);
+                <div className="space-y-4">
+                  <div className={sectionCardClass}>
+                    <div className="font-medium text-sm">Recipients</div>
+                    <div className="text-xs opacity-60 mt-1">Choose which workspace users should receive this notification.</div>
+                    <div className="mt-3 space-y-3">
+                      <label className="form-control">
+                        <span className="label-text">Recipient</span>
+                        <select
+                          className="select select-bordered"
+                          value=""
+                          onChange={(e) => {
+                            const nextId = e.target.value;
+                            if (!nextId) return;
+                            const next = Array.from(new Set([...selectedIds, nextId]));
                             updateStepInput(index, "recipient_user_ids", next);
                             updateStepInput(index, "recipient_user_id", next[0] || "");
                           }}
                         >
-                          ×
-                        </button>
-                      </span>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-            <div className="md:col-span-2 rounded-box border border-base-300 bg-base-100">
-              <details className="group">
-                <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
-                  <div>
-                    <div className="font-medium text-sm">Advanced options</div>
-                    <div className="text-xs opacity-60">Only set these if you want different styling or a clickable link.</div>
+                          <option value="">Select workspace user…</option>
+                          {memberOptions.map((member) => (
+                            <option key={member.user_id} value={member.user_id}>
+                              {member.name || member.email || member.user_email || member.user_id}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="label-text-alt mt-1 block opacity-50">Add one or more workspace users to notify.</span>
+                      </label>
+
+                      {selectedIds.length > 0 && (
+                        <div className={insetCardClass}>
+                          <span className="label-text">Selected recipients</span>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {selectedIds.map((userId) => {
+                              const member = memberById.get(userId);
+                              const label = member?.name || member?.email || member?.user_email || "Unknown user";
+                              return (
+                                <span key={userId} className="badge badge-outline badge-dismissible">
+                                  {label}
+                                  <button
+                                    type="button"
+                                    className="badge-remove"
+                                    onClick={() => {
+                                      const current = Array.isArray(step.inputs?.recipient_user_ids)
+                                        ? step.inputs.recipient_user_ids
+                                        : step.inputs?.recipient_user_id
+                                          ? [step.inputs.recipient_user_id]
+                                          : [];
+                                      const next = current.filter((id) => id !== userId);
+                                      updateStepInput(index, "recipient_user_ids", next);
+                                      updateStepInput(index, "recipient_user_id", next[0] || "");
+                                    }}
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-xs opacity-60 group-open:hidden">Show</span>
-                  <span className="text-xs opacity-60 hidden group-open:inline">Hide</span>
-                </summary>
-                <div className={`${standardGridClass} px-4 pb-4`}>
-                  <label className="form-control">
-                    <span className="label-text">Severity</span>
-                    <select className="select select-bordered" value={step.inputs?.severity || "info"} onChange={(e) => updateStepInput(index, "severity", e.target.value)}>
-                      <option value="info">Info</option>
-                      <option value="success">Success</option>
-                      <option value="warning">Warning</option>
-                      <option value="danger">Danger</option>
-                    </select>
-                  </label>
-                  <label className="form-control">
-                    <span className="label-text">Link</span>
-                    <input className="input input-bordered" value={step.inputs?.link_to || ""} onChange={(e) => updateStepInput(index, "link_to", e.target.value)} />
-                  </label>
+
+                  <div className={sectionCardClass}>
+                    <div className="font-medium text-sm">Notification content</div>
+                    <div className="text-xs opacity-60 mt-1">Write the message and choose the visual severity.</div>
+                    <div className="mt-3 space-y-3">
+                      <label className="form-control">
+                        <span className="label-text">Title</span>
+                        <input className="input input-bordered" value={step.inputs?.title || ""} onChange={(e) => updateStepInput(index, "title", e.target.value)} />
+                        <span className="label-text-alt mt-1 block opacity-50">What the user sees as the notification heading.</span>
+                      </label>
+
+                      <label className="form-control">
+                        <span className="label-text">Body</span>
+                        <CodeTextarea
+                          value={step.inputs?.body || ""}
+                          onChange={(e) => updateStepInput(index, "body", e.target.value)}
+                          minHeight="140px"
+                        />
+                        <span className="label-text-alt mt-1 block opacity-50">Main message text. You can still use refs like {"{{trigger.record_id}}"}.</span>
+                      </label>
+
+                      <label className="form-control">
+                        <span className="label-text">Severity</span>
+                        <select className="select select-bordered" value={step.inputs?.severity || "info"} onChange={(e) => updateStepInput(index, "severity", e.target.value)}>
+                          <option value="info">Info</option>
+                          <option value="success">Success</option>
+                          <option value="warning">Warning</option>
+                          <option value="danger">Danger</option>
+                        </select>
+                        <span className="label-text-alt mt-1 block opacity-50">Optional. This changes the visual style only. Default is Info.</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className={sectionCardClass}>
+                    <div className="font-medium text-sm">Link</div>
+                    <div className="text-xs opacity-60 mt-1">Choose what should open when someone clicks the notification.</div>
+                    <div className="mt-3 space-y-3">
+                      <label className="form-control">
+                        <span className="label-text">Link target</span>
+                        <select
+                          className="select select-bordered"
+                          value={linkMode}
+                          onChange={(e) => {
+                            const nextMode = e.target.value;
+                            if (nextMode === "record") {
+                              updateNotificationLink(index, {
+                                link_mode: "record",
+                                link_entity_id: step.inputs?.link_entity_id || step.inputs?.entity_id || triggerEventMeta?.entity_id || "",
+                                link_record_id: step.inputs?.link_record_id || step.inputs?.record_id || "{{trigger.record_id}}",
+                                link_custom_url: undefined,
+                              });
+                              return;
+                            }
+                            if (nextMode === "custom") {
+                              updateNotificationLink(index, {
+                                link_mode: "custom",
+                                link_custom_url: linkConfig.customUrl || "",
+                                link_entity_id: undefined,
+                                link_record_id: undefined,
+                              });
+                              return;
+                            }
+                            if (nextMode === "trigger_record") {
+                              updateNotificationLink(index, {
+                                link_mode: "trigger_record",
+                                link_custom_url: undefined,
+                                link_entity_id: undefined,
+                                link_record_id: undefined,
+                              });
+                              return;
+                            }
+                            updateNotificationLink(index, {
+                              link_mode: "none",
+                              link_custom_url: undefined,
+                              link_entity_id: undefined,
+                              link_record_id: undefined,
+                            });
+                          }}
+                        >
+                          <option value="none">No link</option>
+                          <option value="trigger_record">Current trigger record</option>
+                          <option value="record">Specific record</option>
+                          <option value="custom">Custom URL</option>
+                        </select>
+                        <span className="label-text-alt mt-1 block opacity-50">
+                          {linkMode === "trigger_record"
+                            ? "Optional. Opens the record from the trigger event."
+                            : linkMode === "record"
+                              ? `Optional. Opens a specific record. The record ID starts with {{trigger.record_id}} but you can change it.`
+                              : linkMode === "custom"
+                                ? "Optional. Opens an internal route or external website."
+                                : "Optional. Choose what should open when someone clicks the notification."}
+                        </span>
+                      </label>
+
+                      {linkMode === "record" && (
+                        <div className="space-y-3">
+                          <label className="form-control">
+                            <span className="label-text">Record entity</span>
+                            <select
+                              className="select select-bordered"
+                              value={linkConfig.entityId || ""}
+                              onChange={(e) => updateNotificationLink(index, { link_entity_id: e.target.value })}
+                            >
+                              <option value="">Select entity…</option>
+                              {entityOptions.map((ent) => (
+                                <option key={ent.id} value={ent.id}>
+                                  {ent.label || ent.id}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="label-text-alt mt-1 block opacity-50">Choose the entity that should open from the notification.</span>
+                          </label>
+
+                          <label className="form-control">
+                            <span className="label-text">Record ID</span>
+                            <input
+                              className="input input-bordered"
+                              list="automation-record-hints"
+                              value={linkConfig.recordId || ""}
+                              onChange={(e) => updateNotificationLink(index, { link_record_id: e.target.value })}
+                              placeholder="{{trigger.record_id}}"
+                            />
+                            <span className="label-text-alt mt-1 block opacity-50">Defaults to {"{{trigger.record_id}}"}. Change it if this notification should open a different record.</span>
+                          </label>
+                        </div>
+                      )}
+
+                      {linkMode === "custom" && (
+                        <label className="form-control">
+                          <span className="label-text">Custom URL</span>
+                          <input
+                            className="input input-bordered"
+                            value={linkConfig.customUrl || ""}
+                            onChange={(e) => updateNotificationLink(index, { link_custom_url: e.target.value })}
+                            placeholder="https://example.com"
+                          />
+                          <span className="label-text-alt mt-1 block opacity-50">Use an internal route like /home or an external URL like https://example.com.</span>
+                        </label>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </details>
-            </div>
+              );
+            })()}
           </div>
         )}
 
         {isActionLike && step.action_id === "system.send_email" && (
-          <div className={wideGridClass}>
+          <div className="space-y-4">
             {(() => {
               const selectedEntityId = step.inputs?.entity_id || triggerEventMeta?.entity_id || "";
               const activeEntity = selectedEntityId ? entityById.get(selectedEntityId) : null;
@@ -2260,6 +2453,7 @@ export default function AutomationEditorPage({ user }) {
                 const label = (f?.label || "").toLowerCase();
                 return id.includes("email") || label.includes("email");
               });
+              const hasTemplate = Boolean(step.inputs?.template_id);
               const includeAttachments = Boolean(
                 step.inputs?.include_attachments
                 || step.inputs?.attachment_purpose
@@ -2269,263 +2463,210 @@ export default function AutomationEditorPage({ user }) {
               );
 
               return (
-                <>
-                  <label className="form-control md:col-span-12">
-                    <span className="label-text">Direct email addresses</span>
-                    <input className="input input-bordered" value={(step.inputs?.to || []).join(", ")} onChange={(e) => updateStepInput(index, "to", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
-                    <span className="label label-text-alt opacity-50">Optional comma-separated addresses. Leave blank if you only want to use recipients from fields or related records.</span>
-                  </label>
-                  <label className="form-control md:col-span-6">
-                    <span className="label-text">Add internal recipient</span>
-                    <select
-                      className="select select-bordered"
-                      value=""
-                      onChange={(e) => {
-                        const email = e.target.value;
-                        if (!email) return;
-                        const next = Array.from(new Set([...(selectedInternalEmails || []), email]));
-                        updateStepInput(index, "to_internal_emails", next);
-                      }}
-                    >
-                      <option value="">Select workspace member…</option>
-                      {memberOptions.map((member) => {
-                        const memberEmail = member.email || member.user_email || "";
-                        return (
-                          <option key={member.user_id} value={memberEmail} disabled={!memberEmail}>
-                            {member.name || memberEmail || member.user_id}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </label>
-                  {emailFields.length > 0 && (
-                    <label className="form-control md:col-span-6">
-                      <span className="label-text">Add record email field</span>
-                      <select
-                        className="select select-bordered"
-                        value=""
-                        onChange={(e) => {
-                          const fieldId = e.target.value;
-                          if (!fieldId) return;
-                          const next = Array.from(new Set([...(selectedRecordEmailFieldIds || []), fieldId]));
-                          updateStepInput(index, "to_field_ids", next);
-                          updateStepInput(index, "to_field_id", next[0] || "");
-                        }}
-                      >
-                        <option value="">Select email field…</option>
-                        {emailFields.map((field) => (
-                          <option key={field.id} value={field.id}>
-                            {field.label || field.id}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-                  {lookupFields.length > 0 && (
-                    <label className="form-control md:col-span-6">
-                      <span className="label-text">Add lookup recipient field</span>
-                      <select
-                        className="select select-bordered"
-                        value=""
-                        onChange={(e) => {
-                          const fieldId = e.target.value;
-                          if (!fieldId) return;
-                          const next = Array.from(new Set([...(selectedLookupIds || []), fieldId]));
-                          updateStepInput(index, "to_lookup_field_ids", next);
-                          updateStepInput(index, "to_lookup_field_id", next[0] || "");
-                        }}
-                      >
-                        <option value="">Select lookup field…</option>
-                        {lookupFields.map((field) => (
-                          <option key={field.id} value={field.id}>
-                            {field.label || field.id}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-                  {selectedLookupIds.length > 0 && targetEmailFields.length > 0 && (
-                    <label className="form-control md:col-span-6">
-                      <span className="label-text">Target email field</span>
-                      <select
-                        className="select select-bordered"
-                        value={step.inputs?.to_lookup_email_field || ""}
-                        onChange={(e) => updateStepInput(index, "to_lookup_email_field", e.target.value)}
-                      >
-                        <option value="">Auto-detect email</option>
-                        {targetEmailFields.map((field) => (
-                          <option key={field.id} value={field.id}>
-                            {field.label || field.id}
-                          </option>
-                        ))}
-                      </select>
-                      <span className="label label-text-alt opacity-50">Only needed if the related record has more than one email field.</span>
-                    </label>
-                  )}
-                  {(selectedInternalEmails.length || selectedRecordEmailFieldIds.length || selectedLookupIds.length) > 0 && (
-                    <div className="md:col-span-12">
-                      <span className="label-text">Selected recipient sources</span>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {selectedInternalEmails.map((email) => {
-                          const match = memberOptions.find((m) => (m.email || m.user_email) === email);
-                          const label = match?.name ? `${match.name} (${email})` : email;
-                          return (
-                            <span key={`internal:${email}`} className="badge badge-outline gap-2 py-3">
-                              Internal: {label}
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-xs"
-                                onClick={() => updateStepInput(index, "to_internal_emails", selectedInternalEmails.filter((v) => v !== email))}
-                              >
-                                ×
-                              </button>
-                            </span>
-                          );
-                        })}
-                        {selectedRecordEmailFieldIds.map((fieldId) => {
-                          const field = emailFields.find((f) => f.id === fieldId);
-                          return (
-                            <span key={`record:${fieldId}`} className="badge badge-outline gap-2 py-3">
-                              Record field: {field?.label || fieldId}
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-xs"
-                                onClick={() => {
-                                  const next = selectedRecordEmailFieldIds.filter((v) => v !== fieldId);
-                                  updateStepInput(index, "to_field_ids", next);
-                                  updateStepInput(index, "to_field_id", next[0] || "");
-                                }}
-                              >
-                                ×
-                              </button>
-                            </span>
-                          );
-                        })}
-                        {selectedLookupIds.map((fieldId) => {
-                          const field = lookupFields.find((f) => f.id === fieldId);
-                          return (
-                            <span key={`lookup:${fieldId}`} className="badge badge-outline gap-2 py-3">
-                              Lookup: {field?.label || fieldId}
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-xs"
-                                onClick={() => {
-                                  const next = selectedLookupIds.filter((v) => v !== fieldId);
-                                  updateStepInput(index, "to_lookup_field_ids", next);
-                                  updateStepInput(index, "to_lookup_field_id", next[0] || "");
-                                }}
-                              >
-                                ×
-                              </button>
-                            </span>
-                          );
-                        })}
+                <div className="space-y-4">
+                  <div className={sectionCardClass}>
+                    <div className="font-medium text-sm">Recipients</div>
+                    <div className="text-xs opacity-60 mt-1">Choose who should receive this email, whether that comes from direct addresses, record fields, related records, or expressions.</div>
+                    <div className="mt-3 space-y-3">
+                      <label className="form-control">
+                        <span className="label-text">Direct email addresses</span>
+                        <input className="input input-bordered" value={(step.inputs?.to || []).join(", ")} onChange={(e) => updateStepInput(index, "to", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
+                        <span className="label-text-alt mt-1 block opacity-50">Optional comma-separated addresses. Leave blank if you only want to use recipients from fields or related records.</span>
+                      </label>
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <label className="form-control">
+                          <span className="label-text">Add internal recipient</span>
+                          <select
+                            className="select select-bordered"
+                            value=""
+                            onChange={(e) => {
+                              const email = e.target.value;
+                              if (!email) return;
+                              const next = Array.from(new Set([...(selectedInternalEmails || []), email]));
+                              updateStepInput(index, "to_internal_emails", next);
+                            }}
+                          >
+                            <option value="">Select workspace member…</option>
+                            {memberOptions.map((member) => {
+                              const memberEmail = member.email || member.user_email || "";
+                              return (
+                                <option key={member.user_id} value={memberEmail} disabled={!memberEmail}>
+                                  {member.name || memberEmail || member.user_id}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </label>
+
+                        {emailFields.length > 0 && (
+                          <label className="form-control">
+                            <span className="label-text">Add record email field</span>
+                            <select
+                              className="select select-bordered"
+                              value=""
+                              onChange={(e) => {
+                                const fieldId = e.target.value;
+                                if (!fieldId) return;
+                                const next = Array.from(new Set([...(selectedRecordEmailFieldIds || []), fieldId]));
+                                updateStepInput(index, "to_field_ids", next);
+                                updateStepInput(index, "to_field_id", next[0] || "");
+                              }}
+                            >
+                              <option value="">Select email field…</option>
+                              {emailFields.map((field) => (
+                                <option key={field.id} value={field.id}>
+                                  {field.label || field.id}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
                       </div>
-                    </div>
-                  )}
-                  <label className="form-control md:col-span-12">
-                    <label className="label cursor-pointer justify-start gap-3">
-                      <input
-                        type="checkbox"
-                        className="toggle toggle-sm"
-                        checked={includeAttachments}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
-                          updateStepInput(index, "include_attachments", checked ? true : undefined);
-                          if (!checked) {
-                            updateStepInput(index, "attachment_purpose", undefined);
-                            updateStepInput(index, "attachment_entity_id", undefined);
-                            updateStepInput(index, "attachment_record_id", undefined);
-                            updateStepInput(index, "attachment_field_id", undefined);
-                          }
-                        }}
-                      />
-                      <span className="label-text">Include attachments</span>
-                    </label>
-                    <span className="label label-text-alt opacity-50">Turn this on only if the email should include generated files or attachments from a record.</span>
-                  </label>
-                  {includeAttachments && (
-                    <>
-                      <label className="form-control md:col-span-4">
-                        <span className="label-text">Attachment purpose</span>
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {lookupFields.length > 0 && (
+                          <label className="form-control">
+                            <span className="label-text">Add lookup recipient field</span>
+                            <select
+                              className="select select-bordered"
+                              value=""
+                              onChange={(e) => {
+                                const fieldId = e.target.value;
+                                if (!fieldId) return;
+                                const next = Array.from(new Set([...(selectedLookupIds || []), fieldId]));
+                                updateStepInput(index, "to_lookup_field_ids", next);
+                                updateStepInput(index, "to_lookup_field_id", next[0] || "");
+                              }}
+                            >
+                              <option value="">Select lookup field…</option>
+                              {lookupFields.map((field) => (
+                                <option key={field.id} value={field.id}>
+                                  {field.label || field.id}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
+
+                        {selectedLookupIds.length > 0 && targetEmailFields.length > 0 && (
+                          <label className="form-control">
+                            <span className="label-text">Target email field</span>
+                            <select
+                              className="select select-bordered"
+                              value={step.inputs?.to_lookup_email_field || ""}
+                              onChange={(e) => updateStepInput(index, "to_lookup_email_field", e.target.value)}
+                            >
+                              <option value="">Auto-detect email</option>
+                              {targetEmailFields.map((field) => (
+                                <option key={field.id} value={field.id}>
+                                  {field.label || field.id}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="label-text-alt mt-1 block opacity-50">Only needed if the related record has more than one email field.</span>
+                          </label>
+                        )}
+                      </div>
+
+                      <label className="form-control">
+                        <span className="label-text">Recipient expression</span>
                         <input
                           className="input input-bordered"
-                          value={step.inputs?.attachment_purpose || ""}
-                          onChange={(e) => updateStepInput(index, "attachment_purpose", e.target.value)}
-                          placeholder="invoice_pdf"
+                          list="automation-trigger-fields"
+                          value={step.inputs?.to_expr || ""}
+                          onChange={(e) => updateStepInput(index, "to_expr", e.target.value)}
+                          placeholder="{{ record['contact_email'] }}, ops@example.com"
                         />
-                        <span className="label label-text-alt opacity-50">Attach linked files with this purpose from the selected record.</span>
+                        <span className="label-text-alt mt-1 block opacity-50">Optional. Add extra addresses, refs, or expressions in addition to the selected recipient sources.</span>
                       </label>
-                      <label className="form-control md:col-span-4">
-                        <span className="label-text">Attachment entity</span>
-                        <select
-                          className="select select-bordered"
-                          value={step.inputs?.attachment_entity_id || ""}
-                          onChange={(e) => updateStepInput(index, "attachment_entity_id", e.target.value)}
-                        >
-                          <option value="">Use email entity</option>
-                          {entityOptions.map((ent) => (
-                            <option key={ent.id} value={ent.id}>
-                              {ent.label || ent.id}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="form-control md:col-span-4">
-                        <span className="label-text">Attachment record</span>
-                        <input
-                          className="input input-bordered"
-                          list="automation-record-hints"
-                          value={step.inputs?.attachment_record_id || ""}
-                          onChange={(e) => updateStepInput(index, "attachment_record_id", e.target.value)}
-                          placeholder="{{trigger.record_id}}"
-                        />
-                      </label>
-                      <label className="form-control md:col-span-12">
-                        <span className="label-text">Attachment field</span>
-                        <select
-                          className="select select-bordered"
-                          value={step.inputs?.attachment_field_id || ""}
-                          onChange={(e) => updateStepInput(index, "attachment_field_id", e.target.value)}
-                        >
-                          <option value="">No record attachment field</option>
-                          {attachmentFields.map((field) => (
-                            <option key={field.id} value={field.id}>
-                              {field.label || field.id}
-                            </option>
-                          ))}
-                        </select>
-                        <span className="label label-text-alt opacity-50">Optional extra source if files already live in an attachments field on the record.</span>
-                      </label>
-                    </>
-                  )}
-                  <div className="md:col-span-12 rounded-box border border-base-300 bg-base-100">
-                    <details className="group">
-                      <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
-                        <div>
-                          <div className="font-medium text-sm">Advanced email options</div>
-                          <div className="text-xs opacity-60">Connection, template, merge-record context, subject override, and recipient expression.</div>
+
+                      {(selectedInternalEmails.length || selectedRecordEmailFieldIds.length || selectedLookupIds.length) > 0 && (
+                        <div className={insetCardClass}>
+                          <span className="label-text">Selected recipient sources</span>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {selectedInternalEmails.map((email) => {
+                              const match = memberOptions.find((m) => (m.email || m.user_email) === email);
+                              const label = match?.name ? `${match.name} (${email})` : email;
+                              return (
+                                <span key={`internal:${email}`} className="badge badge-outline badge-dismissible">
+                                  Internal: {label}
+                                  <button
+                                    type="button"
+                                    className="badge-remove"
+                                    onClick={() => updateStepInput(index, "to_internal_emails", selectedInternalEmails.filter((v) => v !== email))}
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              );
+                            })}
+                            {selectedRecordEmailFieldIds.map((fieldId) => {
+                              const field = emailFields.find((f) => f.id === fieldId);
+                              return (
+                                <span key={`record:${fieldId}`} className="badge badge-outline badge-dismissible">
+                                  Record field: {field?.label || fieldId}
+                                  <button
+                                    type="button"
+                                    className="badge-remove"
+                                    onClick={() => {
+                                      const next = selectedRecordEmailFieldIds.filter((v) => v !== fieldId);
+                                      updateStepInput(index, "to_field_ids", next);
+                                      updateStepInput(index, "to_field_id", next[0] || "");
+                                    }}
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              );
+                            })}
+                            {selectedLookupIds.map((fieldId) => {
+                              const field = lookupFields.find((f) => f.id === fieldId);
+                              return (
+                                <span key={`lookup:${fieldId}`} className="badge badge-outline badge-dismissible">
+                                  Lookup: {field?.label || fieldId}
+                                  <button
+                                    type="button"
+                                    className="badge-remove"
+                                    onClick={() => {
+                                      const next = selectedLookupIds.filter((v) => v !== fieldId);
+                                      updateStepInput(index, "to_lookup_field_ids", next);
+                                      updateStepInput(index, "to_lookup_field_id", next[0] || "");
+                                    }}
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              );
+                            })}
+                          </div>
                         </div>
-                        <span className="text-xs opacity-60 group-open:hidden">Show</span>
-                        <span className="text-xs opacity-60 hidden group-open:inline">Hide</span>
-                      </summary>
-                      <div className={`${wideGridClass} px-4 pb-4`}>
-                        <label className="form-control md:col-span-6">
+                      )}
+                    </div>
+                  </div>
+
+                  <div className={sectionCardClass}>
+                    <div className="font-medium text-sm">Email content</div>
+                    <div className="text-xs opacity-60 mt-1">Set how this email is sent, where merge fields should read from, and what the message should contain.</div>
+                    <div className="mt-3 space-y-3">
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <label className="form-control">
                           <span className="label-text">Connection</span>
                           <select
                             className="select select-bordered"
                             value={step.inputs?.connection_id || ""}
                             onChange={(e) => updateStepInput(index, "connection_id", e.target.value)}
                           >
-                            <option value="">Use default</option>
+                            <option value="">Use default connection</option>
                             {emailConnectionOptions.map((conn) => (
                               <option key={conn.id} value={conn.id}>
                                 {conn.name || conn.id}
                               </option>
                             ))}
                           </select>
+                          <span className="label-text-alt mt-1 block opacity-50">Optional. Leave blank to use the workspace default.</span>
                         </label>
-                        <label className="form-control md:col-span-6">
+                        <label className="form-control">
                           <span className="label-text">Template</span>
                           <select
                             className="select select-bordered"
@@ -2539,8 +2680,12 @@ export default function AutomationEditorPage({ user }) {
                               </option>
                             ))}
                           </select>
+                          <span className="label-text-alt mt-1 block opacity-50">Optional. Leave blank to write the subject and body here instead.</span>
                         </label>
-                        <label className="form-control md:col-span-6">
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <label className="form-control">
                           <span className="label-text">Entity for merge fields</span>
                           <select
                             className="select select-bordered"
@@ -2554,136 +2699,247 @@ export default function AutomationEditorPage({ user }) {
                               </option>
                             ))}
                           </select>
+                          <span className="label-text-alt mt-1 block opacity-50">Optional. Pick the entity whose fields should be available in this email.</span>
                         </label>
-                        <label className="form-control md:col-span-6">
+                        <label className="form-control">
                           <span className="label-text">Record for merge fields</span>
-                          <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} />
-                          <span className="label label-text-alt opacity-50">Optional record for merge fields, attachments, or lookup recipients.</span>
-                        </label>
-                        <label className="form-control md:col-span-12">
-                          <span className="label-text">Recipient expression</span>
                           <input
                             className="input input-bordered"
-                            value={step.inputs?.to_expr || ""}
-                            onChange={(e) => updateStepInput(index, "to_expr", e.target.value)}
-                            placeholder="{{ record['contact_email'] }}, ops@example.com"
+                            list="automation-record-hints"
+                            value={step.inputs?.record_id || ""}
+                            onChange={(e) => updateStepInput(index, "record_id", e.target.value)}
+                            placeholder="{{trigger.record_id}}"
                           />
-                        </label>
-                        <label className="form-control md:col-span-12">
-                          <span className="label-text">Subject override</span>
-                          <input className="input input-bordered" value={step.inputs?.subject || ""} onChange={(e) => updateStepInput(index, "subject", e.target.value)} />
-                          <span className="label label-text-alt opacity-50">Leave blank to use the template subject.</span>
+                          <span className="label-text-alt mt-1 block opacity-50">
+                            Optional. Use a record ID, a ref like <code>{'{{trigger.record_id}}'}</code>, or leave blank to follow the trigger context.
+                          </span>
                         </label>
                       </div>
-                    </details>
+
+                      <label className="form-control">
+                        <span className="label-text">{hasTemplate ? "Subject override" : "Subject"}</span>
+                        <input className="input input-bordered" value={step.inputs?.subject || ""} onChange={(e) => updateStepInput(index, "subject", e.target.value)} />
+                        <span className="label-text-alt mt-1 block opacity-50">
+                          {hasTemplate ? "Optional. Leave blank to use the template subject." : "Required when no template is selected."}
+                        </span>
+                      </label>
+
+                      {!hasTemplate && (
+                        <label className="form-control">
+                          <span className="label-text">Email body</span>
+                          <CodeTextarea
+                            value={step.inputs?.body_text || ""}
+                            onChange={(e) => updateStepInput(index, "body_text", e.target.value)}
+                            minHeight="160px"
+                          />
+                          <span className="label-text-alt mt-1 block opacity-50">Required when no template is selected. Write the plain-text body here.</span>
+                        </label>
+                      )}
+                    </div>
                   </div>
-                </>
+
+                  <div className={sectionCardClass}>
+                    <div className="font-medium text-sm">Attachments</div>
+                    <div className="text-xs opacity-60 mt-1">Choose whether this email should include generated files or attachments from a record.</div>
+                    <div className="mt-3 space-y-3">
+                      <label className="form-control">
+                        <label className="label cursor-pointer justify-start gap-3">
+                          <input
+                            type="checkbox"
+                            className="toggle toggle-sm"
+                            checked={includeAttachments}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              updateStepInput(index, "include_attachments", checked ? true : undefined);
+                              if (!checked) {
+                                updateStepInput(index, "attachment_purpose", undefined);
+                                updateStepInput(index, "attachment_entity_id", undefined);
+                                updateStepInput(index, "attachment_record_id", undefined);
+                                updateStepInput(index, "attachment_field_id", undefined);
+                              }
+                            }}
+                          />
+                          <span className="label-text">Include attachments</span>
+                        </label>
+                        <span className="label-text-alt mt-1 block opacity-50">Turn this on only if the email should include generated files or attachments from a record.</span>
+                      </label>
+
+                      {includeAttachments && (
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <label className="form-control">
+                            <span className="label-text">Attachment purpose</span>
+                            <input
+                              className="input input-bordered"
+                              value={step.inputs?.attachment_purpose || ""}
+                              onChange={(e) => updateStepInput(index, "attachment_purpose", e.target.value)}
+                              placeholder="invoice_pdf"
+                            />
+                            <span className="label-text-alt mt-1 block opacity-50">Optional. Attach linked files with this purpose from the selected record.</span>
+                          </label>
+                          <label className="form-control">
+                            <span className="label-text">Attachment entity</span>
+                            <select
+                              className="select select-bordered"
+                              value={step.inputs?.attachment_entity_id || ""}
+                              onChange={(e) => updateStepInput(index, "attachment_entity_id", e.target.value)}
+                            >
+                              <option value="">Use email entity</option>
+                              {entityOptions.map((ent) => (
+                                <option key={ent.id} value={ent.id}>
+                                  {ent.label || ent.id}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="label-text-alt mt-1 block opacity-50">Optional. Leave blank to reuse the email merge entity above.</span>
+                          </label>
+                          <label className="form-control">
+                            <span className="label-text">Attachment record</span>
+                            <input
+                              className="input input-bordered"
+                              list="automation-record-hints"
+                              value={step.inputs?.attachment_record_id || ""}
+                              onChange={(e) => updateStepInput(index, "attachment_record_id", e.target.value)}
+                              placeholder="{{trigger.record_id}}"
+                            />
+                            <span className="label-text-alt mt-1 block opacity-50">Optional. Use a record ID or a ref if the files live on a different record.</span>
+                          </label>
+                          <label className="form-control">
+                            <span className="label-text">Attachment field</span>
+                            <select
+                              className="select select-bordered"
+                              value={step.inputs?.attachment_field_id || ""}
+                              onChange={(e) => updateStepInput(index, "attachment_field_id", e.target.value)}
+                            >
+                              <option value="">No record attachment field</option>
+                              {attachmentFields.map((field) => (
+                                <option key={field.id} value={field.id}>
+                                  {field.label || field.id}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="label-text-alt mt-1 block opacity-50">Optional extra source if files already live in an attachments field on the record.</span>
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               );
             })()}
           </div>
         )}
 
         {isActionLike && step.action_id === "system.generate_document" && (
-          <div className={standardGridClass}>
-            <label className="form-control">
-              <span className="label-text">Template</span>
-              <select
-                className="select select-bordered"
-                value={step.inputs?.template_id || ""}
-                onChange={(e) => updateStepInput(index, "template_id", e.target.value)}
-              >
-                <option value="">Select template…</option>
-                {docTemplateOptions.map((tpl) => (
-                  <option key={tpl.id} value={tpl.id}>
-                    {tpl.name || tpl.id}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="form-control">
-              <span className="label-text">Purpose</span>
-              <input className="input input-bordered" value={step.inputs?.purpose || ""} onChange={(e) => updateStepInput(index, "purpose", e.target.value)} />
-              <span className="label label-text-alt opacity-50">Optional attachment purpose tag, like `handover_pdf` or `quote_pdf`.</span>
-            </label>
-            <label className="form-control">
-              <span className="label-text">Entity</span>
-              <select
-                className="select select-bordered"
-                value={step.inputs?.entity_id || ""}
-                onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
-              >
-                <option value="">Select entity…</option>
-                <option value="{{trigger.entity_id}}">Use trigger entity</option>
-                {entityOptions.map((ent) => (
-                  <option key={ent.id} value={ent.id}>
-                    {ent.label || ent.id}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="form-control">
-              <span className="label-text">Record</span>
-              <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} />
-              <span className="label label-text-alt opacity-50">Paste record ID or use trigger.</span>
-            </label>
+          <div className={sectionCardClass}>
+            <div className="font-medium text-sm">Document setup</div>
+            <div className="text-xs opacity-60 mt-1">Choose the template, target record, and optional attachment purpose for the generated file.</div>
+            <div className={`mt-3 ${standardGridClass}`}>
+              <label className="form-control">
+                <span className="label-text">Template</span>
+                <select
+                  className="select select-bordered"
+                  value={step.inputs?.template_id || ""}
+                  onChange={(e) => updateStepInput(index, "template_id", e.target.value)}
+                >
+                  <option value="">Select template…</option>
+                  {docTemplateOptions.map((tpl) => (
+                    <option key={tpl.id} value={tpl.id}>
+                      {tpl.name || tpl.id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="form-control">
+                <span className="label-text">Purpose</span>
+                <input className="input input-bordered" value={step.inputs?.purpose || ""} onChange={(e) => updateStepInput(index, "purpose", e.target.value)} />
+                <span className="label-text-alt mt-1 block opacity-50">Optional attachment purpose tag, like `handover_pdf` or `quote_pdf`.</span>
+              </label>
+              <label className="form-control">
+                <span className="label-text">Entity</span>
+                <select
+                  className="select select-bordered"
+                  value={step.inputs?.entity_id || ""}
+                  onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
+                >
+                  <option value="">Select entity…</option>
+                  <option value="{{trigger.entity_id}}">Use trigger entity</option>
+                  {entityOptions.map((ent) => (
+                    <option key={ent.id} value={ent.id}>
+                      {ent.label || ent.id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="form-control">
+                <span className="label-text">Record</span>
+                <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} />
+                <span className="label-text-alt mt-1 block opacity-50">Paste record ID or use trigger.</span>
+              </label>
+            </div>
           </div>
         )}
 
         {isActionLike && step.action_id === "system.integration_request" && (
           (() => {
-            const headerRows = objectEntriesForEditor(step.inputs?.headers);
-            const queryRows = objectEntriesForEditor(step.inputs?.query);
+            const headerRows = readEditorDraftRows(index, "headers", objectEntriesForEditor(step.inputs?.headers));
+            const queryRows = readEditorDraftRows(index, "query", objectEntriesForEditor(step.inputs?.query));
             return (
-              <div className={standardGridClass}>
-                <label className="form-control">
-                  <span className="label-text">Connection</span>
-                  <select
-                    className="select select-bordered"
-                    value={step.inputs?.connection_id || ""}
-                    onChange={(e) => updateStepInput(index, "connection_id", e.target.value)}
-                  >
-                    <option value="">Select connection…</option>
-                    {integrationConnectionOptions.map((conn) => (
-                      <option key={conn.id} value={conn.id}>
-                        {conn.name || conn.id}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="form-control">
-                  <span className="label-text">Method</span>
-                  <select
-                    className="select select-bordered"
-                    value={step.inputs?.method || "GET"}
-                    onChange={(e) => updateStepInput(index, "method", e.target.value)}
-                  >
-                    {["GET", "POST", "PUT", "PATCH", "DELETE"].map((method) => (
-                      <option key={method} value={method}>
-                        {method}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="form-control">
-                  <span className="label-text">Path</span>
-                  <input
-                    className="input input-bordered"
-                    value={step.inputs?.path || ""}
-                    onChange={(e) => updateStepInput(index, "path", e.target.value)}
-                    placeholder="/contacts"
-                  />
-                  <span className="label label-text-alt opacity-50">Use path for the provider base URL. Leave blank if you want to call a full URL directly.</span>
-                </label>
-                <label className="form-control">
-                  <span className="label-text">Full URL override</span>
-                  <input
-                    className="input input-bordered"
-                    value={step.inputs?.url || ""}
-                    onChange={(e) => updateStepInput(index, "url", e.target.value)}
-                    placeholder="https://api.example.com/custom/path"
-                  />
-                </label>
-                <div className="rounded-box border border-base-300 bg-base-100/70 p-3 space-y-3">
+              <div className="space-y-4">
+                <div className={sectionCardClass}>
+                  <div className="font-medium text-sm">Request setup</div>
+                  <div className="text-xs opacity-60 mt-1">Choose the connection and the endpoint this request should call.</div>
+                  <div className={`${standardGridClass} mt-3`}>
+                    <label className="form-control">
+                      <span className="label-text">Connection</span>
+                      <select
+                        className="select select-bordered"
+                        value={step.inputs?.connection_id || ""}
+                        onChange={(e) => updateStepInput(index, "connection_id", e.target.value)}
+                      >
+                        <option value="">Select connection…</option>
+                        {integrationConnectionOptions.map((conn) => (
+                          <option key={conn.id} value={conn.id}>
+                            {conn.name || conn.id}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Method</span>
+                      <select
+                        className="select select-bordered"
+                        value={step.inputs?.method || "GET"}
+                        onChange={(e) => updateStepInput(index, "method", e.target.value)}
+                      >
+                        {["GET", "POST", "PUT", "PATCH", "DELETE"].map((method) => (
+                          <option key={method} value={method}>
+                            {method}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Path</span>
+                      <input
+                        className="input input-bordered"
+                        value={step.inputs?.path || ""}
+                        onChange={(e) => updateStepInput(index, "path", e.target.value)}
+                        placeholder="/contacts"
+                      />
+                      <span className="label-text-alt mt-1 block opacity-50">Use path for the provider base URL. Leave blank if you want to call a full URL directly.</span>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Full URL override</span>
+                      <input
+                        className="input input-bordered"
+                        value={step.inputs?.url || ""}
+                        onChange={(e) => updateStepInput(index, "url", e.target.value)}
+                        placeholder="https://api.example.com/custom/path"
+                      />
+                    </label>
+                  </div>
+                </div>
+                <div className={builderSectionCardClass}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="font-medium text-sm">Headers</div>
@@ -2691,7 +2947,7 @@ export default function AutomationEditorPage({ user }) {
                     </div>
                     <button
                       type="button"
-                      className="btn btn-xs btn-ghost"
+                      className={builderAddButtonClass}
                       onClick={() => writeObjectEntries(index, "headers", [...headerRows, { fieldId: "", value: "" }])}
                     >
                       Add header
@@ -2704,45 +2960,51 @@ export default function AutomationEditorPage({ user }) {
                       {headerRows.map((row, rowIndex) => {
                         const nextRows = headerRows.slice();
                         return (
-                          <div key={`request-header-${rowIndex}`} className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                            <label className="form-control">
-                              <span className="label-text">Header name</span>
-                              <input
-                                className="input input-bordered"
-                                value={row.fieldId}
-                                onChange={(e) => {
-                                  nextRows[rowIndex] = { ...row, fieldId: e.target.value };
-                                  writeObjectEntries(index, "headers", nextRows);
-                                }}
-                                placeholder="Authorization"
-                              />
-                            </label>
-                            <label className="form-control">
-                              <span className="label-text">Header value</span>
-                              <input
-                                className="input input-bordered"
-                                value={row.value}
-                                onChange={(e) => {
-                                  nextRows[rowIndex] = { ...row, value: e.target.value };
-                                  writeObjectEntries(index, "headers", nextRows);
-                                }}
-                                placeholder="Bearer {{vars.token}}"
-                              />
-                            </label>
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm text-error self-end"
-                              onClick={() => writeObjectEntries(index, "headers", headerRows.filter((_, idx) => idx !== rowIndex))}
-                            >
-                              Remove
-                            </button>
+                          <div key={`request-header-${rowIndex}`} className={builderRowCardClass}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-xs font-medium uppercase tracking-wide opacity-60">Header {rowIndex + 1}</div>
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-xs text-error"
+                                onClick={() => writeObjectEntries(index, "headers", headerRows.filter((_, idx) => idx !== rowIndex))}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                            <div className={standardGridClass}>
+                              <label className="form-control">
+                                <span className="label-text">Header name</span>
+                                <input
+                                  className="input input-bordered"
+                                  value={row.fieldId}
+                                  onChange={(e) => {
+                                    nextRows[rowIndex] = { ...row, fieldId: e.target.value };
+                                    writeObjectEntries(index, "headers", nextRows);
+                                  }}
+                                  placeholder="Authorization"
+                                />
+                              </label>
+                              <label className="form-control">
+                                <span className="label-text">Header value</span>
+                                <input
+                                  className="input input-bordered"
+                                  list="automation-ref-values"
+                                  value={row.value}
+                                  onChange={(e) => {
+                                    nextRows[rowIndex] = { ...row, value: e.target.value };
+                                    writeObjectEntries(index, "headers", nextRows);
+                                  }}
+                                  placeholder="Bearer {{vars.token}}"
+                                />
+                              </label>
+                            </div>
                           </div>
                         );
                       })}
                     </div>
                   )}
                 </div>
-                <div className="rounded-box border border-base-300 bg-base-100/70 p-3 space-y-3">
+                <div className={builderSectionCardClass}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="font-medium text-sm">Query parameters</div>
@@ -2750,7 +3012,7 @@ export default function AutomationEditorPage({ user }) {
                     </div>
                     <button
                       type="button"
-                      className="btn btn-xs btn-ghost"
+                      className={builderAddButtonClass}
                       onClick={() => writeObjectEntries(index, "query", [...queryRows, { fieldId: "", value: "" }])}
                     >
                       Add parameter
@@ -2763,55 +3025,54 @@ export default function AutomationEditorPage({ user }) {
                       {queryRows.map((row, rowIndex) => {
                         const nextRows = queryRows.slice();
                         return (
-                          <div key={`request-query-${rowIndex}`} className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                            <label className="form-control">
-                              <span className="label-text">Parameter name</span>
-                              <input
-                                className="input input-bordered"
-                                value={row.fieldId}
-                                onChange={(e) => {
-                                  nextRows[rowIndex] = { ...row, fieldId: e.target.value };
-                                  writeObjectEntries(index, "query", nextRows);
-                                }}
-                                placeholder="updated_since"
-                              />
-                            </label>
-                            <label className="form-control">
-                              <span className="label-text">Parameter value</span>
-                              <input
-                                className="input input-bordered"
-                                value={row.value}
-                                onChange={(e) => {
-                                  nextRows[rowIndex] = { ...row, value: e.target.value };
-                                  writeObjectEntries(index, "query", nextRows);
-                                }}
-                                placeholder="{{trigger.timestamp}}"
-                              />
-                            </label>
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm text-error self-end"
-                              onClick={() => writeObjectEntries(index, "query", queryRows.filter((_, idx) => idx !== rowIndex))}
-                            >
-                              Remove
-                            </button>
+                          <div key={`request-query-${rowIndex}`} className={builderRowCardClass}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-xs font-medium uppercase tracking-wide opacity-60">Parameter {rowIndex + 1}</div>
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-xs text-error"
+                                onClick={() => writeObjectEntries(index, "query", queryRows.filter((_, idx) => idx !== rowIndex))}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                            <div className={standardGridClass}>
+                              <label className="form-control">
+                                <span className="label-text">Parameter name</span>
+                                <input
+                                  className="input input-bordered"
+                                  value={row.fieldId}
+                                  onChange={(e) => {
+                                    nextRows[rowIndex] = { ...row, fieldId: e.target.value };
+                                    writeObjectEntries(index, "query", nextRows);
+                                  }}
+                                  placeholder="updated_since"
+                                />
+                              </label>
+                              <label className="form-control">
+                                <span className="label-text">Parameter value</span>
+                                <input
+                                  className="input input-bordered"
+                                  list="automation-ref-values"
+                                  value={row.value}
+                                  onChange={(e) => {
+                                    nextRows[rowIndex] = { ...row, value: e.target.value };
+                                    writeObjectEntries(index, "query", nextRows);
+                                  }}
+                                  placeholder="{{trigger.timestamp}}"
+                                />
+                              </label>
+                            </div>
                           </div>
                         );
                       })}
                     </div>
                   )}
                 </div>
-                <div className="rounded-box border border-base-300 bg-base-100">
-                  <details className="group">
-                    <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
-                      <div>
-                        <div className="font-medium text-sm">Request body and advanced options</div>
-                        <div className="text-xs opacity-60">Use this if the request needs a JSON body, a raw body, or you want to edit the raw headers/query objects directly.</div>
-                      </div>
-                      <span className="text-xs opacity-60 group-open:hidden">Show</span>
-                      <span className="text-xs opacity-60 hidden group-open:inline">Hide</span>
-                    </summary>
-                    <div className={`${standardGridClass} px-4 pb-4`}>
+                <div className={sectionCardClass}>
+                  <div className="font-medium text-sm">Request body and raw objects</div>
+                  <div className="text-xs opacity-60 mt-1">Use this if the request needs a JSON body, a raw body, or you want to edit the raw headers/query objects directly.</div>
+                  <div className={`${standardGridClass} mt-3`}>
                       <label className="form-control">
                         <span className="label-text">JSON body</span>
                         <CodeTextarea
@@ -2833,7 +3094,10 @@ export default function AutomationEditorPage({ user }) {
                         <span className="label-text">Headers JSON</span>
                         <CodeTextarea
                           value={typeof step.inputs?.headers === "string" ? step.inputs.headers : JSON.stringify(step.inputs?.headers || {}, null, 2)}
-                          onChange={(e) => updateStepInput(index, "headers", e.target.value)}
+                          onChange={(e) => {
+                            clearEditorDraftRows(index, "headers");
+                            updateStepInput(index, "headers", e.target.value);
+                          }}
                           minHeight="120px"
                         />
                       </label>
@@ -2841,12 +3105,14 @@ export default function AutomationEditorPage({ user }) {
                         <span className="label-text">Query JSON</span>
                         <CodeTextarea
                           value={typeof step.inputs?.query === "string" ? step.inputs.query : JSON.stringify(step.inputs?.query || {}, null, 2)}
-                          onChange={(e) => updateStepInput(index, "query", e.target.value)}
+                          onChange={(e) => {
+                            clearEditorDraftRows(index, "query");
+                            updateStepInput(index, "query", e.target.value);
+                          }}
                           minHeight="120px"
                         />
                       </label>
-                    </div>
-                  </details>
+                  </div>
                 </div>
               </div>
             );
@@ -2855,70 +3121,69 @@ export default function AutomationEditorPage({ user }) {
 
         {isActionLike && step.action_id === "system.integration_sync" && (
           (() => {
-            const headerRows = objectEntriesForEditor(step.inputs?.headers);
-            const queryRows = objectEntriesForEditor(step.inputs?.query);
+            const headerRows = readEditorDraftRows(index, "headers", objectEntriesForEditor(step.inputs?.headers));
+            const queryRows = readEditorDraftRows(index, "query", objectEntriesForEditor(step.inputs?.query));
             return (
-              <div className={standardGridClass}>
-                <label className="form-control">
-                  <span className="label-text">Connection</span>
-                  <select
-                    className="select select-bordered"
-                    value={step.inputs?.connection_id || ""}
-                    onChange={(e) => updateStepInput(index, "connection_id", e.target.value)}
-                  >
-                    <option value="">Select connection…</option>
-                    {integrationConnectionOptions.map((conn) => (
-                      <option key={conn.id} value={conn.id}>
-                        {conn.name || conn.id}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="form-control">
-                  <span className="label-text">Checkpoint scope</span>
-                  <input
-                    className="input input-bordered"
-                    value={step.inputs?.scope_key || ""}
-                    onChange={(e) => updateStepInput(index, "scope_key", e.target.value)}
-                    placeholder="contacts"
-                  />
-                  <span className="label label-text-alt opacity-50">Use different scopes when one connection syncs more than one resource.</span>
-                </label>
-                <label className="form-control">
-                  <label className="label cursor-pointer justify-start gap-3">
-                    <input
-                      type="checkbox"
-                      className="toggle toggle-sm"
-                      checked={Boolean(step.inputs?.emit_events)}
-                      onChange={(e) => updateStepInput(index, "emit_events", e.target.checked ? true : undefined)}
-                    />
-                    <span className="label-text">Emit item events</span>
-                  </label>
-                  <span className="label label-text-alt opacity-50">Turn this on if later automations should react to each returned item.</span>
-                </label>
-                <label className="form-control">
-                  <label className="label cursor-pointer justify-start gap-3">
-                    <input
-                      type="checkbox"
-                      className="toggle toggle-sm"
-                      checked={Boolean(step.inputs?.async)}
-                      onChange={(e) => updateStepInput(index, "async", e.target.checked ? true : undefined)}
-                    />
-                    <span className="label-text">Queue in background</span>
-                  </label>
-                  <span className="label label-text-alt opacity-50">Use this when the sync might take a while and you do not need the result immediately.</span>
-                </label>
-                <div className="rounded-box border border-base-300 bg-base-100">
-                  <details className="group">
-                    <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
-                      <div>
-                        <div className="font-medium text-sm">Advanced sync options</div>
-                        <div className="text-xs opacity-60">Override the saved sync request or cursor settings for this automation run.</div>
-                      </div>
-                      <span className="text-xs opacity-60 group-open:hidden">Show</span>
-                      <span className="text-xs opacity-60 hidden group-open:inline">Hide</span>
-                    </summary>
-                    <div className={`${standardGridClass} px-4 pb-4`}>
+              <div className="space-y-4">
+                <div className={sectionCardClass}>
+                  <div className="font-medium text-sm">Sync setup</div>
+                  <div className="text-xs opacity-60 mt-1">Choose the connection, checkpoint scope, and whether this sync should emit events or run in the background.</div>
+                  <div className={`${standardGridClass} mt-3`}>
+                    <label className="form-control">
+                      <span className="label-text">Connection</span>
+                      <select
+                        className="select select-bordered"
+                        value={step.inputs?.connection_id || ""}
+                        onChange={(e) => updateStepInput(index, "connection_id", e.target.value)}
+                      >
+                        <option value="">Select connection…</option>
+                        {integrationConnectionOptions.map((conn) => (
+                          <option key={conn.id} value={conn.id}>
+                            {conn.name || conn.id}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Checkpoint scope</span>
+                      <input
+                        className="input input-bordered"
+                        value={step.inputs?.scope_key || ""}
+                        onChange={(e) => updateStepInput(index, "scope_key", e.target.value)}
+                        placeholder="contacts"
+                      />
+                      <span className="label-text-alt mt-1 block opacity-50">Use different scopes when one connection syncs more than one resource.</span>
+                    </label>
+                    <label className="form-control">
+                      <label className="label cursor-pointer justify-start gap-3">
+                        <input
+                          type="checkbox"
+                          className="toggle toggle-sm"
+                          checked={Boolean(step.inputs?.emit_events)}
+                          onChange={(e) => updateStepInput(index, "emit_events", e.target.checked ? true : undefined)}
+                        />
+                        <span className="label-text">Emit item events</span>
+                      </label>
+                      <span className="label-text-alt mt-1 block opacity-50">Turn this on if later automations should react to each returned item.</span>
+                    </label>
+                    <label className="form-control">
+                      <label className="label cursor-pointer justify-start gap-3">
+                        <input
+                          type="checkbox"
+                          className="toggle toggle-sm"
+                          checked={Boolean(step.inputs?.async)}
+                          onChange={(e) => updateStepInput(index, "async", e.target.checked ? true : undefined)}
+                        />
+                        <span className="label-text">Queue in background</span>
+                      </label>
+                      <span className="label-text-alt mt-1 block opacity-50">Use this when the sync might take a while and you do not need the result immediately.</span>
+                    </label>
+                  </div>
+                </div>
+                <div className={sectionCardClass}>
+                  <div className="font-medium text-sm">Sync request options</div>
+                  <div className="text-xs opacity-60 mt-1">Override the saved sync request or cursor settings for this automation run.</div>
+                  <div className={`${standardGridClass} mt-3`}>
                       <label className="form-control">
                         <span className="label-text">Method</span>
                         <select
@@ -2987,7 +3252,7 @@ export default function AutomationEditorPage({ user }) {
                           placeholder="100"
                         />
                       </label>
-                      <div className="rounded-box border border-base-300 bg-base-100/70 p-3 space-y-3">
+                      <div className={builderSectionCardClass}>
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <div className="font-medium text-sm">Headers</div>
@@ -2995,7 +3260,7 @@ export default function AutomationEditorPage({ user }) {
                           </div>
                           <button
                             type="button"
-                            className="btn btn-xs btn-ghost"
+                            className={builderAddButtonClass}
                             onClick={() => writeObjectEntries(index, "headers", [...headerRows, { fieldId: "", value: "" }])}
                           >
                             Add header
@@ -3008,45 +3273,51 @@ export default function AutomationEditorPage({ user }) {
                             {headerRows.map((row, rowIndex) => {
                               const nextRows = headerRows.slice();
                               return (
-                                <div key={`sync-header-${rowIndex}`} className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                                  <label className="form-control">
-                                    <span className="label-text">Header name</span>
-                                    <input
-                                      className="input input-bordered"
-                                      value={row.fieldId}
-                                      onChange={(e) => {
-                                        nextRows[rowIndex] = { ...row, fieldId: e.target.value };
-                                        writeObjectEntries(index, "headers", nextRows);
-                                      }}
-                                      placeholder="Authorization"
-                                    />
-                                  </label>
-                                  <label className="form-control">
-                                    <span className="label-text">Header value</span>
-                                    <input
-                                      className="input input-bordered"
-                                      value={row.value}
-                                      onChange={(e) => {
-                                        nextRows[rowIndex] = { ...row, value: e.target.value };
-                                        writeObjectEntries(index, "headers", nextRows);
-                                      }}
-                                      placeholder="Bearer {{vars.token}}"
-                                    />
-                                  </label>
-                                  <button
-                                    type="button"
-                                    className="btn btn-ghost btn-sm text-error self-end"
-                                    onClick={() => writeObjectEntries(index, "headers", headerRows.filter((_, idx) => idx !== rowIndex))}
-                                  >
-                                    Remove
-                                  </button>
+                                <div key={`sync-header-${rowIndex}`} className={builderRowCardClass}>
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="text-xs font-medium uppercase tracking-wide opacity-60">Header {rowIndex + 1}</div>
+                                    <button
+                                      type="button"
+                                      className="btn btn-ghost btn-xs text-error"
+                                      onClick={() => writeObjectEntries(index, "headers", headerRows.filter((_, idx) => idx !== rowIndex))}
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                  <div className={standardGridClass}>
+                                    <label className="form-control">
+                                      <span className="label-text">Header name</span>
+                                      <input
+                                        className="input input-bordered"
+                                        value={row.fieldId}
+                                        onChange={(e) => {
+                                          nextRows[rowIndex] = { ...row, fieldId: e.target.value };
+                                          writeObjectEntries(index, "headers", nextRows);
+                                        }}
+                                        placeholder="Authorization"
+                                      />
+                                    </label>
+                                    <label className="form-control">
+                                      <span className="label-text">Header value</span>
+                                      <input
+                                        className="input input-bordered"
+                                        list="automation-ref-values"
+                                        value={row.value}
+                                        onChange={(e) => {
+                                          nextRows[rowIndex] = { ...row, value: e.target.value };
+                                          writeObjectEntries(index, "headers", nextRows);
+                                        }}
+                                        placeholder="Bearer {{vars.token}}"
+                                      />
+                                    </label>
+                                  </div>
                                 </div>
                               );
                             })}
                           </div>
                         )}
                       </div>
-                      <div className="rounded-box border border-base-300 bg-base-100/70 p-3 space-y-3">
+                      <div className={builderSectionCardClass}>
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <div className="font-medium text-sm">Query parameters</div>
@@ -3054,7 +3325,7 @@ export default function AutomationEditorPage({ user }) {
                           </div>
                           <button
                             type="button"
-                            className="btn btn-xs btn-ghost"
+                            className={builderAddButtonClass}
                             onClick={() => writeObjectEntries(index, "query", [...queryRows, { fieldId: "", value: "" }])}
                           >
                             Add parameter
@@ -3067,38 +3338,44 @@ export default function AutomationEditorPage({ user }) {
                             {queryRows.map((row, rowIndex) => {
                               const nextRows = queryRows.slice();
                               return (
-                                <div key={`sync-query-${rowIndex}`} className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                                  <label className="form-control">
-                                    <span className="label-text">Parameter name</span>
-                                    <input
-                                      className="input input-bordered"
-                                      value={row.fieldId}
-                                      onChange={(e) => {
-                                        nextRows[rowIndex] = { ...row, fieldId: e.target.value };
-                                        writeObjectEntries(index, "query", nextRows);
-                                      }}
-                                      placeholder="updated_since"
-                                    />
-                                  </label>
-                                  <label className="form-control">
-                                    <span className="label-text">Parameter value</span>
-                                    <input
-                                      className="input input-bordered"
-                                      value={row.value}
-                                      onChange={(e) => {
-                                        nextRows[rowIndex] = { ...row, value: e.target.value };
-                                        writeObjectEntries(index, "query", nextRows);
-                                      }}
-                                      placeholder="{{trigger.timestamp}}"
-                                    />
-                                  </label>
-                                  <button
-                                    type="button"
-                                    className="btn btn-ghost btn-sm text-error self-end"
-                                    onClick={() => writeObjectEntries(index, "query", queryRows.filter((_, idx) => idx !== rowIndex))}
-                                  >
-                                    Remove
-                                  </button>
+                                <div key={`sync-query-${rowIndex}`} className={builderRowCardClass}>
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="text-xs font-medium uppercase tracking-wide opacity-60">Parameter {rowIndex + 1}</div>
+                                    <button
+                                      type="button"
+                                      className="btn btn-ghost btn-xs text-error"
+                                      onClick={() => writeObjectEntries(index, "query", queryRows.filter((_, idx) => idx !== rowIndex))}
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                  <div className={standardGridClass}>
+                                    <label className="form-control">
+                                      <span className="label-text">Parameter name</span>
+                                      <input
+                                        className="input input-bordered"
+                                        value={row.fieldId}
+                                        onChange={(e) => {
+                                          nextRows[rowIndex] = { ...row, fieldId: e.target.value };
+                                          writeObjectEntries(index, "query", nextRows);
+                                        }}
+                                        placeholder="updated_since"
+                                      />
+                                    </label>
+                                    <label className="form-control">
+                                      <span className="label-text">Parameter value</span>
+                                      <input
+                                        className="input input-bordered"
+                                        list="automation-ref-values"
+                                        value={row.value}
+                                        onChange={(e) => {
+                                          nextRows[rowIndex] = { ...row, value: e.target.value };
+                                          writeObjectEntries(index, "query", nextRows);
+                                        }}
+                                        placeholder="{{trigger.timestamp}}"
+                                      />
+                                    </label>
+                                  </div>
                                 </div>
                               );
                             })}
@@ -3109,7 +3386,10 @@ export default function AutomationEditorPage({ user }) {
                         <span className="label-text">Headers JSON</span>
                         <CodeTextarea
                           value={typeof step.inputs?.headers === "string" ? step.inputs.headers : JSON.stringify(step.inputs?.headers || {}, null, 2)}
-                          onChange={(e) => updateStepInput(index, "headers", e.target.value)}
+                          onChange={(e) => {
+                            clearEditorDraftRows(index, "headers");
+                            updateStepInput(index, "headers", e.target.value);
+                          }}
                           minHeight="120px"
                         />
                       </label>
@@ -3117,12 +3397,14 @@ export default function AutomationEditorPage({ user }) {
                         <span className="label-text">Query JSON</span>
                         <CodeTextarea
                           value={typeof step.inputs?.query === "string" ? step.inputs.query : JSON.stringify(step.inputs?.query || {}, null, 2)}
-                          onChange={(e) => updateStepInput(index, "query", e.target.value)}
+                          onChange={(e) => {
+                            clearEditorDraftRows(index, "query");
+                            updateStepInput(index, "query", e.target.value);
+                          }}
                           minHeight="120px"
                         />
                       </label>
-                    </div>
-                  </details>
+                  </div>
                 </div>
               </div>
             );
@@ -3130,32 +3412,36 @@ export default function AutomationEditorPage({ user }) {
         )}
 
         {isActionLike && step.action_id && !step.action_id.startsWith("system.") && (
-          <div className={standardGridClass}>
-            <label className="form-control">
-              <span className="label-text">Entity</span>
-              <select
-                className="select select-bordered"
-                value={step.inputs?.entity_id || ""}
-                onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
-              >
-                <option value="">Use trigger entity</option>
-                {entityOptions.map((ent) => (
-                  <option key={ent.id} value={ent.id}>
-                    {ent.label || ent.id}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="form-control">
-              <span className="label-text">Record</span>
-              <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} />
-              <span className="label label-text-alt opacity-50">Paste record ID or use trigger.</span>
-            </label>
-            <label className="form-control md:col-span-2">
-              <span className="label-text">Selected records (comma)</span>
-              <input className="input input-bordered" value={(step.inputs?.selected_ids || []).join(", ")} onChange={(e) => updateStepInput(index, "selected_ids", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
-              <span className="label label-text-alt opacity-50">Comma-separated record IDs.</span>
-            </label>
+          <div className={sectionCardClass}>
+            <div className="font-medium text-sm">Action target</div>
+            <div className="text-xs opacity-60 mt-1">Choose which record or records this module action should run against.</div>
+            <div className={`mt-3 ${standardGridClass}`}>
+              <label className="form-control">
+                <span className="label-text">Entity</span>
+                <select
+                  className="select select-bordered"
+                  value={step.inputs?.entity_id || ""}
+                  onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
+                >
+                  <option value="">Use trigger entity</option>
+                  {entityOptions.map((ent) => (
+                    <option key={ent.id} value={ent.id}>
+                      {ent.label || ent.id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="form-control">
+                <span className="label-text">Record</span>
+                <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} />
+                <span className="label-text-alt mt-1 block opacity-50">Paste record ID or use trigger.</span>
+              </label>
+              <label className="form-control md:col-span-2">
+                <span className="label-text">Selected records (comma)</span>
+                <input className="input input-bordered" value={(step.inputs?.selected_ids || []).join(", ")} onChange={(e) => updateStepInput(index, "selected_ids", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
+                <span className="label-text-alt mt-1 block opacity-50">Comma-separated record IDs.</span>
+              </label>
+            </div>
           </div>
         )}
 
@@ -3165,23 +3451,29 @@ export default function AutomationEditorPage({ user }) {
             const selectedEntity = selectedEntityId ? entityById.get(selectedEntityId) : null;
             const selectedEntityFields = Array.isArray(selectedEntity?.fields) ? selectedEntity.fields : [];
             const fieldDatalistId = `automation-step-fields-${normalizedPath.join("-") || "root"}-create`;
-            const rows = objectEntriesForEditor(step.inputs?.values);
+            const rows = readEditorDraftRows(index, "values", objectEntriesForEditor(step.inputs?.values));
             return (
-              <div className={standardGridClass}>
-                <label className="form-control">
-                  <span className="label-text">Entity</span>
-                  <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
-                    <option value="">Select entity…</option>
-                    {entityOptions.map((ent) => (
-                      <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="form-control">
-                  <span className="label-text">Store output as</span>
-                  <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="new_record" />
-                </label>
-                <div className="md:col-span-2 rounded-box border border-base-300 bg-base-100/70 p-3 space-y-3">
+              <div className="space-y-4">
+                <div className={sectionCardClass}>
+                  <div className="font-medium text-sm">Record setup</div>
+                  <div className="text-xs opacity-60 mt-1">Choose which entity to create and where to store the result for later steps.</div>
+                  <div className={`${standardGridClass} mt-3`}>
+                    <label className="form-control">
+                      <span className="label-text">Entity</span>
+                      <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                        <option value="">Select entity…</option>
+                        {entityOptions.map((ent) => (
+                          <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Store output as</span>
+                      <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="new_record" />
+                    </label>
+                  </div>
+                </div>
+                <div className={builderSectionCardClass}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="font-medium text-sm">Field values</div>
@@ -3189,7 +3481,7 @@ export default function AutomationEditorPage({ user }) {
                     </div>
                     <button
                       type="button"
-                      className="btn btn-xs btn-ghost"
+                      className={builderAddButtonClass}
                       onClick={() => writeObjectEntries(index, "values", [...rows, { fieldId: "", value: "" }])}
                     >
                       Add field
@@ -3203,44 +3495,49 @@ export default function AutomationEditorPage({ user }) {
                         const nextRows = rows.slice();
                         const fieldDef = findEntityField(selectedEntityFields, row.fieldId);
                         return (
-                          <div key={`create-value-${rowIndex}`} className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                            <label className="form-control">
-                              <span className="label-text">Field</span>
-                              <input
-                                className="input input-bordered"
-                                list={fieldDatalistId}
-                                value={row.fieldId}
-                                onChange={(e) => {
-                                  nextRows[rowIndex] = { ...row, fieldId: e.target.value };
-                                  writeObjectEntries(index, "values", nextRows);
-                                }}
-                                placeholder="field_id"
-                              />
-                            </label>
-                            <label className="form-control">
-                              <span className="label-text">Value</span>
-                              {renderTypedValueEditor({
-                                fieldDef,
-                                value: row.value,
-                                onChange: (nextValue) => {
-                                  nextRows[rowIndex] = { ...row, value: nextValue };
-                                  writeObjectEntries(index, "values", nextRows);
-                                },
-                                placeholder: "{{trigger.record_id}}",
-                              })}
-                              <span className="label label-text-alt opacity-50">
-                                {fieldDef
-                                  ? `Field type: ${fieldDef.type || "string"}`
-                                  : "Pick a field first to get a type-aware value input."}
-                              </span>
-                            </label>
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm text-error self-end"
-                              onClick={() => writeObjectEntries(index, "values", rows.filter((_, idx) => idx !== rowIndex))}
-                            >
-                              Remove
-                            </button>
+                          <div key={`create-value-${rowIndex}`} className={builderRowCardClass}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-xs font-medium uppercase tracking-wide opacity-60">Field {rowIndex + 1}</div>
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-xs text-error"
+                                onClick={() => writeObjectEntries(index, "values", rows.filter((_, idx) => idx !== rowIndex))}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                            <div className={standardGridClass}>
+                              <label className="form-control">
+                                <span className="label-text">Field</span>
+                                <input
+                                  className="input input-bordered"
+                                  list={fieldDatalistId}
+                                  value={row.fieldId}
+                                  onChange={(e) => {
+                                    nextRows[rowIndex] = { ...row, fieldId: e.target.value };
+                                    writeObjectEntries(index, "values", nextRows);
+                                  }}
+                                  placeholder="field_id"
+                                />
+                              </label>
+                              <label className="form-control">
+                                <span className="label-text">Value</span>
+                                {renderTypedValueEditor({
+                                  fieldDef,
+                                  value: row.value,
+                                  onChange: (nextValue) => {
+                                    nextRows[rowIndex] = { ...row, value: nextValue };
+                                    writeObjectEntries(index, "values", nextRows);
+                                  },
+                                  placeholder: "{{trigger.record_id}}",
+                                })}
+                                <span className="label label-text-alt opacity-50">
+                                  {fieldDef
+                                    ? `Field type: ${fieldDef.type || "string"}`
+                                    : "Pick a field first to get a type-aware value input."}
+                                </span>
+                              </label>
+                            </div>
                           </div>
                         );
                       })}
@@ -3253,27 +3550,24 @@ export default function AutomationEditorPage({ user }) {
                       </option>
                     ))}
                   </datalist>
-                  <details className="group rounded-box border border-base-300 bg-base-100">
-                    <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
-                      <div>
-                        <div className="font-medium text-sm">Advanced values JSON</div>
-                        <div className="text-xs opacity-60">Use this only if you need nested objects or a shape that is easier to paste as raw JSON.</div>
-                      </div>
-                      <span className="text-xs opacity-60 group-open:hidden">Show</span>
-                      <span className="text-xs opacity-60 hidden group-open:inline">Hide</span>
-                    </summary>
-                    <div className="px-4 pb-4">
+                  <div className={detailCardClass}>
+                    <div className="font-medium text-sm">Raw values JSON</div>
+                    <div className="text-xs opacity-60 mt-1">Use this only if you need nested objects or a shape that is easier to paste as raw JSON.</div>
+                    <div className="mt-3">
                       <label className="form-control">
                         <span className="label-text">Values JSON</span>
                         <CodeTextarea
                           value={stringifyJsonObjectInput(step.inputs?.values)}
-                          onChange={(e) => updateStepInput(index, "values", e.target.value)}
+                          onChange={(e) => {
+                            clearEditorDraftRows(index, "values");
+                            updateStepInput(index, "values", e.target.value);
+                          }}
                           minHeight="180px"
                           placeholder={`{\n  "field_id": "value",\n  "other_field": "{{trigger.record_id}}"\n}`}
                         />
                       </label>
                     </div>
-                  </details>
+                  </div>
                 </div>
               </div>
             );
@@ -3286,27 +3580,33 @@ export default function AutomationEditorPage({ user }) {
             const selectedEntity = selectedEntityId ? entityById.get(selectedEntityId) : null;
             const selectedEntityFields = Array.isArray(selectedEntity?.fields) ? selectedEntity.fields : [];
             const fieldDatalistId = `automation-step-fields-${normalizedPath.join("-") || "root"}-update`;
-            const rows = objectEntriesForEditor(step.inputs?.patch);
+            const rows = readEditorDraftRows(index, "patch", objectEntriesForEditor(step.inputs?.patch));
             return (
-              <div className={standardGridClass}>
-                <label className="form-control">
-                  <span className="label-text">Entity</span>
-                  <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
-                    <option value="">Use trigger entity</option>
-                    {entityOptions.map((ent) => (
-                      <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="form-control">
-                  <span className="label-text">Record</span>
-                  <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} placeholder="{{trigger.record_id}}" />
-                </label>
-                <label className="form-control">
-                  <span className="label-text">Store output as</span>
-                  <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="updated_record" />
-                </label>
-                <div className="md:col-span-2 rounded-box border border-base-300 bg-base-100/70 p-3 space-y-3">
+              <div className="space-y-4">
+                <div className={sectionCardClass}>
+                  <div className="font-medium text-sm">Record target</div>
+                  <div className="text-xs opacity-60 mt-1">Choose the entity and record to update, and optionally store the returned record.</div>
+                  <div className={`${standardGridClass} mt-3`}>
+                    <label className="form-control">
+                      <span className="label-text">Entity</span>
+                      <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                        <option value="">Use trigger entity</option>
+                        {entityOptions.map((ent) => (
+                          <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Record</span>
+                      <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} placeholder="{{trigger.record_id}}" />
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Store output as</span>
+                      <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="updated_record" />
+                    </label>
+                  </div>
+                </div>
+                <div className={builderSectionCardClass}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="font-medium text-sm">Field changes</div>
@@ -3314,7 +3614,7 @@ export default function AutomationEditorPage({ user }) {
                     </div>
                     <button
                       type="button"
-                      className="btn btn-xs btn-ghost"
+                      className={builderAddButtonClass}
                       onClick={() => writeObjectEntries(index, "patch", [...rows, { fieldId: "", value: "" }])}
                     >
                       Add change
@@ -3328,44 +3628,49 @@ export default function AutomationEditorPage({ user }) {
                         const nextRows = rows.slice();
                         const fieldDef = findEntityField(selectedEntityFields, row.fieldId);
                         return (
-                          <div key={`update-patch-${rowIndex}`} className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                            <label className="form-control">
-                              <span className="label-text">Field</span>
-                              <input
-                                className="input input-bordered"
-                                list={fieldDatalistId}
-                                value={row.fieldId}
-                                onChange={(e) => {
-                                  nextRows[rowIndex] = { ...row, fieldId: e.target.value };
-                                  writeObjectEntries(index, "patch", nextRows);
-                                }}
-                                placeholder="field_id"
-                              />
-                            </label>
-                            <label className="form-control">
-                              <span className="label-text">New value</span>
-                              {renderTypedValueEditor({
-                                fieldDef,
-                                value: row.value,
-                                onChange: (nextValue) => {
-                                  nextRows[rowIndex] = { ...row, value: nextValue };
-                                  writeObjectEntries(index, "patch", nextRows);
-                                },
-                                placeholder: "{{trigger.record_id}}",
-                              })}
-                              <span className="label label-text-alt opacity-50">
-                                {fieldDef
-                                  ? `Field type: ${fieldDef.type || "string"}`
-                                  : "Pick a field first to get a type-aware value input."}
-                              </span>
-                            </label>
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm text-error self-end"
-                              onClick={() => writeObjectEntries(index, "patch", rows.filter((_, idx) => idx !== rowIndex))}
-                            >
-                              Remove
-                            </button>
+                          <div key={`update-patch-${rowIndex}`} className={builderRowCardClass}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-xs font-medium uppercase tracking-wide opacity-60">Change {rowIndex + 1}</div>
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-xs text-error"
+                                onClick={() => writeObjectEntries(index, "patch", rows.filter((_, idx) => idx !== rowIndex))}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                            <div className={standardGridClass}>
+                              <label className="form-control">
+                                <span className="label-text">Field</span>
+                                <input
+                                  className="input input-bordered"
+                                  list={fieldDatalistId}
+                                  value={row.fieldId}
+                                  onChange={(e) => {
+                                    nextRows[rowIndex] = { ...row, fieldId: e.target.value };
+                                    writeObjectEntries(index, "patch", nextRows);
+                                  }}
+                                  placeholder="field_id"
+                                />
+                              </label>
+                              <label className="form-control">
+                                <span className="label-text">New value</span>
+                                {renderTypedValueEditor({
+                                  fieldDef,
+                                  value: row.value,
+                                  onChange: (nextValue) => {
+                                    nextRows[rowIndex] = { ...row, value: nextValue };
+                                    writeObjectEntries(index, "patch", nextRows);
+                                  },
+                                  placeholder: "{{trigger.record_id}}",
+                                })}
+                                <span className="label label-text-alt opacity-50">
+                                  {fieldDef
+                                    ? `Field type: ${fieldDef.type || "string"}`
+                                    : "Pick a field first to get a type-aware value input."}
+                                </span>
+                              </label>
+                            </div>
                           </div>
                         );
                       })}
@@ -3378,27 +3683,24 @@ export default function AutomationEditorPage({ user }) {
                       </option>
                     ))}
                   </datalist>
-                  <details className="group rounded-box border border-base-300 bg-base-100">
-                    <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
-                      <div>
-                        <div className="font-medium text-sm">Advanced patch JSON</div>
-                        <div className="text-xs opacity-60">Use this only if you need nested objects or want to paste a prepared patch object.</div>
-                      </div>
-                      <span className="text-xs opacity-60 group-open:hidden">Show</span>
-                      <span className="text-xs opacity-60 hidden group-open:inline">Hide</span>
-                    </summary>
-                    <div className="px-4 pb-4">
+                  <div className={detailCardClass}>
+                    <div className="font-medium text-sm">Raw patch JSON</div>
+                    <div className="text-xs opacity-60 mt-1">Use this only if you need nested objects or want to paste a prepared patch object.</div>
+                    <div className="mt-3">
                       <label className="form-control">
                         <span className="label-text">Patch JSON</span>
                         <CodeTextarea
                           value={stringifyJsonObjectInput(step.inputs?.patch)}
-                          onChange={(e) => updateStepInput(index, "patch", e.target.value)}
+                          onChange={(e) => {
+                            clearEditorDraftRows(index, "patch");
+                            updateStepInput(index, "patch", e.target.value);
+                          }}
                           minHeight="180px"
                           placeholder={`{\n  "status": "approved"\n}`}
                         />
                       </label>
                     </div>
-                  </details>
+                  </div>
                 </div>
               </div>
             );
@@ -3411,33 +3713,39 @@ export default function AutomationEditorPage({ user }) {
             const selectedEntity = selectedEntityId ? entityById.get(selectedEntityId) : null;
             const selectedEntityFields = Array.isArray(selectedEntity?.fields) ? selectedEntity.fields : [];
             const fieldDatalistId = `automation-step-fields-${normalizedPath.join("-") || "root"}-query`;
-            const filterRows = parseFilterRows(step.inputs?.filter_expr);
+            const filterRows = readEditorDraftRows(index, "filter_expr", parseFilterRows(step.inputs?.filter_expr));
             return (
-              <div className={standardGridClass}>
-                <label className="form-control">
-                  <span className="label-text">Entity</span>
-                  <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
-                    <option value="">Use trigger entity</option>
-                    {entityOptions.map((ent) => (
-                      <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="form-control">
-                  <span className="label-text">Search text</span>
-                  <input className="input input-bordered" value={step.inputs?.q || ""} onChange={(e) => updateStepInput(index, "q", e.target.value)} />
-                  <span className="label label-text-alt opacity-50">Optional text search. Leave blank if you only want to use filter rules.</span>
-                </label>
-                <label className="form-control">
-                  <span className="label-text">Limit</span>
-                  <input className="input input-bordered" type="number" min={1} max={200} value={step.inputs?.limit || 25} onChange={(e) => updateStepInput(index, "limit", Number(e.target.value || 25))} />
-                  <span className="label label-text-alt opacity-50">Only the first matching records are returned to later steps.</span>
-                </label>
-                <label className="form-control">
-                  <span className="label-text">Store output as</span>
-                  <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="query_results" />
-                </label>
-                <div className="md:col-span-2 rounded-box border border-base-300 bg-base-100/70 p-3 space-y-3">
+              <div className="space-y-4">
+                <div className={sectionCardClass}>
+                  <div className="font-medium text-sm">Query setup</div>
+                  <div className="text-xs opacity-60 mt-1">Choose the entity, optional search text, and how many records should be returned.</div>
+                  <div className={`${standardGridClass} mt-3`}>
+                    <label className="form-control">
+                      <span className="label-text">Entity</span>
+                      <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                        <option value="">Use trigger entity</option>
+                        {entityOptions.map((ent) => (
+                          <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Search text</span>
+                      <input className="input input-bordered" value={step.inputs?.q || ""} onChange={(e) => updateStepInput(index, "q", e.target.value)} />
+                      <span className="label-text-alt mt-1 block opacity-50">Optional text search. Leave blank if you only want to use filter rules.</span>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Limit</span>
+                      <input className="input input-bordered" type="number" min={1} max={200} value={step.inputs?.limit || 25} onChange={(e) => updateStepInput(index, "limit", Number(e.target.value || 25))} />
+                      <span className="label-text-alt mt-1 block opacity-50">Only the first matching records are returned to later steps.</span>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Store output as</span>
+                      <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="query_results" />
+                    </label>
+                  </div>
+                </div>
+                <div className={builderSectionCardClass}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="font-medium text-sm">Quick filters</div>
@@ -3445,8 +3753,8 @@ export default function AutomationEditorPage({ user }) {
                     </div>
                     <button
                       type="button"
-                      className="btn btn-xs btn-ghost"
-                      onClick={() => updateStepInput(index, "filter_expr", buildFilterExprFromRows([...filterRows, { path: "", op: "eq", value: "" }]))}
+                      className={builderAddButtonClass}
+                      onClick={() => writeFilterRows(index, "filter_expr", [...filterRows, { path: "", op: "eq", value: "" }])}
                     >
                       Add rule
                     </button>
@@ -3459,71 +3767,76 @@ export default function AutomationEditorPage({ user }) {
                         const nextRows = filterRows.slice();
                         const fieldDef = findEntityField(selectedEntityFields, row.path);
                         return (
-                          <div key={`query-filter-${rowIndex}`} className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_180px_minmax(0,1fr)_auto]">
-                            <label className="form-control">
-                              <span className="label-text">Field path</span>
-                              <input
-                                className="input input-bordered"
-                                list={fieldDatalistId}
-                                value={row.path}
-                                onChange={(e) => {
-                                  nextRows[rowIndex] = { ...row, path: e.target.value };
-                                  updateStepInput(index, "filter_expr", buildFilterExprFromRows(nextRows));
-                                }}
-                                placeholder="record.status"
-                              />
-                            </label>
-                            <label className="form-control">
-                              <span className="label-text">Operator</span>
-                              <select
-                                className="select select-bordered"
-                                value={row.op || "eq"}
-                                onChange={(e) => {
-                                  nextRows[rowIndex] = { ...row, op: e.target.value };
-                                  updateStepInput(index, "filter_expr", buildFilterExprFromRows(nextRows));
-                                }}
+                          <div key={`query-filter-${rowIndex}`} className={builderRowCardClass}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-xs font-medium uppercase tracking-wide opacity-60">Rule {rowIndex + 1}</div>
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-xs text-error"
+                                onClick={() => writeFilterRows(index, "filter_expr", filterRows.filter((_, idx) => idx !== rowIndex))}
                               >
-                                <option value="eq">equals</option>
-                                <option value="neq">not equals</option>
-                                <option value="gt">greater than</option>
-                                <option value="gte">greater or equal</option>
-                                <option value="lt">less than</option>
-                                <option value="lte">less or equal</option>
-                                <option value="contains">contains</option>
-                                <option value="in">in list</option>
-                                <option value="not_in">not in list</option>
-                                <option value="exists">exists</option>
-                                <option value="not_exists">not exists</option>
-                              </select>
-                            </label>
-                            <label className="form-control">
-                              <span className="label-text">Value</span>
-                              {row.op === "exists" || row.op === "not_exists" ? (
-                                <input className="input input-bordered" disabled value="No value needed" />
-                              ) : (
-                                renderTypedValueEditor({
-                                  fieldDef,
-                                  value: row.value,
-                                  onChange: (nextValue) => {
-                                    nextRows[rowIndex] = { ...row, value: nextValue };
-                                    updateStepInput(index, "filter_expr", buildFilterExprFromRows(nextRows));
-                                  },
-                                  placeholder: row.op === "in" || row.op === "not_in" ? "open, pending" : "open",
-                                })
-                              )}
-                              <span className="label label-text-alt opacity-50">
-                                {fieldDef
-                                  ? `Field type: ${fieldDef.type || "string"}`
-                                  : "Use record.field_name format to get a type-aware value input."}
-                              </span>
-                            </label>
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm text-error self-end"
-                              onClick={() => updateStepInput(index, "filter_expr", buildFilterExprFromRows(filterRows.filter((_, idx) => idx !== rowIndex)))}
-                            >
-                              Remove
-                            </button>
+                                Remove
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_180px_minmax(0,1fr)]">
+                              <label className="form-control">
+                                <span className="label-text">Field path</span>
+                                <input
+                                  className="input input-bordered"
+                                  list={fieldDatalistId}
+                                  value={row.path}
+                                  onChange={(e) => {
+                                    nextRows[rowIndex] = { ...row, path: e.target.value };
+                                    writeFilterRows(index, "filter_expr", nextRows);
+                                  }}
+                                  placeholder="record.status"
+                                />
+                              </label>
+                              <label className="form-control">
+                                <span className="label-text">Operator</span>
+                                <select
+                                  className="select select-bordered"
+                                  value={row.op || "eq"}
+                                  onChange={(e) => {
+                                    nextRows[rowIndex] = { ...row, op: e.target.value };
+                                    writeFilterRows(index, "filter_expr", nextRows);
+                                  }}
+                                >
+                                  <option value="eq">equals</option>
+                                  <option value="neq">not equals</option>
+                                  <option value="gt">greater than</option>
+                                  <option value="gte">greater or equal</option>
+                                  <option value="lt">less than</option>
+                                  <option value="lte">less or equal</option>
+                                  <option value="contains">contains</option>
+                                  <option value="in">in list</option>
+                                  <option value="not_in">not in list</option>
+                                  <option value="exists">exists</option>
+                                  <option value="not_exists">not exists</option>
+                                </select>
+                              </label>
+                              <label className="form-control">
+                                <span className="label-text">Value</span>
+                                {row.op === "exists" || row.op === "not_exists" ? (
+                                  <input className="input input-bordered" disabled value="No value needed" />
+                                ) : (
+                                  renderTypedValueEditor({
+                                    fieldDef,
+                                    value: row.value,
+                                    onChange: (nextValue) => {
+                                      nextRows[rowIndex] = { ...row, value: nextValue };
+                                      writeFilterRows(index, "filter_expr", nextRows);
+                                    },
+                                    placeholder: row.op === "in" || row.op === "not_in" ? "open, pending" : "open",
+                                  })
+                                )}
+                                <span className="label label-text-alt opacity-50">
+                                  {fieldDef
+                                    ? `Field type: ${fieldDef.type || "string"}`
+                                    : "Use record.field_name format to get a type-aware value input."}
+                                </span>
+                              </label>
+                            </div>
                           </div>
                         );
                       })}
@@ -3542,16 +3855,10 @@ export default function AutomationEditorPage({ user }) {
                       );
                     })}
                   </datalist>
-                  <details className="group rounded-box border border-base-300 bg-base-100">
-                    <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
-                      <div>
-                        <div className="font-medium text-sm">Advanced query options</div>
-                        <div className="text-xs opacity-60">Use this for search field limits or a more complex filter expression than the quick rules above can represent.</div>
-                      </div>
-                      <span className="text-xs opacity-60 group-open:hidden">Show</span>
-                      <span className="text-xs opacity-60 hidden group-open:inline">Hide</span>
-                    </summary>
-                    <div className={`${standardGridClass} px-4 pb-4`}>
+                  <div className={sectionCardClass}>
+                    <div className="font-medium text-sm">Search and raw filter options</div>
+                    <div className="text-xs opacity-60 mt-1">Use this for search field limits or a more complex filter expression than the quick rules above can represent.</div>
+                    <div className={`${standardGridClass} mt-3`}>
                       <label className="form-control">
                         <span className="label-text">Search fields</span>
                         <input className="input input-bordered" value={step.inputs?.search_fields || ""} onChange={(e) => updateStepInput(index, "search_fields", e.target.value)} placeholder="field.one, field.two" />
@@ -3562,13 +3869,16 @@ export default function AutomationEditorPage({ user }) {
                         <span className="label-text">Filter condition JSON</span>
                         <CodeTextarea
                           value={typeof step.inputs?.filter_expr === "string" ? step.inputs.filter_expr : JSON.stringify(step.inputs?.filter_expr || {}, null, 2)}
-                          onChange={(e) => updateStepInput(index, "filter_expr", e.target.value)}
+                          onChange={(e) => {
+                            clearEditorDraftRows(index, "filter_expr");
+                            updateStepInput(index, "filter_expr", e.target.value);
+                          }}
                           minHeight="140px"
                           placeholder={`{\n  "op": "eq",\n  "left": { "var": "record.status" },\n  "right": { "literal": "open" }\n}`}
                         />
                       </label>
                     </div>
-                  </details>
+                  </div>
                 </div>
               </div>
             );
@@ -3576,41 +3886,48 @@ export default function AutomationEditorPage({ user }) {
         )}
 
         {isActionLike && step.action_id === "system.add_chatter" && (
-            <div className={standardGridClass}>
-            <label className="form-control">
-              <span className="label-text">Entity</span>
-              <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
-                <option value="">Use trigger entity</option>
-                {entityOptions.map((ent) => (
-                  <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
-                ))}
-              </select>
-            </label>
-            <label className="form-control">
-              <span className="label-text">Record</span>
-              <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} placeholder="{{trigger.record_id}}" />
-            </label>
-            <label className="form-control">
-              <span className="label-text">Entry type</span>
-              <select className="select select-bordered" value={step.inputs?.entry_type || "note"} onChange={(e) => updateStepInput(index, "entry_type", e.target.value)}>
-                <option value="note">Note</option>
-                <option value="comment">Comment</option>
-                <option value="system">System</option>
-              </select>
-            </label>
-            <label className="form-control">
-              <span className="label-text">Store output as</span>
-              <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="activity_note" />
-            </label>
-            <label className="form-control md:col-span-2">
-              <span className="label-text">Body</span>
-              <CodeTextarea value={step.inputs?.body || ""} onChange={(e) => updateStepInput(index, "body", e.target.value)} minHeight="140px" />
-            </label>
+          <div className={sectionCardClass}>
+            <div className="font-medium text-sm">Entry setup</div>
+            <div className="text-xs opacity-60 mt-1">Choose the record, entry type, and message that should be added as chatter.</div>
+            <div className={`mt-3 ${standardGridClass}`}>
+              <label className="form-control">
+                <span className="label-text">Entity</span>
+                <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                  <option value="">Use trigger entity</option>
+                  {entityOptions.map((ent) => (
+                    <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="form-control">
+                <span className="label-text">Record</span>
+                <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} placeholder="{{trigger.record_id}}" />
+              </label>
+              <label className="form-control">
+                <span className="label-text">Entry type</span>
+                <select className="select select-bordered" value={step.inputs?.entry_type || "note"} onChange={(e) => updateStepInput(index, "entry_type", e.target.value)}>
+                  <option value="note">Note</option>
+                  <option value="comment">Comment</option>
+                  <option value="system">System</option>
+                </select>
+              </label>
+              <label className="form-control">
+                <span className="label-text">Store output as</span>
+                <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="activity_note" />
+              </label>
+              <label className="form-control md:col-span-2">
+                <span className="label-text">Body</span>
+                <CodeTextarea value={step.inputs?.body || ""} onChange={(e) => updateStepInput(index, "body", e.target.value)} minHeight="140px" />
+              </label>
+            </div>
           </div>
         )}
 
         {step.kind === "delay" && (
-          <div className={wideGridClass}>
+          <div className={sectionCardClass}>
+            <div className="font-medium text-sm">Delay settings</div>
+            <div className="text-xs opacity-60 mt-1">Choose whether the step should wait for a relative amount of time or until a specific datetime.</div>
+            <div className={`mt-3 ${wideGridClass}`}>
             <label className="form-control md:col-span-4">
               <span className="label-text">Delay mode</span>
               <select
@@ -3676,6 +3993,7 @@ export default function AutomationEditorPage({ user }) {
                 />
               </label>
             )}
+            </div>
           </div>
         )}
 
@@ -3738,7 +4056,10 @@ export default function AutomationEditorPage({ user }) {
           }
 
           return (
-            <div className={wideGridClass}>
+            <div className={sectionCardClass}>
+              <div className="font-medium text-sm">Condition rule</div>
+              <div className="text-xs opacity-60 mt-1">Choose the field to check, how to compare it, and what value should be matched.</div>
+              <div className={`mt-3 ${wideGridClass}`}>
               <label className="form-control md:col-span-4">
                 <span className="label-text">Entity context</span>
                 <select
@@ -3847,6 +4168,7 @@ export default function AutomationEditorPage({ user }) {
                   {isInListOp ? "Use comma-separated values." : "Condition runs against trigger data."}
                 </span>
               </label>
+              </div>
             </div>
           );
         })()}
@@ -3863,15 +4185,6 @@ export default function AutomationEditorPage({ user }) {
             <span className="label-text">Name</span>
             <input className="input input-bordered" value={name} onChange={(e) => setName(e.target.value)} />
           </label>
-
-          <div className="form-control">
-            <span className="label-text">Trigger type</span>
-            <select className="select select-bordered" value={triggerMode} onChange={(e) => setTriggerMode(e.target.value)}>
-              <option value="event">When an event happens</option>
-              <option value="webhook">When a webhook is received</option>
-              <option value="schedule">Run on a schedule</option>
-            </select>
-          </div>
 
           <label className="form-control md:col-span-2">
             <span className="label-text">Description</span>
@@ -4022,7 +4335,7 @@ export default function AutomationEditorPage({ user }) {
                       : "Most automations can leave this empty and run whenever the trigger happens."}
                   </div>
                 </div>
-                <button type="button" className="btn btn-sm" onClick={addTriggerFilter}>Add rule</button>
+                <button type="button" className={automationAddButtonClass} onClick={addTriggerFilter}>Add rule</button>
               </div>
               {((trigger?.filters || [])).length === 0 ? (
                 <div className="text-xs opacity-60">
@@ -4147,25 +4460,34 @@ export default function AutomationEditorPage({ user }) {
         <div className="border-b border-primary/15 bg-primary/5 px-4 py-4 md:px-5">
           <div className="text-[11px] uppercase tracking-[0.18em] text-primary/70">Automation Flow</div>
           <div className="mt-1 text-lg font-semibold">Build what happens after the trigger</div>
-          <div className="mt-1 text-xs opacity-70">Click a step to edit it in a focused modal. Add steps where they belong. `Then / Else` branches only appear on Condition steps.</div>
+          <div className="mt-1 text-xs opacity-70">Click the trigger or a step to edit it in a focused drawer. Add steps where they belong. `Then / Else` branches only appear on Condition steps.</div>
         </div>
         <div className="space-y-3 min-w-0 p-4 md:p-5">
-          <div className="rounded-box border border-base-300 bg-base-200/40 p-4">
-            <div className="text-xs uppercase tracking-wide opacity-60">Trigger</div>
-            <div className="font-medium">{triggerSummaryText}</div>
-            <div className="text-xs opacity-60 mt-1">
-              {trigger?.kind === "schedule"
-                ? "Runs on the shared scheduler"
-                : triggerMode === "webhook"
-                ? [
-                    webhookTriggerConnectionId ? "Connection selected" : "Any connection",
-                    webhookTriggerEventKey ? `Event key: ${webhookTriggerEventKey}` : "Any webhook event",
-                  ].join(" • ")
-                : (trigger?.filters || []).length > 0
-                ? `${trigger.filters.length} trigger rule${trigger.filters.length === 1 ? "" : "s"}`
-                : "Runs for every matching event"}
+          <button
+            type="button"
+            className="w-full rounded-box border border-base-300 bg-base-200/40 p-4 text-left transition hover:border-primary/40 hover:bg-base-200/60"
+            onClick={() => setTriggerDrawerOpen(true)}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-xs uppercase tracking-wide opacity-60">Trigger</div>
+                <div className="font-medium">{triggerSummaryText}</div>
+                <div className="text-xs opacity-60 mt-1">
+                  {trigger?.kind === "schedule"
+                    ? "Runs on the shared scheduler"
+                    : triggerMode === "webhook"
+                    ? [
+                        webhookTriggerConnectionId ? "Connection selected" : "Any connection",
+                        webhookTriggerEventKey ? `Event key: ${webhookTriggerEventKey}` : "Any webhook event",
+                      ].join(" • ")
+                    : (trigger?.filters || []).length > 0
+                    ? `${trigger.filters.length} trigger rule${trigger.filters.length === 1 ? "" : "s"}`
+                    : "Runs for every matching event"}
+                </div>
+              </div>
+              <span className="btn btn-sm btn-outline">Edit trigger</span>
             </div>
-          </div>
+          </button>
 
           {steps.length === 0 ? (
             <div className="rounded-box border border-dashed border-base-300 bg-base-100 p-6 text-sm opacity-60">
@@ -4177,24 +4499,20 @@ export default function AutomationEditorPage({ user }) {
         </div>
       </div>
 
-      {stepModalOpen && selectedStep && (
-        <div className="modal modal-open">
-          <div
-            className={`modal-box ${isMobile ? "w-full max-w-none h-dvh rounded-none" : "max-w-5xl"}`}
-            onFocusCapture={rememberFocusedField}
-          >
-            <div className="flex items-start justify-between gap-3 mb-4">
-              <div>
-                <h3 className="font-semibold text-lg">{stepSummaryText(selectedStep)}</h3>
-                <p className="text-sm opacity-70">{stepHelpText(selectedStep)}</p>
-              </div>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setStepModalOpen(false)}>Close</button>
-            </div>
+      <ResponsiveDrawer
+        open={Boolean(stepModalOpen && selectedStep)}
+        onClose={() => setStepModalOpen(false)}
+        title={selectedStep ? stepSummaryText(selectedStep) : "Step"}
+        description={selectedStep ? stepHelpText(selectedStep) : ""}
+        mobileHeightClass="max-h-[92vh]"
+        zIndexClass="z-[240]"
+      >
+        {selectedStep ? (
+          <div onFocusCapture={rememberFocusedField}>
             {renderStepEditor(selectedStep, selectedStepPath, { showHeader: false, linear: true })}
           </div>
-          <div className="modal-backdrop" onClick={() => setStepModalOpen(false)} />
-        </div>
-      )}
+        ) : null}
+      </ResponsiveDrawer>
 
       <div className="hidden">
         <div className="flex items-center justify-between">
@@ -4395,11 +4713,11 @@ export default function AutomationEditorPage({ user }) {
                               const member = memberById.get(userId);
                               const label = member?.name || member?.email || member?.user_email || "Unknown user";
                               return (
-                                <span key={userId} className="badge badge-outline gap-2 py-3">
+                                <span key={userId} className="badge badge-outline badge-dismissible">
                                   {label}
                                   <button
                                     type="button"
-                                    className="btn btn-ghost btn-xs"
+                                    className="badge-remove"
                                     onClick={() => {
                                       const current = Array.isArray(step.inputs?.recipient_user_ids)
                                         ? step.inputs.recipient_user_ids
@@ -4685,11 +5003,11 @@ export default function AutomationEditorPage({ user }) {
                               const match = memberOptions.find((m) => (m.email || m.user_email) === email);
                               const label = match?.name ? `${match.name} (${email})` : email;
                               return (
-                                <span key={`internal:${email}`} className="badge badge-outline gap-2 py-3">
+                                <span key={`internal:${email}`} className="badge badge-outline badge-dismissible">
                                   Internal: {label}
                                   <button
                                     type="button"
-                                    className="btn btn-ghost btn-xs"
+                                    className="badge-remove"
                                     onClick={() => updateStepInput(index, "to_internal_emails", selectedInternalEmails.filter((v) => v !== email))}
                                   >
                                     ×
@@ -4700,11 +5018,11 @@ export default function AutomationEditorPage({ user }) {
                             {selectedRecordEmailFieldIds.map((fieldId) => {
                               const field = emailFields.find((f) => f.id === fieldId);
                               return (
-                                <span key={`record:${fieldId}`} className="badge badge-outline gap-2 py-3">
+                                <span key={`record:${fieldId}`} className="badge badge-outline badge-dismissible">
                                   Record field: {field?.label || fieldId}
                                   <button
                                     type="button"
-                                    className="btn btn-ghost btn-xs"
+                                    className="badge-remove"
                                     onClick={() => {
                                       const next = selectedRecordEmailFieldIds.filter((v) => v !== fieldId);
                                       updateStepInput(index, "to_field_ids", next);
@@ -4719,11 +5037,11 @@ export default function AutomationEditorPage({ user }) {
                             {selectedLookupIds.map((fieldId) => {
                               const field = lookupFields.find((f) => f.id === fieldId);
                               return (
-                                <span key={`lookup:${fieldId}`} className="badge badge-outline gap-2 py-3">
+                                <span key={`lookup:${fieldId}`} className="badge badge-outline badge-dismissible">
                                   Lookup: {field?.label || fieldId}
                                   <button
                                     type="button"
-                                    className="btn btn-ghost btn-xs"
+                                    className="badge-remove"
                                     onClick={() => {
                                       const next = selectedLookupIds.filter((v) => v !== fieldId);
                                       updateStepInput(index, "to_lookup_field_ids", next);
@@ -5226,6 +5544,32 @@ export default function AutomationEditorPage({ user }) {
           </option>
         ))}
       </datalist>
+      <datalist id="automation-ref-values">
+        <option value="{{trigger.entity_id}}">Trigger entity ID</option>
+        <option value="{{trigger.record_id}}">Trigger record ID</option>
+        <option value="{{trigger.user_id}}">Trigger user ID</option>
+        <option value="{{trigger.timestamp}}">Trigger timestamp</option>
+        <option value="{{last.id}}">Last step ID</option>
+        <option value="{{last.records}}">Last step records</option>
+        <option value="{{vars.created_record.id}}">Created record ID</option>
+        <option value="{{vars.query_results.records}}">Stored query records</option>
+        <option value="{{item.id}}">Loop item ID</option>
+        <option value="{{item.record_id}}">Loop item record ID</option>
+        {triggerMode === "webhook" && (
+          <>
+            <option value="{{trigger.connection_id}}">Webhook connection ID</option>
+            <option value="{{trigger.event_key}}">Webhook event key</option>
+            <option value="{{trigger.provider_event_id}}">Webhook provider event ID</option>
+            <option value="{{trigger.payload.id}}">Webhook payload ID</option>
+            <option value="{{trigger.payload.record_id}}">Webhook payload record ID</option>
+          </>
+        )}
+        {triggerFieldOptions.map((field) => (
+          <option key={`ref:${field.value}`} value={`{{trigger.${field.value}}}`}>
+            {field.label}
+          </option>
+        ))}
+      </datalist>
       <datalist id="automation-connections">
         {connectionOptions.map((conn) => (
           <option key={conn.id} value={conn.id}>
@@ -5240,6 +5584,13 @@ export default function AutomationEditorPage({ user }) {
           </option>
         ))}
       </datalist>
+      <datalist id="automation-attachment-fields">
+        {attachmentFields.map((field) => (
+          <option key={field.id} value={field.id}>
+            {field.label || field.id}
+          </option>
+        ))}
+      </datalist>
       <datalist id="automation-doc-templates">
         {docTemplateOptions.map((tpl) => (
           <option key={tpl.id} value={tpl.id}>
@@ -5250,309 +5601,254 @@ export default function AutomationEditorPage({ user }) {
     </div>
   );
 
-  const setupTab = (
-    <div className="space-y-5">
-      {error && <div className="alert alert-error">{error}</div>}
-      <div className="rounded-2xl border border-base-300 bg-base-100 p-4 md:p-5 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <label className="form-control">
-            <span className="label-text">Name</span>
-            <input className="input input-bordered" value={name} onChange={(e) => setName(e.target.value)} />
-          </label>
+  const triggerSectionCardClass = "rounded-box border border-base-300 bg-base-200/40 p-4 space-y-3";
+  const triggerDetailCardClass = "rounded-box border border-base-300 bg-base-100 p-4 space-y-3";
 
-          <div className="form-control">
-            <span className="label-text">Trigger type</span>
-            <select className="select select-bordered" value={triggerMode} onChange={(e) => setTriggerMode(e.target.value)}>
-              <option value="event">When an event happens</option>
-              <option value="webhook">When a webhook is received</option>
-              <option value="schedule">Run on a schedule</option>
-            </select>
-          </div>
-
-          <label className="form-control md:col-span-2">
-            <span className="label-text">Description</span>
-            <textarea className="textarea textarea-bordered" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
-          </label>
+  const triggerEditorContent = (
+    <div className="automation-drawer-linear space-y-4">
+      <div className={triggerSectionCardClass}>
+        <div>
+          <div className="font-medium text-sm">Trigger setup</div>
+          <div className="text-xs opacity-60 mt-1">Choose what starts this automation and fill in the matching trigger details.</div>
         </div>
+        <label className="form-control">
+          <span className="label-text">Trigger type</span>
+          <select className="select select-bordered" value={triggerMode} onChange={(e) => setTriggerMode(e.target.value)}>
+            <option value="event">When an event happens</option>
+            <option value="webhook">When a webhook is received</option>
+            <option value="schedule">Run on a schedule</option>
+          </select>
+        </label>
 
-        <div className="rounded-box border border-base-300 bg-base-200/40 px-4 py-3">
-          <div className="text-[11px] uppercase tracking-wide opacity-50">Trigger summary</div>
-          <div className="mt-1 font-medium">{triggerSummaryText}</div>
-          <div className="mt-1 text-xs opacity-60">
-            {triggerMode === "schedule"
-              ? "This automation runs from the shared scheduler."
-              : "Keep this simple where possible. Most automations only need a trigger and a flow."}
-          </div>
-        </div>
-
-        <div className="rounded-box border border-base-300 bg-base-200/40">
-          <details open className="group">
-            <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+        {triggerMode === "schedule" ? (
+          <label className="form-control max-w-xs">
+            <span className="label-text">Run every N minutes</span>
+            <input
+              className="input input-bordered"
+              inputMode="numeric"
+              value={trigger?.every_minutes ?? ""}
+              onChange={(e) => setTrigger((prev) => ({ ...(prev || {}), kind: "schedule", every_minutes: e.target.value ? Number(e.target.value) : "" }))}
+              placeholder="60"
+            />
+            <span className="label label-text-alt opacity-50">Use a simple interval first. The shared scheduler will enqueue this automation in the background.</span>
+          </label>
+        ) : triggerMode === "webhook" ? (
+          <div className="space-y-3">
+            <div className={triggerDetailCardClass}>
               <div>
-                <div className="font-medium text-sm">Trigger setup</div>
-                <div className="text-xs opacity-60">Set up what starts the automation. The actual steps live in the Flow tab.</div>
+                <div className="font-medium text-sm">Webhook setup</div>
+                <div className="text-xs opacity-60 mt-1">Run this automation when an inbound integration webhook is received. Narrow it only if you need to.</div>
               </div>
-              <span className="text-xs opacity-60 group-[&[open]]:hidden">Show</span>
-              <span className="text-xs opacity-60 hidden group-[&[open]]:inline">Hide</span>
-            </summary>
-            <div className="px-4 pb-4 space-y-4">
-              {triggerMode === "schedule" ? (
-                <div className="space-y-3">
-                  <div>
-                    <div className="font-medium text-sm">Schedule</div>
-                    <div className="text-xs opacity-60 mt-1">Use a simple interval first. The shared scheduler will enqueue this automation in the background.</div>
-                  </div>
-                  <label className="form-control max-w-xs">
-                    <span className="label-text">Run every N minutes</span>
-                    <input
-                      className="input input-bordered"
-                      inputMode="numeric"
-                      value={trigger?.every_minutes ?? ""}
-                      onChange={(e) => setTrigger((prev) => ({ ...(prev || {}), kind: "schedule", every_minutes: e.target.value ? Number(e.target.value) : "" }))}
-                      placeholder="60"
-                    />
-                  </label>
-                </div>
-              ) : triggerMode === "webhook" ? (
-                <div className="space-y-4">
-                  <div>
-                    <div className="font-medium text-sm">Webhook trigger</div>
-                    <div className="text-xs opacity-60 mt-1">
-                      Run this automation when an inbound integration webhook is received. Narrow it only if you need to.
-                    </div>
-                  </div>
-                  <label className="form-control">
-                    <span className="label-text">Connection</span>
-                    <select
-                      className="select select-bordered"
-                      value={webhookTriggerConnectionId}
-                      onChange={(e) => upsertTriggerFilter("connection_id", e.target.value)}
-                    >
-                      <option value="">Any connection</option>
-                      {webhookConnectionOptions.map((conn) => (
-                        <option key={conn.id} value={conn.id}>
-                          {conn.name || conn.id}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="label label-text-alt opacity-50">Optional. Leave empty to react to any configured integration connection.</span>
-                  </label>
-                  <label className="form-control">
-                    <span className="label-text">Event key</span>
-                    <input
-                      className="input input-bordered"
-                      value={webhookTriggerEventKey}
-                      onChange={(e) => upsertTriggerFilter("event_key", e.target.value)}
-                      placeholder="invoice.created"
-                    />
-                    <span className="label label-text-alt opacity-50">Optional. Only set this if the flow should run for one webhook event type.</span>
-                  </label>
-                  <details className="rounded-box border border-base-300 bg-base-200/40">
-                    <summary className="cursor-pointer list-none px-3 py-3 flex items-center justify-between">
-                      <div>
-                        <div className="font-medium text-sm">Webhook data available to the flow</div>
-                        <div className="text-xs opacity-60">Only open this if you need payload paths.</div>
-                      </div>
-                      <span className="text-xs opacity-60">Show</span>
-                    </summary>
-                    <div className="px-3 pb-3 text-xs leading-5 text-base-content/70">
-                      <div className="font-mono">trigger.connection_id</div>
-                      <div className="font-mono">trigger.event_key</div>
-                      <div className="font-mono">trigger.provider_event_id</div>
-                      <div className="font-mono">trigger.payload</div>
-                      <div className="font-mono">trigger.headers</div>
-                      <div className="font-mono">trigger.signature_valid</div>
-                    </div>
-                  </details>
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" className="btn btn-sm btn-outline" onClick={() => setWebhookTestOpen(true)}>
-                      Test webhook trigger
-                    </button>
-                    <div className="self-center text-xs opacity-60">Queue a sample inbound webhook against the saved automation.</div>
+              <label className="form-control">
+                <span className="label-text">Connection</span>
+                <select className="select select-bordered" value={webhookTriggerConnectionId} onChange={(e) => upsertTriggerFilter("connection_id", e.target.value)}>
+                  <option value="">Any connection</option>
+                  {webhookConnectionOptions.map((conn) => (
+                    <option key={conn.id} value={conn.id}>
+                      {conn.name || conn.id}
+                    </option>
+                  ))}
+                </select>
+                <span className="label label-text-alt opacity-50">Optional. Leave empty to react to any configured integration connection.</span>
+              </label>
+              <label className="form-control">
+                <span className="label-text">Event key</span>
+                <input
+                  className="input input-bordered"
+                  value={webhookTriggerEventKey}
+                  onChange={(e) => upsertTriggerFilter("event_key", e.target.value)}
+                  placeholder="invoice.created"
+                />
+                <span className="label label-text-alt opacity-50">Optional. Only set this if the flow should run for one webhook event type.</span>
+              </label>
+            </div>
+            <div className={triggerDetailCardClass}>
+              <div className="font-medium text-sm">Webhook data available to the flow</div>
+              <div className="text-xs opacity-60 mt-1">Use these payload and metadata paths in later steps.</div>
+              <div className="mt-1 text-xs leading-5 text-base-content/70">
+                <div className="font-mono">trigger.connection_id</div>
+                <div className="font-mono">trigger.event_key</div>
+                <div className="font-mono">trigger.provider_event_id</div>
+                <div className="font-mono">trigger.payload</div>
+                <div className="font-mono">trigger.headers</div>
+                <div className="font-mono">trigger.signature_valid</div>
+              </div>
+            </div>
+            <div className={triggerDetailCardClass}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs opacity-60">Queue a sample inbound webhook against the saved automation.</div>
+                <button type="button" className="btn btn-sm btn-outline" onClick={() => setWebhookTestOpen(true)}>
+                  Test webhook trigger
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <label className="form-control">
+            <span className="label-text">Trigger event</span>
+            <select className="select select-bordered" value={(trigger?.event_types || [])[0] || ""} onChange={(e) => updateTriggerEvent(e.target.value)}>
+              <option value="">Select event…</option>
+              {triggerOptions.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {Array.isArray(group.options) &&
+                    group.options.map((evt) => {
+                      if (typeof evt === "string") return <option key={evt} value={evt}>{evt}</option>;
+                      const value = evt.id || "";
+                      const label = evt.label || evt.id || "";
+                      return <option key={value} value={value}>{label}</option>;
+                    })}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
+
+      {(triggerMode === "event" || triggerMode === "webhook") && (
+        <>
+          <div className={triggerSectionCardClass}>
+            <div>
+              <div className="font-medium text-sm">Trigger rules</div>
+              <div className="text-xs opacity-60 mt-1">Optional. Use these only if the automation should run only in specific cases.</div>
+            </div>
+            <div className="space-y-3">
+              {((trigger?.filters || [])).length === 0 ? (
+                <div className="rounded-box border border-dashed border-base-300 bg-base-100 p-5 text-center">
+                  <div className="text-sm font-medium">No rules yet</div>
+                  <div className="mt-1 text-xs opacity-60">
+                    {triggerMode === "webhook"
+                      ? "This automation will run whenever the selected webhook trigger matches."
+                      : "This automation will run every time the selected trigger event happens."}
                   </div>
                 </div>
               ) : (
-                <div className="form-control">
-                  <span className="label-text">Trigger event</span>
-                  <select
-                    className="select select-bordered"
-                    value={(trigger?.event_types || [])[0] || ""}
-                    onChange={(e) => updateTriggerEvent(e.target.value)}
-                  >
-                    <option value="">Select event…</option>
-                    {triggerOptions.map((group) => (
-                      <optgroup key={group.label} label={group.label}>
-                        {Array.isArray(group.options) &&
-                          group.options.map((evt) => {
-                            if (typeof evt === "string") {
-                              return <option key={evt} value={evt}>{evt}</option>;
-                            }
-                            const value = evt.id || "";
-                            const label = evt.label || evt.id || "";
-                            return <option key={value} value={value}>{label}</option>;
-                          })}
-                      </optgroup>
-                    ))}
-                  </select>
+                <div className="space-y-3">
+                  {(trigger?.filters || []).map((filt, idx) => {
+                    const op = filt?.op || "eq";
+                    const noValue = ["exists", "not_exists", "changed"].includes(op);
+                    const selectedFieldDef = triggerFieldOptionByValue.get(filt?.path || "") || null;
+                    const supportsTypedValue = !["in", "not_in"].includes(op) && !noValue;
+                    return (
+                      <div key={`trigger-filter-${idx}`} className={triggerDetailCardClass}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-xs font-medium uppercase tracking-wide opacity-60">Rule {idx + 1}</div>
+                          <button type="button" className="btn btn-ghost btn-xs text-error" onClick={() => removeTriggerFilter(idx)}>
+                            Remove
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+                          <label className="form-control md:col-span-5">
+                            <span className="label-text">Field</span>
+                            <input
+                              className="input input-bordered"
+                              list="automation-trigger-fields"
+                              value={filt?.path || ""}
+                              onChange={(e) => updateTriggerFilter(idx, { path: e.target.value })}
+                              placeholder={triggerMode === "webhook" ? "payload.customer.email" : "status"}
+                            />
+                            <span className="label label-text-alt opacity-50">
+                              {selectedFieldDef ? `Field type: ${selectedFieldDef.type || "string"}` : "Pick a suggested field or type a custom path."}
+                            </span>
+                          </label>
+                          <label className="form-control md:col-span-3">
+                            <span className="label-text">Operator</span>
+                            <select className="select select-bordered" value={op} onChange={(e) => updateTriggerFilter(idx, { op: e.target.value })}>
+                              <option value="eq">equals</option>
+                              <option value="neq">not equals</option>
+                              <option value="gt">greater than</option>
+                              <option value="gte">greater or equal</option>
+                              <option value="lt">less than</option>
+                              <option value="lte">less or equal</option>
+                              <option value="contains">contains</option>
+                              <option value="in">in list</option>
+                              <option value="not_in">not in list</option>
+                              <option value="exists">exists</option>
+                              <option value="not_exists">not exists</option>
+                              <option value="changed">changed</option>
+                              <option value="changed_from">changed from</option>
+                              <option value="changed_to">changed to</option>
+                            </select>
+                          </label>
+                          <label className="form-control md:col-span-4">
+                            <span className="label-text">Value</span>
+                            {noValue ? (
+                              <input className="input input-bordered" disabled value="No value needed" />
+                            ) : supportsTypedValue ? (
+                              renderTypedValueEditor({
+                                fieldDef: selectedFieldDef,
+                                value: Array.isArray(filt?.value) ? filt.value.join(", ") : (filt?.value ?? ""),
+                                onChange: (nextValue) => updateTriggerFilter(idx, { value: nextValue }),
+                                placeholder: triggerMode === "webhook" ? "ops@example.com" : "active",
+                              })
+                            ) : (
+                              <input
+                                className="input input-bordered"
+                                value={Array.isArray(filt?.value) ? filt.value.join(", ") : (filt?.value ?? "")}
+                                placeholder={triggerMode === "webhook" ? "one, two" : "active, pending"}
+                                onChange={(e) => {
+                                  const raw = e.target.value;
+                                  const value = ["in", "not_in"].includes(op) ? raw.split(",").map((part) => part.trim()).filter(Boolean) : raw;
+                                  updateTriggerFilter(idx, { value });
+                                }}
+                              />
+                            )}
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
-              {(triggerMode === "event" || triggerMode === "webhook") && (
-                <div className="space-y-3">
-                  <div className="rounded-box border border-base-300 bg-base-200/40">
-                    <details className="group">
-                      <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
-                        <div>
-                          <div className="font-medium text-sm">Advanced trigger rules</div>
-                          <div className="text-xs opacity-60">Optional. Use this only if the automation should run only in specific cases.</div>
-                        </div>
-                        <span className="text-xs opacity-60 group-[&[open]]:hidden">Show</span>
-                        <span className="text-xs opacity-60 hidden group-[&[open]]:inline">Hide</span>
-                      </summary>
-                      <div className="px-4 pb-4 space-y-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <div className="label-text">Only run when</div>
-                            <div className="text-xs opacity-60 mt-1">
-                              {triggerMode === "webhook"
-                                ? "Use extra rules only if connection and event key are not enough. These rules run against webhook payload data."
-                                : "Most automations can leave this empty and run whenever the trigger happens."}
-                            </div>
-                          </div>
-                          <button type="button" className="btn btn-sm" onClick={addTriggerFilter}>Add rule</button>
-                        </div>
-                        {((trigger?.filters || [])).length === 0 ? (
-                          <div className="text-xs opacity-60">
-                            {triggerMode === "webhook"
-                              ? "No extra rules yet. This automation will run whenever the selected webhook trigger matches."
-                              : "No extra rules yet. This automation will run every time the selected trigger event happens."}
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            {(trigger?.filters || []).map((filt, idx) => {
-                              const op = filt?.op || "eq";
-                              const noValue = ["exists", "not_exists", "changed"].includes(op);
-                              const selectedFieldDef = triggerFieldOptionByValue.get(filt?.path || "") || null;
-                              const supportsTypedValue = !["in", "not_in"].includes(op) && !noValue;
-                              return (
-                                <div key={`trigger-filter-${idx}`} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                                  <label className="form-control md:col-span-5">
-                                    <span className="label-text">Field</span>
-                                    <input
-                                      className="input input-bordered"
-                                      list="automation-trigger-fields"
-                                      value={filt?.path || ""}
-                                      onChange={(e) => updateTriggerFilter(idx, { path: e.target.value })}
-                                      placeholder={triggerMode === "webhook" ? "payload.customer.email" : "status"}
-                                    />
-                                    <span className="label label-text-alt opacity-50">
-                                      {selectedFieldDef
-                                        ? `Field type: ${selectedFieldDef.type || "string"}`
-                                        : "Pick a suggested field or type a custom path."}
-                                    </span>
-                                  </label>
-                                  <label className="form-control md:col-span-3">
-                                    <span className="label-text">Operator</span>
-                                    <select
-                                      className="select select-bordered"
-                                      value={op}
-                                      onChange={(e) => updateTriggerFilter(idx, { op: e.target.value })}
-                                    >
-                                      <option value="eq">equals</option>
-                                      <option value="neq">not equals</option>
-                                      <option value="gt">greater than</option>
-                                      <option value="gte">greater or equal</option>
-                                      <option value="lt">less than</option>
-                                      <option value="lte">less or equal</option>
-                                      <option value="contains">contains</option>
-                                      <option value="in">in list</option>
-                                      <option value="not_in">not in list</option>
-                                      <option value="exists">exists</option>
-                                      <option value="not_exists">not exists</option>
-                                      <option value="changed">changed</option>
-                                      <option value="changed_from">changed from</option>
-                                      <option value="changed_to">changed to</option>
-                                    </select>
-                                  </label>
-                                  <label className="form-control md:col-span-3">
-                                    <span className="label-text">Value</span>
-                                    {noValue ? (
-                                      <input className="input input-bordered" disabled value="No value needed" />
-                                    ) : supportsTypedValue ? (
-                                      renderTypedValueEditor({
-                                        fieldDef: selectedFieldDef,
-                                        value: Array.isArray(filt?.value) ? filt.value.join(", ") : (filt?.value ?? ""),
-                                        onChange: (nextValue) => updateTriggerFilter(idx, { value: nextValue }),
-                                        placeholder: triggerMode === "webhook" ? "ops@example.com" : "active",
-                                      })
-                                    ) : (
-                                      <input
-                                        className="input input-bordered"
-                                        value={Array.isArray(filt?.value) ? filt.value.join(", ") : (filt?.value ?? "")}
-                                        placeholder={triggerMode === "webhook" ? "one, two" : "active, pending"}
-                                        onChange={(e) => {
-                                          const raw = e.target.value;
-                                          const value = ["in", "not_in"].includes(op)
-                                            ? raw.split(",").map((part) => part.trim()).filter(Boolean)
-                                            : raw;
-                                          updateTriggerFilter(idx, { value });
-                                        }}
-                                      />
-                                    )}
-                                  </label>
-                                  <button type="button" className="btn btn-ghost btn-sm md:col-span-1" onClick={() => removeTriggerFilter(idx)}>
-                                    Remove
-                                  </button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                        <details className="group">
-                          <summary className="cursor-pointer list-none py-1 flex items-center justify-between">
-                            <div>
-                              <div className="font-medium text-sm">Advanced logic</div>
-                              <div className="text-xs opacity-60">Only use this if the simple rules above are not enough.</div>
-                            </div>
-                            <span className="text-xs opacity-60 group-[&[open]]:hidden">Show</span>
-                            <span className="text-xs opacity-60 hidden group-[&[open]]:inline">Hide</span>
-                          </summary>
-                          <div className="pt-3">
-                            <label className="form-control">
-                              <span className="label-text">Advanced trigger condition JSON</span>
-                              <CodeTextarea
-                                value={triggerExprText}
-                                onChange={(e) => setTriggerExprText(e.target.value)}
-                                minHeight="120px"
-                                placeholder={`{\n  "op": "and",\n  "children": []\n}`}
-                              />
-                              <span className="label label-text-alt opacity-50">Optional full condition DSL over `trigger.*` values. Leave empty unless you need advanced branching logic.</span>
-                            </label>
-                          </div>
-                        </details>
-                      </div>
-                    </details>
-                  </div>
-                </div>
-              )}
+              <div>
+                <button type="button" className={automationAddButtonClass} onClick={addTriggerFilter}>
+                  {((trigger?.filters || [])).length === 0 ? "Add first rule" : "Add rule"}
+                </button>
+              </div>
             </div>
-          </details>
-        </div>
-      </div>
+          </div>
+
+          <div className={triggerSectionCardClass}>
+            <div>
+              <div className="font-medium text-sm">Advanced logic</div>
+              <div className="text-xs opacity-60 mt-1">Use this only if the simple rules above are not enough.</div>
+            </div>
+            <label className="form-control">
+              <span className="label-text">Advanced trigger condition JSON</span>
+              <CodeTextarea
+                value={triggerExprText}
+                onChange={(e) => setTriggerExprText(e.target.value)}
+                minHeight="120px"
+                placeholder={`{\n  "op": "and",\n  "children": []\n}`}
+              />
+              <span className="label label-text-alt opacity-50">Optional full condition DSL over `trigger.*` values. Leave empty unless you need advanced branching logic.</span>
+            </label>
+          </div>
+        </>
+      )}
     </div>
   );
 
   const flowTab = (
     <div className="space-y-5">
-      {error && <div className="alert alert-error">{error}</div>}
-      <div className="rounded-2xl border border-primary/30 bg-base-100 shadow-sm">
-        <div className="border-b border-primary/15 bg-primary/5 px-4 py-4 md:px-5">
-          <div className="text-[11px] uppercase tracking-[0.18em] text-primary/70">Automation Flow</div>
-          <div className="mt-1 text-lg font-semibold">Build what happens after the trigger</div>
-          <div className="mt-1 text-xs opacity-70">Click a step to edit it in a focused modal. Add steps where they belong. `Then / Else` branches only appear on Condition steps.</div>
+      <div className="space-y-3 min-w-0">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
+          <label className="form-control md:col-span-4">
+            <span className="label-text">Name</span>
+            <input className="input input-bordered bg-base-100" value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+          <label className="form-control md:col-span-8">
+            <span className="label-text">Description</span>
+            <input className="input input-bordered bg-base-100" value={description} onChange={(e) => setDescription(e.target.value)} />
+          </label>
         </div>
-        <div className="space-y-3 min-w-0 p-4 md:p-5">
-          <div className="rounded-box border border-base-300 bg-base-200/40 p-4">
+
+        <button
+          type="button"
+          className="w-full rounded-2xl border border-base-300 bg-base-200/40 p-4 text-left transition-colors duration-150 hover:bg-base-200/70"
+          onClick={() => setTriggerDrawerOpen(true)}
+        >
+          <div className="min-w-0">
             <div className="text-xs uppercase tracking-wide opacity-60">Trigger</div>
             <div className="font-medium">{triggerSummaryText}</div>
             <div className="text-xs opacity-60 mt-1">
@@ -5568,60 +5864,190 @@ export default function AutomationEditorPage({ user }) {
                 : "Runs for every matching event"}
             </div>
           </div>
+        </button>
 
-          {steps.length === 0 ? (
-            <div className="rounded-box border border-dashed border-base-300 bg-base-100 p-6 text-sm opacity-60">
-              No steps yet. Add a step to start building the flow.
-            </div>
-          ) : (
-            renderStepCards(steps)
-          )}
-        </div>
+        {steps.length === 0 ? (
+          <div className="rounded-box border border-dashed border-base-300 bg-base-100 p-6 text-sm opacity-60">
+            No steps yet. Add a step to start building the flow.
+          </div>
+        ) : (
+          renderStepCards(steps)
+        )}
       </div>
     </div>
   );
 
   const runsTab = (
-    <div className="h-full min-h-0">
-      {runsError && <div className="alert alert-error mb-3 text-sm">{runsError}</div>}
-      {runsLoading && <div className="text-sm opacity-60">Loading runs…</div>}
-      {!runsLoading && runs.length === 0 && (
-        <div className="text-sm opacity-60">No runs yet.</div>
-      )}
-      {!runsLoading && runs.length > 0 && (
-        <div className="space-y-2 text-xs">
-          {runs.map((run) => (
-            <div key={run.id} className="flex items-start justify-between gap-3 border border-base-200 rounded-box px-3 py-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`badge ${run.status === "failed" ? "badge-error badge-outline" : "badge-outline"}`}>{run.status || "run"}</span>
-                  <span className="font-mono break-all">{run.id}</span>
-                  <span className="opacity-60">{formatDateTime(run.started_at || run.created_at || "", "")}</span>
-                </div>
-                {run.last_error ? (
-                  <div className="mt-2 text-sm text-error break-words">
-                    {run.last_error}
-                  </div>
-                ) : null}
-              </div>
-              <button className="btn btn-xs btn-outline" onClick={() => navigate(`/automation-runs/${run.id}`)}>
-                View
-              </button>
-            </div>
-          ))}
+    (() => {
+      const runRows = runs.map((run) => ({
+        id: run.id || "",
+        status: run.status || "run",
+        started_at: run.started_at || run.created_at || "",
+        ended_at: run.ended_at || "",
+        last_error: run.last_error || "",
+      }));
+      const runFieldIndex = {
+        "run.id": { id: "run.id", label: "Run ID", type: "text" },
+        "run.status": { id: "run.status", label: "Status", type: "enum", options: ["queued", "running", "completed", "failed", "cancelled"] },
+        "run.started_at": { id: "run.started_at", label: "Started", type: "datetime" },
+        "run.ended_at": { id: "run.ended_at", label: "Ended", type: "datetime" },
+        "run.last_error": { id: "run.last_error", label: "Last error", type: "text" },
+      };
+      const runListView = {
+        id: "system.automation.runs.list",
+        kind: "list",
+        columns: [
+          { field_id: "run.id" },
+          { field_id: "run.status" },
+          { field_id: "run.started_at" },
+          { field_id: "run.ended_at" },
+          { field_id: "run.last_error" },
+        ],
+      };
+      const runListRecords = runRows.map((row) => ({
+        record_id: row.id,
+        record: {
+          id: row.id,
+          "run.id": row.id,
+          "run.status": row.status,
+          "run.started_at": row.started_at,
+          "run.ended_at": row.ended_at,
+          "run.last_error": row.last_error,
+        },
+      }));
+      const runFilters = [
+        { id: "all", label: "All", domain: null },
+        { id: "queued", label: "Queued", domain: { op: "eq", field: "run.status", value: "queued" } },
+        { id: "running", label: "Running", domain: { op: "eq", field: "run.status", value: "running" } },
+        { id: "completed", label: "Completed", domain: { op: "eq", field: "run.status", value: "completed" } },
+        { id: "failed", label: "Failed", domain: { op: "eq", field: "run.status", value: "failed" } },
+      ];
+      const activeRunFilter = runFilters.find((flt) => flt.id === runsStatusFilter) || null;
+      const runFilterableFields = [
+        { id: "run.id", label: "Run ID" },
+        { id: "run.status", label: "Status" },
+        { id: "run.last_error", label: "Last error" },
+      ];
+
+      return (
+        <div className="h-full min-h-0 flex flex-col gap-4">
+          {runsError && <div className="alert alert-error text-sm">{runsError}</div>}
+          {runsLoading ? (
+            <div className="text-sm opacity-60">Loading runs…</div>
+          ) : (
+            <>
+              <SystemListToolbar
+                title="Runs"
+                searchValue={runsSearch}
+                onSearchChange={(value) => {
+                  setRunsSearch(value);
+                  setRunsPage(0);
+                }}
+                filters={runFilters}
+                onFilterChange={(id) => {
+                  setRunsStatusFilter(id);
+                  setRunsPage(0);
+                }}
+                filterableFields={runFilterableFields}
+                onAddCustomFilter={(field, value) => {
+                  if (!field?.id) return;
+                  setRunsClientFilters((prev) => [
+                    ...prev,
+                    { field_id: field.id, label: field.label || field.id, op: "contains", value },
+                  ]);
+                  setRunsPage(0);
+                }}
+                onClearFilters={() => {
+                  setRunsStatusFilter("all");
+                  setRunsClientFilters([]);
+                  setRunsPage(0);
+                }}
+                onRefresh={loadRuns}
+                pagination={{
+                  page: runsPage,
+                  pageSize: 25,
+                  totalItems: runsTotalItems,
+                  onPageChange: setRunsPage,
+                }}
+                showSavedViews={false}
+              />
+
+              {!runs.length ? (
+                <div className="text-sm opacity-60">No runs yet.</div>
+              ) : (
+                <ListViewRenderer
+                  view={runListView}
+                  fieldIndex={runFieldIndex}
+                  records={runListRecords}
+                  hideHeader
+                  searchQuery={runsSearch}
+                  searchFields={["run.id", "run.status", "run.last_error"]}
+                  filters={runFilters}
+                  activeFilter={activeRunFilter}
+                  clientFilters={runsClientFilters}
+                  page={runsPage}
+                  pageSize={25}
+                  onPageChange={setRunsPage}
+                  onTotalItemsChange={setRunsTotalItems}
+                  showPaginationControls={false}
+                  enableSelection={false}
+                  onSelectRow={(row) => {
+                    const id = row?.record_id || row?.record?.["run.id"];
+                    if (id) navigate(`/automation-runs/${id}`);
+                  }}
+                />
+              )}
+            </>
+          )}
         </div>
-      )}
-    </div>
+      );
+    })()
   );
 
+  function resetJsonEditor() {
+    setJsonEditorText(JSON.stringify(buildAutomationDefinition(), null, 2));
+    setJsonEditorError("");
+    setJsonEditorDirty(false);
+  }
+
+  function applyJsonEditor() {
+    try {
+      const parsed = JSON.parse(jsonEditorText);
+      applyAutomationDefinition(parsed);
+      pushToast("success", "Automation JSON applied");
+    } catch (err) {
+      setJsonEditorError(err?.message || "Automation JSON is invalid");
+    }
+  }
+
   const jsonTab = (
-    <div className="h-full min-h-0 flex flex-col">
-      <div className="text-sm font-semibold mb-2">Automation JSON</div>
-      <CodeTextarea
-        readOnly
-        value={JSON.stringify({ name, description, trigger, steps }, null, 2)}
-        fill
-      />
+    <div className="h-full min-h-0 flex flex-col space-y-3">
+      <div className="rounded-box border border-base-300 bg-base-200/40 p-4 space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold">Automation JSON</div>
+            <div className="mt-1 text-xs opacity-60">Edit the full automation definition here, then apply it back into the flow.</div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="btn btn-sm btn-ghost" onClick={resetJsonEditor} disabled={!jsonEditorDirty}>
+              Reset
+            </button>
+            <button type="button" className="btn btn-sm btn-primary" onClick={applyJsonEditor}>
+              Apply to flow
+            </button>
+          </div>
+        </div>
+        {jsonEditorDirty ? <div className="text-xs opacity-60">JSON has unapplied changes.</div> : null}
+        <CodeTextarea
+          value={jsonEditorText}
+          onChange={(e) => {
+            setJsonEditorText(e.target.value);
+            setJsonEditorDirty(true);
+            if (jsonEditorError) setJsonEditorError("");
+          }}
+          minHeight="70vh"
+        />
+      </div>
     </div>
   );
 
@@ -5655,22 +6081,21 @@ export default function AutomationEditorPage({ user }) {
     setWebhookTestSaving(false);
   }
 
-  const defaultAutomationTabId = automationId === "new" ? "setup" : "flow";
+  const defaultAutomationTabId = "flow";
 
   const automationProfile = useMemo(() => ({
     kind: "automation",
     defaultTabId: defaultAutomationTabId,
     rightTabs: [
-      { id: "setup", label: "Setup", render: () => setupTab },
       { id: "flow", label: "Flow", render: () => flowTab },
-      { id: "runs", label: "Runs", render: () => runsTab },
       { id: "json", label: "JSON", render: () => jsonTab },
+      { id: "runs", label: "Runs", render: () => runsTab },
     ],
     actions: [
       { id: "save", label: "Save", kind: "secondary", onClick: save, disabled: saving },
       { id: "publish", label: "Publish", kind: "primary", onClick: publish, disabled: item?.status === "published" },
     ],
-  }), [defaultAutomationTabId, setupTab, flowTab, runsTab, jsonTab, save, publish, saving, item?.status]);
+  }), [defaultAutomationTabId, flowTab, runsTab, jsonTab, save, publish, saving, item?.status]);
 
   return (
     <div className={isMobile ? "min-h-full bg-base-100 flex flex-col" : "h-full min-h-0 flex flex-col overflow-hidden"}>
@@ -5679,28 +6104,33 @@ export default function AutomationEditorPage({ user }) {
         recordId={automationId}
         profile={automationProfile}
         loadRecord={loadRecord}
+        validate={validateRecord}
         enableAutosave={false}
         renderLeftPane={renderLeftPane}
         renderValidationPanel={renderValidationPanel}
       />
-      {stepModalOpen && selectedStep && (
-        <div className="modal modal-open">
-          <div
-            className={`modal-box ${isMobile ? "w-full max-w-none h-dvh rounded-none" : "max-w-5xl"}`}
-            onFocusCapture={rememberFocusedField}
-          >
-            <div className="flex items-start justify-between gap-3 mb-4">
-              <div>
-                <h3 className="font-semibold text-lg">{stepSummaryText(selectedStep)}</h3>
-                <p className="text-sm opacity-70">{stepHelpText(selectedStep)}</p>
-              </div>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setStepModalOpen(false)}>Close</button>
-            </div>
-            {renderStepEditor(selectedStep, selectedStepPath, { showHeader: false, linear: true })}
-          </div>
-          <div className="modal-backdrop" onClick={() => setStepModalOpen(false)} />
+      <ResponsiveDrawer
+        open={triggerDrawerOpen}
+        onClose={() => setTriggerDrawerOpen(false)}
+        title="Trigger"
+        description="Choose what starts this automation and add any optional trigger rules."
+        mobileHeightClass="max-h-[92vh]"
+        zIndexClass="z-[240]"
+      >
+        {triggerEditorContent}
+      </ResponsiveDrawer>
+      <ResponsiveDrawer
+        open={Boolean(stepModalOpen && selectedStep)}
+        onClose={() => setStepModalOpen(false)}
+        title={selectedStep ? stepSummaryText(selectedStep) : "Step"}
+        description={selectedStep ? stepHelpText(selectedStep) : ""}
+        mobileHeightClass="max-h-[92vh]"
+        zIndexClass="z-[240]"
+      >
+        <div className="automation-drawer-linear" onFocusCapture={rememberFocusedField}>
+          {selectedStep ? renderStepEditor(selectedStep, selectedStepPath, { showHeader: false, linear: true }) : null}
         </div>
-      )}
+      </ResponsiveDrawer>
       {webhookTestOpen && (
         <div className="modal modal-open">
           <div className={`modal-box ${isMobile ? "w-full max-w-none h-dvh rounded-none" : "max-w-4xl"}`}>

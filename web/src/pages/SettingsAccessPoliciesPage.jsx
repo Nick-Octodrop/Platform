@@ -1,28 +1,35 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { MoreHorizontal } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api.js";
+import { useToast } from "../components/Toast.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
+import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
+import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 
 function ProfileModal({ draft, setDraft, saving, onCancel, onConfirm }) {
   return (
     <div className="modal modal-open">
       <div className="modal-box max-w-2xl">
         <h3 className="text-lg font-semibold">Create Access Profile</h3>
-        <p className="mt-1 text-sm opacity-70">Create a reusable access bundle like Sales, Ops, Finance, or a customer-specific role.</p>
+        <p className="mt-1 text-sm opacity-70">Create the profile here, then add its access rules on the next page.</p>
 
         <div className="mt-5 grid grid-cols-1 gap-4">
           <label className="form-control">
             <span className="label-text text-sm">Name</span>
             <input className="input input-bordered" value={draft.name} onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))} disabled={saving} />
+            <span className="label label-text-alt opacity-50">Required. Use a clear name like Sales, Finance, or Customer Admin.</span>
           </label>
           <label className="form-control">
             <span className="label-text text-sm">Key</span>
             <input className="input input-bordered" value={draft.profile_key} onChange={(e) => setDraft((prev) => ({ ...prev, profile_key: e.target.value }))} disabled={saving} />
+            <span className="label label-text-alt opacity-50">Optional. Use a stable internal key if you want one, otherwise you can leave this blank.</span>
           </label>
           <label className="form-control">
             <span className="label-text text-sm">Description</span>
             <textarea className="textarea textarea-bordered min-h-[8rem]" value={draft.description} onChange={(e) => setDraft((prev) => ({ ...prev, description: e.target.value }))} disabled={saving} />
+            <span className="label label-text-alt opacity-50">Optional. Add a short note explaining who this profile is for or what it grants.</span>
           </label>
         </div>
 
@@ -41,6 +48,7 @@ function ProfileModal({ draft, setDraft, saving, onCancel, onConfirm }) {
 
 export default function SettingsAccessPoliciesPage() {
   const navigate = useNavigate();
+  const { pushToast } = useToast();
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -50,6 +58,7 @@ export default function SettingsAccessPoliciesPage() {
   const [page, setPage] = useState(0);
   const [totalItems, setTotalItems] = useState(0);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [createDraft, setCreateDraft] = useState({ name: "", description: "", profile_key: "" });
 
   async function load() {
@@ -70,6 +79,23 @@ export default function SettingsAccessPoliciesPage() {
     load();
   }, []);
 
+  async function deleteSelectedProfiles() {
+    if (!selectedIds.length || saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      await Promise.all(selectedIds.map((id) => apiFetch(`/access/profiles/${id}`, { method: "DELETE" })));
+      setSelectedIds([]);
+      setShowDeleteModal(false);
+      pushToast("success", selectedIds.length === 1 ? "Access profile deleted." : "Access profiles deleted.");
+      await load();
+    } catch (err) {
+      setError(err?.message || "Failed to delete access profiles");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function createProfile() {
     if (!createDraft.name.trim() || saving) return;
     setSaving(true);
@@ -81,6 +107,7 @@ export default function SettingsAccessPoliciesPage() {
       });
       setShowCreateModal(false);
       setCreateDraft({ name: "", description: "", profile_key: "" });
+      pushToast("success", "Access profile created.");
       await load();
       if (response?.profile?.id) {
         navigate(`/settings/access-policies/${response.profile.id}`);
@@ -146,8 +173,8 @@ export default function SettingsAccessPoliciesPage() {
 
   return (
     <div className="min-h-full md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
-      <div className="bg-base-100 md:card md:rounded-[1.75rem] md:border md:border-base-300 md:shadow-sm md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
-        <div className="p-4 md:card-body md:flex md:flex-col md:min-h-0 md:overflow-hidden">
+      <div className={DESKTOP_PAGE_SHELL}>
+        <div className={DESKTOP_PAGE_SHELL_BODY}>
           <div className="space-y-4 md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
             <SystemListToolbar
@@ -169,13 +196,37 @@ export default function SettingsAccessPoliciesPage() {
                 totalItems,
                 onPageChange: setPage,
               }}
+              rightActions={
+                selectedIds.length > 0 ? (
+                  <div className="dropdown dropdown-end">
+                    <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </button>
+                    <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
+                      <li className="menu-title">
+                        <span>Selection</span>
+                      </li>
+                      {selectedIds.length === 1 ? (
+                        <li>
+                          <button onClick={() => navigate(`/settings/access-policies/${selectedIds[0]}`)}>
+                            Open profile
+                          </button>
+                        </li>
+                      ) : null}
+                      <li>
+                        <button className="text-error" onClick={() => setShowDeleteModal(true)} disabled={saving}>
+                          {selectedIds.length === 1 ? "Delete" : `Delete selected (${selectedIds.length})`}
+                        </button>
+                      </li>
+                    </ul>
+                  </div>
+                ) : null
+              }
             />
 
             <div className="md:mt-4">
               {loading ? (
                 <div className="text-sm opacity-70">Loading…</div>
-              ) : rows.length === 0 ? (
-                <div className="text-sm opacity-60">No access profiles yet.</div>
               ) : (
                 <ListViewRenderer
                   view={listView}
@@ -194,6 +245,7 @@ export default function SettingsAccessPoliciesPage() {
                   onPageChange={setPage}
                   onTotalItemsChange={setTotalItems}
                   showPaginationControls={false}
+                  emptyLabel={null}
                   selectedIds={selectedIds}
                   onToggleSelect={(id, checked) => {
                     if (!id) return;
@@ -226,6 +278,33 @@ export default function SettingsAccessPoliciesPage() {
           onCancel={() => setShowCreateModal(false)}
           onConfirm={createProfile}
         />
+      ) : null}
+
+      {showDeleteModal ? (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-md">
+            <h3 className="font-semibold text-lg">Delete Access Profile{selectedIds.length > 1 ? "s" : ""}</h3>
+            <div className="mt-3 text-sm">
+              This will permanently remove {selectedIds.length} access profile{selectedIds.length > 1 ? "s" : ""}. This cannot be undone.
+            </div>
+            <div className="modal-action">
+              <button
+                className="btn btn-ghost btn-sm"
+                type="button"
+                onClick={() => !saving && setShowDeleteModal(false)}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button className="btn btn-error btn-sm" type="button" onClick={deleteSelectedProfiles} disabled={saving}>
+                {saving ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+          <button className="modal-backdrop" type="button" onClick={() => !saving && setShowDeleteModal(false)}>
+            close
+          </button>
+        </div>
       ) : null}
     </div>
   );

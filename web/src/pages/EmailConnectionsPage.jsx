@@ -1,13 +1,19 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { MoreHorizontal } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api.js";
+import { useToast } from "../components/Toast.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
+import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
+import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 
 export default function EmailConnectionsPage() {
   const navigate = useNavigate();
+  const { pushToast } = useToast();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -15,6 +21,7 @@ export default function EmailConnectionsPage() {
   const [page, setPage] = useState(0);
   const [totalItems, setTotalItems] = useState(0);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createForm, setCreateForm] = useState({
     type: "smtp",
@@ -38,6 +45,23 @@ export default function EmailConnectionsPage() {
   useEffect(() => {
     load();
   }, []);
+
+  async function deleteSelectedConnections() {
+    if (!selectedIds.length || saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      await Promise.all(selectedIds.map((id) => apiFetch(`/email/connections/${encodeURIComponent(id)}`, { method: "DELETE" })));
+      setSelectedIds([]);
+      setShowDeleteModal(false);
+      pushToast("success", selectedIds.length === 1 ? "Email connection deleted." : "Email connections deleted.");
+      await load();
+    } catch (err) {
+      setError(err?.message || "Failed to delete email connections");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   function openCreateModal() {
     setCreateForm({
@@ -143,8 +167,8 @@ export default function EmailConnectionsPage() {
 
   return (
     <div className="min-h-full md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
-      <div className="bg-base-100 md:card md:rounded-[1.75rem] md:border md:border-base-300 md:shadow-sm md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
-        <div className="p-4 md:card-body md:flex md:flex-col md:min-h-0 md:overflow-hidden">
+      <div className={DESKTOP_PAGE_SHELL}>
+        <div className={DESKTOP_PAGE_SHELL_BODY}>
           <div className="space-y-4 md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
             <SystemListToolbar
@@ -173,13 +197,37 @@ export default function EmailConnectionsPage() {
                 totalItems,
                 onPageChange: setPage,
               }}
+              rightActions={
+                selectedIds.length > 0 ? (
+                  <div className="dropdown dropdown-end">
+                    <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </button>
+                    <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
+                      <li className="menu-title">
+                        <span>Selection</span>
+                      </li>
+                      {selectedIds.length === 1 ? (
+                        <li>
+                          <button onClick={() => navigate(`/settings/email/connections/${selectedIds[0]}`)}>
+                            Open connection
+                          </button>
+                        </li>
+                      ) : null}
+                      <li>
+                        <button className="text-error" onClick={() => setShowDeleteModal(true)} disabled={saving}>
+                          {selectedIds.length === 1 ? "Delete" : `Delete selected (${selectedIds.length})`}
+                        </button>
+                      </li>
+                    </ul>
+                  </div>
+                ) : null
+              }
             />
 
             <div className="md:mt-4">
               {loading ? (
                 <div className="text-sm opacity-70">Loading…</div>
-              ) : rows.length === 0 ? (
-                <div className="text-sm opacity-60">No email connections yet.</div>
               ) : (
                 <ListViewRenderer
                   view={listView}
@@ -198,6 +246,7 @@ export default function EmailConnectionsPage() {
                   onPageChange={setPage}
                   onTotalItemsChange={setTotalItems}
                   showPaginationControls={false}
+                  emptyLabel={null}
                   selectedIds={selectedIds}
                   onToggleSelect={(id, checked) => {
                     if (!id) return;
@@ -268,6 +317,32 @@ export default function EmailConnectionsPage() {
               </button>
             </div>
           </div>
+        </div>
+      ) : null}
+      {showDeleteModal ? (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-md">
+            <h3 className="font-semibold text-lg">Delete Email Connection{selectedIds.length > 1 ? "s" : ""}</h3>
+            <div className="mt-3 text-sm">
+              This will permanently remove {selectedIds.length} email connection{selectedIds.length > 1 ? "s" : ""}. This cannot be undone.
+            </div>
+            <div className="modal-action">
+              <button
+                className="btn btn-ghost btn-sm"
+                type="button"
+                onClick={() => !saving && setShowDeleteModal(false)}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button className="btn btn-error btn-sm" type="button" onClick={deleteSelectedConnections} disabled={saving}>
+                {saving ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+          <button className="modal-backdrop" type="button" onClick={() => !saving && setShowDeleteModal(false)}>
+            close
+          </button>
         </div>
       ) : null}
     </div>

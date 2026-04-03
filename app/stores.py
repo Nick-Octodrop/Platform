@@ -483,6 +483,12 @@ class MemoryEmailStore:
         item = self._templates.get(template_id)
         return copy.deepcopy(item) if item else None
 
+    def delete_template(self, template_id: str) -> bool:
+        if template_id not in self._templates:
+            return False
+        del self._templates[template_id]
+        return True
+
     def create_outbox(self, record: dict) -> dict:
         item = copy.deepcopy(record)
         item.setdefault("id", str(uuid.uuid4()))
@@ -509,6 +515,12 @@ class MemoryEmailStore:
     def get_outbox(self, outbox_id: str) -> dict | None:
         item = self._outbox.get(outbox_id)
         return copy.deepcopy(item) if item else None
+
+    def delete_outbox(self, outbox_id: str) -> bool:
+        if outbox_id not in self._outbox:
+            return False
+        del self._outbox[outbox_id]
+        return True
 
 
 class MemoryAttachmentStore:
@@ -631,6 +643,12 @@ class MemoryDocTemplateStore:
         items = [t for t in self._items.values() if t.get("workspace_id") == workspace_id]
         items.sort(key=lambda t: t.get("created_at", ""), reverse=True)
         return [copy.deepcopy(t) for t in items]
+
+    def delete(self, template_id: str) -> bool:
+        if template_id not in self._items:
+            return False
+        del self._items[template_id]
+        return True
 
 
 class MemoryConnectionStore:

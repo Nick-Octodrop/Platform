@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { MoreHorizontal } from "lucide-react";
 import { apiFetch } from "../api";
 import { useNavigate } from "react-router-dom";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
+import CodeTextarea from "../components/CodeTextarea.jsx";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import { buildSavedViewDomain } from "../utils/savedViews.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
@@ -27,6 +29,11 @@ export default function AutomationsPage() {
   const [clientFilters, setClientFilters] = useState([]);
   const [page, setPage] = useState(0);
   const [totalItems, setTotalItems] = useState(0);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importJsonText, setImportJsonText] = useState("");
+  const [importError, setImportError] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [selectionActionBusy, setSelectionActionBusy] = useState("");
   const navigate = useNavigate();
 
   async function load() {
@@ -54,21 +61,30 @@ export default function AutomationsPage() {
   }
 
   async function importAutomation() {
-    const text = window.prompt("Paste automation JSON");
-    if (!text) return;
+    const text = importJsonText.trim();
+    if (!text) {
+      setImportError("Paste automation JSON to import.");
+      return;
+    }
     let parsed;
     try {
       parsed = JSON.parse(text);
     } catch {
-      setError("Invalid JSON");
+      setImportError("Invalid JSON");
       return;
     }
+    setImporting(true);
+    setImportError("");
     try {
       const data = await apiFetch("/automations/import", { method: "POST", body: parsed });
+      setImportModalOpen(false);
+      setImportJsonText("");
+      setImportError("");
       navigate(`/automations/${data.automation.id}`);
     } catch (err) {
-      setError(err?.message || "Import failed");
+      setImportError(err?.message || "Import failed");
     }
+    setImporting(false);
   }
 
   async function publish(id) {
@@ -94,10 +110,42 @@ export default function AutomationsPage() {
     if (!ok) return;
     try {
       await apiFetch(`/automations/${id}`, { method: "DELETE" });
+      setSelectedIds((prev) => prev.filter((selectedId) => selectedId !== id));
       load();
     } catch (err) {
       setError(err?.message || "Delete failed");
     }
+  }
+
+  async function disableSelectedAutomations() {
+    const publishedIds = selectedRows.filter((row) => row.status === "published").map((row) => row.id);
+    if (!publishedIds.length || selectionActionBusy) return;
+    setSelectionActionBusy("disable");
+    setError("");
+    try {
+      await Promise.all(publishedIds.map((id) => apiFetch(`/automations/${id}/disable`, { method: "POST" })));
+      setSelectedIds([]);
+      await load();
+    } catch (err) {
+      setError(err?.message || "Disable failed");
+    }
+    setSelectionActionBusy("");
+  }
+
+  async function deleteSelectedAutomations() {
+    if (!selectedIds.length || selectionActionBusy) return;
+    const ok = window.confirm(`Delete ${selectedIds.length} automation(s)? This cannot be undone.`);
+    if (!ok) return;
+    setSelectionActionBusy("delete");
+    setError("");
+    try {
+      await Promise.all(selectedIds.map((id) => apiFetch(`/automations/${id}`, { method: "DELETE" })));
+      setSelectedIds([]);
+      await load();
+    } catch (err) {
+      setError(err?.message || "Delete failed");
+    }
+    setSelectionActionBusy("");
   }
 
   const automationRows = useMemo(
@@ -127,6 +175,7 @@ export default function AutomationsPage() {
       kind: "list",
       columns: [
         { field_id: "automation.name" },
+        { field_id: "automation.description" },
         { field_id: "automation.status" },
         { field_id: "automation.updated_at" },
       ],
@@ -178,6 +227,10 @@ export default function AutomationsPage() {
   }, [automationRows, selectedIds]);
 
   const singleSelected = selectedRows.length === 1 ? selectedRows[0] : null;
+  const selectedPublishedCount = useMemo(
+    () => selectedRows.filter((row) => row.status === "published").length,
+    [selectedRows]
+  );
 
   useEffect(() => {
     load();
@@ -239,58 +292,67 @@ export default function AutomationsPage() {
                   }}
                   rightActions={
                     <>
-                      {selectedIds.length === 1 && singleSelected && (
-                        <div className="flex items-center gap-2">
-                          <button
-                            className={SOFT_BUTTON_SM}
-                            onClick={() => navigate(`/automations/${singleSelected.id}/runs`)}
-                          >
-                            Runs
+                      {selectedIds.length > 0 && (
+                        <div className="dropdown dropdown-end">
+                          <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                            <MoreHorizontal className="h-4 w-4" />
                           </button>
-                          {singleSelected.status !== "published" && (
-                            <button
-                              className={SOFT_BUTTON_SM}
-                              onClick={() => publish(singleSelected.id)}
-                            >
-                              Publish
-                            </button>
-                          )}
-                          {singleSelected.status === "published" && (
-                            <button
-                              className={SOFT_BUTTON_SM}
-                              onClick={() => disable(singleSelected.id)}
-                            >
-                              Disable
-                            </button>
-                          )}
-                          <button
-                            className={SOFT_BUTTON_SM}
-                            onClick={() => removeAutomation(singleSelected.id)}
-                          >
-                            Delete (1)
-                          </button>
+                          <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
+                            <li className="menu-title">
+                              <span>Selection</span>
+                            </li>
+                            {selectedIds.length === 1 && singleSelected && (
+                              <>
+                                <li>
+                                  <button onClick={() => navigate(`/automations/${singleSelected.id}`)}>
+                                    Open automation
+                                  </button>
+                                </li>
+                                <li>
+                                  <button onClick={() => navigate(`/automations/${singleSelected.id}/runs`)}>
+                                    View runs
+                                  </button>
+                                </li>
+                                {singleSelected.status !== "published" && (
+                                  <li>
+                                    <button onClick={() => publish(singleSelected.id)}>
+                                      Publish
+                                    </button>
+                                  </li>
+                                )}
+                              </>
+                            )}
+                            <li>
+                              <button
+                                onClick={disableSelectedAutomations}
+                                disabled={!selectedPublishedCount || selectionActionBusy === "disable"}
+                              >
+                                {selectedIds.length === 1 ? "Disable" : `Disable selected${selectedPublishedCount ? ` (${selectedPublishedCount})` : ""}`}
+                              </button>
+                            </li>
+                            <li>
+                              <button
+                                className="text-error"
+                                onClick={selectedIds.length === 1 && singleSelected
+                                  ? () => removeAutomation(singleSelected.id)
+                                  : deleteSelectedAutomations}
+                                disabled={selectionActionBusy === "delete"}
+                              >
+                                {selectedIds.length === 1 ? "Delete" : `Delete selected (${selectedIds.length})`}
+                              </button>
+                            </li>
+                          </ul>
                         </div>
                       )}
-                      {selectedIds.length > 1 && (
-                        <div className="flex items-center gap-2">
-                          <button
-                            className={SOFT_BUTTON_SM}
-                            onClick={() => {
-                              const ok = window.confirm(`Delete ${selectedIds.length} automation(s)?`);
-                              if (!ok) return;
-                              Promise.all(selectedIds.map((id) => apiFetch(`/automations/${id}`, { method: "DELETE" })))
-                                .then(() => {
-                                  setSelectedIds([]);
-                                  load();
-                                })
-                                .catch((err) => setError(err?.message || "Delete failed"));
-                            }}
-                          >
-                            Delete ({selectedIds.length})
-                          </button>
-                        </div>
-                      )}
-                      <button className={SOFT_BUTTON_SM} onClick={importAutomation}>Import</button>
+                      <button
+                        className={SOFT_BUTTON_SM}
+                        onClick={() => {
+                          setImportModalOpen(true);
+                          setImportError("");
+                        }}
+                      >
+                        Import
+                      </button>
                     </>
                   }
                 />
@@ -333,6 +395,66 @@ export default function AutomationsPage() {
           </div>
         </div>
       </div>
+      {importModalOpen && (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-3xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold">Import automation</h3>
+                <p className="mt-1 text-sm opacity-70">Paste an automation JSON definition to create a new automation.</p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  if (importing) return;
+                  setImportModalOpen(false);
+                  setImportError("");
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div className="mt-4 space-y-4">
+              {importError ? <div className="alert alert-error text-sm">{importError}</div> : null}
+              <label className="form-control">
+                <span className="label-text">Automation JSON</span>
+                <CodeTextarea
+                  value={importJsonText}
+                  onChange={(e) => setImportJsonText(e.target.value)}
+                  minHeight="360px"
+                  placeholder={`{\n  "name": "Imported automation",\n  "description": "",\n  "trigger": {\n    "kind": "event",\n    "event_types": ["record.created"],\n    "filters": []\n  },\n  "steps": []\n}`}
+                />
+              </label>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    if (importing) return;
+                    setImportModalOpen(false);
+                    setImportError("");
+                  }}
+                  disabled={importing}
+                >
+                  Cancel
+                </button>
+                <button type="button" className="btn btn-primary" onClick={importAutomation} disabled={importing}>
+                  {importing ? "Importing..." : "Import"}
+                </button>
+              </div>
+            </div>
+          </div>
+          <div
+            className="modal-backdrop"
+            onClick={() => {
+              if (importing) return;
+              setImportModalOpen(false);
+              setImportError("");
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiFetch } from "../api.js";
+import { useToast } from "../components/Toast.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
 
@@ -57,12 +58,12 @@ function DetailPanel({ title, description, children, tone = "bg-base-100" }) {
 export default function SettingsApiCredentialDetailPage() {
   const { credentialId } = useParams();
   const navigate = useNavigate();
+  const { pushToast } = useToast();
   const [items, setItems] = useState([]);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [activeTabId, setActiveTabId] = useState("details");
   const [revokingId, setRevokingId] = useState("");
   const [rotatingId, setRotatingId] = useState("");
@@ -107,10 +108,9 @@ export default function SettingsApiCredentialDetailPage() {
     if (!item?.id || revokingId) return;
     setRevokingId(item.id);
     setError("");
-    setNotice("");
     try {
       await apiFetch(`/settings/api-credentials/${encodeURIComponent(item.id)}/revoke`, { method: "POST" });
-      setNotice("API credential revoked.");
+      pushToast("success", "API credential revoked.");
       await load();
       await loadLogs();
     } catch (err) {
@@ -124,14 +124,13 @@ export default function SettingsApiCredentialDetailPage() {
     if (!item?.id || rotatingId) return;
     setRotatingId(item.id);
     setError("");
-    setNotice("");
     try {
       const response = await apiFetch(`/settings/api-credentials/${encodeURIComponent(item.id)}/rotate`, {
         method: "POST",
         body: {},
       });
       setRevealedToken(response?.token || "");
-      setNotice("API credential rotated. Copy the new token now.");
+      pushToast("success", "API credential rotated.");
       await load();
       await loadLogs();
     } catch (err) {
@@ -151,6 +150,7 @@ export default function SettingsApiCredentialDetailPage() {
       ]}
       activeTabId={activeTabId}
       onTabChange={setActiveTabId}
+      contentContainer={true}
       rightActions={(
         <div className="flex items-center gap-2">
           <button className="btn btn-sm btn-ghost" type="button" onClick={() => { load(); loadLogs(); }} disabled={loading || loadingLogs}>
@@ -163,7 +163,6 @@ export default function SettingsApiCredentialDetailPage() {
       )}
     >
       {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
-      {notice ? <div className="alert alert-success text-sm mb-4">{notice}</div> : null}
 
       {loading ? (
         <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-70">Loading…</div>

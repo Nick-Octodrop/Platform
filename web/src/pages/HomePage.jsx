@@ -6,7 +6,7 @@ import { getAppDisplayName } from "../state/appCatalog.js";
 import { getAppIcon, subscribeAppIcons } from "../state/appIcons.js";
 import { getDefaultOpenRoute, loadEntityIndex } from "../data/entityIndex.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
-import { LayoutGrid, Package, PenTool, Settings as SettingsIcon, Sparkles, Workflow, Wrench } from "lucide-react";
+import { LayoutGrid, Package, Settings as SettingsIcon, Sparkles } from "lucide-react";
 import { normalizeLucideKey, resolveLucideIcon } from "../state/lucideIconCatalog.js";
 import { normalizeHeroKey, resolveHeroIcon } from "../state/heroIconCatalog.js";
 import { useAccessContext } from "../access.js";
@@ -18,8 +18,8 @@ function AppTile({ app, module, onOpen }) {
   const iconUrl = app.icon_url;
   const lucideKey = normalizeLucideKey(iconUrl);
   const LucideIcon = lucideKey ? resolveLucideIcon(lucideKey) : null;
-  const heroKey = normalizeHeroKey(iconUrl);
-  const HeroIcon = heroKey ? resolveHeroIcon(heroKey) : null;
+  const heroParsed = normalizeHeroKey(iconUrl);
+  const HeroIcon = heroParsed ? resolveHeroIcon(iconUrl) : null;
   const isImageUrl = typeof iconUrl === "string" && !LucideIcon && !HeroIcon && !iconUrl.includes("lucide:") && !iconUrl.includes("hero:") && (
     iconUrl.startsWith("data:") || iconUrl.startsWith("http")
   );
@@ -56,10 +56,7 @@ export default function HomePage({ user }) {
   const [entityIndex, setEntityIndex] = useState(null);
   const [iconVersion, setIconVersion] = useState(0);
   const { loading: accessLoading, hasCapability, isSuperadmin } = useAccessContext();
-  const canSeeStudio = !accessLoading && hasCapability("modules.manage");
   const canSeeOctoAi = !accessLoading && isSuperadmin;
-  const canSeeAutomations = !accessLoading && hasCapability("automations.manage");
-  const canSeeIntegrations = !accessLoading && hasCapability("workspace.manage_settings");
   const homeLoading = loading || accessLoading;
 
   useEffect(() => {
@@ -77,10 +74,7 @@ export default function HomePage({ user }) {
 
   const systemApps = [
     { id: "apps", name: "App Manager", route: "/apps", system: true, icon: <LayoutGrid size={56} strokeWidth={1.31} className="text-primary" /> },
-    ...(canSeeStudio ? [{ id: "studio", name: "Studio", route: "/studio", system: true, icon: <PenTool size={56} strokeWidth={1.31} className="text-primary" /> }] : []),
     ...(canSeeOctoAi ? [{ id: "octo_ai", name: "Octo AI", route: "/octo-ai", system: true, icon: <Sparkles size={56} strokeWidth={1.31} className="text-primary" /> }] : []),
-    ...(canSeeAutomations ? [{ id: "automations", name: "Automations", route: "/automations", system: true, icon: <Workflow size={56} strokeWidth={1.31} className="text-primary" /> }] : []),
-    ...(canSeeIntegrations ? [{ id: "integrations", name: "Integrations", route: "/integrations", system: true, icon: <Wrench size={56} strokeWidth={1.31} className="text-primary" /> }] : []),
     { id: "settings", name: "Settings", route: "/settings", system: true, icon: <SettingsIcon size={56} strokeWidth={1.31} className="text-primary" /> },
   ].map((app) => ({ ...app, icon_url: getAppIcon(app.id) }));
 

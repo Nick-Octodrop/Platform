@@ -1,5 +1,3 @@
-// SideNav encodes the system vs module mental model.
-// System items are always visible; enabled modules appear as shortcuts.
 import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useModuleStore } from "../state/moduleStore.jsx";
@@ -66,7 +64,6 @@ export default function SideNav() {
     return [...pinnedFirst, ...recentNext, ...rest];
   }, [enabledApps, pinned, recent]);
 
-  const canSeeIntegrations = !accessLoading && hasCapability("workspace.manage_settings");
   const canSeeOctoAi = !accessLoading && isSuperadmin;
 
   return (
@@ -77,10 +74,7 @@ export default function SideNav() {
           <div className="text-xs uppercase opacity-60 mb-2">Core</div>
           <NavLink to={appendOctoAiFrameParams("/home")} className={navLinkClass}>Home</NavLink>
           <NavLink to={appendOctoAiFrameParams("/apps")} className={navLinkClass}>Apps</NavLink>
-          <NavLink to={appendOctoAiFrameParams("/studio")} className={navLinkClass}>Studio</NavLink>
           {canSeeOctoAi ? <NavLink to={appendOctoAiFrameParams("/octo-ai")} className={navLinkClass}>Octo AI</NavLink> : null}
-          <NavLink to={appendOctoAiFrameParams("/automations")} className={navLinkClass}>Automations</NavLink>
-          {canSeeIntegrations ? <NavLink to={appendOctoAiFrameParams("/integrations")} className={navLinkClass}>Integrations</NavLink> : null}
           <NavLink to={appendOctoAiFrameParams("/ops")} className={navLinkClass}>Ops</NavLink>
         </div>
         <div>

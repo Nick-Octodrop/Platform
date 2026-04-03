@@ -28,18 +28,20 @@ export default function ValidationPanel({
 
   return (
     <div className="mb-3">
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-semibold">{title}</div>
-        {showFix && hasIssues && (
-          <button
-            className="btn btn-sm btn-primary"
-            onClick={onFix}
-            disabled={fixDisabled}
-          >
-            {fixLabel}
-          </button>
-        )}
-      </div>
+      {(title || (showFix && hasIssues)) && (
+        <div className="flex items-center justify-between">
+          {title ? <div className="text-sm font-semibold">{title}</div> : <div />}
+          {showFix && hasIssues && (
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={onFix}
+              disabled={fixDisabled}
+            >
+              {fixLabel}
+            </button>
+          )}
+        </div>
+      )}
       {showIdle && <div className="text-xs opacity-60 mt-2">{idleMessage}</div>}
       {hasErrors && (
         <div className="alert alert-error text-xs mt-2">

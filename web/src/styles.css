@@ -62,6 +62,36 @@ body {
     @apply w-full;
   }
 
+  .badge-dismissible {
+    @apply inline-flex items-center gap-1.5 px-2 py-1;
+    min-height: 2rem;
+    height: auto;
+  }
+
+  .badge-remove {
+    @apply inline-flex items-center justify-center rounded-full;
+    width: 1.1rem;
+    min-width: 1.1rem;
+    height: 1.1rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    opacity: 0.6;
+    line-height: 1;
+  }
+
+  .badge-remove:hover {
+    background: hsl(var(--b3) / 0.8);
+    opacity: 1;
+  }
+
+  .badge-remove:focus-visible {
+    outline: 2px solid hsl(var(--bc) / 0.2);
+    outline-offset: 1px;
+    opacity: 1;
+  }
+
   html.ui-density-sm .form-control .input,
   html.ui-density-sm .fieldset .input {
     @apply input-sm;
@@ -230,5 +260,20 @@ body {
   html.ui-density-md .toggle {
     width: 2.75rem;
     height: 1.45rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .automation-drawer-linear [class*="md:grid-cols-"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .automation-drawer-linear [class*="md:col-span-"] {
+    grid-column: span 1 / span 1 !important;
+  }
+
+  .automation-drawer-linear .form-control[class*="max-w-"] {
+    max-width: none !important;
+    width: 100%;
   }
 }

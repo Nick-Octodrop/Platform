@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiFetch } from "../api.js";
+import { useToast } from "../components/Toast.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
 
@@ -31,12 +32,12 @@ function emptyForm() {
 export default function SettingsWebhookSubscriptionDetailPage() {
   const { subscriptionId } = useParams();
   const navigate = useNavigate();
+  const { pushToast } = useToast();
   const [items, setItems] = useState([]);
   const [secrets, setSecrets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [form, setForm] = useState(emptyForm());
   const [activeTabId, setActiveTabId] = useState("details");
 
@@ -85,7 +86,6 @@ export default function SettingsWebhookSubscriptionDetailPage() {
     if (!form.id || saving) return;
     setSaving(true);
     setError("");
-    setNotice("");
     try {
       let headersJson = {};
       try {
@@ -104,7 +104,7 @@ export default function SettingsWebhookSubscriptionDetailPage() {
           headers_json: headersJson,
         },
       });
-      setNotice("Webhook subscription updated.");
+      pushToast("success", "Webhook subscription updated.");
       await load();
     } catch (err) {
       setError(err?.message || "Failed to update webhook subscription");
@@ -117,9 +117,9 @@ export default function SettingsWebhookSubscriptionDetailPage() {
     if (!item?.id || saving) return;
     setSaving(true);
     setError("");
-    setNotice("");
     try {
       await apiFetch(`/settings/webhook-subscriptions/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+      pushToast("success", "Webhook subscription deleted.");
       navigate("/settings/webhook-subscriptions");
     } catch (err) {
       setError(err?.message || "Failed to delete webhook subscription");
@@ -138,6 +138,7 @@ export default function SettingsWebhookSubscriptionDetailPage() {
       ]}
       activeTabId={activeTabId}
       onTabChange={setActiveTabId}
+      contentContainer={true}
       rightActions={(
         <div className="flex items-center gap-2">
           {activeTabId === "details" ? (
@@ -155,7 +156,6 @@ export default function SettingsWebhookSubscriptionDetailPage() {
       )}
     >
       {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
-      {notice ? <div className="alert alert-success text-sm mb-4">{notice}</div> : null}
 
       {loading ? (
         <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-70">Loading…</div>

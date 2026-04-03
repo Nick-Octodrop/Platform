@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { MessageSquare, MoreHorizontal, ShieldCheck } from "lucide-react";
 import Tabs from "../../components/Tabs.jsx";
 import ValidationPanel from "../../components/ValidationPanel.jsx";
@@ -8,6 +7,7 @@ import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM } from "../../components/buttonStyles
 import { apiFetch } from "../../api.js";
 import { useAccessContext } from "../../access.js";
 import useMediaQuery from "../../hooks/useMediaQuery.js";
+import ResponsiveDrawer from "../../ui/ResponsiveDrawer.jsx";
 
 const DEFAULT_SAMPLE = { entity_id: "", record_id: "" };
 
@@ -29,6 +29,8 @@ export default function TemplateStudioShell({
   enableAutosave = true,
   activeTab: externalActiveTab,
   onTabChange,
+  desktopContentClass = "",
+  desktopFrameClass = "",
 }) {
   const { isSuperadmin } = useAccessContext();
   const isMobile = useMediaQuery("(max-width: 768px)");
@@ -43,7 +45,7 @@ export default function TemplateStudioShell({
   const [sample, setSample] = useState(DEFAULT_SAMPLE);
   const [renderModalOpen, setRenderModalOpen] = useState(false);
   const [renderSample, setRenderSample] = useState({ entity_id: "", record_id: "" });
-  const [mobileUtilitySheet, setMobileUtilitySheet] = useState("");
+  const [utilityDrawer, setUtilityDrawer] = useState("");
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const debounceRef = useRef(null);
   const previewDebounceRef = useRef(null);
@@ -51,10 +53,6 @@ export default function TemplateStudioShell({
   const validateDebounceRef = useRef(null);
   const lastValidateSigRef = useRef("");
   const loadRecordRef = useRef(loadRecord);
-  const layoutKey = useMemo(() => {
-    return `template-studio:${profile?.kind || "default"}`;
-  }, [profile?.kind]);
-
   const sampleStorageKey = useMemo(() => {
     return `template-studio-sample:${profile?.kind || "template"}`;
   }, [profile?.kind]);
@@ -307,7 +305,7 @@ export default function TemplateStudioShell({
   ];
   const validationContent = renderValidationPanel ? renderValidationPanel(ctx) : (
     <ValidationPanel
-      title="Validation"
+      title=""
       errors={validationState?.errors || []}
       warnings={mergedWarnings}
       idleMessage="Validation runs automatically while you edit."
@@ -319,6 +317,40 @@ export default function TemplateStudioShell({
 
   const primaryAction = actions.find((action) => action.kind === "primary") || null;
   const secondaryActions = actions.filter((action) => action !== primaryAction);
+  const validationStatus = validationState
+    ? ((validationState?.errors || []).length > 0
+      ? "error"
+      : mergedWarnings.length > 0
+        ? "warning"
+        : "success")
+    : "idle";
+  const validationButtonClass = validationStatus === "success"
+    ? "btn btn-outline btn-sm btn-success"
+    : validationStatus === "warning"
+      ? "btn btn-outline btn-sm btn-warning"
+      : validationStatus === "error"
+        ? "btn btn-outline btn-sm btn-error"
+        : SOFT_BUTTON_SM;
+  const validationButtonLabel = validationStatus === "success"
+    ? "Validated"
+    : validationStatus === "warning"
+      ? "Warning"
+      : validationStatus === "error"
+        ? "Error"
+        : "Validation";
+  const utilityButtons = [
+    { id: "agent", label: "AI", icon: MessageSquare },
+    { id: "validation", label: validationButtonLabel, icon: ShieldCheck },
+  ];
+  const utilityDrawerTitle = utilityDrawer === "agent" ? "AI Assistant" : "Validation";
+  const utilityDrawerDescription = utilityDrawer === "agent"
+    ? "Use the assistant to draft and refine changes in this editor."
+    : "Review validation results and warnings while you work.";
+  const utilityDrawerContent = utilityDrawer === "agent" ? leftPaneContent : validationContent;
+
+  useEffect(() => {
+    lastValidateSigRef.current = "";
+  }, [validate]);
 
   useEffect(() => {
     if (!validate) return;
@@ -375,6 +407,23 @@ export default function TemplateStudioShell({
               <div className="text-2xl font-semibold truncate">{title}</div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              {utilityButtons.map((button) => {
+                const Icon = button.icon;
+                const isActive = utilityDrawer === button.id;
+                return (
+                  <button
+                    key={button.id}
+                    type="button"
+                    className={button.id === "validation"
+                      ? `${validationButtonClass} ${isActive ? "btn-active" : ""}`
+                      : `${SOFT_BUTTON_SM} ${isActive ? "bg-base-300" : ""}`}
+                    onClick={() => setUtilityDrawer(button.id)}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {button.label}
+                  </button>
+                );
+              })}
               {primaryAction && (
                 <button
                   className={PRIMARY_BUTTON_SM}
@@ -416,25 +465,6 @@ export default function TemplateStudioShell({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className={SOFT_BUTTON_SM}
-              onClick={() => setMobileUtilitySheet("agent")}
-            >
-              <MessageSquare className="h-4 w-4" />
-              Agent
-            </button>
-            <button
-              type="button"
-              className={SOFT_BUTTON_SM}
-              onClick={() => setMobileUtilitySheet("validation")}
-            >
-              <ShieldCheck className="h-4 w-4" />
-              Validation
-            </button>
-          </div>
-
           <div>
             <Tabs
               activeId={activeTabId}
@@ -451,109 +481,103 @@ export default function TemplateStudioShell({
           </div>
         </div>
 
-        {mobileUtilitySheet && (
-          <div className="fixed inset-0 z-[220]">
-            <button
-              type="button"
-              className="absolute inset-0 bg-base-content/35"
-              aria-label="Close panel"
-              onClick={() => setMobileUtilitySheet("")}
-            />
-            <div className="absolute inset-x-0 bottom-0 max-h-[85vh] rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4 flex flex-col">
-              <div className="mx-auto mb-4 h-1.5 w-24 rounded-full bg-base-300" />
-              <div className="flex items-center justify-between gap-2 pb-3">
-                <div className="text-sm font-semibold">
-                  {mobileUtilitySheet === "agent" ? "Agent" : ""}
-                </div>
-                <button type="button" className={SOFT_BUTTON_SM} onClick={() => setMobileUtilitySheet("")}>
-                  Done
-                </button>
-              </div>
-              <div className="flex-1 min-h-0 overflow-auto">
-                {mobileUtilitySheet === "agent" ? leftPaneContent : validationContent}
-              </div>
-            </div>
-          </div>
-        )}
+        <ResponsiveDrawer
+          open={Boolean(utilityDrawer)}
+          onClose={() => setUtilityDrawer("")}
+          title={utilityDrawerTitle}
+          description={utilityDrawerDescription}
+          mobileHeightClass="max-h-[85vh]"
+          zIndexClass="z-[220]"
+        >
+          {utilityDrawerContent}
+        </ResponsiveDrawer>
       </div>
     );
   }
 
   return (
     <div className="h-[calc(100vh-6rem)] min-h-0 flex flex-col overflow-hidden">
-      <div className="flex-1 min-h-0">
-        <PanelGroup direction="horizontal" autoSaveId={`${layoutKey}:horizontal`}>
-          <Panel defaultSize={22} minSize={22} maxSize={40}>
-            <div className="card bg-base-100 shadow h-full min-h-0 flex flex-col overflow-hidden">
-              <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-6">
-                {leftPaneContent}
+      <div className={`flex-1 min-h-0 ${desktopFrameClass || ""}`}>
+        <div className="card bg-base-100 shadow h-full min-h-0 flex flex-col overflow-hidden">
+          <div className="h-full flex flex-col min-h-0 p-6">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xl font-semibold">{title}</div>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {utilityButtons.map((button) => {
+                  const Icon = button.icon;
+                  const isActive = utilityDrawer === button.id;
+                  return (
+                    <button
+                      key={button.id}
+                      type="button"
+                      className={button.id === "validation"
+                        ? `${validationButtonClass} ${isActive ? "btn-active" : ""}`
+                        : `${SOFT_BUTTON_SM} ${isActive ? "bg-base-300" : ""}`}
+                      onClick={() => setUtilityDrawer(button.id)}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {button.label}
+                    </button>
+                  );
+                })}
+                {actions.map((action) => {
+                  const cls = action.kind === "primary" ? PRIMARY_BUTTON_SM : SOFT_BUTTON_SM;
+                  return (
+                    <button
+                      key={action.id}
+                      className={cls}
+                      onClick={() => action.onClick?.(ctx)}
+                      disabled={saving || action.disabled}
+                    >
+                      {action.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
-          </Panel>
-          <PanelResizeHandle className="w-2 bg-base-200 hover:bg-base-300" />
-          <Panel minSize={55}>
-            <div className="card bg-base-100 shadow h-full min-h-0 flex flex-col overflow-hidden">
-              <PanelGroup direction="vertical" autoSaveId={`${layoutKey}:vertical`}>
-                <Panel defaultSize={88} minSize={55}>
-                  <div className="h-full flex flex-col min-h-0 p-6">
-                    <div className="flex items-center justify-end mb-3">
-                      <div className="flex items-center gap-2">
-                        {actions.map((action) => {
-                          const cls = action.kind === "primary" ? PRIMARY_BUTTON_SM : SOFT_BUTTON_SM;
-                          return (
-                            <button
-                              key={action.id}
-                              className={cls}
-                              onClick={() => action.onClick?.(ctx)}
-                              disabled={saving || action.disabled}
-                            >
-                              {action.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <div className="mb-3">
-                      <Tabs
-                        activeId={activeTabId}
-                        onChange={handleTabChange}
-                        tabs={(profile?.rightTabs || []).map((tab) => ({ id: tab.id, label: tab.label }))}
-                      />
-                    </div>
-                    <div className="flex-1 min-h-0 overflow-y-auto bg-base-100">
-                      {(profile?.rightTabs || []).map((tab) => {
-                        if (tab.id === "preview") {
-                          const isActive = tab.id === activeTabId;
-                          return (
-                            <div
-                              key={tab.id}
-                              className={`h-full ${isActive ? "" : "hidden"}`}
-                              aria-hidden={!isActive}
-                            >
-                              {tab.render(ctx)}
-                            </div>
-                          );
-                        }
-                        return tab.id === activeTabId ? (
-                          <div key={tab.id} className="h-full">
-                            {tab.render(ctx)}
-                          </div>
-                        ) : null;
-                      })}
-                    </div>
-                  </div>
-                </Panel>
-                <PanelResizeHandle className="h-2 bg-base-200 hover:bg-base-300" />
-                <Panel defaultSize={12} minSize={12} maxSize={40}>
-                  <div className="h-full border-t border-base-200 bg-base-100 p-6 overflow-y-auto">
-                    {validationContent}
-                  </div>
-                </Panel>
-              </PanelGroup>
+            <div className="mb-3">
+              <Tabs
+                activeId={activeTabId}
+                onChange={handleTabChange}
+                tabs={(profile?.rightTabs || []).map((tab) => ({ id: tab.id, label: tab.label }))}
+              />
             </div>
-          </Panel>
-        </PanelGroup>
+            <div className="flex-1 min-h-0 overflow-y-auto bg-base-100">
+              <div className={desktopContentClass || "w-full"}>
+                {(profile?.rightTabs || []).map((tab) => {
+                  if (tab.id === "preview") {
+                    const isActive = tab.id === activeTabId;
+                    return (
+                      <div
+                        key={tab.id}
+                        className={`h-full min-h-0 flex flex-col ${isActive ? "" : "hidden"}`}
+                        aria-hidden={!isActive}
+                      >
+                        {tab.render(ctx)}
+                      </div>
+                    );
+                  }
+                  return tab.id === activeTabId ? (
+                    <div key={tab.id} className="h-full">
+                      {tab.render(ctx)}
+                    </div>
+                  ) : null;
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
+      <ResponsiveDrawer
+        open={Boolean(utilityDrawer)}
+        onClose={() => setUtilityDrawer("")}
+        title={utilityDrawerTitle}
+        description={utilityDrawerDescription}
+      >
+        {utilityDrawerContent}
+      </ResponsiveDrawer>
     </div>
   );
 }
