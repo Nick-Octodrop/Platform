@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { apiFetch } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
@@ -45,19 +45,16 @@ function TokenModal({ token, onClose }) {
 
 function DetailPanel({ title, description, children, tone = "bg-base-100" }) {
   return (
-    <section className={`rounded-box border border-base-300 ${tone}`}>
-      <div className="border-b border-base-300 px-4 py-3">
-        <div className="font-medium">{title}</div>
-        {description ? <div className="mt-1 text-sm opacity-70">{description}</div> : null}
-      </div>
-      <div className="p-4">{children}</div>
+    <section className={`rounded-box border border-base-300 ${tone} p-4`}>
+      <div className="font-medium">{title}</div>
+      {description ? <div className="mt-1 text-sm opacity-70">{description}</div> : null}
+      <div className="mt-4">{children}</div>
     </section>
   );
 }
 
 export default function SettingsApiCredentialDetailPage() {
   const { credentialId } = useParams();
-  const navigate = useNavigate();
   const { pushToast } = useToast();
   const [items, setItems] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -142,25 +139,16 @@ export default function SettingsApiCredentialDetailPage() {
 
   return (
     <TabbedPaneShell
-      title={item?.name || "API Credential"}
-      subtitle="Scoped external API key, lifecycle controls, and request activity."
+      title=""
+      subtitle=""
       tabs={[
         { id: "details", label: "Details" },
         { id: "requests", label: "Request Logs" },
       ]}
       activeTabId={activeTabId}
       onTabChange={setActiveTabId}
-      contentContainer={true}
-      rightActions={(
-        <div className="flex items-center gap-2">
-          <button className="btn btn-sm btn-ghost" type="button" onClick={() => { load(); loadLogs(); }} disabled={loading || loadingLogs}>
-            Refresh
-          </button>
-          <button className="btn btn-sm" type="button" onClick={() => navigate("/settings/api-credentials")}>
-            Back
-          </button>
-        </div>
-      )}
+      contentContainer={false}
+      rightActions={null}
     >
       {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
 
@@ -239,11 +227,6 @@ export default function SettingsApiCredentialDetailPage() {
           title={`Request Logs for ${item.name || item.key_prefix}`}
           description="Recent `/ext/v1` activity for this credential."
         >
-          <div className="mb-4 flex justify-end">
-            <button type="button" className="btn btn-sm btn-ghost" onClick={loadLogs} disabled={loadingLogs}>
-              {loadingLogs ? "Refreshing..." : "Refresh Logs"}
-            </button>
-          </div>
           <div className="overflow-x-auto">
             <table className="table">
               <thead>

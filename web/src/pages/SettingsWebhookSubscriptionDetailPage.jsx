@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { apiFetch } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
@@ -7,12 +7,10 @@ import { formatDateTime } from "../utils/dateTime.js";
 
 function DetailPanel({ title, description, children, tone = "bg-base-100" }) {
   return (
-    <section className={`rounded-box border border-base-300 ${tone}`}>
-      <div className="border-b border-base-300 px-4 py-3">
-        <div className="font-medium">{title}</div>
-        {description ? <div className="mt-1 text-sm opacity-70">{description}</div> : null}
-      </div>
-      <div className="p-4">{children}</div>
+    <section className={`rounded-box border border-base-300 ${tone} p-4`}>
+      <div className="font-medium">{title}</div>
+      {description ? <div className="mt-1 text-sm opacity-70">{description}</div> : null}
+      <div className="mt-4">{children}</div>
     </section>
   );
 }
@@ -31,7 +29,6 @@ function emptyForm() {
 
 export default function SettingsWebhookSubscriptionDetailPage() {
   const { subscriptionId } = useParams();
-  const navigate = useNavigate();
   const { pushToast } = useToast();
   const [items, setItems] = useState([]);
   const [secrets, setSecrets] = useState([]);
@@ -113,47 +110,18 @@ export default function SettingsWebhookSubscriptionDetailPage() {
     }
   }
 
-  async function deleteSubscription() {
-    if (!item?.id || saving) return;
-    setSaving(true);
-    setError("");
-    try {
-      await apiFetch(`/settings/webhook-subscriptions/${encodeURIComponent(item.id)}`, { method: "DELETE" });
-      pushToast("success", "Webhook subscription deleted.");
-      navigate("/settings/webhook-subscriptions");
-    } catch (err) {
-      setError(err?.message || "Failed to delete webhook subscription");
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <TabbedPaneShell
-      title={item?.name || "Webhook Subscription"}
-      subtitle="Outbound delivery settings for an external endpoint."
+      title=""
+      subtitle=""
       tabs={[
         { id: "details", label: "Details" },
         { id: "delivery", label: "Delivery" },
       ]}
       activeTabId={activeTabId}
       onTabChange={setActiveTabId}
-      contentContainer={true}
-      rightActions={(
-        <div className="flex items-center gap-2">
-          {activeTabId === "details" ? (
-            <button className="btn btn-sm btn-primary" type="button" onClick={saveSubscription} disabled={loading || saving || !form.name.trim() || !form.target_url.trim() || !form.event_pattern.trim()}>
-              Save
-            </button>
-          ) : null}
-          <button className="btn btn-sm btn-ghost" type="button" onClick={load} disabled={loading || saving}>
-            Refresh
-          </button>
-          <button className="btn btn-sm" type="button" onClick={() => navigate("/settings/webhook-subscriptions")} disabled={saving}>
-            Back
-          </button>
-        </div>
-      )}
+      contentContainer={false}
+      rightActions={null}
     >
       {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
 
@@ -201,10 +169,7 @@ export default function SettingsWebhookSubscriptionDetailPage() {
 
             <div className="flex flex-wrap gap-2">
               <button className="btn btn-sm btn-primary" type="button" onClick={saveSubscription} disabled={saving || !form.name.trim() || !form.target_url.trim() || !form.event_pattern.trim()}>
-                {saving ? "Saving..." : "Save Changes"}
-              </button>
-              <button className="btn btn-sm btn-outline text-error" type="button" onClick={deleteSubscription} disabled={saving}>
-                Delete
+                {saving ? "Saving..." : "Save"}
               </button>
             </div>
           </DetailPanel>

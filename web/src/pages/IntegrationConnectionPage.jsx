@@ -3,7 +3,6 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ArrowRight, CheckCircle2, Circle, KeyRound, Plus, ShieldCheck, TestTube2 } from "lucide-react";
 import { apiFetch } from "../api.js";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
-import useMediaQuery from "../hooks/useMediaQuery.js";
 import { formatDateTime } from "../utils/dateTime.js";
 
 function providerKeyFromType(type) {
@@ -181,8 +180,6 @@ function TableList({ emptyLabel, columns, rows }) {
 export default function IntegrationConnectionPage() {
   const { connectionId } = useParams();
   const navigate = useNavigate();
-  const isMobile = useMediaQuery("(max-width: 768px)");
-
   const [item, setItem] = useState(null);
   const [providers, setProviders] = useState([]);
   const [secrets, setSecrets] = useState([]);
@@ -625,20 +622,6 @@ export default function IntegrationConnectionPage() {
     }
   }
 
-  async function removeConnection() {
-    if (!item?.id) return;
-    const ok = window.confirm("Delete this integration connection? This cannot be undone.");
-    if (!ok) return;
-    setError("");
-    setNotice("");
-    try {
-      await apiFetch(`/integrations/connections/${encodeURIComponent(item.id)}`, { method: "DELETE" });
-      navigate("/integrations");
-    } catch (err) {
-      setError(err?.message || "Delete failed");
-    }
-  }
-
   async function createMapping() {
     if (creatingMapping || !item?.id) return;
     setCreatingMapping(true);
@@ -996,49 +979,19 @@ export default function IntegrationConnectionPage() {
 
   return (
     <TabbedPaneShell
-      title={item?.name || "Connection"}
-      subtitle={provider ? `${provider.name} • ${provider.auth_type || "no auth"}` : "Integration connection"}
+      title=""
+      subtitle=""
       tabs={tabs}
       activeTabId={activeTab}
       onTabChange={setActiveTab}
-      mobilePrimaryActions={[
-        { label: saving ? "Saving..." : "Save", onClick: save, disabled: loading || saving || !name.trim(), className: "btn btn-primary btn-sm" },
-      ]}
-      mobileOverflowActions={[
-        { label: testing ? "Testing..." : "Test connection", onClick: runTest, disabled: loading || testing || !item?.id },
-        { label: "Refresh", onClick: load, disabled: loading || saving },
-        { label: "Back", onClick: () => navigate(-1), disabled: saving },
-      ]}
-      rightActions={(
-        <div className="flex items-center gap-2">
-          <button className="btn btn-sm btn-outline" type="button" onClick={runTest} disabled={loading || testing || !item?.id}>
-            {testing ? "Testing..." : "Test connection"}
-          </button>
-          <button className="btn btn-sm btn-ghost" type="button" onClick={load} disabled={loading || saving}>
-            Refresh
-          </button>
-          <button className="btn btn-sm btn-primary" type="button" onClick={save} disabled={loading || saving || !name.trim()}>
-            Save
-          </button>
-          <button className="btn btn-sm" type="button" onClick={() => navigate(-1)} disabled={saving}>
-            Back
-          </button>
-          <button
-            className="btn btn-sm btn-outline btn-error"
-            type="button"
-            onClick={removeConnection}
-            disabled={loading || saving || !item || item.status !== "disabled"}
-            title={item && item.status !== "disabled" ? "Disable the connection before deleting it" : undefined}
-          >
-            Delete
-          </button>
-        </div>
-      )}
+      mobilePrimaryActions={[]}
+      mobileOverflowActions={[]}
+      rightActions={null}
     >
       {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
       {notice ? <div className="alert alert-success text-sm mb-4">{notice}</div> : null}
 
-      <div className={`${isMobile ? "space-y-4" : "space-y-4"}`}>
+      <div className="space-y-4">
         {loading ? (
           <div className="text-sm opacity-70">Loading…</div>
         ) : !item ? (
@@ -1119,6 +1072,11 @@ export default function IntegrationConnectionPage() {
                   })}
                 </div>
               )}
+              <div className="flex flex-wrap gap-2">
+                <button className="btn btn-primary btn-sm" type="button" onClick={save} disabled={loading || saving || !item?.id}>
+                  {saving ? "Saving..." : "Save"}
+                </button>
+              </div>
             </Section>
           </div>
         ) : activeTab === "request" ? (
@@ -1588,6 +1546,15 @@ export default function IntegrationConnectionPage() {
                     />
                   </div>
                 </details>
+
+                <div className="flex flex-wrap gap-2">
+                  <button className="btn btn-outline btn-sm" type="button" onClick={runTest} disabled={loading || testing || !item?.id}>
+                    {testing ? "Testing..." : "Test connection"}
+                  </button>
+                  <button className="btn btn-primary btn-sm" type="button" onClick={save} disabled={loading || saving || !name.trim()}>
+                    {saving ? "Saving..." : "Save"}
+                  </button>
+                </div>
               </div>
             </Section>
 

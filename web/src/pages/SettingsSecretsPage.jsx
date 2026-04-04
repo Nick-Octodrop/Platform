@@ -1,19 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { MoreHorizontal } from "lucide-react";
 import { apiFetch } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
-
-function SummaryStat({ label, value }) {
-  return (
-    <div>
-      <div className="text-xs uppercase tracking-wide opacity-60">{label}</div>
-      <div className="mt-1 break-words text-sm">{value || "—"}</div>
-    </div>
-  );
-}
+import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 
 function SecretModal({
   title,
@@ -280,15 +273,6 @@ export default function SettingsSecretsPage() {
           <div className="space-y-4 md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {error ? <div className="alert alert-error text-sm">{error}</div> : null}
 
-            <div className="rounded-box border border-base-300 bg-base-100 p-4">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <SummaryStat label="Secrets" value={String(rows.length)} />
-                <SummaryStat label="Providers" value={String(new Set(rows.map((row) => row.provider_key).filter((v) => v && v !== "—")).size)} />
-                <SummaryStat label="Rotated" value={String(rows.filter((row) => row.version > 1).length)} />
-                <SummaryStat label="Active" value={String(rows.filter((row) => row.status === "active").length)} />
-              </div>
-            </div>
-
             <SystemListToolbar
               title="Secrets"
               createTooltip="New secret"
@@ -303,15 +287,27 @@ export default function SettingsSecretsPage() {
               showSavedViews={false}
               rightActions={
                 selectedIds.length > 0 ? (
-                  <div className="flex items-center gap-2">
-                    {singleSelected ? (
-                      <button className="btn btn-sm btn-outline" type="button" onClick={() => setShowRotateModal(true)}>
-                        Rotate
-                      </button>
-                    ) : null}
-                    <button className="btn btn-sm btn-outline btn-error" type="button" onClick={() => setShowDeleteModal(true)}>
-                      Delete
+                  <div className="dropdown dropdown-end">
+                    <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                      <MoreHorizontal className="h-4 w-4" />
                     </button>
+                    <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
+                      <li className="menu-title">
+                        <span>Selection</span>
+                      </li>
+                      {singleSelected ? (
+                        <li>
+                          <button onClick={() => setShowRotateModal(true)}>
+                            Rotate
+                          </button>
+                        </li>
+                      ) : null}
+                      <li>
+                        <button className="text-error" onClick={() => setShowDeleteModal(true)}>
+                          {selectedIds.length === 1 ? "Delete" : `Delete selected (${selectedIds.length})`}
+                        </button>
+                      </li>
+                    </ul>
                   </div>
                 ) : null
               }
@@ -323,18 +319,9 @@ export default function SettingsSecretsPage() {
               }}
             />
 
-            <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-70">
-              Store provider credentials here and link them to integration connections by named secret slots such as `api_token`, `client_secret`, or `signing_secret`.
-            </div>
-
             <div className="md:mt-4">
               {loading ? (
                 <div className="text-sm opacity-70">Loading…</div>
-              ) : rows.length === 0 ? (
-                <div className="space-y-2 text-sm opacity-70">
-                  <div>No secrets yet.</div>
-                  <div>Create secrets here first, then attach them to integration connections from the connection’s `Secrets` tab.</div>
-                </div>
               ) : (
                 <ListViewRenderer
                   view={listView}
@@ -353,6 +340,7 @@ export default function SettingsSecretsPage() {
                   onPageChange={setPage}
                   onTotalItemsChange={setTotalItems}
                   showPaginationControls={false}
+                  emptyLabel={null}
                   selectedIds={selectedIds}
                   onToggleSelect={(id, checked) => {
                     if (!id) return;

@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { MoreHorizontal } from "lucide-react";
 import { apiFetch } from "../api.js";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
+import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 
 function SubscriptionModal({
   form,
@@ -106,6 +108,7 @@ export default function SettingsWebhookSubscriptionsPage() {
   const [page, setPage] = useState(0);
   const [totalItems, setTotalItems] = useState(0);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [createForm, setCreateForm] = useState(emptyForm());
 
   async function load() {
@@ -160,6 +163,24 @@ export default function SettingsWebhookSubscriptionsPage() {
       }
     } catch (err) {
       setError(err?.message || "Failed to create webhook subscription");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteSelectedSubscriptions() {
+    if (saving || selectedIds.length === 0) return;
+    setSaving(true);
+    setError("");
+    try {
+      await Promise.all(
+        selectedIds.map((id) => apiFetch(`/settings/webhook-subscriptions/${encodeURIComponent(id)}`, { method: "DELETE" }))
+      );
+      setShowDeleteModal(false);
+      setSelectedIds([]);
+      await load();
+    } catch (err) {
+      setError(err?.message || "Failed to delete webhook subscriptions");
     } finally {
       setSaving(false);
     }
@@ -263,13 +284,37 @@ export default function SettingsWebhookSubscriptionsPage() {
                 totalItems,
                 onPageChange: setPage,
               }}
+              rightActions={
+                selectedIds.length > 0 ? (
+                  <div className="dropdown dropdown-end">
+                    <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </button>
+                    <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
+                      <li className="menu-title">
+                        <span>Selection</span>
+                      </li>
+                      {selectedIds.length === 1 ? (
+                        <li>
+                          <button onClick={() => navigate(`/settings/webhook-subscriptions/${selectedIds[0]}`)}>
+                            Open subscription
+                          </button>
+                        </li>
+                      ) : null}
+                      <li>
+                        <button className="text-error" onClick={() => setShowDeleteModal(true)} disabled={saving}>
+                          {selectedIds.length === 1 ? "Delete" : `Delete selected (${selectedIds.length})`}
+                        </button>
+                      </li>
+                    </ul>
+                  </div>
+                ) : null
+              }
             />
 
             <div className="md:mt-4">
               {loading ? (
                 <div className="text-sm opacity-70">Loading…</div>
-              ) : rows.length === 0 ? (
-                <div className="text-sm opacity-60">No webhook subscriptions yet.</div>
               ) : (
                 <ListViewRenderer
                   view={listView}
@@ -288,6 +333,7 @@ export default function SettingsWebhookSubscriptionsPage() {
                   onPageChange={setPage}
                   onTotalItemsChange={setTotalItems}
                   showPaginationControls={false}
+                  emptyLabel={null}
                   selectedIds={selectedIds}
                   onToggleSelect={(id, checked) => {
                     if (!id) return;
@@ -321,6 +367,25 @@ export default function SettingsWebhookSubscriptionsPage() {
           onCancel={() => setShowCreateModal(false)}
           onConfirm={createSubscription}
         />
+      ) : null}
+
+      {showDeleteModal ? (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-md">
+            <h3 className="text-lg font-semibold">Delete webhook subscription{selectedIds.length > 1 ? "s" : ""}?</h3>
+            <p className="mt-2 text-sm opacity-70">
+              This will permanently remove {selectedIds.length} webhook subscription{selectedIds.length > 1 ? "s" : ""}. This cannot be undone.
+            </p>
+            <div className="modal-action">
+              <button type="button" className="btn btn-ghost" onClick={() => setShowDeleteModal(false)} disabled={saving}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-error" onClick={deleteSelectedSubscriptions} disabled={saving}>
+                {saving ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </div>
   );

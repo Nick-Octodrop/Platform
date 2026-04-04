@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { MoreHorizontal } from "lucide-react";
 import { apiFetch } from "../api.js";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
+import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 
 const AVAILABLE_SCOPES = [
   { id: "meta.read", label: "Metadata Read", help: "List entities and field metadata." },
@@ -288,13 +290,32 @@ export default function SettingsApiCredentialsPage() {
                 totalItems,
                 onPageChange: setPage,
               }}
+              rightActions={
+                selectedIds.length > 0 ? (
+                  <div className="dropdown dropdown-end">
+                    <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </button>
+                    <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
+                      <li className="menu-title">
+                        <span>Selection</span>
+                      </li>
+                      {selectedIds.length === 1 ? (
+                        <li>
+                          <button onClick={() => navigate(`/settings/api-credentials/${selectedIds[0]}`)}>
+                            Open credential
+                          </button>
+                        </li>
+                      ) : null}
+                    </ul>
+                  </div>
+                ) : null
+              }
             />
 
             <div className="md:mt-4">
               {loading ? (
                 <div className="text-sm opacity-70">Loading…</div>
-              ) : rows.length === 0 ? (
-                <div className="text-sm opacity-60">No API credentials yet.</div>
               ) : (
                 <ListViewRenderer
                   view={listView}
@@ -313,6 +334,7 @@ export default function SettingsApiCredentialsPage() {
                   onPageChange={setPage}
                   onTotalItemsChange={setTotalItems}
                   showPaginationControls={false}
+                  emptyLabel={null}
                   selectedIds={selectedIds}
                   onToggleSelect={(id, checked) => {
                     if (!id) return;

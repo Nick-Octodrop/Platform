@@ -24,6 +24,14 @@ function AutomationLookupValueInput({ fieldDef, value, onChange, placeholder = "
   const containerRef = useRef(null);
   const entityId = fieldDef?.entity || null;
   const labelField = fieldDef?.display_field || null;
+  const domainSignature = JSON.stringify(fieldDef?.domain || null);
+  const domain = useMemo(() => {
+    try {
+      return domainSignature ? JSON.parse(domainSignature) : null;
+    } catch {
+      return null;
+    }
+  }, [domainSignature]);
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedSearch(search), 250);
@@ -41,7 +49,7 @@ function AutomationLookupValueInput({ fieldDef, value, onChange, placeholder = "
           body: JSON.stringify({
             q: (debouncedSearch || "").trim() || null,
             limit: 20,
-            domain: fieldDef?.domain || null,
+            domain,
             record_context: {},
           }),
         });
@@ -63,7 +71,7 @@ function AutomationLookupValueInput({ fieldDef, value, onChange, placeholder = "
     return () => {
       cancelled = true;
     };
-  }, [entityId, labelField, debouncedSearch, opened, fieldDef?.domain]);
+  }, [entityId, labelField, debouncedSearch, opened, domain]);
 
   useEffect(() => {
     let cancelled = false;
@@ -4504,7 +4512,7 @@ export default function AutomationEditorPage({ user }) {
         onClose={() => setStepModalOpen(false)}
         title={selectedStep ? stepSummaryText(selectedStep) : "Step"}
         description={selectedStep ? stepHelpText(selectedStep) : ""}
-        mobileHeightClass="max-h-[92vh]"
+        mobileHeightClass="h-[92dvh] max-h-[92dvh]"
         zIndexClass="z-[240]"
       >
         {selectedStep ? (
@@ -5829,9 +5837,11 @@ export default function AutomationEditorPage({ user }) {
     </div>
   );
 
+  const automationTabSectionClass = "rounded-box border border-base-300 bg-base-100 p-4";
+
   const flowTab = (
     <div className="space-y-5">
-      <div className="space-y-3 min-w-0">
+      <section className={automationTabSectionClass}>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
           <label className="form-control md:col-span-4">
             <span className="label-text">Name</span>
@@ -5842,10 +5852,12 @@ export default function AutomationEditorPage({ user }) {
             <input className="input input-bordered bg-base-100" value={description} onChange={(e) => setDescription(e.target.value)} />
           </label>
         </div>
+      </section>
 
+      <section className={`${automationTabSectionClass} space-y-3 min-w-0`}>
         <button
           type="button"
-          className="w-full rounded-2xl border border-base-300 bg-base-200/40 p-4 text-left transition-colors duration-150 hover:bg-base-200/70"
+          className="w-full rounded-box border border-base-300 bg-base-200/40 p-4 text-left transition-colors duration-150 hover:bg-base-200/70"
           onClick={() => setTriggerDrawerOpen(true)}
         >
           <div className="min-w-0">
@@ -5873,7 +5885,7 @@ export default function AutomationEditorPage({ user }) {
         ) : (
           renderStepCards(steps)
         )}
-      </div>
+      </section>
     </div>
   );
 
@@ -5932,12 +5944,13 @@ export default function AutomationEditorPage({ user }) {
       return (
         <div className="h-full min-h-0 flex flex-col gap-4">
           {runsError && <div className="alert alert-error text-sm">{runsError}</div>}
-          {runsLoading ? (
-            <div className="text-sm opacity-60">Loading runs…</div>
-          ) : (
-            <>
-              <SystemListToolbar
-                title="Runs"
+          <section className={`${automationTabSectionClass} h-full min-h-0 flex flex-col gap-4`}>
+            {runsLoading ? (
+              <div className="text-sm opacity-60">Loading runs…</div>
+            ) : (
+              <>
+                <SystemListToolbar
+                title=""
                 searchValue={runsSearch}
                 onSearchChange={(value) => {
                   setRunsSearch(value);
@@ -5972,9 +5985,7 @@ export default function AutomationEditorPage({ user }) {
                 showSavedViews={false}
               />
 
-              {!runs.length ? (
-                <div className="text-sm opacity-60">No runs yet.</div>
-              ) : (
+              <div className="min-h-0 flex-1">
                 <ListViewRenderer
                   view={runListView}
                   fieldIndex={runFieldIndex}
@@ -5996,9 +6007,10 @@ export default function AutomationEditorPage({ user }) {
                     if (id) navigate(`/automation-runs/${id}`);
                   }}
                 />
-              )}
-            </>
-          )}
+              </div>
+              </>
+            )}
+          </section>
         </div>
       );
     })()
@@ -6021,8 +6033,8 @@ export default function AutomationEditorPage({ user }) {
   }
 
   const jsonTab = (
-    <div className="h-full min-h-0 flex flex-col space-y-3">
-      <div className="rounded-box border border-base-300 bg-base-200/40 p-4 space-y-3">
+    <div className="h-full min-h-0 flex flex-col">
+      <section className={`${automationTabSectionClass} h-full min-h-0 flex flex-col space-y-3`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="text-sm font-semibold">Automation JSON</div>
@@ -6047,7 +6059,7 @@ export default function AutomationEditorPage({ user }) {
           }}
           minHeight="70vh"
         />
-      </div>
+      </section>
     </div>
   );
 
@@ -6114,7 +6126,7 @@ export default function AutomationEditorPage({ user }) {
         onClose={() => setTriggerDrawerOpen(false)}
         title="Trigger"
         description="Choose what starts this automation and add any optional trigger rules."
-        mobileHeightClass="max-h-[92vh]"
+        mobileHeightClass="h-[92dvh] max-h-[92dvh]"
         zIndexClass="z-[240]"
       >
         {triggerEditorContent}
@@ -6124,7 +6136,7 @@ export default function AutomationEditorPage({ user }) {
         onClose={() => setStepModalOpen(false)}
         title={selectedStep ? stepSummaryText(selectedStep) : "Step"}
         description={selectedStep ? stepHelpText(selectedStep) : ""}
-        mobileHeightClass="max-h-[92vh]"
+        mobileHeightClass="h-[92dvh] max-h-[92dvh]"
         zIndexClass="z-[240]"
       >
         <div className="automation-drawer-linear" onFocusCapture={rememberFocusedField}>

@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { MoreHorizontal } from "lucide-react";
 import { apiFetch } from "../api.js";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
+import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 
 function providerKeyFromType(type) {
   const raw = String(type || "");
@@ -33,6 +35,8 @@ export default function IntegrationsPage() {
   const [totalItems, setTotalItems] = useState(0);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [createForm, setCreateForm] = useState({
     provider: "",
     name: "",
@@ -109,11 +113,12 @@ export default function IntegrationsPage() {
     }
   }
 
-  async function removeConnection(id) {
-    const ok = window.confirm("Delete this integration connection? This cannot be undone.");
-    if (!ok) return;
+  async function deleteSelected() {
+    if (!selectedIds.length) return;
     try {
-      await apiFetch(`/integrations/connections/${encodeURIComponent(id)}`, { method: "DELETE" });
+      await Promise.all(selectedIds.map((id) => apiFetch(`/integrations/connections/${encodeURIComponent(id)}`, { method: "DELETE" })));
+      setSelectedIds([]);
+      setShowDeleteModal(false);
       await load();
     } catch (err) {
       setError(err?.message || "Delete failed");
@@ -224,16 +229,37 @@ export default function IntegrationsPage() {
                 onPageChange: setPage,
               }}
               showListToggle={false}
+              rightActions={
+                selectedIds.length > 0 ? (
+                  <div className="dropdown dropdown-end">
+                    <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </button>
+                    <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
+                      <li className="menu-title">
+                        <span>Selection</span>
+                      </li>
+                      {selectedIds.length === 1 ? (
+                        <li>
+                          <button onClick={() => navigate(`/integrations/connections/${selectedIds[0]}`)}>
+                            Open connection
+                          </button>
+                        </li>
+                      ) : null}
+                      <li>
+                        <button className="text-error" onClick={() => setShowDeleteModal(true)} disabled={creating}>
+                          {selectedIds.length === 1 ? "Delete" : `Delete selected (${selectedIds.length})`}
+                        </button>
+                      </li>
+                    </ul>
+                  </div>
+                ) : null
+              }
             />
 
             <div className="mt-4">
               {loading ? (
                 <div className="text-sm opacity-70">Loading…</div>
-              ) : rows.length === 0 ? (
-                <div className="space-y-2 text-sm opacity-70">
-                  <div>No integrations yet.</div>
-                  <div>Create a connection first, then configure secrets, webhooks, and test requests inside it.</div>
-                </div>
               ) : (
                 <ListViewRenderer
                   view={listView}
@@ -250,7 +276,20 @@ export default function IntegrationsPage() {
                   onPageChange={setPage}
                   onTotalItemsChange={setTotalItems}
                   showPaginationControls={false}
-                  enableSelection={false}
+                  emptyLabel={null}
+                  selectedIds={selectedIds}
+                  onToggleSelect={(id, checked) => {
+                    if (!id) return;
+                    setSelectedIds((prev) => {
+                      const next = new Set(prev);
+                      if (checked) next.add(id);
+                      else next.delete(id);
+                      return Array.from(next);
+                    });
+                  }}
+                  onToggleAll={(checked, allIds) => {
+                    setSelectedIds(checked ? allIds || [] : []);
+                  }}
                   onSelectRow={(row) => {
                     const recordId = row?.record_id || row?.record?.id;
                     if (!recordId) return;
@@ -334,6 +373,25 @@ export default function IntegrationsPage() {
               </button>
               <button className="btn btn-primary" type="button" onClick={createConnection} disabled={creating || !createForm.provider}>
                 Create
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showDeleteModal ? (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-md">
+            <h3 className="text-lg font-semibold">Delete integration connection{selectedIds.length > 1 ? "s" : ""}?</h3>
+            <p className="mt-2 text-sm opacity-70">
+              This will permanently remove {selectedIds.length} integration connection{selectedIds.length > 1 ? "s" : ""}. This cannot be undone.
+            </p>
+            <div className="modal-action">
+              <button className="btn btn-ghost" type="button" onClick={() => setShowDeleteModal(false)}>
+                Cancel
+              </button>
+              <button className="btn btn-error" type="button" onClick={deleteSelected}>
+                Delete
               </button>
             </div>
           </div>

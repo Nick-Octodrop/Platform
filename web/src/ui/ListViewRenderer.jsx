@@ -398,11 +398,12 @@ export default function ListViewRenderer({
       <div
         className={
           isMobile
-            ? "flex-1 min-h-0 w-full overflow-x-auto overflow-y-auto no-scrollbar"
+            ? "flex-1 min-h-0 w-full overflow-x-auto overflow-y-auto no-scrollbar overscroll-x-contain"
             : disableHorizontalScroll
               ? "flex-1 min-h-0 overflow-x-hidden overflow-y-auto"
               : "flex-1 min-h-0 overflow-x-auto overflow-y-auto"
         }
+        style={isMobile ? { WebkitOverflowScrolling: "touch" } : undefined}
       >
         {useVirtual ? (
           <div className="w-full">
@@ -474,7 +475,7 @@ export default function ListViewRenderer({
             </VirtualList>
           </div>
         ) : (
-          <table className={`table table-hover ${tableClassName} min-w-max`.trim()}>
+          <table className={`table table-hover ${tableClassName} min-w-max ${isMobile ? "w-max min-w-full table-auto" : ""}`.trim()}>
             <thead className="[&_th]:border-b-0">
               <tr>
                 {enableSelection && (

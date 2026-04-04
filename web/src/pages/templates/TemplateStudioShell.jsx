@@ -486,7 +486,7 @@ export default function TemplateStudioShell({
           onClose={() => setUtilityDrawer("")}
           title={utilityDrawerTitle}
           description={utilityDrawerDescription}
-          mobileHeightClass="max-h-[85vh]"
+          mobileHeightClass="h-[85dvh] max-h-[85dvh]"
           zIndexClass="z-[220]"
         >
           {utilityDrawerContent}

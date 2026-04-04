@@ -10,7 +10,7 @@ export default function ResponsiveDrawer({
   description = "",
   children,
   desktopWidthClass = "w-[34vw] min-w-[460px] max-w-[600px]",
-  mobileHeightClass = "max-h-[88vh]",
+  mobileHeightClass = "h-[88dvh] max-h-[88dvh]",
   zIndexClass = "z-[260]",
   panelClassName = "",
 }) {
@@ -36,7 +36,7 @@ export default function ResponsiveDrawer({
         onClick={() => onClose?.()}
       />
       {isMobile ? (
-        <div className={`absolute inset-x-0 bottom-0 ${mobileHeightClass} rounded-t-3xl border-t border-base-300 bg-base-100 shadow-2xl ${panelClassName}`}>
+        <div className={`absolute inset-x-0 bottom-0 ${mobileHeightClass} overflow-hidden rounded-t-3xl border-t border-base-300 bg-base-100 shadow-2xl ${panelClassName}`}>
           <div className="flex h-full min-h-0 flex-col p-4">
             <div className="mx-auto mb-4 h-1.5 w-24 rounded-full bg-base-300" />
             <div className="mb-3 flex items-start justify-between gap-3">
@@ -48,11 +48,16 @@ export default function ResponsiveDrawer({
                 Done
               </button>
             </div>
-            <div className="flex-1 min-h-0 overflow-auto">{children}</div>
+            <div
+              className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain"
+              style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
+            >
+              {children}
+            </div>
           </div>
         </div>
       ) : (
-        <div className={`absolute inset-y-0 right-0 w-full ${desktopWidthClass} border-l border-base-300 bg-base-100 shadow-2xl ${panelClassName}`}>
+        <div className={`absolute inset-y-0 right-0 w-full overflow-hidden ${desktopWidthClass} border-l border-base-300 bg-base-100 shadow-2xl ${panelClassName}`}>
           <div className="flex h-full min-h-0 flex-col p-6">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
@@ -63,7 +68,12 @@ export default function ResponsiveDrawer({
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="flex-1 min-h-0 overflow-auto">{children}</div>
+            <div
+              className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain"
+              style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
+            >
+              {children}
+            </div>
           </div>
         </div>
       )}

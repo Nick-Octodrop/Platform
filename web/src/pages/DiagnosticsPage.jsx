@@ -159,8 +159,6 @@ export default function DiagnosticsPage() {
             <div className="md:mt-4">
               {loading ? (
                 <div className="text-sm opacity-70">Loading…</div>
-              ) : rows.length === 0 ? (
-                <div className="text-sm opacity-60">No modules found.</div>
               ) : (
                 <ListViewRenderer
                   view={listView}
@@ -179,6 +177,7 @@ export default function DiagnosticsPage() {
                   onPageChange={setPage}
                   onTotalItemsChange={setTotalItems}
                   showPaginationControls={false}
+                  emptyLabel={null}
                   selectedIds={selectedIds}
                   onToggleSelect={(id, checked) => {
                     if (!id) return;

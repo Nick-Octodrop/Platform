@@ -159,45 +159,42 @@ export default function OpsPage() {
                   }}
                 />
 
-                {rows.length === 0 ? (
-                  <div className="text-sm opacity-60">No jobs.</div>
-                ) : (
-                  <ListViewRenderer
-                    view={listView}
-                    fieldIndex={listFieldIndex}
-                    records={listRecords}
-                    hideHeader
-                    disableHorizontalScroll
-                    tableClassName="w-full table-fixed min-w-0"
-                    searchQuery={search}
-                    searchFields={["job.type", "job.id", "job.last_error"]}
-                    filters={filters}
-                    activeFilter={statusFilter}
-                    clientFilters={clientFilters}
-                    page={page}
-                    pageSize={25}
-                    onPageChange={setPage}
-                    onTotalItemsChange={setTotalItems}
-                    showPaginationControls={false}
-                    selectedIds={selectedIds}
-                    onToggleSelect={(id, checked) => {
-                      if (!id) return;
-                      setSelectedIds((prev) => {
-                        const next = new Set(prev);
-                        if (checked) next.add(id);
-                        else next.delete(id);
-                        return Array.from(next);
-                      });
-                    }}
-                    onToggleAll={(checked, allIds) => {
-                      setSelectedIds(checked ? allIds || [] : []);
-                    }}
-                    onSelectRow={(row) => {
-                      const id = row?.record_id;
-                      if (id) navigate(`/ops/jobs/${id}`);
-                    }}
-                  />
-                )}
+                <ListViewRenderer
+                  view={listView}
+                  fieldIndex={listFieldIndex}
+                  records={listRecords}
+                  hideHeader
+                  disableHorizontalScroll
+                  tableClassName="w-full table-fixed min-w-0"
+                  searchQuery={search}
+                  searchFields={["job.type", "job.id", "job.last_error"]}
+                  filters={filters}
+                  activeFilter={statusFilter}
+                  clientFilters={clientFilters}
+                  page={page}
+                  pageSize={25}
+                  onPageChange={setPage}
+                  onTotalItemsChange={setTotalItems}
+                  showPaginationControls={false}
+                  emptyLabel={null}
+                  selectedIds={selectedIds}
+                  onToggleSelect={(id, checked) => {
+                    if (!id) return;
+                    setSelectedIds((prev) => {
+                      const next = new Set(prev);
+                      if (checked) next.add(id);
+                      else next.delete(id);
+                      return Array.from(next);
+                    });
+                  }}
+                  onToggleAll={(checked, allIds) => {
+                    setSelectedIds(checked ? allIds || [] : []);
+                  }}
+                  onSelectRow={(row) => {
+                    const id = row?.record_id;
+                    if (id) navigate(`/ops/jobs/${id}`);
+                  }}
+                />
               </div>
             )}
           </div>

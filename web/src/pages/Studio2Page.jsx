@@ -24,6 +24,7 @@ import {
   validateStudio2Patchset,
 } from "../api";
 import { useToast } from "../components/Toast.jsx";
+import CodeTextarea from "../components/CodeTextarea.jsx";
 import { startAgentStream } from "../studio2/useAgentStream.js";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
@@ -32,6 +33,7 @@ import AgentChatInput from "../ui/AgentChatInput.jsx";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 import { useAccessContext } from "../access.js";
 import { formatDateTime, formatTime } from "../utils/dateTime.js";
+import { MoreHorizontal } from "lucide-react";
 
 function nowIso() {
   return new Date().toISOString();
@@ -697,7 +699,6 @@ export default function Studio2Page({ user }) {
   const [publishDescription, setPublishDescription] = useState("");
   const [publishSlug, setPublishSlug] = useState("");
   const [publishCategory, setPublishCategory] = useState("");
-  const [editorScrollTop, setEditorScrollTop] = useState(0);
   const [historySnapshots, setHistorySnapshots] = useState([]);
   const [historyDrafts, setHistoryDrafts] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -2190,21 +2191,12 @@ function buildPreviewManifest() {
         <div className="text-sm font-semibold">Manifest</div>
         <div />
       </div>
-      <div className="flex-1 min-h-0 border border-base-200 rounded-box overflow-hidden">
-        <div className="flex h-full min-h-0">
-          <div className="bg-base-200 text-xs text-right px-2 py-2 font-mono select-none">
-            <pre style={{ transform: `translateY(-${editorScrollTop}px)` }}>
-              {(draftText.split("\n").map((_, idx) => idx + 1)).join("\n")}
-            </pre>
-          </div>
-          <textarea
-            className="textarea textarea-bordered w-full h-full font-mono text-xs rounded-none border-0"
-            value={draftText}
-            onChange={(e) => setDraftText(e.target.value)}
-            onScroll={(e) => setEditorScrollTop(e.currentTarget.scrollTop)}
-          />
-        </div>
-      </div>
+      <CodeTextarea
+        value={draftText}
+        onChange={(e) => setDraftText(e.target.value)}
+        fill
+        className="flex-1 min-h-0"
+      />
       {draftError && (
         <div className="alert alert-error text-xs mt-2">
           JSON error: {draftError.message} {draftError.line ? `(${draftError.line}:${draftError.col})` : ""}
@@ -2812,70 +2804,74 @@ function buildPreviewManifest() {
                     }}
                     onRefresh={() => refreshModules(true)}
                     rightActions={
-                      <>
-                        {listSelectedIds.length === 1 && singleSelected && (
-                          <div className="flex items-center gap-2">
-                            {isSuperadmin && singleSelected.installed && (
+                      listSelectedIds.length > 0 ? (
+                        <div className="dropdown dropdown-end">
+                          <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </button>
+                          <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
+                            <li className="menu-title">
+                              <span>Selection</span>
+                            </li>
+                            {listSelectedIds.length === 1 && singleSelected ? (
+                              <>
+                                <li>
+                                  <button onClick={() => navigate(`/studio/${singleSelected.module_id}`)}>
+                                    Open module
+                                  </button>
+                                </li>
+                                {isSuperadmin && singleSelected.installed ? (
+                                  <li>
+                                    <button onClick={() => openPublish(singleSelected)} disabled={listActionLoading}>
+                                      Publish
+                                    </button>
+                                  </li>
+                                ) : null}
+                                {singleSelected.installed ? (
+                                  <li>
+                                    <button onClick={() => openRollback(singleSelected.module_id)} disabled={listActionLoading}>
+                                      Rollback
+                                    </button>
+                                  </li>
+                                ) : null}
+                              </>
+                            ) : null}
+                            <li>
                               <button
-                                className={SOFT_BUTTON_SM}
-                                onClick={() => openPublish(singleSelected)}
+                                className="text-error"
+                                onClick={() => {
+                                  if (listSelectedIds.length === 1 && singleSelected) {
+                                    openDelete(
+                                      singleSelected.module_id,
+                                      singleSelected.installed ? "installed" : "draft"
+                                    );
+                                    return;
+                                  }
+                                  if (listActionLoading) return;
+                                  const ok = window.confirm(`Delete ${listSelectedIds.length} module(s)?`);
+                                  if (!ok) return;
+                                  Promise.all(
+                                    selectedRows.map((row) => {
+                                      if (!row) return Promise.resolve();
+                                      return row.installed
+                                        ? deleteModule(row.module_id, { archive: true })
+                                        : deleteStudio2Draft(row.module_id);
+                                    })
+                                  )
+                                    .then(() => {
+                                      setListSelectedIds([]);
+                                      refreshModules(true);
+                                    })
+                                    .catch(() => {});
+                                }}
                                 disabled={listActionLoading}
                               >
-                                Publish
+                                {listSelectedIds.length === 1 ? "Delete" : `Delete selected (${listSelectedIds.length})`}
                               </button>
-                            )}
-                            {singleSelected.installed && (
-                              <button
-                                className={SOFT_BUTTON_SM}
-                                onClick={() => openRollback(singleSelected.module_id)}
-                                disabled={listActionLoading}
-                              >
-                                Rollback
-                              </button>
-                            )}
-                            <button
-                              className={SOFT_BUTTON_SM}
-                              onClick={() =>
-                                openDelete(
-                                  singleSelected.module_id,
-                                  singleSelected.installed ? "installed" : "draft"
-                                )
-                              }
-                              disabled={listActionLoading}
-                            >
-                              Delete (1)
-                            </button>
-                          </div>
-                        )}
-                        {listSelectedIds.length > 1 && (
-                          <div className="flex items-center gap-2">
-                            <button
-                              className={SOFT_BUTTON_SM}
-                              onClick={() => {
-                                if (listActionLoading) return;
-                                const ok = window.confirm(`Delete ${listSelectedIds.length} module(s)?`);
-                                if (!ok) return;
-                                Promise.all(
-                                  selectedRows.map((row) => {
-                                    if (!row) return Promise.resolve();
-                                    return row.installed
-                                      // Bulk deletes should be safe by default: archive/disable but keep records.
-                                      ? deleteModule(row.module_id, { archive: true })
-                                      : deleteStudio2Draft(row.module_id);
-                                  })
-                                )
-                                  .then(() => {
-                                    setListSelectedIds([]);
-                                    refreshModules(true);
-                                  })
-                                  .catch(() => {});
-                              }}
-                            >
-                              Delete ({listSelectedIds.length})
-                            </button>
-                          </div>
-                        )}
-                      </>
+                            </li>
+                          </ul>
+                        </div>
+                      ) : null
                     }
                   />
 

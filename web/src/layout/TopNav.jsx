@@ -26,8 +26,10 @@ export default function TopNav({ user, onSignOut }) {
   const isSettingsPassword = location.pathname.startsWith("/settings/password");
   const isSettingsUsers = location.pathname.startsWith("/settings/users");
   const isSettingsAccessPolicies = location.pathname.startsWith("/settings/access-policies");
+  const isSettingsApiCredentials = location.pathname.startsWith("/settings/api-credentials");
   const isSettingsWorkspaces = location.pathname.startsWith("/settings/workspaces");
   const isSettingsSecrets = location.pathname.startsWith("/settings/secrets");
+  const isSettingsWebhookSubscriptions = location.pathname.startsWith("/settings/webhook-subscriptions");
   const isDiagnostics = location.pathname.startsWith("/settings/diagnostics");
   const isAudit = location.pathname.startsWith("/audit");
   const isIntegrations = location.pathname.startsWith("/integrations");
@@ -47,12 +49,16 @@ export default function TopNav({ user, onSignOut }) {
       ? "Password"
     : isSettingsUsers
       ? "Users"
-      : isSettingsAccessPolicies
+    : isSettingsAccessPolicies
         ? "Access Policies"
+      : isSettingsApiCredentials
+        ? "API Credentials"
       : isSettingsWorkspaces
         ? "Workspaces"
         : isSettingsSecrets
           ? "Secrets"
+          : isSettingsWebhookSubscriptions
+            ? "Webhook Subscriptions"
           : isDiagnostics
             ? "Diagnostics"
             : isAudit
@@ -82,8 +88,10 @@ export default function TopNav({ user, onSignOut }) {
     || isSettingsPassword
     || isSettingsUsers
     || isSettingsAccessPolicies
+    || isSettingsApiCredentials
     || isSettingsWorkspaces
     || isSettingsSecrets
+    || isSettingsWebhookSubscriptions
     || isDiagnostics
     || isAudit
     || isEmailHome
@@ -102,7 +110,10 @@ export default function TopNav({ user, onSignOut }) {
   const automationMatch = useMatch("/automations/:automationId");
   const automationRunMatch = useMatch("/automation-runs/:runId");
   const accessPolicyMatch = useMatch("/settings/access-policies/:profileId");
+  const apiCredentialMatch = useMatch("/settings/api-credentials/:credentialId");
   const emailConnectionMatch = useMatch("/settings/email/connections/:connectionId");
+  const integrationConnectionMatch = useMatch("/integrations/connections/:connectionId");
+  const webhookSubscriptionMatch = useMatch("/settings/webhook-subscriptions/:subscriptionId");
   const emailTemplateMatch = useMatch("/email/templates/:templateId");
   const emailOutboxMatch = useMatch("/settings/email-outbox/:outboxId");
   const docTemplateMatch = useMatch("/documents/templates/:templateId");
@@ -110,7 +121,10 @@ export default function TopNav({ user, onSignOut }) {
   const automationIdParam = automationMatch?.params?.automationId || "";
   const automationRunIdParam = automationRunMatch?.params?.runId || "";
   const accessPolicyIdParam = accessPolicyMatch?.params?.profileId || "";
+  const apiCredentialIdParam = apiCredentialMatch?.params?.credentialId || "";
   const emailConnectionIdParam = emailConnectionMatch?.params?.connectionId || "";
+  const integrationConnectionIdParam = integrationConnectionMatch?.params?.connectionId || "";
+  const webhookSubscriptionIdParam = webhookSubscriptionMatch?.params?.subscriptionId || "";
   const emailTemplateIdParam = emailTemplateMatch?.params?.templateId || "";
   const emailOutboxIdParam = emailOutboxMatch?.params?.outboxId || "";
   const docTemplateIdParam = docTemplateMatch?.params?.templateId || "";
@@ -123,7 +137,10 @@ export default function TopNav({ user, onSignOut }) {
   const [automationRunCrumbLabel, setAutomationRunCrumbLabel] = useState("");
   const [automationCrumbId, setAutomationCrumbId] = useState("");
   const [accessPolicyCrumbLabel, setAccessPolicyCrumbLabel] = useState("");
+  const [apiCredentialCrumbLabel, setApiCredentialCrumbLabel] = useState("");
   const [emailConnectionCrumbLabel, setEmailConnectionCrumbLabel] = useState("");
+  const [integrationConnectionCrumbLabel, setIntegrationConnectionCrumbLabel] = useState("");
+  const [webhookSubscriptionCrumbLabel, setWebhookSubscriptionCrumbLabel] = useState("");
   const [emailTemplateCrumbLabel, setEmailTemplateCrumbLabel] = useState("");
   const [emailOutboxCrumbLabel, setEmailOutboxCrumbLabel] = useState("");
   const [docTemplateCrumbLabel, setDocTemplateCrumbLabel] = useState("");
@@ -334,6 +351,29 @@ export default function TopNav({ user, onSignOut }) {
 
   useEffect(() => {
     let mounted = true;
+    async function loadApiCredentialCrumb() {
+      if (!apiCredentialIdParam) {
+        setApiCredentialCrumbLabel("");
+        return;
+      }
+      try {
+        const res = await apiFetch("/settings/api-credentials");
+        if (!mounted) return;
+        const items = Array.isArray(res?.api_credentials) ? res.api_credentials : [];
+        const item = items.find((entry) => String(entry?.id || "") === apiCredentialIdParam);
+        setApiCredentialCrumbLabel(String(item?.name || apiCredentialIdParam || "").trim() || "API Credential");
+      } catch {
+        if (mounted) setApiCredentialCrumbLabel("API Credential");
+      }
+    }
+    loadApiCredentialCrumb();
+    return () => {
+      mounted = false;
+    };
+  }, [apiCredentialIdParam]);
+
+  useEffect(() => {
+    let mounted = true;
     async function loadEmailConnectionCrumb() {
       if (!emailConnectionIdParam) {
         setEmailConnectionCrumbLabel("");
@@ -353,6 +393,51 @@ export default function TopNav({ user, onSignOut }) {
       mounted = false;
     };
   }, [emailConnectionIdParam]);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadIntegrationConnectionCrumb() {
+      if (!integrationConnectionIdParam) {
+        setIntegrationConnectionCrumbLabel("");
+        return;
+      }
+      try {
+        const res = await apiFetch(`/integrations/connections/${encodeURIComponent(integrationConnectionIdParam)}`);
+        if (!mounted) return;
+        const connection = res?.connection || {};
+        setIntegrationConnectionCrumbLabel(String(connection?.name || integrationConnectionIdParam || "").trim() || "Connection");
+      } catch {
+        if (mounted) setIntegrationConnectionCrumbLabel("Connection");
+      }
+    }
+    loadIntegrationConnectionCrumb();
+    return () => {
+      mounted = false;
+    };
+  }, [integrationConnectionIdParam]);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadWebhookSubscriptionCrumb() {
+      if (!webhookSubscriptionIdParam) {
+        setWebhookSubscriptionCrumbLabel("");
+        return;
+      }
+      try {
+        const res = await apiFetch("/settings/webhook-subscriptions");
+        if (!mounted) return;
+        const items = Array.isArray(res?.subscriptions) ? res.subscriptions : [];
+        const item = items.find((entry) => String(entry?.id || "") === webhookSubscriptionIdParam);
+        setWebhookSubscriptionCrumbLabel(String(item?.name || webhookSubscriptionIdParam || "").trim() || "Webhook Subscription");
+      } catch {
+        if (mounted) setWebhookSubscriptionCrumbLabel("Webhook Subscription");
+      }
+    }
+    loadWebhookSubscriptionCrumb();
+    return () => {
+      mounted = false;
+    };
+  }, [webhookSubscriptionIdParam]);
 
   useEffect(() => {
     let mounted = true;
@@ -492,7 +577,7 @@ export default function TopNav({ user, onSignOut }) {
     if (isAutomations) return "Automations";
     if (isAutomationRuns) return automationRunCrumbLabel || "Run";
     if (isOctoAi) return "Octo AI";
-    if (isIntegrations) return "Integrations";
+    if (isIntegrations) return integrationConnectionIdParam ? (integrationConnectionCrumbLabel || "Connection") : "Integrations";
     if (isOps) return "Ops";
     return "Octodrop";
   }, [
@@ -504,6 +589,8 @@ export default function TopNav({ user, onSignOut }) {
     isAutomations,
     automationRunCrumbLabel,
     isIntegrations,
+    integrationConnectionCrumbLabel,
+    integrationConnectionIdParam,
     isNotifications,
     isOctoAi,
     isOps,
@@ -658,8 +745,12 @@ export default function TopNav({ user, onSignOut }) {
                     to={
                       isSettingsAccessPolicies && accessPolicyIdParam
                         ? appendOctoAiFrameParams("/settings/access-policies")
+                        : location.pathname.startsWith("/settings/api-credentials") && apiCredentialIdParam
+                          ? appendOctoAiFrameParams("/settings/api-credentials")
                         : isEmailConnections && emailConnectionIdParam
                           ? appendOctoAiFrameParams("/settings/email/connections")
+                        : location.pathname.startsWith("/settings/webhook-subscriptions") && webhookSubscriptionIdParam
+                          ? appendOctoAiFrameParams("/settings/webhook-subscriptions")
                         : isEmailTemplateStudio && emailTemplateIdParam
                           ? appendOctoAiFrameParams("/settings/email-templates")
                         : isEmailOutbox && emailOutboxIdParam
@@ -674,7 +765,9 @@ export default function TopNav({ user, onSignOut }) {
                 </li>
               )}
               {isSettingsAccessPolicies && accessPolicyIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{accessPolicyCrumbLabel || "Access Profile"}</CrumbLink></li> : null}
+              {location.pathname.startsWith("/settings/api-credentials") && apiCredentialIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{apiCredentialCrumbLabel || "API Credential"}</CrumbLink></li> : null}
               {isEmailConnections && emailConnectionIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{emailConnectionCrumbLabel || "Connection"}</CrumbLink></li> : null}
+              {location.pathname.startsWith("/settings/webhook-subscriptions") && webhookSubscriptionIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{webhookSubscriptionCrumbLabel || "Webhook Subscription"}</CrumbLink></li> : null}
               {isEmailTemplateStudio && emailTemplateIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{emailTemplateCrumbLabel || "Email Template"}</CrumbLink></li> : null}
               {isEmailOutbox && emailOutboxIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{emailOutboxCrumbLabel || "Email"}</CrumbLink></li> : null}
               {isDocTemplateStudio && docTemplateIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{docTemplateCrumbLabel || "Document Template"}</CrumbLink></li> : null}
@@ -752,6 +845,13 @@ export default function TopNav({ user, onSignOut }) {
             <ul>
               <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
               <li><CrumbLink to={appendOctoAiFrameParams("/integrations")}>Integrations</CrumbLink></li>
+              {integrationConnectionIdParam ? (
+                <li>
+                  <CrumbLink to={appendOctoAiFrameParams(currentRoute)}>
+                    {integrationConnectionCrumbLabel || "Connection"}
+                  </CrumbLink>
+                </li>
+              ) : null}
             </ul>
           </div>
           )
