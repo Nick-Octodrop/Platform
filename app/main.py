@@ -2128,18 +2128,20 @@ def _get_module(request: Request, module_id: str):
     return module
 
 
-def _get_registry_list(request: Request) -> list[dict]:
+def _get_registry_list(request: Request, *, fresh: bool = False) -> list[dict]:
     cache_key = "registry:list"
-    cached = _req_cache_get(request, cache_key)
-    if cached is not None:
-        return cached
-    global_cached = _cache_get("registry_list")
-    if global_cached is not None:
-        _req_cache_set(request, cache_key, global_cached)
-        return global_cached
+    if not fresh:
+        cached = _req_cache_get(request, cache_key)
+        if cached is not None:
+            return cached
+        global_cached = _cache_get("registry_list")
+        if global_cached is not None:
+            _req_cache_set(request, cache_key, global_cached)
+            return global_cached
     modules = registry.list()
-    _req_cache_set(request, cache_key, modules)
-    _cache_set("registry_list", modules)
+    if not fresh:
+        _req_cache_set(request, cache_key, modules)
+        _cache_set("registry_list", modules)
     return modules
 
 
@@ -2183,14 +2185,14 @@ def _get_snapshot(request: Request, module_id: str, manifest_hash: str):
     return manifest
 
 
-def _dependency_manifest_index(request: Request, overrides: dict[str, dict] | None = None) -> dict[str, dict]:
+def _dependency_manifest_index(request: Request, overrides: dict[str, dict] | None = None, *, fresh: bool = False) -> dict[str, dict]:
     cache_key = "dependency_manifest_index"
-    cached = _req_cache_get(request, cache_key)
+    cached = None if fresh else _req_cache_get(request, cache_key)
     if isinstance(cached, dict):
         base = copy.deepcopy(cached)
     else:
         base = {}
-        for module in _get_registry_list(request):
+        for module in _get_registry_list(request, fresh=fresh):
             module_id = module.get("module_id")
             manifest_hash = module.get("current_hash")
             if not isinstance(module_id, str) or not module_id or not isinstance(manifest_hash, str) or not manifest_hash:
@@ -2206,7 +2208,8 @@ def _dependency_manifest_index(request: Request, overrides: dict[str, dict] | No
                 "version": module_version_from_manifest(manifest if isinstance(manifest, dict) else {}),
                 "enabled": bool(module.get("enabled")),
             }
-        _req_cache_set(request, cache_key, copy.deepcopy(base))
+        if not fresh:
+            _req_cache_set(request, cache_key, copy.deepcopy(base))
     if isinstance(overrides, dict):
         for module_id, manifest in overrides.items():
             if not isinstance(module_id, str) or not module_id:
@@ -2251,7 +2254,7 @@ def _validate_dependency_state(
     warnings: list[dict] = []
     manifest_obj = manifest if isinstance(manifest, dict) else {}
     module_key = module_key_from_manifest(manifest_obj) or module_id
-    manifest_index = _dependency_manifest_index(request, overrides={module_id: manifest_obj})
+    manifest_index = _dependency_manifest_index(request, overrides={module_id: manifest_obj}, fresh=(mode in {"install", "upgrade"}))
     available_versions = {}
     available_enabled = {}
     for _, data in manifest_index.items():

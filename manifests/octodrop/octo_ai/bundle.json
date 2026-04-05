@@ -1,0 +1,6 @@
+{
+  "name": "Octodrop AI",
+  "manifests": [
+    "./octo_ai.json"
+  ]
+}

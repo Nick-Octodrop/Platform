@@ -1,0 +1,1972 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "sales",
+    "key": "sales",
+    "name": "Sales",
+    "version": "1.9.0",
+    "description": "Quotation management for operational sales workflows and quote-to-job handoff.",
+    "category": "Sales",
+    "icon_key": "lucide:FileCheck2"
+  },
+  "depends_on": {
+    "required": [
+      {
+        "module": "contacts",
+        "version": ">=1.0.0"
+      },
+      {
+        "module": "catalog",
+        "version": ">=1.1.0"
+      },
+      {
+        "module": "jobs",
+        "version": ">=1.3.1"
+      }
+    ],
+    "optional": [
+      {
+        "module": "crm",
+        "version": ">=1.0.0"
+      }
+    ]
+  },
+  "app": {
+    "home": "page:quote.list_page",
+    "defaults": {
+      "entity_home_page": "page:quote.list_page",
+      "entity_form_page": "page:quote.form_page",
+      "entities": {
+        "entity.quote": {
+          "entity_home_page": "page:quote.list_page",
+          "entity_form_page": "page:quote.form_page"
+        },
+        "entity.quote_line": {
+          "entity_home_page": "page:quote_line.list_page",
+          "entity_form_page": "page:quote_line.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Sales",
+        "items": [
+          {
+            "label": "Quotes",
+            "to": "page:quote.list_page"
+          },
+          {
+            "label": "Approved",
+            "to": "page:quote.approved_page"
+          },
+          {
+            "label": "Converted",
+            "to": "page:quote.converted_page"
+          },
+          {
+            "label": "Line Items",
+            "to": "page:quote_line.list_page"
+          }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.quote",
+      "display_field": "quote.number",
+      "fields": [
+        {
+          "id": "quote.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "quote.number",
+          "type": "string",
+          "label": "Quote Number",
+          "required": true
+        },
+        {
+          "id": "quote.reference",
+          "type": "string",
+          "label": "Reference"
+        },
+        {
+          "id": "quote.contact_id",
+          "type": "lookup",
+          "label": "Customer",
+          "entity": "entity.contact",
+          "display_field": "contact.name",
+          "required": true
+        },
+        {
+          "id": "quote.opportunity_id",
+          "type": "lookup",
+          "label": "Opportunity",
+          "entity": "entity.opportunity",
+          "display_field": "opportunity.title"
+        },
+        {
+          "id": "quote.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "draft",
+          "ui": {
+            "widget": "steps"
+          },
+          "options": [
+            {
+              "value": "draft",
+              "label": "Draft"
+            },
+            {
+              "value": "sent",
+              "label": "Sent"
+            },
+            {
+              "value": "approved",
+              "label": "Approved"
+            },
+            {
+              "value": "rejected",
+              "label": "Rejected"
+            },
+            {
+              "value": "expired",
+              "label": "Expired"
+            },
+            {
+              "value": "converted",
+              "label": "Converted"
+            }
+          ]
+        },
+        {
+          "id": "quote.quote_date",
+          "type": "date",
+          "label": "Quote Date"
+        },
+        {
+          "id": "quote.expiry_date",
+          "type": "date",
+          "label": "Expiry Date"
+        },
+        {
+          "id": "quote.owner_id",
+          "type": "user",
+          "label": "Owner"
+        },
+        {
+          "id": "quote.currency",
+          "type": "string",
+          "label": "Currency",
+          "default": "USD"
+        },
+        {
+          "id": "quote.discount_total",
+          "type": "number",
+          "label": "Discount",
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency_field": "quote.currency",
+            "precision": 2
+          }
+        },
+        {
+          "id": "quote.subtotal",
+          "type": "number",
+          "label": "Subtotal",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency_field": "quote.currency",
+            "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.quote_line",
+              "field": "quote_line.line_subtotal",
+              "where": {
+                "op": "eq",
+                "field": "quote_line.quote_id",
+                "value": {
+                  "ref": "$parent.id"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "quote.tax",
+          "type": "number",
+          "label": "Tax",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency_field": "quote.currency",
+            "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.quote_line",
+              "field": "quote_line.tax_amount",
+              "where": {
+                "op": "eq",
+                "field": "quote_line.quote_id",
+                "value": {
+                  "ref": "$parent.id"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "quote.total",
+          "type": "number",
+          "label": "Total",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency_field": "quote.currency",
+            "precision": 2
+          },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "add",
+                  "args": [
+                    {
+                      "op": "sub",
+                      "args": [
+                        {
+                          "ref": "$current.quote.subtotal"
+                        },
+                        {
+                          "ref": "$current.quote.discount_total"
+                        }
+                      ]
+                    },
+                    {
+                      "ref": "$current.quote.tax"
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "quote.estimated_cost_total",
+          "type": "number",
+          "label": "Estimated Cost",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency_field": "quote.currency",
+            "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.quote_line",
+              "field": "quote_line.buy_total",
+              "where": {
+                "op": "eq",
+                "field": "quote_line.quote_id",
+                "value": {
+                  "ref": "$parent.id"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "quote.margin_amount",
+          "type": "number",
+          "label": "Estimated Margin",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency_field": "quote.currency",
+            "precision": 2
+          },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "sub",
+                  "args": [
+                    {
+                      "ref": "$current.quote.total"
+                    },
+                    {
+                      "ref": "$current.quote.estimated_cost_total"
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "quote.margin_percent",
+          "type": "number",
+          "label": "Margin (%)",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "percent",
+            "precision": 2
+          },
+          "compute": {
+            "expression": {
+              "op": "if",
+              "condition": {
+                "op": "gt",
+                "field": "quote.total",
+                "value": 0
+              },
+              "then": {
+                "op": "round",
+                "args": [
+                  {
+                    "op": "mul",
+                    "args": [
+                      {
+                        "op": "div",
+                        "args": [
+                          {
+                            "ref": "$current.quote.margin_amount"
+                          },
+                          {
+                            "ref": "$current.quote.total"
+                          }
+                        ]
+                      },
+                      100
+                    ]
+                  },
+                  2
+                ]
+              },
+              "else": 0
+            }
+          }
+        },
+        {
+          "id": "quote.notes",
+          "type": "text",
+          "label": "Customer Notes"
+        },
+        {
+          "id": "quote.internal_notes",
+          "type": "text",
+          "label": "Internal Notes"
+        },
+        {
+          "id": "quote.attachments",
+          "type": "attachments",
+          "label": "Attachments"
+        },
+        {
+          "id": "quote.job_id",
+          "type": "lookup",
+          "label": "Job",
+          "entity": "entity.job",
+          "display_field": "job.number",
+          "readonly": true
+        },
+        {
+          "id": "quote.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    },
+    {
+      "id": "entity.quote_line",
+      "display_field": "quote_line.description",
+      "fields": [
+        {
+          "id": "quote_line.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "quote_line.quote_id",
+          "type": "lookup",
+          "label": "Quote",
+          "entity": "entity.quote",
+          "display_field": "quote.number",
+          "required": true
+        },
+        {
+          "id": "quote_line.item_id",
+          "type": "lookup",
+          "label": "Item",
+          "entity": "entity.item",
+          "display_field": "item.name",
+          "required": true
+        },
+        {
+          "id": "quote_line.description",
+          "type": "string",
+          "label": "Description",
+          "required": true
+        },
+        {
+          "id": "quote_line.uom",
+          "type": "string",
+          "label": "Unit of Measure",
+          "default": "Unit"
+        },
+        {
+          "id": "quote_line.qty",
+          "type": "number",
+          "label": "Qty",
+          "default": 1,
+          "format": {
+            "kind": "measurement",
+            "unit_field": "quote_line.uom",
+            "precision": 2
+          }
+        },
+        {
+          "id": "quote_line.unit_price",
+          "type": "number",
+          "label": "Unit Price",
+          "default": 0
+        },
+        {
+          "id": "quote_line.unit_cost",
+          "type": "number",
+          "label": "Unit Cost",
+          "default": 0
+        },
+        {
+          "id": "quote_line.line_subtotal",
+          "type": "number",
+          "label": "Line Subtotal",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    {
+                      "ref": "$current.quote_line.qty"
+                    },
+                    {
+                      "ref": "$current.quote_line.unit_price"
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "quote_line.tax_rate",
+          "type": "number",
+          "label": "Tax Rate (%)",
+          "default": 0,
+          "format": {
+            "kind": "percent",
+            "precision": 2
+          }
+        },
+        {
+          "id": "quote_line.tax_amount",
+          "type": "number",
+          "label": "Tax Amount",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    {
+                      "ref": "$current.quote_line.line_subtotal"
+                    },
+                    {
+                      "op": "div",
+                      "args": [
+                        {
+                          "ref": "$current.quote_line.tax_rate"
+                        },
+                        100
+                      ]
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "quote_line.line_total",
+          "type": "number",
+          "label": "Line Total",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "add",
+                  "args": [
+                    {
+                      "ref": "$current.quote_line.line_subtotal"
+                    },
+                    {
+                      "ref": "$current.quote_line.tax_amount"
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "quote_line.buy_total",
+          "type": "number",
+          "label": "Estimated Cost",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    {
+                      "ref": "$current.quote_line.qty"
+                    },
+                    {
+                      "ref": "$current.quote_line.unit_cost"
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "quote_line.sort_order",
+          "type": "number",
+          "label": "Sort Order",
+          "default": 10
+        },
+        {
+          "id": "quote_line.notes",
+          "type": "text",
+          "label": "Line Notes"
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "action.quote_new",
+      "kind": "open_form",
+      "label": "+ New Quote",
+      "target": "quote.form"
+    },
+    {
+      "id": "action.quote_mark_sent",
+      "kind": "update_record",
+      "label": "Send",
+      "entity_id": "entity.quote",
+      "patch": {
+        "quote.status": "sent"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "quote.status",
+        "value": "draft"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "quote.status",
+        "value": "draft"
+      }
+    },
+    {
+      "id": "action.quote_mark_approved",
+      "kind": "update_record",
+      "label": "Approve",
+      "entity_id": "entity.quote",
+      "patch": {
+        "quote.status": "approved"
+      },
+      "enabled_when": {
+        "op": "in",
+        "field": "quote.status",
+        "value": [
+          "draft",
+          "sent"
+        ]
+      },
+      "visible_when": {
+        "op": "in",
+        "field": "quote.status",
+        "value": [
+          "draft",
+          "sent"
+        ]
+      }
+    },
+    {
+      "id": "action.quote_mark_rejected",
+      "kind": "update_record",
+      "label": "Reject",
+      "entity_id": "entity.quote",
+      "patch": {
+        "quote.status": "rejected"
+      },
+      "enabled_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "quote.status",
+          "value": [
+            "rejected",
+            "converted"
+          ]
+        }
+      },
+      "visible_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "quote.status",
+          "value": [
+            "rejected",
+            "converted"
+          ]
+        }
+      },
+      "confirm": {
+        "title": "Reject Quote",
+        "body": "This quote will be marked as Rejected."
+      }
+    },
+    {
+      "id": "action.quote_mark_expired",
+      "kind": "update_record",
+      "label": "Mark Expired",
+      "entity_id": "entity.quote",
+      "patch": {
+        "quote.status": "expired"
+      },
+      "enabled_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "quote.status",
+          "value": [
+            "approved",
+            "converted",
+            "expired"
+          ]
+        }
+      },
+      "visible_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "quote.status",
+          "value": [
+            "approved",
+            "converted",
+            "expired"
+          ]
+        }
+      },
+      "confirm": {
+        "title": "Mark Quote Expired",
+        "body": "This quote will be marked as Expired."
+      }
+    },
+    {
+      "id": "action.quote_mark_converted",
+      "kind": "transform_record",
+      "label": "Create Job",
+      "entity_id": "entity.quote",
+      "transformation_key": "quote_to_job",
+      "enabled_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "eq",
+            "field": "quote.status",
+            "value": "approved"
+          },
+          {
+            "op": "not",
+            "condition": {
+              "op": "exists",
+              "field": "quote.job_id"
+            }
+          }
+        ]
+      },
+      "visible_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "eq",
+            "field": "quote.status",
+            "value": "approved"
+          },
+          {
+            "op": "not",
+            "condition": {
+              "op": "exists",
+              "field": "quote.job_id"
+            }
+          }
+        ]
+      },
+      "confirm": {
+        "title": "Create Job",
+        "body": "Create a Job and copy all quote lines?"
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "id": "sales.record.quote.created",
+      "event": "record.created",
+      "entity_id": "entity.quote"
+    },
+    {
+      "id": "sales.record.quote.updated",
+      "event": "record.updated",
+      "entity_id": "entity.quote"
+    },
+    {
+      "id": "sales.record.quote_line.created",
+      "event": "record.created",
+      "entity_id": "entity.quote_line"
+    },
+    {
+      "id": "sales.record.quote_line.updated",
+      "event": "record.updated",
+      "entity_id": "entity.quote_line"
+    },
+    {
+      "id": "sales.workflow.quote.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.quote",
+      "status_field": "quote.status"
+    },
+    {
+      "id": "sales.action.quote_new.clicked",
+      "event": "action.clicked",
+      "action_id": "action.quote_new"
+    },
+    {
+      "id": "sales.action.quote_mark_sent.clicked",
+      "event": "action.clicked",
+      "action_id": "action.quote_mark_sent"
+    },
+    {
+      "id": "sales.action.quote_mark_approved.clicked",
+      "event": "action.clicked",
+      "action_id": "action.quote_mark_approved"
+    },
+    {
+      "id": "sales.action.quote_mark_rejected.clicked",
+      "event": "action.clicked",
+      "action_id": "action.quote_mark_rejected"
+    },
+    {
+      "id": "sales.action.quote_mark_expired.clicked",
+      "event": "action.clicked",
+      "action_id": "action.quote_mark_expired"
+    },
+    {
+      "id": "sales.action.quote_mark_converted.clicked",
+      "event": "action.clicked",
+      "action_id": "action.quote_mark_converted"
+    }
+  ],
+  "views": [
+    {
+      "id": "quote.list",
+      "kind": "list",
+      "entity": "entity.quote",
+      "columns": [
+        {
+          "field_id": "quote.number"
+        },
+        {
+          "field_id": "quote.contact_id"
+        },
+        {
+          "field_id": "quote.status"
+        },
+        {
+          "field_id": "quote.quote_date"
+        },
+        {
+          "field_id": "quote.expiry_date"
+        },
+        {
+          "field_id": "quote.total"
+        }
+      ],
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.quote_new"
+          }
+        ],
+        "open_record_target": "page:quote.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search quotes...",
+          "fields": [
+            "quote.number",
+            "quote.reference",
+            "quote.status"
+          ]
+        },
+        "filters": [
+          {
+            "id": "open",
+            "label": "Open",
+            "domain": {
+              "op": "in",
+              "field": "quote.status",
+              "value": [
+                "draft",
+                "sent",
+                "approved"
+              ]
+            }
+          },
+          {
+            "id": "mine",
+            "label": "Mine",
+            "domain": {
+              "op": "eq",
+              "field": "quote.owner_id",
+              "value": {
+                "ref": "$actor.user_id"
+              }
+            }
+          },
+          {
+            "id": "approved",
+            "label": "Approved",
+            "domain": {
+              "op": "eq",
+              "field": "quote.status",
+              "value": "approved"
+            }
+          },
+          {
+            "id": "converted",
+            "label": "Converted",
+            "domain": {
+              "op": "eq",
+              "field": "quote.status",
+              "value": "converted"
+            }
+          },
+          {
+            "id": "draft",
+            "label": "Draft",
+            "domain": {
+              "op": "eq",
+              "field": "quote.status",
+              "value": "draft"
+            }
+          },
+          {
+            "id": "sent",
+            "label": "Sent",
+            "domain": {
+              "op": "eq",
+              "field": "quote.status",
+              "value": "sent"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "quote.kanban",
+      "kind": "kanban",
+      "entity": "entity.quote",
+      "card": {
+        "title_field": "quote.number",
+        "subtitle_fields": [
+          "quote.contact_id",
+          "quote.expiry_date"
+        ],
+        "badge_fields": [
+          "quote.status",
+          "quote.total"
+        ]
+      }
+    },
+    {
+      "id": "quote.calendar",
+      "kind": "calendar",
+      "entity": "entity.quote",
+      "calendar": {
+        "title_field": "quote.number",
+        "date_start": "quote.expiry_date",
+        "color_field": "quote.owner_id",
+        "default_scale": "month"
+      }
+    },
+    {
+      "id": "quote_line.list",
+      "kind": "list",
+      "entity": "entity.quote_line",
+      "columns": [
+        {
+          "field_id": "quote_line.quote_id"
+        },
+        {
+          "field_id": "quote_line.item_id"
+        },
+        {
+          "field_id": "quote_line.sort_order"
+        },
+        {
+          "field_id": "quote_line.description"
+        },
+        {
+          "field_id": "quote_line.qty"
+        },
+        {
+          "field_id": "quote_line.unit_price"
+        },
+        {
+          "field_id": "quote_line.tax_rate"
+        },
+        {
+          "field_id": "quote_line.line_total"
+        }
+      ],
+      "header": {
+        "open_record_target": "page:quote_line.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search quote lines...",
+          "fields": [
+            "quote_line.description"
+          ]
+        }
+      }
+    },
+    {
+      "id": "quote_line.form",
+      "kind": "form",
+      "entity": "entity.quote_line",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Quote Line",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "quote_line.quote_id",
+            "quote_line.item_id",
+            "quote_line.sort_order",
+            "quote_line.description",
+            "quote_line.qty",
+            "quote_line.unit_price",
+            "quote_line.tax_rate",
+            "quote_line.line_total"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": [
+            "quote_line.notes"
+          ]
+        }
+      ],
+      "header": {
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "quote_line_details_tab",
+          "tabs": [
+            {
+              "id": "quote_line_details_tab",
+              "label": "Details",
+              "sections": [
+                "main"
+              ]
+            },
+            {
+              "id": "quote_line_notes_tab",
+              "label": "Notes",
+              "sections": [
+                "notes"
+              ]
+            }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "quote_line.quote_id",
+          "quote_line.item_id",
+          "quote_line.sort_order",
+          "quote_line.description",
+          "quote_line.qty",
+          "quote_line.unit_price",
+          "quote_line.tax_rate",
+          "quote_line.line_total",
+          "quote_line.notes"
+        ]
+      }
+    },
+    {
+      "id": "quote.form",
+      "kind": "form",
+      "entity": "entity.quote",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Summary",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "quote.number",
+            "quote.reference",
+            "quote.contact_id",
+            "quote.opportunity_id",
+            "quote.status",
+            "quote.owner_id",
+            "quote.quote_date",
+            "quote.expiry_date",
+            "quote.currency"
+          ]
+        },
+        {
+          "id": "totals",
+          "title": "Totals",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "quote.discount_total",
+            "quote.subtotal",
+            "quote.tax",
+            "quote.total",
+            "quote.estimated_cost_total",
+            "quote.margin_amount",
+            "quote.margin_percent"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": [
+            "quote.notes",
+            "quote.internal_notes",
+            "quote.attachments"
+          ]
+        },
+        {
+          "id": "line_items",
+          "title": "Order Lines",
+          "line_editor": {
+            "entity_id": "entity.quote_line",
+            "parent_field": "quote_line.quote_id",
+            "item_lookup_field": "quote_line.item_id",
+            "item_lookup_entity": "entity.item",
+            "item_lookup_display_field": "item.name",
+            "item_field_map": {
+              "quote_line.uom": "item.uom",
+              "quote_line.unit_price": "item.sales_price",
+              "quote_line.unit_cost": "item.cost_price",
+              "quote_line.tax_rate": "item.tax_rate",
+              "quote_line.description": "item.description"
+            },
+            "description_field": "quote_line.description",
+            "defaults": {
+              "quote_line.uom": "Unit",
+              "quote_line.qty": 1,
+              "quote_line.unit_price": 0,
+              "quote_line.unit_cost": 0,
+              "quote_line.tax_rate": 0
+            },
+            "columns": [
+              {
+                "field_id": "quote_line.item_id",
+                "label": "Item",
+                "readonly": true
+              },
+              {
+                "field_id": "quote_line.description",
+                "label": "Description"
+              },
+              {
+                "field_id": "quote_line.uom",
+                "label": "UoM"
+              },
+              {
+                "field_id": "quote_line.qty",
+                "label": "Qty",
+                "type": "number"
+              },
+              {
+                "field_id": "quote_line.unit_price",
+                "label": "Unit Price",
+                "type": "number"
+              },
+              {
+                "field_id": "quote_line.unit_cost",
+                "label": "Unit Cost",
+                "type": "number"
+              },
+              {
+                "field_id": "quote_line.tax_rate",
+                "label": "Tax %",
+                "type": "number"
+              },
+              {
+                "field_id": "quote_line.line_total",
+                "label": "Line Total",
+                "type": "number",
+                "readonly": true
+              }
+            ]
+          }
+        }
+      ],
+      "header": {
+        "statusbar": {
+          "field_id": "quote.status"
+        },
+        "secondary_actions": [
+          {
+            "action_id": "action.quote_mark_sent"
+          },
+          {
+            "action_id": "action.quote_mark_approved"
+          },
+          {
+            "action_id": "action.quote_mark_rejected"
+          },
+          {
+            "action_id": "action.quote_mark_expired"
+          },
+          {
+            "action_id": "action.quote_mark_converted"
+          }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "summary",
+          "tabs": [
+            {
+              "id": "summary",
+              "label": "Summary",
+              "sections": [
+                "summary"
+              ]
+            },
+            {
+              "id": "line_items",
+              "label": "Order Lines",
+              "sections": [
+                "line_items"
+              ]
+            },
+            {
+              "id": "totals",
+              "label": "Totals",
+              "sections": [
+                "totals"
+              ]
+            },
+            {
+              "id": "notes",
+              "label": "Notes",
+              "sections": [
+                "notes"
+              ]
+            }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "quote.number",
+          "quote.reference",
+          "quote.contact_id",
+          "quote.opportunity_id",
+          "quote.status",
+          "quote.owner_id",
+          "quote.quote_date",
+          "quote.expiry_date",
+          "quote.currency",
+          "quote.discount_total",
+          "quote.subtotal",
+          "quote.tax",
+          "quote.total",
+          "quote.estimated_cost_total",
+          "quote.margin_amount",
+          "quote.margin_percent",
+          "quote.notes",
+          "quote.internal_notes"
+        ]
+      }
+    },
+    {
+      "id": "quote.graph",
+      "kind": "graph",
+      "entity": "entity.quote",
+      "default": {
+        "type": "bar",
+        "group_by": "quote.status",
+        "measure": "sum:quote.total"
+      }
+    },
+    {
+      "id": "quote_line.graph",
+      "kind": "graph",
+      "entity": "entity.quote_line",
+      "default": {
+        "type": "bar",
+        "group_by": "quote_line.tax_rate",
+        "measure": "sum:quote_line.line_total"
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "quote.dashboard_page",
+      "title": "Sales Home",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.quote_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "stat_cards",
+          "columns": 4,
+          "cards": [
+            {
+              "id": "open_quotes",
+              "label": "Open Quotes",
+              "subtitle": "Draft and sent quotes",
+              "entity_id": "entity.quote",
+              "measure": "count",
+              "domain": {
+                "op": "in",
+                "field": "quote.status",
+                "value": [
+                  "draft",
+                  "sent"
+                ]
+              },
+              "icon": "lucide:FileCheck2",
+              "tone": "primary",
+              "format": "number",
+              "target": "page:quote.list_page"
+            },
+            {
+              "id": "approval_queue",
+              "label": "Ready To Convert",
+              "subtitle": "Approved and not yet converted",
+              "entity_id": "entity.quote",
+              "measure": "count",
+              "domain": {
+                "op": "eq",
+                "field": "quote.status",
+                "value": "approved"
+              },
+              "icon": "lucide:BadgeCheck",
+              "tone": "success",
+              "format": "number",
+              "target": "page:quote.approved_page"
+            },
+            {
+              "id": "converted_quotes",
+              "label": "Converted",
+              "subtitle": "Quotes handed over to jobs",
+              "entity_id": "entity.quote",
+              "measure": "count",
+              "domain": {
+                "op": "eq",
+                "field": "quote.status",
+                "value": "converted"
+              },
+              "icon": "lucide:BriefcaseBusiness",
+              "tone": "warning",
+              "format": "number",
+              "target": "page:quote.converted_page"
+            },
+            {
+              "id": "expired_or_rejected",
+              "label": "Exceptions",
+              "subtitle": "Rejected and expired quotes",
+              "entity_id": "entity.quote",
+              "measure": "count",
+              "domain": {
+                "op": "in",
+                "field": "quote.status",
+                "value": [
+                  "rejected",
+                  "expired"
+                ]
+              },
+              "icon": "lucide:CircleOff",
+              "tone": "accent",
+              "format": "number",
+              "target": "page:quote.list_page"
+            }
+          ]
+        },
+        {
+          "kind": "container",
+          "variant": "card",
+          "title": "Open Quotes",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.quote",
+              "compact": true,
+              "param_scope": "local",
+              "default_mode": "list",
+              "record_domain": {
+                "op": "in",
+                "field": "quote.status",
+                "value": [
+                  "draft",
+                  "sent",
+                  "approved"
+                ]
+              },
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:quote.list"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quote.list_page",
+      "title": "Quotes",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.quote_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.quote",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:quote.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:quote.kanban",
+                  "default_group_by": "quote.status"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:quote.calendar"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:quote.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:quote.list",
+                  "default_group_by": "quote.status"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quote_line.list_page",
+      "title": "Quote Lines",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.quote_line",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:quote_line.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:quote_line.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:quote_line.list",
+                  "default_group_by": "quote_line.tax_rate"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quote.form_page",
+      "title": "Quote",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.quote",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:quote.form"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.quote",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quote_line.form_page",
+      "title": "Quote Line",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.quote_line",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                {
+                  "kind": "view",
+                  "target": "view:quote_line.form"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quote.calendar_page",
+      "title": "Quote Calendar",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.quote",
+              "default_mode": "calendar",
+              "modes": [
+                {
+                  "mode": "calendar",
+                  "target": "view:quote.calendar"
+                },
+                {
+                  "mode": "list",
+                  "target": "view:quote.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:quote.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:quote.list",
+                  "default_group_by": "quote.status"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quote.board_page",
+      "title": "Quote Board",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.quote_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.quote",
+              "default_mode": "kanban",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:quote.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:quote.kanban",
+                  "default_group_by": "quote.status"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:quote.calendar"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:quote.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:quote.list",
+                  "default_group_by": "quote.status"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quote.approved_page",
+      "title": "Approved Quotes",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.quote_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.quote",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:quote.list"
+                }
+              ],
+              "default_filter_id": "approved"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quote.converted_page",
+      "title": "Converted Quotes",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.quote_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.quote",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:quote.list"
+                }
+              ],
+              "default_filter_id": "converted"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "interfaces": {
+    "documentable": [
+      {
+        "entity_id": "entity.quote",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "quote.attachments",
+        "title_field": "quote.number",
+        "owner_field": "quote.owner_id",
+        "category_field": "quote.status",
+        "date_field": "quote.created_at",
+        "record_label_field": "quote.number",
+        "preview_enabled": true,
+        "allow_delete": false,
+        "allow_download": true
+      }
+    ],
+    "dashboardable": [
+      {
+        "entity_id": "entity.quote",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "quote.created_at",
+        "measures": [
+          "count",
+          "sum:quote.total"
+        ],
+        "group_bys": [
+          "quote.status",
+          "quote.owner_id"
+        ],
+        "default_widgets": [
+          {
+            "id": "quotes_by_status",
+            "type": "group",
+            "title": "Quotes by Status",
+            "group_by": "quote.status",
+            "measure": "count"
+          }
+        ]
+      }
+    ]
+  },
+  "relations": [],
+  "workflows": [
+    {
+      "id": "workflow.quote_status",
+      "entity": "entity.quote",
+      "status_field": "quote.status",
+      "required_fields_by_state": {
+        "sent": [
+          "quote.contact_id",
+          "quote.quote_date",
+          "quote.expiry_date"
+        ],
+        "approved": [
+          "quote.contact_id",
+          "quote.quote_date"
+        ]
+      },
+      "states": [
+        {
+          "id": "draft",
+          "label": "Draft",
+          "order": 1
+        },
+        {
+          "id": "sent",
+          "label": "Sent",
+          "order": 2
+        },
+        {
+          "id": "approved",
+          "label": "Approved",
+          "order": 3
+        },
+        {
+          "id": "rejected",
+          "label": "Rejected",
+          "order": 4
+        },
+        {
+          "id": "expired",
+          "label": "Expired",
+          "order": 5
+        },
+        {
+          "id": "converted",
+          "label": "Converted",
+          "order": 6
+        }
+      ],
+      "transitions": [
+        {
+          "from": "draft",
+          "to": "sent",
+          "label": "Send"
+        },
+        {
+          "from": "draft",
+          "to": "approved",
+          "label": "Approve"
+        },
+        {
+          "from": "sent",
+          "to": "approved",
+          "label": "Approve"
+        },
+        {
+          "from": "draft",
+          "to": "rejected",
+          "label": "Reject"
+        },
+        {
+          "from": "sent",
+          "to": "rejected",
+          "label": "Reject"
+        },
+        {
+          "from": "approved",
+          "to": "converted",
+          "label": "Create Job"
+        },
+        {
+          "from": "draft",
+          "to": "expired",
+          "label": "Mark Expired"
+        },
+        {
+          "from": "sent",
+          "to": "expired",
+          "label": "Mark Expired"
+        }
+      ]
+    }
+  ],
+  "transformations": [
+    {
+      "key": "quote_to_job",
+      "source_entity_id": "entity.quote",
+      "target_entity_id": "entity.job",
+      "field_mappings": {
+        "job.number": {
+          "from": "quote.number"
+        },
+        "job.title": {
+          "from": "quote.number"
+        },
+        "job.contact_id": {
+          "from": "quote.contact_id"
+        },
+        "job.owner_id": {
+          "from": "quote.owner_id"
+        },
+        "job.currency": {
+          "from": "quote.currency"
+        },
+        "job.start_date": {
+          "from": "quote.quote_date"
+        },
+        "job.due_date": {
+          "from": "quote.expiry_date"
+        },
+        "job.total_estimate": {
+          "from": "quote.total"
+        },
+        "job.description": {
+          "from": "quote.notes"
+        },
+        "job.internal_notes": {
+          "from": "quote.internal_notes"
+        },
+        "job.status": {
+          "value": "new"
+        }
+      },
+      "child_mappings": [
+        {
+          "source_entity_id": "entity.quote_line",
+          "target_entity_id": "entity.job_line",
+          "source_link_field": "quote_line.quote_id",
+          "target_link_field": "job_line.job_id",
+          "field_mappings": {
+            "job_line.item_id": {
+              "from": "quote_line.item_id"
+            },
+            "job_line.description": {
+              "from": "quote_line.description"
+            },
+            "job_line.uom": {
+              "from": "quote_line.uom"
+            },
+            "job_line.qty": {
+              "from": "quote_line.qty"
+            },
+            "job_line.unit_price": {
+              "from": "quote_line.unit_price"
+            },
+            "job_line.unit_cost": {
+              "from": "quote_line.unit_cost"
+            },
+            "job_line.tax_rate": {
+              "from": "quote_line.tax_rate"
+            },
+            "job_line.line_total": {
+              "from": "quote_line.line_total"
+            },
+            "job_line.sort_order": {
+              "from": "quote_line.sort_order"
+            },
+            "job_line.notes": {
+              "from": "quote_line.notes"
+            },
+            "job_line.status": {
+              "value": "new"
+            }
+          }
+        }
+      ],
+      "link_fields": {
+        "source_to_target": "quote.job_id",
+        "target_to_source": "job.source_quote_id"
+      },
+      "source_update": {
+        "patch": {
+          "quote.status": "converted"
+        }
+      },
+      "validation": {
+        "require_source_fields": [
+          "quote.number",
+          "quote.contact_id"
+        ],
+        "require_child_records": true,
+        "prevent_if_target_linked": true
+      }
+    }
+  ],
+  "modals": [],
+  "queries": {}
+}

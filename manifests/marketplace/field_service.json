@@ -1,0 +1,1710 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "field_service",
+    "key": "field_service",
+    "name": "Field Service",
+    "version": "1.4.0",
+    "description": "Dispatch, site visit, and field reporting on top of operational jobs.",
+    "category": "Operations",
+    "icon_key": "lucide:MapPinned"
+  },
+  "depends_on": {
+    "required": [
+      {
+        "module": "contacts",
+        "version": ">=1.0.0"
+      },
+      {
+        "module": "jobs",
+        "version": ">=1.3.1"
+      }
+    ],
+    "optional": [
+      {
+        "module": "tasks",
+        "version": ">=1.1.0"
+      },
+      {
+        "module": "sales",
+        "version": ">=1.6.2"
+      }
+    ]
+  },
+  "app": {
+    "home": "page:site_visit.list_page",
+    "defaults": {
+      "entity_home_page": "page:site_visit.dispatch",
+      "entity_form_page": "page:site_visit.form_page",
+      "entities": {
+        "entity.site_visit": {
+          "entity_home_page": "page:site_visit.dispatch",
+          "entity_form_page": "page:site_visit.form_page"
+        },
+        "entity.service_report": {
+          "entity_home_page": "page:service_report.list_page",
+          "entity_form_page": "page:service_report.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Field Service",
+        "items": [
+          {
+            "label": "Visits",
+            "to": "page:site_visit.list_page"
+          },
+          {
+            "label": "Open Visits",
+            "to": "page:site_visit.open_page"
+          },
+          {
+            "label": "Reports",
+            "to": "page:service_report.list_page"
+          },
+          {
+            "label": "Approvals",
+            "to": "page:service_report.approvals_page"
+          }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.site_visit",
+      "display_field": "site_visit.job_id",
+      "fields": [
+        {
+          "id": "site_visit.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "site_visit.job_id",
+          "type": "lookup",
+          "label": "Job",
+          "entity": "entity.job",
+          "display_field": "job.number",
+          "required": true
+        },
+        {
+          "id": "site_visit.contact_id",
+          "type": "lookup",
+          "label": "Contact",
+          "entity": "entity.contact",
+          "display_field": "contact.name"
+        },
+        {
+          "id": "site_visit.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "planned",
+          "ui": {
+            "widget": "steps"
+          },
+          "options": [
+            {
+              "value": "planned",
+              "label": "Planned"
+            },
+            {
+              "value": "en_route",
+              "label": "En Route"
+            },
+            {
+              "value": "on_site",
+              "label": "On Site"
+            },
+            {
+              "value": "completed",
+              "label": "Completed"
+            },
+            {
+              "value": "cancelled",
+              "label": "Cancelled"
+            }
+          ]
+        },
+        {
+          "id": "site_visit.assignee_id",
+          "type": "user",
+          "label": "Technician",
+          "required_when": {
+            "op": "in",
+            "field": "site_visit.status",
+            "value": [
+              "en_route",
+              "on_site",
+              "completed"
+            ]
+          }
+        },
+        {
+          "id": "site_visit.scheduled_start",
+          "type": "datetime",
+          "label": "Scheduled Start",
+          "required": true
+        },
+        {
+          "id": "site_visit.scheduled_end",
+          "type": "datetime",
+          "label": "Scheduled End"
+        },
+        {
+          "id": "site_visit.location",
+          "type": "string",
+          "label": "Location"
+        },
+        {
+          "id": "site_visit.visit_type",
+          "type": "string",
+          "label": "Visit Type"
+        },
+        {
+          "id": "site_visit.notes",
+          "type": "text",
+          "label": "Notes"
+        },
+        {
+          "id": "site_visit.attachments",
+          "type": "attachments",
+          "label": "Attachments"
+        },
+        {
+          "id": "site_visit.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    },
+    {
+      "id": "entity.service_report",
+      "display_field": "service_report.summary",
+      "fields": [
+        {
+          "id": "service_report.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "service_report.job_id",
+          "type": "lookup",
+          "label": "Job",
+          "entity": "entity.job",
+          "display_field": "job.number",
+          "required": true
+        },
+        {
+          "id": "service_report.site_visit_id",
+          "type": "lookup",
+          "label": "Site Visit",
+          "entity": "entity.site_visit",
+          "display_field": "site_visit.job_id"
+        },
+        {
+          "id": "service_report.technician_id",
+          "type": "user",
+          "label": "Technician"
+        },
+        {
+          "id": "service_report.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "draft",
+          "ui": {
+            "widget": "steps"
+          },
+          "options": [
+            {
+              "value": "draft",
+              "label": "Draft"
+            },
+            {
+              "value": "submitted",
+              "label": "Submitted"
+            },
+            {
+              "value": "approved",
+              "label": "Approved"
+            }
+          ]
+        },
+        {
+          "id": "service_report.summary",
+          "type": "string",
+          "label": "Summary",
+          "required": true
+        },
+        {
+          "id": "service_report.work_done",
+          "type": "text",
+          "label": "Work Done",
+          "required_when": {
+            "op": "in",
+            "field": "service_report.status",
+            "value": [
+              "submitted",
+              "approved"
+            ]
+          }
+        },
+        {
+          "id": "service_report.follow_up_required",
+          "type": "bool",
+          "label": "Follow Up Required",
+          "default": false
+        },
+        {
+          "id": "service_report.customer_notes",
+          "type": "text",
+          "label": "Customer Notes"
+        },
+        {
+          "id": "service_report.attachments",
+          "type": "attachments",
+          "label": "Attachments"
+        },
+        {
+          "id": "service_report.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "action.site_visit_refresh",
+      "kind": "refresh",
+      "label": "Refresh"
+    },
+    {
+      "id": "action.site_visit_new",
+      "kind": "open_form",
+      "label": "+ New Visit",
+      "target": "site_visit.form"
+    },
+    {
+      "id": "action.site_visit_en_route",
+      "kind": "update_record",
+      "label": "Mark En Route",
+      "entity_id": "entity.site_visit",
+      "patch": {
+        "site_visit.status": "en_route"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "site_visit.status",
+        "value": "planned"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "site_visit.status",
+        "value": "planned"
+      }
+    },
+    {
+      "id": "action.site_visit_on_site",
+      "kind": "update_record",
+      "label": "Mark On Site",
+      "entity_id": "entity.site_visit",
+      "patch": {
+        "site_visit.status": "on_site"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "site_visit.status",
+        "value": "en_route"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "site_visit.status",
+        "value": "en_route"
+      }
+    },
+    {
+      "id": "action.site_visit_complete",
+      "kind": "update_record",
+      "label": "Complete Visit",
+      "entity_id": "entity.site_visit",
+      "patch": {
+        "site_visit.status": "completed"
+      },
+      "enabled_when": {
+        "op": "in",
+        "field": "site_visit.status",
+        "value": [
+          "en_route",
+          "on_site"
+        ]
+      },
+      "visible_when": {
+        "op": "in",
+        "field": "site_visit.status",
+        "value": [
+          "en_route",
+          "on_site"
+        ]
+      }
+    },
+    {
+      "id": "action.site_visit_cancel",
+      "kind": "update_record",
+      "label": "Cancel Visit",
+      "entity_id": "entity.site_visit",
+      "patch": {
+        "site_visit.status": "cancelled"
+      },
+      "enabled_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "site_visit.status",
+          "value": [
+            "completed",
+            "cancelled"
+          ]
+        }
+      },
+      "visible_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "site_visit.status",
+          "value": [
+            "completed",
+            "cancelled"
+          ]
+        }
+      },
+      "confirm": {
+        "title": "Cancel Visit",
+        "body": "This visit will be cancelled."
+      }
+    },
+    {
+      "id": "action.service_report_new",
+      "kind": "open_form",
+      "label": "+ New Report",
+      "target": "service_report.form"
+    },
+    {
+      "id": "action.service_report_submit",
+      "kind": "update_record",
+      "label": "Submit Report",
+      "entity_id": "entity.service_report",
+      "patch": {
+        "service_report.status": "submitted"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "service_report.status",
+        "value": "draft"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "service_report.status",
+        "value": "draft"
+      }
+    },
+    {
+      "id": "action.service_report_approve",
+      "kind": "update_record",
+      "label": "Approve Report",
+      "entity_id": "entity.service_report",
+      "patch": {
+        "service_report.status": "approved"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "service_report.status",
+        "value": "submitted"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "service_report.status",
+        "value": "submitted"
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "id": "field_service.record.site_visit.created",
+      "event": "record.created",
+      "entity_id": "entity.site_visit"
+    },
+    {
+      "id": "field_service.record.site_visit.updated",
+      "event": "record.updated",
+      "entity_id": "entity.site_visit"
+    },
+    {
+      "id": "field_service.record.service_report.created",
+      "event": "record.created",
+      "entity_id": "entity.service_report"
+    },
+    {
+      "id": "field_service.record.service_report.updated",
+      "event": "record.updated",
+      "entity_id": "entity.service_report"
+    },
+    {
+      "id": "field_service.workflow.site_visit.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.site_visit",
+      "status_field": "site_visit.status"
+    },
+    {
+      "id": "field_service.workflow.service_report.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.service_report",
+      "status_field": "service_report.status"
+    },
+    {
+      "id": "field_service.action.site_visit_refresh.clicked",
+      "event": "action.clicked",
+      "action_id": "action.site_visit_refresh"
+    },
+    {
+      "id": "field_service.action.site_visit_new.clicked",
+      "event": "action.clicked",
+      "action_id": "action.site_visit_new"
+    },
+    {
+      "id": "field_service.action.site_visit_en_route.clicked",
+      "event": "action.clicked",
+      "action_id": "action.site_visit_en_route"
+    },
+    {
+      "id": "field_service.action.site_visit_on_site.clicked",
+      "event": "action.clicked",
+      "action_id": "action.site_visit_on_site"
+    },
+    {
+      "id": "field_service.action.site_visit_complete.clicked",
+      "event": "action.clicked",
+      "action_id": "action.site_visit_complete"
+    },
+    {
+      "id": "field_service.action.site_visit_cancel.clicked",
+      "event": "action.clicked",
+      "action_id": "action.site_visit_cancel"
+    },
+    {
+      "id": "field_service.action.service_report_new.clicked",
+      "event": "action.clicked",
+      "action_id": "action.service_report_new"
+    },
+    {
+      "id": "field_service.action.service_report_submit.clicked",
+      "event": "action.clicked",
+      "action_id": "action.service_report_submit"
+    },
+    {
+      "id": "field_service.action.service_report_approve.clicked",
+      "event": "action.clicked",
+      "action_id": "action.service_report_approve"
+    }
+  ],
+  "views": [
+    {
+      "id": "site_visit.list",
+      "kind": "list",
+      "entity": "entity.site_visit",
+      "columns": [
+        {
+          "field_id": "site_visit.job_id"
+        },
+        {
+          "field_id": "site_visit.status"
+        },
+        {
+          "field_id": "site_visit.assignee_id"
+        },
+        {
+          "field_id": "site_visit.scheduled_start"
+        },
+        {
+          "field_id": "site_visit.location"
+        }
+      ],
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.site_visit_new"
+          }
+        ],
+        "secondary_actions": [
+          {
+            "action_id": "action.site_visit_refresh"
+          }
+        ],
+        "open_record_target": "page:site_visit.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search visits...",
+          "fields": [
+            "site_visit.job_id",
+            "site_visit.status",
+            "site_visit.assignee_id",
+            "site_visit.location",
+            "site_visit.visit_type"
+          ]
+        },
+        "filters": [
+          {
+            "id": "open",
+            "label": "Open",
+            "domain": {
+              "op": "not",
+              "condition": {
+                "op": "in",
+                "field": "site_visit.status",
+                "value": [
+                  "completed",
+                  "cancelled"
+                ]
+              }
+            }
+          },
+          {
+            "id": "mine",
+            "label": "Mine",
+            "domain": {
+              "op": "eq",
+              "field": "site_visit.assignee_id",
+              "value": {
+                "ref": "$actor.user_id"
+              }
+            }
+          },
+          {
+            "id": "completed",
+            "label": "Completed",
+            "domain": {
+              "op": "eq",
+              "field": "site_visit.status",
+              "value": "completed"
+            }
+          },
+          {
+            "id": "cancelled",
+            "label": "Cancelled",
+            "domain": {
+              "op": "eq",
+              "field": "site_visit.status",
+              "value": "cancelled"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "site_visit.kanban",
+      "kind": "kanban",
+      "entity": "entity.site_visit",
+      "card": {
+        "title_field": "site_visit.job_id",
+        "subtitle_fields": [
+          "site_visit.assignee_id",
+          "site_visit.scheduled_start"
+        ],
+        "badge_fields": [
+          "site_visit.status",
+          "site_visit.visit_type"
+        ]
+      }
+    },
+    {
+      "id": "site_visit.calendar",
+      "kind": "calendar",
+      "entity": "entity.site_visit",
+      "calendar": {
+        "title_field": "site_visit.job_id",
+        "date_start": "site_visit.scheduled_start",
+        "date_end": "site_visit.scheduled_end",
+        "color_field": "site_visit.assignee_id",
+        "default_scale": "week"
+      }
+    },
+    {
+      "id": "site_visit.form",
+      "kind": "form",
+      "entity": "entity.site_visit",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Visit",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "site_visit.job_id",
+            "site_visit.contact_id",
+            "site_visit.status",
+            "site_visit.assignee_id",
+            "site_visit.visit_type",
+            "site_visit.location",
+            "site_visit.scheduled_start",
+            "site_visit.scheduled_end"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": [
+            "site_visit.notes",
+            "site_visit.attachments"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": {
+          "field_id": "site_visit.status"
+        },
+        "secondary_actions": [
+          {
+            "action_id": "action.site_visit_en_route"
+          },
+          {
+            "action_id": "action.site_visit_on_site"
+          },
+          {
+            "action_id": "action.site_visit_complete"
+          },
+          {
+            "action_id": "action.site_visit_cancel"
+          },
+          {
+            "action_id": "action.site_visit_refresh"
+          }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "visit_tab",
+          "tabs": [
+            {
+              "id": "visit_tab",
+              "label": "Visit",
+              "sections": [
+                "main"
+              ]
+            },
+            {
+              "id": "notes_tab",
+              "label": "Notes",
+              "sections": [
+                "notes"
+              ]
+            }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "site_visit.job_id",
+          "site_visit.contact_id",
+          "site_visit.status",
+          "site_visit.assignee_id",
+          "site_visit.visit_type",
+          "site_visit.location",
+          "site_visit.scheduled_start",
+          "site_visit.scheduled_end",
+          "site_visit.notes"
+        ]
+      }
+    },
+    {
+      "id": "service_report.list",
+      "kind": "list",
+      "entity": "entity.service_report",
+      "columns": [
+        {
+          "field_id": "service_report.job_id"
+        },
+        {
+          "field_id": "service_report.summary"
+        },
+        {
+          "field_id": "service_report.technician_id"
+        },
+        {
+          "field_id": "service_report.status"
+        },
+        {
+          "field_id": "service_report.follow_up_required"
+        }
+      ],
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.service_report_new"
+          }
+        ],
+        "secondary_actions": [
+          {
+            "action_id": "action.site_visit_refresh"
+          }
+        ],
+        "open_record_target": "page:service_report.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search reports...",
+          "fields": [
+            "service_report.summary",
+            "service_report.job_id",
+            "service_report.technician_id",
+            "service_report.status"
+          ]
+        },
+        "filters": [
+          {
+            "id": "open",
+            "label": "Open",
+            "domain": {
+              "op": "in",
+              "field": "service_report.status",
+              "value": [
+                "draft",
+                "submitted"
+              ]
+            }
+          },
+          {
+            "id": "mine",
+            "label": "Mine",
+            "domain": {
+              "op": "eq",
+              "field": "service_report.technician_id",
+              "value": {
+                "ref": "$actor.user_id"
+              }
+            }
+          },
+          {
+            "id": "approved",
+            "label": "Approved",
+            "domain": {
+              "op": "eq",
+              "field": "service_report.status",
+              "value": "approved"
+            }
+          },
+          {
+            "id": "draft",
+            "label": "Draft",
+            "domain": {
+              "op": "eq",
+              "field": "service_report.status",
+              "value": "draft"
+            }
+          },
+          {
+            "id": "submitted",
+            "label": "Submitted",
+            "domain": {
+              "op": "eq",
+              "field": "service_report.status",
+              "value": "submitted"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "service_report.kanban",
+      "kind": "kanban",
+      "entity": "entity.service_report",
+      "card": {
+        "title_field": "service_report.summary",
+        "subtitle_fields": [
+          "service_report.job_id",
+          "service_report.technician_id"
+        ],
+        "badge_fields": [
+          "service_report.status",
+          "service_report.follow_up_required"
+        ]
+      }
+    },
+    {
+      "id": "service_report.form",
+      "kind": "form",
+      "entity": "entity.service_report",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Report",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "service_report.job_id",
+            "service_report.site_visit_id",
+            "service_report.technician_id",
+            "service_report.status",
+            "service_report.summary",
+            "service_report.follow_up_required"
+          ]
+        },
+        {
+          "id": "details",
+          "title": "Details",
+          "fields": [
+            "service_report.work_done",
+            "service_report.customer_notes",
+            "service_report.attachments"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": {
+          "field_id": "service_report.status"
+        },
+        "secondary_actions": [
+          {
+            "action_id": "action.service_report_submit"
+          },
+          {
+            "action_id": "action.service_report_approve"
+          },
+          {
+            "action_id": "action.site_visit_refresh"
+          }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "report_tab",
+          "tabs": [
+            {
+              "id": "report_tab",
+              "label": "Report",
+              "sections": [
+                "summary"
+              ]
+            },
+            {
+              "id": "details_tab",
+              "label": "Details",
+              "sections": [
+                "details"
+              ]
+            }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "service_report.job_id",
+          "service_report.site_visit_id",
+          "service_report.technician_id",
+          "service_report.status",
+          "service_report.summary",
+          "service_report.follow_up_required",
+          "service_report.work_done",
+          "service_report.customer_notes"
+        ]
+      }
+    },
+    {
+      "id": "site_visit.graph",
+      "kind": "graph",
+      "entity": "entity.site_visit",
+      "default": {
+        "type": "bar",
+        "group_by": "site_visit.status",
+        "measure": "count"
+      }
+    },
+    {
+      "id": "service_report.graph",
+      "kind": "graph",
+      "entity": "entity.service_report",
+      "default": {
+        "type": "bar",
+        "group_by": "service_report.status",
+        "measure": "count"
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "field_service.dashboard_page",
+      "title": "Field Service Home",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.site_visit_new"
+          },
+          {
+            "action_id": "action.service_report_new"
+          },
+          {
+            "action_id": "action.site_visit_refresh"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "stat_cards",
+          "columns": 4,
+          "cards": [
+            {
+              "id": "open_visits",
+              "label": "Open Visits",
+              "subtitle": "Not yet completed or cancelled",
+              "entity_id": "entity.site_visit",
+              "measure": "count",
+              "domain": {
+                "op": "not",
+                "condition": {
+                  "op": "in",
+                  "field": "site_visit.status",
+                  "value": [
+                    "completed",
+                    "cancelled"
+                  ]
+                }
+              },
+              "icon": "lucide:MapPinned",
+              "tone": "primary",
+              "format": "number",
+              "target": "page:site_visit.open_page"
+            },
+            {
+              "id": "en_route_visits",
+              "label": "En Route",
+              "subtitle": "Technicians in transit",
+              "entity_id": "entity.site_visit",
+              "measure": "count",
+              "domain": {
+                "op": "eq",
+                "field": "site_visit.status",
+                "value": "en_route"
+              },
+              "icon": "lucide:Route",
+              "tone": "warning",
+              "format": "number",
+              "target": "page:site_visit.dispatch"
+            },
+            {
+              "id": "on_site_visits",
+              "label": "On Site",
+              "subtitle": "Active visits underway",
+              "entity_id": "entity.site_visit",
+              "measure": "count",
+              "domain": {
+                "op": "eq",
+                "field": "site_visit.status",
+                "value": "on_site"
+              },
+              "icon": "lucide:HardHat",
+              "tone": "success",
+              "format": "number",
+              "target": "page:site_visit.board_page"
+            },
+            {
+              "id": "pending_reports",
+              "label": "Pending Approvals",
+              "subtitle": "Submitted reports awaiting sign-off",
+              "entity_id": "entity.service_report",
+              "measure": "count",
+              "domain": {
+                "op": "eq",
+                "field": "service_report.status",
+                "value": "submitted"
+              },
+              "icon": "lucide:ClipboardCheck",
+              "tone": "accent",
+              "format": "number",
+              "target": "page:service_report.approvals_page"
+            }
+          ]
+        },
+        {
+          "kind": "container",
+          "variant": "card",
+          "title": "Visit Queue",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.site_visit",
+              "compact": true,
+              "param_scope": "local",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:site_visit.list"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        },
+        {
+          "kind": "container",
+          "variant": "card",
+          "title": "Report Queue",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.service_report",
+              "compact": true,
+              "param_scope": "local",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:service_report.list"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "site_visit.dispatch",
+      "title": "Dispatch",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.site_visit_new"
+          },
+          {
+            "action_id": "action.site_visit_refresh"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.site_visit",
+              "default_mode": "calendar",
+              "modes": [
+                {
+                  "mode": "calendar",
+                  "target": "view:site_visit.calendar"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:site_visit.kanban",
+                  "default_group_by": "site_visit.status"
+                },
+                {
+                  "mode": "list",
+                  "target": "view:site_visit.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:site_visit.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:site_visit.list",
+                  "default_group_by": "site_visit.status"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "site_visit.form_page",
+      "title": "Site Visit",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.site_visit",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:site_visit.form"
+                        },
+                        {
+                          "kind": "related_list",
+                          "entity_id": "entity.service_report",
+                          "target": "view:service_report.list",
+                          "record_domain": {
+                            "op": "eq",
+                            "field": "service_report.site_visit_id",
+                            "value": {
+                              "ref": "$record.id"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.site_visit",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "site_visit.list_page",
+      "title": "Visits",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.site_visit",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:site_visit.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:site_visit.kanban",
+                  "default_group_by": "site_visit.status"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:site_visit.calendar"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:site_visit.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:site_visit.list",
+                  "default_group_by": "site_visit.status"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "service_report.list_page",
+      "title": "Service Reports",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.service_report",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:service_report.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:service_report.kanban",
+                  "default_group_by": "service_report.status"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:service_report.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:service_report.list",
+                  "default_group_by": "service_report.status"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "service_report.form_page",
+      "title": "Service Report",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.service_report",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:service_report.form"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.service_report",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "site_visit.open_page",
+      "title": "Open Visits",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.site_visit",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:site_visit.list"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "service_report.approvals_page",
+      "title": "Report Approvals",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.service_report",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:service_report.list"
+                }
+              ],
+              "default_filter_id": "approved"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "site_visit.board_page",
+      "title": "Visit Board",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.site_visit",
+              "default_mode": "kanban",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:site_visit.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:site_visit.kanban",
+                  "default_group_by": "site_visit.status"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:site_visit.calendar"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:site_visit.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:site_visit.list",
+                  "default_group_by": "site_visit.status"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "service_report.board_page",
+      "title": "Report Board",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.service_report",
+              "default_mode": "kanban",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:service_report.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:service_report.kanban",
+                  "default_group_by": "service_report.status"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:service_report.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:service_report.list",
+                  "default_group_by": "service_report.status"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "interfaces": {
+    "schedulable": [
+      {
+        "entity_id": "entity.site_visit",
+        "enabled": true,
+        "scope": "module_and_global",
+        "title_field": "site_visit.job_id",
+        "date_start": "site_visit.scheduled_start",
+        "date_end": "site_visit.scheduled_end",
+        "owner_field": "site_visit.assignee_id",
+        "location_field": "site_visit.location",
+        "status_field": "site_visit.status",
+        "color_field": "site_visit.assignee_id"
+      }
+    ],
+    "documentable": [
+      {
+        "entity_id": "entity.site_visit",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "site_visit.attachments",
+        "title_field": "site_visit.job_id",
+        "owner_field": "site_visit.assignee_id",
+        "category_field": "site_visit.status",
+        "date_field": "site_visit.created_at",
+        "record_label_field": "site_visit.job_id",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
+      },
+      {
+        "entity_id": "entity.service_report",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "service_report.attachments",
+        "title_field": "service_report.summary",
+        "owner_field": "service_report.technician_id",
+        "category_field": "service_report.status",
+        "date_field": "service_report.created_at",
+        "record_label_field": "service_report.summary",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
+      }
+    ],
+    "dashboardable": [
+      {
+        "entity_id": "entity.site_visit",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "site_visit.created_at",
+        "measures": [
+          "count"
+        ],
+        "group_bys": [
+          "site_visit.status",
+          "site_visit.assignee_id",
+          "site_visit.visit_type"
+        ],
+        "default_widgets": [
+          {
+            "id": "visits_by_status",
+            "type": "group",
+            "title": "Visits by Status",
+            "group_by": "site_visit.status",
+            "measure": "count"
+          }
+        ]
+      },
+      {
+        "entity_id": "entity.service_report",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "service_report.created_at",
+        "measures": [
+          "count"
+        ],
+        "group_bys": [
+          "service_report.status",
+          "service_report.technician_id"
+        ],
+        "default_widgets": [
+          {
+            "id": "reports_by_status",
+            "type": "group",
+            "title": "Reports by Status",
+            "group_by": "service_report.status",
+            "measure": "count"
+          }
+        ]
+      }
+    ]
+  },
+  "relations": [],
+  "workflows": [
+    {
+      "id": "workflow.site_visit_status",
+      "entity": "entity.site_visit",
+      "status_field": "site_visit.status",
+      "required_fields_by_state": {
+        "en_route": [
+          "site_visit.assignee_id"
+        ],
+        "on_site": [
+          "site_visit.assignee_id"
+        ],
+        "completed": [
+          "site_visit.assignee_id"
+        ]
+      },
+      "states": [
+        {
+          "id": "planned",
+          "label": "Planned",
+          "order": 1
+        },
+        {
+          "id": "en_route",
+          "label": "En Route",
+          "order": 2
+        },
+        {
+          "id": "on_site",
+          "label": "On Site",
+          "order": 3
+        },
+        {
+          "id": "completed",
+          "label": "Completed",
+          "order": 4
+        },
+        {
+          "id": "cancelled",
+          "label": "Cancelled",
+          "order": 5
+        }
+      ],
+      "transitions": [
+        {
+          "from": "planned",
+          "to": "en_route",
+          "label": "Mark En Route"
+        },
+        {
+          "from": "en_route",
+          "to": "on_site",
+          "label": "Mark On Site"
+        },
+        {
+          "from": "en_route",
+          "to": "completed",
+          "label": "Complete Visit"
+        },
+        {
+          "from": "on_site",
+          "to": "completed",
+          "label": "Complete Visit"
+        },
+        {
+          "from": "planned",
+          "to": "cancelled",
+          "label": "Cancel Visit"
+        },
+        {
+          "from": "en_route",
+          "to": "cancelled",
+          "label": "Cancel Visit"
+        },
+        {
+          "from": "on_site",
+          "to": "cancelled",
+          "label": "Cancel Visit"
+        }
+      ]
+    },
+    {
+      "id": "workflow.service_report_status",
+      "entity": "entity.service_report",
+      "status_field": "service_report.status",
+      "required_fields_by_state": {
+        "submitted": [
+          "service_report.work_done"
+        ],
+        "approved": [
+          "service_report.work_done"
+        ]
+      },
+      "states": [
+        {
+          "id": "draft",
+          "label": "Draft",
+          "order": 1
+        },
+        {
+          "id": "submitted",
+          "label": "Submitted",
+          "order": 2
+        },
+        {
+          "id": "approved",
+          "label": "Approved",
+          "order": 3
+        }
+      ],
+      "transitions": [
+        {
+          "from": "draft",
+          "to": "submitted",
+          "label": "Submit Report"
+        },
+        {
+          "from": "submitted",
+          "to": "approved",
+          "label": "Approve Report"
+        }
+      ]
+    }
+  ],
+  "transformations": [],
+  "modals": [],
+  "queries": {}
+}

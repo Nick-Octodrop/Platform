@@ -1,0 +1,1042 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "calendar",
+    "key": "calendar",
+    "name": "Calendar",
+    "version": "1.4.0",
+    "description": "Scheduling and event operations with strong calendar-first workflows.",
+    "category": "Operations",
+    "icon_key": "lucide:Calendar"
+  },
+  "app": {
+    "home": "page:calendar_event.home",
+    "defaults": {
+      "entity_home_page": "page:calendar_event.home",
+      "entity_form_page": "page:calendar_event.form_page",
+      "entities": {
+        "entity.calendar_event": {
+          "entity_home_page": "page:calendar_event.home",
+          "entity_form_page": "page:calendar_event.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Calendar",
+        "items": [
+          {
+            "label": "Schedule",
+            "to": "page:calendar_event.home"
+          },
+          {
+            "label": "Open Events",
+            "to": "page:calendar_event.open_page"
+          },
+          {
+            "label": "My Events",
+            "to": "page:calendar_event.my_page"
+          },
+          {
+            "label": "Team / Public",
+            "to": "page:calendar_event.shared_page"
+          },
+          {
+            "label": "Board",
+            "to": "page:calendar_event.board_page"
+          },
+          {
+            "label": "All Events",
+            "to": "page:calendar_event.list_page"
+          }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.calendar_event",
+      "display_field": "calendar_event.title",
+      "fields": [
+        {
+          "id": "calendar_event.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "calendar_event.title",
+          "type": "string",
+          "label": "Title",
+          "required": true
+        },
+        {
+          "id": "calendar_event.description",
+          "type": "text",
+          "label": "Description"
+        },
+        {
+          "id": "calendar_event.start_at",
+          "type": "datetime",
+          "label": "Start",
+          "required": true
+        },
+        {
+          "id": "calendar_event.end_at",
+          "type": "datetime",
+          "label": "End"
+        },
+        {
+          "id": "calendar_event.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "planned",
+          "options": [
+            {
+              "value": "planned",
+              "label": "Planned"
+            },
+            {
+              "value": "confirmed",
+              "label": "Confirmed"
+            },
+            {
+              "value": "done",
+              "label": "Done"
+            },
+            {
+              "value": "cancelled",
+              "label": "Cancelled"
+            }
+          ]
+        },
+        {
+          "id": "calendar_event.owner_id",
+          "type": "user",
+          "label": "Owner"
+        },
+        {
+          "id": "calendar_event.participant_ids",
+          "type": "users",
+          "label": "Participants"
+        },
+        {
+          "id": "calendar_event.scope",
+          "type": "enum",
+          "label": "Scope",
+          "default": "personal",
+          "options": [
+            {
+              "value": "personal",
+              "label": "Personal"
+            },
+            {
+              "value": "team",
+              "label": "Team"
+            },
+            {
+              "value": "public",
+              "label": "Public"
+            }
+          ]
+        },
+        {
+          "id": "calendar_event.location",
+          "type": "string",
+          "label": "Location"
+        },
+        {
+          "id": "calendar_event.all_day",
+          "type": "bool",
+          "label": "All Day",
+          "default": false
+        },
+        {
+          "id": "calendar_event.color_key",
+          "type": "string",
+          "label": "Color Key"
+        },
+        {
+          "id": "calendar_event.tags",
+          "type": "tags",
+          "label": "Tags"
+        },
+        {
+          "id": "calendar_event.attachments",
+          "type": "attachments",
+          "label": "Attachments"
+        },
+        {
+          "id": "calendar_event.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    }
+  ],
+  "interfaces": {
+    "schedulable": [
+      {
+        "entity_id": "entity.calendar_event",
+        "enabled": true,
+        "scope": "module_and_global",
+        "title_field": "calendar_event.title",
+        "date_start": "calendar_event.start_at",
+        "date_end": "calendar_event.end_at",
+        "owner_field": "calendar_event.owner_id",
+        "location_field": "calendar_event.location",
+        "status_field": "calendar_event.status",
+        "all_day_field": "calendar_event.all_day",
+        "color_field": "calendar_event.color_key"
+      }
+    ],
+    "documentable": [
+      {
+        "entity_id": "entity.calendar_event",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "calendar_event.attachments",
+        "title_field": "calendar_event.title",
+        "owner_field": "calendar_event.owner_id",
+        "category_field": "calendar_event.status",
+        "date_field": "calendar_event.created_at",
+        "record_label_field": "calendar_event.title",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
+      }
+    ],
+    "dashboardable": [
+      {
+        "entity_id": "entity.calendar_event",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "calendar_event.start_at",
+        "measures": [
+          "count"
+        ],
+        "group_bys": [
+          "calendar_event.status",
+          "calendar_event.owner_id",
+          "calendar_event.scope"
+        ],
+        "default_widgets": [
+          {
+            "id": "events_by_status",
+            "type": "group",
+            "title": "Events by Status",
+            "group_by": "calendar_event.status",
+            "measure": "count"
+          }
+        ]
+      }
+    ]
+  },
+  "actions": [
+    {
+      "id": "action.calendar_refresh",
+      "kind": "refresh",
+      "label": "Refresh"
+    },
+    {
+      "id": "action.calendar_event_new",
+      "kind": "open_form",
+      "label": "+ New Event",
+      "target": "calendar_event.form"
+    },
+    {
+      "id": "action.calendar_event_confirm",
+      "kind": "update_record",
+      "label": "Confirm",
+      "entity_id": "entity.calendar_event",
+      "patch": {
+        "calendar_event.status": "confirmed"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "calendar_event.status",
+        "value": "planned"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "calendar_event.status",
+        "value": "planned"
+      }
+    },
+    {
+      "id": "action.calendar_event_done",
+      "kind": "update_record",
+      "label": "Mark Done",
+      "entity_id": "entity.calendar_event",
+      "patch": {
+        "calendar_event.status": "done"
+      },
+      "enabled_when": {
+        "op": "in",
+        "field": "calendar_event.status",
+        "value": [
+          "planned",
+          "confirmed"
+        ]
+      },
+      "visible_when": {
+        "op": "in",
+        "field": "calendar_event.status",
+        "value": [
+          "planned",
+          "confirmed"
+        ]
+      }
+    },
+    {
+      "id": "action.calendar_event_cancel",
+      "kind": "update_record",
+      "label": "Cancel",
+      "entity_id": "entity.calendar_event",
+      "patch": {
+        "calendar_event.status": "cancelled"
+      },
+      "enabled_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "calendar_event.status",
+          "value": [
+            "done",
+            "cancelled"
+          ]
+        }
+      },
+      "visible_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "calendar_event.status",
+          "value": [
+            "done",
+            "cancelled"
+          ]
+        }
+      },
+      "confirm": {
+        "title": "Cancel Event",
+        "body": "This event will be cancelled."
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "id": "calendar.record.calendar_event.created",
+      "event": "record.created",
+      "entity_id": "entity.calendar_event"
+    },
+    {
+      "id": "calendar.record.calendar_event.updated",
+      "event": "record.updated",
+      "entity_id": "entity.calendar_event"
+    },
+    {
+      "id": "calendar.workflow.calendar_event.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.calendar_event",
+      "status_field": "calendar_event.status"
+    },
+    {
+      "id": "calendar.action.calendar_refresh.clicked",
+      "event": "action.clicked",
+      "action_id": "action.calendar_refresh"
+    },
+    {
+      "id": "calendar.action.calendar_event_new.clicked",
+      "event": "action.clicked",
+      "action_id": "action.calendar_event_new"
+    },
+    {
+      "id": "calendar.action.calendar_event_confirm.clicked",
+      "event": "action.clicked",
+      "action_id": "action.calendar_event_confirm"
+    },
+    {
+      "id": "calendar.action.calendar_event_done.clicked",
+      "event": "action.clicked",
+      "action_id": "action.calendar_event_done"
+    },
+    {
+      "id": "calendar.action.calendar_event_cancel.clicked",
+      "event": "action.clicked",
+      "action_id": "action.calendar_event_cancel"
+    }
+  ],
+  "views": [
+    {
+      "id": "calendar_event.list",
+      "kind": "list",
+      "entity": "entity.calendar_event",
+      "columns": [
+        {
+          "field_id": "calendar_event.title"
+        },
+        {
+          "field_id": "calendar_event.start_at"
+        },
+        {
+          "field_id": "calendar_event.end_at"
+        },
+        {
+          "field_id": "calendar_event.status"
+        },
+        {
+          "field_id": "calendar_event.owner_id"
+        },
+        {
+          "field_id": "calendar_event.participant_ids"
+        },
+        {
+          "field_id": "calendar_event.scope"
+        },
+        {
+          "field_id": "calendar_event.location"
+        }
+      ],
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.calendar_event_new"
+          }
+        ],
+        "secondary_actions": [
+          {
+            "action_id": "action.calendar_refresh"
+          }
+        ],
+        "open_record_target": "page:calendar_event.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search events...",
+          "fields": [
+            "calendar_event.title",
+            "calendar_event.location",
+            "calendar_event.owner_id",
+            "calendar_event.participant_ids",
+            "calendar_event.status",
+            "calendar_event.scope"
+          ]
+        },
+        "filters": [
+          {
+            "id": "open",
+            "label": "Open",
+            "domain": {
+              "op": "not",
+              "condition": {
+                "op": "in",
+                "field": "calendar_event.status",
+                "value": [
+                  "done",
+                  "cancelled"
+                ]
+              }
+            }
+          },
+          {
+            "id": "mine",
+            "label": "Mine",
+            "domain": {
+              "op": "or",
+              "conditions": [
+                {
+                  "op": "eq",
+                  "field": "calendar_event.owner_id",
+                  "value": {
+                    "ref": "$actor.user_id"
+                  }
+                },
+                {
+                  "op": "contains",
+                  "field": "calendar_event.participant_ids",
+                  "value": {
+                    "ref": "$actor.user_id"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "shared",
+            "label": "Team/Public",
+            "domain": {
+              "op": "in",
+              "field": "calendar_event.scope",
+              "value": [
+                "team",
+                "public"
+              ]
+            }
+          },
+          {
+            "id": "planned",
+            "label": "Planned",
+            "domain": {
+              "op": "eq",
+              "field": "calendar_event.status",
+              "value": "planned"
+            }
+          },
+          {
+            "id": "confirmed",
+            "label": "Confirmed",
+            "domain": {
+              "op": "eq",
+              "field": "calendar_event.status",
+              "value": "confirmed"
+            }
+          },
+          {
+            "id": "done",
+            "label": "Done",
+            "domain": {
+              "op": "eq",
+              "field": "calendar_event.status",
+              "value": "done"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "calendar_event.kanban",
+      "kind": "kanban",
+      "entity": "entity.calendar_event",
+      "card": {
+        "title_field": "calendar_event.title",
+        "subtitle_fields": [
+          "calendar_event.start_at",
+          "calendar_event.location"
+        ],
+        "badge_fields": [
+          "calendar_event.status",
+          "calendar_event.owner_id",
+          "calendar_event.scope",
+          "calendar_event.tags"
+        ]
+      }
+    },
+    {
+      "id": "calendar_event.form",
+      "kind": "form",
+      "entity": "entity.calendar_event",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Event",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "calendar_event.title",
+            "calendar_event.status",
+            "calendar_event.start_at",
+            "calendar_event.end_at",
+            "calendar_event.all_day",
+            "calendar_event.owner_id",
+            "calendar_event.participant_ids",
+            "calendar_event.scope",
+            "calendar_event.location",
+            "calendar_event.color_key",
+            "calendar_event.tags"
+          ]
+        },
+        {
+          "id": "details",
+          "title": "Details",
+          "fields": [
+            "calendar_event.description",
+            "calendar_event.attachments"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": {
+          "field_id": "calendar_event.status"
+        },
+        "secondary_actions": [
+          {
+            "action_id": "action.calendar_event_confirm"
+          },
+          {
+            "action_id": "action.calendar_event_done"
+          },
+          {
+            "action_id": "action.calendar_event_cancel"
+          },
+          {
+            "action_id": "action.calendar_refresh"
+          }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "event_tab",
+          "tabs": [
+            {
+              "id": "event_tab",
+              "label": "Event",
+              "sections": [
+                "main"
+              ]
+            },
+            {
+              "id": "details_tab",
+              "label": "Details",
+              "sections": [
+                "details"
+              ]
+            }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "calendar_event.title",
+          "calendar_event.status",
+          "calendar_event.start_at",
+          "calendar_event.end_at",
+          "calendar_event.all_day",
+          "calendar_event.owner_id",
+          "calendar_event.participant_ids",
+          "calendar_event.scope",
+          "calendar_event.location",
+          "calendar_event.color_key",
+          "calendar_event.tags",
+          "calendar_event.description"
+        ]
+      }
+    },
+    {
+      "id": "calendar_event.calendar",
+      "kind": "calendar",
+      "entity": "entity.calendar_event",
+      "calendar": {
+        "title_field": "calendar_event.title",
+        "date_start": "calendar_event.start_at",
+        "date_end": "calendar_event.end_at",
+        "all_day_field": "calendar_event.all_day",
+        "color_field": "calendar_event.color_key",
+        "default_scale": "week"
+      }
+    },
+    {
+      "id": "calendar_event.graph",
+      "kind": "graph",
+      "entity": "entity.calendar_event",
+      "default": {
+        "type": "bar",
+        "group_by": "calendar_event.status",
+        "measure": "count"
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "calendar_event.home",
+      "title": "Calendar",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.calendar_event_new"
+          },
+          {
+            "action_id": "action.calendar_refresh"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.calendar_event",
+              "default_mode": "calendar",
+              "modes": [
+                {
+                  "mode": "calendar",
+                  "target": "view:calendar_event.calendar"
+                },
+                {
+                  "mode": "list",
+                  "target": "view:calendar_event.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:calendar_event.kanban",
+                  "default_group_by": "calendar_event.status"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:calendar_event.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:calendar_event.list",
+                  "default_group_by": "calendar_event.status"
+                }
+              ],
+              "default_filter_id": "mine"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "calendar_event.form_page",
+      "title": "Event",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.calendar_event",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:calendar_event.form"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.calendar_event",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "calendar_event.list_page",
+      "title": "All Events",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.calendar_event",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:calendar_event.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:calendar_event.kanban",
+                  "default_group_by": "calendar_event.status"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:calendar_event.calendar"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:calendar_event.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:calendar_event.list",
+                  "default_group_by": "calendar_event.status"
+                }
+              ],
+              "default_filter_id": "mine"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "calendar_event.my_page",
+      "title": "My Events",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.calendar_event",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:calendar_event.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:calendar_event.kanban",
+                  "default_group_by": "calendar_event.status"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:calendar_event.calendar"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:calendar_event.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:calendar_event.list",
+                  "default_group_by": "calendar_event.status"
+                }
+              ],
+              "default_filter_id": "mine"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "calendar_event.shared_page",
+      "title": "Team & Public Events",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.calendar_event",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:calendar_event.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:calendar_event.kanban",
+                  "default_group_by": "calendar_event.status"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:calendar_event.calendar"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:calendar_event.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:calendar_event.list",
+                  "default_group_by": "calendar_event.status"
+                }
+              ],
+              "default_filter_id": "shared"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "calendar_event.board_page",
+      "title": "Event Board",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.calendar_event",
+              "default_mode": "kanban",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:calendar_event.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:calendar_event.kanban",
+                  "default_group_by": "calendar_event.status"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:calendar_event.calendar"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:calendar_event.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:calendar_event.list",
+                  "default_group_by": "calendar_event.status"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "calendar_event.open_page",
+      "title": "Open Events",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.calendar_event",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:calendar_event.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:calendar_event.kanban",
+                  "default_group_by": "calendar_event.status"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:calendar_event.calendar"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:calendar_event.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:calendar_event.list",
+                  "default_group_by": "calendar_event.status"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "relations": [],
+  "workflows": [
+    {
+      "id": "workflow.calendar_event_status",
+      "entity": "entity.calendar_event",
+      "status_field": "calendar_event.status",
+      "states": [
+        {
+          "id": "planned",
+          "label": "Planned",
+          "order": 1
+        },
+        {
+          "id": "confirmed",
+          "label": "Confirmed",
+          "order": 2
+        },
+        {
+          "id": "done",
+          "label": "Done",
+          "order": 3
+        },
+        {
+          "id": "cancelled",
+          "label": "Cancelled",
+          "order": 4
+        }
+      ],
+      "transitions": [
+        {
+          "from": "planned",
+          "to": "confirmed",
+          "label": "Confirm"
+        },
+        {
+          "from": "planned",
+          "to": "done",
+          "label": "Mark Done"
+        },
+        {
+          "from": "confirmed",
+          "to": "done",
+          "label": "Mark Done"
+        },
+        {
+          "from": "planned",
+          "to": "cancelled",
+          "label": "Cancel"
+        },
+        {
+          "from": "confirmed",
+          "to": "cancelled",
+          "label": "Cancel"
+        }
+      ]
+    }
+  ],
+  "transformations": [],
+  "modals": [],
+  "queries": {}
+}

@@ -1,0 +1,9 @@
+{
+  "name": "Octodrop Outreach",
+  "manifests": [
+    "../../marketplace/contacts.json",
+    "../../marketplace/calendar.json",
+    "../../marketplace/crm.json",
+    "./outreach.json"
+  ]
+}

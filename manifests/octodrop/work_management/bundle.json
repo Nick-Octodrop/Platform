@@ -1,0 +1,12 @@
+{
+  "name": "Octodrop Work Management",
+  "manifests": [
+    "../../marketplace/contacts.json",
+    "../../marketplace/calendar.json",
+    "../../marketplace/tasks.json",
+    "../../marketplace/jobs.json",
+    "../../marketplace/field_service.json",
+    "../../marketplace/maintenance.json",
+    "../../marketplace/documents.json"
+  ]
+}

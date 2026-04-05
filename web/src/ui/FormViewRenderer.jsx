@@ -728,15 +728,84 @@ function InlineLineItemsTable({
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [searchDebounced, setSearchDebounced] = useState("");
-  const [lookupOpen, setLookupOpen] = useState(false);
-  const [lookupLoading, setLookupLoading] = useState(false);
-  const [lookupOptions, setLookupOptions] = useState([]);
   const [lookupCache, setLookupCache] = useState({});
   const [pendingDeleteRow, setPendingDeleteRow] = useState(null);
   const [deletingRowId, setDeletingRowId] = useState("");
-  const lookupRef = useRef(null);
+  const [addLookupResetKey, setAddLookupResetKey] = useState(0);
+  const lookupCacheRef = useRef({});
+  const addLookupField = useMemo(
+    () => ({
+      id: `${itemField || "line_item"}.adder`,
+      type: "lookup",
+      label: "Add item",
+      entity: itemEntityId,
+      display_field: itemDisplayField,
+      placeholder: "Add line item...",
+    }),
+    [itemDisplayField, itemEntityId, itemField]
+  );
+
+  useEffect(() => {
+    lookupCacheRef.current = lookupCache;
+  }, [lookupCache]);
+
+  const resolveItemLabel = React.useCallback(async (itemId) => {
+    if (!itemEntityId || !itemId || previewMode) return String(itemId || "");
+    try {
+      const res = await apiFetch(`/records/${itemEntityId}/${itemId}`);
+      const itemRecord = res?.record || res || {};
+      return itemRecord?.[itemDisplayField] || itemRecord?.id || String(itemId);
+    } catch {
+      return String(itemId);
+    }
+  }, [itemDisplayField, itemEntityId, previewMode]);
+
+  const hydrateLookupLabels = React.useCallback(async (nextRows) => {
+    const missingEntries = (Array.isArray(nextRows) ? nextRows : [])
+      .map((row) => ({
+        recordId: row?.record_id,
+        itemId: row?.record?.[itemField],
+      }))
+      .filter(({ recordId, itemId }) => recordId && itemId);
+    if (missingEntries.length === 0) return;
+    const unresolved = missingEntries.filter(({ recordId }) => !lookupCacheRef.current[recordId]);
+    if (unresolved.length === 0) return;
+    const resolvedPairs = await Promise.all(
+      unresolved.map(async ({ recordId, itemId }) => [recordId, await resolveItemLabel(itemId)])
+    );
+    setLookupCache((prev) => {
+      const next = { ...prev };
+      for (const [recordId, label] of resolvedPairs) {
+        if (recordId && label) next[recordId] = label;
+      }
+      return next;
+    });
+  }, [itemField, resolveItemLabel]);
+
+  const buildRowPayload = React.useCallback((rowRecord, overrides = {}) => {
+    const nextRecord = { ...(rowRecord || {}), ...(overrides || {}) };
+    const fieldIds = new Set([
+      parentField,
+      itemField,
+      descriptionField,
+      ...Object.keys(defaults || {}),
+      ...Object.keys(itemFieldMap || {}),
+      ...columns.map((column) => column?.field_id).filter(Boolean),
+    ]);
+    const payload = {};
+    for (const fieldId of fieldIds) {
+      if (!fieldId) continue;
+      if (fieldId === parentField) {
+        payload[fieldId] = nextRecord[fieldId] ?? parentRecordId;
+        continue;
+      }
+      if (fieldId.endsWith(".line_total")) continue;
+      if (Object.prototype.hasOwnProperty.call(nextRecord, fieldId)) {
+        payload[fieldId] = nextRecord[fieldId];
+      }
+    }
+    return payload;
+  }, [columns, defaults, descriptionField, itemField, itemFieldMap, parentField, parentRecordId]);
 
   const fetchRows = React.useCallback(async () => {
     if (!childEntityId || !parentField || !parentRecordId || previewMode) {
@@ -771,72 +840,23 @@ function InlineLineItemsTable({
         record: r.record || {},
       }));
       setRows(next);
+      void hydrateLookupLabels(next);
     } catch (err) {
       setError(err?.message || "Failed to load line items.");
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, [childEntityId, parentField, parentRecordId, previewMode, columns, itemField, descriptionField]);
+  }, [childEntityId, parentField, parentRecordId, previewMode, columns, itemField, descriptionField, hydrateLookupLabels]);
 
   useEffect(() => {
     fetchRows();
   }, [fetchRows]);
 
-  useEffect(() => {
-    const t = setTimeout(() => setSearchDebounced(search.trim()), 250);
-    return () => clearTimeout(t);
-  }, [search]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      if (!lookupOpen || !itemEntityId || previewMode) return;
-      if (searchDebounced.length < 2) {
-        setLookupOptions([]);
-        return;
-      }
-      setLookupLoading(true);
-      try {
-        const res = await apiFetch(`/lookup/${itemEntityId}/options`, {
-          method: "POST",
-          body: JSON.stringify({
-            q: searchDebounced,
-            limit: 30,
-          }),
-        });
-        const opts = (res?.records || []).map((item) => {
-          const rec = item.record || {};
-          const rid = item.record_id || rec.id;
-          const label = (itemDisplayField && rec[itemDisplayField]) || rid || "—";
-          return { value: rid, label };
-        });
-        if (!cancelled) setLookupOptions(opts);
-      } catch {
-        if (!cancelled) setLookupOptions([]);
-      } finally {
-        if (!cancelled) setLookupLoading(false);
-      }
-    }
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [lookupOpen, itemEntityId, itemDisplayField, previewMode, searchDebounced]);
-
-  useEffect(() => {
-    function onOutside(e) {
-      if (!lookupRef.current) return;
-      if (lookupRef.current.contains(e.target)) return;
-      setLookupOpen(false);
-    }
-    if (!lookupOpen) return;
-    document.addEventListener("mousedown", onOutside);
-    return () => document.removeEventListener("mousedown", onOutside);
-  }, [lookupOpen]);
-
   async function patchRow(recordId, fieldId, rawValue, type) {
     const value = coerceEditorValue(rawValue, type);
+    const currentRow = rows.find((row) => row.record_id === recordId);
+    const nextRecord = { ...(currentRow?.record || {}), [fieldId]: value };
     setRows((prev) =>
       prev.map((row) =>
         row.record_id === recordId
@@ -845,7 +865,7 @@ function InlineLineItemsTable({
       )
     );
     try {
-      await updateRecord(childEntityId, recordId, { [fieldId]: value });
+      await updateRecord(childEntityId, recordId, buildRowPayload(nextRecord));
       await fetchRows();
       await onRefreshParent?.();
     } catch {
@@ -911,12 +931,17 @@ function InlineLineItemsTable({
     try {
       const created = await createRecord(childEntityId, payload);
       const createdId = created?.record_id;
+      const createdRecord = created?.record && typeof created.record === "object"
+        ? created.record
+        : { ...payload, id: createdId || payload.id };
       if (createdId) {
+        setRows((prev) => {
+          if (prev.some((row) => row.record_id === createdId)) return prev;
+          return [...prev, { record_id: createdId, record: createdRecord }];
+        });
         setLookupCache((prev) => ({ ...prev, [createdId]: option.label || option.value }));
       }
-      setSearch("");
-      setSearchDebounced("");
-      setLookupOpen(false);
+      setAddLookupResetKey((prev) => prev + 1);
       await fetchRows();
       await onRefreshParent?.();
     } catch (err) {
@@ -962,7 +987,69 @@ function InlineLineItemsTable({
                   const raw = row.record?.[fieldId];
                   if (fieldId === itemField) {
                     const label = lookupCache[row.record_id] || row.record?.[descriptionField] || raw || "";
-                    return <td key={`${row.record_id}-${fieldId}`}>{label}</td>;
+                    if (readonly || col.readonly) {
+                      return <td key={`${row.record_id}-${fieldId}`}>{label}</td>;
+                    }
+                    return (
+                      <td key={`${row.record_id}-${fieldId}`}>
+                        <LookupField
+                          field={{
+                            id: fieldId,
+                            label: col.label || "Item",
+                            type: "lookup",
+                            entity: itemEntityId,
+                            display_field: itemDisplayField,
+                            placeholder: "Search items...",
+                          }}
+                          value={raw || null}
+                          onChange={async (nextItemId) => {
+                            if (!nextItemId) return;
+                            let itemRecord = null;
+                            try {
+                              const itemRes = await apiFetch(`/records/${itemEntityId}/${nextItemId}`);
+                              itemRecord = itemRes?.record || itemRes || null;
+                            } catch {
+                              itemRecord = null;
+                            }
+                            const mappedValues = {};
+                            for (const [targetField, sourceField] of Object.entries(itemFieldMap || {})) {
+                              if (!itemRecord || typeof targetField !== "string" || typeof sourceField !== "string") continue;
+                              const mapped = itemRecord[sourceField];
+                              if (mapped !== undefined && mapped !== null && mapped !== "") {
+                                mappedValues[targetField] = mapped;
+                              }
+                            }
+                            const nextRecord = {
+                              ...row.record,
+                              ...mappedValues,
+                              [itemField]: nextItemId,
+                            };
+                            if (descriptionField && !mappedValues[descriptionField] && itemRecord?.[itemDisplayField]) {
+                              nextRecord[descriptionField] = itemRecord[itemDisplayField];
+                            }
+                            setRows((prev) =>
+                              prev.map((current) =>
+                                current.record_id === row.record_id ? { ...current, record: nextRecord } : current
+                              )
+                            );
+                            try {
+                              await updateRecord(childEntityId, row.record_id, buildRowPayload(nextRecord));
+                              const nextLabel = await resolveItemLabel(nextItemId);
+                              setLookupCache((prev) => ({ ...prev, [row.record_id]: nextLabel }));
+                              await fetchRows();
+                              await onRefreshParent?.();
+                            } catch {
+                              fetchRows();
+                            }
+                          }}
+                          readonly={readonly || col.readonly}
+                          record={row.record}
+                          previewMode={previewMode}
+                          canCreate={canCreateLookup}
+                          onCreate={onLookupCreate}
+                        />
+                      </td>
+                    );
                   }
                   if (readonly || col.readonly) {
                     return <td key={`${row.record_id}-${fieldId}`}>{String(raw ?? "")}</td>;
@@ -1003,60 +1090,36 @@ function InlineLineItemsTable({
             ))}
           </tbody>
           {!readonly && (
-            <tfoot>
-              <tr>
-                <td colSpan={columns.length + 1}>
-                  <div ref={lookupRef} className="relative">
-                    <input
-                      className="input input-bordered input-sm w-full"
-                      placeholder="Add line: search item..."
-                      value={search}
-                      onFocus={() => setLookupOpen(true)}
-                      onChange={(e) => {
-                        setSearch(e.target.value);
-                        setLookupOpen(true);
+          <tfoot>
+            <tr>
+              {columns.map((col, index) => (
+                <td key={`adder-${col.field_id || col.label || index}`}>
+                  {index === 0 ? (
+                    <LookupField
+                      key={addLookupResetKey}
+                      field={addLookupField}
+                      value={null}
+                      onChange={async (nextItemId) => {
+                        if (!nextItemId) return;
+                        const nextLabel = await resolveItemLabel(nextItemId);
+                        await addRowFromOption({ value: nextItemId, label: nextLabel || nextItemId });
                       }}
+                      readonly={readonly}
+                      record={null}
+                      previewMode={previewMode}
+                      canCreate={canCreateLookup}
+                      onCreate={onLookupCreate}
                     />
-                    {lookupOpen && (
-                      <div className="absolute z-30 mt-1 w-full rounded-box border border-base-300 bg-base-100 shadow">
-                        <ul className="menu menu-compact max-h-64 overflow-auto">
-                          {lookupLoading && <li className="menu-title"><span>Loading...</span></li>}
-                          {!lookupLoading && searchDebounced.length < 2 && <li className="menu-title"><span>Type at least 2 characters...</span></li>}
-                          {!lookupLoading && searchDebounced.length >= 2 && lookupOptions.length === 0 && <li className="menu-title"><span>No results</span></li>}
-                          {lookupOptions.map((opt) => (
-                            <li key={opt.value}>
-                              <button type="button" onClick={() => addRowFromOption(opt)}>
-                                {opt.label}
-                              </button>
-                            </li>
-                          ))}
-                          {typeof canCreateLookup === "function" && canCreateLookup(itemEntityId) && (
-                            <li className="border-t border-base-300 mt-1 pt-1">
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  if (typeof onLookupCreate !== "function") return;
-                                  const result = await onLookupCreate({
-                                    entityId: itemEntityId,
-                                    displayField: itemDisplayField,
-                                    initialValue: searchDebounced || "",
-                                  });
-                                  if (result?.record_id) {
-                                    await addRowFromOption({ value: result.record_id, label: result.label || result.record_id });
-                                  }
-                                }}
-                              >
-                                + Create new item
-                              </button>
-                            </li>
-                          )}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
+                  ) : index === 1 ? (
+                    <span className="text-xs opacity-60">Select an item to add a new line</span>
+                  ) : null}
                 </td>
-              </tr>
-            </tfoot>
+              ))}
+              <td>
+                <span className="text-xs opacity-50">New</span>
+              </td>
+            </tr>
+          </tfoot>
           )}
         </table>
       </div>
@@ -1515,6 +1578,7 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
   const cacheRef = useRef(new Map());
   const lastKeyRef = useRef(null);
   const entityId = field?.entity || null;
+  const placeholder = field?.search_placeholder || field?.placeholder || "Search...";
   const recordContext = useMemo(() => buildRecordContext(field?.domain || null, record), [field?.domain, record]);
   const recordContextKey = useMemo(() => JSON.stringify(recordContext), [recordContext]);
 
@@ -1662,7 +1726,7 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
           className="input input-bordered w-full pr-10"
           value={inputValue}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search..."
+          placeholder={placeholder}
           disabled={readonly || field.readonly}
           onFocus={() => {
             setOpened(true);
@@ -1753,7 +1817,7 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
               className="input input-bordered w-full"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search..."
+              placeholder={placeholder}
               disabled={readonly || field.readonly}
               autoFocus
             />

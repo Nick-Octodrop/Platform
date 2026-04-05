@@ -505,7 +505,7 @@ class DbModuleRegistry:
     def __init__(self, manifest_store: DbManifestStore) -> None:
         self._store = manifest_store
 
-    def get(self, module_id: str) -> dict | None:
+    def _get_any(self, module_id: str) -> dict | None:
         with get_conn() as conn:
             row = fetch_one(
                 conn,
@@ -519,6 +519,26 @@ class DbModuleRegistry:
                 left join manifest_snapshots ms
                   on ms.org_id = m.org_id and ms.module_id = m.module_id and ms.manifest_hash = m.current_hash
                 where m.org_id=%s and m.module_id=%s
+                """,
+                [get_org_id(), module_id],
+                query_name="modules_installed.get_any",
+            )
+            return _deepcopy(_module_from_row(row)) if row else None
+
+    def get(self, module_id: str) -> dict | None:
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                select m.module_id, m.name, m.enabled, m.current_hash, m.installed_at, m.updated_at, m.tags,
+                       m.status, m.active_version, m.last_error, m.archived, m.display_order,
+                       coalesce(m.icon_key, mi.icon_key) as icon_key,
+                       ms.manifest->>'manifest_version' as manifest_version
+                from modules_installed m
+                left join module_icons mi on mi.module_id = m.module_id
+                left join manifest_snapshots ms
+                  on ms.org_id = m.org_id and ms.module_id = m.module_id and ms.manifest_hash = m.current_hash
+                where m.org_id=%s and m.module_id=%s and m.archived=false
                 """,
                 [get_org_id(), module_id],
                 query_name="modules_installed.get",
@@ -722,6 +742,10 @@ class DbModuleRegistry:
             return {"ok": False, "errors": [{"code": "MODULE_INVALID", "message": "patch.mode must be preview", "path": "patch.mode", "detail": None}], "warnings": [], "module": None, "audit_id": None}
 
         existing = self.get(module_id)
+        existing_any = existing or self._get_any(module_id)
+        archived_existing = bool(existing_any and existing_any.get("archived"))
+        if existing is None and archived_existing:
+            existing = existing_any
         if existing is None and not auto_register:
             return {"ok": False, "errors": [{"code": "MODULE_NOT_FOUND", "message": "module not found", "path": "module_id", "detail": None}], "warnings": [], "module": None, "audit_id": None}
 
@@ -772,7 +796,7 @@ class DbModuleRegistry:
                         conn,
                         """
                         update modules_installed
-                        set current_hash=%s, updated_at=%s, status=%s, active_version=%s, last_error=%s, name=coalesce(%s, name)
+                        set current_hash=%s, updated_at=%s, status=%s, active_version=%s, last_error=%s, name=coalesce(%s, name), archived=false
                         where org_id=%s and module_id=%s
                         """,
                         [to_hash, _now(), "installed", version.get("version_id"), None, module_name, get_org_id(), module_id],

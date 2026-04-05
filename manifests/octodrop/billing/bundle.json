@@ -1,0 +1,10 @@
+{
+  "name": "Octodrop Billing",
+  "manifests": [
+    "../../marketplace/contacts.json",
+    "../../marketplace/catalog.json",
+    "../../marketplace/sales.json",
+    "../../marketplace/documents.json",
+    "./shop_finance.json"
+  ]
+}

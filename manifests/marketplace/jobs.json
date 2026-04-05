@@ -1,0 +1,1833 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "jobs",
+    "key": "jobs",
+    "name": "Jobs",
+    "version": "1.6.0",
+    "description": "Operational job/work-order management with scheduling and execution tracking.",
+    "category": "Operations",
+    "icon_key": "lucide:BriefcaseBusiness"
+  },
+  "depends_on": {
+    "required": [
+      {
+        "module": "contacts",
+        "version": ">=1.0.0"
+      },
+      {
+        "module": "catalog",
+        "version": ">=1.1.0"
+      }
+    ],
+    "optional": [
+      {
+        "module": "sales",
+        "version": ">=1.6.2"
+      }
+    ]
+  },
+  "app": {
+    "home": "page:job.list_page",
+    "defaults": {
+      "entity_home_page": "page:job.list_page",
+      "entity_form_page": "page:job.form_page",
+      "entities": {
+        "entity.job": {
+          "entity_home_page": "page:job.list_page",
+          "entity_form_page": "page:job.form_page"
+        },
+        "entity.job_line": {
+          "entity_home_page": "page:job_line.list_page",
+          "entity_form_page": "page:job_line.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Jobs",
+        "items": [
+          {
+            "label": "All Jobs",
+            "to": "page:job.list_page"
+          },
+          {
+            "label": "Open Jobs",
+            "to": "page:job.open_page"
+          },
+          {
+            "label": "Scheduled",
+            "to": "page:job.scheduled_page"
+          },
+          {
+            "label": "Line Items",
+            "to": "page:job_line.list_page"
+          }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.job",
+      "display_field": "job.number",
+      "fields": [
+        {
+          "id": "job.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "job.number",
+          "type": "string",
+          "label": "Job Number",
+          "required": true
+        },
+        {
+          "id": "job.title",
+          "type": "string",
+          "label": "Title",
+          "required": true
+        },
+        {
+          "id": "job.contact_id",
+          "type": "lookup",
+          "label": "Contact",
+          "entity": "entity.contact",
+          "display_field": "contact.name",
+          "required": true
+        },
+        {
+          "id": "job.source_quote_id",
+          "type": "lookup",
+          "label": "Source Quote",
+          "entity": "entity.quote",
+          "display_field": "quote.number"
+        },
+        {
+          "id": "job.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "new",
+          "ui": {
+            "widget": "steps"
+          },
+          "options": [
+            {
+              "value": "new",
+              "label": "New"
+            },
+            {
+              "value": "planned",
+              "label": "Planned"
+            },
+            {
+              "value": "in_progress",
+              "label": "In Progress"
+            },
+            {
+              "value": "on_hold",
+              "label": "On Hold"
+            },
+            {
+              "value": "completed",
+              "label": "Completed"
+            },
+            {
+              "value": "cancelled",
+              "label": "Cancelled"
+            }
+          ]
+        },
+        {
+          "id": "job.priority",
+          "type": "enum",
+          "label": "Priority",
+          "default": "normal",
+          "options": [
+            {
+              "value": "low",
+              "label": "Low"
+            },
+            {
+              "value": "normal",
+              "label": "Normal"
+            },
+            {
+              "value": "high",
+              "label": "High"
+            },
+            {
+              "value": "urgent",
+              "label": "Urgent"
+            }
+          ]
+        },
+        {
+          "id": "job.owner_id",
+          "type": "user",
+          "label": "Owner"
+        },
+        {
+          "id": "job.assignee_id",
+          "type": "user",
+          "label": "Assignee"
+        },
+        {
+          "id": "job.participant_ids",
+          "type": "users",
+          "label": "Participants"
+        },
+        {
+          "id": "job.currency",
+          "type": "string",
+          "label": "Currency",
+          "default": "USD"
+        },
+        {
+          "id": "job.start_date",
+          "type": "date",
+          "label": "Start Date"
+        },
+        {
+          "id": "job.due_date",
+          "type": "date",
+          "label": "Due Date"
+        },
+        {
+          "id": "job.scheduled_start",
+          "type": "datetime",
+          "label": "Scheduled Start"
+        },
+        {
+          "id": "job.scheduled_end",
+          "type": "datetime",
+          "label": "Scheduled End"
+        },
+        {
+          "id": "job.location",
+          "type": "string",
+          "label": "Location"
+        },
+        {
+          "id": "job.description",
+          "type": "text",
+          "label": "Description"
+        },
+        {
+          "id": "job.internal_notes",
+          "type": "text",
+          "label": "Internal Notes"
+        },
+        {
+          "id": "job.attachments",
+          "type": "attachments",
+          "label": "Attachments"
+        },
+        {
+          "id": "job.total_estimate",
+          "type": "number",
+          "label": "Estimated Total",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency_field": "job.currency",
+            "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.job_line",
+              "field": "job_line.line_total",
+              "where": {
+                "op": "eq",
+                "field": "job_line.job_id",
+                "value": {
+                  "ref": "$parent.id"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "job.actual_cost",
+          "type": "number",
+          "label": "Actual Cost",
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency_field": "job.currency",
+            "precision": 2
+          }
+        },
+        {
+          "id": "job.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    },
+    {
+      "id": "entity.job_line",
+      "display_field": "job_line.description",
+      "fields": [
+        {
+          "id": "job_line.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "job_line.job_id",
+          "type": "lookup",
+          "label": "Job",
+          "entity": "entity.job",
+          "display_field": "job.number",
+          "required": true
+        },
+        {
+          "id": "job_line.item_id",
+          "type": "lookup",
+          "label": "Item",
+          "entity": "entity.item",
+          "display_field": "item.name",
+          "required": true
+        },
+        {
+          "id": "job_line.description",
+          "type": "string",
+          "label": "Description",
+          "required": true
+        },
+        {
+          "id": "job_line.uom",
+          "type": "string",
+          "label": "Unit of Measure",
+          "default": "Unit"
+        },
+        {
+          "id": "job_line.qty",
+          "type": "number",
+          "label": "Qty",
+          "default": 1,
+          "format": {
+            "kind": "measurement",
+            "unit_field": "job_line.uom",
+            "precision": 2
+          }
+        },
+        {
+          "id": "job_line.unit_price",
+          "type": "number",
+          "label": "Unit Price",
+          "default": 0
+        },
+        {
+          "id": "job_line.unit_cost",
+          "type": "number",
+          "label": "Unit Cost",
+          "default": 0
+        },
+        {
+          "id": "job_line.tax_rate",
+          "type": "number",
+          "label": "Tax Rate (%)",
+          "default": 0,
+          "format": {
+            "kind": "percent",
+            "precision": 2
+          }
+        },
+        {
+          "id": "job_line.line_subtotal",
+          "type": "number",
+          "label": "Line Subtotal",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    {
+                      "ref": "$current.job_line.qty"
+                    },
+                    {
+                      "ref": "$current.job_line.unit_price"
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "job_line.tax_amount",
+          "type": "number",
+          "label": "Tax Amount",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    {
+                      "ref": "$current.job_line.line_subtotal"
+                    },
+                    {
+                      "op": "div",
+                      "args": [
+                        {
+                          "ref": "$current.job_line.tax_rate"
+                        },
+                        100
+                      ]
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "job_line.line_total",
+          "type": "number",
+          "label": "Line Total",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "add",
+                  "args": [
+                    {
+                      "ref": "$current.job_line.line_subtotal"
+                    },
+                    {
+                      "ref": "$current.job_line.tax_amount"
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "job_line.status",
+          "type": "enum",
+          "label": "Line Status",
+          "default": "new",
+          "options": [
+            {
+              "value": "new",
+              "label": "New"
+            },
+            {
+              "value": "in_progress",
+              "label": "In Progress"
+            },
+            {
+              "value": "done",
+              "label": "Done"
+            },
+            {
+              "value": "cancelled",
+              "label": "Cancelled"
+            }
+          ]
+        },
+        {
+          "id": "job_line.sort_order",
+          "type": "number",
+          "label": "Sort Order",
+          "default": 10
+        },
+        {
+          "id": "job_line.notes",
+          "type": "text",
+          "label": "Line Notes"
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "action.job_new",
+      "kind": "open_form",
+      "label": "+ New Job",
+      "target": "job.form"
+    },
+    {
+      "id": "action.job_plan",
+      "kind": "update_record",
+      "label": "Plan",
+      "entity_id": "entity.job",
+      "patch": {
+        "job.status": "planned"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "job.status",
+        "value": "new"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "job.status",
+        "value": "new"
+      }
+    },
+    {
+      "id": "action.job_start",
+      "kind": "update_record",
+      "label": "Start",
+      "entity_id": "entity.job",
+      "patch": {
+        "job.status": "in_progress"
+      },
+      "enabled_when": {
+        "op": "in",
+        "field": "job.status",
+        "value": [
+          "new",
+          "planned",
+          "on_hold"
+        ]
+      },
+      "visible_when": {
+        "op": "in",
+        "field": "job.status",
+        "value": [
+          "new",
+          "planned",
+          "on_hold"
+        ]
+      }
+    },
+    {
+      "id": "action.job_hold",
+      "kind": "update_record",
+      "label": "Put On Hold",
+      "entity_id": "entity.job",
+      "patch": {
+        "job.status": "on_hold"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "job.status",
+        "value": "in_progress"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "job.status",
+        "value": "in_progress"
+      },
+      "confirm": {
+        "title": "Put Job On Hold",
+        "body": "The job will be moved to On Hold."
+      }
+    },
+    {
+      "id": "action.job_complete",
+      "kind": "update_record",
+      "label": "Complete",
+      "entity_id": "entity.job",
+      "patch": {
+        "job.status": "completed"
+      },
+      "enabled_when": {
+        "op": "in",
+        "field": "job.status",
+        "value": [
+          "planned",
+          "in_progress",
+          "on_hold"
+        ]
+      },
+      "visible_when": {
+        "op": "in",
+        "field": "job.status",
+        "value": [
+          "planned",
+          "in_progress",
+          "on_hold"
+        ]
+      },
+      "confirm": {
+        "title": "Complete Job",
+        "body": "Mark this job as completed?"
+      }
+    },
+    {
+      "id": "action.job_cancel",
+      "kind": "update_record",
+      "label": "Cancel",
+      "entity_id": "entity.job",
+      "patch": {
+        "job.status": "cancelled"
+      },
+      "enabled_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "job.status",
+          "value": [
+            "completed",
+            "cancelled"
+          ]
+        }
+      },
+      "visible_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "job.status",
+          "value": [
+            "completed",
+            "cancelled"
+          ]
+        }
+      },
+      "confirm": {
+        "title": "Cancel Job",
+        "body": "This job will be cancelled."
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "id": "jobs.record.job.created",
+      "event": "record.created",
+      "entity_id": "entity.job"
+    },
+    {
+      "id": "jobs.record.job.updated",
+      "event": "record.updated",
+      "entity_id": "entity.job"
+    },
+    {
+      "id": "jobs.record.job_line.created",
+      "event": "record.created",
+      "entity_id": "entity.job_line"
+    },
+    {
+      "id": "jobs.record.job_line.updated",
+      "event": "record.updated",
+      "entity_id": "entity.job_line"
+    },
+    {
+      "id": "jobs.workflow.job.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.job",
+      "status_field": "job.status"
+    },
+    {
+      "id": "jobs.action.job_new.clicked",
+      "event": "action.clicked",
+      "action_id": "action.job_new"
+    },
+    {
+      "id": "jobs.action.job_plan.clicked",
+      "event": "action.clicked",
+      "action_id": "action.job_plan"
+    },
+    {
+      "id": "jobs.action.job_start.clicked",
+      "event": "action.clicked",
+      "action_id": "action.job_start"
+    },
+    {
+      "id": "jobs.action.job_hold.clicked",
+      "event": "action.clicked",
+      "action_id": "action.job_hold"
+    },
+    {
+      "id": "jobs.action.job_complete.clicked",
+      "event": "action.clicked",
+      "action_id": "action.job_complete"
+    },
+    {
+      "id": "jobs.action.job_cancel.clicked",
+      "event": "action.clicked",
+      "action_id": "action.job_cancel"
+    }
+  ],
+  "views": [
+    {
+      "id": "job.list",
+      "kind": "list",
+      "entity": "entity.job",
+      "columns": [
+        {
+          "field_id": "job.number"
+        },
+        {
+          "field_id": "job.title"
+        },
+        {
+          "field_id": "job.contact_id"
+        },
+        {
+          "field_id": "job.status"
+        },
+        {
+          "field_id": "job.priority"
+        },
+        {
+          "field_id": "job.scheduled_start"
+        },
+        {
+          "field_id": "job.assignee_id"
+        }
+      ],
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.job_new"
+          }
+        ],
+        "open_record_target": "page:job.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search jobs...",
+          "fields": [
+            "job.number",
+            "job.title",
+            "job.location",
+            "job.status",
+            "job.assignee_id",
+            "job.participant_ids"
+          ]
+        },
+        "filters": [
+          {
+            "id": "open",
+            "label": "Open",
+            "domain": {
+              "op": "not",
+              "condition": {
+                "op": "in",
+                "field": "job.status",
+                "value": [
+                  "completed",
+                  "cancelled"
+                ]
+              }
+            }
+          },
+          {
+            "id": "mine",
+            "label": "Mine",
+            "domain": {
+              "op": "or",
+              "conditions": [
+                {
+                  "op": "eq",
+                  "field": "job.owner_id",
+                  "value": {
+                    "ref": "$actor.user_id"
+                  }
+                },
+                {
+                  "op": "eq",
+                  "field": "job.assignee_id",
+                  "value": {
+                    "ref": "$actor.user_id"
+                  }
+                },
+                {
+                  "op": "contains",
+                  "field": "job.participant_ids",
+                  "value": {
+                    "ref": "$actor.user_id"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "scheduled",
+            "label": "Scheduled",
+            "domain": {
+              "op": "exists",
+              "field": "job.scheduled_start"
+            }
+          },
+          {
+            "id": "completed",
+            "label": "Completed",
+            "domain": {
+              "op": "eq",
+              "field": "job.status",
+              "value": "completed"
+            }
+          },
+          {
+            "id": "on_hold",
+            "label": "On Hold",
+            "domain": {
+              "op": "eq",
+              "field": "job.status",
+              "value": "on_hold"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "job.kanban",
+      "kind": "kanban",
+      "entity": "entity.job",
+      "card": {
+        "title_field": "job.title",
+        "subtitle_fields": [
+          "job.number",
+          "job.contact_id",
+          "job.scheduled_start"
+        ],
+        "badge_fields": [
+          "job.status",
+          "job.priority",
+          "job.participant_ids"
+        ]
+      }
+    },
+    {
+      "id": "job.calendar",
+      "kind": "calendar",
+      "entity": "entity.job",
+      "calendar": {
+        "title_field": "job.title",
+        "date_start": "job.scheduled_start",
+        "date_end": "job.scheduled_end",
+        "color_field": "job.assignee_id",
+        "default_scale": "week"
+      }
+    },
+    {
+      "id": "job_line.list",
+      "kind": "list",
+      "entity": "entity.job_line",
+      "columns": [
+        {
+          "field_id": "job_line.job_id"
+        },
+        {
+          "field_id": "job_line.item_id"
+        },
+        {
+          "field_id": "job_line.sort_order"
+        },
+        {
+          "field_id": "job_line.description"
+        },
+        {
+          "field_id": "job_line.qty"
+        },
+        {
+          "field_id": "job_line.unit_price"
+        },
+        {
+          "field_id": "job_line.tax_rate"
+        },
+        {
+          "field_id": "job_line.line_total"
+        },
+        {
+          "field_id": "job_line.status"
+        }
+      ],
+      "header": {
+        "open_record_target": "page:job_line.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search job lines...",
+          "fields": [
+            "job_line.description",
+            "job_line.status"
+          ]
+        },
+        "filters": [
+          {
+            "id": "open",
+            "label": "Open",
+            "domain": {
+              "op": "not",
+              "condition": {
+                "op": "in",
+                "field": "job_line.status",
+                "value": [
+                  "done",
+                  "cancelled"
+                ]
+              }
+            }
+          },
+          {
+            "id": "done",
+            "label": "Done",
+            "domain": {
+              "op": "eq",
+              "field": "job_line.status",
+              "value": "done"
+            }
+          },
+          {
+            "id": "cancelled",
+            "label": "Cancelled",
+            "domain": {
+              "op": "eq",
+              "field": "job_line.status",
+              "value": "cancelled"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "job_line.form",
+      "kind": "form",
+      "entity": "entity.job_line",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Job Line",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "job_line.job_id",
+            "job_line.item_id",
+            "job_line.sort_order",
+            "job_line.description",
+            "job_line.qty",
+            "job_line.unit_price",
+            "job_line.tax_rate",
+            "job_line.line_total",
+            "job_line.status"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": [
+            "job_line.notes"
+          ]
+        }
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "job_line.job_id",
+          "job_line.item_id",
+          "job_line.sort_order",
+          "job_line.description",
+          "job_line.qty",
+          "job_line.unit_price",
+          "job_line.tax_rate",
+          "job_line.line_total",
+          "job_line.status",
+          "job_line.notes"
+        ]
+      },
+      "header": {
+        "statusbar": {
+          "field_id": "job_line.status"
+        },
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "line_details_tab",
+          "tabs": [
+            {
+              "id": "line_details_tab",
+              "label": "Details",
+              "sections": [
+                "main"
+              ]
+            },
+            {
+              "id": "line_notes_tab",
+              "label": "Notes",
+              "sections": [
+                "notes"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "job.form",
+      "kind": "form",
+      "entity": "entity.job",
+      "sections": [
+        {
+          "id": "details",
+          "title": "Job Details",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "job.number",
+            "job.title",
+            "job.contact_id",
+            "job.source_quote_id",
+            "job.status",
+            "job.priority",
+            "job.owner_id",
+            "job.assignee_id",
+            "job.participant_ids",
+            "job.currency"
+          ]
+        },
+        {
+          "id": "schedule",
+          "title": "Schedule",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "job.start_date",
+            "job.due_date",
+            "job.scheduled_start",
+            "job.scheduled_end",
+            "job.location"
+          ]
+        },
+        {
+          "id": "financials",
+          "title": "Financials",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "job.total_estimate",
+            "job.actual_cost"
+          ]
+        },
+        {
+          "id": "line_items",
+          "title": "Line Items",
+          "line_editor": {
+            "entity_id": "entity.job_line",
+            "parent_field": "job_line.job_id",
+            "item_lookup_field": "job_line.item_id",
+            "item_lookup_entity": "entity.item",
+            "item_lookup_display_field": "item.name",
+            "item_field_map": {
+              "job_line.uom": "item.uom",
+              "job_line.unit_price": "item.sales_price",
+              "job_line.unit_cost": "item.cost_price",
+              "job_line.tax_rate": "item.tax_rate",
+              "job_line.description": "item.description"
+            },
+            "description_field": "job_line.description",
+            "defaults": {
+              "job_line.uom": "Unit",
+              "job_line.qty": 1,
+              "job_line.unit_price": 0,
+              "job_line.unit_cost": 0,
+              "job_line.tax_rate": 0
+            },
+            "columns": [
+              {
+                "field_id": "job_line.item_id",
+                "label": "Item",
+                "readonly": true
+              },
+              {
+                "field_id": "job_line.description",
+                "label": "Description"
+              },
+              {
+                "field_id": "job_line.uom",
+                "label": "UoM"
+              },
+              {
+                "field_id": "job_line.qty",
+                "label": "Qty",
+                "type": "number"
+              },
+              {
+                "field_id": "job_line.unit_price",
+                "label": "Unit Price",
+                "type": "number"
+              },
+              {
+                "field_id": "job_line.unit_cost",
+                "label": "Unit Cost",
+                "type": "number"
+              },
+              {
+                "field_id": "job_line.tax_rate",
+                "label": "Tax %",
+                "type": "number"
+              },
+              {
+                "field_id": "job_line.line_total",
+                "label": "Line Total",
+                "type": "number",
+                "readonly": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": [
+            "job.description",
+            "job.internal_notes",
+            "job.attachments"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": {
+          "field_id": "job.status"
+        },
+        "secondary_actions": [
+          {
+            "action_id": "action.job_plan"
+          },
+          {
+            "action_id": "action.job_start"
+          },
+          {
+            "action_id": "action.job_hold"
+          },
+          {
+            "action_id": "action.job_complete"
+          },
+          {
+            "action_id": "action.job_cancel"
+          }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "details_tab",
+          "tabs": [
+            {
+              "id": "details_tab",
+              "label": "Details",
+              "sections": [
+                "details"
+              ]
+            },
+            {
+              "id": "line_items_tab",
+              "label": "Line Items",
+              "sections": [
+                "line_items"
+              ]
+            },
+            {
+              "id": "schedule_tab",
+              "label": "Schedule",
+              "sections": [
+                "schedule"
+              ]
+            },
+            {
+              "id": "financials_tab",
+              "label": "Financials",
+              "sections": [
+                "financials"
+              ]
+            },
+            {
+              "id": "notes_tab",
+              "label": "Notes",
+              "sections": [
+                "notes"
+              ]
+            }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "job.number",
+          "job.title",
+          "job.contact_id",
+          "job.source_quote_id",
+          "job.status",
+          "job.priority",
+          "job.owner_id",
+          "job.assignee_id",
+          "job.participant_ids",
+          "job.start_date",
+          "job.due_date",
+          "job.scheduled_start",
+          "job.scheduled_end",
+          "job.location",
+          "job.total_estimate",
+          "job.actual_cost",
+          "job.description",
+          "job.internal_notes"
+        ]
+      }
+    },
+    {
+      "id": "job.graph",
+      "kind": "graph",
+      "entity": "entity.job",
+      "default": {
+        "type": "bar",
+        "group_by": "job.status",
+        "measure": "sum:job.total_estimate"
+      }
+    },
+    {
+      "id": "job_line.graph",
+      "kind": "graph",
+      "entity": "entity.job_line",
+      "default": {
+        "type": "bar",
+        "group_by": "job_line.status",
+        "measure": "sum:job_line.line_total"
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "job.dashboard_page",
+      "title": "Jobs Home",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.job_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "stat_cards",
+          "columns": 4,
+          "cards": [
+            {
+              "id": "open_jobs",
+              "label": "Open Jobs",
+              "subtitle": "Active work not yet completed",
+              "entity_id": "entity.job",
+              "measure": "count",
+              "domain": {
+                "op": "not",
+                "condition": {
+                  "op": "in",
+                  "field": "job.status",
+                  "value": [
+                    "completed",
+                    "cancelled"
+                  ]
+                }
+              },
+              "icon": "lucide:BriefcaseBusiness",
+              "tone": "primary",
+              "format": "number",
+              "target": "page:job.open_page"
+            },
+            {
+              "id": "planned_jobs",
+              "label": "Planned",
+              "subtitle": "Scheduled and ready to dispatch",
+              "entity_id": "entity.job",
+              "measure": "count",
+              "domain": {
+                "op": "eq",
+                "field": "job.status",
+                "value": "planned"
+              },
+              "icon": "lucide:CalendarClock",
+              "tone": "success",
+              "format": "number",
+              "target": "page:job.scheduled_page"
+            },
+            {
+              "id": "in_progress_jobs",
+              "label": "In Progress",
+              "subtitle": "Currently active execution",
+              "entity_id": "entity.job",
+              "measure": "count",
+              "domain": {
+                "op": "eq",
+                "field": "job.status",
+                "value": "in_progress"
+              },
+              "icon": "lucide:PlayCircle",
+              "tone": "warning",
+              "format": "number",
+              "target": "page:job.board_page"
+            },
+            {
+              "id": "on_hold_jobs",
+              "label": "On Hold",
+              "subtitle": "Requires review or unblock",
+              "entity_id": "entity.job",
+              "measure": "count",
+              "domain": {
+                "op": "eq",
+                "field": "job.status",
+                "value": "on_hold"
+              },
+              "icon": "lucide:PauseCircle",
+              "tone": "accent",
+              "format": "number",
+              "target": "page:job.board_page"
+            }
+          ]
+        },
+        {
+          "kind": "container",
+          "variant": "card",
+          "title": "Open Jobs",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.job",
+              "compact": true,
+              "param_scope": "local",
+              "default_mode": "list",
+              "record_domain": {
+                "op": "not",
+                "condition": {
+                  "op": "in",
+                  "field": "job.status",
+                  "value": [
+                    "completed",
+                    "cancelled"
+                  ]
+                }
+              },
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:job.list"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "job.list_page",
+      "title": "Jobs",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.job_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.job",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:job.list"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "job_line.list_page",
+      "title": "Job Lines",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.job_line",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:job_line.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:job_line.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:job_line.list",
+                  "default_group_by": "job_line.status"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "job.form_page",
+      "title": "Job",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.job",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:job.form"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.job",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "job_line.form_page",
+      "title": "Job Line",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.job_line",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                {
+                  "kind": "view",
+                  "target": "view:job_line.form"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "job.calendar_page",
+      "title": "Job Schedule",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.job",
+              "default_mode": "calendar",
+              "modes": [
+                {
+                  "mode": "calendar",
+                  "target": "view:job.calendar"
+                },
+                {
+                  "mode": "list",
+                  "target": "view:job.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:job.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:job.list",
+                  "default_group_by": "job.status"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "job.open_page",
+      "title": "Open Jobs",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.job_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.job",
+              "default_mode": "kanban",
+              "modes": [
+                {
+                  "mode": "kanban",
+                  "target": "view:job.kanban",
+                  "default_group_by": "job.status"
+                },
+                {
+                  "mode": "list",
+                  "target": "view:job.list"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:job.calendar"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:job.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:job.list",
+                  "default_group_by": "job.status"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "job.board_page",
+      "title": "Job Board",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.job_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.job",
+              "default_mode": "kanban",
+              "modes": [
+                {
+                  "mode": "kanban",
+                  "target": "view:job.kanban",
+                  "default_group_by": "job.status"
+                },
+                {
+                  "mode": "list",
+                  "target": "view:job.list"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:job.calendar"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:job.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:job.list",
+                  "default_group_by": "job.status"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "job.scheduled_page",
+      "title": "Scheduled Jobs",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.job",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:job.list"
+                }
+              ],
+              "default_filter_id": "scheduled"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "interfaces": {
+    "schedulable": [
+      {
+        "entity_id": "entity.job",
+        "enabled": true,
+        "scope": "module_and_global",
+        "title_field": "job.title",
+        "date_start": "job.scheduled_start",
+        "date_end": "job.scheduled_end",
+        "owner_field": "job.assignee_id",
+        "location_field": "job.location",
+        "status_field": "job.status",
+        "color_field": "job.assignee_id"
+      }
+    ],
+    "documentable": [
+      {
+        "entity_id": "entity.job",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "job.attachments",
+        "title_field": "job.title",
+        "owner_field": "job.owner_id",
+        "category_field": "job.status",
+        "date_field": "job.created_at",
+        "record_label_field": "job.number",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
+      }
+    ],
+    "dashboardable": [
+      {
+        "entity_id": "entity.job",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "job.created_at",
+        "measures": [
+          "count",
+          "sum:job.total_estimate",
+          "sum:job.actual_cost"
+        ],
+        "group_bys": [
+          "job.status",
+          "job.priority",
+          "job.assignee_id"
+        ],
+        "default_widgets": [
+          {
+            "id": "jobs_by_status",
+            "type": "group",
+            "title": "Jobs by Status",
+            "group_by": "job.status",
+            "measure": "count"
+          },
+          {
+            "id": "jobs_by_assignee",
+            "type": "group",
+            "title": "Jobs by Assignee",
+            "group_by": "job.assignee_id",
+            "measure": "count"
+          }
+        ]
+      }
+    ]
+  },
+  "relations": [],
+  "workflows": [
+    {
+      "id": "workflow.job_status",
+      "entity": "entity.job",
+      "status_field": "job.status",
+      "required_fields_by_state": {
+        "planned": [
+          "job.assignee_id",
+          "job.due_date"
+        ],
+        "in_progress": [
+          "job.assignee_id"
+        ]
+      },
+      "states": [
+        {
+          "id": "new",
+          "label": "New",
+          "order": 1
+        },
+        {
+          "id": "planned",
+          "label": "Planned",
+          "order": 2
+        },
+        {
+          "id": "in_progress",
+          "label": "In Progress",
+          "order": 3
+        },
+        {
+          "id": "on_hold",
+          "label": "On Hold",
+          "order": 4
+        },
+        {
+          "id": "completed",
+          "label": "Completed",
+          "order": 5
+        },
+        {
+          "id": "cancelled",
+          "label": "Cancelled",
+          "order": 6
+        }
+      ],
+      "transitions": [
+        {
+          "from": "new",
+          "to": "planned",
+          "label": "Plan"
+        },
+        {
+          "from": "new",
+          "to": "in_progress",
+          "label": "Start"
+        },
+        {
+          "from": "planned",
+          "to": "in_progress",
+          "label": "Start"
+        },
+        {
+          "from": "on_hold",
+          "to": "in_progress",
+          "label": "Resume"
+        },
+        {
+          "from": "in_progress",
+          "to": "on_hold",
+          "label": "Put On Hold"
+        },
+        {
+          "from": "planned",
+          "to": "completed",
+          "label": "Complete"
+        },
+        {
+          "from": "in_progress",
+          "to": "completed",
+          "label": "Complete"
+        },
+        {
+          "from": "on_hold",
+          "to": "completed",
+          "label": "Complete"
+        },
+        {
+          "from": "new",
+          "to": "cancelled",
+          "label": "Cancel"
+        },
+        {
+          "from": "planned",
+          "to": "cancelled",
+          "label": "Cancel"
+        },
+        {
+          "from": "in_progress",
+          "to": "cancelled",
+          "label": "Cancel"
+        },
+        {
+          "from": "on_hold",
+          "to": "cancelled",
+          "label": "Cancel"
+        }
+      ]
+    }
+  ],
+  "transformations": [],
+  "modals": [],
+  "queries": {}
+}

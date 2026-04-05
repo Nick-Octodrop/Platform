@@ -1,0 +1,2805 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "octo_ai",
+    "key": "octo_ai",
+    "name": "Octo AI",
+    "version": "1.3.0",
+    "description": "Workspace-aware AI sessions, plans, patchsets, workspace indexing, validation, apply, and rollback operations.",
+    "category": "Admin",
+    "icon_key": "lucide:Sparkles"
+  },
+  "app": {
+    "home": "page:ai_session.list_page",
+    "defaults": {
+      "entity_home_page": "page:ai_session.list_page",
+      "entity_form_page": "page:ai_session.form_page",
+      "entities": {
+        "entity.ai_session": {
+          "entity_home_page": "page:ai_session.list_page",
+          "entity_form_page": "page:ai_session.form_page"
+        },
+        "entity.ai_message": {
+          "entity_home_page": "page:ai_message.list_page",
+          "entity_form_page": "page:ai_message.form_page"
+        },
+        "entity.ai_plan": {
+          "entity_home_page": "page:ai_plan.list_page",
+          "entity_form_page": "page:ai_plan.form_page"
+        },
+        "entity.ai_patchset": {
+          "entity_home_page": "page:ai_patchset.list_page",
+          "entity_form_page": "page:ai_patchset.form_page"
+        },
+        "entity.ai_snapshot": {
+          "entity_home_page": "page:ai_snapshot.list_page",
+          "entity_form_page": "page:ai_snapshot.form_page"
+        },
+        "entity.ai_workspace_index": {
+          "entity_home_page": "page:ai_workspace_index.list_page",
+          "entity_form_page": "page:ai_workspace_index.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Octo AI",
+        "items": [
+          {
+            "label": "Sessions",
+            "to": "page:ai_session.list_page"
+          },
+          {
+            "label": "Waiting Input",
+            "to": "page:ai_session.waiting_page"
+          },
+          {
+            "label": "Ready To Apply",
+            "to": "page:ai_session.ready_page"
+          },
+          {
+            "label": "Failed Sessions",
+            "to": "page:ai_session.failed_page"
+          },
+          {
+            "label": "Plans",
+            "to": "page:ai_plan.list_page"
+          },
+          {
+            "label": "Patchsets",
+            "to": "page:ai_patchset.list_page"
+          },
+          {
+            "label": "Validated Patchsets",
+            "to": "page:ai_patchset.validated_page"
+          },
+          {
+            "label": "Approved Patchsets",
+            "to": "page:ai_patchset.approved_page"
+          },
+          {
+            "label": "Workspace Index",
+            "to": "page:ai_workspace_index.list_page"
+          }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.ai_session",
+      "display_field": "ai_session.title",
+      "fields": [
+        {
+          "id": "ai_session.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "ai_session.title",
+          "type": "string",
+          "label": "Title",
+          "required": true
+        },
+        {
+          "id": "ai_session.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "draft",
+          "options": [
+            {
+              "value": "draft",
+              "label": "Draft"
+            },
+            {
+              "value": "planning",
+              "label": "Planning"
+            },
+            {
+              "value": "waiting_input",
+              "label": "Waiting Input"
+            },
+            {
+              "value": "ready_to_apply",
+              "label": "Ready To Apply"
+            },
+            {
+              "value": "applied",
+              "label": "Applied"
+            },
+            {
+              "value": "failed",
+              "label": "Failed"
+            },
+            {
+              "value": "archived",
+              "label": "Archived"
+            }
+          ]
+        },
+        {
+          "id": "ai_session.scope_mode",
+          "type": "enum",
+          "label": "Scope Mode",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "Auto"
+            },
+            {
+              "value": "current_item",
+              "label": "Current Item"
+            },
+            {
+              "value": "selected_items",
+              "label": "Selected Items"
+            },
+            {
+              "value": "workspace",
+              "label": "Workspace"
+            }
+          ]
+        },
+        {
+          "id": "ai_session.selected_artifact_type",
+          "type": "enum",
+          "label": "Selected Artifact Type",
+          "default": "none",
+          "options": [
+            {
+              "value": "module",
+              "label": "Module"
+            },
+            {
+              "value": "automation",
+              "label": "Automation"
+            },
+            {
+              "value": "integration",
+              "label": "Integration"
+            },
+            {
+              "value": "none",
+              "label": "None"
+            }
+          ]
+        },
+        {
+          "id": "ai_session.selected_artifact_key",
+          "type": "string",
+          "label": "Selected Artifact Key"
+        },
+        {
+          "id": "ai_session.created_by",
+          "type": "string",
+          "label": "Created By"
+        },
+        {
+          "id": "ai_session.last_activity_at",
+          "type": "datetime",
+          "label": "Last Activity"
+        },
+        {
+          "id": "ai_session.last_error",
+          "type": "text",
+          "label": "Last Error"
+        },
+        {
+          "id": "ai_session.summary",
+          "type": "text",
+          "label": "Summary"
+        },
+        {
+          "id": "ai_session.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    },
+    {
+      "id": "entity.ai_message",
+      "display_field": "ai_message.body",
+      "fields": [
+        {
+          "id": "ai_message.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "ai_message.session_id",
+          "type": "lookup",
+          "label": "Session",
+          "entity": "entity.ai_session",
+          "display_field": "ai_session.title",
+          "required": true
+        },
+        {
+          "id": "ai_message.role",
+          "type": "enum",
+          "label": "Role",
+          "options": [
+            {
+              "value": "user",
+              "label": "User"
+            },
+            {
+              "value": "assistant",
+              "label": "Assistant"
+            },
+            {
+              "value": "system",
+              "label": "System"
+            }
+          ]
+        },
+        {
+          "id": "ai_message.body",
+          "type": "text",
+          "label": "Body"
+        },
+        {
+          "id": "ai_message.message_type",
+          "type": "enum",
+          "label": "Message Type",
+          "options": [
+            {
+              "value": "chat",
+              "label": "Chat"
+            },
+            {
+              "value": "plan",
+              "label": "Plan"
+            },
+            {
+              "value": "question",
+              "label": "Question"
+            },
+            {
+              "value": "answer",
+              "label": "Answer"
+            },
+            {
+              "value": "apply_result",
+              "label": "Apply Result"
+            },
+            {
+              "value": "error",
+              "label": "Error"
+            }
+          ]
+        },
+        {
+          "id": "ai_message.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    },
+    {
+      "id": "entity.ai_plan",
+      "display_field": "ai_plan.scope_summary",
+      "fields": [
+        {
+          "id": "ai_plan.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "ai_plan.session_id",
+          "type": "lookup",
+          "label": "Session",
+          "entity": "entity.ai_session",
+          "display_field": "ai_session.title",
+          "required": true
+        },
+        {
+          "id": "ai_plan.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "draft",
+          "options": [
+            {
+              "value": "draft",
+              "label": "Draft"
+            },
+            {
+              "value": "approved",
+              "label": "Approved"
+            },
+            {
+              "value": "superseded",
+              "label": "Superseded"
+            },
+            {
+              "value": "rejected",
+              "label": "Rejected"
+            }
+          ]
+        },
+        {
+          "id": "ai_plan.scope_summary",
+          "type": "text",
+          "label": "Scope Summary"
+        },
+        {
+          "id": "ai_plan.affected_artifacts_json",
+          "type": "text",
+          "label": "Affected Artifacts JSON"
+        },
+        {
+          "id": "ai_plan.questions_json",
+          "type": "text",
+          "label": "Questions JSON"
+        },
+        {
+          "id": "ai_plan.assumptions_json",
+          "type": "text",
+          "label": "Assumptions JSON"
+        },
+        {
+          "id": "ai_plan.risks_json",
+          "type": "text",
+          "label": "Risks JSON"
+        },
+        {
+          "id": "ai_plan.plan_json",
+          "type": "text",
+          "label": "Plan JSON"
+        },
+        {
+          "id": "ai_plan.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    },
+    {
+      "id": "entity.ai_patchset",
+      "display_field": "ai_patchset.id",
+      "fields": [
+        {
+          "id": "ai_patchset.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "ai_patchset.session_id",
+          "type": "lookup",
+          "label": "Session",
+          "entity": "entity.ai_session",
+          "display_field": "ai_session.title",
+          "required": true
+        },
+        {
+          "id": "ai_patchset.plan_id",
+          "type": "lookup",
+          "label": "Plan",
+          "entity": "entity.ai_plan",
+          "display_field": "ai_plan.scope_summary"
+        },
+        {
+          "id": "ai_patchset.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "draft",
+          "options": [
+            {
+              "value": "draft",
+              "label": "Draft"
+            },
+            {
+              "value": "validated",
+              "label": "Validated"
+            },
+            {
+              "value": "invalid",
+              "label": "Invalid"
+            },
+            {
+              "value": "approved",
+              "label": "Approved"
+            },
+            {
+              "value": "applied",
+              "label": "Applied"
+            },
+            {
+              "value": "rolled_back",
+              "label": "Rolled Back"
+            },
+            {
+              "value": "failed",
+              "label": "Failed"
+            }
+          ]
+        },
+        {
+          "id": "ai_patchset.base_snapshot_refs_json",
+          "type": "text",
+          "label": "Base Snapshot Refs JSON"
+        },
+        {
+          "id": "ai_patchset.patch_json",
+          "type": "text",
+          "label": "Patch JSON"
+        },
+        {
+          "id": "ai_patchset.validation_json",
+          "type": "text",
+          "label": "Validation JSON"
+        },
+        {
+          "id": "ai_patchset.apply_log_json",
+          "type": "text",
+          "label": "Apply Log JSON"
+        },
+        {
+          "id": "ai_patchset.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        },
+        {
+          "id": "ai_patchset.applied_at",
+          "type": "datetime",
+          "label": "Applied At"
+        }
+      ]
+    },
+    {
+      "id": "entity.ai_snapshot",
+      "display_field": "ai_snapshot.artifact_key",
+      "fields": [
+        {
+          "id": "ai_snapshot.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "ai_snapshot.patchset_id",
+          "type": "lookup",
+          "label": "Patchset",
+          "entity": "entity.ai_patchset",
+          "display_field": "ai_patchset.id"
+        },
+        {
+          "id": "ai_snapshot.artifact_type",
+          "type": "string",
+          "label": "Artifact Type"
+        },
+        {
+          "id": "ai_snapshot.artifact_key",
+          "type": "string",
+          "label": "Artifact Key"
+        },
+        {
+          "id": "ai_snapshot.artifact_version",
+          "type": "string",
+          "label": "Artifact Version"
+        },
+        {
+          "id": "ai_snapshot.snapshot_json",
+          "type": "text",
+          "label": "Snapshot JSON"
+        },
+        {
+          "id": "ai_snapshot.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    },
+    {
+      "id": "entity.ai_workspace_index",
+      "display_field": "ai_workspace_index.node_key",
+      "fields": [
+        {
+          "id": "ai_workspace_index.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "ai_workspace_index.node_type",
+          "type": "string",
+          "label": "Node Type"
+        },
+        {
+          "id": "ai_workspace_index.node_key",
+          "type": "string",
+          "label": "Node Key"
+        },
+        {
+          "id": "ai_workspace_index.parent_key",
+          "type": "string",
+          "label": "Parent Key"
+        },
+        {
+          "id": "ai_workspace_index.summary_json",
+          "type": "text",
+          "label": "Summary JSON"
+        },
+        {
+          "id": "ai_workspace_index.updated_at",
+          "type": "datetime",
+          "label": "Updated At"
+        }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "ai_session.list",
+      "kind": "list",
+      "entity": "entity.ai_session",
+      "columns": [
+        {
+          "field_id": "ai_session.title"
+        },
+        {
+          "field_id": "ai_session.status"
+        },
+        {
+          "field_id": "ai_session.scope_mode"
+        },
+        {
+          "field_id": "ai_session.selected_artifact_type"
+        },
+        {
+          "field_id": "ai_session.selected_artifact_key"
+        },
+        {
+          "field_id": "ai_session.created_by"
+        },
+        {
+          "field_id": "ai_session.last_activity_at"
+        }
+      ],
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.ai_session_new"
+          }
+        ],
+        "open_record_target": "page:ai_session.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search AI sessions...",
+          "fields": [
+            "ai_session.title",
+            "ai_session.summary",
+            "ai_session.selected_artifact_key",
+            "ai_session.created_by",
+            "ai_session.last_error"
+          ]
+        },
+        "filters": [
+          {
+            "id": "active",
+            "label": "Active",
+            "domain": {
+              "op": "not",
+              "condition": {
+                "op": "in",
+                "field": "ai_session.status",
+                "value": [
+                  "applied",
+                  "archived"
+                ]
+              }
+            }
+          },
+          {
+            "id": "waiting",
+            "label": "Waiting Input",
+            "domain": {
+              "op": "eq",
+              "field": "ai_session.status",
+              "value": "waiting_input"
+            }
+          },
+          {
+            "id": "ready",
+            "label": "Ready To Apply",
+            "domain": {
+              "op": "eq",
+              "field": "ai_session.status",
+              "value": "ready_to_apply"
+            }
+          },
+          {
+            "id": "failed",
+            "label": "Failed",
+            "domain": {
+              "op": "eq",
+              "field": "ai_session.status",
+              "value": "failed"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "ai_session.form",
+      "kind": "form",
+      "entity": "entity.ai_session",
+      "sections": [
+        {
+          "id": "overview",
+          "title": "Session Details",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "ai_session.title",
+            "ai_session.status",
+            "ai_session.scope_mode",
+            "ai_session.selected_artifact_type",
+            "ai_session.selected_artifact_key",
+            "ai_session.created_by",
+            "ai_session.created_at",
+            "ai_session.last_activity_at"
+          ]
+        },
+        {
+          "id": "summary",
+          "title": "Summary",
+          "fields": [
+            "ai_session.summary"
+          ]
+        },
+        {
+          "id": "diagnostics",
+          "title": "Diagnostics",
+          "fields": [
+            "ai_session.last_error"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": {
+          "field_id": "ai_session.status"
+        },
+        "secondary_actions": [
+          {
+            "action_id": "action.ai_session_start_planning"
+          },
+          {
+            "action_id": "action.ai_session_mark_waiting"
+          },
+          {
+            "action_id": "action.ai_session_ready"
+          },
+          {
+            "action_id": "action.ai_session_mark_applied"
+          },
+          {
+            "action_id": "action.ai_session_mark_failed"
+          },
+          {
+            "action_id": "action.ai_session_archive"
+          }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "session_overview",
+          "tabs": [
+            {
+              "id": "session_overview",
+              "label": "Overview",
+              "sections": [
+                "overview",
+                "summary"
+              ]
+            },
+            {
+              "id": "session_diagnostics",
+              "label": "Diagnostics",
+              "sections": [
+                "diagnostics"
+              ]
+            }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "ai_session.title",
+          "ai_session.status",
+          "ai_session.scope_mode",
+          "ai_session.selected_artifact_type",
+          "ai_session.selected_artifact_key",
+          "ai_session.summary",
+          "ai_session.last_error",
+          "ai_session.created_by",
+          "ai_session.created_at",
+          "ai_session.last_activity_at"
+        ]
+      }
+    },
+    {
+      "id": "ai_session.graph",
+      "kind": "graph",
+      "entity": "entity.ai_session",
+      "default": {
+        "type": "bar",
+        "group_by": "ai_session.status",
+        "measure": "count"
+      }
+    },
+    {
+      "id": "ai_message.list",
+      "kind": "list",
+      "entity": "entity.ai_message",
+      "columns": [
+        {
+          "field_id": "ai_message.role"
+        },
+        {
+          "field_id": "ai_message.message_type"
+        },
+        {
+          "field_id": "ai_message.body"
+        },
+        {
+          "field_id": "ai_message.created_at"
+        }
+      ],
+      "header": {
+        "open_record_target": "page:ai_message.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search messages...",
+          "fields": [
+            "ai_message.body",
+            "ai_message.role",
+            "ai_message.message_type"
+          ]
+        }
+      }
+    },
+    {
+      "id": "ai_message.form",
+      "kind": "form",
+      "entity": "entity.ai_message",
+      "sections": [
+        {
+          "id": "details",
+          "title": "Message Details",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "ai_message.session_id",
+            "ai_message.role",
+            "ai_message.message_type",
+            "ai_message.created_at"
+          ]
+        },
+        {
+          "id": "body",
+          "title": "Message Body",
+          "fields": [
+            "ai_message.body"
+          ]
+        }
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "ai_message.session_id",
+          "ai_message.role",
+          "ai_message.message_type",
+          "ai_message.body",
+          "ai_message.created_at"
+        ]
+      },
+      "header": {
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "details_tab",
+          "tabs": [
+            {
+              "id": "details_tab",
+              "label": "Details",
+              "sections": [
+                "details"
+              ]
+            },
+            {
+              "id": "body_tab",
+              "label": "Body",
+              "sections": [
+                "body"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ai_plan.list",
+      "kind": "list",
+      "entity": "entity.ai_plan",
+      "columns": [
+        {
+          "field_id": "ai_plan.session_id"
+        },
+        {
+          "field_id": "ai_plan.status"
+        },
+        {
+          "field_id": "ai_plan.scope_summary"
+        },
+        {
+          "field_id": "ai_plan.created_at"
+        }
+      ],
+      "header": {
+        "open_record_target": "page:ai_plan.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search plans...",
+          "fields": [
+            "ai_plan.scope_summary",
+            "ai_plan.questions_json",
+            "ai_plan.assumptions_json",
+            "ai_plan.risks_json"
+          ]
+        },
+        "filters": [
+          {
+            "id": "draft",
+            "label": "Draft",
+            "domain": {
+              "op": "eq",
+              "field": "ai_plan.status",
+              "value": "draft"
+            }
+          },
+          {
+            "id": "approved",
+            "label": "Approved",
+            "domain": {
+              "op": "eq",
+              "field": "ai_plan.status",
+              "value": "approved"
+            }
+          },
+          {
+            "id": "rejected",
+            "label": "Rejected",
+            "domain": {
+              "op": "eq",
+              "field": "ai_plan.status",
+              "value": "rejected"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "ai_plan.form",
+      "kind": "form",
+      "entity": "entity.ai_plan",
+      "sections": [
+        {
+          "id": "overview",
+          "title": "Plan Details",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "ai_plan.session_id",
+            "ai_plan.status",
+            "ai_plan.created_at"
+          ]
+        },
+        {
+          "id": "scope",
+          "title": "Scope Summary",
+          "fields": [
+            "ai_plan.scope_summary",
+            "ai_plan.affected_artifacts_json"
+          ]
+        },
+        {
+          "id": "inputs",
+          "title": "Questions, Assumptions, and Risks",
+          "fields": [
+            "ai_plan.questions_json",
+            "ai_plan.assumptions_json",
+            "ai_plan.risks_json"
+          ]
+        },
+        {
+          "id": "plan_payload",
+          "title": "Plan Payload",
+          "fields": [
+            "ai_plan.plan_json"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": {
+          "field_id": "ai_plan.status"
+        },
+        "secondary_actions": [
+          {
+            "action_id": "action.ai_plan_approve"
+          },
+          {
+            "action_id": "action.ai_plan_reject"
+          },
+          {
+            "action_id": "action.ai_plan_supersede"
+          }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "plan_overview",
+          "tabs": [
+            {
+              "id": "plan_overview",
+              "label": "Overview",
+              "sections": [
+                "overview",
+                "scope"
+              ]
+            },
+            {
+              "id": "plan_inputs",
+              "label": "Inputs",
+              "sections": [
+                "inputs"
+              ]
+            },
+            {
+              "id": "plan_payload_tab",
+              "label": "Plan JSON",
+              "sections": [
+                "plan_payload"
+              ]
+            }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "ai_plan.session_id",
+          "ai_plan.status",
+          "ai_plan.scope_summary",
+          "ai_plan.affected_artifacts_json",
+          "ai_plan.questions_json",
+          "ai_plan.assumptions_json",
+          "ai_plan.risks_json",
+          "ai_plan.plan_json",
+          "ai_plan.created_at"
+        ]
+      }
+    },
+    {
+      "id": "ai_plan.graph",
+      "kind": "graph",
+      "entity": "entity.ai_plan",
+      "default": {
+        "type": "bar",
+        "group_by": "ai_plan.status",
+        "measure": "count"
+      }
+    },
+    {
+      "id": "ai_patchset.list",
+      "kind": "list",
+      "entity": "entity.ai_patchset",
+      "columns": [
+        {
+          "field_id": "ai_patchset.id"
+        },
+        {
+          "field_id": "ai_patchset.session_id"
+        },
+        {
+          "field_id": "ai_patchset.plan_id"
+        },
+        {
+          "field_id": "ai_patchset.status"
+        },
+        {
+          "field_id": "ai_patchset.created_at"
+        },
+        {
+          "field_id": "ai_patchset.applied_at"
+        }
+      ],
+      "header": {
+        "open_record_target": "page:ai_patchset.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search patchsets...",
+          "fields": [
+            "ai_patchset.id",
+            "ai_patchset.patch_json",
+            "ai_patchset.validation_json",
+            "ai_patchset.apply_log_json"
+          ]
+        },
+        "filters": [
+          {
+            "id": "draft",
+            "label": "Draft",
+            "domain": {
+              "op": "eq",
+              "field": "ai_patchset.status",
+              "value": "draft"
+            }
+          },
+          {
+            "id": "validated",
+            "label": "Validated",
+            "domain": {
+              "op": "eq",
+              "field": "ai_patchset.status",
+              "value": "validated"
+            }
+          },
+          {
+            "id": "approved",
+            "label": "Approved",
+            "domain": {
+              "op": "eq",
+              "field": "ai_patchset.status",
+              "value": "approved"
+            }
+          },
+          {
+            "id": "applied",
+            "label": "Applied",
+            "domain": {
+              "op": "eq",
+              "field": "ai_patchset.status",
+              "value": "applied"
+            }
+          },
+          {
+            "id": "invalid_failed",
+            "label": "Invalid / Failed",
+            "domain": {
+              "op": "in",
+              "field": "ai_patchset.status",
+              "value": [
+                "invalid",
+                "failed"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "ai_patchset.form",
+      "kind": "form",
+      "entity": "entity.ai_patchset",
+      "sections": [
+        {
+          "id": "overview",
+          "title": "Patchset Details",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "ai_patchset.session_id",
+            "ai_patchset.plan_id",
+            "ai_patchset.status",
+            "ai_patchset.created_at",
+            "ai_patchset.applied_at"
+          ]
+        },
+        {
+          "id": "payload",
+          "title": "Patch Payload",
+          "fields": [
+            "ai_patchset.base_snapshot_refs_json",
+            "ai_patchset.patch_json"
+          ]
+        },
+        {
+          "id": "validation",
+          "title": "Validation and Apply Log",
+          "fields": [
+            "ai_patchset.validation_json",
+            "ai_patchset.apply_log_json"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": {
+          "field_id": "ai_patchset.status"
+        },
+        "secondary_actions": [
+          {
+            "action_id": "action.ai_patchset_validate"
+          },
+          {
+            "action_id": "action.ai_patchset_invalidate"
+          },
+          {
+            "action_id": "action.ai_patchset_approve"
+          },
+          {
+            "action_id": "action.ai_patchset_apply"
+          },
+          {
+            "action_id": "action.ai_patchset_rollback"
+          },
+          {
+            "action_id": "action.ai_patchset_fail"
+          }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "patchset_overview",
+          "tabs": [
+            {
+              "id": "patchset_overview",
+              "label": "Overview",
+              "sections": [
+                "overview"
+              ]
+            },
+            {
+              "id": "patchset_payload",
+              "label": "Patch",
+              "sections": [
+                "payload"
+              ]
+            },
+            {
+              "id": "patchset_validation",
+              "label": "Validation",
+              "sections": [
+                "validation"
+              ]
+            }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "ai_patchset.session_id",
+          "ai_patchset.plan_id",
+          "ai_patchset.status",
+          "ai_patchset.base_snapshot_refs_json",
+          "ai_patchset.patch_json",
+          "ai_patchset.validation_json",
+          "ai_patchset.apply_log_json",
+          "ai_patchset.created_at",
+          "ai_patchset.applied_at"
+        ]
+      }
+    },
+    {
+      "id": "ai_patchset.graph",
+      "kind": "graph",
+      "entity": "entity.ai_patchset",
+      "default": {
+        "type": "bar",
+        "group_by": "ai_patchset.status",
+        "measure": "count"
+      }
+    },
+    {
+      "id": "ai_snapshot.list",
+      "kind": "list",
+      "entity": "entity.ai_snapshot",
+      "columns": [
+        {
+          "field_id": "ai_snapshot.artifact_type"
+        },
+        {
+          "field_id": "ai_snapshot.artifact_key"
+        },
+        {
+          "field_id": "ai_snapshot.artifact_version"
+        },
+        {
+          "field_id": "ai_snapshot.patchset_id"
+        },
+        {
+          "field_id": "ai_snapshot.created_at"
+        }
+      ],
+      "header": {
+        "open_record_target": "page:ai_snapshot.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search snapshots...",
+          "fields": [
+            "ai_snapshot.artifact_type",
+            "ai_snapshot.artifact_key",
+            "ai_snapshot.artifact_version",
+            "ai_snapshot.snapshot_json"
+          ]
+        }
+      }
+    },
+    {
+      "id": "ai_snapshot.form",
+      "kind": "form",
+      "entity": "entity.ai_snapshot",
+      "sections": [
+        {
+          "id": "overview",
+          "title": "Snapshot Details",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "ai_snapshot.patchset_id",
+            "ai_snapshot.artifact_type",
+            "ai_snapshot.artifact_key",
+            "ai_snapshot.artifact_version",
+            "ai_snapshot.created_at"
+          ]
+        },
+        {
+          "id": "snapshot_payload",
+          "title": "Snapshot JSON",
+          "fields": [
+            "ai_snapshot.snapshot_json"
+          ]
+        }
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "ai_snapshot.patchset_id",
+          "ai_snapshot.artifact_type",
+          "ai_snapshot.artifact_key",
+          "ai_snapshot.artifact_version",
+          "ai_snapshot.snapshot_json",
+          "ai_snapshot.created_at"
+        ]
+      },
+      "header": {
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "overview_tab",
+          "tabs": [
+            {
+              "id": "overview_tab",
+              "label": "Details",
+              "sections": [
+                "overview"
+              ]
+            },
+            {
+              "id": "payload_tab",
+              "label": "Snapshot",
+              "sections": [
+                "snapshot_payload"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ai_workspace_index.list",
+      "kind": "list",
+      "entity": "entity.ai_workspace_index",
+      "columns": [
+        {
+          "field_id": "ai_workspace_index.node_type"
+        },
+        {
+          "field_id": "ai_workspace_index.node_key"
+        },
+        {
+          "field_id": "ai_workspace_index.parent_key"
+        },
+        {
+          "field_id": "ai_workspace_index.updated_at"
+        }
+      ],
+      "header": {
+        "open_record_target": "page:ai_workspace_index.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search workspace index...",
+          "fields": [
+            "ai_workspace_index.node_type",
+            "ai_workspace_index.node_key",
+            "ai_workspace_index.parent_key",
+            "ai_workspace_index.summary_json"
+          ]
+        }
+      }
+    },
+    {
+      "id": "ai_workspace_index.form",
+      "kind": "form",
+      "entity": "entity.ai_workspace_index",
+      "sections": [
+        {
+          "id": "overview",
+          "title": "Node Details",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "ai_workspace_index.node_type",
+            "ai_workspace_index.node_key",
+            "ai_workspace_index.parent_key",
+            "ai_workspace_index.updated_at"
+          ]
+        },
+        {
+          "id": "summary",
+          "title": "Summary JSON",
+          "fields": [
+            "ai_workspace_index.summary_json"
+          ]
+        }
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "ai_workspace_index.node_type",
+          "ai_workspace_index.node_key",
+          "ai_workspace_index.parent_key",
+          "ai_workspace_index.summary_json",
+          "ai_workspace_index.updated_at"
+        ]
+      },
+      "header": {
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "overview_tab",
+          "tabs": [
+            {
+              "id": "overview_tab",
+              "label": "Details",
+              "sections": [
+                "overview"
+              ]
+            },
+            {
+              "id": "summary_tab",
+              "label": "Summary",
+              "sections": [
+                "summary"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ai_workspace_index.graph",
+      "kind": "graph",
+      "entity": "entity.ai_workspace_index",
+      "default": {
+        "type": "bar",
+        "group_by": "ai_workspace_index.node_type",
+        "measure": "count"
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "ai_session.list_page",
+      "title": "AI Sessions",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.ai_session_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.ai_session",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:ai_session.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:ai_session.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:ai_session.list",
+                  "default_group_by": "ai_session.status"
+                }
+              ],
+              "default_filter_id": "active"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ai_session.form_page",
+      "title": "AI Session",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.ai_session",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:ai_session.form"
+                        },
+                        {
+                          "kind": "related_list",
+                          "entity_id": "entity.ai_message",
+                          "target": "view:ai_message.list",
+                          "record_domain": {
+                            "op": "eq",
+                            "field": "ai_message.session_id",
+                            "value": {
+                              "ref": "$record.id"
+                            }
+                          }
+                        },
+                        {
+                          "kind": "related_list",
+                          "entity_id": "entity.ai_plan",
+                          "target": "view:ai_plan.list",
+                          "record_domain": {
+                            "op": "eq",
+                            "field": "ai_plan.session_id",
+                            "value": {
+                              "ref": "$record.id"
+                            }
+                          }
+                        },
+                        {
+                          "kind": "related_list",
+                          "entity_id": "entity.ai_patchset",
+                          "target": "view:ai_patchset.list",
+                          "record_domain": {
+                            "op": "eq",
+                            "field": "ai_patchset.session_id",
+                            "value": {
+                              "ref": "$record.id"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.ai_session",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ai_message.list_page",
+      "title": "Messages",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.ai_message",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:ai_message.list"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ai_message.form_page",
+      "title": "Message",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.ai_message",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                {
+                  "kind": "view",
+                  "target": "view:ai_message.form"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ai_plan.list_page",
+      "title": "Plans",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.ai_plan",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:ai_plan.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:ai_plan.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:ai_plan.list",
+                  "default_group_by": "ai_plan.status"
+                }
+              ],
+              "default_filter_id": "draft"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ai_plan.form_page",
+      "title": "Plan",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.ai_plan",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:ai_plan.form"
+                        },
+                        {
+                          "kind": "related_list",
+                          "entity_id": "entity.ai_patchset",
+                          "target": "view:ai_patchset.list",
+                          "record_domain": {
+                            "op": "eq",
+                            "field": "ai_patchset.plan_id",
+                            "value": {
+                              "ref": "$record.id"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.ai_plan",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ai_patchset.list_page",
+      "title": "Patchsets",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.ai_patchset",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:ai_patchset.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:ai_patchset.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:ai_patchset.list",
+                  "default_group_by": "ai_patchset.status"
+                }
+              ],
+              "default_filter_id": "draft"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ai_patchset.form_page",
+      "title": "Patchset",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.ai_patchset",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:ai_patchset.form"
+                        },
+                        {
+                          "kind": "related_list",
+                          "entity_id": "entity.ai_snapshot",
+                          "target": "view:ai_snapshot.list",
+                          "record_domain": {
+                            "op": "eq",
+                            "field": "ai_snapshot.patchset_id",
+                            "value": {
+                              "ref": "$record.id"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.ai_patchset",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ai_snapshot.list_page",
+      "title": "Snapshots",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.ai_snapshot",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:ai_snapshot.list"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ai_snapshot.form_page",
+      "title": "Snapshot",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.ai_snapshot",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                {
+                  "kind": "view",
+                  "target": "view:ai_snapshot.form"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ai_workspace_index.list_page",
+      "title": "Workspace Index",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.ai_workspace_index",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:ai_workspace_index.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:ai_workspace_index.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:ai_workspace_index.list",
+                  "default_group_by": "ai_workspace_index.node_type"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ai_workspace_index.form_page",
+      "title": "Workspace Index Node",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.ai_workspace_index",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                {
+                  "kind": "view",
+                  "target": "view:ai_workspace_index.form"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ai_session.waiting_page",
+      "title": "Waiting Input Sessions",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.ai_session_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.ai_session",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:ai_session.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:ai_session.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:ai_session.list",
+                  "default_group_by": "ai_session.status"
+                }
+              ],
+              "default_filter_id": "waiting"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ai_session.ready_page",
+      "title": "Ready To Apply Sessions",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.ai_session_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.ai_session",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:ai_session.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:ai_session.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:ai_session.list",
+                  "default_group_by": "ai_session.status"
+                }
+              ],
+              "default_filter_id": "ready"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ai_patchset.approved_page",
+      "title": "Approved Patchsets",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.ai_patchset",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:ai_patchset.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:ai_patchset.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:ai_patchset.list",
+                  "default_group_by": "ai_patchset.status"
+                }
+              ],
+              "default_filter_id": "approved"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ai_session.failed_page",
+      "title": "Failed Sessions",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.ai_session_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.ai_session",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:ai_session.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:ai_session.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:ai_session.list",
+                  "default_group_by": "ai_session.status"
+                }
+              ],
+              "default_filter_id": "failed"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ai_patchset.validated_page",
+      "title": "Validated Patchsets",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.ai_patchset",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:ai_patchset.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:ai_patchset.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:ai_patchset.list",
+                  "default_group_by": "ai_patchset.status"
+                }
+              ],
+              "default_filter_id": "validated"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "action.ai_session_new",
+      "kind": "open_form",
+      "label": "+ New Session",
+      "target": "ai_session.form"
+    },
+    {
+      "id": "action.ai_session_start_planning",
+      "kind": "update_record",
+      "label": "Start Planning",
+      "entity_id": "entity.ai_session",
+      "patch": {
+        "ai_session.status": "planning"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "ai_session.status",
+        "value": "draft"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "ai_session.status",
+        "value": "draft"
+      }
+    },
+    {
+      "id": "action.ai_session_mark_waiting",
+      "kind": "update_record",
+      "label": "Await Input",
+      "entity_id": "entity.ai_session",
+      "patch": {
+        "ai_session.status": "waiting_input"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "ai_session.status",
+        "value": "planning"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "ai_session.status",
+        "value": "planning"
+      }
+    },
+    {
+      "id": "action.ai_session_ready",
+      "kind": "update_record",
+      "label": "Ready To Apply",
+      "entity_id": "entity.ai_session",
+      "patch": {
+        "ai_session.status": "ready_to_apply"
+      },
+      "enabled_when": {
+        "op": "in",
+        "field": "ai_session.status",
+        "value": [
+          "planning",
+          "waiting_input"
+        ]
+      },
+      "visible_when": {
+        "op": "in",
+        "field": "ai_session.status",
+        "value": [
+          "planning",
+          "waiting_input"
+        ]
+      }
+    },
+    {
+      "id": "action.ai_session_mark_applied",
+      "kind": "update_record",
+      "label": "Mark Applied",
+      "entity_id": "entity.ai_session",
+      "patch": {
+        "ai_session.status": "applied"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "ai_session.status",
+        "value": "ready_to_apply"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "ai_session.status",
+        "value": "ready_to_apply"
+      },
+      "confirm": {
+        "title": "Mark Session Applied",
+        "body": "Mark this AI session as applied?"
+      }
+    },
+    {
+      "id": "action.ai_session_mark_failed",
+      "kind": "update_record",
+      "label": "Mark Failed",
+      "entity_id": "entity.ai_session",
+      "patch": {
+        "ai_session.status": "failed"
+      },
+      "enabled_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "ai_session.status",
+          "value": [
+            "applied",
+            "archived",
+            "failed"
+          ]
+        }
+      },
+      "visible_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "ai_session.status",
+          "value": [
+            "applied",
+            "archived",
+            "failed"
+          ]
+        }
+      },
+      "confirm": {
+        "title": "Mark Session Failed",
+        "body": "Mark this AI session as failed?"
+      }
+    },
+    {
+      "id": "action.ai_session_archive",
+      "kind": "update_record",
+      "label": "Archive",
+      "entity_id": "entity.ai_session",
+      "patch": {
+        "ai_session.status": "archived"
+      },
+      "enabled_when": {
+        "op": "in",
+        "field": "ai_session.status",
+        "value": [
+          "applied",
+          "failed"
+        ]
+      },
+      "visible_when": {
+        "op": "in",
+        "field": "ai_session.status",
+        "value": [
+          "applied",
+          "failed"
+        ]
+      }
+    },
+    {
+      "id": "action.ai_plan_approve",
+      "kind": "update_record",
+      "label": "Approve",
+      "entity_id": "entity.ai_plan",
+      "patch": {
+        "ai_plan.status": "approved"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "ai_plan.status",
+        "value": "draft"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "ai_plan.status",
+        "value": "draft"
+      }
+    },
+    {
+      "id": "action.ai_plan_reject",
+      "kind": "update_record",
+      "label": "Reject",
+      "entity_id": "entity.ai_plan",
+      "patch": {
+        "ai_plan.status": "rejected"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "ai_plan.status",
+        "value": "draft"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "ai_plan.status",
+        "value": "draft"
+      },
+      "confirm": {
+        "title": "Reject Plan",
+        "body": "Reject this plan?"
+      }
+    },
+    {
+      "id": "action.ai_plan_supersede",
+      "kind": "update_record",
+      "label": "Supersede",
+      "entity_id": "entity.ai_plan",
+      "patch": {
+        "ai_plan.status": "superseded"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "ai_plan.status",
+        "value": "approved"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "ai_plan.status",
+        "value": "approved"
+      }
+    },
+    {
+      "id": "action.ai_patchset_validate",
+      "kind": "update_record",
+      "label": "Validate",
+      "entity_id": "entity.ai_patchset",
+      "patch": {
+        "ai_patchset.status": "validated"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "ai_patchset.status",
+        "value": "draft"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "ai_patchset.status",
+        "value": "draft"
+      }
+    },
+    {
+      "id": "action.ai_patchset_invalidate",
+      "kind": "update_record",
+      "label": "Mark Invalid",
+      "entity_id": "entity.ai_patchset",
+      "patch": {
+        "ai_patchset.status": "invalid"
+      },
+      "enabled_when": {
+        "op": "in",
+        "field": "ai_patchset.status",
+        "value": [
+          "draft",
+          "validated",
+          "approved"
+        ]
+      },
+      "visible_when": {
+        "op": "in",
+        "field": "ai_patchset.status",
+        "value": [
+          "draft",
+          "validated",
+          "approved"
+        ]
+      },
+      "confirm": {
+        "title": "Mark Patchset Invalid",
+        "body": "Flag this patchset as invalid?"
+      }
+    },
+    {
+      "id": "action.ai_patchset_approve",
+      "kind": "update_record",
+      "label": "Approve",
+      "entity_id": "entity.ai_patchset",
+      "patch": {
+        "ai_patchset.status": "approved"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "ai_patchset.status",
+        "value": "validated"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "ai_patchset.status",
+        "value": "validated"
+      }
+    },
+    {
+      "id": "action.ai_patchset_apply",
+      "kind": "update_record",
+      "label": "Mark Applied",
+      "entity_id": "entity.ai_patchset",
+      "patch": {
+        "ai_patchset.status": "applied"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "ai_patchset.status",
+        "value": "approved"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "ai_patchset.status",
+        "value": "approved"
+      },
+      "confirm": {
+        "title": "Mark Patchset Applied",
+        "body": "Mark this patchset as applied?"
+      }
+    },
+    {
+      "id": "action.ai_patchset_rollback",
+      "kind": "update_record",
+      "label": "Roll Back",
+      "entity_id": "entity.ai_patchset",
+      "patch": {
+        "ai_patchset.status": "rolled_back"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "ai_patchset.status",
+        "value": "applied"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "ai_patchset.status",
+        "value": "applied"
+      },
+      "confirm": {
+        "title": "Roll Back Patchset",
+        "body": "Mark this patchset as rolled back?"
+      }
+    },
+    {
+      "id": "action.ai_patchset_fail",
+      "kind": "update_record",
+      "label": "Mark Failed",
+      "entity_id": "entity.ai_patchset",
+      "patch": {
+        "ai_patchset.status": "failed"
+      },
+      "enabled_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "ai_patchset.status",
+          "value": [
+            "applied",
+            "rolled_back",
+            "failed"
+          ]
+        }
+      },
+      "visible_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "ai_patchset.status",
+          "value": [
+            "applied",
+            "rolled_back",
+            "failed"
+          ]
+        }
+      },
+      "confirm": {
+        "title": "Mark Patchset Failed",
+        "body": "Mark this patchset as failed?"
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "id": "octo_ai.record.ai_session.created",
+      "event": "record.created",
+      "entity_id": "entity.ai_session"
+    },
+    {
+      "id": "octo_ai.record.ai_session.updated",
+      "event": "record.updated",
+      "entity_id": "entity.ai_session"
+    },
+    {
+      "id": "octo_ai.record.ai_plan.created",
+      "event": "record.created",
+      "entity_id": "entity.ai_plan"
+    },
+    {
+      "id": "octo_ai.record.ai_plan.updated",
+      "event": "record.updated",
+      "entity_id": "entity.ai_plan"
+    },
+    {
+      "id": "octo_ai.record.ai_patchset.created",
+      "event": "record.created",
+      "entity_id": "entity.ai_patchset"
+    },
+    {
+      "id": "octo_ai.record.ai_patchset.updated",
+      "event": "record.updated",
+      "entity_id": "entity.ai_patchset"
+    },
+    {
+      "id": "octo_ai.workflow.ai_session.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.ai_session",
+      "status_field": "ai_session.status"
+    },
+    {
+      "id": "octo_ai.workflow.ai_plan.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.ai_plan",
+      "status_field": "ai_plan.status"
+    },
+    {
+      "id": "octo_ai.workflow.ai_patchset.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.ai_patchset",
+      "status_field": "ai_patchset.status"
+    }
+  ],
+  "queries": {},
+  "interfaces": {
+    "dashboardable": [
+      {
+        "entity_id": "entity.ai_session",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "ai_session.created_at",
+        "measures": [
+          "count"
+        ],
+        "group_bys": [
+          "ai_session.status",
+          "ai_session.scope_mode",
+          "ai_session.selected_artifact_type"
+        ],
+        "default_widgets": [
+          {
+            "id": "ai_sessions_by_status",
+            "type": "group",
+            "title": "Sessions by Status",
+            "group_by": "ai_session.status",
+            "measure": "count"
+          },
+          {
+            "id": "ai_sessions_by_scope",
+            "type": "group",
+            "title": "Sessions by Scope",
+            "group_by": "ai_session.scope_mode",
+            "measure": "count"
+          }
+        ]
+      },
+      {
+        "entity_id": "entity.ai_patchset",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "ai_patchset.created_at",
+        "measures": [
+          "count"
+        ],
+        "group_bys": [
+          "ai_patchset.status"
+        ],
+        "default_widgets": [
+          {
+            "id": "patchsets_by_status",
+            "type": "group",
+            "title": "Patchsets by Status",
+            "group_by": "ai_patchset.status",
+            "measure": "count"
+          }
+        ]
+      }
+    ]
+  },
+  "relations": [],
+  "workflows": [
+    {
+      "id": "workflow.ai_session_status",
+      "entity": "entity.ai_session",
+      "status_field": "ai_session.status",
+      "states": [
+        {
+          "id": "draft",
+          "label": "Draft",
+          "order": 1
+        },
+        {
+          "id": "planning",
+          "label": "Planning",
+          "order": 2
+        },
+        {
+          "id": "waiting_input",
+          "label": "Waiting Input",
+          "order": 3
+        },
+        {
+          "id": "ready_to_apply",
+          "label": "Ready To Apply",
+          "order": 4
+        },
+        {
+          "id": "applied",
+          "label": "Applied",
+          "order": 5
+        },
+        {
+          "id": "failed",
+          "label": "Failed",
+          "order": 6
+        },
+        {
+          "id": "archived",
+          "label": "Archived",
+          "order": 7
+        }
+      ],
+      "transitions": [
+        {
+          "from": "draft",
+          "to": "planning",
+          "label": "Start Planning"
+        },
+        {
+          "from": "planning",
+          "to": "waiting_input",
+          "label": "Await Input"
+        },
+        {
+          "from": "planning",
+          "to": "ready_to_apply",
+          "label": "Ready To Apply"
+        },
+        {
+          "from": "waiting_input",
+          "to": "ready_to_apply",
+          "label": "Ready To Apply"
+        },
+        {
+          "from": "ready_to_apply",
+          "to": "applied",
+          "label": "Apply"
+        },
+        {
+          "from": "applied",
+          "to": "archived",
+          "label": "Archive"
+        }
+      ]
+    },
+    {
+      "id": "workflow.ai_plan_status",
+      "entity": "entity.ai_plan",
+      "status_field": "ai_plan.status",
+      "states": [
+        {
+          "id": "draft",
+          "label": "Draft",
+          "order": 1
+        },
+        {
+          "id": "approved",
+          "label": "Approved",
+          "order": 2
+        },
+        {
+          "id": "rejected",
+          "label": "Rejected",
+          "order": 3
+        },
+        {
+          "id": "superseded",
+          "label": "Superseded",
+          "order": 4
+        }
+      ],
+      "transitions": [
+        {
+          "from": "draft",
+          "to": "approved",
+          "label": "Approve"
+        },
+        {
+          "from": "draft",
+          "to": "rejected",
+          "label": "Reject"
+        },
+        {
+          "from": "approved",
+          "to": "superseded",
+          "label": "Supersede"
+        }
+      ]
+    },
+    {
+      "id": "workflow.ai_patchset_status",
+      "entity": "entity.ai_patchset",
+      "status_field": "ai_patchset.status",
+      "states": [
+        {
+          "id": "draft",
+          "label": "Draft",
+          "order": 1
+        },
+        {
+          "id": "validated",
+          "label": "Validated",
+          "order": 2
+        },
+        {
+          "id": "invalid",
+          "label": "Invalid",
+          "order": 3
+        },
+        {
+          "id": "approved",
+          "label": "Approved",
+          "order": 4
+        },
+        {
+          "id": "applied",
+          "label": "Applied",
+          "order": 5
+        },
+        {
+          "id": "rolled_back",
+          "label": "Rolled Back",
+          "order": 6
+        },
+        {
+          "id": "failed",
+          "label": "Failed",
+          "order": 7
+        }
+      ],
+      "transitions": [
+        {
+          "from": "draft",
+          "to": "validated",
+          "label": "Validate"
+        },
+        {
+          "from": "validated",
+          "to": "approved",
+          "label": "Approve"
+        },
+        {
+          "from": "approved",
+          "to": "applied",
+          "label": "Apply"
+        },
+        {
+          "from": "applied",
+          "to": "rolled_back",
+          "label": "Roll Back"
+        }
+      ]
+    }
+  ],
+  "modals": [],
+  "transformations": []
+}

@@ -1,0 +1,1659 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "maintenance",
+    "key": "maintenance",
+    "name": "Maintenance",
+    "version": "1.4.0",
+    "description": "Asset and maintenance request management with service history readiness.",
+    "category": "Operations",
+    "icon_key": "lucide:Wrench"
+  },
+  "depends_on": {
+    "required": [
+      {
+        "module": "contacts",
+        "version": ">=1.0.0"
+      }
+    ],
+    "optional": [
+      {
+        "module": "field_service",
+        "version": ">=1.1.0"
+      },
+      {
+        "module": "jobs",
+        "version": ">=1.3.1"
+      }
+    ]
+  },
+  "app": {
+    "home": "page:maintenance_request.list_page",
+    "defaults": {
+      "entity_home_page": "page:maintenance_request.list_page",
+      "entity_form_page": "page:maintenance_request.form_page",
+      "entities": {
+        "entity.asset": {
+          "entity_home_page": "page:asset.list_page",
+          "entity_form_page": "page:asset.form_page"
+        },
+        "entity.maintenance_request": {
+          "entity_home_page": "page:maintenance_request.list_page",
+          "entity_form_page": "page:maintenance_request.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Maintenance",
+        "items": [
+          {
+            "label": "Requests",
+            "to": "page:maintenance_request.list_page"
+          },
+          {
+            "label": "Open Requests",
+            "to": "page:maintenance_request.open_page"
+          },
+          {
+            "label": "Assets",
+            "to": "page:asset.list_page"
+          },
+          {
+            "label": "Active Assets",
+            "to": "page:asset.active_page"
+          },
+          {
+            "label": "Retired Assets",
+            "to": "page:asset.retired_page"
+          }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.asset",
+      "display_field": "asset.name",
+      "fields": [
+        {
+          "id": "asset.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "asset.name",
+          "type": "string",
+          "label": "Asset Name",
+          "required": true
+        },
+        {
+          "id": "asset.contact_id",
+          "type": "lookup",
+          "label": "Contact",
+          "entity": "entity.contact",
+          "display_field": "contact.name"
+        },
+        {
+          "id": "asset.asset_type",
+          "type": "string",
+          "label": "Asset Type"
+        },
+        {
+          "id": "asset.serial_number",
+          "type": "string",
+          "label": "Serial Number"
+        },
+        {
+          "id": "asset.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "active",
+          "ui": {
+            "widget": "steps"
+          },
+          "options": [
+            {
+              "value": "active",
+              "label": "Active"
+            },
+            {
+              "value": "inactive",
+              "label": "Inactive"
+            },
+            {
+              "value": "retired",
+              "label": "Retired"
+            }
+          ]
+        },
+        {
+          "id": "asset.install_date",
+          "type": "date",
+          "label": "Install Date"
+        },
+        {
+          "id": "asset.service_interval_days",
+          "type": "number",
+          "label": "Service Interval",
+          "default": 0,
+          "format": {
+            "kind": "measurement",
+            "unit": "days",
+            "precision": 0
+          }
+        },
+        {
+          "id": "asset.warranty_expiry",
+          "type": "date",
+          "label": "Warranty Expiry"
+        },
+        {
+          "id": "asset.location",
+          "type": "string",
+          "label": "Location"
+        },
+        {
+          "id": "asset.notes",
+          "type": "text",
+          "label": "Notes"
+        },
+        {
+          "id": "asset.attachments",
+          "type": "attachments",
+          "label": "Attachments"
+        },
+        {
+          "id": "asset.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    },
+    {
+      "id": "entity.maintenance_request",
+      "display_field": "maintenance_request.summary",
+      "fields": [
+        {
+          "id": "maintenance_request.id",
+          "type": "uuid",
+          "label": "Record ID",
+          "readonly": true
+        },
+        {
+          "id": "maintenance_request.asset_id",
+          "type": "lookup",
+          "label": "Asset",
+          "entity": "entity.asset",
+          "display_field": "asset.name",
+          "required": true
+        },
+        {
+          "id": "maintenance_request.contact_id",
+          "type": "lookup",
+          "label": "Contact",
+          "entity": "entity.contact",
+          "display_field": "contact.name"
+        },
+        {
+          "id": "maintenance_request.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "new",
+          "ui": {
+            "widget": "steps"
+          },
+          "options": [
+            {
+              "value": "new",
+              "label": "New"
+            },
+            {
+              "value": "triaged",
+              "label": "Triaged"
+            },
+            {
+              "value": "planned",
+              "label": "Planned"
+            },
+            {
+              "value": "in_progress",
+              "label": "In Progress"
+            },
+            {
+              "value": "resolved",
+              "label": "Resolved"
+            },
+            {
+              "value": "cancelled",
+              "label": "Cancelled"
+            }
+          ]
+        },
+        {
+          "id": "maintenance_request.priority",
+          "type": "enum",
+          "label": "Priority",
+          "default": "normal",
+          "options": [
+            {
+              "value": "low",
+              "label": "Low"
+            },
+            {
+              "value": "normal",
+              "label": "Normal"
+            },
+            {
+              "value": "high",
+              "label": "High"
+            },
+            {
+              "value": "critical",
+              "label": "Critical"
+            }
+          ]
+        },
+        {
+          "id": "maintenance_request.request_date",
+          "type": "date",
+          "label": "Request Date"
+        },
+        {
+          "id": "maintenance_request.planned_start",
+          "type": "datetime",
+          "label": "Planned Start"
+        },
+        {
+          "id": "maintenance_request.planned_end",
+          "type": "datetime",
+          "label": "Planned End"
+        },
+        {
+          "id": "maintenance_request.summary",
+          "type": "string",
+          "label": "Summary",
+          "required": true
+        },
+        {
+          "id": "maintenance_request.assignee_id",
+          "type": "user",
+          "label": "Assignee",
+          "required_when": {
+            "op": "in",
+            "field": "maintenance_request.status",
+            "value": [
+              "planned",
+              "in_progress",
+              "resolved"
+            ]
+          }
+        },
+        {
+          "id": "maintenance_request.job_id",
+          "type": "lookup",
+          "label": "Job",
+          "entity": "entity.job",
+          "display_field": "job.number"
+        },
+        {
+          "id": "maintenance_request.attachments",
+          "type": "attachments",
+          "label": "Attachments"
+        },
+        {
+          "id": "maintenance_request.created_at",
+          "type": "datetime",
+          "label": "Created At"
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "action.maintenance_refresh",
+      "kind": "refresh",
+      "label": "Refresh"
+    },
+    {
+      "id": "action.asset_new",
+      "kind": "open_form",
+      "label": "+ New Asset",
+      "target": "asset.form"
+    },
+    {
+      "id": "action.request_new",
+      "kind": "open_form",
+      "label": "+ New Request",
+      "target": "maintenance_request.form"
+    },
+    {
+      "id": "action.request_triage",
+      "kind": "update_record",
+      "label": "Triage",
+      "entity_id": "entity.maintenance_request",
+      "patch": {
+        "maintenance_request.status": "triaged"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "maintenance_request.status",
+        "value": "new"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "maintenance_request.status",
+        "value": "new"
+      }
+    },
+    {
+      "id": "action.request_plan",
+      "kind": "update_record",
+      "label": "Plan",
+      "entity_id": "entity.maintenance_request",
+      "patch": {
+        "maintenance_request.status": "planned"
+      },
+      "enabled_when": {
+        "op": "in",
+        "field": "maintenance_request.status",
+        "value": [
+          "new",
+          "triaged"
+        ]
+      },
+      "visible_when": {
+        "op": "in",
+        "field": "maintenance_request.status",
+        "value": [
+          "new",
+          "triaged"
+        ]
+      }
+    },
+    {
+      "id": "action.request_start",
+      "kind": "update_record",
+      "label": "Start",
+      "entity_id": "entity.maintenance_request",
+      "patch": {
+        "maintenance_request.status": "in_progress"
+      },
+      "enabled_when": {
+        "op": "eq",
+        "field": "maintenance_request.status",
+        "value": "planned"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "maintenance_request.status",
+        "value": "planned"
+      }
+    },
+    {
+      "id": "action.request_resolve",
+      "kind": "update_record",
+      "label": "Resolve",
+      "entity_id": "entity.maintenance_request",
+      "patch": {
+        "maintenance_request.status": "resolved"
+      },
+      "enabled_when": {
+        "op": "in",
+        "field": "maintenance_request.status",
+        "value": [
+          "planned",
+          "in_progress"
+        ]
+      },
+      "visible_when": {
+        "op": "in",
+        "field": "maintenance_request.status",
+        "value": [
+          "planned",
+          "in_progress"
+        ]
+      }
+    },
+    {
+      "id": "action.request_cancel",
+      "kind": "update_record",
+      "label": "Cancel",
+      "entity_id": "entity.maintenance_request",
+      "patch": {
+        "maintenance_request.status": "cancelled"
+      },
+      "enabled_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "maintenance_request.status",
+          "value": [
+            "resolved",
+            "cancelled"
+          ]
+        }
+      },
+      "visible_when": {
+        "op": "not",
+        "condition": {
+          "op": "in",
+          "field": "maintenance_request.status",
+          "value": [
+            "resolved",
+            "cancelled"
+          ]
+        }
+      },
+      "confirm": {
+        "title": "Cancel Request",
+        "body": "This maintenance request will be cancelled."
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "id": "maintenance.record.asset.created",
+      "event": "record.created",
+      "entity_id": "entity.asset"
+    },
+    {
+      "id": "maintenance.record.asset.updated",
+      "event": "record.updated",
+      "entity_id": "entity.asset"
+    },
+    {
+      "id": "maintenance.record.maintenance_request.created",
+      "event": "record.created",
+      "entity_id": "entity.maintenance_request"
+    },
+    {
+      "id": "maintenance.record.maintenance_request.updated",
+      "event": "record.updated",
+      "entity_id": "entity.maintenance_request"
+    },
+    {
+      "id": "maintenance.workflow.asset.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.asset",
+      "status_field": "asset.status"
+    },
+    {
+      "id": "maintenance.workflow.maintenance_request.status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.maintenance_request",
+      "status_field": "maintenance_request.status"
+    },
+    {
+      "id": "maintenance.action.maintenance_refresh.clicked",
+      "event": "action.clicked",
+      "action_id": "action.maintenance_refresh"
+    },
+    {
+      "id": "maintenance.action.asset_new.clicked",
+      "event": "action.clicked",
+      "action_id": "action.asset_new"
+    },
+    {
+      "id": "maintenance.action.request_new.clicked",
+      "event": "action.clicked",
+      "action_id": "action.request_new"
+    },
+    {
+      "id": "maintenance.action.request_triage.clicked",
+      "event": "action.clicked",
+      "action_id": "action.request_triage"
+    },
+    {
+      "id": "maintenance.action.request_plan.clicked",
+      "event": "action.clicked",
+      "action_id": "action.request_plan"
+    },
+    {
+      "id": "maintenance.action.request_start.clicked",
+      "event": "action.clicked",
+      "action_id": "action.request_start"
+    },
+    {
+      "id": "maintenance.action.request_resolve.clicked",
+      "event": "action.clicked",
+      "action_id": "action.request_resolve"
+    },
+    {
+      "id": "maintenance.action.request_cancel.clicked",
+      "event": "action.clicked",
+      "action_id": "action.request_cancel"
+    }
+  ],
+  "views": [
+    {
+      "id": "asset.list",
+      "kind": "list",
+      "entity": "entity.asset",
+      "columns": [
+        {
+          "field_id": "asset.name"
+        },
+        {
+          "field_id": "asset.asset_type"
+        },
+        {
+          "field_id": "asset.serial_number"
+        },
+        {
+          "field_id": "asset.status"
+        },
+        {
+          "field_id": "asset.location"
+        }
+      ],
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.asset_new"
+          }
+        ],
+        "secondary_actions": [
+          {
+            "action_id": "action.maintenance_refresh"
+          }
+        ],
+        "open_record_target": "page:asset.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search assets...",
+          "fields": [
+            "asset.name",
+            "asset.asset_type",
+            "asset.serial_number",
+            "asset.location"
+          ]
+        },
+        "filters": [
+          {
+            "id": "active",
+            "label": "Active",
+            "domain": {
+              "op": "eq",
+              "field": "asset.status",
+              "value": "active"
+            }
+          },
+          {
+            "id": "inactive",
+            "label": "Inactive",
+            "domain": {
+              "op": "eq",
+              "field": "asset.status",
+              "value": "inactive"
+            }
+          },
+          {
+            "id": "retired",
+            "label": "Retired",
+            "domain": {
+              "op": "eq",
+              "field": "asset.status",
+              "value": "retired"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "asset.form",
+      "kind": "form",
+      "entity": "entity.asset",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Asset",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "asset.name",
+            "asset.asset_type",
+            "asset.serial_number",
+            "asset.status",
+            "asset.contact_id",
+            "asset.install_date",
+            "asset.service_interval_days",
+            "asset.warranty_expiry",
+            "asset.location"
+          ]
+        },
+        {
+          "id": "details",
+          "title": "Details",
+          "fields": [
+            "asset.notes",
+            "asset.attachments"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": {
+          "field_id": "asset.status"
+        },
+        "secondary_actions": [
+          {
+            "action_id": "action.maintenance_refresh"
+          }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "asset_tab",
+          "tabs": [
+            {
+              "id": "asset_tab",
+              "label": "Asset",
+              "sections": [
+                "main"
+              ]
+            },
+            {
+              "id": "details_tab",
+              "label": "Details",
+              "sections": [
+                "details"
+              ]
+            }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "asset.name",
+          "asset.asset_type",
+          "asset.serial_number",
+          "asset.status",
+          "asset.contact_id",
+          "asset.install_date",
+          "asset.service_interval_days",
+          "asset.warranty_expiry",
+          "asset.location",
+          "asset.notes"
+        ]
+      }
+    },
+    {
+      "id": "maintenance_request.list",
+      "kind": "list",
+      "entity": "entity.maintenance_request",
+      "columns": [
+        {
+          "field_id": "maintenance_request.summary"
+        },
+        {
+          "field_id": "maintenance_request.asset_id"
+        },
+        {
+          "field_id": "maintenance_request.job_id"
+        },
+        {
+          "field_id": "maintenance_request.status"
+        },
+        {
+          "field_id": "maintenance_request.priority"
+        },
+        {
+          "field_id": "maintenance_request.request_date"
+        },
+        {
+          "field_id": "maintenance_request.assignee_id"
+        }
+      ],
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.request_new"
+          }
+        ],
+        "secondary_actions": [
+          {
+            "action_id": "action.maintenance_refresh"
+          }
+        ],
+        "open_record_target": "page:maintenance_request.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search maintenance requests...",
+          "fields": [
+            "maintenance_request.summary",
+            "maintenance_request.job_id",
+            "maintenance_request.status",
+            "maintenance_request.priority",
+            "maintenance_request.assignee_id"
+          ]
+        },
+        "filters": [
+          {
+            "id": "open",
+            "label": "Open",
+            "domain": {
+              "op": "not",
+              "condition": {
+                "op": "in",
+                "field": "maintenance_request.status",
+                "value": [
+                  "resolved",
+                  "cancelled"
+                ]
+              }
+            }
+          },
+          {
+            "id": "mine",
+            "label": "Mine",
+            "domain": {
+              "op": "eq",
+              "field": "maintenance_request.assignee_id",
+              "value": {
+                "ref": "$actor.user_id"
+              }
+            }
+          },
+          {
+            "id": "planned",
+            "label": "Planned",
+            "domain": {
+              "op": "eq",
+              "field": "maintenance_request.status",
+              "value": "planned"
+            }
+          },
+          {
+            "id": "in_progress",
+            "label": "In Progress",
+            "domain": {
+              "op": "eq",
+              "field": "maintenance_request.status",
+              "value": "in_progress"
+            }
+          },
+          {
+            "id": "resolved",
+            "label": "Resolved",
+            "domain": {
+              "op": "eq",
+              "field": "maintenance_request.status",
+              "value": "resolved"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "maintenance_request.kanban",
+      "kind": "kanban",
+      "entity": "entity.maintenance_request",
+      "card": {
+        "title_field": "maintenance_request.summary",
+        "subtitle_fields": [
+          "maintenance_request.asset_id",
+          "maintenance_request.assignee_id"
+        ],
+        "badge_fields": [
+          "maintenance_request.status",
+          "maintenance_request.priority"
+        ]
+      }
+    },
+    {
+      "id": "maintenance_request.form",
+      "kind": "form",
+      "entity": "entity.maintenance_request",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Request",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "maintenance_request.summary",
+            "maintenance_request.asset_id",
+            "maintenance_request.contact_id",
+            "maintenance_request.status",
+            "maintenance_request.priority",
+            "maintenance_request.assignee_id",
+            "maintenance_request.request_date",
+            "maintenance_request.job_id"
+          ]
+        },
+        {
+          "id": "schedule",
+          "title": "Planned Window",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "maintenance_request.planned_start",
+            "maintenance_request.planned_end"
+          ]
+        },
+        {
+          "id": "attachments",
+          "title": "Attachments",
+          "fields": [
+            "maintenance_request.attachments"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": {
+          "field_id": "maintenance_request.status"
+        },
+        "secondary_actions": [
+          {
+            "action_id": "action.request_triage"
+          },
+          {
+            "action_id": "action.request_plan"
+          },
+          {
+            "action_id": "action.request_start"
+          },
+          {
+            "action_id": "action.request_resolve"
+          },
+          {
+            "action_id": "action.request_cancel"
+          },
+          {
+            "action_id": "action.maintenance_refresh"
+          }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "request_tab",
+          "tabs": [
+            {
+              "id": "request_tab",
+              "label": "Request",
+              "sections": [
+                "main"
+              ]
+            },
+            {
+              "id": "schedule_tab",
+              "label": "Schedule",
+              "sections": [
+                "schedule"
+              ]
+            },
+            {
+              "id": "attachments_tab",
+              "label": "Attachments",
+              "sections": [
+                "attachments"
+              ]
+            }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "maintenance_request.summary",
+          "maintenance_request.asset_id",
+          "maintenance_request.contact_id",
+          "maintenance_request.status",
+          "maintenance_request.priority",
+          "maintenance_request.assignee_id",
+          "maintenance_request.request_date",
+          "maintenance_request.job_id",
+          "maintenance_request.planned_start",
+          "maintenance_request.planned_end"
+        ]
+      }
+    },
+    {
+      "id": "asset.graph",
+      "kind": "graph",
+      "entity": "entity.asset",
+      "default": {
+        "type": "bar",
+        "group_by": "asset.status",
+        "measure": "count"
+      }
+    },
+    {
+      "id": "maintenance_request.graph",
+      "kind": "graph",
+      "entity": "entity.maintenance_request",
+      "default": {
+        "type": "bar",
+        "group_by": "maintenance_request.status",
+        "measure": "count"
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "maintenance.dashboard_page",
+      "title": "Maintenance Home",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.request_new"
+          },
+          {
+            "action_id": "action.asset_new"
+          },
+          {
+            "action_id": "action.maintenance_refresh"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "stat_cards",
+          "columns": 4,
+          "cards": [
+            {
+              "id": "open_requests",
+              "label": "Open Requests",
+              "subtitle": "Outstanding work orders",
+              "entity_id": "entity.maintenance_request",
+              "measure": "count",
+              "domain": {
+                "op": "not",
+                "condition": {
+                  "op": "in",
+                  "field": "maintenance_request.status",
+                  "value": [
+                    "resolved",
+                    "cancelled"
+                  ]
+                }
+              },
+              "icon": "lucide:Wrench",
+              "tone": "primary",
+              "format": "number",
+              "target": "page:maintenance_request.open_page"
+            },
+            {
+              "id": "critical_requests",
+              "label": "Critical",
+              "subtitle": "Requires immediate attention",
+              "entity_id": "entity.maintenance_request",
+              "measure": "count",
+              "domain": {
+                "op": "eq",
+                "field": "maintenance_request.priority",
+                "value": "critical"
+              },
+              "icon": "lucide:TriangleAlert",
+              "tone": "warning",
+              "format": "number",
+              "target": "page:maintenance_request.open_page"
+            },
+            {
+              "id": "in_progress_requests",
+              "label": "In Progress",
+              "subtitle": "Currently being worked",
+              "entity_id": "entity.maintenance_request",
+              "measure": "count",
+              "domain": {
+                "op": "eq",
+                "field": "maintenance_request.status",
+                "value": "in_progress"
+              },
+              "icon": "lucide:PlayCircle",
+              "tone": "success",
+              "format": "number",
+              "target": "page:maintenance_request.board_page"
+            },
+            {
+              "id": "active_assets",
+              "label": "Active Assets",
+              "subtitle": "In-service installed base",
+              "entity_id": "entity.asset",
+              "measure": "count",
+              "domain": {
+                "op": "eq",
+                "field": "asset.status",
+                "value": "active"
+              },
+              "icon": "lucide:Factory",
+              "tone": "accent",
+              "format": "number",
+              "target": "page:asset.active_page"
+            }
+          ]
+        },
+        {
+          "kind": "container",
+          "variant": "card",
+          "title": "Open Requests",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.maintenance_request",
+              "compact": true,
+              "param_scope": "local",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:maintenance_request.list"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "maintenance_request.list_page",
+      "title": "Maintenance Requests",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.request_new"
+          },
+          {
+            "action_id": "action.maintenance_refresh"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.maintenance_request",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:maintenance_request.list"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "maintenance_request.form_page",
+      "title": "Maintenance Request",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.maintenance_request",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:maintenance_request.form"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.maintenance_request",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "asset.list_page",
+      "title": "Assets",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.asset",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:asset.list"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:asset.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:asset.list",
+                  "default_group_by": "asset.status"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "asset.form_page",
+      "title": "Asset",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.asset",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:asset.form"
+                        },
+                        {
+                          "kind": "related_list",
+                          "entity_id": "entity.maintenance_request",
+                          "target": "view:maintenance_request.list",
+                          "record_domain": {
+                            "op": "eq",
+                            "field": "maintenance_request.asset_id",
+                            "value": {
+                              "ref": "$record.id"
+                            }
+                          },
+                          "create_modal": true,
+                          "create_defaults": {
+                            "maintenance_request.asset_id": {
+                              "ref": "$record.id"
+                            },
+                            "maintenance_request.status": "new"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.asset",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "maintenance_request.open_page",
+      "title": "Open Requests",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.request_new"
+          },
+          {
+            "action_id": "action.maintenance_refresh"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.maintenance_request",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:maintenance_request.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:maintenance_request.kanban",
+                  "default_group_by": "maintenance_request.status"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:maintenance_request.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:maintenance_request.list",
+                  "default_group_by": "maintenance_request.status"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "asset.retired_page",
+      "title": "Retired Assets",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.asset",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:asset.list"
+                }
+              ],
+              "default_filter_id": "retired"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "maintenance_request.board_page",
+      "title": "Request Board",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.request_new"
+          },
+          {
+            "action_id": "action.maintenance_refresh"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.maintenance_request",
+              "default_mode": "kanban",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:maintenance_request.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:maintenance_request.kanban",
+                  "default_group_by": "maintenance_request.status"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:maintenance_request.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:maintenance_request.list",
+                  "default_group_by": "maintenance_request.status"
+                }
+              ],
+              "default_filter_id": "open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "asset.active_page",
+      "title": "Active Assets",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.asset",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:asset.list"
+                }
+              ],
+              "default_filter_id": "active"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "interfaces": {
+    "schedulable": [
+      {
+        "entity_id": "entity.maintenance_request",
+        "enabled": true,
+        "scope": "module_and_global",
+        "title_field": "maintenance_request.summary",
+        "date_start": "maintenance_request.planned_start",
+        "date_end": "maintenance_request.planned_end",
+        "owner_field": "maintenance_request.assignee_id",
+        "status_field": "maintenance_request.status",
+        "color_field": "maintenance_request.priority"
+      }
+    ],
+    "documentable": [
+      {
+        "entity_id": "entity.asset",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "asset.attachments",
+        "title_field": "asset.name",
+        "owner_field": "asset.contact_id",
+        "category_field": "asset.asset_type",
+        "date_field": "asset.created_at",
+        "record_label_field": "asset.serial_number",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
+      },
+      {
+        "entity_id": "entity.maintenance_request",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "maintenance_request.attachments",
+        "title_field": "maintenance_request.summary",
+        "owner_field": "maintenance_request.assignee_id",
+        "category_field": "maintenance_request.status",
+        "date_field": "maintenance_request.created_at",
+        "record_label_field": "maintenance_request.summary",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
+      }
+    ],
+    "dashboardable": [
+      {
+        "entity_id": "entity.asset",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "asset.created_at",
+        "measures": [
+          "count"
+        ],
+        "group_bys": [
+          "asset.status",
+          "asset.asset_type",
+          "asset.location"
+        ],
+        "default_widgets": [
+          {
+            "id": "assets_by_status",
+            "type": "group",
+            "title": "Assets by Status",
+            "group_by": "asset.status",
+            "measure": "count"
+          }
+        ]
+      },
+      {
+        "entity_id": "entity.maintenance_request",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "maintenance_request.created_at",
+        "measures": [
+          "count"
+        ],
+        "group_bys": [
+          "maintenance_request.status",
+          "maintenance_request.priority"
+        ],
+        "default_widgets": [
+          {
+            "id": "maintenance_by_status",
+            "type": "group",
+            "title": "Requests by Status",
+            "group_by": "maintenance_request.status",
+            "measure": "count"
+          }
+        ]
+      }
+    ]
+  },
+  "relations": [],
+  "workflows": [
+    {
+      "id": "workflow.asset_status",
+      "entity": "entity.asset",
+      "status_field": "asset.status",
+      "states": [
+        {
+          "id": "active",
+          "label": "Active",
+          "order": 1
+        },
+        {
+          "id": "inactive",
+          "label": "Inactive",
+          "order": 2
+        },
+        {
+          "id": "retired",
+          "label": "Retired",
+          "order": 3
+        }
+      ],
+      "transitions": [
+        {
+          "from": "active",
+          "to": "inactive",
+          "label": "Deactivate"
+        },
+        {
+          "from": "inactive",
+          "to": "active",
+          "label": "Activate"
+        },
+        {
+          "from": "active",
+          "to": "retired",
+          "label": "Retire"
+        },
+        {
+          "from": "inactive",
+          "to": "retired",
+          "label": "Retire"
+        }
+      ]
+    },
+    {
+      "id": "workflow.maintenance_request_status",
+      "entity": "entity.maintenance_request",
+      "status_field": "maintenance_request.status",
+      "required_fields_by_state": {
+        "planned": [
+          "maintenance_request.assignee_id",
+          "maintenance_request.planned_start"
+        ],
+        "in_progress": [
+          "maintenance_request.assignee_id",
+          "maintenance_request.planned_start"
+        ],
+        "resolved": [
+          "maintenance_request.assignee_id"
+        ]
+      },
+      "states": [
+        {
+          "id": "new",
+          "label": "New",
+          "order": 1
+        },
+        {
+          "id": "triaged",
+          "label": "Triaged",
+          "order": 2
+        },
+        {
+          "id": "planned",
+          "label": "Planned",
+          "order": 3
+        },
+        {
+          "id": "in_progress",
+          "label": "In Progress",
+          "order": 4
+        },
+        {
+          "id": "resolved",
+          "label": "Resolved",
+          "order": 5
+        },
+        {
+          "id": "cancelled",
+          "label": "Cancelled",
+          "order": 6
+        }
+      ],
+      "transitions": [
+        {
+          "from": "new",
+          "to": "triaged",
+          "label": "Triage"
+        },
+        {
+          "from": "new",
+          "to": "planned",
+          "label": "Plan"
+        },
+        {
+          "from": "triaged",
+          "to": "planned",
+          "label": "Plan"
+        },
+        {
+          "from": "planned",
+          "to": "in_progress",
+          "label": "Start"
+        },
+        {
+          "from": "planned",
+          "to": "resolved",
+          "label": "Resolve"
+        },
+        {
+          "from": "in_progress",
+          "to": "resolved",
+          "label": "Resolve"
+        },
+        {
+          "from": "new",
+          "to": "cancelled",
+          "label": "Cancel"
+        },
+        {
+          "from": "triaged",
+          "to": "cancelled",
+          "label": "Cancel"
+        },
+        {
+          "from": "planned",
+          "to": "cancelled",
+          "label": "Cancel"
+        },
+        {
+          "from": "in_progress",
+          "to": "cancelled",
+          "label": "Cancel"
+        }
+      ]
+    }
+  ],
+  "transformations": [],
+  "modals": [],
+  "queries": {}
+}
