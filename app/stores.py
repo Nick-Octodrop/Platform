@@ -443,6 +443,16 @@ class MemoryNotificationStore:
                     count += 1
         return count
 
+    def clear_all(self, user_id: str) -> int:
+        to_delete = [
+            notification_id
+            for notification_id, item in self._items.items()
+            if item.get("recipient_user_id") == user_id
+        ]
+        for notification_id in to_delete:
+            self._items.pop(notification_id, None)
+        return len(to_delete)
+
     def unread_count(self, user_id: str) -> int:
         return sum(
             1

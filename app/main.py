@@ -35031,6 +35031,17 @@ async def read_all_notifications(request: Request) -> dict:
     return _ok_response({"updated": count})
 
 
+@app.post("/notifications/clear_all")
+async def clear_all_notifications(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    if not hasattr(notification_store, "clear_all"):
+        return _error_response("NOTIFICATIONS_CLEAR_UNSUPPORTED", "Notification clearing is not supported", status=400)
+    count = notification_store.clear_all(actor["user_id"])
+    return _ok_response({"deleted": count})
+
+
 # ---- Email ----
 
 

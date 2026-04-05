@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { apiFetch } from "../api.js";
-import { Bell } from "lucide-react";
+import { Bell, MoreHorizontal } from "lucide-react";
+import { SOFT_BUTTON_XS } from "../components/buttonStyles.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 
 export default function NotificationBell() {
@@ -9,6 +10,8 @@ export default function NotificationBell() {
   const [count, setCount] = useState(0);
   const [items, setItems] = useState([]);
   const [open, setOpen] = useState(false);
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const panelRef = useRef(null);
   const latestSeenAtRef = useRef(null);
   const location = useLocation();
@@ -123,6 +126,31 @@ export default function NotificationBell() {
     }
   }
 
+  async function markAllSeen() {
+    try {
+      await apiFetch("/notifications/read_all", { method: "POST" });
+      setItems((prev) => prev.map((item) => ({ ...item, read_at: new Date().toISOString() })));
+      setCount(0);
+    } catch {
+      // ignore
+    }
+  }
+
+  async function clearAll() {
+    setClearing(true);
+    try {
+      await apiFetch("/notifications/clear_all", { method: "POST" });
+      setItems([]);
+      latestSeenAtRef.current = null;
+      setCount(0);
+      setShowClearModal(false);
+    } catch {
+      // ignore
+    } finally {
+      setClearing(false);
+    }
+  }
+
   async function openNotification(item) {
     const id = item?.id;
     if (!id) return;
@@ -153,7 +181,31 @@ export default function NotificationBell() {
       {open && !isMobile && (
         <div className="absolute right-0 mt-2 w-80 card bg-base-100 shadow z-50">
           <div className="card-body p-3">
-            <div className="font-semibold">Notifications</div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-semibold">Notifications</div>
+              <div className="dropdown dropdown-end">
+                <button
+                  type="button"
+                  tabIndex={0}
+                  className={SOFT_BUTTON_XS}
+                  aria-label="Notification actions"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+                <ul tabIndex={0} className="dropdown-content menu z-[240] mt-2 w-44 rounded-box border border-base-300 bg-base-100 p-2 shadow">
+                  <li>
+                    <button type="button" onClick={markAllSeen} disabled={items.length === 0}>
+                      Mark all seen
+                    </button>
+                  </li>
+                  <li>
+                    <button type="button" className="text-error" onClick={() => setShowClearModal(true)} disabled={items.length === 0}>
+                      Clear all
+                    </button>
+                  </li>
+                </ul>
+              </div>
+            </div>
             <div className="mt-2 space-y-2 max-h-80 overflow-auto">
               {items.length === 0 && <div className="text-xs opacity-60">No notifications</div>}
               {items.map((n) => (
@@ -181,7 +233,31 @@ export default function NotificationBell() {
           />
           <div className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4">
             <div className="mx-auto mb-4 h-1.5 w-24 rounded-full bg-base-300" />
-            <div className="mb-3 font-semibold">Notifications</div>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div className="font-semibold">Notifications</div>
+              <div className="dropdown dropdown-end">
+                <button
+                  type="button"
+                  tabIndex={0}
+                  className={SOFT_BUTTON_XS}
+                  aria-label="Notification actions"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+                <ul tabIndex={0} className="dropdown-content menu z-[240] mt-2 w-44 rounded-box border border-base-300 bg-base-100 p-2 shadow">
+                  <li>
+                    <button type="button" onClick={markAllSeen} disabled={items.length === 0}>
+                      Mark all seen
+                    </button>
+                  </li>
+                  <li>
+                    <button type="button" className="text-error" onClick={() => setShowClearModal(true)} disabled={items.length === 0}>
+                      Clear all
+                    </button>
+                  </li>
+                </ul>
+              </div>
+            </div>
             <div className="space-y-2 max-h-[60vh] overflow-auto">
               {items.length === 0 && <div className="text-sm opacity-60 px-2 py-4">No notifications</div>}
               {items.map((n) => (
@@ -199,6 +275,24 @@ export default function NotificationBell() {
           </div>
         </div>
       )}
+      {showClearModal ? (
+        <div className="fixed inset-0 z-[230] flex items-center justify-center bg-base-content/40 px-4">
+          <div className="w-full max-w-sm rounded-box border border-base-300 bg-base-100 p-5 shadow-2xl">
+            <h3 className="text-lg font-semibold">Clear notifications</h3>
+            <p className="mt-2 text-sm text-base-content/70">
+              Remove all notifications from your list. This cannot be undone.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" className="btn btn-ghost" onClick={() => setShowClearModal(false)} disabled={clearing}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-error" onClick={clearAll} disabled={clearing}>
+                {clearing ? "Clearing..." : "Clear all"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

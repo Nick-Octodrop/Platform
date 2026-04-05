@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { MoreHorizontal } from "lucide-react";
 import { apiFetch } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
+import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import { formatDateTime } from "../utils/dateTime.js";
 
 function mergeNotifications(prev, incoming) {
@@ -19,8 +21,10 @@ export default function NotificationsPage() {
   const { pushToast } = useToast();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [activeTab, setActiveTab] = useState("unread");
   const [search, setSearch] = useState("");
+  const [showClearModal, setShowClearModal] = useState(false);
   const latestSeenAtRef = useRef(null);
 
   async function load({ quiet = false } = {}) {
@@ -74,7 +78,22 @@ export default function NotificationsPage() {
       if (activeTab === "unread") setItems([]);
       else setItems((prev) => prev.map((item) => ({ ...item, read_at: new Date().toISOString() })));
     } catch (err) {
-      pushToast("error", err.message || "Failed to mark all read");
+      pushToast("error", err.message || "Failed to mark all seen");
+    }
+  }
+
+  async function clearAll() {
+    setClearing(true);
+    try {
+      await apiFetch("/notifications/clear_all", { method: "POST" });
+      setItems([]);
+      latestSeenAtRef.current = null;
+      setShowClearModal(false);
+      pushToast("success", "Notifications cleared");
+    } catch (err) {
+      pushToast("error", err.message || "Failed to clear notifications");
+    } finally {
+      setClearing(false);
     }
   }
 
@@ -121,7 +140,28 @@ export default function NotificationsPage() {
           <h2 className="card-title">Notifications</h2>
           <div className="flex items-center gap-2">
             <button className="btn btn-sm" onClick={() => load()} disabled={loading}>Refresh</button>
-            <button className="btn btn-sm btn-primary" onClick={markAll}>Mark all read</button>
+            <div className="dropdown dropdown-end">
+              <button
+                type="button"
+                tabIndex={0}
+                className={SOFT_BUTTON_SM}
+                aria-label="Notification actions"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+              <ul tabIndex={0} className="dropdown-content menu z-[60] mt-2 w-48 rounded-box border border-base-300 bg-base-100 p-2 shadow">
+                <li>
+                  <button type="button" onClick={markAll} disabled={loading || items.length === 0}>
+                    Mark all seen
+                  </button>
+                </li>
+                <li>
+                  <button type="button" className="text-error" onClick={() => setShowClearModal(true)} disabled={loading || items.length === 0}>
+                    Clear all
+                  </button>
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
 
@@ -160,7 +200,7 @@ export default function NotificationsPage() {
                 <div className="flex items-center gap-2">
                   {!n.read_at && (
                     <button className="btn btn-xs" onClick={() => markRead(n.id)}>
-                      Mark read
+                      Mark seen
                     </button>
                   )}
                   {n.link_to && (
@@ -180,6 +220,24 @@ export default function NotificationsPage() {
           ))}
         </div>
       </div>
+      {showClearModal ? (
+        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-base-content/40 px-4">
+          <div className="w-full max-w-md rounded-box border border-base-300 bg-base-100 p-5 shadow-2xl">
+            <h3 className="text-lg font-semibold">Clear notifications</h3>
+            <p className="mt-2 text-sm text-base-content/70">
+              Remove all notifications from this list. This cannot be undone.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" className="btn btn-ghost" onClick={() => setShowClearModal(false)} disabled={clearing}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-error" onClick={clearAll} disabled={clearing}>
+                {clearing ? "Clearing..." : "Clear all"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

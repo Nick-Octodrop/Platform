@@ -3653,12 +3653,33 @@ class DbNotificationStore:
             row = fetch_one(
                 conn,
                 """
-                update notifications set read_at=now()
-                where org_id=%s and recipient_user_id=%s and read_at is null
-                returning count(*) as count
+                with updated as (
+                  update notifications
+                  set read_at=now()
+                  where org_id=%s and recipient_user_id=%s and read_at is null
+                  returning 1
+                )
+                select count(*) as count from updated
                 """,
                 [get_org_id(), user_id],
                 query_name="notifications.mark_all",
+            )
+            return int(row["count"]) if row else 0
+
+    def clear_all(self, user_id: str) -> int:
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                with deleted as (
+                  delete from notifications
+                  where org_id=%s and recipient_user_id=%s
+                  returning 1
+                )
+                select count(*) as count from deleted
+                """,
+                [get_org_id(), user_id],
+                query_name="notifications.clear_all",
             )
             return int(row["count"]) if row else 0
 
