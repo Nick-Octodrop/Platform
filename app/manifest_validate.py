@@ -604,8 +604,6 @@ def _validate_blocks(
                 entity_id = _get(card, "entity_id")
                 if not isinstance(entity_id, str) or not entity_id:
                     errors.append(_issue("MANIFEST_STAT_CARD_INVALID", "stat card entity_id is required", f"{cpath}.entity_id"))
-                elif entity_id not in entity_by_id and f"entity.{entity_id}" not in entity_by_id:
-                    errors.append(_issue("MANIFEST_STAT_CARD_INVALID", "stat card entity_id not found", f"{cpath}.entity_id"))
                 measure = _get(card, "measure")
                 if not isinstance(measure, str) or not measure:
                     errors.append(_issue("MANIFEST_STAT_CARD_INVALID", "stat card measure is required", f"{cpath}.measure"))

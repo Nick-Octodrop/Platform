@@ -414,7 +414,19 @@ export default function AppShell({
         setError(null);
       } catch (err) {
         if (!cancelled) {
-          setError(err.message || "Failed to load page");
+          try {
+            const fallback = await getManifest(moduleId);
+            if (cancelled) return;
+            setManifest(fallback.manifest);
+            setCompiled(fallback.compiled || compileManifest(fallback.manifest));
+            setBootstrap(null);
+            setBootstrapVersion((v) => v + 1);
+            setError(null);
+          } catch {
+            if (!cancelled) {
+              setError(err.message || "Failed to load page");
+            }
+          }
         }
       } finally {
         if (!cancelled) {

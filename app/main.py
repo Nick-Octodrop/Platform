@@ -9705,11 +9705,8 @@ async def page_bootstrap(
             view_obj, page_obj = _resolve_bootstrap_view(filtered_manifest, page_id, fallback_view)
             if view_obj:
                 view_id = fallback_view
-        if not view_obj:
+        if not view_obj and not page_obj:
             return _error_response("VIEW_NOT_FOUND", "View not found for bootstrap", "view_id", status=404)
-    kind = view_obj.get("kind") or view_obj.get("type")
-    view_entity = view_obj.get("entity") or view_obj.get("entity_id") or view_obj.get("entityId")
-    view_entity = _normalize_entity_id(view_entity) if isinstance(view_entity, str) else view_entity
 
     payload: dict = {
         "module_id": module_id,
@@ -9717,10 +9714,19 @@ async def page_bootstrap(
         "manifest": filtered_manifest,
         "compiled": compiled,
         "page": page_obj,
-        "view_id": view_obj.get("id"),
+        "view_id": view_obj.get("id") if isinstance(view_obj, dict) else None,
         "page_id": page_obj.get("id") if isinstance(page_obj, dict) else None,
         "permissions": _actor_permissions(actor),
     }
+
+    if not isinstance(view_obj, dict):
+        cached_resp = _ok_response(payload)
+        _resp_cache_put(cache_key, cached_resp)
+        return cached_resp
+
+    kind = view_obj.get("kind") or view_obj.get("type")
+    view_entity = view_obj.get("entity") or view_obj.get("entity_id") or view_obj.get("entityId")
+    view_entity = _normalize_entity_id(view_entity) if isinstance(view_entity, str) else view_entity
 
     if kind == "list" and view_entity:
         denied = _entity_access_denied_response(actor, module_id, view_entity, write=False)

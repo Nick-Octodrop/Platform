@@ -522,6 +522,7 @@ export default function FormViewRenderer({
               <InlineLineItemsTable
                 config={lineEditorConfig}
                 parentRecordId={effectiveRecordId}
+                parentRecord={computedRecord}
                 readonly={readonly}
                 previewMode={previewMode}
                 onLookupCreate={onLookupCreate}
@@ -701,6 +702,7 @@ function coerceEditorValue(value, type) {
 function InlineLineItemsTable({
   config,
   parentRecordId,
+  parentRecord,
   readonly,
   previewMode = false,
   onLookupCreate,
@@ -714,6 +716,7 @@ function InlineLineItemsTable({
   const itemDisplayField = config?.item_lookup_display_field || null;
   const descriptionField = config?.description_field || null;
   const itemFieldMap = config?.item_field_map && typeof config.item_field_map === "object" ? config.item_field_map : {};
+  const parentFieldMap = config?.parent_field_map && typeof config.parent_field_map === "object" ? config.parent_field_map : {};
   const defaults = config?.defaults && typeof config.defaults === "object" ? config.defaults : {};
   const columns = Array.isArray(config?.columns) ? config.columns : [];
   const itemPrefix = useMemo(() => {
@@ -790,6 +793,7 @@ function InlineLineItemsTable({
       descriptionField,
       ...Object.keys(defaults || {}),
       ...Object.keys(itemFieldMap || {}),
+      ...Object.keys(parentFieldMap || {}),
       ...columns.map((column) => column?.field_id).filter(Boolean),
     ]);
     const payload = {};
@@ -800,12 +804,23 @@ function InlineLineItemsTable({
         continue;
       }
       if (fieldId.endsWith(".line_total")) continue;
+      const parentSourceField = parentFieldMap?.[fieldId];
+      if (
+        typeof parentSourceField === "string" &&
+        !Object.prototype.hasOwnProperty.call(nextRecord, fieldId)
+      ) {
+        const mapped = parentRecord?.[parentSourceField];
+        if (mapped !== undefined && mapped !== null && mapped !== "") {
+          payload[fieldId] = mapped;
+          continue;
+        }
+      }
       if (Object.prototype.hasOwnProperty.call(nextRecord, fieldId)) {
         payload[fieldId] = nextRecord[fieldId];
       }
     }
     return payload;
-  }, [columns, defaults, descriptionField, itemField, itemFieldMap, parentField, parentRecordId]);
+  }, [columns, defaults, descriptionField, itemField, itemFieldMap, parentFieldMap, parentField, parentRecord, parentRecordId]);
 
   const fetchRows = React.useCallback(async () => {
     if (!childEntityId || !parentField || !parentRecordId || previewMode) {
@@ -821,6 +836,7 @@ function InlineLineItemsTable({
             ...columns.map((c) => c?.field_id).filter(Boolean),
             itemField,
             descriptionField,
+            ...Object.keys(parentFieldMap || {}),
           ].filter(Boolean)
         )
       );
@@ -847,7 +863,7 @@ function InlineLineItemsTable({
     } finally {
       setLoading(false);
     }
-  }, [childEntityId, parentField, parentRecordId, previewMode, columns, itemField, descriptionField, hydrateLookupLabels]);
+  }, [childEntityId, parentField, parentRecordId, previewMode, columns, itemField, descriptionField, parentFieldMap, hydrateLookupLabels]);
 
   useEffect(() => {
     fetchRows();
@@ -902,6 +918,13 @@ function InlineLineItemsTable({
       [parentField]: parentRecordId,
       [itemField]: option.value,
     };
+    for (const [targetField, sourceField] of Object.entries(parentFieldMap || {})) {
+      if (typeof targetField !== "string" || typeof sourceField !== "string") continue;
+      const mapped = parentRecord?.[sourceField];
+      if (mapped !== undefined && mapped !== null && mapped !== "") {
+        payload[targetField] = mapped;
+      }
+    }
     const explicitMappings = Object.entries(itemFieldMap);
     if (itemRecord && explicitMappings.length > 0) {
       for (const [targetField, sourceField] of explicitMappings) {

@@ -645,7 +645,7 @@ function evalConditionSafe(condition, record) {
 function buildStatCardShells(block) {
   return (Array.isArray(block?.cards) ? block.cards : []).map((card) => ({
     ...card,
-    value: card.value ?? 0,
+    value: card.value ?? null,
     error: card.error || "",
   }));
 }
@@ -677,7 +677,7 @@ function StatCardsBlock({ block, moduleId, recordContext, onNavigate }) {
         setError("");
         const sourceRes = await apiFetch("/system/dashboard/sources");
         const sources = Array.isArray(sourceRes?.sources) ? sourceRes.sources : [];
-        const results = await Promise.all(
+        const results = await Promise.allSettled(
           definedCards.map(async (card) => {
             const source =
               sources.find((item) => item?.entity_id === card.entity_id && item?.module_id === moduleId) ||
@@ -711,17 +711,30 @@ function StatCardsBlock({ block, moduleId, recordContext, onNavigate }) {
           })
         );
         if (cancelled) return;
-        const valueMap = new Map(results.map((item) => [item.id, item]));
+        const valueMap = new Map(
+          results.map((item, idx) => {
+            if (item?.status === "fulfilled") return [item.value.id, item.value];
+            const card = definedCards[idx] || {};
+            return [
+              card.id,
+              {
+                id: card.id,
+                value: null,
+                error: item?.reason?.message || "Metric unavailable",
+              },
+            ];
+          })
+        );
         setCards(
           definedCards.map((card) => ({
             ...card,
-            value: valueMap.get(card.id)?.value ?? 0,
+            value: valueMap.get(card.id)?.value ?? null,
             error: valueMap.get(card.id)?.error || "",
           }))
         );
       } catch (err) {
         if (cancelled) return;
-        setError(err?.message || "Failed to load dashboard cards");
+        setError("Dashboard metrics are unavailable right now.");
         setCards(buildStatCardShells(block));
       } finally {
         if (!cancelled) setLoading(false);
@@ -775,7 +788,13 @@ function StatCardsBlock({ block, moduleId, recordContext, onNavigate }) {
                   ) : null}
                 </div>
                 <div className="text-3xl font-semibold leading-none">
-                  {loading ? <span className="loading loading-dots loading-sm" /> : formatStatCardValue(card.value, card.format)}
+                  {loading ? (
+                    <span className="loading loading-dots loading-sm" />
+                  ) : card.error ? (
+                    <span className="text-base-content/35">-</span>
+                  ) : (
+                    formatStatCardValue(card.value, card.format)
+                  )}
                 </div>
                 {card.error ? <div className="text-xs text-error">{card.error}</div> : null}
               </div>

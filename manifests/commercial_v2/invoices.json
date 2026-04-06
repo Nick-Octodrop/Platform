@@ -1,0 +1,1030 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "biz_invoices",
+    "key": "biz_invoices",
+    "name": "Invoices",
+    "version": "1.0.0",
+    "description": "Deposit, progress, final, and credit-note style billing for a commercial workflow workspace.",
+    "category": "Commercial",
+    "icon_key": "lucide:Receipt"
+  },
+  "depends_on": {
+    "required": [
+      { "module": "biz_contacts", "version": ">=1.0.0" },
+      { "module": "biz_products", "version": ">=1.0.0" }
+    ]
+  },
+  "app": {
+    "home": "page:biz_invoice.list_page",
+    "defaults": {
+      "entity_home_page": "page:biz_invoice.list_page",
+      "entity_form_page": "page:biz_invoice.form_page",
+      "entities": {
+        "entity.biz_invoice": {
+          "entity_home_page": "page:biz_invoice.list_page",
+          "entity_form_page": "page:biz_invoice.form_page"
+        },
+        "entity.biz_invoice_line": {
+          "entity_home_page": "page:biz_invoice_line.list_page",
+          "entity_form_page": "page:biz_invoice_line.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Commercial",
+        "mode": "inline",
+        "items": [
+          { "label": "Invoices", "to": "page:biz_invoice.list_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.biz_invoice",
+      "display_field": "biz_invoice.invoice_number",
+      "fields": [
+        { "id": "biz_invoice.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "biz_invoice.invoice_number", "type": "string", "label": "Invoice Number", "readonly": true },
+        {
+          "id": "biz_invoice.status",
+          "type": "enum",
+          "label": "Status",
+          "required": true,
+          "default": "draft",
+          "ui": { "widget": "steps" },
+          "options": [
+            { "value": "draft", "label": "Draft" },
+            { "value": "issued", "label": "Issued" },
+            { "value": "part_paid", "label": "Part Paid" },
+            { "value": "paid", "label": "Paid" },
+            { "value": "cancelled", "label": "Cancelled" },
+            { "value": "credited", "label": "Credited" }
+          ]
+        },
+        {
+          "id": "biz_invoice.invoice_type",
+          "type": "enum",
+          "label": "Invoice Type",
+          "required": true,
+          "default": "deposit",
+          "options": [
+            { "value": "deposit", "label": "Deposit" },
+            { "value": "progress", "label": "Progress" },
+            { "value": "final", "label": "Final" },
+            { "value": "credit_note", "label": "Credit Note" }
+          ]
+        },
+        {
+          "id": "biz_invoice.customer_id",
+          "type": "lookup",
+          "label": "Customer",
+          "entity": "entity.biz_contact",
+          "display_field": "biz_contact.name",
+          "required": true
+        },
+        {
+          "id": "biz_invoice.source_order_id",
+          "type": "lookup",
+          "label": "Source Order",
+          "entity": "entity.biz_order",
+          "display_field": "biz_order.order_number",
+          "readonly": true,
+          "visible_when": { "op": "exists", "field": "biz_invoice.source_order_id" }
+        },
+        { "id": "biz_invoice.source_order_number", "type": "string", "label": "Source Order", "readonly": true },
+        {
+          "id": "biz_invoice.origin_invoice_id",
+          "type": "lookup",
+          "label": "Origin Invoice",
+          "entity": "entity.biz_invoice",
+          "display_field": "biz_invoice.invoice_number",
+          "readonly": true,
+          "visible_when": { "op": "eq", "field": "biz_invoice.invoice_type", "value": "credit_note" }
+        },
+        {
+          "id": "biz_invoice.credit_note_id",
+          "type": "lookup",
+          "label": "Credit Note",
+          "entity": "entity.biz_invoice",
+          "display_field": "biz_invoice.invoice_number",
+          "readonly": true,
+          "visible_when": { "op": "exists", "field": "biz_invoice.credit_note_id" }
+        },
+        {
+          "id": "biz_invoice.sales_entity",
+          "type": "enum",
+          "label": "Sales Entity",
+          "default": "NLight BV",
+          "options": [
+            { "value": "NLight BV", "label": "NLight BV" },
+            { "value": "EcoTech FZCO", "label": "EcoTech FZCO" }
+          ]
+        },
+        { "id": "biz_invoice.invoice_date", "type": "date", "label": "Invoice Date" },
+        { "id": "biz_invoice.due_date", "type": "date", "label": "Due Date" },
+        {
+          "id": "biz_invoice.currency",
+          "type": "enum",
+          "label": "Currency",
+          "default": "EUR",
+          "options": [
+            { "value": "EUR", "label": "EUR" },
+            { "value": "USD", "label": "USD" }
+          ]
+        },
+        { "id": "biz_invoice.customer_reference", "type": "string", "label": "Customer Reference" },
+        { "id": "biz_invoice.notes", "type": "text", "label": "Notes" },
+        {
+          "id": "biz_invoice.cancellation_reason",
+          "type": "text",
+          "label": "Cancellation Reason",
+          "visible_when": { "op": "eq", "field": "biz_invoice.status", "value": "cancelled" }
+        },
+        {
+          "id": "biz_invoice.source_order_total_snapshot",
+          "type": "number",
+          "label": "Order Total Snapshot",
+          "default": 0,
+          "visible_when": {
+            "op": "in",
+            "field": "biz_invoice.invoice_type",
+            "value": ["deposit", "final"]
+          },
+          "format": { "kind": "currency", "currency_field": "biz_invoice.currency", "precision": 2 }
+        },
+        {
+          "id": "biz_invoice.deposit_percent_snapshot",
+          "type": "number",
+          "label": "Deposit % Snapshot",
+          "default": 30,
+          "visible_when": {
+            "op": "in",
+            "field": "biz_invoice.invoice_type",
+            "value": ["deposit", "final"]
+          },
+          "format": { "kind": "percent", "precision": 2 }
+        },
+        {
+          "id": "biz_invoice.invoice_manual_total",
+          "type": "number",
+          "label": "Manual Total Override",
+          "default": 0,
+          "visible_when": {
+            "op": "in",
+            "field": "biz_invoice.invoice_type",
+            "value": ["progress", "credit_note"]
+          },
+          "format": { "kind": "currency", "currency_field": "biz_invoice.currency", "precision": 2 }
+        },
+        {
+          "id": "biz_invoice.invoice_total",
+          "type": "number",
+          "label": "Invoice Total",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "biz_invoice.currency", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "if",
+              "condition": { "op": "eq", "field": "biz_invoice.invoice_type", "value": "deposit" },
+              "then": {
+                "op": "round",
+                "args": [
+                  {
+                    "op": "mul",
+                    "args": [
+                      { "ref": "$current.biz_invoice.source_order_total_snapshot" },
+                      {
+                        "op": "div",
+                        "args": [
+                          { "ref": "$current.biz_invoice.deposit_percent_snapshot" },
+                          100
+                        ]
+                      }
+                    ]
+                  },
+                  2
+                ]
+              },
+              "else": {
+                "op": "if",
+                "condition": { "op": "eq", "field": "biz_invoice.invoice_type", "value": "final" },
+                "then": {
+                  "op": "round",
+                  "args": [
+                    {
+                      "op": "sub",
+                      "args": [
+                        { "ref": "$current.biz_invoice.source_order_total_snapshot" },
+                        {
+                          "op": "mul",
+                          "args": [
+                            { "ref": "$current.biz_invoice.source_order_total_snapshot" },
+                            {
+                              "op": "div",
+                              "args": [
+                                { "ref": "$current.biz_invoice.deposit_percent_snapshot" },
+                                100
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    2
+                  ]
+                },
+                "else": {
+                  "op": "if",
+                  "condition": { "op": "eq", "field": "biz_invoice.invoice_type", "value": "credit_note" },
+                  "then": {
+                    "op": "neg",
+                    "args": [{ "ref": "$current.biz_invoice.invoice_manual_total" }]
+                  },
+                  "else": { "ref": "$current.biz_invoice.invoice_manual_total" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_invoice.amount_paid",
+          "type": "number",
+          "label": "Amount Paid",
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "biz_invoice.currency", "precision": 2 }
+        },
+        {
+          "id": "biz_invoice.balance_due",
+          "type": "number",
+          "label": "Balance Due",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "biz_invoice.currency", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "sub",
+                  "args": [
+                    { "ref": "$current.biz_invoice.invoice_total" },
+                    { "ref": "$current.biz_invoice.amount_paid" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "entity.biz_invoice_line",
+      "display_field": "biz_invoice_line.description",
+      "fields": [
+        { "id": "biz_invoice_line.id", "type": "uuid", "label": "ID", "readonly": true },
+        {
+          "id": "biz_invoice_line.invoice_id",
+          "type": "lookup",
+          "label": "Invoice",
+          "entity": "entity.biz_invoice",
+          "display_field": "biz_invoice.invoice_number",
+          "required": true
+        },
+        {
+          "id": "biz_invoice_line.product_id",
+          "type": "lookup",
+          "label": "Product",
+          "entity": "entity.biz_product",
+          "display_field": "biz_product.name"
+        },
+        { "id": "biz_invoice_line.description", "type": "string", "label": "Description", "required": true },
+        {
+          "id": "biz_invoice_line.sales_entity_snapshot",
+          "type": "enum",
+          "label": "Sales Entity Snapshot",
+          "default": "NLight BV",
+          "options": [
+            { "value": "NLight BV", "label": "NLight BV" },
+            { "value": "EcoTech FZCO", "label": "EcoTech FZCO" }
+          ]
+        },
+        {
+          "id": "biz_invoice_line.currency_snapshot",
+          "type": "enum",
+          "label": "Currency Snapshot",
+          "default": "EUR",
+          "options": [
+            { "value": "EUR", "label": "EUR" },
+            { "value": "USD", "label": "USD" }
+          ]
+        },
+        {
+          "id": "biz_invoice_line.uom",
+          "type": "enum",
+          "label": "UOM",
+          "default": "EA",
+          "options": [
+            { "value": "EA", "label": "Each" },
+            { "value": "SET", "label": "Set" },
+            { "value": "KIT", "label": "Kit" },
+            { "value": "LOT", "label": "Lot" }
+          ]
+        },
+        { "id": "biz_invoice_line.quantity", "type": "number", "label": "Qty", "default": 1 },
+        { "id": "biz_invoice_line.unit_price", "type": "number", "label": "Unit Price", "default": 0 },
+        {
+          "id": "biz_invoice_line.line_total",
+          "type": "number",
+          "label": "Line Total",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    { "ref": "$current.biz_invoice_line.quantity" },
+                    { "ref": "$current.biz_invoice_line.unit_price" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "workflows": [
+    {
+      "id": "invoice_status_workflow",
+      "entity": "entity.biz_invoice",
+      "status_field": "biz_invoice.status",
+      "states": [
+        { "id": "draft", "label": "Draft" },
+        { "id": "issued", "label": "Issued" },
+        { "id": "part_paid", "label": "Part Paid" },
+        { "id": "paid", "label": "Paid" },
+        { "id": "cancelled", "label": "Cancelled" },
+        { "id": "credited", "label": "Credited" }
+      ],
+      "required_fields_by_state": {
+        "cancelled": ["biz_invoice.cancellation_reason"]
+      }
+    }
+  ],
+  "transformations": [
+    {
+      "key": "invoice_to_credit_note",
+      "source_entity_id": "entity.biz_invoice",
+      "target_entity_id": "entity.biz_invoice",
+      "field_mappings": {
+        "biz_invoice.invoice_type": { "value": "credit_note" },
+        "biz_invoice.customer_id": { "from": "biz_invoice.customer_id" },
+        "biz_invoice.source_order_id": { "from": "biz_invoice.source_order_id" },
+        "biz_invoice.source_order_number": { "from": "biz_invoice.source_order_number" },
+        "biz_invoice.sales_entity": { "from": "biz_invoice.sales_entity" },
+        "biz_invoice.invoice_date": { "ref": "$today" },
+        "biz_invoice.due_date": { "ref": "$today" },
+        "biz_invoice.currency": { "from": "biz_invoice.currency" },
+        "biz_invoice.customer_reference": { "from": "biz_invoice.customer_reference" },
+        "biz_invoice.notes": { "from": "biz_invoice.notes" },
+        "biz_invoice.invoice_manual_total": { "from": "biz_invoice.invoice_total" },
+        "biz_invoice.status": { "value": "draft" }
+      },
+      "child_mappings": [
+        {
+          "source_entity_id": "entity.biz_invoice_line",
+          "target_entity_id": "entity.biz_invoice_line",
+          "source_link_field": "biz_invoice_line.invoice_id",
+          "target_link_field": "biz_invoice_line.invoice_id",
+          "field_mappings": {
+            "biz_invoice_line.product_id": { "from": "biz_invoice_line.product_id" },
+            "biz_invoice_line.description": { "from": "biz_invoice_line.description" },
+            "biz_invoice_line.sales_entity_snapshot": { "from": "biz_invoice_line.sales_entity_snapshot" },
+            "biz_invoice_line.currency_snapshot": { "from": "biz_invoice_line.currency_snapshot" },
+            "biz_invoice_line.uom": { "from": "biz_invoice_line.uom" },
+            "biz_invoice_line.quantity": { "from": "biz_invoice_line.quantity" },
+            "biz_invoice_line.unit_price": { "from": "biz_invoice_line.unit_price" }
+          }
+        }
+      ],
+      "link_fields": {
+        "source_to_target": "biz_invoice.credit_note_id",
+        "target_to_source": "biz_invoice.origin_invoice_id"
+      },
+      "validation": {
+        "require_source_fields": ["biz_invoice.invoice_number", "biz_invoice.customer_id"],
+        "prevent_if_target_linked": true
+      }
+    }
+  ],
+  "actions": [
+    { "id": "action.invoice_new", "kind": "open_form", "label": "New Invoice", "target": "biz_invoice.form" },
+    {
+      "id": "action.invoice_issue",
+      "kind": "update_record",
+      "entity_id": "entity.biz_invoice",
+      "label": "Issue / Send Invoice",
+      "patch": { "biz_invoice.status": "issued" },
+      "confirm": {
+        "title": "Issue invoice?",
+        "body": "Use this once the invoice is ready to be sent to the customer."
+      },
+      "visible_when": { "op": "eq", "field": "biz_invoice.status", "value": "draft" },
+      "enabled_when": {
+        "op": "and",
+        "conditions": [
+          { "op": "exists", "field": "biz_invoice.customer_id" },
+          { "op": "gt", "field": "biz_invoice.invoice_total", "value": 0 }
+        ]
+      }
+    },
+    {
+      "id": "action.invoice_mark_part_paid",
+      "kind": "update_record",
+      "entity_id": "entity.biz_invoice",
+      "label": "Mark Part Paid",
+      "patch": { "biz_invoice.status": "part_paid" },
+      "visible_when": { "op": "eq", "field": "biz_invoice.status", "value": "issued" }
+    },
+    {
+      "id": "action.invoice_mark_paid",
+      "kind": "update_record",
+      "entity_id": "entity.biz_invoice",
+      "label": "Mark Paid",
+      "patch": { "biz_invoice.status": "paid" },
+      "visible_when": {
+        "op": "or",
+        "conditions": [
+          { "op": "eq", "field": "biz_invoice.status", "value": "issued" },
+          { "op": "eq", "field": "biz_invoice.status", "value": "part_paid" }
+        ]
+      }
+    },
+    {
+      "id": "action.invoice_open_cancel_modal",
+      "kind": "update_record",
+      "entity_id": "entity.biz_invoice",
+      "label": "Cancel",
+      "modal_id": "modal.invoice_cancel",
+      "visible_when": {
+        "op": "or",
+        "conditions": [
+          { "op": "eq", "field": "biz_invoice.status", "value": "draft" },
+          { "op": "eq", "field": "biz_invoice.status", "value": "issued" }
+        ]
+      }
+    },
+    {
+      "id": "action.invoice_create_credit_note",
+      "kind": "transform_record",
+      "entity_id": "entity.biz_invoice",
+      "label": "Create Credit Note",
+      "transformation_key": "invoice_to_credit_note",
+      "confirm": {
+        "title": "Create credit note?",
+        "body": "This will create a draft credit note linked back to the current invoice."
+      },
+      "visible_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "in",
+            "field": "biz_invoice.status",
+            "value": ["issued", "part_paid", "paid"]
+          },
+          {
+            "op": "not",
+            "condition": { "op": "eq", "field": "biz_invoice.invoice_type", "value": "credit_note" }
+          },
+          {
+            "op": "not",
+            "condition": { "op": "exists", "field": "biz_invoice.credit_note_id" }
+          }
+        ]
+      }
+    },
+    {
+      "id": "action.invoice_mark_credited",
+      "kind": "update_record",
+      "entity_id": "entity.biz_invoice",
+      "label": "Mark Credited",
+      "patch": { "biz_invoice.status": "credited" },
+      "confirm": {
+        "title": "Mark invoice as credited?",
+        "body": "Use this after the related credit note has been issued and the invoice should be treated as fully credited."
+      },
+      "visible_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "in",
+            "field": "biz_invoice.status",
+            "value": ["issued", "part_paid", "paid"]
+          },
+          { "op": "exists", "field": "biz_invoice.credit_note_id" }
+        ]
+      }
+    }
+  ],
+  "views": [
+    {
+      "id": "biz_invoice.list",
+      "kind": "list",
+      "entity": "entity.biz_invoice",
+      "columns": [
+        { "field_id": "biz_invoice.invoice_number" },
+        { "field_id": "biz_invoice.invoice_date" },
+        { "field_id": "biz_invoice.customer_id" },
+        { "field_id": "biz_invoice.invoice_type" },
+        { "field_id": "biz_invoice.source_order_number" },
+        { "field_id": "biz_invoice.currency" },
+        { "field_id": "biz_invoice.invoice_total" },
+        { "field_id": "biz_invoice.amount_paid" },
+        { "field_id": "biz_invoice.status" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.invoice_new" }],
+        "open_record_target": "page:biz_invoice.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search invoices...",
+          "fields": ["biz_invoice.invoice_number", "biz_invoice.customer_reference", "biz_invoice.source_order_number"]
+        },
+        "filters": [
+          {
+            "id": "open_receivables",
+            "label": "Open Receivables",
+            "domain": {
+              "op": "in",
+              "field": "biz_invoice.status",
+              "value": ["draft", "issued", "part_paid"]
+            }
+          },
+          { "id": "draft", "label": "Draft Invoices", "domain": { "op": "eq", "field": "biz_invoice.status", "value": "draft" } },
+          { "id": "issued", "label": "Issued Invoices", "domain": { "op": "eq", "field": "biz_invoice.status", "value": "issued" } },
+          { "id": "part_paid", "label": "Part Paid", "domain": { "op": "eq", "field": "biz_invoice.status", "value": "part_paid" } },
+          { "id": "paid", "label": "Paid", "domain": { "op": "eq", "field": "biz_invoice.status", "value": "paid" } },
+          { "id": "credit_notes", "label": "Credit Notes", "domain": { "op": "eq", "field": "biz_invoice.invoice_type", "value": "credit_note" } }
+        ]
+      }
+    },
+    {
+      "id": "biz_invoice.form",
+      "kind": "form",
+      "entity": "entity.biz_invoice",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Invoice",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "biz_invoice.invoice_number",
+            "biz_invoice.status",
+            "biz_invoice.customer_id",
+            "biz_invoice.invoice_type",
+            "biz_invoice.source_order_id",
+            "biz_invoice.sales_entity",
+            "biz_invoice.currency",
+            "biz_invoice.customer_reference",
+            "biz_invoice.invoice_date",
+            "biz_invoice.due_date"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": [
+            "biz_invoice.notes",
+            "biz_invoice.cancellation_reason"
+          ]
+        },
+        {
+          "id": "financials",
+          "title": "Payments Summary",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "biz_invoice.source_order_total_snapshot",
+            "biz_invoice.deposit_percent_snapshot",
+            "biz_invoice.invoice_manual_total",
+            "biz_invoice.invoice_total",
+            "biz_invoice.amount_paid",
+            "biz_invoice.balance_due"
+          ]
+        },
+        {
+          "id": "related",
+          "title": "Related Records",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "biz_invoice.origin_invoice_id",
+            "biz_invoice.credit_note_id"
+          ]
+        },
+        {
+          "id": "lines",
+          "title": "Invoice Lines",
+          "line_editor": {
+            "entity_id": "entity.biz_invoice_line",
+            "parent_field": "biz_invoice_line.invoice_id",
+            "item_lookup_field": "biz_invoice_line.product_id",
+            "item_lookup_entity": "entity.biz_product",
+            "item_lookup_display_field": "biz_product.name",
+            "item_field_map": {
+              "biz_invoice_line.description": "biz_product.description",
+              "biz_invoice_line.uom": "biz_product.uom",
+              "biz_invoice_line.unit_price": "biz_product.default_sales_price"
+            },
+            "parent_field_map": {
+              "biz_invoice_line.sales_entity_snapshot": "biz_invoice.sales_entity",
+              "biz_invoice_line.currency_snapshot": "biz_invoice.currency"
+            },
+            "description_field": "biz_invoice_line.description",
+            "defaults": {
+              "biz_invoice_line.sales_entity_snapshot": "NLight BV",
+              "biz_invoice_line.currency_snapshot": "EUR",
+              "biz_invoice_line.uom": "EA",
+              "biz_invoice_line.quantity": 1,
+              "biz_invoice_line.unit_price": 0
+            },
+            "columns": [
+              { "field_id": "biz_invoice_line.product_id", "label": "Product", "readonly": true },
+              { "field_id": "biz_invoice_line.description", "label": "Description" },
+              { "field_id": "biz_invoice_line.uom", "label": "UOM" },
+              { "field_id": "biz_invoice_line.quantity", "label": "Qty", "type": "number" },
+              { "field_id": "biz_invoice_line.unit_price", "label": "Unit Price", "type": "number" },
+              { "field_id": "biz_invoice_line.line_total", "label": "Line Total", "type": "number" }
+            ]
+          }
+        }
+      ],
+      "header": {
+        "statusbar": { "field_id": "biz_invoice.status" },
+        "secondary_actions": [
+          { "action_id": "action.invoice_issue" },
+          { "action_id": "action.invoice_mark_part_paid" },
+          { "action_id": "action.invoice_mark_paid" },
+          { "action_id": "action.invoice_create_credit_note" },
+          { "action_id": "action.invoice_mark_credited" },
+          { "action_id": "action.invoice_open_cancel_modal" }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "summary",
+          "tabs": [
+            { "id": "summary", "label": "Summary", "sections": ["summary"] },
+            { "id": "notes", "label": "Notes", "sections": ["notes"] },
+            { "id": "financials", "label": "Payments Summary", "sections": ["financials"] },
+            { "id": "lines", "label": "Invoice Lines", "sections": ["lines"] },
+            { "id": "related", "label": "Related Records", "sections": ["related"] }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "biz_invoice.status",
+          "biz_invoice.customer_id",
+          "biz_invoice.source_order_id",
+          "biz_invoice.invoice_type",
+          "biz_invoice.sales_entity",
+          "biz_invoice.currency",
+          "biz_invoice.invoice_date",
+          "biz_invoice.due_date",
+          "biz_invoice.invoice_total",
+          "biz_invoice.amount_paid",
+          "biz_invoice.balance_due",
+          "biz_invoice.credit_note_id",
+          "biz_invoice.cancellation_reason",
+          "biz_invoice.notes"
+        ]
+      }
+    },
+    {
+      "id": "biz_invoice.kanban",
+      "kind": "kanban",
+      "entity": "entity.biz_invoice",
+      "card": {
+        "title_field": "biz_invoice.invoice_number",
+        "subtitle_fields": [
+          "biz_invoice.customer_id",
+          "biz_invoice.due_date"
+        ],
+        "badge_fields": [
+          "biz_invoice.status",
+          "biz_invoice.invoice_total"
+        ]
+      }
+    },
+    {
+      "id": "biz_invoice.calendar",
+      "kind": "calendar",
+      "entity": "entity.biz_invoice",
+      "calendar": {
+        "title_field": "biz_invoice.invoice_number",
+        "date_start": "biz_invoice.due_date",
+        "color_field": "biz_invoice.status",
+        "default_scale": "month"
+      }
+    },
+    {
+      "id": "biz_invoice.graph",
+      "kind": "graph",
+      "entity": "entity.biz_invoice",
+      "default": {
+        "type": "bar",
+        "group_by": "biz_invoice.status",
+        "measure": "sum:biz_invoice.invoice_total"
+      }
+    },
+    {
+      "id": "biz_invoice_line.list",
+      "kind": "list",
+      "entity": "entity.biz_invoice_line",
+      "columns": [
+        { "field_id": "biz_invoice_line.invoice_id" },
+        { "field_id": "biz_invoice_line.product_id" },
+        { "field_id": "biz_invoice_line.description" },
+        { "field_id": "biz_invoice_line.uom" },
+        { "field_id": "biz_invoice_line.quantity" },
+        { "field_id": "biz_invoice_line.unit_price" },
+        { "field_id": "biz_invoice_line.line_total" }
+      ],
+      "header": {
+        "open_record_target": "page:biz_invoice_line.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search invoice lines...",
+          "fields": ["biz_invoice_line.description"]
+        }
+      }
+    },
+    {
+      "id": "biz_invoice_line.form",
+      "kind": "form",
+      "entity": "entity.biz_invoice_line",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Invoice Line",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "biz_invoice_line.invoice_id",
+            "biz_invoice_line.product_id",
+            "biz_invoice_line.description",
+            "biz_invoice_line.uom",
+            "biz_invoice_line.quantity",
+            "biz_invoice_line.unit_price",
+            "biz_invoice_line.line_total"
+          ]
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "id": "biz_invoice.list_page",
+      "title": "Invoices",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "kind": "navigate", "label": "New Invoice", "target": "page:biz_invoice.form_page" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "stat_cards",
+          "columns": 4,
+          "cards": [
+            {
+              "id": "invoice_open_receivables_count",
+              "label": "Open Receivables",
+              "subtitle": "Draft, issued and part paid",
+              "entity_id": "entity.biz_invoice",
+              "measure": "count",
+              "domain": { "op": "in", "field": "biz_invoice.status", "value": ["draft", "issued", "part_paid"] },
+              "icon": "lucide:ReceiptText",
+              "tone": "primary",
+              "format": "number"
+            },
+            {
+              "id": "invoice_part_paid_count",
+              "label": "Part Paid",
+              "subtitle": "Collections still in progress",
+              "entity_id": "entity.biz_invoice",
+              "measure": "count",
+              "domain": { "op": "eq", "field": "biz_invoice.status", "value": "part_paid" },
+              "icon": "lucide:WalletCards",
+              "tone": "warning",
+              "format": "number"
+            },
+            {
+              "id": "invoice_paid_count",
+              "label": "Paid",
+              "subtitle": "Fully settled invoices",
+              "entity_id": "entity.biz_invoice",
+              "measure": "count",
+              "domain": { "op": "eq", "field": "biz_invoice.status", "value": "paid" },
+              "icon": "lucide:CircleDollarSign",
+              "tone": "success",
+              "format": "number"
+            },
+            {
+              "id": "invoice_credit_note_count",
+              "label": "Credit Notes",
+              "subtitle": "Commercial reversals",
+              "entity_id": "entity.biz_invoice",
+              "measure": "count",
+              "domain": { "op": "eq", "field": "biz_invoice.invoice_type", "value": "credit_note" },
+              "icon": "lucide:Undo2",
+              "tone": "accent",
+              "format": "number"
+            }
+          ]
+        },
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_invoice",
+              "default_mode": "list",
+              "default_filter_id": "open_receivables",
+              "modes": [
+                { "mode": "list", "target": "view:biz_invoice.list" },
+                { "mode": "kanban", "target": "view:biz_invoice.kanban", "default_group_by": "biz_invoice.status" },
+                { "mode": "calendar", "target": "view:biz_invoice.calendar" },
+                { "mode": "graph", "target": "view:biz_invoice.graph" },
+                { "mode": "pivot", "target": "view:biz_invoice.list", "default_group_by": "biz_invoice.status" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_invoice.form_page",
+      "title": "Invoice",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.biz_invoice",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "view", "target": "view:biz_invoice.form" }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        { "kind": "chatter", "entity_id": "entity.biz_invoice", "record_ref": "$record.id" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_invoice_line.list_page",
+      "title": "Invoice Lines",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_invoice_line",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:biz_invoice_line.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_invoice_line.form_page",
+      "title": "Invoice Line",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.biz_invoice_line",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                { "kind": "view", "target": "view:biz_invoice_line.form" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "modals": [
+    {
+      "id": "modal.invoice_cancel",
+      "title": "Cancel Invoice",
+      "description": "Record the cancellation reason before removing this invoice from the active receivables flow.",
+      "entity_id": "entity.biz_invoice",
+      "fields": [
+        "biz_invoice.cancellation_reason"
+      ],
+      "actions": [
+        {
+          "kind": "update_record",
+          "label": "Cancel Invoice",
+          "entity_id": "entity.biz_invoice",
+          "patch": {
+            "biz_invoice.status": "cancelled",
+            "biz_invoice.cancellation_reason": { "ref": "$record.biz_invoice.cancellation_reason" }
+          },
+          "close_on_success": true
+        },
+        {
+          "kind": "close_modal",
+          "label": "Keep Open",
+          "variant": "ghost"
+        }
+      ]
+    }
+  ],
+  "interfaces": {
+    "dashboardable": [
+      {
+        "entity_id": "entity.biz_invoice",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "biz_invoice.invoice_date",
+        "measures": [
+          "count",
+          "sum:biz_invoice.invoice_total"
+        ],
+        "group_bys": [
+          "biz_invoice.status",
+          "biz_invoice.invoice_type",
+          "biz_invoice.sales_entity",
+          "biz_invoice.currency"
+        ],
+        "default_widgets": [
+          {
+            "id": "invoices_by_status",
+            "type": "group",
+            "title": "Invoices by Status",
+            "group_by": "biz_invoice.status",
+            "measure": "count"
+          }
+        ]
+      }
+    ]
+  }
+}

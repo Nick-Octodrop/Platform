@@ -1,0 +1,227 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "biz_dashboard",
+    "key": "biz_dashboard",
+    "name": "Dashboard",
+    "version": "1.0.0",
+    "description": "Role-aware commercial workspace dashboard for quotes, orders, purchasing, and invoicing.",
+    "category": "Commercial",
+    "icon_key": "lucide:LayoutDashboard"
+  },
+  "depends_on": {
+    "required": [
+      { "module": "biz_quotes", "version": ">=1.0.0" },
+      { "module": "biz_orders", "version": ">=1.0.0" },
+      { "module": "biz_purchase_orders", "version": ">=1.0.0" },
+      { "module": "biz_invoices", "version": ">=1.0.0" }
+    ]
+  },
+  "app": {
+    "home": "page:commercial_dashboard.home_page",
+    "nav": [
+      {
+        "group": "Commercial",
+        "mode": "inline",
+        "items": [
+          { "label": "Dashboard", "to": "page:commercial_dashboard.home_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [],
+  "actions": [],
+  "triggers": [],
+  "views": [],
+  "pages": [
+    {
+      "id": "commercial_dashboard.home_page",
+      "title": "Dashboard",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "stat_cards",
+          "title": "Sales",
+          "columns": 4,
+          "cards": [
+            {
+              "id": "quotes_draft",
+              "label": "Draft Quotes",
+              "subtitle": "Still being priced or reviewed",
+              "entity_id": "entity.biz_quote",
+              "measure": "count",
+              "domain": { "op": "eq", "field": "biz_quote.status", "value": "draft" },
+              "icon": "lucide:FilePenLine",
+              "tone": "primary",
+              "format": "number"
+            },
+            {
+              "id": "quotes_sent",
+              "label": "Awaiting Customer",
+              "subtitle": "Sent and waiting on response",
+              "entity_id": "entity.biz_quote",
+              "measure": "count",
+              "domain": { "op": "eq", "field": "biz_quote.status", "value": "sent" },
+              "icon": "lucide:Send",
+              "tone": "warning",
+              "format": "number"
+            },
+            {
+              "id": "quotes_ready_to_convert",
+              "label": "Accepted, No Order",
+              "subtitle": "Ready for order conversion",
+              "entity_id": "entity.biz_quote",
+              "measure": "count",
+              "domain": {
+                "op": "and",
+                "conditions": [
+                  { "op": "eq", "field": "biz_quote.status", "value": "accepted" },
+                  { "op": "not", "condition": { "op": "exists", "field": "biz_quote.linked_customer_order_id" } }
+                ]
+              },
+              "icon": "lucide:BadgeCheck",
+              "tone": "success",
+              "format": "number"
+            },
+            {
+              "id": "quotes_follow_up_due",
+              "label": "Follow-Up Due",
+              "subtitle": "Open quotes past follow-up date",
+              "entity_id": "entity.biz_quote",
+              "measure": "count",
+              "domain": {
+                "op": "and",
+                "conditions": [
+                  { "op": "in", "field": "biz_quote.status", "value": ["draft", "sent"] },
+                  { "op": "lt", "field": "biz_quote.follow_up_date", "value": { "ref": "$today" } }
+                ]
+              },
+              "icon": "lucide:CalendarClock",
+              "tone": "warning",
+              "format": "number"
+            }
+          ]
+        },
+        {
+          "kind": "stat_cards",
+          "title": "Operations",
+          "columns": 4,
+          "cards": [
+            {
+              "id": "orders_confirmed",
+              "label": "Confirmed Orders",
+              "subtitle": "Ready for execution",
+              "entity_id": "entity.biz_order",
+              "measure": "count",
+              "domain": { "op": "eq", "field": "biz_order.status", "value": "confirmed" },
+              "icon": "lucide:ClipboardCheck",
+              "tone": "primary",
+              "format": "number"
+            },
+            {
+              "id": "orders_in_production",
+              "label": "Orders In Production",
+              "subtitle": "Active delivery execution",
+              "entity_id": "entity.biz_order",
+              "measure": "count",
+              "domain": { "op": "eq", "field": "biz_order.status", "value": "in_production" },
+              "icon": "lucide:Factory",
+              "tone": "warning",
+              "format": "number"
+            },
+            {
+              "id": "purchase_orders_open",
+              "label": "Open Purchase Orders",
+              "subtitle": "Buying still in motion",
+              "entity_id": "entity.biz_purchase_order",
+              "measure": "count",
+              "domain": {
+                "op": "in",
+                "field": "biz_purchase_order.status",
+                "value": ["draft", "sent_to_supplier", "confirmed", "in_production", "shipped"]
+              },
+              "icon": "lucide:Truck",
+              "tone": "success",
+              "format": "number"
+            },
+            {
+              "id": "purchase_orders_received",
+              "label": "POs Received",
+              "subtitle": "Awaiting closeout",
+              "entity_id": "entity.biz_purchase_order",
+              "measure": "count",
+              "domain": { "op": "eq", "field": "biz_purchase_order.status", "value": "received" },
+              "icon": "lucide:PackageCheck",
+              "tone": "accent",
+              "format": "number"
+            }
+          ]
+        },
+        {
+          "kind": "stat_cards",
+          "title": "Finance",
+          "columns": 4,
+          "cards": [
+            {
+              "id": "invoice_draft",
+              "label": "Draft Invoices",
+              "subtitle": "Prepared but not issued",
+              "entity_id": "entity.biz_invoice",
+              "measure": "count",
+              "domain": { "op": "eq", "field": "biz_invoice.status", "value": "draft" },
+              "icon": "lucide:FileText",
+              "tone": "primary",
+              "format": "number"
+            },
+            {
+              "id": "invoice_awaiting_payment",
+              "label": "Awaiting Payment",
+              "subtitle": "Issued and not yet settled",
+              "entity_id": "entity.biz_invoice",
+              "measure": "count",
+              "domain": { "op": "eq", "field": "biz_invoice.status", "value": "issued" },
+              "icon": "lucide:ReceiptText",
+              "tone": "warning",
+              "format": "number"
+            },
+            {
+              "id": "invoice_part_paid",
+              "label": "Part Paid",
+              "subtitle": "Customer payments in progress",
+              "entity_id": "entity.biz_invoice",
+              "measure": "count",
+              "domain": { "op": "eq", "field": "biz_invoice.status", "value": "part_paid" },
+              "icon": "lucide:WalletCards",
+              "tone": "success",
+              "format": "number"
+            },
+            {
+              "id": "invoice_overdue",
+              "label": "Overdue Invoices",
+              "subtitle": "Due date has passed",
+              "entity_id": "entity.biz_invoice",
+              "measure": "count",
+              "domain": {
+                "op": "and",
+                "conditions": [
+                  { "op": "in", "field": "biz_invoice.status", "value": ["issued", "part_paid"] },
+                  { "op": "lt", "field": "biz_invoice.due_date", "value": { "ref": "$today" } }
+                ]
+              },
+              "icon": "lucide:BadgeAlert",
+              "tone": "error",
+              "format": "number"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "interfaces": {},
+  "relations": [],
+  "workflows": [],
+  "transformations": [],
+  "modals": [],
+  "queries": {}
+}
