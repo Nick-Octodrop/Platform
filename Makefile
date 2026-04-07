@@ -1,6 +1,15 @@
 perf:
 	python -m unittest tests.test_perf_backend
 
+security:
+	python3 scripts/security_check.py
+
+security-strict:
+	python3 scripts/security_check.py --strict
+
+security-runtime:
+	python3 scripts/runtime_security_verify.py
+
 sync-marketplace-v1:
 	python3 scripts/bulk_sync_manifests.py --dir manifests/marketplace_v1 --validate-first --skip-equal
 

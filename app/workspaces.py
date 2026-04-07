@@ -6,7 +6,7 @@ import os
 import time
 from psycopg2 import sql
 
-from app.db import execute, fetch_all, fetch_one, get_conn
+from app.db import db_internal_service, execute, fetch_all, fetch_one, get_conn
 
 _MEMBERSHIP_CACHE: dict[str, dict] = {}
 _MEMBERSHIP_TTL_S = float(os.getenv("OCTO_MEMBERSHIP_CACHE_TTL", "30"))
@@ -59,19 +59,20 @@ def get_platform_role(user_id: str) -> str:
 
 
 def set_platform_role(user_id: str, platform_role: str) -> dict:
-    with get_conn() as conn:
-        row = fetch_one(
-            conn,
-            """
-            insert into user_platform_roles (user_id, platform_role, created_at, updated_at)
-            values (%s, %s, now(), now())
-            on conflict (user_id)
-            do update set platform_role=excluded.platform_role, updated_at=now()
-            returning user_id, platform_role, created_at, updated_at
-            """,
-            [user_id, platform_role],
-            query_name="user_platform_roles.upsert",
-        )
+    with db_internal_service():
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                insert into user_platform_roles (user_id, platform_role, created_at, updated_at)
+                values (%s, %s, now(), now())
+                on conflict (user_id)
+                do update set platform_role=excluded.platform_role, updated_at=now()
+                returning user_id, platform_role, created_at, updated_at
+                """,
+                [user_id, platform_role],
+                query_name="user_platform_roles.upsert",
+            )
         return row or {"user_id": user_id, "platform_role": platform_role}
 
 

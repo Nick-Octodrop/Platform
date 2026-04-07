@@ -16,6 +16,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from app.db import db_internal_service, set_db_user_id
 from app.api_credentials import hash_api_key
 from app.stores_db import DbApiCredentialStore
 
@@ -31,6 +32,11 @@ _PUBLIC_PATHS = {
     "/ext/v1/guide.md",
     "/ext/v1/events.md",
 }
+
+
+def _is_prod_env() -> bool:
+    env = (os.getenv("APP_ENV") or os.getenv("ENV") or "dev").strip().lower()
+    return env in {"prod", "production"}
 
 
 def _attach_local_cors(request: Request, response: JSONResponse) -> JSONResponse:
@@ -122,7 +128,8 @@ class SupabaseAuthMiddleware(BaseHTTPMiddleware):
         if request.url.path.startswith("/ext/"):
             api_key = _get_api_key(request)
             if api_key:
-                credential = DbApiCredentialStore().get_by_key_hash_any(hash_api_key(api_key))
+                with db_internal_service():
+                    credential = DbApiCredentialStore().get_by_key_hash_any(hash_api_key(api_key))
                 if not credential or credential.get("status") != "active" or _is_expired(credential):
                     logger = logging.getLogger("octo.auth")
                     logger.warning("auth_invalid_api_key path=%s", request.url.path)
@@ -148,7 +155,8 @@ class SupabaseAuthMiddleware(BaseHTTPMiddleware):
                 request.state.user = None
                 request.state.auth_ms = (time.perf_counter() - start) * 1000
                 try:
-                    DbApiCredentialStore().touch_last_used_any(str(credential.get("id")))
+                    with db_internal_service():
+                        DbApiCredentialStore().touch_last_used_any(str(credential.get("id")))
                 except Exception:
                     pass
                 return await call_next(request)
@@ -204,7 +212,7 @@ class SupabaseAuthMiddleware(BaseHTTPMiddleware):
                             "code": "AUTH_INVALID_TOKEN",
                             "message": "Invalid bearer token",
                             "path": "Authorization",
-                            "detail": {"error": str(exc)},
+                            "detail": None if _is_prod_env() else {"error": str(exc)},
                         }
                     ],
                     "warnings": [],
@@ -219,5 +227,6 @@ class SupabaseAuthMiddleware(BaseHTTPMiddleware):
             "role": claims.get("role"),
             "claims": claims,
         }
+        set_db_user_id(claims.get("sub"))
         request.state.auth_ms = (time.perf_counter() - start) * 1000
         return await call_next(request)

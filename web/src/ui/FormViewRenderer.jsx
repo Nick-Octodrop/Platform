@@ -43,7 +43,24 @@ export default function FormViewRenderer({
   renderBlocks = null,
 }) {
   if (!view) return <div className="alert">Missing form view</div>;
-  const sections = view.sections || [];
+  const rawSections = Array.isArray(view.sections) ? view.sections : [];
+  const sections = useMemo(
+    () =>
+      rawSections
+        .map((section) => {
+          if (!section || typeof section !== "object") return null;
+          const fields = Array.isArray(section.fields)
+            ? section.fields.filter((fieldId) => typeof fieldId === "string" && fieldIndex[fieldId])
+            : [];
+          return { ...section, fields };
+        })
+        .filter((section) => {
+          if (!section) return false;
+          const lineEditor = section.line_editor ?? section.lineEditor;
+          return section.fields.length > 0 || Boolean(lineEditor && typeof lineEditor === "object");
+        }),
+    [rawSections, fieldIndex]
+  );
   const isMobile = useMediaQuery("(max-width: 768px)");
   const viewLineEditors = useMemo(() => {
     const raw = view?.line_editors ?? view?.lineEditors;
@@ -93,8 +110,17 @@ export default function FormViewRenderer({
   const activityConfig = view?.activity && view.activity.enabled === true ? view.activity : null;
   const activityTabId = "__activity";
   const activityTabLabel = (typeof activityConfig?.tab_label === "string" && activityConfig.tab_label.trim()) || "Activity";
+  const visibleSectionIds = useMemo(() => new Set(sections.map((section) => section.id).filter(Boolean)), [sections]);
   const tabsForUi = useMemo(() => {
-    const baseTabs = Array.isArray(tabsConfig?.tabs) ? tabsConfig.tabs : [];
+    const baseTabs = Array.isArray(tabsConfig?.tabs)
+      ? tabsConfig.tabs
+          .map((tab) => {
+            if (!tab || typeof tab !== "object") return null;
+            const nextSections = Array.isArray(tab.sections) ? tab.sections.filter((sectionId) => visibleSectionIds.has(sectionId)) : [];
+            return { ...tab, sections: nextSections };
+          })
+          .filter((tab) => tab && (tab.sections?.length || 0) > 0)
+      : [];
     if (!activityConfig || activityConfig.mode !== "tab") {
       return baseTabs;
     }
@@ -103,7 +129,7 @@ export default function FormViewRenderer({
       return [...baseTabs, { id: activityTabId, label: activityTabLabel }];
     }
     return [{ id: activityTabId, label: activityTabLabel }];
-  }, [tabsConfig?.tabs, activityConfig, activityTabLabel]);
+  }, [tabsConfig?.tabs, activityConfig, activityTabLabel, visibleSectionIds]);
   const hasTabs = tabsForUi.length > 0;
   const [activeTab, setActiveTab] = useState(() => tabsConfig?.default_tab || tabsForUi[0]?.id || null);
   const [sectionTabs, setSectionTabs] = useState({});
@@ -121,9 +147,8 @@ export default function FormViewRenderer({
     [onChange, fieldIndex]
   );
 
-  const missing = sectionFieldIds.find((fieldId) => !fieldIndex[fieldId]);
-  if (missing) {
-    return <div className="alert alert-error">Missing field in manifest: {missing}</div>;
+  if (sections.length === 0 && !activityConfig) {
+    return <div className="alert alert-info">No visible fields for this form.</div>;
   }
 
   useEffect(() => {

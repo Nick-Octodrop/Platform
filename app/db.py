@@ -28,6 +28,9 @@ _DB_LOCK = threading.Lock()
 _logger = logging.getLogger("octo.db")
 _query_logger = logging.getLogger("octo.db.query")
 _ACTIVE_CONN: contextvars.ContextVar[Any | None] = contextvars.ContextVar("octo_db_active_conn", default=None)
+_DB_ORG_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar("octo_db_org_id", default=None)
+_DB_USER_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar("octo_db_user_id", default=None)
+_DB_INTERNAL_SERVICE: contextvars.ContextVar[bool] = contextvars.ContextVar("octo_db_internal_service", default=False)
 _DB_STATS: contextvars.ContextVar[dict] = contextvars.ContextVar("octo_db_stats", default=None)
 _DB_QUERY_LOG: contextvars.ContextVar[list] = contextvars.ContextVar("octo_db_query_log", default=None)
 _APP_ENV = os.getenv("APP_ENV", os.getenv("ENV", "dev")).strip().lower() or "dev"
@@ -169,10 +172,55 @@ def get_active_conn():
     return _ACTIVE_CONN.get()
 
 
+def set_db_org_id(value: str | None):
+    normalized = str(value).strip() if value is not None and str(value).strip() else None
+    return _DB_ORG_ID.set(normalized)
+
+
+def reset_db_org_id(token) -> None:
+    _DB_ORG_ID.reset(token)
+
+
+def set_db_user_id(value: str | None):
+    normalized = str(value).strip() if value is not None and str(value).strip() else None
+    return _DB_USER_ID.set(normalized)
+
+
+def reset_db_user_id(token) -> None:
+    _DB_USER_ID.reset(token)
+
+
+def set_db_internal_service(enabled: bool = True):
+    return _DB_INTERNAL_SERVICE.set(bool(enabled))
+
+
+def reset_db_internal_service(token) -> None:
+    _DB_INTERNAL_SERVICE.reset(token)
+
+
+@contextmanager
+def db_internal_service():
+    token = set_db_internal_service(True)
+    try:
+        yield
+    finally:
+        reset_db_internal_service(token)
+
+
+def _apply_rls_context(conn) -> None:
+    # These transaction-local settings are consumed by RLS policies. They are
+    # intentionally set with raw cursor calls to avoid recursive query logging.
+    with conn.cursor() as cur:
+        cur.execute("select set_config('app.org_id', %s, true)", [_DB_ORG_ID.get() or ""])
+        cur.execute("select set_config('app.user_id', %s, true)", [_DB_USER_ID.get() or ""])
+        cur.execute("select set_config('app.internal_service', %s, true)", ["true" if _DB_INTERNAL_SERVICE.get() else "false"])
+
+
 @contextmanager
 def get_conn():
     active = get_active_conn()
     if active is not None:
+        _apply_rls_context(active)
         yield active
         return
     pool = _get_pool()
@@ -182,6 +230,7 @@ def get_conn():
     add_db_acquire_ms(acquire_ms)
     _logger.info("db_conn borrowed")
     try:
+        _apply_rls_context(conn)
         yield conn
         conn.commit()
     except Exception:

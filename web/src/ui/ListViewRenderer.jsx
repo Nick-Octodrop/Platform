@@ -76,11 +76,10 @@ export default function ListViewRenderer({
   emptyLabel = null,
 }) {
   if (!view) return <div className="alert">Missing list view</div>;
-  const columns = view.columns || [];
-  const missing = columns.find((c) => !fieldIndex[c.field_id]);
-  if (missing) {
-    return <div className="alert alert-error">Missing field in manifest: {missing.field_id}</div>;
-  }
+  const columns = useMemo(
+    () => (Array.isArray(view.columns) ? view.columns.filter((c) => c?.field_id && fieldIndex[c.field_id]) : []),
+    [view.columns, fieldIndex]
+  );
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [lookupLabels, setLookupLabels] = useState({});
@@ -91,6 +90,10 @@ export default function ListViewRenderer({
   const isExternalPagination = typeof externalPage === "number" && typeof onPageChange === "function";
   const page = isExternalPagination ? externalPage : internalPage;
   const safePageSize = Number.isFinite(pageSize) && pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE;
+
+  if (columns.length === 0) {
+    return <div className="alert alert-info">No visible columns for this view.</div>;
+  }
 
   useEffect(() => {
     let cancelled = false;

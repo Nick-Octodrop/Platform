@@ -23,6 +23,8 @@ node_modules/
 web/node_modules/
 web/dist/
 web/.vite/
+construction-worker-pwa/node_modules/
+construction-worker-pwa/dist/
 
 # Environment/secrets
 .env

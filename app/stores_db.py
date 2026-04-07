@@ -16,7 +16,19 @@ from octo.manifest_hash import manifest_hash
 
 logger = logging.getLogger("octo.chatter")
 
-from app.db import execute, fetch_all, fetch_one, get_conn, init_pool, _get_pool, set_active_conn, clear_active_conn
+from app.db import (
+    clear_active_conn,
+    db_internal_service,
+    execute,
+    fetch_all,
+    fetch_one,
+    get_conn,
+    init_pool,
+    reset_db_org_id,
+    set_active_conn,
+    set_db_org_id,
+    _get_pool,
+)
 
 
 from contextvars import ContextVar
@@ -33,11 +45,16 @@ def get_org_id() -> str:
 
 
 def set_org_id(value: str):
-    return _ORG_ID.set(value)
+    return (_ORG_ID.set(value), set_db_org_id(value))
 
 
 def reset_org_id(token):
+    if isinstance(token, tuple) and len(token) == 2:
+        _ORG_ID.reset(token[0])
+        reset_db_org_id(token[1])
+        return
     _ORG_ID.reset(token)
+    set_db_org_id(_ORG_ID.get())
 # Auto-migration allowlist (ALLOWED_AUTO_MIGRATION)
 _ALLOWED_AUTO_MIGRATION_TABLES = {"module_draft_versions"}
 _AUTO_MIGRATION_LOGGED: set[str] = set()
@@ -2505,32 +2522,33 @@ _SYSTEM_INTEGRATION_PROVIDERS: list[dict[str, Any]] = [
 class DbIntegrationProviderStore:
     def bootstrap_system(self) -> None:
         try:
-            with get_conn() as conn:
-                for provider in _SYSTEM_INTEGRATION_PROVIDERS:
-                    execute(
-                        conn,
-                        """
-                        insert into integration_providers (
-                          key, name, description, auth_type, manifest_json, is_system, created_at, updated_at
+            with db_internal_service():
+                with get_conn() as conn:
+                    for provider in _SYSTEM_INTEGRATION_PROVIDERS:
+                        execute(
+                            conn,
+                            """
+                            insert into integration_providers (
+                              key, name, description, auth_type, manifest_json, is_system, created_at, updated_at
+                            )
+                            values (%s, %s, %s, %s, %s, true, now(), now())
+                            on conflict (key)
+                            do update set
+                              name=excluded.name,
+                              description=excluded.description,
+                              auth_type=excluded.auth_type,
+                              manifest_json=excluded.manifest_json,
+                              updated_at=now()
+                            """,
+                            [
+                                provider["key"],
+                                provider["name"],
+                                provider.get("description"),
+                                provider.get("auth_type") or "none",
+                                json.dumps(provider.get("manifest") or {}),
+                            ],
+                            query_name="integration_providers.bootstrap",
                         )
-                        values (%s, %s, %s, %s, %s, true, now(), now())
-                        on conflict (key)
-                        do update set
-                          name=excluded.name,
-                          description=excluded.description,
-                          auth_type=excluded.auth_type,
-                          manifest_json=excluded.manifest_json,
-                          updated_at=now()
-                        """,
-                        [
-                            provider["key"],
-                            provider["name"],
-                            provider.get("description"),
-                            provider.get("auth_type") or "none",
-                            json.dumps(provider.get("manifest") or {}),
-                        ],
-                        query_name="integration_providers.bootstrap",
-                    )
         except Exception as exc:
             if not _is_undefined_table(exc):
                 raise

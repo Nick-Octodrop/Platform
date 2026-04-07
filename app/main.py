@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import sys
@@ -15,10 +16,11 @@ from typing import Any, Callable, Dict
 from fastapi import FastAPI, Request, UploadFile, File, Form
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html, get_swagger_ui_oauth2_redirect_html
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.openapi.docs import get_swagger_ui_oauth2_redirect_html
 from fastapi.openapi.utils import get_openapi
 from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, Response
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -76,7 +78,7 @@ from app.agent_stream import (
 
 from app.api_credentials import generate_api_key
 from app.auth import SupabaseAuthMiddleware
-from app.db import get_db_ms, reset_db_ms, get_db_stats, get_db_query_log
+from app.db import get_db_ms, reset_db_ms, get_db_stats, get_db_query_log, set_db_user_id
 from app.manifest_validate import validate_manifest, validate_manifest_raw
 from app.module_dependencies import (
     build_dependency_graph,
@@ -122,7 +124,7 @@ from app.stores import (
     MemoryConnectionStore,
     MemoryAutomationStore,
 )
-from app.db import execute, get_conn, fetch_all, fetch_one
+from app.db import db_internal_service, execute, get_conn, fetch_all, fetch_one
 from app.stores_db import (
     DbManifestStore,
     DbModuleRegistry,
@@ -238,6 +240,9 @@ _PUBLIC_EXT_DOC_PATHS = {
     "/ext/v1/guide.md",
 }
 
+_APP_ENV_FOR_SECURITY = os.getenv("APP_ENV", os.getenv("ENV", "dev")).strip().lower() or "dev"
+_IS_PROD_ENV = _APP_ENV_FOR_SECURITY in {"prod", "production"}
+
 
 def _is_public_path(path: str | None) -> bool:
     return isinstance(path, str) and path in _PUBLIC_EXT_DOC_PATHS
@@ -257,10 +262,15 @@ _EXTRA_CORS_ORIGINS = {
     for origin in os.getenv("OCTO_CORS_ORIGINS", "").split(",")
     if origin.strip()
 }
-_DEFAULT_CORS_REGEX_PATTERNS = [
-    r"^https://[a-z0-9-]+\.netlify\.app$",
-    r"^https://[a-z0-9-]+--[a-z0-9-]+\.netlify\.app$",
-]
+_ALLOW_NETLIFY_PREVIEWS = os.getenv("OCTO_CORS_ALLOW_NETLIFY_PREVIEWS", "").strip().lower() in ("1", "true", "yes")
+_DEFAULT_CORS_REGEX_PATTERNS = (
+    [
+        r"^https://[a-z0-9-]+\.netlify\.app$",
+        r"^https://[a-z0-9-]+--[a-z0-9-]+\.netlify\.app$",
+    ]
+    if (not _IS_PROD_ENV or _ALLOW_NETLIFY_PREVIEWS)
+    else []
+)
 _EXTRA_CORS_REGEX_PATTERNS = [
     pattern.strip()
     for pattern in os.getenv("OCTO_CORS_ORIGIN_REGEXES", "").split(",")
@@ -270,7 +280,16 @@ _CORS_ORIGIN_REGEXES = [
     re.compile(pattern)
     for pattern in [*_DEFAULT_CORS_REGEX_PATTERNS, *_EXTRA_CORS_REGEX_PATTERNS]
 ]
-_CORS_ORIGINS = _LOCAL_CORS_ORIGINS | _EXTRA_CORS_ORIGINS
+_CORS_ORIGINS = (_LOCAL_CORS_ORIGINS if not _IS_PROD_ENV else set()) | _EXTRA_CORS_ORIGINS
+_CORS_ALLOW_ORIGIN_REGEX = "|".join(
+    [
+        *([] if _IS_PROD_ENV else [r"http://localhost:\d+", r"http://127\.0\.0\.1:\d+"]),
+        *_DEFAULT_CORS_REGEX_PATTERNS,
+        *_EXTRA_CORS_REGEX_PATTERNS,
+    ]
+) or None
+_TRUSTED_HOSTS = [host.strip() for host in os.getenv("OCTO_TRUSTED_HOSTS", "").split(",") if host.strip()]
+_MAX_UPLOAD_BYTES = int(os.getenv("OCTO_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)) or str(10 * 1024 * 1024))
 _AI_DESIGN_FAMILY_CATALOG: dict[str, dict] | None = None
 
 
@@ -280,7 +299,7 @@ def _attach_cors_headers(request: Request, response: Response) -> Response:
     regex_allowed = normalized_origin and any(pattern.match(normalized_origin) for pattern in _CORS_ORIGIN_REGEXES)
     if normalized_origin and (
         normalized_origin in _CORS_ORIGINS
-        or _LOCAL_CORS_REGEX.match(normalized_origin)
+        or (not _IS_PROD_ENV and _LOCAL_CORS_REGEX.match(normalized_origin))
         or regex_allowed
     ):
         response.headers.setdefault("Access-Control-Allow-Origin", origin)
@@ -298,6 +317,19 @@ async def local_cors_fallback_middleware(request: Request, call_next):
     else:
         response = await call_next(request)
     return _attach_cors_headers(request, response)
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    if _IS_PROD_ENV or request.url.scheme == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
 
 
 def _log_db_rtt_once() -> None:
@@ -507,7 +539,9 @@ async def timing_middleware(request: Request, call_next):
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    return _error_response("INTERNAL_ERROR", "Unexpected server error", detail={"error": str(exc)}, status=500)
+    logger.exception("unhandled_exception path=%s", request.url.path)
+    detail = {"error": str(exc)} if not _IS_PROD_ENV else None
+    return _error_response("INTERNAL_ERROR", "Unexpected server error", detail=detail, status=500)
 
 
 USE_DB = os.getenv("USE_DB", "").strip() == "1"
@@ -893,6 +927,7 @@ def _resolve_actor(request: Request) -> dict | JSONResponse:
             "claims": user.get("claims"),
         }
     user_id = user.get("id")
+    set_db_user_id(user_id)
     platform_role = get_platform_role(user_id)
     user_email = user.get("email")
     if isinstance(user_email, str) and user_email:
@@ -1015,18 +1050,15 @@ def _workspace_ids_for_actor(actor: dict | None) -> list[str]:
 
 
 def _get_attachment_for_actor(actor: dict | None, attachment_id: str) -> tuple[dict | None, str | None]:
-    for workspace_id in _workspace_ids_for_actor(actor):
-        token = None
-        if workspace_id != get_org_id():
-            token = set_org_id(workspace_id)
-        try:
-            attachment = attachment_store.get_attachment(attachment_id)
-        finally:
-            if token is not None:
-                reset_org_id(token)
-        if attachment:
-            return attachment, workspace_id
-    return None, None
+    attachment = attachment_store.get_attachment(attachment_id)
+    return (attachment, get_org_id()) if attachment else (None, None)
+
+
+def _uploaded_file_too_large(data: bytes | bytearray | None) -> bool:
+    try:
+        return len(data or b"") > max(1, _MAX_UPLOAD_BYTES)
+    except Exception:
+        return True
 
 
 def _invalidate_access_runtime_caches(workspace_id: str | None = None, user_id: str | None = None) -> None:
@@ -1260,6 +1292,32 @@ def _field_write_policy_errors(actor: dict | None, module_id: str | None, entity
     return errors
 
 
+def _record_access_denied_response(
+    request: Request,
+    actor: dict | None,
+    entity_id: str,
+    record_id: str,
+    *,
+    write: bool = False,
+) -> JSONResponse | None:
+    found = _find_entity_def(request, entity_id)
+    if not found:
+        return _error_response("ENTITY_NOT_FOUND", "Entity not found", "entity_id", status=404)
+    module_id, entity_def, _manifest = found
+    denied = _entity_access_denied_response(actor, module_id, entity_def.get("id"), write=write)
+    if denied:
+        return denied
+    record = generic_records.get(_normalize_entity_id(entity_def.get("id") or entity_id), record_id)
+    if not record:
+        return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
+    if write:
+        if not _record_write_allowed_for_actor(actor, module_id, entity_def.get("id"), record):
+            return _error_response("FORBIDDEN", "Record write access denied", "record_id", status=403)
+    elif not _record_visible_for_actor(actor, module_id, entity_def.get("id"), record):
+        return _error_response("FORBIDDEN", "Record access denied", "record_id", status=403)
+    return None
+
+
 def _is_admin_actor(actor: dict | None) -> bool:
     if not isinstance(actor, dict):
         return False
@@ -1484,10 +1542,89 @@ def _filter_manifest_for_actor(manifest: dict, module_id: str, actor: dict | Non
         view_entity = view.get("entity") or view.get("entity_id") or view.get("entityId")
         if isinstance(view_entity, str) and _normalize_entity_id(view_entity) not in visible_entities:
             continue
+        view_copy = copy.deepcopy(view)
+        kind = view_copy.get("kind") or view_copy.get("type")
+        if kind == "list":
+            columns = view_copy.get("columns") if isinstance(view_copy.get("columns"), list) else []
+            view_copy["columns"] = [
+                col
+                for col in columns
+                if isinstance(col, dict) and isinstance(col.get("field_id"), str) and col.get("field_id") in visible_fields
+            ]
+            header = view_copy.get("header") if isinstance(view_copy.get("header"), dict) else None
+            if header and isinstance(header.get("search"), dict):
+                search_fields = header["search"].get("fields")
+                if isinstance(search_fields, list):
+                    header["search"]["fields"] = [field_id for field_id in search_fields if isinstance(field_id, str) and field_id in visible_fields]
+        elif kind == "form":
+            sections = view_copy.get("sections") if isinstance(view_copy.get("sections"), list) else []
+            filtered_sections: list[dict] = []
+            visible_section_ids: set[str] = set()
+            for section in sections:
+                if not isinstance(section, dict):
+                    continue
+                fields = section.get("fields") if isinstance(section.get("fields"), list) else []
+                next_fields = [field_id for field_id in fields if isinstance(field_id, str) and field_id in visible_fields]
+                has_line_editor = isinstance(section.get("line_editor"), dict) or isinstance(section.get("lineEditor"), dict)
+                if not next_fields and not has_line_editor:
+                    continue
+                next_section = copy.deepcopy(section)
+                if isinstance(next_section.get("fields"), list):
+                    next_section["fields"] = next_fields
+                for line_editor_key in ("line_editor", "lineEditor"):
+                    line_editor = next_section.get(line_editor_key)
+                    if not isinstance(line_editor, dict):
+                        continue
+                    columns = line_editor.get("columns")
+                    if isinstance(columns, list):
+                        line_editor["columns"] = [
+                            col
+                            for col in columns
+                            if isinstance(col, dict)
+                            and isinstance(col.get("field_id"), str)
+                            and col.get("field_id") in visible_fields
+                        ]
+                    for map_key in ("item_field_map", "itemFieldMap", "parent_field_map", "parentFieldMap", "defaults"):
+                        mapping = line_editor.get(map_key)
+                        if isinstance(mapping, dict):
+                            line_editor[map_key] = {key: value for key, value in mapping.items() if isinstance(key, str) and key in visible_fields}
+                filtered_sections.append(next_section)
+                section_id = next_section.get("id")
+                if isinstance(section_id, str) and section_id:
+                    visible_section_ids.add(section_id)
+            view_copy["sections"] = filtered_sections
+            header = view_copy.get("header") if isinstance(view_copy.get("header"), dict) else None
+            if header and isinstance(header.get("statusbar"), dict):
+                status_field_id = header["statusbar"].get("field_id")
+                if not isinstance(status_field_id, str) or status_field_id not in visible_fields:
+                    header.pop("statusbar", None)
+            if header and isinstance(header.get("tabs"), dict):
+                tabs = header["tabs"].get("tabs")
+                if isinstance(tabs, list):
+                    next_tabs: list[dict] = []
+                    for tab in tabs:
+                        if not isinstance(tab, dict):
+                            continue
+                        section_ids = tab.get("sections") if isinstance(tab.get("sections"), list) else []
+                        next_section_ids = [section_id for section_id in section_ids if isinstance(section_id, str) and section_id in visible_section_ids]
+                        if not next_section_ids:
+                            continue
+                        next_tab = copy.deepcopy(tab)
+                        next_tab["sections"] = next_section_ids
+                        next_tabs.append(next_tab)
+                    header["tabs"]["tabs"] = next_tabs
+                    default_tab = header["tabs"].get("default_tab")
+                    if not isinstance(default_tab, str) or default_tab not in {
+                        tab.get("id") for tab in next_tabs if isinstance(tab, dict) and isinstance(tab.get("id"), str)
+                    }:
+                        if next_tabs:
+                            header["tabs"]["default_tab"] = next_tabs[0].get("id")
+                        else:
+                            header.pop("tabs", None)
         view_id = view.get("id")
         if isinstance(view_id, str):
             visible_view_ids.add(view_id)
-        filtered_views.append(view)
+        filtered_views.append(view_copy)
     out["views"] = filtered_views
 
     filtered_actions: list[dict] = []
@@ -1821,6 +1958,7 @@ class ActorContextMiddleware(BaseHTTPMiddleware):
                 return _attach_cors_headers(request, denied)
         request.state.actor = actor
         token = set_org_id(actor.get("workspace_id") or "default")
+        set_db_user_id(actor.get("user_id"))
         started_at = time.perf_counter()
         response = None
         api_request_logged = False
@@ -1916,22 +2054,20 @@ class ActorContextMiddleware(BaseHTTPMiddleware):
                     )
                 except Exception:
                     pass
+            set_db_user_id(None)
             reset_org_id(token)
 
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=sorted(_CORS_ORIGINS),
-    allow_origin_regex="|".join([
-        r"http://localhost:\d+",
-        r"http://127\.0\.0\.1:\d+",
-        *_DEFAULT_CORS_REGEX_PATTERNS,
-        *_EXTRA_CORS_REGEX_PATTERNS,
-    ]),
+    allow_origin_regex=_CORS_ALLOW_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+if _TRUSTED_HOSTS:
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=_TRUSTED_HOSTS)
 app.add_middleware(ActorContextMiddleware)
 if not DISABLE_AUTH:
     if not SUPABASE_URL:
@@ -8791,7 +8927,7 @@ def _json_fix_attempt(text: str, line: int | None, col: int | None) -> tuple[str
                     break
                 idx += len(l) + 1
             if 0 <= idx <= len(fixed):
-                if idx > 0 and fixed[idx - 1] not in "{[,": 
+                if idx > 0 and fixed[idx - 1] not in "{[,":
                     candidate = fixed[:idx] + "," + fixed[idx:]
                     suggestions.append("inserted missing comma")
                     if can_parse(candidate):
@@ -9304,20 +9440,21 @@ async def list_marketplace_apps(request: Request) -> dict:
     if isinstance(actor, JSONResponse):
         return actor
     include_non_published = bool(actor.get("platform_role") == "superadmin")
-    with get_conn() as conn:
-        rows = fetch_all(
-            conn,
-            """
-            select id, slug, title, description, category, icon_url, status,
-                   source_org_id, source_module_id, source_manifest_hash, source_manifest,
-                   published_by_user_id, created_at, updated_at
-            from marketplace_apps
-            where (%s or status='published')
-            order by created_at desc
-            """,
-            [include_non_published],
-            query_name="marketplace.list",
-        )
+    with db_internal_service():
+        with get_conn() as conn:
+            rows = fetch_all(
+                conn,
+                """
+                select id, slug, title, description, category, icon_url, status,
+                       source_org_id, source_module_id, source_manifest_hash, source_manifest,
+                       published_by_user_id, created_at, updated_at
+                from marketplace_apps
+                where (%s or status='published')
+                order by created_at desc
+                """,
+                [include_non_published],
+                query_name="marketplace.list",
+            )
     items = []
     for row in rows:
         normalized = _normalize_marketplace_row(row)
@@ -9369,66 +9506,67 @@ async def publish_marketplace_app(request: Request) -> dict:
         icon_url = icon_url.strip() or None
     slug_input = body.get("slug") if isinstance(body, dict) and isinstance(body.get("slug"), str) and body.get("slug").strip() else title
     org_id = get_org_id()
-    with get_conn() as conn:
-        existing = fetch_one(
-            conn,
-            """
-            select id
-            from marketplace_apps
-            where source_org_id=%s and source_module_id=%s and source_manifest_hash=%s
-            limit 1
-            """,
-            [org_id, module_id, source_hash],
-            query_name="marketplace.get_by_source",
-        )
-        if existing:
-            listing_id = existing.get("id")
-            slug = _marketplace_unique_slug(conn, slug_input, row_id=listing_id)
-            row = fetch_one(
+    with db_internal_service():
+        with get_conn() as conn:
+            existing = fetch_one(
                 conn,
                 """
-                update marketplace_apps
-                set slug=%s, title=%s, description=%s, category=%s, icon_url=%s,
-                    status='published', source_manifest=%s, updated_at=%s
-                where id=%s
-                returning id, slug, title, description, category, icon_url, status,
-                          source_org_id, source_module_id, source_manifest_hash, source_manifest,
-                          published_by_user_id, created_at, updated_at
+                select id
+                from marketplace_apps
+                where source_org_id=%s and source_module_id=%s and source_manifest_hash=%s
+                limit 1
                 """,
-                [slug, title, description, category, icon_url, json.dumps(manifest), _now(), listing_id],
-                query_name="marketplace.update",
+                [org_id, module_id, source_hash],
+                query_name="marketplace.get_by_source",
             )
-        else:
-            slug = _marketplace_unique_slug(conn, slug_input)
-            row = fetch_one(
-                conn,
-                """
-                insert into marketplace_apps (
-                  slug, title, description, category, icon_url, status,
-                  source_org_id, source_module_id, source_manifest_hash, source_manifest,
-                  published_by_user_id, created_at, updated_at
+            if existing:
+                listing_id = existing.get("id")
+                slug = _marketplace_unique_slug(conn, slug_input, row_id=listing_id)
+                row = fetch_one(
+                    conn,
+                    """
+                    update marketplace_apps
+                    set slug=%s, title=%s, description=%s, category=%s, icon_url=%s,
+                        status='published', source_manifest=%s, updated_at=%s
+                    where id=%s
+                    returning id, slug, title, description, category, icon_url, status,
+                              source_org_id, source_module_id, source_manifest_hash, source_manifest,
+                              published_by_user_id, created_at, updated_at
+                    """,
+                    [slug, title, description, category, icon_url, json.dumps(manifest), _now(), listing_id],
+                    query_name="marketplace.update",
                 )
-                values (%s,%s,%s,%s,%s,'published',%s,%s,%s,%s,%s,%s,%s)
-                returning id, slug, title, description, category, icon_url, status,
-                          source_org_id, source_module_id, source_manifest_hash, source_manifest,
-                          published_by_user_id, created_at, updated_at
-                """,
-                [
-                    slug,
-                    title,
-                    description,
-                    category,
-                    icon_url,
-                    org_id,
-                    module_id,
-                    source_hash,
-                    json.dumps(manifest),
-                    actor.get("user_id"),
-                    _now(),
-                    _now(),
-                ],
-                query_name="marketplace.insert",
-            )
+            else:
+                slug = _marketplace_unique_slug(conn, slug_input)
+                row = fetch_one(
+                    conn,
+                    """
+                    insert into marketplace_apps (
+                      slug, title, description, category, icon_url, status,
+                      source_org_id, source_module_id, source_manifest_hash, source_manifest,
+                      published_by_user_id, created_at, updated_at
+                    )
+                    values (%s,%s,%s,%s,%s,'published',%s,%s,%s,%s,%s,%s,%s)
+                    returning id, slug, title, description, category, icon_url, status,
+                              source_org_id, source_module_id, source_manifest_hash, source_manifest,
+                              published_by_user_id, created_at, updated_at
+                    """,
+                    [
+                        slug,
+                        title,
+                        description,
+                        category,
+                        icon_url,
+                        org_id,
+                        module_id,
+                        source_hash,
+                        json.dumps(manifest),
+                        actor.get("user_id"),
+                        _now(),
+                        _now(),
+                    ],
+                    query_name="marketplace.insert",
+                )
     listing = _normalize_marketplace_row(row) or {}
     listing.pop("source_manifest", None)
     return _ok_response({"app": listing})
@@ -9545,20 +9683,21 @@ async def set_marketplace_app_status(request: Request, app_id: str) -> dict:
     if not isinstance(status, str) or status.strip() not in {"draft", "published", "archived"}:
         return _error_response("STATUS_INVALID", "status must be draft, published, or archived", "status", status=400)
     status = status.strip()
-    with get_conn() as conn:
-        row = fetch_one(
-            conn,
-            """
-            update marketplace_apps
-            set status=%s, updated_at=%s
-            where id=%s
-            returning id, slug, title, description, category, icon_url, status,
-                      source_org_id, source_module_id, source_manifest_hash, source_manifest,
-                      published_by_user_id, created_at, updated_at
-            """,
-            [status, _now(), app_id],
-            query_name="marketplace.status.update",
-        )
+    with db_internal_service():
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                update marketplace_apps
+                set status=%s, updated_at=%s
+                where id=%s
+                returning id, slug, title, description, category, icon_url, status,
+                          source_org_id, source_module_id, source_manifest_hash, source_manifest,
+                          published_by_user_id, created_at, updated_at
+                """,
+                [status, _now(), app_id],
+                query_name="marketplace.status.update",
+            )
     listing = _normalize_marketplace_row(row)
     if not listing:
         return _error_response("MARKETPLACE_APP_NOT_FOUND", "Marketplace app not found", "app_id", status=404)
@@ -9573,13 +9712,14 @@ async def delete_marketplace_app(request: Request, app_id: str) -> dict:
         return actor
     if actor.get("platform_role") != "superadmin":
         return _error_response("FORBIDDEN", "Superadmin role required", status=403)
-    with get_conn() as conn:
-        row = fetch_one(
-            conn,
-            "delete from marketplace_apps where id=%s returning id",
-            [app_id],
-            query_name="marketplace.delete",
-        )
+    with db_internal_service():
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                "delete from marketplace_apps where id=%s returning id",
+                [app_id],
+                query_name="marketplace.delete",
+            )
     if not row:
         return _error_response("MARKETPLACE_APP_NOT_FOUND", "Marketplace app not found", "app_id", status=404)
     return _ok_response({"deleted": True, "id": row.get("id")})
@@ -34515,7 +34655,8 @@ async def upsert_integration_checkpoint(request: Request, connection_id: str, sc
 async def ingest_integration_webhook(request: Request, webhook_id: str) -> Response:
     if not integration_webhook_store or not webhook_event_store:
         return JSONResponse(status_code=404, content={"ok": False, "error": {"code": "WEBHOOKS_UNAVAILABLE", "message": "Webhook ingestion is unavailable"}})
-    webhook = integration_webhook_store.get_any(webhook_id)
+    with db_internal_service():
+        webhook = integration_webhook_store.get_any(webhook_id)
     if not webhook or webhook.get("direction") != "inbound" or webhook.get("status") != "active":
         return JSONResponse(status_code=404, content={"ok": False, "error": {"code": "WEBHOOK_NOT_FOUND", "message": "Webhook not found"}})
     org_id = webhook.get("org_id") or "default"
@@ -36253,12 +36394,193 @@ async def ext_external_event_catalog() -> Response:
     return Response(catalog_path.read_text(encoding="utf-8"), media_type="text/markdown; charset=utf-8")
 
 
+def _external_docs_shell(*, title: str, active: str, head: str = "", body: str = "", scripts: str = "") -> HTMLResponse:
+    docs_active = "active" if active == "docs" else ""
+    redoc_active = "active" if active == "redoc" else ""
+    html = f"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    {head}
+    <style>
+      :root {{
+        --octo-bg: #f3f4f6;
+        --octo-panel: #ffffff;
+        --octo-border: #d8dee6;
+        --octo-muted: #65758b;
+        --octo-text: #0f172a;
+        --octo-green: #16a34a;
+        --octo-green-strong: #15803d;
+      }}
+      * {{ box-sizing: border-box; }}
+      body {{
+        margin: 0;
+        min-height: 100vh;
+        background: var(--octo-bg);
+        color: var(--octo-text);
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }}
+      .octo-topbar {{
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        min-height: 46px;
+        padding: 0 18px;
+        border-bottom: 1px solid var(--octo-border);
+        background: rgba(255, 255, 255, 0.94);
+        backdrop-filter: blur(10px);
+      }}
+      .octo-breadcrumb {{
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--octo-muted);
+        font-size: 13px;
+      }}
+      .octo-breadcrumb strong {{ color: var(--octo-text); font-weight: 600; }}
+      .octo-status {{
+        color: var(--octo-green);
+        font-size: 13px;
+        font-weight: 700;
+      }}
+      .octo-shell {{ padding: 20px; }}
+      .octo-panel {{
+        overflow: hidden;
+        min-height: calc(100vh - 86px);
+        border: 1px solid var(--octo-border);
+        border-radius: 16px;
+        background: var(--octo-panel);
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+      }}
+      .octo-header {{
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--octo-border);
+      }}
+      .octo-kicker {{
+        margin: 0 0 6px;
+        color: var(--octo-muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }}
+      h1 {{
+        margin: 0;
+        font-size: 28px;
+        line-height: 1.15;
+        letter-spacing: -0.03em;
+      }}
+      .octo-subtitle {{
+        max-width: 760px;
+        margin: 10px 0 0;
+        color: var(--octo-muted);
+        font-size: 14px;
+        line-height: 1.6;
+      }}
+      .octo-tabs {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+      }}
+      .octo-tab {{
+        display: inline-flex;
+        align-items: center;
+        min-height: 34px;
+        padding: 0 13px;
+        border: 1px solid var(--octo-border);
+        border-radius: 10px;
+        color: var(--octo-text);
+        background: #fff;
+        font-size: 13px;
+        font-weight: 700;
+        text-decoration: none;
+      }}
+      .octo-tab:hover {{ border-color: var(--octo-green); color: var(--octo-green-strong); }}
+      .octo-tab.active {{
+        border-color: var(--octo-green);
+        background: #ecfdf3;
+        color: var(--octo-green-strong);
+      }}
+      .octo-doc-body {{ background: #fff; }}
+      #swagger-ui .topbar {{ display: none; }}
+      #swagger-ui .scheme-container {{
+        border-top: 1px solid var(--octo-border);
+        border-bottom: 1px solid var(--octo-border);
+        box-shadow: none;
+      }}
+      #swagger-ui .info {{ margin: 24px 0; }}
+      #swagger-ui .info .title {{ color: var(--octo-text); font-family: inherit; }}
+      redoc {{ display: block; min-height: 70vh; }}
+      @media (max-width: 760px) {{
+        .octo-shell {{ padding: 0; }}
+        .octo-panel {{ min-height: calc(100vh - 46px); border-width: 0; border-radius: 0; }}
+        .octo-header {{ flex-direction: column; padding: 18px; }}
+        .octo-tabs {{ justify-content: flex-start; }}
+      }}
+    </style>
+  </head>
+  <body>
+    <div class="octo-topbar">
+      <div class="octo-breadcrumb"><span>Home</span><span>&gt;</span><strong>External API</strong></div>
+      <div class="octo-status">Docs</div>
+    </div>
+    <main class="octo-shell">
+      <section class="octo-panel">
+        <header class="octo-header">
+          <div>
+            <p class="octo-kicker">Octodrop External API</p>
+            <h1>{title}</h1>
+            <p class="octo-subtitle">
+              Public API documentation for metadata, records, automation execution, and signed webhook integrations.
+            </p>
+          </div>
+          <nav class="octo-tabs" aria-label="External API documentation">
+            <a class="octo-tab {docs_active}" href="/ext/v1/docs">Swagger UI</a>
+            <a class="octo-tab {redoc_active}" href="/ext/v1/redoc">ReDoc</a>
+            <a class="octo-tab" href="/ext/v1/openapi.json">OpenAPI JSON</a>
+            <a class="octo-tab" href="/ext/v1/guide.md">Guide</a>
+            <a class="octo-tab" href="/ext/v1/events.md">Events</a>
+          </nav>
+        </header>
+        <div class="octo-doc-body">{body}</div>
+      </section>
+    </main>
+    {scripts}
+  </body>
+</html>"""
+    return HTMLResponse(html)
+
+
 @app.get("/ext/v1/docs", include_in_schema=False)
 async def ext_swagger_ui() -> Response:
-    return get_swagger_ui_html(
-        openapi_url="/ext/v1/openapi.json",
-        title="Octodrop External API Docs",
-        oauth2_redirect_url="/ext/v1/docs/oauth2-redirect",
+    return _external_docs_shell(
+        title="Swagger UI",
+        active="docs",
+        head='<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css" />',
+        body='<div id="swagger-ui"></div>',
+        scripts="""
+    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script>
+      window.ui = SwaggerUIBundle({
+        url: "/ext/v1/openapi.json",
+        dom_id: "#swagger-ui",
+        deepLinking: true,
+        persistAuthorization: true,
+        layout: "BaseLayout",
+        oauth2RedirectUrl: window.location.origin + "/ext/v1/docs/oauth2-redirect"
+      });
+    </script>""",
     )
 
 
@@ -36269,10 +36591,11 @@ async def ext_swagger_ui_redirect() -> Response:
 
 @app.get("/ext/v1/redoc", include_in_schema=False)
 async def ext_redoc() -> Response:
-    return get_redoc_html(
-        openapi_url="/ext/v1/openapi.json",
-        title="Octodrop External API ReDoc",
-        redoc_js_url="https://cdn.jsdelivr.net/npm/redoc@2/bundles/redoc.standalone.js",
+    return _external_docs_shell(
+        title="ReDoc",
+        active="redoc",
+        body='<redoc spec-url="/ext/v1/openapi.json"></redoc>',
+        scripts='<script src="https://cdn.jsdelivr.net/npm/redoc@2/bundles/redoc.standalone.js"></script>',
     )
 
 
@@ -36599,6 +36922,13 @@ async def upload_attachment(request: Request, file: UploadFile = File(...)) -> d
     if isinstance(actor, JSONResponse):
         return actor
     data = await file.read()
+    if _uploaded_file_too_large(data):
+        return _error_response(
+            "ATTACHMENT_TOO_LARGE",
+            f"Attachment exceeds the configured {int(_MAX_UPLOAD_BYTES / (1024 * 1024))}MB limit",
+            "file",
+            status=413,
+        )
     try:
         stored = store_bytes(get_org_id(), file.filename, data, mime_type=file.content_type or "application/octet-stream")
     except Exception as exc:
@@ -36631,6 +36961,13 @@ async def upload_workspace_logo(request: Request, file: UploadFile = File(...)) 
         )
     org_id = get_org_id()
     data = await file.read()
+    if _uploaded_file_too_large(data):
+        return _error_response(
+            "ATTACHMENT_TOO_LARGE",
+            f"Logo exceeds the configured {int(_MAX_UPLOAD_BYTES / (1024 * 1024))}MB limit",
+            "file",
+            status=413,
+        )
     stored = store_bytes(
         org_id,
         file.filename,
@@ -36731,6 +37068,15 @@ async def link_attachment(request: Request) -> dict:
         return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
     if not (body.get("attachment_id") and body.get("entity_id") and body.get("record_id")):
         return _error_response("ATTACHMENT_LINK_REQUIRED", "attachment_id, entity_id, record_id required", None, status=400)
+    record_denied = _record_access_denied_response(
+        request,
+        actor,
+        str(body.get("entity_id")),
+        str(body.get("record_id")),
+        write=True,
+    )
+    if record_denied:
+        return record_denied
     purpose = body.get("purpose")
     if purpose is not None:
         body["purpose"] = str(purpose).strip() or "default"
@@ -36759,6 +37105,9 @@ async def list_record_attachments(request: Request, entity_id: str, record_id: s
     denied = _require_capability(actor, "records.read", "Read access required")
     if denied:
         return denied
+    record_denied = _record_access_denied_response(request, actor, entity_id, record_id, write=False)
+    if record_denied:
+        return record_denied
     purpose = (request.query_params.get("purpose") or "").strip() or None
     try:
         links = attachment_store.list_links(entity_id, record_id, purpose)
@@ -36790,6 +37139,9 @@ async def delete_record_attachment(request: Request, entity_id: str, record_id: 
     denied = _require_capability(actor, "records.write", "Records write permission required")
     if denied:
         return denied
+    record_denied = _record_access_denied_response(request, actor, entity_id, record_id, write=True)
+    if record_denied:
+        return record_denied
     if not attachment_store or not hasattr(attachment_store, "unlink"):
         return _error_response("NOT_SUPPORTED", "Attachment deletion is not supported", None, status=400)
     attachment = attachment_store.get_attachment(attachment_id)
