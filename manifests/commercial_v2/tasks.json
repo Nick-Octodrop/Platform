@@ -1,0 +1,691 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "biz_tasks",
+    "key": "biz_tasks",
+    "name": "Tasks",
+    "version": "1.0.0",
+    "description": "Assigned work for NLight sales, operations, procurement, finance, and customer handoff follow-ups.",
+    "category": "Operations",
+    "icon_key": "lucide:ListTodo"
+  },
+  "depends_on": {
+    "required": [
+      { "module": "biz_contacts", "version": ">=1.0.0" },
+      { "module": "biz_quotes", "version": ">=1.0.0" },
+      { "module": "biz_orders", "version": ">=1.0.0" },
+      { "module": "biz_purchase_orders", "version": ">=1.0.0" },
+      { "module": "biz_invoices", "version": ">=1.0.0" },
+      { "module": "biz_documents", "version": ">=1.0.0" },
+      { "module": "biz_crm", "version": ">=1.0.0" }
+    ]
+  },
+  "app": {
+    "home": "page:biz_task.list_page",
+    "defaults": {
+      "entity_home_page": "page:biz_task.list_page",
+      "entity_form_page": "page:biz_task.form_page",
+      "entities": {
+        "entity.biz_task": {
+          "entity_home_page": "page:biz_task.list_page",
+          "entity_form_page": "page:biz_task.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Operations",
+        "mode": "inline",
+        "items": [
+          { "label": "Tasks", "to": "page:biz_task.list_page" },
+          { "label": "My Tasks", "to": "page:biz_task.mine_page" },
+          { "label": "Overdue", "to": "page:biz_task.overdue_page" },
+          { "label": "CRM", "to": "page:biz_task.crm_page" },
+          { "label": "Operations", "to": "page:biz_task.operations_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.biz_task",
+      "label": "Task",
+      "display_field": "biz_task.title",
+      "fields": [
+        { "id": "biz_task.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "biz_task.title", "type": "string", "label": "Task", "required": true },
+        {
+          "id": "biz_task.task_type",
+          "type": "enum",
+          "label": "Type",
+          "default": "follow_up",
+          "options": [
+            { "value": "follow_up", "label": "Follow-Up" },
+            { "value": "quote", "label": "Quote Work" },
+            { "value": "order_handoff", "label": "Order Handoff" },
+            { "value": "procurement", "label": "Procurement" },
+            { "value": "finance", "label": "Finance" },
+            { "value": "document", "label": "Document" },
+            { "value": "site_visit", "label": "Site Visit" },
+            { "value": "internal", "label": "Internal" }
+          ]
+        },
+        {
+          "id": "biz_task.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "open",
+          "ui": { "widget": "steps" },
+          "options": [
+            { "value": "open", "label": "Open" },
+            { "value": "in_progress", "label": "In Progress" },
+            { "value": "blocked", "label": "Blocked" },
+            { "value": "done", "label": "Done" },
+            { "value": "cancelled", "label": "Cancelled" }
+          ]
+        },
+        {
+          "id": "biz_task.priority",
+          "type": "enum",
+          "label": "Priority",
+          "default": "normal",
+          "options": [
+            { "value": "low", "label": "Low" },
+            { "value": "normal", "label": "Normal" },
+            { "value": "high", "label": "High" },
+            { "value": "urgent", "label": "Urgent" }
+          ]
+        },
+        { "id": "biz_task.owner_user_id", "type": "user", "label": "Owner" },
+        { "id": "biz_task.assignee_user_id", "type": "user", "label": "Assignee" },
+        { "id": "biz_task.participant_user_ids", "type": "users", "label": "Participants" },
+        { "id": "biz_task.start_date", "type": "date", "label": "Start Date" },
+        { "id": "biz_task.due_date", "type": "date", "label": "Due Date" },
+        {
+          "id": "biz_task.company_id",
+          "type": "lookup",
+          "label": "Company",
+          "entity": "entity.biz_contact",
+          "display_field": "biz_contact.name"
+        },
+        {
+          "id": "biz_task.lead_id",
+          "type": "lookup",
+          "label": "Lead",
+          "entity": "entity.crm_lead",
+          "display_field": "crm_lead.title"
+        },
+        {
+          "id": "biz_task.opportunity_id",
+          "type": "lookup",
+          "label": "Opportunity",
+          "entity": "entity.crm_opportunity",
+          "display_field": "crm_opportunity.title"
+        },
+        {
+          "id": "biz_task.site_id",
+          "type": "lookup",
+          "label": "Site",
+          "entity": "entity.crm_site",
+          "display_field": "crm_site.name"
+        },
+        {
+          "id": "biz_task.quote_id",
+          "type": "lookup",
+          "label": "Quote",
+          "entity": "entity.biz_quote",
+          "display_field": "biz_quote.quote_number"
+        },
+        {
+          "id": "biz_task.order_id",
+          "type": "lookup",
+          "label": "Order",
+          "entity": "entity.biz_order",
+          "display_field": "biz_order.order_number"
+        },
+        {
+          "id": "biz_task.purchase_order_id",
+          "type": "lookup",
+          "label": "Purchase Order",
+          "entity": "entity.biz_purchase_order",
+          "display_field": "biz_purchase_order.po_number"
+        },
+        {
+          "id": "biz_task.invoice_id",
+          "type": "lookup",
+          "label": "Invoice",
+          "entity": "entity.biz_invoice",
+          "display_field": "biz_invoice.invoice_number"
+        },
+        {
+          "id": "biz_task.document_id",
+          "type": "lookup",
+          "label": "Document",
+          "entity": "entity.biz_document",
+          "display_field": "biz_document.name"
+        },
+        { "id": "biz_task.blocked_reason", "type": "text", "label": "Blocked Reason", "required_when": { "op": "eq", "field": "biz_task.status", "value": "blocked" } },
+        { "id": "biz_task.cancel_reason", "type": "text", "label": "Cancel Reason", "required_when": { "op": "eq", "field": "biz_task.status", "value": "cancelled" } },
+        { "id": "biz_task.description", "type": "text", "label": "Description" },
+        { "id": "biz_task.attachments", "type": "attachments", "label": "Attachments" },
+        { "id": "biz_task.created_at", "type": "datetime", "label": "Created At", "readonly": true }
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "biz_task.title",
+          "biz_task.task_type",
+          "biz_task.status",
+          "biz_task.priority",
+          "biz_task.owner_user_id",
+          "biz_task.assignee_user_id",
+          "biz_task.participant_user_ids",
+          "biz_task.start_date",
+          "biz_task.due_date",
+          "biz_task.company_id",
+          "biz_task.lead_id",
+          "biz_task.opportunity_id",
+          "biz_task.site_id",
+          "biz_task.quote_id",
+          "biz_task.order_id",
+          "biz_task.purchase_order_id",
+          "biz_task.invoice_id",
+          "biz_task.document_id",
+          "biz_task.blocked_reason",
+          "biz_task.cancel_reason",
+          "biz_task.description"
+        ]
+      }
+    }
+  ],
+  "actions": [
+    { "id": "action.biz_task_new", "kind": "open_form", "label": "New Task", "target": "biz_task.form" },
+    {
+      "id": "action.biz_task_start",
+      "kind": "update_record",
+      "entity_id": "entity.biz_task",
+      "label": "Start",
+      "patch": { "biz_task.status": "in_progress" },
+      "visible_when": { "op": "in", "field": "biz_task.status", "value": ["open", "blocked"] }
+    },
+    {
+      "id": "action.biz_task_block",
+      "kind": "update_record",
+      "entity_id": "entity.biz_task",
+      "label": "Block",
+      "modal_id": "modal.biz_task_block",
+      "visible_when": { "op": "in", "field": "biz_task.status", "value": ["open", "in_progress"] }
+    },
+    {
+      "id": "action.biz_task_done",
+      "kind": "update_record",
+      "entity_id": "entity.biz_task",
+      "label": "Mark Done",
+      "patch": { "biz_task.status": "done" },
+      "visible_when": { "op": "in", "field": "biz_task.status", "value": ["open", "in_progress", "blocked"] }
+    },
+    {
+      "id": "action.biz_task_cancel",
+      "kind": "update_record",
+      "entity_id": "entity.biz_task",
+      "label": "Cancel",
+      "modal_id": "modal.biz_task_cancel",
+      "visible_when": { "op": "in", "field": "biz_task.status", "value": ["open", "in_progress", "blocked"] }
+    }
+  ],
+  "workflows": [
+    {
+      "id": "biz_task_status_workflow",
+      "entity": "entity.biz_task",
+      "status_field": "biz_task.status",
+      "states": [
+        { "id": "open", "label": "Open", "required_fields": ["biz_task.title"] },
+        { "id": "in_progress", "label": "In Progress" },
+        { "id": "blocked", "label": "Blocked" },
+        { "id": "done", "label": "Done" },
+        { "id": "cancelled", "label": "Cancelled" }
+      ],
+      "transitions": [
+        { "from": "open", "to": "in_progress", "label": "Start" },
+        { "from": "open", "to": "blocked", "label": "Block" },
+        { "from": "in_progress", "to": "blocked", "label": "Block" },
+        { "from": "blocked", "to": "in_progress", "label": "Resume" },
+        { "from": "open", "to": "done", "label": "Mark Done" },
+        { "from": "in_progress", "to": "done", "label": "Mark Done" },
+        { "from": "blocked", "to": "done", "label": "Mark Done" },
+        { "from": "open", "to": "cancelled", "label": "Cancel" },
+        { "from": "in_progress", "to": "cancelled", "label": "Cancel" },
+        { "from": "blocked", "to": "cancelled", "label": "Cancel" }
+      ],
+      "required_fields_by_state": {
+        "blocked": ["biz_task.blocked_reason"],
+        "cancelled": ["biz_task.cancel_reason"]
+      }
+    }
+  ],
+  "triggers": [
+    { "id": "biz_tasks.record.biz_task.created", "label": "Task created", "event": "record.created", "entity_id": "entity.biz_task" },
+    { "id": "biz_tasks.record.biz_task.updated", "label": "Task updated", "event": "record.updated", "entity_id": "entity.biz_task" },
+    { "id": "biz_tasks.workflow.biz_task.status_changed", "label": "Task status changed", "event": "workflow.status_changed", "entity_id": "entity.biz_task", "status_field": "biz_task.status" },
+    { "id": "biz_tasks.action.biz_task_new.clicked", "label": "New Task clicked", "event": "action.clicked", "action_id": "action.biz_task_new" },
+    { "id": "biz_tasks.action.biz_task_start.clicked", "label": "Start clicked", "event": "action.clicked", "action_id": "action.biz_task_start" },
+    { "id": "biz_tasks.action.biz_task_block.clicked", "label": "Block clicked", "event": "action.clicked", "action_id": "action.biz_task_block" },
+    { "id": "biz_tasks.action.biz_task_done.clicked", "label": "Mark Done clicked", "event": "action.clicked", "action_id": "action.biz_task_done" },
+    { "id": "biz_tasks.action.biz_task_cancel.clicked", "label": "Cancel clicked", "event": "action.clicked", "action_id": "action.biz_task_cancel" }
+  ],
+  "views": [
+    {
+      "id": "biz_task.list",
+      "kind": "list",
+      "entity": "entity.biz_task",
+      "columns": [
+        { "field_id": "biz_task.title" },
+        { "field_id": "biz_task.task_type" },
+        { "field_id": "biz_task.status" },
+        { "field_id": "biz_task.priority" },
+        { "field_id": "biz_task.assignee_user_id" },
+        { "field_id": "biz_task.due_date" },
+        { "field_id": "biz_task.company_id" },
+        { "field_id": "biz_task.opportunity_id" },
+        { "field_id": "biz_task.order_id" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.biz_task_new" }],
+        "open_record_target": "page:biz_task.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search tasks...",
+          "fields": ["biz_task.title", "biz_task.description", "biz_task.blocked_reason", "biz_task.cancel_reason"]
+        },
+        "filters": [
+          { "id": "open", "label": "Open Work", "domain": { "op": "in", "field": "biz_task.status", "value": ["open", "in_progress", "blocked"] } },
+          { "id": "mine", "label": "My Tasks", "domain": { "op": "or", "conditions": [{ "op": "eq", "field": "biz_task.assignee_user_id", "value": { "ref": "$actor.user_id" } }, { "op": "eq", "field": "biz_task.owner_user_id", "value": { "ref": "$actor.user_id" } }] } },
+          { "id": "overdue", "label": "Overdue", "domain": { "op": "and", "conditions": [{ "op": "in", "field": "biz_task.status", "value": ["open", "in_progress", "blocked"] }, { "op": "lte", "field": "biz_task.due_date", "value": { "ref": "$today" } }] } },
+          { "id": "crm", "label": "CRM Tasks", "domain": { "op": "or", "conditions": [{ "op": "exists", "field": "biz_task.lead_id" }, { "op": "exists", "field": "biz_task.opportunity_id" }] } },
+          { "id": "operations", "label": "Operations", "domain": { "op": "or", "conditions": [{ "op": "exists", "field": "biz_task.order_id" }, { "op": "exists", "field": "biz_task.purchase_order_id" }] } },
+          { "id": "finance", "label": "Finance", "domain": { "op": "exists", "field": "biz_task.invoice_id" } },
+          { "id": "blocked", "label": "Blocked", "domain": { "op": "eq", "field": "biz_task.status", "value": "blocked" } },
+          { "id": "done", "label": "Done", "domain": { "op": "eq", "field": "biz_task.status", "value": "done" } }
+        ]
+      }
+    },
+    {
+      "id": "biz_task.kanban",
+      "kind": "kanban",
+      "entity": "entity.biz_task",
+      "card": {
+        "title_field": "biz_task.title",
+        "subtitle_fields": ["biz_task.assignee_user_id", "biz_task.due_date"],
+        "badge_fields": ["biz_task.status", "biz_task.priority", "biz_task.task_type"]
+      }
+    },
+    {
+      "id": "biz_task.calendar",
+      "kind": "calendar",
+      "entity": "entity.biz_task",
+      "calendar": {
+        "title_field": "biz_task.title",
+        "date_start": "biz_task.start_date",
+        "date_end": "biz_task.due_date",
+        "color_field": "biz_task.priority",
+        "default_scale": "week"
+      }
+    },
+    {
+      "id": "biz_task.graph",
+      "kind": "graph",
+      "entity": "entity.biz_task",
+      "default": { "type": "bar", "group_by": "biz_task.status", "measure": "count" }
+    },
+    {
+      "id": "biz_task.form",
+      "kind": "form",
+      "entity": "entity.biz_task",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Task",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "biz_task.title",
+            "biz_task.task_type",
+            "biz_task.priority",
+            "biz_task.owner_user_id",
+            "biz_task.assignee_user_id",
+            "biz_task.participant_user_ids",
+            "biz_task.start_date",
+            "biz_task.due_date"
+          ]
+        },
+        {
+          "id": "links",
+          "title": "Related Records",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "biz_task.company_id",
+            "biz_task.lead_id",
+            "biz_task.opportunity_id",
+            "biz_task.site_id",
+            "biz_task.quote_id",
+            "biz_task.order_id",
+            "biz_task.purchase_order_id",
+            "biz_task.invoice_id",
+            "biz_task.document_id"
+          ]
+        },
+        {
+          "id": "details",
+          "title": "Details",
+          "fields": [
+            "biz_task.blocked_reason",
+            "biz_task.cancel_reason",
+            "biz_task.description",
+            "biz_task.attachments"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": { "field_id": "biz_task.status" },
+        "auto_state_actions": false,
+        "primary_actions": [
+          { "action_id": "action.biz_task_start" },
+          { "action_id": "action.biz_task_done" }
+        ],
+        "secondary_actions": [
+          { "action_id": "action.biz_task_block" },
+          { "action_id": "action.biz_task_cancel" }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "summary",
+          "tabs": [
+            { "id": "summary", "label": "Task", "sections": ["summary"] },
+            { "id": "links", "label": "Links", "sections": ["links"] },
+            { "id": "details", "label": "Details", "sections": ["details"] }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "biz_task.list_page",
+      "title": "Tasks",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_task",
+              "default_mode": "list",
+              "default_filter_id": "open",
+              "modes": [
+                { "mode": "list", "target": "view:biz_task.list" },
+                { "mode": "kanban", "target": "view:biz_task.kanban", "default_group_by": "biz_task.status" },
+                { "mode": "calendar", "target": "view:biz_task.calendar" },
+                { "mode": "graph", "target": "view:biz_task.graph" },
+                { "mode": "pivot", "target": "view:biz_task.list", "default_group_by": "biz_task.status" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_task.mine_page",
+      "title": "My Tasks",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.biz_task_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_task",
+              "default_mode": "list",
+              "default_filter_id": "mine",
+              "modes": [
+                { "mode": "list", "target": "view:biz_task.list" },
+                { "mode": "kanban", "target": "view:biz_task.kanban", "default_group_by": "biz_task.status" },
+                { "mode": "calendar", "target": "view:biz_task.calendar" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_task.overdue_page",
+      "title": "Overdue Tasks",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.biz_task_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_task",
+              "default_mode": "list",
+              "default_filter_id": "overdue",
+              "modes": [
+                { "mode": "list", "target": "view:biz_task.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_task.crm_page",
+      "title": "CRM Tasks",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.biz_task_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_task",
+              "default_mode": "list",
+              "default_filter_id": "crm",
+              "modes": [
+                { "mode": "list", "target": "view:biz_task.list" },
+                { "mode": "kanban", "target": "view:biz_task.kanban", "default_group_by": "biz_task.status" },
+                { "mode": "calendar", "target": "view:biz_task.calendar" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_task.operations_page",
+      "title": "Operations Tasks",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.biz_task_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_task",
+              "default_mode": "list",
+              "default_filter_id": "operations",
+              "modes": [
+                { "mode": "list", "target": "view:biz_task.list" },
+                { "mode": "kanban", "target": "view:biz_task.kanban", "default_group_by": "biz_task.status" },
+                { "mode": "calendar", "target": "view:biz_task.calendar" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_task.form_page",
+      "title": "Task",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.biz_task",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [{ "kind": "view", "target": "view:biz_task.form" }]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [{ "kind": "chatter", "entity_id": "entity.biz_task", "record_ref": "$record.id" }]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "modals": [
+    {
+      "id": "modal.biz_task_block",
+      "title": "Block Task",
+      "entity_id": "entity.biz_task",
+      "fields": ["biz_task.blocked_reason"],
+      "actions": [
+        {
+          "kind": "update_record",
+          "entity_id": "entity.biz_task",
+          "label": "Block",
+          "patch": {
+            "biz_task.status": "blocked",
+            "biz_task.blocked_reason": { "ref": "$record.biz_task.blocked_reason" }
+          },
+          "close_on_success": true
+        },
+        { "kind": "close_modal", "label": "Keep Open", "variant": "ghost" }
+      ]
+    },
+    {
+      "id": "modal.biz_task_cancel",
+      "title": "Cancel Task",
+      "entity_id": "entity.biz_task",
+      "fields": ["biz_task.cancel_reason"],
+      "actions": [
+        {
+          "kind": "update_record",
+          "entity_id": "entity.biz_task",
+          "label": "Cancel Task",
+          "patch": {
+            "biz_task.status": "cancelled",
+            "biz_task.cancel_reason": { "ref": "$record.biz_task.cancel_reason" }
+          },
+          "close_on_success": true
+        },
+        { "kind": "close_modal", "label": "Keep Open", "variant": "ghost" }
+      ]
+    }
+  ],
+  "interfaces": {
+    "schedulable": [
+      {
+        "entity_id": "entity.biz_task",
+        "enabled": true,
+        "scope": "module_and_global",
+        "title_field": "biz_task.title",
+        "date_start": "biz_task.start_date",
+        "date_end": "biz_task.due_date",
+        "owner_field": "biz_task.assignee_user_id",
+        "status_field": "biz_task.status",
+        "color_field": "biz_task.priority"
+      }
+    ],
+    "documentable": [
+      {
+        "entity_id": "entity.biz_task",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "biz_task.attachments",
+        "title_field": "biz_task.title",
+        "owner_field": "biz_task.owner_user_id",
+        "category_field": "biz_task.task_type",
+        "date_field": "biz_task.due_date",
+        "record_label_field": "biz_task.title",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
+      }
+    ],
+    "dashboardable": [
+      {
+        "entity_id": "entity.biz_task",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "biz_task.due_date",
+        "measures": ["count"],
+        "group_bys": ["biz_task.status", "biz_task.priority", "biz_task.task_type", "biz_task.assignee_user_id"]
+      }
+    ]
+  }
+}

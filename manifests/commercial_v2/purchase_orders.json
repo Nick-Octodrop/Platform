@@ -36,7 +36,11 @@
         "group": "Commercial",
         "mode": "inline",
         "items": [
-          { "label": "Purchase Orders", "to": "page:biz_purchase_order.list_page" }
+          { "label": "Purchase Orders", "to": "page:biz_purchase_order.list_page" },
+          { "label": "Sent", "to": "page:biz_purchase_order.sent_page" },
+          { "label": "In Production", "to": "page:biz_purchase_order.production_page" },
+          { "label": "Shipped", "to": "page:biz_purchase_order.shipped_page" },
+          { "label": "Received", "to": "page:biz_purchase_order.received_page" }
         ]
       }
     ]
@@ -309,6 +313,23 @@
       }
     }
   ],
+  "triggers": [
+    { "id": "biz_purchase_orders.record.biz_purchase_order.created", "label": "Purchase Order created", "event": "record.created", "entity_id": "entity.biz_purchase_order" },
+    { "id": "biz_purchase_orders.record.biz_purchase_order.updated", "label": "Purchase Order updated", "event": "record.updated", "entity_id": "entity.biz_purchase_order" },
+    { "id": "biz_purchase_orders.record.biz_purchase_order_line.created", "label": "Purchase Order Line created", "event": "record.created", "entity_id": "entity.biz_purchase_order_line" },
+    { "id": "biz_purchase_orders.record.biz_purchase_order_line.updated", "label": "Purchase Order Line updated", "event": "record.updated", "entity_id": "entity.biz_purchase_order_line" },
+    { "id": "biz_purchase_orders.workflow.biz_purchase_order.status_changed", "label": "Purchase Order status changed", "event": "workflow.status_changed", "entity_id": "entity.biz_purchase_order", "status_field": "biz_purchase_order.status" },
+    { "id": "biz_purchase_orders.action.purchase_order_new.clicked", "label": "New Purchase Order clicked", "event": "action.clicked", "action_id": "action.purchase_order_new" },
+    { "id": "biz_purchase_orders.action.purchase_order_mark_sent.clicked", "label": "Send PO clicked", "event": "action.clicked", "action_id": "action.purchase_order_mark_sent" },
+    { "id": "biz_purchase_orders.action.purchase_order_confirm.clicked", "label": "Confirm PO clicked", "event": "action.clicked", "action_id": "action.purchase_order_confirm" },
+    { "id": "biz_purchase_orders.action.purchase_order_open_hold_modal.clicked", "label": "Put On Hold clicked", "event": "action.clicked", "action_id": "action.purchase_order_open_hold_modal" },
+    { "id": "biz_purchase_orders.action.purchase_order_resume.clicked", "label": "Resume PO clicked", "event": "action.clicked", "action_id": "action.purchase_order_resume" },
+    { "id": "biz_purchase_orders.action.purchase_order_mark_in_production.clicked", "label": "Mark In Production clicked", "event": "action.clicked", "action_id": "action.purchase_order_mark_in_production" },
+    { "id": "biz_purchase_orders.action.purchase_order_mark_shipped.clicked", "label": "Mark Shipped clicked", "event": "action.clicked", "action_id": "action.purchase_order_mark_shipped" },
+    { "id": "biz_purchase_orders.action.purchase_order_mark_received.clicked", "label": "Mark Received clicked", "event": "action.clicked", "action_id": "action.purchase_order_mark_received" },
+    { "id": "biz_purchase_orders.action.purchase_order_close.clicked", "label": "Close PO clicked", "event": "action.clicked", "action_id": "action.purchase_order_close" },
+    { "id": "biz_purchase_orders.action.purchase_order_open_cancel_modal.clicked", "label": "Cancel PO clicked", "event": "action.clicked", "action_id": "action.purchase_order_open_cancel_modal" }
+  ],
   "actions": [
     { "id": "action.purchase_order_new", "kind": "open_form", "label": "New Purchase Order", "target": "biz_purchase_order.form" },
     {
@@ -539,27 +560,30 @@
             },
             "description_field": "biz_purchase_order_line.description",
             "columns": [
-              { "field_id": "biz_purchase_order_line.product_id", "label": "Product", "readonly": true },
-              { "field_id": "biz_purchase_order_line.description", "label": "Description" },
-              { "field_id": "biz_purchase_order_line.uom", "label": "UOM" },
-              { "field_id": "biz_purchase_order_line.quantity", "label": "Qty", "type": "number" },
-              { "field_id": "biz_purchase_order_line.unit_cost", "label": "Unit Cost", "type": "number" },
-              { "field_id": "biz_purchase_order_line.line_total", "label": "Line Total", "type": "number" }
+              { "field_id": "biz_purchase_order_line.product_id", "label": "Product", "readonly": true, "width": 220 },
+              { "field_id": "biz_purchase_order_line.description", "label": "Description", "width": 500 },
+              { "field_id": "biz_purchase_order_line.uom", "label": "UOM", "type": "enum", "width": 105, "options": [{ "value": "EA", "label": "Each" }, { "value": "SET", "label": "Set" }, { "value": "KIT", "label": "Kit" }, { "value": "LOT", "label": "Lot" }, { "value": "PALLET", "label": "Pallet" }, { "value": "CONTAINER", "label": "Container" }, { "value": "M", "label": "Meter" }] },
+              { "field_id": "biz_purchase_order_line.quantity", "label": "Qty", "type": "number", "width": 90, "align": "right" },
+              { "field_id": "biz_purchase_order_line.unit_cost", "label": "Unit Cost", "type": "number", "width": 155, "align": "right", "currency_field": "biz_purchase_order_line.currency_snapshot" },
+              { "field_id": "biz_purchase_order_line.line_total", "label": "Line Total", "type": "number", "readonly": true, "width": 155, "align": "right", "currency_field": "biz_purchase_order_line.currency_snapshot" }
             ]
           }
         }
       ],
       "header": {
         "statusbar": { "field_id": "biz_purchase_order.status" },
-        "secondary_actions": [
+        "auto_state_actions": false,
+        "primary_actions": [
           { "action_id": "action.purchase_order_mark_sent" },
           { "action_id": "action.purchase_order_confirm" },
-          { "action_id": "action.purchase_order_open_hold_modal" },
           { "action_id": "action.purchase_order_resume" },
           { "action_id": "action.purchase_order_mark_in_production" },
           { "action_id": "action.purchase_order_mark_shipped" },
           { "action_id": "action.purchase_order_mark_received" },
-          { "action_id": "action.purchase_order_close" },
+          { "action_id": "action.purchase_order_close" }
+        ],
+        "secondary_actions": [
+          { "action_id": "action.purchase_order_open_hold_modal" },
           { "action_id": "action.purchase_order_open_cancel_modal" }
         ],
         "tabs": {
@@ -567,7 +591,7 @@
           "default_tab": "summary",
           "tabs": [
             { "id": "summary", "label": "Summary", "sections": ["summary"] },
-            { "id": "lines", "label": "PO Lines", "sections": ["lines"] },
+            { "id": "lines", "label": "Line Items", "sections": ["lines"] },
             { "id": "financials", "label": "Status / Logistics", "sections": ["financials"] },
             { "id": "notes", "label": "Notes", "sections": ["notes"] }
           ]
@@ -773,6 +797,119 @@
                 { "mode": "calendar", "target": "view:biz_purchase_order.calendar" },
                 { "mode": "graph", "target": "view:biz_purchase_order.graph" },
                 { "mode": "pivot", "target": "view:biz_purchase_order.list", "default_group_by": "biz_purchase_order.status" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_purchase_order.sent_page",
+      "title": "Sent Purchase Orders",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.purchase_order_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_purchase_order",
+              "default_mode": "list",
+              "default_filter_id": "sent",
+              "modes": [
+                { "mode": "list", "target": "view:biz_purchase_order.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_purchase_order.production_page",
+      "title": "Purchase Orders In Production",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.purchase_order_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_purchase_order",
+              "default_mode": "list",
+              "default_filter_id": "production",
+              "modes": [
+                { "mode": "list", "target": "view:biz_purchase_order.list" },
+                { "mode": "kanban", "target": "view:biz_purchase_order.kanban", "default_group_by": "biz_purchase_order.status" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_purchase_order.shipped_page",
+      "title": "Shipped Purchase Orders",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.purchase_order_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_purchase_order",
+              "default_mode": "list",
+              "default_filter_id": "shipped",
+              "modes": [
+                { "mode": "list", "target": "view:biz_purchase_order.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_purchase_order.received_page",
+      "title": "Received Purchase Orders",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.purchase_order_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_purchase_order",
+              "default_mode": "list",
+              "default_filter_id": "received",
+              "modes": [
+                { "mode": "list", "target": "view:biz_purchase_order.list" }
               ]
             }
           ]

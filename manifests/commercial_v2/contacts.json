@@ -320,6 +320,13 @@
       ]
     }
   ],
+  "triggers": [
+    { "id": "biz_contacts.record.biz_contact.created", "label": "Contact created", "event": "record.created", "entity_id": "entity.biz_contact" },
+    { "id": "biz_contacts.record.biz_contact.updated", "label": "Contact updated", "event": "record.updated", "entity_id": "entity.biz_contact" },
+    { "id": "biz_contacts.action.contact_new.clicked", "label": "New Contact clicked", "event": "action.clicked", "action_id": "action.contact_new" },
+    { "id": "biz_contacts.action.contact_deactivate.clicked", "label": "Deactivate clicked", "event": "action.clicked", "action_id": "action.contact_deactivate" },
+    { "id": "biz_contacts.action.contact_activate.clicked", "label": "Activate clicked", "event": "action.clicked", "action_id": "action.contact_activate" }
+  ],
   "workflows": [],
   "transformations": []
 }

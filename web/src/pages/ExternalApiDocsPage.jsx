@@ -45,7 +45,7 @@ function CodeBlock({ children }) {
 
 function Section({ title, description, children }) {
   return (
-    <section className="rounded-box border border-base-300 bg-base-100 p-4">
+    <section className="rounded-box border border-base-300 bg-base-100 p-4 shadow-sm">
       <div className="text-sm font-semibold">{title}</div>
       {description ? <div className="mt-1 text-sm leading-6 opacity-70">{description}</div> : null}
       <div className="mt-4">{children}</div>
@@ -55,7 +55,7 @@ function Section({ title, description, children }) {
 
 function SurfaceCard({ icon: Icon, title, description, endpoints }) {
   return (
-    <div className="rounded-box border border-base-300 bg-base-100 p-4">
+    <div className="rounded-box border border-base-300 bg-base-100 p-4 shadow-sm">
       <div className="flex items-start gap-3">
         <div className="rounded-box bg-base-200 p-2">
           <Icon className="h-5 w-5 text-success" />
@@ -76,6 +76,16 @@ function SurfaceCard({ icon: Icon, title, description, endpoints }) {
   );
 }
 
+function InfoTile({ label, value, description }) {
+  return (
+    <div className="rounded-box border border-base-300 bg-base-200/35 p-3">
+      <div className="text-xs font-semibold uppercase tracking-[0.12em] opacity-55">{label}</div>
+      <div className="mt-2 text-sm font-semibold">{value}</div>
+      {description ? <div className="mt-1 text-xs leading-5 opacity-70">{description}</div> : null}
+    </div>
+  );
+}
+
 export function ExternalApiDocsRedirectPage({ path, label }) {
   const url = useMemo(() => buildDocUrl(path), [path]);
 
@@ -85,7 +95,7 @@ export function ExternalApiDocsRedirectPage({ path, label }) {
   }, [url]);
 
   return (
-    <div className="min-h-screen bg-base-200 p-4 text-base-content md:p-6">
+    <div className="h-full min-h-0 overflow-y-auto bg-base-200 p-4 text-base-content md:p-6">
       <div className="mx-auto max-w-3xl">
         <div className={DESKTOP_PAGE_SHELL}>
           <div className={DESKTOP_PAGE_SHELL_BODY}>
@@ -140,10 +150,10 @@ export default function ExternalApiDocsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-base-200 p-4 text-base-content md:p-6">
-      <main className="mx-auto max-w-6xl">
+    <div className="h-full min-h-0 overflow-y-auto bg-base-200 p-3 text-base-content sm:p-4 lg:p-6">
+      <main className="mx-auto flex min-h-full max-w-6xl flex-col">
         <div className={DESKTOP_PAGE_SHELL}>
-          <div className={`${DESKTOP_PAGE_SHELL_BODY} gap-4`}>
+          <div className={`${DESKTOP_PAGE_SHELL_BODY} gap-4 overflow-visible pb-8 md:overflow-auto`}>
             <div className="flex flex-col gap-4 border-b border-base-300 pb-5 lg:flex-row lg:items-start lg:justify-between">
               <div className="max-w-3xl">
                 <div className="flex flex-wrap items-center gap-2">
@@ -166,23 +176,91 @@ export default function ExternalApiDocsPage() {
               </div>
             </div>
 
+            <Section title="Documentation links" description="Use these links when handing the API to a client or integration partner.">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                {links.map((link) => {
+                  const Icon = link.icon;
+                  return (
+                    <a
+                      key={link.href}
+                      className="group rounded-box border border-base-300 bg-base-100 p-4 transition hover:border-success hover:bg-base-200/50"
+                      href={link.href}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <Icon className="h-5 w-5 text-success" />
+                        <ExternalLink className="h-3.5 w-3.5 opacity-40 transition group-hover:opacity-80" />
+                      </div>
+                      <div className="mt-3 text-sm font-semibold">{link.label}</div>
+                    </a>
+                  );
+                })}
+              </div>
+            </Section>
+
             <div className="grid gap-3 md:grid-cols-3">
-              <div className="rounded-box border border-base-300 bg-base-100 p-4">
+              <div className="rounded-box border border-base-300 bg-base-100 p-4 shadow-sm">
                 <KeyRound className="h-5 w-5 text-success" />
                 <div className="mt-3 text-sm font-semibold">API key auth</div>
-                <div className="mt-1 text-sm opacity-70">Send `X-Api-Key` with a scoped credential from Settings.</div>
+                <div className="mt-1 text-sm opacity-70">Send `X-Api-Key` with a scoped credential from Settings. Never use query string keys.</div>
               </div>
-              <div className="rounded-box border border-base-300 bg-base-100 p-4">
+              <div className="rounded-box border border-base-300 bg-base-100 p-4 shadow-sm">
                 <ShieldCheck className="h-5 w-5 text-info" />
                 <div className="mt-3 text-sm font-semibold">Tenant scoped</div>
                 <div className="mt-1 text-sm opacity-70">Keys can only see records inside their workspace and scope.</div>
               </div>
-              <div className="rounded-box border border-base-300 bg-base-100 p-4">
+              <div className="rounded-box border border-base-300 bg-base-100 p-4 shadow-sm">
                 <Radio className="h-5 w-5 text-warning" />
                 <div className="mt-3 text-sm font-semibold">Signed webhooks</div>
                 <div className="mt-1 text-sm opacity-70">Outbound events support HMAC signatures and replay checks.</div>
               </div>
             </div>
+
+            <Section title="Production contract" description="The supported operational behavior clients should build against.">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <InfoTile
+                  label="Authentication"
+                  value="X-Api-Key"
+                  description="Static per-system credentials. Create one key per integration and rotate/revoke from Settings."
+                />
+                <InfoTile
+                  label="Scopes"
+                  value="Least privilege"
+                  description="Use meta.read, records.read, records.write, automations.read, and automations.write as needed."
+                />
+                <InfoTile
+                  label="Rate limit"
+                  value="300 / 60s default"
+                  description="Per API credential. Handle 429 using Retry-After and X-RateLimit-* headers."
+                />
+                <InfoTile
+                  label="Pagination"
+                  value="limit + cursor"
+                  description="List responses include pagination and next_cursor. Current list cap is 200."
+                />
+                <InfoTile
+                  label="Errors"
+                  value="Stable JSON"
+                  description="Failures return ok=false with errors[].code, message, path, and optional detail."
+                />
+                <InfoTile
+                  label="Files"
+                  value="10MB default"
+                  description="Attachments are workspace scoped. Upload first, then link to a record."
+                />
+                <InfoTile
+                  label="Webhooks"
+                  value="HMAC SHA-256"
+                  description="Verify X-Octo-Timestamp and X-Octo-Signature over timestamp.raw_body."
+                />
+                <InfoTile
+                  label="Security"
+                  value="No shared keys"
+                  description="Do not reuse credentials between vendors. Store keys server-side only."
+                />
+              </div>
+            </Section>
 
             <Section title="Quickstart" description="Create a scoped API credential, then call metadata first to discover installed entities and field IDs.">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
@@ -238,30 +316,15 @@ export default function ExternalApiDocsPage() {
               </div>
             </Section>
 
-            <Section title="Reference links" description="Stable backend links for clients, SDK generation, and webhook implementation.">
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                {links.map((link) => {
-                  const Icon = link.icon;
-                  return (
-                    <a key={link.href} className="rounded-box border border-base-300 bg-base-100 p-4 transition hover:border-success" href={link.href} target="_blank" rel="noreferrer">
-                      <Icon className="h-5 w-5 text-success" />
-                      <div className="mt-3 flex items-center justify-between gap-2 text-sm font-semibold">
-                        <span>{link.label}</span>
-                        <ExternalLink className="h-3.5 w-3.5 opacity-60" />
-                      </div>
-                    </a>
-                  );
-                })}
-              </div>
-            </Section>
-
             <Section title="Client handoff checklist">
               <ul className="space-y-2 text-sm leading-6 opacity-75">
                 <li>Create one API credential per external system and grant the minimum scopes required.</li>
                 <li>Send `X-Api-Key` on every `/ext/v1` request. Do not put the key in query strings.</li>
                 <li>Use `/ext/v1/meta/entities` to discover entity and field IDs instead of hardcoding labels.</li>
+                <li>Expect `401` for missing/expired/revoked keys and `403` for missing scopes or blocked record access.</li>
                 <li>Use cursor pagination for lists and handle `429` with the `Retry-After` header.</li>
                 <li>Verify webhook signatures with `X-Octo-Timestamp` and `X-Octo-Signature` before processing events.</li>
+                <li>Store credentials in a server-side secret manager and rotate them on a regular schedule.</li>
               </ul>
             </Section>
           </div>

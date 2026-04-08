@@ -71,7 +71,7 @@ ALLOWED_V1_BLOCK_KEYS = {
     "cards",
 }
 ALLOWED_V1_ACTION_KINDS = {"navigate", "open_form", "refresh", "create_record", "update_record", "bulk_update", "transform_record"}
-ALLOWED_V1_TRIGGER_KEYS = {"id", "event", "entity_id", "action_id", "status_field"}
+ALLOWED_V1_TRIGGER_KEYS = {"id", "label", "event", "entity_id", "action_id", "status_field"}
 ALLOWED_V1_TRIGGER_EVENTS = {"record.created", "record.updated", "action.clicked", "workflow.status_changed"}
 ALLOWED_V1_STACK_KEYS = {"kind", "gap", "content"}
 ALLOWED_V1_GRID_KEYS = {"kind", "columns", "gap", "items"}
@@ -111,7 +111,7 @@ ALLOWED_COMPUTE_KEYS = {"expression", "aggregate", "persist"}
 ALLOWED_COMPUTE_AGGREGATE_KEYS = {"op", "measure", "entity", "field", "where"}
 ALLOWED_COMPUTE_AGGREGATE_OPS = {"sum", "count", "min", "max", "avg"}
 ALLOWED_V1_ACTION_KEYS = {"id", "kind", "label", "target", "entity_id", "defaults", "patch", "transformation_key", "selection_mode", "enabled_when", "visible_when", "confirm", "modal_id"}
-ALLOWED_V1_VIEW_HEADER_KEYS = {"title_field", "primary_actions", "secondary_actions", "search", "filters", "bulk_actions", "save_mode", "open_record_target", "auto_save", "auto_save_debounce_ms", "statusbar", "tabs"}
+ALLOWED_V1_VIEW_HEADER_KEYS = {"title_field", "primary_actions", "secondary_actions", "search", "filters", "bulk_actions", "save_mode", "open_record_target", "auto_save", "auto_save_debounce_ms", "auto_state_actions", "statusbar", "tabs"}
 ALLOWED_V1_VIEW_HEADER_ACTION_KEYS = {"action_id", "kind", "label", "target", "enabled_when", "visible_when", "confirm", "modal_id"}
 ALLOWED_V1_MODAL_KEYS = {"id", "title", "description", "entity_id", "fields", "defaults", "actions"}
 ALLOWED_V1_MODAL_ACTION_KEYS = {
@@ -1451,6 +1451,8 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
         errors.append(_issue("MANIFEST_VIEWS_INVALID", "views must be a list", "views"))
         views = []
 
+    view_ids = {v.get("id") for v in views if isinstance(v, dict) and isinstance(v.get("id"), str)}
+
     for i, view in enumerate(views):
         vpath = f"views[{i}]"
         if not isinstance(view, dict):
@@ -1596,8 +1598,14 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
                                 else:
                                     seen.add(tab_id)
                                 sections_ref = _get(tab, "sections")
-                                if not isinstance(sections_ref, list) or not sections_ref:
-                                    errors.append(_issue("MANIFEST_VIEW_HEADER_INVALID", "tab.sections must be a non-empty list", f"{tpath}.sections"))
+                                content = _get(tab, "content", [])
+                                has_content = isinstance(content, list) and len(content) > 0
+                                if sections_ref is None:
+                                    sections_ref = []
+                                if not isinstance(sections_ref, list):
+                                    errors.append(_issue("MANIFEST_VIEW_HEADER_INVALID", "tab.sections must be a list", f"{tpath}.sections"))
+                                elif not sections_ref and not has_content:
+                                    errors.append(_issue("MANIFEST_VIEW_HEADER_INVALID", "tab must reference sections or content", tpath))
                                 else:
                                     for sidx, sid in enumerate(sections_ref):
                                         if not isinstance(sid, str):
@@ -1606,6 +1614,22 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
                                             errors.append(_issue("MANIFEST_VIEW_HEADER_INVALID", "tab.section not found", f"{tpath}.sections[{sidx}]"))
                                         else:
                                             referenced.add(sid)
+                                if content is not None:
+                                    if not isinstance(content, list):
+                                        errors.append(_issue("MANIFEST_VIEW_HEADER_INVALID", "tab.content must be a list", f"{tpath}.content"))
+                                    elif has_content:
+                                        _validate_blocks(
+                                            content,
+                                            f"{tpath}.content",
+                                            view_ids,
+                                            entity_by_id,
+                                            action_by_id,
+                                            errors,
+                                            allow_layout=is_v11,
+                                            allow_chatter=is_v12,
+                                            allow_v13=is_v13,
+                                            record_entity=full_entity_id,
+                                        )
                             default_tab = _get(tabs, "default_tab")
                             if default_tab is not None and default_tab not in seen:
                                 errors.append(_issue("MANIFEST_VIEW_HEADER_INVALID", "tabs.default_tab not found", f"{vpath}.header.tabs.default_tab"))
@@ -1830,8 +1854,6 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
                     errors.append(_issue("MANIFEST_VIEW_FIELD_UNKNOWN", "calendar.color_field field not found", f"{vpath}.calendar.color_field"))
             if default_scale is not None and default_scale not in {"month", "week", "day", "year"}:
                 errors.append(_issue("MANIFEST_VIEW_CALENDAR_INVALID", "calendar.default_scale must be month|week|day|year", f"{vpath}.calendar.default_scale"))
-
-    view_ids = {v.get("id") for v in views if isinstance(v, dict) and isinstance(v.get("id"), str)}
 
     relations = _get(manifest, "relations", [])
     if relations and not isinstance(relations, list):

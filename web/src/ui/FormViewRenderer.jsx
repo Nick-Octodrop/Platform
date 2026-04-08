@@ -1,11 +1,11 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, Trash2 } from "lucide-react";
 import { renderField, setFieldValue, getFieldValue } from "./field_renderers.jsx";
 import { apiFetch, createRecord, deleteRecord, updateRecord } from "../api.js";
 import { evalCondition } from "../utils/conditions.js";
 import { applyComputedFields } from "../utils/computedFields.js";
 import Tabs from "../components/Tabs.jsx";
-import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_BUTTON_XS } from "../components/buttonStyles.js";
+import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
 import ActivityPanel from "./ActivityPanel.jsx";
 import AttachmentField from "./AttachmentField.jsx";
@@ -119,7 +119,7 @@ export default function FormViewRenderer({
             const nextSections = Array.isArray(tab.sections) ? tab.sections.filter((sectionId) => visibleSectionIds.has(sectionId)) : [];
             return { ...tab, sections: nextSections };
           })
-          .filter((tab) => tab && (tab.sections?.length || 0) > 0)
+          .filter((tab) => tab && ((tab.sections?.length || 0) > 0 || (Array.isArray(tab.content) && tab.content.length > 0)))
       : [];
     if (!activityConfig || activityConfig.mode !== "tab") {
       return baseTabs;
@@ -382,6 +382,12 @@ export default function FormViewRenderer({
     activeTab !== activityTabId &&
     !hasCustomTabBlocks &&
     renderedSections.length === 0;
+  const isSingleLineEditorTab =
+    activeTab !== activityTabId &&
+    !hasCustomTabBlocks &&
+    renderedSections.length === 1 &&
+    Boolean(renderedSections[0]?.lineEditorConfig) &&
+    renderedSections[0]?.fields?.length === 0;
   const mobileHeaderActions = [...primaryActions, ...secondaryActions];
 
   useEffect(() => {
@@ -491,19 +497,28 @@ export default function FormViewRenderer({
                 </DaisyTooltip>
               );
             })}
-            {secondaryActions.map((item) => (
-              <button
-                key={item.label}
-                className={SOFT_BUTTON_SM}
-                onClick={() => {
-                  if (previewMode || readonly || !item.enabled) return;
-                  onActionClick?.(item.action);
-                }}
-                disabled={!item.enabled || previewMode || readonly}
-              >
-                {item.label}
-              </button>
-            ))}
+            {secondaryActions.length > 0 && (
+              <div className="dropdown dropdown-end">
+                <button type="button" className={`${SOFT_BUTTON_SM} px-3`} aria-label="More actions">
+                  ...
+                </button>
+                <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[220]">
+                  {secondaryActions.map((item) => (
+                    <li key={item.label}>
+                      <button
+                        onClick={() => {
+                          if (previewMode || readonly || !item.enabled) return;
+                          onActionClick?.(item.action);
+                        }}
+                        disabled={!item.enabled || previewMode || readonly}
+                      >
+                        {item.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -517,7 +532,13 @@ export default function FormViewRenderer({
           <Tabs tabs={tabsForUi} activeId={activeTab} onChange={setActiveTab} />
         </div>
       )}
-      <div className={hasCustomTabBlocks ? (isMobile ? "space-y-4" : "flex-1 min-h-0 overflow-hidden") : (isMobile ? "space-y-4" : "flex-1 min-h-0 overflow-auto space-y-4")}>
+      <div className={
+        hasCustomTabBlocks
+          ? (isMobile ? "space-y-4" : "flex-1 min-h-0 overflow-hidden")
+          : isSingleLineEditorTab
+            ? (isMobile ? "space-y-4" : "flex-1 min-h-0 overflow-hidden")
+            : (isMobile ? "space-y-4" : "flex-1 min-h-0 overflow-auto space-y-4")
+      }>
       {activityConfig?.mode === "panel" && (
           <div className={`border border-base-300 rounded-box ${isMobile ? "p-4" : "p-3"}`}>
             <div className="text-sm font-semibold mb-2">{activityTabLabel}</div>
@@ -539,13 +560,14 @@ export default function FormViewRenderer({
           </div>
         )}
         {activeTab !== activityTabId && renderedSections.map(({ section, fields, lineEditorConfig }) => (
-          <div key={section.id} className="space-y-3">
+          <div key={section.id} className={lineEditorConfig && isSingleLineEditorTab ? "h-full min-h-0" : "space-y-3"}>
             {!hasTabs && (
               <div className="text-sm font-semibold">{section.title || section.id}</div>
             )}
             {lineEditorConfig ? (
               <InlineLineItemsTable
                 config={lineEditorConfig}
+                parentEntityId={entityId}
                 parentRecordId={effectiveRecordId}
                 parentRecord={computedRecord}
                 readonly={readonly}
@@ -726,6 +748,7 @@ function coerceEditorValue(value, type) {
 
 function InlineLineItemsTable({
   config,
+  parentEntityId,
   parentRecordId,
   parentRecord,
   readonly,
@@ -743,6 +766,7 @@ function InlineLineItemsTable({
   const itemFieldMap = config?.item_field_map && typeof config.item_field_map === "object" ? config.item_field_map : {};
   const parentFieldMap = config?.parent_field_map && typeof config.parent_field_map === "object" ? config.parent_field_map : {};
   const defaults = config?.defaults && typeof config.defaults === "object" ? config.defaults : {};
+  const customLineDefaults = config?.custom_line_defaults && typeof config.custom_line_defaults === "object" ? config.custom_line_defaults : {};
   const columns = Array.isArray(config?.columns) ? config.columns : [];
   const itemPrefix = useMemo(() => {
     if (typeof itemDisplayField === "string" && itemDisplayField.includes(".")) {
@@ -760,7 +784,13 @@ function InlineLineItemsTable({
   const [pendingDeleteRow, setPendingDeleteRow] = useState(null);
   const [deletingRowId, setDeletingRowId] = useState("");
   const [addLookupResetKey, setAddLookupResetKey] = useState(0);
+  const [creatingCustomLine, setCreatingCustomLine] = useState(false);
   const lookupCacheRef = useRef({});
+  const uomColumn = columns.find((col) => typeof col?.field_id === "string" && col.field_id.endsWith(".uom"));
+  const quantityColumn = columns.find((col) => typeof col?.field_id === "string" && col.field_id.endsWith(".quantity"));
+  const unitAmountColumn = columns.find(
+    (col) => typeof col?.field_id === "string" && (col.field_id.endsWith(".unit_price") || col.field_id.endsWith(".unit_cost"))
+  );
   const addLookupField = useMemo(
     () => ({
       id: `${itemField || "line_item"}.adder`,
@@ -772,6 +802,35 @@ function InlineLineItemsTable({
     }),
     [itemDisplayField, itemEntityId, itemField]
   );
+
+  async function addParentActivity(message) {
+    if (!parentEntityId || !parentRecordId || previewMode || !message) return;
+    try {
+      await apiFetch("/api/activity/comment", {
+        method: "POST",
+        body: {
+          entity_id: parentEntityId,
+          record_id: parentRecordId,
+          body: message,
+        },
+      });
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("octo:activity-mutated", {
+            detail: { entityId: parentEntityId, recordId: parentRecordId },
+          })
+        );
+      }
+    } catch {
+      // Activity logging is best-effort; line edits should not fail because the feed rejected a note.
+    }
+  }
+
+  function rowLabel(rowOrRecord) {
+    const recordId = rowOrRecord?.record_id;
+    const record = rowOrRecord?.record || rowOrRecord || {};
+    return lookupCache[recordId] || record?.[descriptionField] || record?.[itemField] || "line item";
+  }
 
   useEffect(() => {
     lookupCacheRef.current = lookupCache;
@@ -859,6 +918,7 @@ function InlineLineItemsTable({
         new Set(
           [
             ...columns.map((c) => c?.field_id).filter(Boolean),
+            ...columns.map((c) => c?.currency_field).filter(Boolean),
             itemField,
             descriptionField,
             ...Object.keys(parentFieldMap || {}),
@@ -897,6 +957,8 @@ function InlineLineItemsTable({
   async function patchRow(recordId, fieldId, rawValue, type) {
     const value = coerceEditorValue(rawValue, type);
     const currentRow = rows.find((row) => row.record_id === recordId);
+    const beforeValue = currentRow?.record?.[fieldId];
+    if (beforeValue === value) return;
     const nextRecord = { ...(currentRow?.record || {}), [fieldId]: value };
     setRows((prev) =>
       prev.map((row) =>
@@ -907,6 +969,8 @@ function InlineLineItemsTable({
     );
     try {
       await updateRecord(childEntityId, recordId, buildRowPayload(nextRecord));
+      const column = columns.find((col) => col?.field_id === fieldId);
+      await addParentActivity(`Line item updated: ${rowLabel(currentRow)} (${column?.label || fieldId}).`);
       await fetchRows();
       await onRefreshParent?.();
     } catch {
@@ -918,9 +982,11 @@ function InlineLineItemsTable({
     if (!recordId || deletingRowId) return;
     setDeletingRowId(recordId);
     try {
+      const currentRow = rows.find((row) => row.record_id === recordId);
       await deleteRecord(childEntityId, recordId);
       setRows((prev) => prev.filter((row) => row.record_id !== recordId));
       setPendingDeleteRow(null);
+      await addParentActivity(`Line item removed: ${rowLabel(currentRow)}.`);
       await onRefreshParent?.();
     } catch {
       fetchRows();
@@ -990,10 +1056,60 @@ function InlineLineItemsTable({
         setLookupCache((prev) => ({ ...prev, [createdId]: option.label || option.value }));
       }
       setAddLookupResetKey((prev) => prev + 1);
+      await addParentActivity(`Line item added: ${option.label || option.value}.`);
       await fetchRows();
       await onRefreshParent?.();
     } catch (err) {
       setError(err?.message || "Failed to add line item.");
+    }
+  }
+
+  async function createInlineCustomLine() {
+    if (!parentRecordId || creatingCustomLine) return;
+    const description = "Custom line";
+    const payload = {
+      ...defaults,
+      ...customLineDefaults,
+      [parentField]: parentRecordId,
+      ...(descriptionField ? { [descriptionField]: description } : {}),
+    };
+    for (const [targetField, sourceField] of Object.entries(parentFieldMap || {})) {
+      if (typeof targetField !== "string" || typeof sourceField !== "string") continue;
+      const mapped = parentRecord?.[sourceField];
+      if (mapped !== undefined && mapped !== null && mapped !== "") {
+        payload[targetField] = mapped;
+      }
+    }
+    if (quantityColumn?.field_id) {
+      payload[quantityColumn.field_id] = coerceEditorValue(defaults?.[quantityColumn.field_id], "number") ?? 1;
+    }
+    if (uomColumn?.field_id) {
+      payload[uomColumn.field_id] = defaults?.[uomColumn.field_id] || "EA";
+    }
+    if (unitAmountColumn?.field_id) {
+      payload[unitAmountColumn.field_id] = coerceEditorValue(defaults?.[unitAmountColumn.field_id], "number") ?? 0;
+    }
+    setCreatingCustomLine(true);
+    try {
+      const created = await createRecord(childEntityId, payload);
+      const createdId = created?.record_id;
+      const createdRecord = created?.record && typeof created.record === "object"
+        ? created.record
+        : { ...payload, id: createdId || payload.id };
+      if (createdId) {
+        setRows((prev) => {
+          if (prev.some((row) => row.record_id === createdId)) return prev;
+          return [...prev, { record_id: createdId, record: createdRecord }];
+        });
+      }
+      setAddLookupResetKey((prev) => prev + 1);
+      await addParentActivity(`Custom line item added: ${description}.`);
+      await fetchRows();
+      await onRefreshParent?.();
+    } catch (err) {
+      setError(err?.message || "Failed to add custom line.");
+    } finally {
+      setCreatingCustomLine(false);
     }
   }
 
@@ -1005,16 +1121,65 @@ function InlineLineItemsTable({
     return <div className="text-sm opacity-70">Save this record first, then add line items.</div>;
   }
 
+  function columnStyle(col) {
+    const normalized = columnWidth(col);
+    if (!normalized) return undefined;
+    return { width: normalized, minWidth: normalized, maxWidth: normalized };
+  }
+
+  function columnWidth(col) {
+    const width = col?.width ?? col?.min_width ?? col?.minWidth;
+    if (!width) return undefined;
+    return typeof width === "number" ? `${width}px` : String(width);
+  }
+
+  function columnWidthNumber(col) {
+    const width = col?.width ?? col?.min_width ?? col?.minWidth;
+    if (typeof width === "number" && Number.isFinite(width)) return width;
+    if (typeof width === "string") {
+      const parsed = Number.parseFloat(width);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return 180;
+  }
+
+  const actionColumnWidth = readonly ? 0 : 52;
+  const tableWidth = columns.reduce((total, col) => total + columnWidthNumber(col), actionColumnWidth);
+
+  function currencyLabel(rowRecord, col) {
+    const fieldId = col?.currency_field;
+    if (!fieldId || !rowRecord || typeof rowRecord !== "object") return "";
+    return rowRecord[fieldId] ? String(rowRecord[fieldId]) : "";
+  }
+
+  function readOnlyCell(raw, col, rowRecord) {
+    const currency = currencyLabel(rowRecord, col);
+    return (
+      <div className={`min-h-8 flex items-center gap-2 ${col?.align === "right" ? "justify-end text-right" : ""}`}>
+        <span className={col?.type === "number" ? "tabular-nums" : ""}>{String(raw ?? "")}</span>
+        {currency ? <span className="badge badge-ghost badge-sm font-mono">{currency}</span> : null}
+      </div>
+    );
+  }
+
   return (
-    <div className="rounded-box border border-base-300 bg-base-100">
-      <div className="w-full overflow-x-auto overflow-y-visible min-h-80 no-scrollbar">
-        <table className="table table-sm min-w-max">
+    <div className="h-full min-h-[520px] rounded-box border border-base-300 bg-base-100 flex flex-col overflow-hidden">
+      <div className="flex-1 min-h-0 w-full overflow-auto">
+        <table className="table table-sm table-fixed" style={{ width: "100%", minWidth: `${tableWidth}px` }}>
+          <colgroup>
+            {columns.map((col, index) => (
+              <col key={`col-${col.field_id || col.label || index}`} style={columnStyle(col)} />
+            ))}
+            {!readonly ? <col style={{ width: `${actionColumnWidth}px`, minWidth: `${actionColumnWidth}px`, maxWidth: `${actionColumnWidth}px` }} /> : null}
+          </colgroup>
           <thead>
             <tr>
               {columns.map((col) => (
-                <th key={col.field_id || col.label}>{col.label || col.field_id}</th>
+                <th key={col.field_id || col.label} style={columnStyle(col)} className={col.align === "right" ? "text-right" : ""}>
+                  {col.label || col.field_id}
+                </th>
               ))}
-              {!readonly ? <th className="w-12" /> : null}
+              {!readonly ? <th className="w-12"><span className="sr-only">Actions</span></th> : null}
             </tr>
           </thead>
           <tbody>
@@ -1034,12 +1199,17 @@ function InlineLineItemsTable({
                   const fieldId = col.field_id;
                   const raw = row.record?.[fieldId];
                   if (fieldId === itemField) {
-                    const label = lookupCache[row.record_id] || row.record?.[descriptionField] || raw || "";
+                    const isCustomLine = !raw;
+                    const label = isCustomLine ? "Custom" : lookupCache[row.record_id] || row.record?.[descriptionField] || raw || "";
                     if (readonly || col.readonly) {
-                      return <td key={`${row.record_id}-${fieldId}`}>{label}</td>;
+                      return (
+                        <td key={`${row.record_id}-${fieldId}`} style={columnStyle(col)}>
+                          {isCustomLine ? <span className="badge badge-outline badge-sm">Custom</span> : label}
+                        </td>
+                      );
                     }
                     return (
-                      <td key={`${row.record_id}-${fieldId}`}>
+                      <td key={`${row.record_id}-${fieldId}`} style={columnStyle(col)}>
                         <LookupField
                           field={{
                             id: fieldId,
@@ -1084,6 +1254,7 @@ function InlineLineItemsTable({
                               await updateRecord(childEntityId, row.record_id, buildRowPayload(nextRecord));
                               const nextLabel = await resolveItemLabel(nextItemId);
                               setLookupCache((prev) => ({ ...prev, [row.record_id]: nextLabel }));
+                              await addParentActivity(`Line item changed: ${rowLabel(row)} -> ${nextLabel || nextItemId}.`);
                               await fetchRows();
                               await onRefreshParent?.();
                             } catch {
@@ -1100,37 +1271,71 @@ function InlineLineItemsTable({
                     );
                   }
                   if (readonly || col.readonly) {
-                    return <td key={`${row.record_id}-${fieldId}`}>{String(raw ?? "")}</td>;
+                    return <td key={`${row.record_id}-${fieldId}`} style={columnStyle(col)}>{readOnlyCell(raw, col, row.record)}</td>;
                   }
+                  if (col.type === "enum" && Array.isArray(col.options)) {
+                    return (
+                      <td key={`${row.record_id}-${fieldId}`} style={columnStyle(col)}>
+                        <select
+                          className="select select-bordered select-xs w-full"
+                          value={raw ?? ""}
+                          onChange={(e) => {
+                            const next = e.target.value;
+                            setRows((prev) =>
+                              prev.map((r) =>
+                                r.record_id === row.record_id
+                                  ? { ...r, record: { ...r.record, [fieldId]: next } }
+                                  : r
+                              )
+                            );
+                            void patchRow(row.record_id, fieldId, next, col.type);
+                          }}
+                        >
+                          <option value="">Select...</option>
+                          {col.options.map((option) => (
+                            <option key={option.value ?? option.label} value={option.value ?? ""}>
+                              {option.label ?? option.value}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    );
+                  }
+                  const currency = currencyLabel(row.record, col);
                   return (
-                    <td key={`${row.record_id}-${fieldId}`}>
-                      <input
-                        className="input input-bordered input-xs w-full"
-                        type={col.type === "number" ? "number" : "text"}
-                        value={raw ?? ""}
-                        onChange={(e) => {
-                          const next = e.target.value;
-                          setRows((prev) =>
-                            prev.map((r) =>
-                              r.record_id === row.record_id
-                                ? { ...r, record: { ...r.record, [fieldId]: next } }
-                                : r
-                            )
-                          );
-                        }}
-                        onBlur={(e) => patchRow(row.record_id, fieldId, e.target.value, col.type)}
-                      />
+                    <td key={`${row.record_id}-${fieldId}`} style={columnStyle(col)}>
+                      <div className="join w-full">
+                        <input
+                          className={`input input-bordered input-xs w-full ${currency ? "join-item" : ""} ${col.align === "right" ? "text-right tabular-nums" : ""}`}
+                          type={col.type === "number" ? "number" : "text"}
+                          value={raw ?? ""}
+                          onChange={(e) => {
+                            const next = e.target.value;
+                            setRows((prev) =>
+                              prev.map((r) =>
+                                r.record_id === row.record_id
+                                  ? { ...r, record: { ...r.record, [fieldId]: next } }
+                                  : r
+                              )
+                            );
+                          }}
+                          onBlur={(e) => patchRow(row.record_id, fieldId, e.target.value, col.type)}
+                        />
+                        {currency ? <span className="join-item badge badge-ghost h-6 rounded-l-none font-mono">{currency}</span> : null}
+                      </div>
                     </td>
                   );
                 })}
                 {!readonly ? (
-                  <td>
+                  <td className="text-right">
                     <button
                       type="button"
-                      className={SOFT_BUTTON_XS}
+                      className="btn btn-ghost btn-xs text-error"
                       onClick={() => setPendingDeleteRow(row)}
+                      aria-label="Delete line item"
+                      title="Delete line item"
                     >
-                      Remove
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </td>
                 ) : null}
@@ -1138,40 +1343,38 @@ function InlineLineItemsTable({
             ))}
           </tbody>
           {!readonly && (
-          <tfoot>
-            <tr>
-              {columns.map((col, index) => (
-                <td key={`adder-${col.field_id || col.label || index}`}>
-                  {index === 0 ? (
-                    <LookupField
-                      key={addLookupResetKey}
-                      field={addLookupField}
-                      value={null}
-                      onChange={async (nextItemId) => {
-                        if (!nextItemId) return;
-                        const nextLabel = await resolveItemLabel(nextItemId);
-                        await addRowFromOption({ value: nextItemId, label: nextLabel || nextItemId });
-                      }}
-                      readonly={readonly}
-                      record={null}
-                      previewMode={previewMode}
-                      canCreate={canCreateLookup}
-                      onCreate={onLookupCreate}
+            <tfoot>
+              <tr>
+                <td colSpan={columns.length + 1} className="bg-base-100">
+                  <LookupField
+                    key={addLookupResetKey}
+                    field={addLookupField}
+                    value={null}
+                    onChange={async (nextItemId) => {
+                      if (!nextItemId) return;
+                      const nextLabel = await resolveItemLabel(nextItemId);
+                      await addRowFromOption({ value: nextItemId, label: nextLabel || nextItemId });
+                    }}
+                    readonly={readonly}
+                    record={null}
+                    previewMode={previewMode}
+                    canCreate={canCreateLookup}
+                    onCreate={onLookupCreate}
+                      extraActions={[
+                        {
+                          label: creatingCustomLine ? "Adding custom line..." : "New custom line",
+                          help: "Add freight, service, discount, or one-off item without creating a product.",
+                          onClick: createInlineCustomLine,
+                        },
+                      ]}
                     />
-                  ) : index === 1 ? (
-                    <span className="text-xs opacity-60">Select an item to add a new line</span>
-                  ) : null}
-                </td>
-              ))}
-              <td>
-                <span className="text-xs opacity-50">New</span>
-              </td>
-            </tr>
-          </tfoot>
-          )}
-        </table>
-      </div>
-      {error ? <div className="px-3 pb-3 text-xs text-error">{error}</div> : null}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+        {error ? <div className="shrink-0 px-3 py-2 text-xs text-error border-t border-base-300">{error}</div> : null}
       {pendingDeleteRow ? (
         <div className="modal modal-open">
           <div className="modal-box max-w-md">
@@ -1614,7 +1817,7 @@ function WorkspaceUsersField({ field, value, onChange, readonly, members, loadin
   );
 }
 
-function LookupField({ field, value, onChange, readonly, record, previewMode = false, onCreate, canCreate }) {
+function LookupField({ field, value, onChange, readonly, record, previewMode = false, onCreate, canCreate, extraActions = [] }) {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [options, setOptions] = useState([]);
   const [search, setSearch] = useState("");
@@ -1629,6 +1832,9 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
   const placeholder = field?.search_placeholder || field?.placeholder || "Search...";
   const recordContext = useMemo(() => buildRecordContext(field?.domain || null, record), [field?.domain, record]);
   const recordContextKey = useMemo(() => JSON.stringify(recordContext), [recordContext]);
+  const visibleExtraActions = Array.isArray(extraActions)
+    ? extraActions.filter((action) => action && typeof action.onClick === "function")
+    : [];
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedSearch(search), 400);
@@ -1760,6 +1966,12 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
     onChange(option.value || null);
   }
 
+  function handleExtraAction(action) {
+    setOpened(false);
+    setSearch(selectedLabel || "");
+    action.onClick();
+  }
+
   const inputValue = opened ? search : search || selectedLabel || "";
   const showOptions = opened;
   const allowCreate =
@@ -1843,6 +2055,22 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
               </ul>
             </div>
           )}
+          {visibleExtraActions.length > 0 && (
+            <div className="shrink-0 border-t border-base-400 p-1">
+              <ul className="menu menu-compact menu-vertical block w-full">
+                {visibleExtraActions.map((action) => (
+                  <li key={action.label || "custom-action"}>
+                    <button type="button" onClick={() => handleExtraAction(action)}>
+                      <span className="flex flex-col items-start gap-0.5">
+                        <span>{action.label || "New custom line"}</span>
+                        {action.help ? <span className="text-xs font-normal opacity-60">{action.help}</span> : null}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
       {showOptions && isMobile && (
@@ -1910,6 +2138,16 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
                     </button>
                   </li>
                 )}
+                {visibleExtraActions.map((action, index) => (
+                  <li key={action.label || `extra-${index}`} className={index === 0 ? "border-t border-base-400 mt-1 pt-1" : ""}>
+                    <button type="button" onClick={() => handleExtraAction(action)}>
+                      <span className="flex flex-col items-start gap-0.5">
+                        <span>{action.label || "New custom line"}</span>
+                        {action.help ? <span className="text-xs font-normal opacity-60">{action.help}</span> : null}
+                      </span>
+                    </button>
+                  </li>
+                ))}
               </ul>
             </div>
           </div>

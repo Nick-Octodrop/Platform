@@ -31,7 +31,13 @@ def main() -> int:
             workspace_id=workspace_id,
             timeout=120,
         )
-        if status == 404:
+        errors = payload.get("errors") if isinstance(payload, dict) else None
+        codes: set[str] = set()
+        if isinstance(errors, list):
+            for entry in errors:
+                if isinstance(entry, dict) and isinstance(entry.get("code"), str):
+                    codes.add(entry["code"])
+        if status == 404 or "MODULE_NOT_FOUND" in codes:
             print(f"[cleanup] missing  {module_id}")
             continue
         if status >= 400 or not is_ok(payload):

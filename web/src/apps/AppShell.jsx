@@ -873,7 +873,8 @@ export default function AppShell({
       pushToast("info", "Preview mode: actions are disabled");
       return null;
     }
-    if (!action?.id) {
+    const inlineAction = Boolean(runtimeContext?.inlineAction);
+    if (!action?.id && !inlineAction) {
       pushToast("error", "Action missing id");
       return null;
     }
@@ -947,6 +948,26 @@ export default function AppShell({
           pushToast("success", "Updated (local preview)");
           return { updated: true };
         }
+      }
+      if (inlineAction) {
+        if (action.kind === "update_record" && resolvedPatch && typeof resolvedPatch === "object") {
+          const entityFullId = resolveEntityFullId(manifest, action.entity_id);
+          if (!entityFullId || !contextRecordId) {
+            pushToast("error", "Action missing record context");
+            return null;
+          }
+          const payload = { ...(contextRecordDraft || {}), ...resolvedPatch };
+          const res = await apiFetch(`/records/${entityFullId}/${contextRecordId}`, {
+            method: "PUT",
+            body: JSON.stringify(payload),
+          });
+          setRecordDraft(res?.record || payload);
+          setRefreshTick((v) => v + 1);
+          pushToast("success", "Action complete");
+          return { updated: true, record_id: contextRecordId, record: res?.record || payload };
+        }
+        pushToast("error", "Inline action kind not supported");
+        return null;
       }
       const res = await runManifestAction(moduleId, action.id, {
         record_id: contextRecordId,
@@ -1719,6 +1740,7 @@ function AppView({
         recordDraft: modalDraft,
         selectedIds,
         skipConfirm: true,
+        inlineAction: !resolvedAction.id,
       });
       Promise.resolve(run)
         .then((result) => {

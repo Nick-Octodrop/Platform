@@ -95,6 +95,18 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
   }, [entityId, recordId, showChanges]);
 
   useEffect(() => {
+    function handleActivityMutated(event) {
+      const detail = event?.detail || {};
+      if (detail.entityId === entityId && detail.recordId === recordId) {
+        loadActivity();
+      }
+    }
+    window.addEventListener("octo:activity-mutated", handleActivityMutated);
+    return () => window.removeEventListener("octo:activity-mutated", handleActivityMutated);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entityId, recordId, showChanges]);
+
+  useEffect(() => {
     let mounted = true;
     async function loadCurrentUser() {
       try {

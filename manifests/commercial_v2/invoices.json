@@ -36,7 +36,12 @@
         "group": "Commercial",
         "mode": "inline",
         "items": [
-          { "label": "Invoices", "to": "page:biz_invoice.list_page" }
+          { "label": "Invoices", "to": "page:biz_invoice.list_page" },
+          { "label": "Draft", "to": "page:biz_invoice.draft_page" },
+          { "label": "Issued", "to": "page:biz_invoice.issued_page" },
+          { "label": "Part Paid", "to": "page:biz_invoice.part_paid_page" },
+          { "label": "Paid", "to": "page:biz_invoice.paid_page" },
+          { "label": "Credit Notes", "to": "page:biz_invoice.credit_notes_page" }
         ]
       }
     ]
@@ -418,6 +423,20 @@
       }
     }
   ],
+  "triggers": [
+    { "id": "biz_invoices.record.biz_invoice.created", "label": "Invoice created", "event": "record.created", "entity_id": "entity.biz_invoice" },
+    { "id": "biz_invoices.record.biz_invoice.updated", "label": "Invoice updated", "event": "record.updated", "entity_id": "entity.biz_invoice" },
+    { "id": "biz_invoices.record.biz_invoice_line.created", "label": "Invoice Line created", "event": "record.created", "entity_id": "entity.biz_invoice_line" },
+    { "id": "biz_invoices.record.biz_invoice_line.updated", "label": "Invoice Line updated", "event": "record.updated", "entity_id": "entity.biz_invoice_line" },
+    { "id": "biz_invoices.workflow.biz_invoice.status_changed", "label": "Invoice status changed", "event": "workflow.status_changed", "entity_id": "entity.biz_invoice", "status_field": "biz_invoice.status" },
+    { "id": "biz_invoices.action.invoice_new.clicked", "label": "New Invoice clicked", "event": "action.clicked", "action_id": "action.invoice_new" },
+    { "id": "biz_invoices.action.invoice_issue.clicked", "label": "Issue / Send Invoice clicked", "event": "action.clicked", "action_id": "action.invoice_issue" },
+    { "id": "biz_invoices.action.invoice_mark_part_paid.clicked", "label": "Mark Part Paid clicked", "event": "action.clicked", "action_id": "action.invoice_mark_part_paid" },
+    { "id": "biz_invoices.action.invoice_mark_paid.clicked", "label": "Mark Paid clicked", "event": "action.clicked", "action_id": "action.invoice_mark_paid" },
+    { "id": "biz_invoices.action.invoice_open_cancel_modal.clicked", "label": "Cancel clicked", "event": "action.clicked", "action_id": "action.invoice_open_cancel_modal" },
+    { "id": "biz_invoices.action.invoice_create_credit_note.clicked", "label": "Create Credit Note clicked", "event": "action.clicked", "action_id": "action.invoice_create_credit_note" },
+    { "id": "biz_invoices.action.invoice_mark_credited.clicked", "label": "Mark Credited clicked", "event": "action.clicked", "action_id": "action.invoice_mark_credited" }
+  ],
   "transformations": [
     {
       "key": "invoice_to_credit_note",
@@ -700,24 +719,27 @@
               "biz_invoice_line.unit_price": 0
             },
             "columns": [
-              { "field_id": "biz_invoice_line.product_id", "label": "Product", "readonly": true },
-              { "field_id": "biz_invoice_line.description", "label": "Description" },
-              { "field_id": "biz_invoice_line.uom", "label": "UOM" },
-              { "field_id": "biz_invoice_line.quantity", "label": "Qty", "type": "number" },
-              { "field_id": "biz_invoice_line.unit_price", "label": "Unit Price", "type": "number" },
-              { "field_id": "biz_invoice_line.line_total", "label": "Line Total", "type": "number" }
+              { "field_id": "biz_invoice_line.product_id", "label": "Product", "readonly": true, "width": 220 },
+              { "field_id": "biz_invoice_line.description", "label": "Description", "width": 500 },
+              { "field_id": "biz_invoice_line.uom", "label": "UOM", "type": "enum", "width": 105, "options": [{ "value": "EA", "label": "Each" }, { "value": "SET", "label": "Set" }, { "value": "KIT", "label": "Kit" }, { "value": "LOT", "label": "Lot" }, { "value": "PALLET", "label": "Pallet" }, { "value": "CONTAINER", "label": "Container" }, { "value": "M", "label": "Meter" }] },
+              { "field_id": "biz_invoice_line.quantity", "label": "Qty", "type": "number", "width": 90, "align": "right" },
+              { "field_id": "biz_invoice_line.unit_price", "label": "Unit Price", "type": "number", "width": 155, "align": "right", "currency_field": "biz_invoice_line.currency_snapshot" },
+              { "field_id": "biz_invoice_line.line_total", "label": "Line Total", "type": "number", "readonly": true, "width": 155, "align": "right", "currency_field": "biz_invoice_line.currency_snapshot" }
             ]
           }
         }
       ],
       "header": {
         "statusbar": { "field_id": "biz_invoice.status" },
-        "secondary_actions": [
+        "auto_state_actions": false,
+        "primary_actions": [
           { "action_id": "action.invoice_issue" },
           { "action_id": "action.invoice_mark_part_paid" },
           { "action_id": "action.invoice_mark_paid" },
           { "action_id": "action.invoice_create_credit_note" },
-          { "action_id": "action.invoice_mark_credited" },
+          { "action_id": "action.invoice_mark_credited" }
+        ],
+        "secondary_actions": [
           { "action_id": "action.invoice_open_cancel_modal" }
         ],
         "tabs": {
@@ -727,7 +749,7 @@
             { "id": "summary", "label": "Summary", "sections": ["summary"] },
             { "id": "notes", "label": "Notes", "sections": ["notes"] },
             { "id": "financials", "label": "Payments Summary", "sections": ["financials"] },
-            { "id": "lines", "label": "Invoice Lines", "sections": ["lines"] },
+            { "id": "lines", "label": "Line Items", "sections": ["lines"] },
             { "id": "related", "label": "Related Records", "sections": ["related"] }
           ]
         }
@@ -834,7 +856,22 @@
             "biz_invoice_line.line_total"
           ]
         }
-      ]
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "biz_invoice_line.invoice_id",
+          "biz_invoice_line.product_id",
+          "biz_invoice_line.description",
+          "biz_invoice_line.uom",
+          "biz_invoice_line.quantity",
+          "biz_invoice_line.unit_price",
+          "biz_invoice_line.line_total"
+        ]
+      }
     }
   ],
   "pages": [
@@ -914,6 +951,146 @@
                 { "mode": "calendar", "target": "view:biz_invoice.calendar" },
                 { "mode": "graph", "target": "view:biz_invoice.graph" },
                 { "mode": "pivot", "target": "view:biz_invoice.list", "default_group_by": "biz_invoice.status" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_invoice.draft_page",
+      "title": "Draft Invoices",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.invoice_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_invoice",
+              "default_mode": "list",
+              "default_filter_id": "draft",
+              "modes": [
+                { "mode": "list", "target": "view:biz_invoice.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_invoice.issued_page",
+      "title": "Issued Invoices",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.invoice_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_invoice",
+              "default_mode": "list",
+              "default_filter_id": "issued",
+              "modes": [
+                { "mode": "list", "target": "view:biz_invoice.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_invoice.part_paid_page",
+      "title": "Part Paid Invoices",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.invoice_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_invoice",
+              "default_mode": "list",
+              "default_filter_id": "part_paid",
+              "modes": [
+                { "mode": "list", "target": "view:biz_invoice.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_invoice.paid_page",
+      "title": "Paid Invoices",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.invoice_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_invoice",
+              "default_mode": "list",
+              "default_filter_id": "paid",
+              "modes": [
+                { "mode": "list", "target": "view:biz_invoice.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_invoice.credit_notes_page",
+      "title": "Credit Notes",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.invoice_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_invoice",
+              "default_mode": "list",
+              "default_filter_id": "credit_notes",
+              "modes": [
+                { "mode": "list", "target": "view:biz_invoice.list" }
               ]
             }
           ]

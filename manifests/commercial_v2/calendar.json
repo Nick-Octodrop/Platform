@@ -1,0 +1,683 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "biz_calendar",
+    "key": "biz_calendar",
+    "name": "Calendar",
+    "version": "1.0.0",
+    "description": "Team calendar for NLight sales follow-ups, site visits, order handoffs, procurement calls, and finance milestones.",
+    "category": "Operations",
+    "icon_key": "lucide:CalendarDays"
+  },
+  "depends_on": {
+    "required": [
+      { "module": "biz_contacts", "version": ">=1.0.0" },
+      { "module": "biz_quotes", "version": ">=1.0.0" },
+      { "module": "biz_orders", "version": ">=1.0.0" },
+      { "module": "biz_purchase_orders", "version": ">=1.0.0" },
+      { "module": "biz_invoices", "version": ">=1.0.0" },
+      { "module": "biz_crm", "version": ">=1.0.0" },
+      { "module": "biz_tasks", "version": ">=1.0.0" }
+    ]
+  },
+  "app": {
+    "home": "page:biz_calendar_event.calendar_page",
+    "defaults": {
+      "entity_home_page": "page:biz_calendar_event.list_page",
+      "entity_form_page": "page:biz_calendar_event.form_page",
+      "entities": {
+        "entity.biz_calendar_event": {
+          "entity_home_page": "page:biz_calendar_event.list_page",
+          "entity_form_page": "page:biz_calendar_event.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Operations",
+        "mode": "inline",
+        "items": [
+          { "label": "Calendar", "to": "page:biz_calendar_event.calendar_page" },
+          { "label": "My Calendar", "to": "page:biz_calendar_event.mine_page" },
+          { "label": "Site Visits", "to": "page:biz_calendar_event.site_visits_page" },
+          { "label": "Operations", "to": "page:biz_calendar_event.operations_page" },
+          { "label": "Finance", "to": "page:biz_calendar_event.finance_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.biz_calendar_event",
+      "label": "Calendar Event",
+      "display_field": "biz_calendar_event.title",
+      "fields": [
+        { "id": "biz_calendar_event.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "biz_calendar_event.title", "type": "string", "label": "Event", "required": true },
+        {
+          "id": "biz_calendar_event.event_type",
+          "type": "enum",
+          "label": "Type",
+          "default": "meeting",
+          "options": [
+            { "value": "call", "label": "Call" },
+            { "value": "meeting", "label": "Meeting" },
+            { "value": "site_visit", "label": "Site Visit" },
+            { "value": "quote_follow_up", "label": "Quote Follow-Up" },
+            { "value": "order_handoff", "label": "Order Handoff" },
+            { "value": "supplier_check_in", "label": "Supplier Check-In" },
+            { "value": "finance_review", "label": "Finance Review" },
+            { "value": "internal", "label": "Internal" }
+          ]
+        },
+        {
+          "id": "biz_calendar_event.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "planned",
+          "ui": { "widget": "steps" },
+          "options": [
+            { "value": "planned", "label": "Planned" },
+            { "value": "confirmed", "label": "Confirmed" },
+            { "value": "done", "label": "Done" },
+            { "value": "cancelled", "label": "Cancelled" }
+          ]
+        },
+        { "id": "biz_calendar_event.start_at", "type": "datetime", "label": "Start", "required": true },
+        { "id": "biz_calendar_event.end_at", "type": "datetime", "label": "End" },
+        { "id": "biz_calendar_event.all_day", "type": "bool", "label": "All Day", "default": false },
+        { "id": "biz_calendar_event.owner_user_id", "type": "user", "label": "Owner" },
+        { "id": "biz_calendar_event.participant_user_ids", "type": "users", "label": "Participants" },
+        {
+          "id": "biz_calendar_event.visibility",
+          "type": "enum",
+          "label": "Visibility",
+          "default": "team",
+          "options": [
+            { "value": "private", "label": "Private" },
+            { "value": "team", "label": "Team" },
+            { "value": "directors", "label": "Directors" }
+          ]
+        },
+        { "id": "biz_calendar_event.location", "type": "string", "label": "Location" },
+        {
+          "id": "biz_calendar_event.company_id",
+          "type": "lookup",
+          "label": "Company",
+          "entity": "entity.biz_contact",
+          "display_field": "biz_contact.name"
+        },
+        {
+          "id": "biz_calendar_event.lead_id",
+          "type": "lookup",
+          "label": "Lead",
+          "entity": "entity.crm_lead",
+          "display_field": "crm_lead.title"
+        },
+        {
+          "id": "biz_calendar_event.opportunity_id",
+          "type": "lookup",
+          "label": "Opportunity",
+          "entity": "entity.crm_opportunity",
+          "display_field": "crm_opportunity.title"
+        },
+        {
+          "id": "biz_calendar_event.site_id",
+          "type": "lookup",
+          "label": "Site",
+          "entity": "entity.crm_site",
+          "display_field": "crm_site.name"
+        },
+        {
+          "id": "biz_calendar_event.task_id",
+          "type": "lookup",
+          "label": "Task",
+          "entity": "entity.biz_task",
+          "display_field": "biz_task.title"
+        },
+        {
+          "id": "biz_calendar_event.quote_id",
+          "type": "lookup",
+          "label": "Quote",
+          "entity": "entity.biz_quote",
+          "display_field": "biz_quote.quote_number"
+        },
+        {
+          "id": "biz_calendar_event.order_id",
+          "type": "lookup",
+          "label": "Order",
+          "entity": "entity.biz_order",
+          "display_field": "biz_order.order_number"
+        },
+        {
+          "id": "biz_calendar_event.purchase_order_id",
+          "type": "lookup",
+          "label": "Purchase Order",
+          "entity": "entity.biz_purchase_order",
+          "display_field": "biz_purchase_order.po_number"
+        },
+        {
+          "id": "biz_calendar_event.invoice_id",
+          "type": "lookup",
+          "label": "Invoice",
+          "entity": "entity.biz_invoice",
+          "display_field": "biz_invoice.invoice_number"
+        },
+        { "id": "biz_calendar_event.description", "type": "text", "label": "Description" },
+        { "id": "biz_calendar_event.cancel_reason", "type": "text", "label": "Cancel Reason", "required_when": { "op": "eq", "field": "biz_calendar_event.status", "value": "cancelled" } },
+        { "id": "biz_calendar_event.attachments", "type": "attachments", "label": "Attachments" },
+        { "id": "biz_calendar_event.created_at", "type": "datetime", "label": "Created At", "readonly": true }
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "biz_calendar_event.title",
+          "biz_calendar_event.event_type",
+          "biz_calendar_event.status",
+          "biz_calendar_event.start_at",
+          "biz_calendar_event.end_at",
+          "biz_calendar_event.all_day",
+          "biz_calendar_event.owner_user_id",
+          "biz_calendar_event.participant_user_ids",
+          "biz_calendar_event.visibility",
+          "biz_calendar_event.location",
+          "biz_calendar_event.company_id",
+          "biz_calendar_event.lead_id",
+          "biz_calendar_event.opportunity_id",
+          "biz_calendar_event.site_id",
+          "biz_calendar_event.task_id",
+          "biz_calendar_event.quote_id",
+          "biz_calendar_event.order_id",
+          "biz_calendar_event.purchase_order_id",
+          "biz_calendar_event.invoice_id",
+          "biz_calendar_event.description",
+          "biz_calendar_event.cancel_reason"
+        ]
+      }
+    }
+  ],
+  "actions": [
+    { "id": "action.biz_calendar_event_new", "kind": "open_form", "label": "New Event", "target": "biz_calendar_event.form" },
+    {
+      "id": "action.biz_calendar_event_confirm",
+      "kind": "update_record",
+      "entity_id": "entity.biz_calendar_event",
+      "label": "Confirm",
+      "patch": { "biz_calendar_event.status": "confirmed" },
+      "visible_when": { "op": "eq", "field": "biz_calendar_event.status", "value": "planned" }
+    },
+    {
+      "id": "action.biz_calendar_event_done",
+      "kind": "update_record",
+      "entity_id": "entity.biz_calendar_event",
+      "label": "Mark Done",
+      "patch": { "biz_calendar_event.status": "done" },
+      "visible_when": { "op": "in", "field": "biz_calendar_event.status", "value": ["planned", "confirmed"] }
+    },
+    {
+      "id": "action.biz_calendar_event_cancel",
+      "kind": "update_record",
+      "entity_id": "entity.biz_calendar_event",
+      "label": "Cancel",
+      "modal_id": "modal.biz_calendar_event_cancel",
+      "visible_when": { "op": "in", "field": "biz_calendar_event.status", "value": ["planned", "confirmed"] }
+    }
+  ],
+  "workflows": [
+    {
+      "id": "biz_calendar_event_status_workflow",
+      "entity": "entity.biz_calendar_event",
+      "status_field": "biz_calendar_event.status",
+      "states": [
+        { "id": "planned", "label": "Planned", "required_fields": ["biz_calendar_event.title", "biz_calendar_event.start_at"] },
+        { "id": "confirmed", "label": "Confirmed" },
+        { "id": "done", "label": "Done" },
+        { "id": "cancelled", "label": "Cancelled" }
+      ],
+      "transitions": [
+        { "from": "planned", "to": "confirmed", "label": "Confirm" },
+        { "from": "planned", "to": "done", "label": "Mark Done" },
+        { "from": "confirmed", "to": "done", "label": "Mark Done" },
+        { "from": "planned", "to": "cancelled", "label": "Cancel" },
+        { "from": "confirmed", "to": "cancelled", "label": "Cancel" }
+      ],
+      "required_fields_by_state": {
+        "cancelled": ["biz_calendar_event.cancel_reason"]
+      }
+    }
+  ],
+  "triggers": [
+    { "id": "biz_calendar.record.biz_calendar_event.created", "label": "Calendar Event created", "event": "record.created", "entity_id": "entity.biz_calendar_event" },
+    { "id": "biz_calendar.record.biz_calendar_event.updated", "label": "Calendar Event updated", "event": "record.updated", "entity_id": "entity.biz_calendar_event" },
+    { "id": "biz_calendar.workflow.biz_calendar_event.status_changed", "label": "Calendar Event status changed", "event": "workflow.status_changed", "entity_id": "entity.biz_calendar_event", "status_field": "biz_calendar_event.status" },
+    { "id": "biz_calendar.action.biz_calendar_event_new.clicked", "label": "New Event clicked", "event": "action.clicked", "action_id": "action.biz_calendar_event_new" },
+    { "id": "biz_calendar.action.biz_calendar_event_confirm.clicked", "label": "Confirm clicked", "event": "action.clicked", "action_id": "action.biz_calendar_event_confirm" },
+    { "id": "biz_calendar.action.biz_calendar_event_done.clicked", "label": "Mark Done clicked", "event": "action.clicked", "action_id": "action.biz_calendar_event_done" },
+    { "id": "biz_calendar.action.biz_calendar_event_cancel.clicked", "label": "Cancel clicked", "event": "action.clicked", "action_id": "action.biz_calendar_event_cancel" }
+  ],
+  "views": [
+    {
+      "id": "biz_calendar_event.list",
+      "kind": "list",
+      "entity": "entity.biz_calendar_event",
+      "columns": [
+        { "field_id": "biz_calendar_event.title" },
+        { "field_id": "biz_calendar_event.event_type" },
+        { "field_id": "biz_calendar_event.status" },
+        { "field_id": "biz_calendar_event.start_at" },
+        { "field_id": "biz_calendar_event.owner_user_id" },
+        { "field_id": "biz_calendar_event.company_id" },
+        { "field_id": "biz_calendar_event.opportunity_id" },
+        { "field_id": "biz_calendar_event.order_id" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.biz_calendar_event_new" }],
+        "open_record_target": "page:biz_calendar_event.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search calendar...",
+          "fields": ["biz_calendar_event.title", "biz_calendar_event.location", "biz_calendar_event.description"]
+        },
+        "filters": [
+          { "id": "planned", "label": "Planned", "domain": { "op": "in", "field": "biz_calendar_event.status", "value": ["planned", "confirmed"] } },
+          { "id": "mine", "label": "My Calendar", "domain": { "op": "or", "conditions": [{ "op": "eq", "field": "biz_calendar_event.owner_user_id", "value": { "ref": "$actor.user_id" } }, { "op": "contains", "field": "biz_calendar_event.participant_user_ids", "value": { "ref": "$actor.user_id" } }] } },
+          { "id": "crm", "label": "CRM Events", "domain": { "op": "or", "conditions": [{ "op": "exists", "field": "biz_calendar_event.lead_id" }, { "op": "exists", "field": "biz_calendar_event.opportunity_id" }] } },
+          { "id": "site_visits", "label": "Site Visits", "domain": { "op": "eq", "field": "biz_calendar_event.event_type", "value": "site_visit" } },
+          { "id": "operations", "label": "Operations", "domain": { "op": "or", "conditions": [{ "op": "exists", "field": "biz_calendar_event.order_id" }, { "op": "exists", "field": "biz_calendar_event.purchase_order_id" }] } },
+          { "id": "finance", "label": "Finance", "domain": { "op": "exists", "field": "biz_calendar_event.invoice_id" } },
+          { "id": "done", "label": "Done", "domain": { "op": "eq", "field": "biz_calendar_event.status", "value": "done" } }
+        ]
+      }
+    },
+    {
+      "id": "biz_calendar_event.kanban",
+      "kind": "kanban",
+      "entity": "entity.biz_calendar_event",
+      "card": {
+        "title_field": "biz_calendar_event.title",
+        "subtitle_fields": ["biz_calendar_event.start_at", "biz_calendar_event.location"],
+        "badge_fields": ["biz_calendar_event.status", "biz_calendar_event.event_type"]
+      }
+    },
+    {
+      "id": "biz_calendar_event.calendar",
+      "kind": "calendar",
+      "entity": "entity.biz_calendar_event",
+      "calendar": {
+        "title_field": "biz_calendar_event.title",
+        "date_start": "biz_calendar_event.start_at",
+        "date_end": "biz_calendar_event.end_at",
+        "all_day_field": "biz_calendar_event.all_day",
+        "color_field": "biz_calendar_event.event_type",
+        "default_scale": "week"
+      }
+    },
+    {
+      "id": "biz_calendar_event.graph",
+      "kind": "graph",
+      "entity": "entity.biz_calendar_event",
+      "default": { "type": "bar", "group_by": "biz_calendar_event.event_type", "measure": "count" }
+    },
+    {
+      "id": "biz_calendar_event.form",
+      "kind": "form",
+      "entity": "entity.biz_calendar_event",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Event",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "biz_calendar_event.title",
+            "biz_calendar_event.event_type",
+            "biz_calendar_event.status",
+            "biz_calendar_event.start_at",
+            "biz_calendar_event.end_at",
+            "biz_calendar_event.all_day",
+            "biz_calendar_event.owner_user_id",
+            "biz_calendar_event.participant_user_ids",
+            "biz_calendar_event.visibility",
+            "biz_calendar_event.location"
+          ]
+        },
+        {
+          "id": "links",
+          "title": "Related Records",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "biz_calendar_event.company_id",
+            "biz_calendar_event.lead_id",
+            "biz_calendar_event.opportunity_id",
+            "biz_calendar_event.site_id",
+            "biz_calendar_event.task_id",
+            "biz_calendar_event.quote_id",
+            "biz_calendar_event.order_id",
+            "biz_calendar_event.purchase_order_id",
+            "biz_calendar_event.invoice_id"
+          ]
+        },
+        {
+          "id": "details",
+          "title": "Details",
+          "fields": [
+            "biz_calendar_event.description",
+            "biz_calendar_event.cancel_reason",
+            "biz_calendar_event.attachments"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": { "field_id": "biz_calendar_event.status" },
+        "auto_state_actions": false,
+        "primary_actions": [
+          { "action_id": "action.biz_calendar_event_confirm" },
+          { "action_id": "action.biz_calendar_event_done" }
+        ],
+        "secondary_actions": [
+          { "action_id": "action.biz_calendar_event_cancel" }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "summary",
+          "tabs": [
+            { "id": "summary", "label": "Event", "sections": ["summary"] },
+            { "id": "links", "label": "Links", "sections": ["links"] },
+            { "id": "details", "label": "Details", "sections": ["details"] }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "biz_calendar_event.calendar_page",
+      "title": "Calendar",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_calendar_event",
+              "default_mode": "calendar",
+              "default_filter_id": "planned",
+              "modes": [
+                { "mode": "calendar", "target": "view:biz_calendar_event.calendar" },
+                { "mode": "list", "target": "view:biz_calendar_event.list" },
+                { "mode": "kanban", "target": "view:biz_calendar_event.kanban", "default_group_by": "biz_calendar_event.status" },
+                { "mode": "graph", "target": "view:biz_calendar_event.graph" },
+                { "mode": "pivot", "target": "view:biz_calendar_event.list", "default_group_by": "biz_calendar_event.event_type" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_calendar_event.list_page",
+      "title": "Calendar Events",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.biz_calendar_event_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_calendar_event",
+              "default_mode": "list",
+              "default_filter_id": "planned",
+              "modes": [
+                { "mode": "list", "target": "view:biz_calendar_event.list" },
+                { "mode": "calendar", "target": "view:biz_calendar_event.calendar" },
+                { "mode": "kanban", "target": "view:biz_calendar_event.kanban", "default_group_by": "biz_calendar_event.status" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_calendar_event.mine_page",
+      "title": "My Calendar",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.biz_calendar_event_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_calendar_event",
+              "default_mode": "calendar",
+              "default_filter_id": "mine",
+              "modes": [
+                { "mode": "calendar", "target": "view:biz_calendar_event.calendar" },
+                { "mode": "list", "target": "view:biz_calendar_event.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_calendar_event.site_visits_page",
+      "title": "Site Visits",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.biz_calendar_event_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_calendar_event",
+              "default_mode": "calendar",
+              "default_filter_id": "site_visits",
+              "modes": [
+                { "mode": "calendar", "target": "view:biz_calendar_event.calendar" },
+                { "mode": "list", "target": "view:biz_calendar_event.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_calendar_event.operations_page",
+      "title": "Operations Calendar",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.biz_calendar_event_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_calendar_event",
+              "default_mode": "calendar",
+              "default_filter_id": "operations",
+              "modes": [
+                { "mode": "calendar", "target": "view:biz_calendar_event.calendar" },
+                { "mode": "list", "target": "view:biz_calendar_event.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_calendar_event.finance_page",
+      "title": "Finance Calendar",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.biz_calendar_event_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_calendar_event",
+              "default_mode": "calendar",
+              "default_filter_id": "finance",
+              "modes": [
+                { "mode": "calendar", "target": "view:biz_calendar_event.calendar" },
+                { "mode": "list", "target": "view:biz_calendar_event.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_calendar_event.form_page",
+      "title": "Calendar Event",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.biz_calendar_event",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [{ "kind": "view", "target": "view:biz_calendar_event.form" }]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [{ "kind": "chatter", "entity_id": "entity.biz_calendar_event", "record_ref": "$record.id" }]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "modals": [
+    {
+      "id": "modal.biz_calendar_event_cancel",
+      "title": "Cancel Event",
+      "entity_id": "entity.biz_calendar_event",
+      "fields": ["biz_calendar_event.cancel_reason"],
+      "actions": [
+        {
+          "kind": "update_record",
+          "entity_id": "entity.biz_calendar_event",
+          "label": "Cancel Event",
+          "patch": {
+            "biz_calendar_event.status": "cancelled",
+            "biz_calendar_event.cancel_reason": { "ref": "$record.biz_calendar_event.cancel_reason" }
+          },
+          "close_on_success": true
+        },
+        { "kind": "close_modal", "label": "Keep Planned", "variant": "ghost" }
+      ]
+    }
+  ],
+  "interfaces": {
+    "schedulable": [
+      {
+        "entity_id": "entity.biz_calendar_event",
+        "enabled": true,
+        "scope": "module_and_global",
+        "title_field": "biz_calendar_event.title",
+        "date_start": "biz_calendar_event.start_at",
+        "date_end": "biz_calendar_event.end_at",
+        "owner_field": "biz_calendar_event.owner_user_id",
+        "status_field": "biz_calendar_event.status",
+        "location_field": "biz_calendar_event.location",
+        "all_day_field": "biz_calendar_event.all_day",
+        "color_field": "biz_calendar_event.event_type"
+      }
+    ],
+    "documentable": [
+      {
+        "entity_id": "entity.biz_calendar_event",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "biz_calendar_event.attachments",
+        "title_field": "biz_calendar_event.title",
+        "owner_field": "biz_calendar_event.owner_user_id",
+        "category_field": "biz_calendar_event.event_type",
+        "date_field": "biz_calendar_event.start_at",
+        "record_label_field": "biz_calendar_event.title",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
+      }
+    ],
+    "dashboardable": [
+      {
+        "entity_id": "entity.biz_calendar_event",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "biz_calendar_event.start_at",
+        "measures": ["count"],
+        "group_bys": ["biz_calendar_event.status", "biz_calendar_event.event_type", "biz_calendar_event.owner_user_id", "biz_calendar_event.visibility"]
+      }
+    ]
+  }
+}

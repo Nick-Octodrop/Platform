@@ -39,4 +39,11 @@ python3 manifests/marketplace/install_all.py
 
 $env:OCTO_BASE_URL="https://octodrop-platform-api.fly.dev"
 $env:OCTO_API_TOKEN=""
-python manifests/marketplace/install_all.py
+
+
+python manifests/commercial_v2/install_all.py
+python manifests/commercial_v2/cleanup_removed_modules.py
+python manifests/commercial_v2/setup_document_numbering.py
+python manifests/commercial_v2/seed_dummy_examples.py
+python manifests/commercial_v2/setup_access_profiles.py --skip-assignments
+

@@ -35,7 +35,11 @@
         "group": "Commercial",
         "mode": "inline",
         "items": [
-          { "label": "Documents", "to": "page:biz_document.list_page" }
+          { "label": "Documents", "to": "page:biz_document.list_page" },
+          { "label": "Quote Docs", "to": "page:biz_document.quote_docs_page" },
+          { "label": "Invoice Docs", "to": "page:biz_document.invoice_docs_page" },
+          { "label": "Supplier Docs", "to": "page:biz_document.supplier_docs_page" },
+          { "label": "Archived", "to": "page:biz_document.archived_page" }
         ]
       }
     ]
@@ -314,10 +318,13 @@
       ],
       "header": {
         "statusbar": { "field_id": "biz_document.status" },
-        "secondary_actions": [
+        "auto_state_actions": false,
+        "primary_actions": [
           { "action_id": "action.document_approve" },
           { "action_id": "action.document_mark_sent" },
-          { "action_id": "action.document_mark_signed" },
+          { "action_id": "action.document_mark_signed" }
+        ],
+        "secondary_actions": [
           { "action_id": "action.document_open_archive_modal" }
         ],
         "tabs": {
@@ -405,6 +412,118 @@
                 { "mode": "kanban", "target": "view:biz_document.kanban", "default_group_by": "biz_document.status" },
                 { "mode": "graph", "target": "view:biz_document.graph" },
                 { "mode": "pivot", "target": "view:biz_document.list", "default_group_by": "biz_document.document_type" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_document.quote_docs_page",
+      "title": "Quote Documents",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.document_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_document",
+              "default_mode": "list",
+              "default_filter_id": "quote_docs",
+              "modes": [
+                { "mode": "list", "target": "view:biz_document.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_document.invoice_docs_page",
+      "title": "Invoice Documents",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.document_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_document",
+              "default_mode": "list",
+              "default_filter_id": "invoice_docs",
+              "modes": [
+                { "mode": "list", "target": "view:biz_document.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_document.supplier_docs_page",
+      "title": "Supplier Documents",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.document_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_document",
+              "default_mode": "list",
+              "default_filter_id": "supplier_docs",
+              "modes": [
+                { "mode": "list", "target": "view:biz_document.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_document.archived_page",
+      "title": "Archived Documents",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.document_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_document",
+              "default_mode": "list",
+              "default_filter_id": "archived",
+              "modes": [
+                { "mode": "list", "target": "view:biz_document.list" }
               ]
             }
           ]
@@ -530,6 +649,16 @@
         "archived": ["biz_document.archive_reason"]
       }
     }
+  ],
+  "triggers": [
+    { "id": "biz_documents.record.biz_document.created", "label": "Document created", "event": "record.created", "entity_id": "entity.biz_document" },
+    { "id": "biz_documents.record.biz_document.updated", "label": "Document updated", "event": "record.updated", "entity_id": "entity.biz_document" },
+    { "id": "biz_documents.workflow.biz_document.status_changed", "label": "Document status changed", "event": "workflow.status_changed", "entity_id": "entity.biz_document", "status_field": "biz_document.status" },
+    { "id": "biz_documents.action.document_new.clicked", "label": "New Document clicked", "event": "action.clicked", "action_id": "action.document_new" },
+    { "id": "biz_documents.action.document_approve.clicked", "label": "Approve clicked", "event": "action.clicked", "action_id": "action.document_approve" },
+    { "id": "biz_documents.action.document_mark_sent.clicked", "label": "Mark Sent clicked", "event": "action.clicked", "action_id": "action.document_mark_sent" },
+    { "id": "biz_documents.action.document_mark_signed.clicked", "label": "Mark Signed clicked", "event": "action.clicked", "action_id": "action.document_mark_signed" },
+    { "id": "biz_documents.action.document_open_archive_modal.clicked", "label": "Archive clicked", "event": "action.clicked", "action_id": "action.document_open_archive_modal" }
   ],
   "transformations": []
 }

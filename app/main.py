@@ -1577,14 +1577,21 @@ def _filter_manifest_for_actor(manifest: dict, module_id: str, actor: dict | Non
                         continue
                     columns = line_editor.get("columns")
                     if isinstance(columns, list):
-                        line_editor["columns"] = [
-                            col
-                            for col in columns
-                            if isinstance(col, dict)
-                            and isinstance(col.get("field_id"), str)
-                            and col.get("field_id") in visible_fields
-                        ]
-                    for map_key in ("item_field_map", "itemFieldMap", "parent_field_map", "parentFieldMap", "defaults"):
+                        next_columns = []
+                        for col in columns:
+                            if not (
+                                isinstance(col, dict)
+                                and isinstance(col.get("field_id"), str)
+                                and col.get("field_id") in visible_fields
+                            ):
+                                continue
+                            next_col = copy.deepcopy(col)
+                            currency_field = next_col.get("currency_field")
+                            if isinstance(currency_field, str) and currency_field not in visible_fields:
+                                next_col.pop("currency_field", None)
+                            next_columns.append(next_col)
+                        line_editor["columns"] = next_columns
+                    for map_key in ("item_field_map", "itemFieldMap", "parent_field_map", "parentFieldMap", "defaults", "custom_line_defaults", "customLineDefaults"):
                         mapping = line_editor.get(map_key)
                         if isinstance(mapping, dict):
                             line_editor[map_key] = {key: value for key, value in mapping.items() if isinstance(key, str) and key in visible_fields}
@@ -1607,7 +1614,8 @@ def _filter_manifest_for_actor(manifest: dict, module_id: str, actor: dict | Non
                             continue
                         section_ids = tab.get("sections") if isinstance(tab.get("sections"), list) else []
                         next_section_ids = [section_id for section_id in section_ids if isinstance(section_id, str) and section_id in visible_section_ids]
-                        if not next_section_ids:
+                        tab_content = tab.get("content") if isinstance(tab.get("content"), list) else []
+                        if not next_section_ids and not tab_content:
                             continue
                         next_tab = copy.deepcopy(tab)
                         next_tab["sections"] = next_section_ids
@@ -1670,7 +1678,7 @@ def _filter_manifest_for_actor(manifest: dict, module_id: str, actor: dict | Non
             action_id = next_node.get("action_id")
             if isinstance(action_id, str) and not _action_visible_for_actor(actor, module_id, action_id):
                 return None
-            if next_node.get("type") == "related_list":
+            if (next_node.get("kind") or next_node.get("type")) == "related_list":
                 related_entity = next_node.get("entity_id") or next_node.get("entity")
                 if isinstance(related_entity, str) and _normalize_entity_id(related_entity) not in visible_entities:
                     return None
@@ -1680,15 +1688,47 @@ def _filter_manifest_for_actor(manifest: dict, module_id: str, actor: dict | Non
                 if isinstance(value, (list, dict)):
                     next_node[key] = _filter_node(value)
             view_ref = next_node.get("view_id") or next_node.get("view") or next_node.get("target")
-            if (
-                isinstance(view_ref, str)
-                and view_ref.startswith("view.")
-                and visible_view_ids
-                and view_ref not in visible_view_ids
-            ):
+            view_ref_id = None
+            if isinstance(view_ref, str):
+                if view_ref.startswith("view:"):
+                    view_ref_id = view_ref[5:]
+                elif view_ref.startswith("view."):
+                    view_ref_id = view_ref
+            if view_ref_id and visible_view_ids and view_ref_id not in visible_view_ids:
                 return None
             return next_node
         return node
+
+    for view in out.get("views") or []:
+        if not isinstance(view, dict):
+            continue
+        header = view.get("header") if isinstance(view.get("header"), dict) else None
+        tabs_cfg = header.get("tabs") if isinstance(header, dict) and isinstance(header.get("tabs"), dict) else None
+        tabs = tabs_cfg.get("tabs") if isinstance(tabs_cfg, dict) else None
+        if not isinstance(tabs, list):
+            continue
+        next_tabs: list[dict] = []
+        for tab in tabs:
+            if not isinstance(tab, dict):
+                continue
+            next_tab = copy.deepcopy(tab)
+            content = next_tab.get("content")
+            if isinstance(content, list):
+                next_tab["content"] = _filter_node(content)
+            sections = next_tab.get("sections") if isinstance(next_tab.get("sections"), list) else []
+            content = next_tab.get("content") if isinstance(next_tab.get("content"), list) else []
+            if not sections and not content:
+                continue
+            next_tabs.append(next_tab)
+        tabs_cfg["tabs"] = next_tabs
+        default_tab = tabs_cfg.get("default_tab")
+        if not isinstance(default_tab, str) or default_tab not in {
+            tab.get("id") for tab in next_tabs if isinstance(tab, dict) and isinstance(tab.get("id"), str)
+        }:
+            if next_tabs:
+                tabs_cfg["default_tab"] = next_tabs[0].get("id")
+            else:
+                header.pop("tabs", None)
 
     out["pages"] = _filter_node(out.get("pages") or [])
     return out
@@ -3361,6 +3401,7 @@ def _invalidate_module_runtime_caches(module_id: str, *, include_studio_modules:
         _cache_invalidate("studio_modules")
     _compiled_cache_invalidate(module_id)
     _resp_cache_invalidate_module_bootstrap(module_id)
+    _resp_cache_invalidate_prefix("automations_meta:")
 
 
 def _domain_hash(domain: dict | None) -> str:
@@ -12903,6 +12944,9 @@ def _studio2_tool_ensure_status_actions(manifest: dict, entity_id: str | None = 
                 continue
             header = view.get("header") if isinstance(view.get("header"), dict) else {}
             if view.get("kind") == "form":
+                if header.get("auto_state_actions") is False:
+                    view["header"] = header
+                    continue
                 secondary = header.get("secondary_actions") if isinstance(header.get("secondary_actions"), list) else []
                 existing = {a.get("action_id") for a in secondary if isinstance(a, dict)}
                 for state in states:
@@ -36653,6 +36697,11 @@ def _ext_openapi_schema() -> dict:
             "Public Octodrop API for external systems. "
             "Authenticate with `X-Api-Key` and use these routes for metadata, records, "
             "published automation execution, and signed webhook-driven integrations.\n\n"
+            "Keys are workspace-scoped and should be issued per external system with least-privilege scopes. "
+            "The default rate limit is 300 requests per 60 seconds per API credential; 429 responses include "
+            "`Retry-After` and `X-RateLimit-*` headers. List endpoints use `limit`, `offset`, and `cursor`; "
+            "the current hard cap is 200 items per page. Outbound webhooks should be verified with "
+            "`X-Octo-Timestamp` and `X-Octo-Signature`.\n\n"
             "Guide: [/ext/v1/guide.md](/ext/v1/guide.md)\n\n"
             "Event Catalog: [/ext/v1/events.md](/ext/v1/events.md)"
         ),

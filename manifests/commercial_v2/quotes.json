@@ -39,7 +39,10 @@
         "group": "Commercial",
         "mode": "inline",
         "items": [
-          { "label": "Quotes", "to": "page:biz_quote.list_page" }
+          { "label": "Quotes", "to": "page:biz_quote.list_page" },
+          { "label": "Draft", "to": "page:biz_quote.draft_page" },
+          { "label": "Sent", "to": "page:biz_quote.sent_page" },
+          { "label": "Ready To Convert", "to": "page:biz_quote.ready_to_convert_page" }
         ]
       }
     ]
@@ -530,6 +533,19 @@
       }
     }
   ],
+  "triggers": [
+    { "id": "biz_quotes.record.biz_quote.created", "label": "Quote created", "event": "record.created", "entity_id": "entity.biz_quote" },
+    { "id": "biz_quotes.record.biz_quote.updated", "label": "Quote updated", "event": "record.updated", "entity_id": "entity.biz_quote" },
+    { "id": "biz_quotes.record.biz_quote_line.created", "label": "Quote Line created", "event": "record.created", "entity_id": "entity.biz_quote_line" },
+    { "id": "biz_quotes.record.biz_quote_line.updated", "label": "Quote Line updated", "event": "record.updated", "entity_id": "entity.biz_quote_line" },
+    { "id": "biz_quotes.workflow.biz_quote.status_changed", "label": "Quote status changed", "event": "workflow.status_changed", "entity_id": "entity.biz_quote", "status_field": "biz_quote.status" },
+    { "id": "biz_quotes.action.quote_new.clicked", "label": "New Quote clicked", "event": "action.clicked", "action_id": "action.quote_new" },
+    { "id": "biz_quotes.action.quote_mark_sent.clicked", "label": "Mark Sent clicked", "event": "action.clicked", "action_id": "action.quote_mark_sent" },
+    { "id": "biz_quotes.action.quote_mark_accepted.clicked", "label": "Mark Accepted clicked", "event": "action.clicked", "action_id": "action.quote_mark_accepted" },
+    { "id": "biz_quotes.action.quote_convert_to_order.clicked", "label": "Create Order clicked", "event": "action.clicked", "action_id": "action.quote_convert_to_order" },
+    { "id": "biz_quotes.action.quote_open_lost_modal.clicked", "label": "Mark Lost clicked", "event": "action.clicked", "action_id": "action.quote_open_lost_modal" },
+    { "id": "biz_quotes.action.quote_open_expired_modal.clicked", "label": "Mark Expired clicked", "event": "action.clicked", "action_id": "action.quote_open_expired_modal" }
+  ],
   "transformations": [
     {
       "key": "quote_to_customer_order",
@@ -788,14 +804,17 @@
               "biz_quote_line.default_buy_price_snapshot": 0,
               "biz_quote_line.buy_currency_snapshot": "USD"
             },
+            "custom_line_defaults": {
+              "biz_quote_line.line_type": "custom"
+            },
             "columns": [
-              { "field_id": "biz_quote_line.product_id", "label": "Product", "readonly": true },
-              { "field_id": "biz_quote_line.description", "label": "Description" },
-              { "field_id": "biz_quote_line.uom", "label": "UOM" },
-              { "field_id": "biz_quote_line.quantity", "label": "Qty", "type": "number" },
-              { "field_id": "biz_quote_line.unit_price", "label": "Unit Price", "type": "number" },
-              { "field_id": "biz_quote_line.line_discount_percent", "label": "Discount %", "type": "number" },
-              { "field_id": "biz_quote_line.line_total", "label": "Line Total", "type": "number" }
+              { "field_id": "biz_quote_line.product_id", "label": "Product", "readonly": true, "width": 220 },
+              { "field_id": "biz_quote_line.description", "label": "Description", "width": 460 },
+              { "field_id": "biz_quote_line.uom", "label": "UOM", "type": "enum", "width": 105, "options": [{ "value": "EA", "label": "Each" }, { "value": "SET", "label": "Set" }, { "value": "KIT", "label": "Kit" }, { "value": "LOT", "label": "Lot" }, { "value": "PALLET", "label": "Pallet" }, { "value": "CONTAINER", "label": "Container" }, { "value": "M", "label": "Meter" }] },
+              { "field_id": "biz_quote_line.quantity", "label": "Qty", "type": "number", "width": 90, "align": "right" },
+              { "field_id": "biz_quote_line.unit_price", "label": "Unit Price", "type": "number", "width": 155, "align": "right", "currency_field": "biz_quote_line.currency_snapshot" },
+              { "field_id": "biz_quote_line.line_discount_percent", "label": "Disc %", "type": "number", "width": 95, "align": "right" },
+              { "field_id": "biz_quote_line.line_total", "label": "Line Total", "type": "number", "readonly": true, "width": 155, "align": "right", "currency_field": "biz_quote_line.currency_snapshot" }
             ]
           }
         },
@@ -836,10 +855,13 @@
       ],
       "header": {
         "statusbar": { "field_id": "biz_quote.status" },
-        "secondary_actions": [
+        "auto_state_actions": false,
+        "primary_actions": [
           { "action_id": "action.quote_mark_sent" },
           { "action_id": "action.quote_mark_accepted" },
-          { "action_id": "action.quote_convert_to_order" },
+          { "action_id": "action.quote_convert_to_order" }
+        ],
+        "secondary_actions": [
           { "action_id": "action.quote_open_lost_modal" },
           { "action_id": "action.quote_open_expired_modal" }
         ],
@@ -848,7 +870,7 @@
           "default_tab": "summary",
           "tabs": [
             { "id": "summary", "label": "Summary", "sections": ["summary"] },
-            { "id": "lines", "label": "Lines", "sections": ["lines"] },
+            { "id": "lines", "label": "Line Items", "sections": ["lines"] },
             { "id": "totals", "label": "Totals", "sections": ["totals"] },
             { "id": "profitability", "label": "Profitability", "sections": ["profitability"] },
             { "id": "notes", "label": "Notes & Terms", "sections": ["notes"] }
@@ -966,7 +988,29 @@
             "biz_quote_line.estimated_margin_percent"
           ]
         }
-      ]
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "biz_quote_line.quote_id",
+          "biz_quote_line.line_type",
+          "biz_quote_line.product_id",
+          "biz_quote_line.description",
+          "biz_quote_line.uom",
+          "biz_quote_line.quantity",
+          "biz_quote_line.unit_price",
+          "biz_quote_line.line_discount_percent",
+          "biz_quote_line.line_total",
+          "biz_quote_line.default_buy_price_snapshot",
+          "biz_quote_line.buy_currency_snapshot",
+          "biz_quote_line.buy_total",
+          "biz_quote_line.estimated_margin_amount",
+          "biz_quote_line.estimated_margin_percent"
+        ]
+      }
     }
   ],
   "pages": [
@@ -1052,6 +1096,90 @@
                 { "mode": "calendar", "target": "view:biz_quote.calendar" },
                 { "mode": "graph", "target": "view:biz_quote.graph" },
                 { "mode": "pivot", "target": "view:biz_quote.list", "default_group_by": "biz_quote.status" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_quote.draft_page",
+      "title": "Draft Quotes",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.quote_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_quote",
+              "default_mode": "list",
+              "default_filter_id": "draft",
+              "modes": [
+                { "mode": "list", "target": "view:biz_quote.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_quote.sent_page",
+      "title": "Sent Quotes",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.quote_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_quote",
+              "default_mode": "list",
+              "default_filter_id": "sent",
+              "modes": [
+                { "mode": "list", "target": "view:biz_quote.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_quote.ready_to_convert_page",
+      "title": "Ready To Convert",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.quote_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_quote",
+              "default_mode": "list",
+              "default_filter_id": "ready_to_convert",
+              "modes": [
+                { "mode": "list", "target": "view:biz_quote.list" }
               ]
             }
           ]

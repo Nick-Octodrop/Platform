@@ -15,15 +15,30 @@ curl https://your-octodrop.example.com/ext/v1/meta/entities \
   -H "X-Api-Key: octo_live_..."
 ```
 
-Notes:
+Production notes:
 
 - API credentials are workspace-scoped.
 - API credentials can be scoped to metadata, records, and automation access.
 - API credentials are static keys, not OAuth access tokens.
 - There are no refresh tokens for external API callers.
 - Expired or revoked keys return `401`.
-- Rate-limited requests return `429`.
+- Missing scopes or blocked record access return `403`.
+- Rate-limited requests return `429` with `Retry-After`.
 - Keys can be rotated or given an expiry time from the API Credentials settings page.
+- Do not send API keys in query strings, browser local storage, screenshots, logs, or client-side code.
+- Create one API credential per external system so individual vendors can be revoked without disrupting other integrations.
+- Store API keys in a server-side secret manager and rotate them on a planned schedule or immediately after suspected exposure.
+
+Supported scopes:
+
+| Scope | Use |
+| --- | --- |
+| `meta.read` | Discover installed entities and field metadata. |
+| `records.read` | Read and search records. |
+| `records.write` | Create, update, delete, upload, link, and unlink record data or attachments. |
+| `automations.read` | List published automations and automation runs. |
+| `automations.write` | Queue published automation runs. |
+| `*` | Full external API access. Avoid for normal client integrations. |
 
 ## Public Docs
 
@@ -361,6 +376,19 @@ Failure:
 }
 ```
 
+Common status codes:
+
+| Status | Meaning |
+| --- | --- |
+| `200` / `201` | Request succeeded. |
+| `400` | Invalid payload, query parameter, cursor, or manifest field. |
+| `401` | Missing, invalid, expired, or revoked API key. |
+| `403` | Valid key, but missing scope or record/entity access. |
+| `404` | Record, automation, attachment, or route not found within the scoped workspace. |
+| `413` | Upload exceeds the configured file-size limit. |
+| `429` | Rate limit exceeded. Retry after the `Retry-After` value. |
+| `500` | Server error. Retry only if the operation is safe or idempotent from the client side. |
+
 ## Current Limits
 
 - API credentials are rate-limited per credential
@@ -375,6 +403,15 @@ Failure:
 - rate-limited responses also include:
   - `Retry-After`
 - record writes still go through the same manifest validation rules as the main app
+- default attachment upload limit is `10MB`
+- attachment limit can be changed server-side with `OCTO_MAX_UPLOAD_BYTES`
+
+Recommended client retry behavior:
+
+- retry `429` only after `Retry-After`
+- retry transient `500`, `502`, `503`, or `504` with exponential backoff
+- do not blindly retry `POST`, `PUT`, `PATCH`, or `DELETE` unless your integration can safely de-duplicate the operation
+- never retry `401`, `403`, or validation `400` without changing credentials, scopes, or payload
 
 ## Pagination Contract
 
@@ -418,11 +455,15 @@ Notes:
 5. Subscribe external systems to events through webhook subscriptions.
 6. Verify webhook signatures using the shared secret.
 
-## Next Expected Additions
+## Production Readiness Checklist
 
-Planned next layers on top of this foundation:
-
-- richer external event catalog
-- tighter quotas and per-key policy controls
-- more formal public API examples and SDK helpers
-- broader external resources beyond records and automation runs
+- Use a separate API credential for every external system.
+- Grant only the scopes required by that integration.
+- Store the key in a server-side secret manager.
+- Confirm the integration handles `401`, `403`, `404`, `413`, and `429` explicitly.
+- Confirm list syncs use `limit` and `next_cursor`.
+- Confirm webhook receivers verify `X-Octo-Signature` and reject old `X-Octo-Timestamp` values.
+- Confirm webhook handlers are idempotent by delivery/event id and tolerate duplicate delivery.
+- Confirm file uploads are scanned or validated by the receiving workflow if files come from untrusted users.
+- Confirm logs redact `X-Api-Key`, webhook signatures, and downloaded file URLs.
+- Rotate the API key before moving from test to production if it was shared during implementation.

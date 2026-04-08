@@ -17,6 +17,26 @@ class CreatedRecord:
     record: dict[str, Any]
 
 
+REQUIRED_ENTITY_MODULES = {
+    "entity.biz_contact": "biz_contacts",
+    "entity.biz_product": "biz_products",
+    "entity.biz_quote": "biz_quotes",
+    "entity.biz_quote_line": "biz_quotes",
+    "entity.biz_order": "biz_orders",
+    "entity.biz_order_line": "biz_orders",
+    "entity.biz_purchase_order": "biz_purchase_orders",
+    "entity.biz_purchase_order_line": "biz_purchase_orders",
+    "entity.biz_invoice": "biz_invoices",
+    "entity.biz_document": "biz_documents",
+    "entity.crm_site": "biz_crm",
+    "entity.crm_lead": "biz_crm",
+    "entity.crm_opportunity": "biz_crm",
+    "entity.crm_activity": "biz_crm",
+    "entity.biz_task": "biz_tasks",
+    "entity.biz_calendar_event": "biz_calendar",
+}
+
+
 def api_call(
     method: str,
     url: str,
@@ -168,6 +188,54 @@ def find_existing_record(
     return None
 
 
+def verify_required_entities(
+    base_url: str,
+    *,
+    token: str | None,
+    workspace_id: str | None,
+    include_calendar: bool,
+) -> None:
+    module_ids = sorted(set(REQUIRED_ENTITY_MODULES.values()))
+    missing: list[str] = []
+    unavailable_modules: list[str] = []
+    for module_id in module_ids:
+        status, payload = api_call(
+            "GET",
+            f"{base_url}/studio2/modules/{urlparse.quote(module_id, safe='')}/manifest",
+            token=token,
+            workspace_id=workspace_id,
+            timeout=120,
+        )
+        data = payload.get("data") if isinstance(payload, dict) else None
+        manifest = data.get("manifest") if isinstance(data, dict) else None
+        if status >= 400 or not is_ok(payload) or not isinstance(manifest, dict):
+            unavailable_modules.append(f"{module_id}: {collect_error_text(payload)}")
+            continue
+        entity_ids = {
+            entity.get("id")
+            for entity in manifest.get("entities", [])
+            if isinstance(entity, dict) and isinstance(entity.get("id"), str)
+        }
+        for entity_id, expected_module_id in REQUIRED_ENTITY_MODULES.items():
+            if expected_module_id != module_id:
+                continue
+            if entity_id == "entity.biz_calendar_event" and not include_calendar:
+                continue
+            if entity_id not in entity_ids:
+                missing.append(f"{entity_id} in {module_id}")
+    if unavailable_modules or missing:
+        details = []
+        if unavailable_modules:
+            details.append("Unavailable modules: " + "; ".join(unavailable_modules))
+        if missing:
+            details.append("Missing entities: " + "; ".join(missing))
+        raise SystemExit(
+            "commercial_v2 seed preflight failed. Run `python manifests/commercial_v2/install_all.py` with the same "
+            "OCTO_BASE_URL/OCTO_WORKSPACE_ID/OCTO_API_TOKEN, confirm it installs `biz_calendar`, then rerun the seed. "
+            + " ".join(details)
+        )
+
+
 def resolve_refs(value: Any, aliases: dict[str, CreatedRecord]) -> Any:
     if isinstance(value, dict):
       if set(value.keys()) == {"$ref"}:
@@ -189,6 +257,7 @@ def create_or_get(
     token: str | None,
     workspace_id: str | None,
     dry_run: bool,
+    record_cache: dict[str, list[CreatedRecord]] | None = None,
 ) -> CreatedRecord:
     entity_id = spec["entity_id"]
     alias = spec["alias"]
@@ -199,13 +268,30 @@ def create_or_get(
         aliases[alias] = created
         print(f"[seed] plan     {alias} -> {entity_id}")
         return created
-    existing = find_existing_record(base_url, entity_id, match_fields, token=token, workspace_id=workspace_id)
+    cache_rows: list[CreatedRecord] | None = None
+    if record_cache is not None:
+        cache_rows = record_cache.setdefault(
+            entity_id,
+            list_records(base_url, entity_id, token=token, workspace_id=workspace_id, fields=None),
+        )
+        existing = next(
+            (
+                row
+                for row in cache_rows
+                if all(row.record.get(field_id) == expected for field_id, expected in match_fields.items())
+            ),
+            None,
+        )
+    else:
+        existing = find_existing_record(base_url, entity_id, match_fields, token=token, workspace_id=workspace_id)
     if existing:
         aliases[alias] = existing
         print(f"[seed] existing {alias} -> {existing.record_id}")
         return existing
     created = create_record(base_url, entity_id, payload, token=token, workspace_id=workspace_id)
     aliases[alias] = created
+    if cache_rows is not None:
+        cache_rows.append(created)
     print(f"[seed] created  {alias} -> {created.record_id}")
     return created
 
@@ -998,7 +1084,7 @@ def crm_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "crm_lead.contact_name": "Sanne Vermeer",
                 "crm_lead.contact_email": "sanne@auroraherbs.example",
                 "crm_lead.contact_phone": "+31 6 5550 4488",
-                "crm_lead.owner_user_id": "Sales Team",
+                "crm_lead.owner_user_id": "Joost",
                 "crm_lead.currency": "EUR",
                 "crm_lead.estimated_value": 38500,
                 "crm_lead.next_action": "Confirm crop area and target light levels.",
@@ -1018,7 +1104,7 @@ def crm_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "crm_lead.contact_name": "Omar Al Hadi",
                 "crm_lead.contact_email": "omar@desertbloom.example",
                 "crm_lead.contact_phone": "+971 50 555 0121",
-                "crm_lead.owner_user_id": "Sales Team",
+                "crm_lead.owner_user_id": "Joost",
                 "crm_lead.currency": "USD",
                 "crm_lead.estimated_value": 87500,
                 "crm_lead.next_action": "Confirm whether quote DBT-RFQ-44 covers bay two.",
@@ -1036,7 +1122,7 @@ def crm_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "crm_lead.source": "referral",
                 "crm_lead.contact_name": "Milan Petrov",
                 "crm_lead.contact_email": "milan@example-grower.example",
-                "crm_lead.owner_user_id": "Sales Team",
+                "crm_lead.owner_user_id": "Joram",
                 "crm_lead.currency": "EUR",
                 "crm_lead.estimated_value": 950,
                 "crm_lead.next_action": "No sales follow-up required.",
@@ -1055,7 +1141,7 @@ def crm_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "crm_opportunity.primary_contact_name": "Eva van Dijk",
                 "crm_opportunity.primary_contact_email": "eva@greengrow.example",
                 "crm_opportunity.site_id": {"$ref": "site.greengrow.aalsmeer"},
-                "crm_opportunity.owner_user_id": "Sales Team",
+                "crm_opportunity.owner_user_id": "Joost",
                 "crm_opportunity.pipeline": "nlight_sales",
                 "crm_opportunity.stage": "won",
                 "crm_opportunity.status": "won",
@@ -1068,9 +1154,8 @@ def crm_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "crm_opportunity.quote_state": "accepted",
                 "crm_opportunity.linked_quote_id": {"$ref": "quote.a"},
                 "crm_opportunity.linked_order_id": {"$ref": "order.a"},
-                "crm_opportunity.won_lost_reason": f"Accepted {quote_a}; operations handoff created as {order_a}.",
                 "crm_opportunity.description": "Customer accepted the 720W expansion package for the Aalsmeer site.",
-                "crm_opportunity.notes": "Demo story: Pipedrive replacement can show the won deal, quote, order, PO, invoice, and documents together.",
+                "crm_opportunity.notes": f"Accepted {quote_a}; operations handoff created as {order_a}. Demo story: Pipedrive replacement can show the won deal, quote, order, PO, invoice, and documents together.",
             },
         },
         {
@@ -1083,7 +1168,7 @@ def crm_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "crm_opportunity.primary_contact_name": "Omar Al Hadi",
                 "crm_opportunity.primary_contact_email": "omar@desertbloom.example",
                 "crm_opportunity.site_id": {"$ref": "site.desert_bloom.dubai"},
-                "crm_opportunity.owner_user_id": "Sales Team",
+                "crm_opportunity.owner_user_id": "Joost",
                 "crm_opportunity.pipeline": "nlight_sales",
                 "crm_opportunity.stage": "quote",
                 "crm_opportunity.status": "open",
@@ -1109,7 +1194,7 @@ def crm_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "crm_opportunity.primary_contact_name": "Irina Sokolova",
                 "crm_opportunity.primary_contact_email": "irina@volga.example",
                 "crm_opportunity.site_id": {"$ref": "site.volga.karaganda"},
-                "crm_opportunity.owner_user_id": "Sales Team",
+                "crm_opportunity.owner_user_id": "Joram",
                 "crm_opportunity.pipeline": "nlight_sales",
                 "crm_opportunity.stage": "lost",
                 "crm_opportunity.status": "lost",
@@ -1136,7 +1221,7 @@ def crm_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "crm_opportunity.primary_contact_name": "Eva van Dijk",
                 "crm_opportunity.primary_contact_email": "eva@greengrow.example",
                 "crm_opportunity.site_id": {"$ref": "site.greengrow.aalsmeer"},
-                "crm_opportunity.owner_user_id": "Sales Team",
+                "crm_opportunity.owner_user_id": "Joost",
                 "crm_opportunity.pipeline": "after_sales",
                 "crm_opportunity.stage": "solution",
                 "crm_opportunity.status": "open",
@@ -1160,7 +1245,7 @@ def crm_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "crm_activity.activity_type": "quote_follow_up",
                 "crm_activity.status": "planned",
                 "crm_activity.due_date": "2026-04-09",
-                "crm_activity.owner_user_id": "Sales Team",
+                "crm_activity.owner_user_id": "Joost",
                 "crm_activity.company_id": {"$ref": "contact.desert_bloom"},
                 "crm_activity.opportunity_id": {"$ref": "opportunity.desert_bloom.quoted"},
                 "crm_activity.site_id": {"$ref": "site.desert_bloom.dubai"},
@@ -1176,7 +1261,7 @@ def crm_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "crm_activity.activity_type": "site_visit",
                 "crm_activity.status": "planned",
                 "crm_activity.due_date": "2026-04-11",
-                "crm_activity.owner_user_id": "Operations Team",
+                "crm_activity.owner_user_id": "Shelly",
                 "crm_activity.company_id": {"$ref": "contact.greengrow"},
                 "crm_activity.opportunity_id": {"$ref": "opportunity.greengrow.won"},
                 "crm_activity.site_id": {"$ref": "site.greengrow.aalsmeer"},
@@ -1192,7 +1277,7 @@ def crm_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "crm_activity.activity_type": "call",
                 "crm_activity.status": "done",
                 "crm_activity.due_date": "2026-04-04",
-                "crm_activity.owner_user_id": "Sales Team",
+                "crm_activity.owner_user_id": "Joram",
                 "crm_activity.company_id": {"$ref": "contact.volga"},
                 "crm_activity.opportunity_id": {"$ref": "opportunity.volga.lost"},
                 "crm_activity.site_id": {"$ref": "site.volga.karaganda"},
@@ -1208,7 +1293,7 @@ def crm_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "crm_activity.activity_type": "call",
                 "crm_activity.status": "planned",
                 "crm_activity.due_date": "2026-04-10",
-                "crm_activity.owner_user_id": "Sales Team",
+                "crm_activity.owner_user_id": "Joost",
                 "crm_activity.lead_id": {"$ref": "lead.trade_show.aurora"},
                 "crm_activity.notes": "Confirm whether this should become a formal opportunity or stay as a reseller lead.",
             },
@@ -1222,7 +1307,7 @@ def crm_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "crm_activity.activity_type": "email_follow_up",
                 "crm_activity.status": "planned",
                 "crm_activity.due_date": "2026-04-05",
-                "crm_activity.owner_user_id": "Sales Team",
+                "crm_activity.owner_user_id": "Joost",
                 "crm_activity.company_id": {"$ref": "contact.desert_bloom"},
                 "crm_activity.opportunity_id": {"$ref": "opportunity.desert_bloom.quoted"},
                 "crm_activity.site_id": {"$ref": "site.desert_bloom.dubai"},
@@ -1230,6 +1315,430 @@ def crm_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
             },
         },
     ]
+
+
+def task_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
+    quote_b = record_number(aliases, "quote.b", "biz_quote.quote_number", "Quote B")
+    order_a = record_number(aliases, "order.a", "biz_order.order_number", "Order A")
+    po_a = record_number(aliases, "po.a", "biz_purchase_order.po_number", "PO A")
+    invoice_a = record_number(aliases, "invoice.a.deposit", "biz_invoice.invoice_number", "Deposit Invoice A")
+    return [
+        {
+            "alias": "task.desert_bloom.quote_followup",
+            "entity_id": "entity.biz_task",
+            "match": {"biz_task.title": "Chase Desert Bloom deposit decision"},
+            "record": {
+                "biz_task.title": "Chase Desert Bloom deposit decision",
+                "biz_task.task_type": "quote",
+                "biz_task.status": "open",
+                "biz_task.priority": "high",
+                "biz_task.owner_user_id": "Joost",
+                "biz_task.assignee_user_id": "Joost",
+                "biz_task.start_date": "2026-04-08",
+                "biz_task.due_date": "2026-04-09",
+                "biz_task.company_id": {"$ref": "contact.desert_bloom"},
+                "biz_task.opportunity_id": {"$ref": "opportunity.desert_bloom.quoted"},
+                "biz_task.site_id": {"$ref": "site.desert_bloom.dubai"},
+                "biz_task.quote_id": {"$ref": "quote.b"},
+                "biz_task.description": f"Follow up on {quote_b}; ask whether the deposit approval can be confirmed this week.",
+            },
+        },
+        {
+            "alias": "task.greengrow.ops_handoff",
+            "entity_id": "entity.biz_task",
+            "match": {"biz_task.title": "Prepare GreenGrow operations handoff pack"},
+            "record": {
+                "biz_task.title": "Prepare GreenGrow operations handoff pack",
+                "biz_task.task_type": "order_handoff",
+                "biz_task.status": "in_progress",
+                "biz_task.priority": "normal",
+                "biz_task.owner_user_id": "Shelly",
+                "biz_task.assignee_user_id": "Shelly",
+                "biz_task.start_date": "2026-04-08",
+                "biz_task.due_date": "2026-04-11",
+                "biz_task.company_id": {"$ref": "contact.greengrow"},
+                "biz_task.opportunity_id": {"$ref": "opportunity.greengrow.won"},
+                "biz_task.site_id": {"$ref": "site.greengrow.aalsmeer"},
+                "biz_task.order_id": {"$ref": "order.a"},
+                "biz_task.description": f"Package site constraints, delivery notes, quote context, and customer expectations before progressing {order_a}.",
+            },
+        },
+        {
+            "alias": "task.greengrow.po_eta",
+            "entity_id": "entity.biz_task",
+            "match": {"biz_task.title": "Confirm supplier ETA for GreenGrow PO"},
+            "record": {
+                "biz_task.title": "Confirm supplier ETA for GreenGrow PO",
+                "biz_task.task_type": "procurement",
+                "biz_task.status": "blocked",
+                "biz_task.priority": "high",
+                "biz_task.owner_user_id": "Walter",
+                "biz_task.assignee_user_id": "Walter",
+                "biz_task.start_date": "2026-04-07",
+                "biz_task.due_date": "2026-04-10",
+                "biz_task.company_id": {"$ref": "contact.greengrow"},
+                "biz_task.order_id": {"$ref": "order.a"},
+                "biz_task.purchase_order_id": {"$ref": "po.a"},
+                "biz_task.blocked_reason": "Awaiting supplier production slot confirmation.",
+                "biz_task.description": f"Supplier ETA for {po_a} needs to be confirmed before Shelly can lock the customer update.",
+            },
+        },
+        {
+            "alias": "task.greengrow.deposit_reconcile",
+            "entity_id": "entity.biz_task",
+            "match": {"biz_task.title": "Reconcile GreenGrow deposit payment"},
+            "record": {
+                "biz_task.title": "Reconcile GreenGrow deposit payment",
+                "biz_task.task_type": "finance",
+                "biz_task.status": "done",
+                "biz_task.priority": "normal",
+                "biz_task.owner_user_id": "Tamzin",
+                "biz_task.assignee_user_id": "Tamzin",
+                "biz_task.start_date": "2026-04-03",
+                "biz_task.due_date": "2026-04-04",
+                "biz_task.company_id": {"$ref": "contact.greengrow"},
+                "biz_task.order_id": {"$ref": "order.a"},
+                "biz_task.invoice_id": {"$ref": "invoice.a.deposit"},
+                "biz_task.description": f"Deposit invoice {invoice_a} has been matched to the bank feed and can be treated as paid for demo flow.",
+            },
+        },
+    ]
+
+
+def calendar_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
+    quote_b = record_number(aliases, "quote.b", "biz_quote.quote_number", "Quote B")
+    order_a = record_number(aliases, "order.a", "biz_order.order_number", "Order A")
+    return [
+        {
+            "alias": "calendar.desert_bloom.quote_call",
+            "entity_id": "entity.biz_calendar_event",
+            "match": {"biz_calendar_event.title": "Desert Bloom quote approval call"},
+            "record": {
+                "biz_calendar_event.title": "Desert Bloom quote approval call",
+                "biz_calendar_event.event_type": "quote_follow_up",
+                "biz_calendar_event.status": "planned",
+                "biz_calendar_event.start_at": "2026-04-09T09:30:00+12:00",
+                "biz_calendar_event.end_at": "2026-04-09T10:00:00+12:00",
+                "biz_calendar_event.owner_user_id": "Joost",
+                "biz_calendar_event.participant_user_ids": ["Joost"],
+                "biz_calendar_event.visibility": "team",
+                "biz_calendar_event.location": "Teams",
+                "biz_calendar_event.company_id": {"$ref": "contact.desert_bloom"},
+                "biz_calendar_event.opportunity_id": {"$ref": "opportunity.desert_bloom.quoted"},
+                "biz_calendar_event.site_id": {"$ref": "site.desert_bloom.dubai"},
+                "biz_calendar_event.task_id": {"$ref": "task.desert_bloom.quote_followup"},
+                "biz_calendar_event.quote_id": {"$ref": "quote.b"},
+                "biz_calendar_event.description": f"Review {quote_b}, confirm deposit timing, and capture any scope changes before procurement.",
+            },
+        },
+        {
+            "alias": "calendar.greengrow.ops_handoff",
+            "entity_id": "entity.biz_calendar_event",
+            "match": {"biz_calendar_event.title": "GreenGrow order handoff review"},
+            "record": {
+                "biz_calendar_event.title": "GreenGrow order handoff review",
+                "biz_calendar_event.event_type": "order_handoff",
+                "biz_calendar_event.status": "confirmed",
+                "biz_calendar_event.start_at": "2026-04-11T14:00:00+12:00",
+                "biz_calendar_event.end_at": "2026-04-11T14:45:00+12:00",
+                "biz_calendar_event.owner_user_id": "Shelly",
+                "biz_calendar_event.participant_user_ids": ["Shelly", "Walter", "Joost"],
+                "biz_calendar_event.visibility": "team",
+                "biz_calendar_event.location": "Internal review",
+                "biz_calendar_event.company_id": {"$ref": "contact.greengrow"},
+                "biz_calendar_event.opportunity_id": {"$ref": "opportunity.greengrow.won"},
+                "biz_calendar_event.site_id": {"$ref": "site.greengrow.aalsmeer"},
+                "biz_calendar_event.task_id": {"$ref": "task.greengrow.ops_handoff"},
+                "biz_calendar_event.order_id": {"$ref": "order.a"},
+                "biz_calendar_event.description": f"Handoff meeting for {order_a}: review site access, PO status, delivery timing, and customer update plan.",
+            },
+        },
+        {
+            "alias": "calendar.greengrow.site_visit",
+            "entity_id": "entity.biz_calendar_event",
+            "match": {"biz_calendar_event.title": "GreenGrow Aalsmeer site constraint check"},
+            "record": {
+                "biz_calendar_event.title": "GreenGrow Aalsmeer site constraint check",
+                "biz_calendar_event.event_type": "site_visit",
+                "biz_calendar_event.status": "planned",
+                "biz_calendar_event.start_at": "2026-04-16T10:00:00+12:00",
+                "biz_calendar_event.end_at": "2026-04-16T11:30:00+12:00",
+                "biz_calendar_event.owner_user_id": "Shelly",
+                "biz_calendar_event.participant_user_ids": ["Shelly"],
+                "biz_calendar_event.visibility": "team",
+                "biz_calendar_event.location": "Aalsmeer Trade Park 4",
+                "biz_calendar_event.company_id": {"$ref": "contact.greengrow"},
+                "biz_calendar_event.opportunity_id": {"$ref": "opportunity.greengrow.won"},
+                "biz_calendar_event.site_id": {"$ref": "site.greengrow.aalsmeer"},
+                "biz_calendar_event.order_id": {"$ref": "order.a"},
+                "biz_calendar_event.description": "Check receiving access and confirm whether the customer needs staged delivery notes in the document pack.",
+            },
+        },
+    ]
+
+
+def generated_demo_specs(count: int) -> list[dict[str, Any]]:
+    if count <= 0:
+        return []
+    prefixes = [
+        "NorthSea",
+        "Harbour",
+        "Delta",
+        "Canal",
+        "Glasshouse",
+        "Solaris",
+        "Everleaf",
+        "VitaGrow",
+        "AquaBloom",
+        "Dune",
+        "Atlas",
+        "Oasis",
+        "Karoo",
+        "Baltic",
+        "Alpine",
+        "Nordic",
+        "Cedar",
+        "Summit",
+        "Prairie",
+        "Aurora",
+    ]
+    suffixes = [
+        "Herbs",
+        "Horticulture",
+        "Greens",
+        "Produce",
+        "Flora",
+        "Cultivation",
+        "Nurseries",
+        "Botanics",
+        "Growers",
+        "AgriSystems",
+    ]
+    cities = [
+        ("Aalsmeer", "Netherlands", "EUR"),
+        ("Rotterdam", "Netherlands", "EUR"),
+        ("Eindhoven", "Netherlands", "EUR"),
+        ("Dubai", "United Arab Emirates", "USD"),
+        ("Abu Dhabi", "United Arab Emirates", "USD"),
+        ("London", "United Kingdom", "GBP"),
+        ("Manchester", "United Kingdom", "GBP"),
+        ("Karaganda", "Kazakhstan", "EUR"),
+        ("Almaty", "Kazakhstan", "EUR"),
+        ("Doha", "Qatar", "USD"),
+    ]
+    owners = ["Joost", "Joram"]
+    activity_owners = ["Joost", "Joram", "Shelly", "Walter", "Tamzin"]
+    lead_statuses = ["new", "contacted", "qualified", "disqualified"]
+    lead_sources = ["website", "referral", "trade_show", "repeat_customer", "manual", "pipedrive_import"]
+    stages = ["new", "discovery", "solution", "quote", "negotiation", "won", "lost"]
+    activity_types = ["call", "meeting", "task", "email_follow_up", "site_visit", "quote_follow_up"]
+    task_types = ["follow_up", "quote", "order_handoff", "procurement", "finance", "document", "site_visit", "internal"]
+    calendar_types = ["call", "meeting", "site_visit", "quote_follow_up", "order_handoff", "supplier_check_in", "finance_review"]
+    document_types = ["quote_pdf", "order_confirmation", "supplier_document", "compliance_document", "other"]
+    specs: list[dict[str, Any]] = []
+
+    for index in range(1, count + 1):
+        prefix = prefixes[(index - 1) % len(prefixes)]
+        suffix = suffixes[(index - 1) % len(suffixes)]
+        city, country, currency = cities[(index - 1) % len(cities)]
+        cycle = ((index - 1) // len(prefixes)) + 1
+        company_name = f"{prefix} {suffix}" if cycle == 1 else f"{prefix} {suffix} {cycle}"
+        slug = f"demo.{index:03d}"
+        contact_alias = f"contact.{slug}"
+        site_alias = f"site.{slug}"
+        lead_alias = f"lead.{slug}"
+        opportunity_alias = f"opportunity.{slug}"
+        owner = owners[(index - 1) % len(owners)]
+        activity_owner = activity_owners[(index - 1) % len(activity_owners)]
+        lead_status = lead_statuses[(index - 1) % len(lead_statuses)]
+        stage = stages[(index - 1) % len(stages)]
+        status = "won" if stage == "won" else "lost" if stage == "lost" else "open"
+        probability = {"new": 15, "discovery": 25, "solution": 40, "quote": 55, "negotiation": 75, "won": 100, "lost": 0}[stage]
+        quote_state = "accepted" if stage == "won" else "quoted" if stage in {"quote", "negotiation", "lost"} else "quote_needed" if stage == "solution" else "unquoted"
+        lead_value = 18000 + (index * 1750)
+        opportunity_value = 24000 + (index * 2250)
+        close_day = ((index - 1) % 24) + 1
+        due_day = ((index + 3) % 24) + 1
+        hour = 8 + ((index - 1) % 8)
+        pipeline = "after_sales" if index % 9 == 0 else "ecotech_supply" if index % 7 == 0 else "nlight_sales"
+
+        specs.append(
+            {
+                "alias": contact_alias,
+                "entity_id": "entity.biz_contact",
+                "match": {"biz_contact.name": company_name},
+                "record": {
+                    "biz_contact.name": company_name,
+                    "biz_contact.contact_type": "customer",
+                    "biz_contact.company_entity_scope": ["NLight BV"],
+                    "biz_contact.email": f"projects+{index:03d}@{prefix.lower()}-{suffix.lower()}.example",
+                    "biz_contact.phone": f"+31 20 555 {1000 + index:04d}",
+                    "biz_contact.website": f"https://{prefix.lower()}-{suffix.lower()}.example",
+                    "biz_contact.country": country,
+                    "biz_contact.currency_preference": currency,
+                    "biz_contact.billing_street": f"{city} Commercial Park {index}",
+                    "biz_contact.billing_city": city,
+                    "biz_contact.billing_country": country,
+                    "biz_contact.shipping_street": f"{city} Glasshouse Block {((index - 1) % 6) + 1}",
+                    "biz_contact.shipping_city": city,
+                    "biz_contact.shipping_country": country,
+                    "biz_contact.notes": "Generated demo customer for CRM pipeline density and Loom walkthroughs.",
+                    "biz_contact.is_active": True,
+                },
+            }
+        )
+        specs.append(
+            {
+                "alias": site_alias,
+                "entity_id": "entity.crm_site",
+                "match": {"crm_site.name": f"{company_name} Production Site"},
+                "record": {
+                    "crm_site.name": f"{company_name} Production Site",
+                    "crm_site.company_id": {"$ref": contact_alias},
+                    "crm_site.address_line_1": f"{city} Glasshouse Block {((index - 1) % 6) + 1}",
+                    "crm_site.address_line_2": f"Bay {((index - 1) % 4) + 1}",
+                    "crm_site.city": city,
+                    "crm_site.country": country,
+                    "crm_site.site_notes": "Generated site linked to CRM, tasks, calendar, and documents for demo navigation.",
+                    "crm_site.is_active": True,
+                },
+            }
+        )
+        specs.append(
+            {
+                "alias": lead_alias,
+                "entity_id": "entity.crm_lead",
+                "match": {"crm_lead.title": f"{company_name} enquiry"},
+                "record": {
+                    "crm_lead.title": f"{company_name} enquiry",
+                    "crm_lead.status": lead_status,
+                    "crm_lead.source": lead_sources[(index - 1) % len(lead_sources)],
+                    "crm_lead.company_id": {"$ref": contact_alias},
+                    "crm_lead.contact_name": f"Demo Buyer {index:03d}",
+                    "crm_lead.contact_email": f"buyer{index:03d}@{prefix.lower()}-{suffix.lower()}.example",
+                    "crm_lead.contact_phone": f"+31 6 555 {2000 + index:04d}",
+                    "crm_lead.owner_user_id": owner,
+                    "crm_lead.currency": currency,
+                    "crm_lead.estimated_value": lead_value,
+                    "crm_lead.next_action": "Qualify crop area, timeline, and quote readiness.",
+                    "crm_lead.next_activity_date": f"2026-04-{due_day:02d}",
+                    "crm_lead.disqualification_reason": "Not a fit for direct sales." if lead_status == "disqualified" else "",
+                    "crm_lead.notes": "Generated CRM lead for Pipedrive replacement demo volume.",
+                },
+            }
+        )
+        specs.append(
+            {
+                "alias": opportunity_alias,
+                "entity_id": "entity.crm_opportunity",
+                "match": {"crm_opportunity.title": f"{company_name} LED Upgrade"},
+                "record": {
+                    "crm_opportunity.title": f"{company_name} LED Upgrade",
+                    "crm_opportunity.company_id": {"$ref": contact_alias},
+                    "crm_opportunity.primary_contact_name": f"Demo Buyer {index:03d}",
+                    "crm_opportunity.primary_contact_email": f"buyer{index:03d}@{prefix.lower()}-{suffix.lower()}.example",
+                    "crm_opportunity.site_id": {"$ref": site_alias},
+                    "crm_opportunity.owner_user_id": owner,
+                    "crm_opportunity.pipeline": pipeline,
+                    "crm_opportunity.stage": stage,
+                    "crm_opportunity.status": status,
+                    "crm_opportunity.currency": currency,
+                    "crm_opportunity.value": opportunity_value,
+                    "crm_opportunity.probability": probability,
+                    "crm_opportunity.expected_close_date": f"2026-05-{close_day:02d}",
+                    "crm_opportunity.next_activity_date": f"2026-04-{due_day:02d}",
+                    "crm_opportunity.source": "existing_customer" if index % 5 == 0 else "website",
+                    "crm_opportunity.quote_state": quote_state,
+                    "crm_opportunity.won_lost_reason": "Deferred to next capex window." if stage == "lost" else "",
+                    "crm_opportunity.description": "Generated opportunity showing CRM pipeline depth tied to a real company and site.",
+                    "crm_opportunity.notes": "Use this record to demo kanban filters, forecast values, and related tasks/calendar/documents.",
+                },
+            }
+        )
+        specs.append(
+            {
+                "alias": f"activity.{slug}",
+                "entity_id": "entity.crm_activity",
+                "match": {"crm_activity.title": f"{company_name} next sales activity"},
+                "record": {
+                    "crm_activity.title": f"{company_name} next sales activity",
+                    "crm_activity.activity_type": activity_types[(index - 1) % len(activity_types)],
+                    "crm_activity.status": "done" if index % 8 == 0 else "cancelled" if index % 19 == 0 else "planned",
+                    "crm_activity.due_date": f"2026-04-{due_day:02d}",
+                    "crm_activity.owner_user_id": activity_owner,
+                    "crm_activity.company_id": {"$ref": contact_alias},
+                    "crm_activity.lead_id": {"$ref": lead_alias},
+                    "crm_activity.opportunity_id": {"$ref": opportunity_alias},
+                    "crm_activity.site_id": {"$ref": site_alias},
+                    "crm_activity.notes": "Generated CRM timeline item for demo activity density.",
+                },
+            }
+        )
+        specs.append(
+            {
+                "alias": f"task.{slug}",
+                "entity_id": "entity.biz_task",
+                "match": {"biz_task.title": f"{company_name} follow-up task"},
+                "record": {
+                    "biz_task.title": f"{company_name} follow-up task",
+                    "biz_task.task_type": task_types[(index - 1) % len(task_types)],
+                    "biz_task.status": "blocked" if index % 11 == 0 else "done" if index % 8 == 0 else "in_progress" if index % 4 == 0 else "open",
+                    "biz_task.priority": "urgent" if index % 13 == 0 else "high" if index % 5 == 0 else "normal",
+                    "biz_task.owner_user_id": activity_owner,
+                    "biz_task.assignee_user_id": activity_owner,
+                    "biz_task.start_date": f"2026-04-{max(1, due_day - 2):02d}",
+                    "biz_task.due_date": f"2026-04-{due_day:02d}",
+                    "biz_task.company_id": {"$ref": contact_alias},
+                    "biz_task.opportunity_id": {"$ref": opportunity_alias},
+                    "biz_task.site_id": {"$ref": site_alias},
+                    "biz_task.blocked_reason": "Waiting on customer technical drawings." if index % 11 == 0 else "",
+                    "biz_task.description": "Generated task tied to CRM and site context for team workload demo.",
+                },
+            }
+        )
+        specs.append(
+            {
+                "alias": f"calendar.{slug}",
+                "entity_id": "entity.biz_calendar_event",
+                "match": {"biz_calendar_event.title": f"{company_name} customer touchpoint"},
+                "record": {
+                    "biz_calendar_event.title": f"{company_name} customer touchpoint",
+                    "biz_calendar_event.event_type": calendar_types[(index - 1) % len(calendar_types)],
+                    "biz_calendar_event.status": "confirmed" if index % 3 == 0 else "done" if index % 8 == 0 else "planned",
+                    "biz_calendar_event.start_at": f"2026-04-{due_day:02d}T{hour:02d}:30:00+12:00",
+                    "biz_calendar_event.end_at": f"2026-04-{due_day:02d}T{hour + 1:02d}:00:00+12:00",
+                    "biz_calendar_event.owner_user_id": activity_owner,
+                    "biz_calendar_event.participant_user_ids": [activity_owner],
+                    "biz_calendar_event.visibility": "team",
+                    "biz_calendar_event.location": "Teams" if index % 2 else f"{city} site",
+                    "biz_calendar_event.company_id": {"$ref": contact_alias},
+                    "biz_calendar_event.opportunity_id": {"$ref": opportunity_alias},
+                    "biz_calendar_event.site_id": {"$ref": site_alias},
+                    "biz_calendar_event.task_id": {"$ref": f"task.{slug}"},
+                    "biz_calendar_event.description": "Generated calendar item for team and personal calendar demo views.",
+                },
+            }
+        )
+        specs.append(
+            {
+                "alias": f"document.{slug}",
+                "entity_id": "entity.biz_document",
+                "match": {"biz_document.name": f"{company_name} demo document"},
+                "record": {
+                    "biz_document.name": f"{company_name} demo document",
+                    "biz_document.document_type": document_types[(index - 1) % len(document_types)],
+                    "biz_document.status": "archived" if index % 17 == 0 else "signed" if index % 8 == 0 else "sent" if index % 3 == 0 else "approved",
+                    "biz_document.related_contact_id": {"$ref": contact_alias},
+                    "biz_document.sales_entity": "NLight BV",
+                    "biz_document.document_date": f"2026-04-{due_day:02d}",
+                    "biz_document.external_system": "none",
+                    "biz_document.external_reference": f"demo-pack:{index:03d}",
+                    "biz_document.notes": "Generated document for document module filters and related-record demo depth.",
+                },
+            }
+        )
+
+    return specs
 
 
 def patch_quote_links(
@@ -1363,6 +1872,12 @@ def main() -> None:
     parser.add_argument("--token", default=None, help="Bearer token")
     parser.add_argument("--workspace-id", default=None, help="Workspace ID")
     parser.add_argument("--dry-run", action="store_true", help="Print the seed plan without writing records")
+    parser.add_argument(
+        "--demo-record-packs",
+        type=int,
+        default=60,
+        help="Number of generated customer/site/CRM/task/calendar/document demo packs to add. Use 0 for only the core story.",
+    )
     args = parser.parse_args()
 
     base_url = (args.base_url or os.environ.get("OCTO_BASE_URL", "")).strip().rstrip("/")
@@ -1370,21 +1885,33 @@ def main() -> None:
     workspace_id = (args.workspace_id or os.environ.get("OCTO_WORKSPACE_ID", "")).strip() or None
     if not base_url:
         raise SystemExit("--base-url or OCTO_BASE_URL is required")
+    if not args.dry_run:
+        verify_required_entities(base_url, token=token, workspace_id=workspace_id, include_calendar=True)
     aliases: dict[str, CreatedRecord] = {}
+    record_cache: dict[str, list[CreatedRecord]] = {}
 
     for spec in CONTACTS:
-        create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run)
+        create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run, record_cache=record_cache)
     for spec in product_specs():
-        create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run)
+        create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run, record_cache=record_cache)
     for spec in SEED_SPECS:
-        create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run)
+        create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run, record_cache=record_cache)
 
     patch_quote_links(base_url, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run)
     patch_order_links(base_url, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run)
     for spec in document_specs(aliases):
-        create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run)
+        create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run, record_cache=record_cache)
     for spec in crm_specs(aliases):
-        create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run)
+        create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run, record_cache=record_cache)
+    for spec in task_specs(aliases):
+        create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run, record_cache=record_cache)
+    for spec in calendar_specs(aliases):
+        create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run, record_cache=record_cache)
+    generated_count = max(0, args.demo_record_packs)
+    if generated_count:
+        print(f"[seed] generated demo packs: {generated_count}")
+    for spec in generated_demo_specs(generated_count):
+        create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run, record_cache=record_cache)
     print("[seed] complete")
 
 

@@ -7,6 +7,8 @@
     "orders.json",
     "quotes.json",
     "documents.json",
-    "crm.json"
+    "crm.json",
+    "tasks.json",
+    "calendar.json"
   ]
 }

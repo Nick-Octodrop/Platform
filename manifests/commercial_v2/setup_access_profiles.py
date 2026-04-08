@@ -29,6 +29,8 @@ BUSINESS_MODULES = [
     "biz_invoices",
     "biz_documents",
     "biz_crm",
+    "biz_tasks",
+    "biz_calendar",
 ]
 LEGACY_REMOVED_MODULES = ["biz_dashboard", "biz_settings"]
 
@@ -40,6 +42,8 @@ PO_ENTITIES = ["entity.biz_purchase_order", "entity.biz_purchase_order_line"]
 INVOICE_ENTITIES = ["entity.biz_invoice", "entity.biz_invoice_line"]
 DOCUMENT_ENTITIES = ["entity.biz_document"]
 CRM_ENTITIES = ["entity.crm_lead", "entity.crm_opportunity", "entity.crm_activity", "entity.crm_site"]
+TASK_ENTITIES = ["entity.biz_task"]
+CALENDAR_ENTITIES = ["entity.biz_calendar_event"]
 
 
 def api_call(
@@ -285,13 +289,32 @@ def crm_write_actions() -> list[RuleSpec]:
         action_rule("action.crm_opportunity_quote_stage", "hidden"),
         action_rule("action.crm_opportunity_create_quote", "hidden"),
         action_rule("action.crm_opportunity_negotiation", "hidden"),
-        action_rule("action.crm_opportunity_open_won_modal", "hidden"),
+        action_rule("action.crm_opportunity_mark_won", "hidden"),
         action_rule("action.crm_opportunity_open_lost_modal", "hidden"),
         action_rule("action.crm_opportunity_create_order", "hidden"),
         action_rule("action.crm_activity_new", "hidden"),
         action_rule("action.crm_activity_done", "hidden"),
         action_rule("action.crm_activity_cancel", "hidden"),
         action_rule("action.crm_site_new", "hidden"),
+    ]
+
+
+def task_write_actions() -> list[RuleSpec]:
+    return [
+        action_rule("action.biz_task_new", "hidden"),
+        action_rule("action.biz_task_start", "hidden"),
+        action_rule("action.biz_task_block", "hidden"),
+        action_rule("action.biz_task_done", "hidden"),
+        action_rule("action.biz_task_cancel", "hidden"),
+    ]
+
+
+def calendar_write_actions() -> list[RuleSpec]:
+    return [
+        action_rule("action.biz_calendar_event_new", "hidden"),
+        action_rule("action.biz_calendar_event_confirm", "hidden"),
+        action_rule("action.biz_calendar_event_done", "hidden"),
+        action_rule("action.biz_calendar_event_cancel", "hidden"),
     ]
 
 
@@ -330,7 +353,7 @@ def finance_hidden_actions() -> list[RuleSpec]:
         action_rule("action.customer_order_mark_in_production", "hidden"),
         action_rule("action.customer_order_mark_shipped", "hidden"),
         action_rule("action.customer_order_mark_completed", "hidden"),
-    ] + crm_write_actions()
+    ] + crm_write_actions() + task_write_actions() + calendar_write_actions()
 
 
 def sales_hidden_actions() -> list[RuleSpec]:
@@ -355,11 +378,11 @@ def sales_hidden_actions() -> list[RuleSpec]:
 def desired_profiles() -> dict[str, dict[str, Any]]:
     directors_rules = (
         modules_visible(include_settings=True)
-        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + ORDER_ENTITIES + PO_ENTITIES + INVOICE_ENTITIES + DOCUMENT_ENTITIES + CRM_ENTITIES, "write")
+        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + ORDER_ENTITIES + PO_ENTITIES + INVOICE_ENTITIES + DOCUMENT_ENTITIES + CRM_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "write")
     )
     procurement_rules = (
         modules_visible(include_settings=False)
-        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + ORDER_ENTITIES + PO_ENTITIES + DOCUMENT_ENTITIES, "write")
+        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + ORDER_ENTITIES + PO_ENTITIES + DOCUMENT_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "write")
         + entities_access(CRM_ENTITIES, "read")
         + entities_access(INVOICE_ENTITIES, "read")
         + procurement_hidden_actions()
@@ -367,22 +390,23 @@ def desired_profiles() -> dict[str, dict[str, Any]]:
     operations_rules = (
         modules_visible(include_settings=False)
         + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + INVOICE_ENTITIES + CRM_ENTITIES, "read")
-        + entities_access(ORDER_ENTITIES + PO_ENTITIES + DOCUMENT_ENTITIES, "write")
+        + entities_access(ORDER_ENTITIES + PO_ENTITIES + DOCUMENT_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "write")
         + operations_hidden_actions()
     )
     finance_rules = (
         modules_visible(include_settings=False)
-        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + PO_ENTITIES + DOCUMENT_ENTITIES + CRM_ENTITIES, "read")
+        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + PO_ENTITIES + DOCUMENT_ENTITIES + CRM_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "read")
         + entities_access(ORDER_ENTITIES, "write")
         + entities_access(INVOICE_ENTITIES, "write")
         + finance_hidden_actions()
     )
     sales_rules = (
-        [module_rule(module_id, "visible") for module_id in ["biz_contacts", "biz_products", "biz_quotes", "biz_orders", "biz_invoices", "biz_documents", "biz_crm"]]
+        [module_rule(module_id, "visible") for module_id in ["biz_contacts", "biz_products", "biz_quotes", "biz_orders", "biz_invoices", "biz_documents", "biz_crm", "biz_tasks", "biz_calendar"]]
         + [module_rule("biz_purchase_orders", "hidden")]
         + [module_rule(module_id, "hidden") for module_id in LEGACY_REMOVED_MODULES]
         + [entity_rule("entity.biz_contact", "write"), entity_rule("entity.biz_contact", "write", eq_condition("biz_contact.contact_type", "customer"))]
         + entities_access(CRM_ENTITIES, "write")
+        + entities_access(TASK_ENTITIES + CALENDAR_ENTITIES, "write")
         + entities_access(PRODUCT_ENTITIES, "read")
         + [entity_rule("entity.biz_quote", "write"), entity_rule("entity.biz_quote", "write", eq_condition("biz_quote.sales_entity", "NLight BV"))]
         + [entity_rule("entity.biz_quote_line", "write"), entity_rule("entity.biz_quote_line", "write", eq_condition("biz_quote_line.sales_entity_snapshot", "NLight BV"))]
