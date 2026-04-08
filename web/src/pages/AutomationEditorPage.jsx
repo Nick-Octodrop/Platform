@@ -1582,7 +1582,7 @@ export default function AutomationEditorPage({ user }) {
             ))}
             {chatLoading && <div className="text-xs opacity-60">Agent is thinking…</div>}
           </div>
-          <div className="shrink-0">
+          <div className="shrink-0 border-t border-base-200 pt-3">
             <AgentChatInput
               value={chatInput}
               onChange={setChatInput}
@@ -1598,7 +1598,8 @@ export default function AutomationEditorPage({ user }) {
                 }, 500);
               }}
               disabled={chatLoading}
-              minRows={1}
+              placeholder="Describe an automation change..."
+              minRows={4}
             />
           </div>
         </>

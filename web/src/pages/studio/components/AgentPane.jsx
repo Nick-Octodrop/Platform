@@ -27,7 +27,7 @@ export default function AgentPane({ onApply, onValidate, onPreview, disabled }) 
           )}
         </div>
         {isSuperadmin && (
-          <div className="mt-3 pt-3">
+          <div className="mt-3 border-t border-base-200 pt-3">
             <AgentChatInput
               value={input}
               onChange={setInput}
@@ -37,7 +37,7 @@ export default function AgentPane({ onApply, onValidate, onPreview, disabled }) 
               }}
               disabled={disabled}
               placeholder="Describe a change…"
-              minRows={1}
+              minRows={4}
             />
           </div>
         )}

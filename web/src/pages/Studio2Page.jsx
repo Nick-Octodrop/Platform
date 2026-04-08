@@ -17,7 +17,6 @@ import {
   rollbackStudio2Module,
   saveStudio2Draft,
   studio2AgentChat,
-  studio2AgentStatus,
   studio2AiFixJson,
   studio2JsonFix,
   validateStudio2Draft,
@@ -668,8 +667,6 @@ export default function Studio2Page({ user }) {
   const [streamDone, setStreamDone] = useState(false);
   const [lastValidationSummary, setLastValidationSummary] = useState(null);
   const streamCancelRef = useRef(null);
-  const [agentError, setAgentError] = useState(null);
-  const [agentStatus, setAgentStatus] = useState(null);
   const [rightTab, setRightTab] = useState("preview");
   const [fixModalOpen, setFixModalOpen] = useState(false);
   const [fixCandidate, setFixCandidate] = useState(null);
@@ -722,24 +719,6 @@ export default function Studio2Page({ user }) {
   useEffect(() => {
     let mounted = true;
     refreshModules(mounted);
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let mounted = true;
-    async function loadStatus() {
-      try {
-        const res = await studio2AgentStatus();
-        if (!mounted) return;
-        setAgentStatus(res.data || null);
-      } catch (err) {
-        if (!mounted) return;
-        setAgentStatus({ configured: false });
-      }
-    }
-    loadStatus();
     return () => {
       mounted = false;
     };
@@ -811,7 +790,6 @@ export default function Studio2Page({ user }) {
         completenessErrors: [],
         designWarnings: [],
       });
-    setAgentError(null);
     setInstalledManifest(null);
   }, [routeModuleId]);
 
@@ -1551,7 +1529,6 @@ function buildPreviewManifest() {
     if (!routeModuleId || !userMessage.trim()) return;
     setChatMessages((prev) => [...prev, { role: "user", text: userMessage, ts: nowIso() }]);
     setChatLoading(true);
-    setAgentError(null);
     try {
       const history = chatMessages.slice(-6).map((m) => ({ role: m.role, text: m.text }));
       const res = await studio2AgentChat(routeModuleId, userMessage, null, null, null, history);
@@ -1567,7 +1544,10 @@ function buildPreviewManifest() {
       }
     } catch (err) {
       if (err.code === "OPENAI_NOT_CONFIGURED" || (err.message || "").includes("OpenAI")) {
-        setAgentError({ code: "OPENAI_NOT_CONFIGURED", message: err.message || "OpenAI not configured" });
+        setChatMessages((prev) => [
+          ...prev,
+          { role: "assistant", text: "Studio agent wiring coming soon.", ts: nowIso() },
+        ]);
       } else {
         pushToast("error", err.message || "Agent chat failed");
       }
@@ -1697,7 +1677,6 @@ function buildPreviewManifest() {
   async function runAgentDraftFlow(userMessage) {
     if (!routeModuleId) return;
     setChatLoading(true);
-    setAgentError(null);
     setChatMessages((prev) => [...prev, { role: "user", text: userMessage, ts: nowIso() }]);
     setProgressEvents([
       { event: "run_started", phase: "start", iter: null, ts_ms: Date.now(), data: { local: true } },
@@ -1757,7 +1736,10 @@ function buildPreviewManifest() {
         applyAgentPayload(payload);
       } catch (fallbackErr) {
         if (fallbackErr.code === "OPENAI_NOT_CONFIGURED" || (fallbackErr.message || "").includes("OpenAI")) {
-          setAgentError({ code: "OPENAI_NOT_CONFIGURED", message: fallbackErr.message || "OpenAI not configured" });
+          setChatMessages((prev) => [
+            ...prev,
+            { role: "assistant", text: "Studio agent wiring coming soon.", ts: nowIso() },
+          ]);
         } else {
           pushToast("error", fallbackErr.message || "Agent chat failed");
         }
@@ -2268,10 +2250,10 @@ function buildPreviewManifest() {
             Generate from Draft
           </button>
         </div>
-        <textarea
-          className="textarea textarea-bordered w-full font-mono text-xs min-h-[220px]"
+        <CodeTextarea
           value={patchsetText}
           onChange={(e) => setPatchsetText(e.target.value)}
+          minHeight="220px"
         />
         {patchsetError && (
           <div className="alert alert-error text-xs mt-2">PatchSet JSON error: {patchsetError.message}</div>
@@ -2329,12 +2311,6 @@ function buildPreviewManifest() {
     return (
       <div ref={leftPaneRef} className="h-full min-h-0 flex flex-col overflow-hidden">
         <div ref={chatListRef} className="flex-1 min-h-0 overflow-auto space-y-4">
-          {agentStatus?.configured === false && (
-            <div className="alert alert-warning text-xs">OpenAI not configured. Set OPENAI_API_KEY.</div>
-          )}
-          {agentError?.code === "OPENAI_NOT_CONFIGURED" && (
-            <div className="alert alert-warning text-xs">OpenAI not configured. Set OPENAI_API_KEY.</div>
-          )}
           {chatMessages.length === 0 && (
             <div className="chat chat-start">
               <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">assistant</div>
@@ -2387,26 +2363,25 @@ function buildPreviewManifest() {
             </div>
           )}
         </div>
-        <div className="shrink-0">
-          <div className="flex gap-2">
+        <div className="shrink-0 border-t border-base-200 pt-3 space-y-2">
             <AgentChatInput
               value={chatInput}
               onChange={setChatInput}
               onSend={handleAgentChat}
               disabled={!routeModuleId || chatLoading}
-              minRows={1}
+              placeholder={routeModuleId ? "Describe a Studio change..." : "Select a module first..."}
+              minRows={4}
             />
             {chatLoading && (
-              <button className="btn btn-ghost btn-sm" onClick={cancelAgentRun}>Cancel</button>
+              <div className="flex justify-end">
+                <button className="btn btn-ghost btn-xs" onClick={cancelAgentRun}>Cancel</button>
+              </div>
             )}
-          </div>
         </div>
       </div>
     );
   }, [
     activeModuleName,
-    agentError,
-    agentStatus?.configured,
     cancelAgentRun,
     chatInput,
     chatLoading,
@@ -3001,7 +2976,7 @@ function buildPreviewManifest() {
   }
 
   return (
-    <div className={`${isMobile ? "min-h-full bg-base-100 flex flex-col" : "h-full min-h-0 flex flex-col overflow-hidden"} ${debugClass}`} ref={rootRef}>
+    <div className={`${isMobile ? "h-[calc(100dvh-2.5rem)] min-h-0 bg-base-100 flex flex-col overflow-hidden" : "h-full min-h-0 flex flex-col overflow-hidden"} ${debugClass}`} ref={rootRef}>
       <TemplateStudioShell
         title={moduleTitle}
         recordId={routeModuleId}

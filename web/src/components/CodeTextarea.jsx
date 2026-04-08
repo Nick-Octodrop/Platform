@@ -28,24 +28,24 @@ export default function CodeTextarea({
 
   return (
     <div
-      className={`border border-base-200 rounded-box overflow-hidden bg-base-100 ${fill ? "h-full" : ""} ${className}`}
+      className={`border border-base-200 rounded-box overflow-hidden bg-base-100 ${fill ? "h-full min-h-0" : ""} ${className}`}
       style={!fill ? { minHeight, height: autoHeight || minHeight } : undefined}
     >
       <div className="flex h-full min-h-0">
-        <div className="bg-base-200 text-xs text-right px-2 py-2 font-mono select-none">
+        <div className="shrink-0 overflow-hidden bg-base-200 text-xs text-right px-2 py-2 font-mono select-none">
           <pre style={{ transform: `translateY(-${scrollTop}px)`, lineHeight: "1rem" }}>
             {Array.from({ length: lines }, (_, idx) => idx + 1).join("\n")}
           </pre>
         </div>
         <textarea
           ref={textareaRef}
-          className={`textarea textarea-bordered w-full font-mono text-xs rounded-none border-0 code-textarea ${fill ? "h-full" : ""} ${textareaClassName}`}
+          className={`textarea textarea-bordered flex-1 min-w-0 self-stretch font-mono text-xs rounded-none border-0 code-textarea resize-none ${fill ? "h-full min-h-0" : "w-full"} ${textareaClassName}`}
           value={value}
           onChange={(e) => onChange?.(e)}
           onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
           placeholder={placeholder}
           readOnly={readOnly}
-          style={!fill ? { minHeight, height: autoHeight || minHeight, lineHeight: "1rem", overflow: "hidden" } : { lineHeight: "1rem" }}
+          style={!fill ? { minHeight, height: autoHeight || minHeight, lineHeight: "1rem", overflow: "hidden" } : { display: "block", width: "100%", height: "100%", minHeight: 0, lineHeight: "1rem", overflow: "auto", resize: "none" }}
         />
       </div>
     </div>

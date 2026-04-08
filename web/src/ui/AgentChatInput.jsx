@@ -1,7 +1,7 @@
-import React, { useEffect, useRef } from "react";
+import React, { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { Send } from "lucide-react";
 
-export default function AgentChatInput({
+const AgentChatInput = forwardRef(function AgentChatInput({
   value,
   onChange,
   onSend,
@@ -9,8 +9,10 @@ export default function AgentChatInput({
   placeholder = "Describe a change…",
   minRows = 1,
   className = "",
-}) {
+}, ref) {
   const textareaRef = useRef(null);
+
+  useImperativeHandle(ref, () => textareaRef.current, []);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -32,14 +34,20 @@ export default function AgentChatInput({
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            onSend?.();
+            if (!disabled && value?.trim()) {
+              onSend?.();
+            }
           }
         }}
         disabled={disabled}
       />
       <button
         className="btn btn-primary btn-sm btn-square absolute right-2.5 top-3 -translate-y-0.5"
-        onClick={onSend}
+        onClick={() => {
+          if (!disabled && value?.trim()) {
+            onSend?.();
+          }
+        }}
         disabled={disabled || !value?.trim()}
         type="button"
         aria-label="Send message"
@@ -48,4 +56,6 @@ export default function AgentChatInput({
       </button>
     </div>
   );
-}
+});
+
+export default AgentChatInput;

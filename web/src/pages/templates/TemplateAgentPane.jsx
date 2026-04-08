@@ -25,7 +25,7 @@ export default function TemplateAgentPane({ disabled, initialMessage }) {
           </div>
         </div>
       </div>
-      <div className="shrink-0 pt-4">
+      <div className="shrink-0 border-t border-base-200 pt-3">
         <AgentChatInput
           value={input}
           onChange={setInput}
@@ -34,7 +34,8 @@ export default function TemplateAgentPane({ disabled, initialMessage }) {
             setInput("");
           }}
           disabled={disabled}
-          minRows={1}
+          placeholder="Describe a template change..."
+          minRows={4}
         />
       </div>
     </div>

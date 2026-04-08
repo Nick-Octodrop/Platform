@@ -400,8 +400,8 @@ export default function TemplateStudioShell({
 
   if (isMobile) {
     return (
-      <div className="min-h-full bg-base-100">
-        <div className="p-4 flex flex-col gap-4">
+      <div className="h-full min-h-0 bg-base-100">
+        <div className="h-full min-h-0 p-4 flex flex-col gap-4 overflow-hidden">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="text-2xl font-semibold truncate">{title}</div>
@@ -473,10 +473,10 @@ export default function TemplateStudioShell({
             />
           </div>
 
-          <div className="flex flex-col gap-4 min-w-0">
+          <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
             {(profile?.rightTabs || []).map((tab) => {
               if (tab.id !== activeTabId) return null;
-              return <div key={tab.id}>{tab.render(ctx)}</div>;
+              return <div key={tab.id} className="h-full min-h-0">{tab.render(ctx)}</div>;
             })}
           </div>
         </div>
@@ -544,8 +544,8 @@ export default function TemplateStudioShell({
                 tabs={(profile?.rightTabs || []).map((tab) => ({ id: tab.id, label: tab.label }))}
               />
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto bg-base-100">
-              <div className={desktopContentClass || "w-full"}>
+            <div className="flex-1 min-h-0 overflow-hidden bg-base-100">
+              <div className={desktopContentClass || "h-full min-h-0 w-full"}>
                 {(profile?.rightTabs || []).map((tab) => {
                   if (tab.id === "preview") {
                     const isActive = tab.id === activeTabId;
@@ -560,7 +560,7 @@ export default function TemplateStudioShell({
                     );
                   }
                   return tab.id === activeTabId ? (
-                    <div key={tab.id} className="h-full">
+                    <div key={tab.id} className="h-full min-h-0">
                       {tab.render(ctx)}
                     </div>
                   ) : null;

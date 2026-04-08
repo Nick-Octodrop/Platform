@@ -19,6 +19,7 @@ import {
 } from "../api.js";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import { DESKTOP_PANEL_SHELL } from "../ui/pageShell.js";
+import AgentChatInput from "../ui/AgentChatInput.jsx";
 
 function JsonBlock({ value }) {
   return (
@@ -999,28 +1000,15 @@ export default function OctoAiWorkspacePage() {
             </select>
           </div>
         ) : null}
-        <textarea
+        <AgentChatInput
           ref={composerRef}
-          className="textarea textarea-bordered w-full text-sm"
-          rows={4}
           value={message}
-          onChange={(e) => setMessage(e.target.value)}
+          onChange={setMessage}
+          onSend={sendMessage}
           placeholder={hasPendingQuestion ? (questionNeedsTypedReply(activeQuestionMeta) ? "Type the missing detail or correction here..." : "Reply with clarification or extra instructions...") : composerPlaceholder}
-          disabled={applyingRevision || publishingRevision || restoringRevision}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              if (!streaming && !busy && message.trim()) {
-                sendMessage();
-              }
-            }
-          }}
+          disabled={streaming || busy || applyingRevision || publishingRevision || restoringRevision}
+          minRows={4}
         />
-        <div className="flex items-center justify-end gap-2">
-          <button className={PRIMARY_BUTTON_SM} disabled={streaming || busy || applyingRevision || publishingRevision || restoringRevision || !message.trim()} onClick={sendMessage}>
-            {streaming ? "Sending..." : hasPendingQuestion ? (questionNeedsTypedReply(activeQuestionMeta) ? "Answer" : "Send Reply") : "Send"}
-          </button>
-        </div>
       </div>
     </div>
   );

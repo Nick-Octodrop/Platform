@@ -5,7 +5,7 @@ import { apiFetch, createRecord, deleteRecord, updateRecord } from "../api.js";
 import { evalCondition } from "../utils/conditions.js";
 import { applyComputedFields } from "../utils/computedFields.js";
 import Tabs from "../components/Tabs.jsx";
-import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM } from "../components/buttonStyles.js";
+import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_ICON_SM } from "../components/buttonStyles.js";
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
 import ActivityPanel from "./ActivityPanel.jsx";
 import AttachmentField from "./AttachmentField.jsx";
@@ -439,7 +439,7 @@ export default function FormViewRenderer({
               <div className="relative" ref={mobileActionsRef}>
                 <button
                   type="button"
-                  className={SOFT_BUTTON_SM}
+                  className={SOFT_ICON_SM}
                   onClick={() => setMobileActionsOpen((open) => !open)}
                   aria-label="More actions"
                 >
@@ -499,9 +499,11 @@ export default function FormViewRenderer({
             })}
             {secondaryActions.length > 0 && (
               <div className="dropdown dropdown-end">
-                <button type="button" className={`${SOFT_BUTTON_SM} px-3`} aria-label="More actions">
-                  ...
-                </button>
+                <DaisyTooltip label="More actions" placement="bottom">
+                  <button type="button" className={SOFT_ICON_SM} aria-label="More actions">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </button>
+                </DaisyTooltip>
                 <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[220]">
                   {secondaryActions.map((item) => (
                     <li key={item.label}>
