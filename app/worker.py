@@ -1132,6 +1132,22 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
         return {"entry": entry, "entity_id": entity_id, "record_id": record_id}
     if action_id == "system.notify":
         store = DbNotificationStore()
+        app_main = _get_app_main()
+        entity_id = inputs.get("entity_id") or _lookup_path(ctx, "trigger.entity_id")
+        record_id = inputs.get("record_id") or _lookup_path(ctx, "trigger.record_id")
+        if not isinstance(entity_id, str):
+            entity_id = None
+        if not isinstance(record_id, str):
+            record_id = None
+        record_data = _fetch_record_payload(entity_id, record_id) if entity_id and record_id else {}
+        entity_def = _find_entity_def(entity_id) if entity_id else None
+        enriched_record = app_main._enrich_template_record(record_data, entity_def) if isinstance(record_data, dict) else {}
+        render_context = {
+            "record": enriched_record if isinstance(enriched_record, dict) else {},
+            "entity_id": entity_id,
+            "trigger": ctx.get("trigger") or {},
+            **app_main._branding_context_for_org(get_org_id()),
+        }
         recipients: list[str] = []
         recipient_user_ids = inputs.get("recipient_user_ids")
         if isinstance(recipient_user_ids, list):
@@ -1146,16 +1162,36 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
         if not recipients:
             raise RuntimeError("Notification recipients not resolved")
 
+        title = inputs.get("title") or "Notification"
+        body = inputs.get("body") or ""
+        link_to = inputs.get("link_to")
+        if isinstance(title, str) and "{{" in title:
+            title = render_template(title, render_context, strict=False)
+        if isinstance(body, str) and "{{" in body:
+            body = render_template(body, render_context, strict=False)
+        if isinstance(link_to, str) and "{{" in link_to:
+            link_to = render_template(link_to, render_context, strict=False)
+        if (
+            (not isinstance(link_to, str) or not link_to.strip())
+            and inputs.get("link_mode") == "trigger_record"
+            and isinstance(entity_id, str)
+            and entity_id
+            and isinstance(record_id, str)
+            and record_id
+        ):
+            route_entity_id = entity_id[7:] if entity_id.startswith("entity.") else entity_id
+            link_to = f"/data/{route_entity_id}/{record_id}"
+
         notifications = []
         for recipient_user_id in recipients:
             notifications.append(
                 store.create(
                     {
                         "recipient_user_id": recipient_user_id,
-                        "title": inputs.get("title") or "Notification",
-                        "body": inputs.get("body") or "",
+                        "title": title,
+                        "body": body,
                         "severity": inputs.get("severity") or "info",
-                        "link_to": inputs.get("link_to"),
+                        "link_to": link_to,
                         "source_event": ctx.get("trigger") or {},
                     }
                 )

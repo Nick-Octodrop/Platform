@@ -122,15 +122,41 @@ export default function NotificationsPage() {
 
   const unreadCount = useMemo(() => items.filter((item) => !item?.read_at).length, [items]);
 
-  function normalizeNotificationTarget(target) {
+  function normalizeNotificationTarget(target, sourceEvent) {
     const raw = typeof target === "string" ? target.trim() : "";
-    if (!raw) return "/home";
-    const legacyEntityMatch = raw.match(/^\/data\/entity\.([^/]+)\/(.+)$/i);
-    return legacyEntityMatch ? `/data/${legacyEntityMatch[1]}/${legacyEntityMatch[2]}` : raw;
+    const source = sourceEvent && typeof sourceEvent === "object" ? sourceEvent : {};
+    const sourceEntityRaw = typeof source?.entity_id === "string" ? source.entity_id.trim() : "";
+    const sourceRecordId = typeof source?.record_id === "string" ? source.record_id.trim() : "";
+    const sourceEntity = sourceEntityRaw.startsWith("entity.") ? sourceEntityRaw.slice(7) : sourceEntityRaw;
+    const sourceTarget = sourceEntity && sourceRecordId ? `/data/${sourceEntity}/${sourceRecordId}` : "";
+    let normalized = raw || sourceTarget || "/home";
+    if (normalized.includes("{{trigger.entity_id}}")) {
+      normalized = normalized.replaceAll("{{trigger.entity_id}}", sourceEntityRaw || sourceEntity);
+    }
+    if (normalized.includes("{{trigger.record_id}}")) {
+      normalized = normalized.replaceAll("{{trigger.record_id}}", sourceRecordId);
+    }
+    const legacyEntityMatch = normalized.match(/^\/data\/entity\.([^/]+)\/(.+)$/i);
+    if (legacyEntityMatch) {
+      normalized = `/data/${legacyEntityMatch[1]}/${legacyEntityMatch[2]}`;
+    }
+    const recordMatch = normalized.match(/^\/data\/([^/]+)\/(.+)$/i);
+    if (recordMatch) {
+      const entityPart = (recordMatch[1] || "").replace(/^entity\./i, "");
+      const recordPart = (recordMatch[2] || "").trim();
+      if (!entityPart || !recordPart || recordPart === "record_id" || recordPart.includes("{{") || recordPart.includes("}}")) {
+        return sourceTarget || "/home";
+      }
+      return `/data/${entityPart}/${recordPart}`;
+    }
+    if (normalized.includes("{{") || normalized.includes("}}")) {
+      return sourceTarget || "/home";
+    }
+    return normalized;
   }
 
-  function isExternalNotificationTarget(target) {
-    return /^https?:\/\//i.test(normalizeNotificationTarget(target));
+  function isExternalNotificationTarget(target, sourceEvent) {
+    return /^https?:\/\//i.test(normalizeNotificationTarget(target, sourceEvent));
   }
 
   return (
@@ -203,13 +229,13 @@ export default function NotificationsPage() {
                       Mark seen
                     </button>
                   )}
-                  {n.link_to && (
-                    isExternalNotificationTarget(n.link_to) ? (
-                      <a className="btn btn-xs btn-ghost" href={normalizeNotificationTarget(n.link_to)}>
+                  {(n.link_to || n.source_event) && (
+                    isExternalNotificationTarget(n.link_to, n.source_event) ? (
+                      <a className="btn btn-xs btn-ghost" href={normalizeNotificationTarget(n.link_to, n.source_event)}>
                         Open
                       </a>
                     ) : (
-                      <Link className="btn btn-xs btn-ghost" to={normalizeNotificationTarget(n.link_to)}>
+                      <Link className="btn btn-xs btn-ghost" to={normalizeNotificationTarget(n.link_to, n.source_event)}>
                         Open
                       </Link>
                     )

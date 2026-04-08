@@ -494,7 +494,7 @@
         "biz_purchase_order.purchasing_entity": { "value": "EcoTech FZCO" },
         "biz_purchase_order.source_customer_order_number": { "from": "biz_order.order_number" },
         "biz_purchase_order.currency": { "value": "USD" },
-        "biz_purchase_order.po_date": { "ref": "$now" },
+        "biz_purchase_order.po_date": { "ref": "$today" },
         "biz_purchase_order.status": { "value": "draft" }
       },
       "child_mappings": [

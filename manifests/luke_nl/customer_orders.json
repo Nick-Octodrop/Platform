@@ -396,7 +396,7 @@
         "nl_purchase_order.purchasing_entity": { "value": "EcoTech FZCO" },
         "nl_purchase_order.source_customer_order_number": { "from": "nl_customer_order.order_number" },
         "nl_purchase_order.currency": { "value": "USD" },
-        "nl_purchase_order.po_date": { "ref": "$now" },
+        "nl_purchase_order.po_date": { "ref": "$today" },
         "nl_purchase_order.status": { "value": "draft" }
       },
       "child_mappings": [

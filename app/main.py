@@ -2662,6 +2662,31 @@ def _format_activity_value(value):
     return text if text != "" else "empty"
 
 
+def _format_activity_field_value(field: dict | None, value: Any, lookup_cache: dict[tuple[str, str, str], str | None] | None = None) -> str:
+    if not isinstance(field, dict):
+        return _format_activity_value(value)
+    field_type = field.get("type")
+    if field_type == "enum":
+        enum_label = _enum_label_for_value(field, value)
+        if isinstance(enum_label, str) and enum_label.strip():
+            return enum_label
+    if field_type == "lookup" and isinstance(value, str) and value.strip():
+        target_entity = field.get("entity")
+        display_field = field.get("display_field")
+        if isinstance(target_entity, str) and isinstance(display_field, str):
+            cache_key = (target_entity, display_field, value)
+            if isinstance(lookup_cache, dict) and cache_key in lookup_cache:
+                cached = lookup_cache.get(cache_key)
+                if isinstance(cached, str) and cached.strip():
+                    return cached
+            label = _lookup_label(target_entity, display_field, value)
+            if isinstance(lookup_cache, dict):
+                lookup_cache[cache_key] = label
+            if isinstance(label, str) and label.strip():
+                return label
+    return _format_activity_value(value)
+
+
 def _collect_activity_changes(
     entity_def: dict,
     before_record: dict,
@@ -2676,6 +2701,7 @@ def _collect_activity_changes(
                 field_by_id[field["id"]] = field
     candidates = tracked_fields or sorted(field_by_id.keys())
     changes: list[dict] = []
+    lookup_cache: dict[tuple[str, str, str], str | None] = {}
     for field_id in candidates:
         if not isinstance(field_id, str):
             continue
@@ -2683,13 +2709,14 @@ def _collect_activity_changes(
         after_val = after_record.get(field_id)
         if before_val == after_val:
             continue
-        label = (field_by_id.get(field_id) or {}).get("label") or field_id
+        field_def = field_by_id.get(field_id) or {}
+        label = field_def.get("label") or field_id
         changes.append(
             {
                 "field": field_id,
                 "label": label,
-                "from": _format_activity_value(before_val),
-                "to": _format_activity_value(after_val),
+                "from": _format_activity_field_value(field_def, before_val, lookup_cache),
+                "to": _format_activity_field_value(field_def, after_val, lookup_cache),
             }
         )
     return changes
