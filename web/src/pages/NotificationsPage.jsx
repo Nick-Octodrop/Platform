@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { MoreHorizontal } from "lucide-react";
 import { apiFetch } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import { formatDateTime } from "../utils/dateTime.js";
+import { isExternalNotificationTarget, resolveNotificationTarget } from "../utils/notificationTargets.js";
 
 function mergeNotifications(prev, incoming) {
   const merged = [...(Array.isArray(incoming) ? incoming : []), ...(Array.isArray(prev) ? prev : [])];
@@ -19,6 +20,7 @@ function mergeNotifications(prev, incoming) {
 
 export default function NotificationsPage() {
   const { pushToast } = useToast();
+  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -122,41 +124,17 @@ export default function NotificationsPage() {
 
   const unreadCount = useMemo(() => items.filter((item) => !item?.read_at).length, [items]);
 
-  function normalizeNotificationTarget(target, sourceEvent) {
-    const raw = typeof target === "string" ? target.trim() : "";
-    const source = sourceEvent && typeof sourceEvent === "object" ? sourceEvent : {};
-    const sourceEntityRaw = typeof source?.entity_id === "string" ? source.entity_id.trim() : "";
-    const sourceRecordId = typeof source?.record_id === "string" ? source.record_id.trim() : "";
-    const sourceEntity = sourceEntityRaw.startsWith("entity.") ? sourceEntityRaw.slice(7) : sourceEntityRaw;
-    const sourceTarget = sourceEntity && sourceRecordId ? `/data/${sourceEntity}/${sourceRecordId}` : "";
-    let normalized = raw || sourceTarget || "/home";
-    if (normalized.includes("{{trigger.entity_id}}")) {
-      normalized = normalized.replaceAll("{{trigger.entity_id}}", sourceEntityRaw || sourceEntity);
-    }
-    if (normalized.includes("{{trigger.record_id}}")) {
-      normalized = normalized.replaceAll("{{trigger.record_id}}", sourceRecordId);
-    }
-    const legacyEntityMatch = normalized.match(/^\/data\/entity\.([^/]+)\/(.+)$/i);
-    if (legacyEntityMatch) {
-      normalized = `/data/${legacyEntityMatch[1]}/${legacyEntityMatch[2]}`;
-    }
-    const recordMatch = normalized.match(/^\/data\/([^/]+)\/(.+)$/i);
-    if (recordMatch) {
-      const entityPart = (recordMatch[1] || "").replace(/^entity\./i, "");
-      const recordPart = (recordMatch[2] || "").trim();
-      if (!entityPart || !recordPart || recordPart === "record_id" || recordPart.includes("{{") || recordPart.includes("}}")) {
-        return sourceTarget || "/home";
+  async function openNotification(item) {
+    try {
+      const target = await resolveNotificationTarget(item?.link_to, item?.source_event);
+      if (/^https?:\/\//i.test(target)) {
+        window.location.assign(target);
+        return;
       }
-      return `/data/${entityPart}/${recordPart}`;
+      navigate(target);
+    } catch (err) {
+      pushToast("error", err?.message || "Failed to open notification");
     }
-    if (normalized.includes("{{") || normalized.includes("}}")) {
-      return sourceTarget || "/home";
-    }
-    return normalized;
-  }
-
-  function isExternalNotificationTarget(target, sourceEvent) {
-    return /^https?:\/\//i.test(normalizeNotificationTarget(target, sourceEvent));
   }
 
   return (
@@ -231,13 +209,13 @@ export default function NotificationsPage() {
                   )}
                   {(n.link_to || n.source_event) && (
                     isExternalNotificationTarget(n.link_to, n.source_event) ? (
-                      <a className="btn btn-xs btn-ghost" href={normalizeNotificationTarget(n.link_to, n.source_event)}>
+                      <button type="button" className="btn btn-xs btn-ghost" onClick={() => openNotification(n)}>
                         Open
-                      </a>
+                      </button>
                     ) : (
-                      <Link className="btn btn-xs btn-ghost" to={normalizeNotificationTarget(n.link_to, n.source_event)}>
+                      <button type="button" className="btn btn-xs btn-ghost" onClick={() => openNotification(n)}>
                         Open
-                      </Link>
+                      </button>
                     )
                   )}
                 </div>

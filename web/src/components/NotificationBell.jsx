@@ -4,6 +4,7 @@ import { apiFetch } from "../api.js";
 import { Bell, MoreHorizontal } from "lucide-react";
 import { SOFT_BUTTON_XS } from "../components/buttonStyles.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
+import { resolveNotificationTarget } from "../utils/notificationTargets.js";
 
 export default function NotificationBell() {
   const isMobile = useMediaQuery("(max-width: 768px)");
@@ -151,44 +152,11 @@ export default function NotificationBell() {
     }
   }
 
-  function resolveNotificationTarget(item) {
-    const raw = typeof item?.link_to === "string" ? item.link_to.trim() : "";
-    const sourceEvent = item?.source_event && typeof item.source_event === "object" ? item.source_event : {};
-    const sourceEntityRaw = typeof sourceEvent?.entity_id === "string" ? sourceEvent.entity_id.trim() : "";
-    const sourceRecordId = typeof sourceEvent?.record_id === "string" ? sourceEvent.record_id.trim() : "";
-    const sourceEntity = sourceEntityRaw.startsWith("entity.") ? sourceEntityRaw.slice(7) : sourceEntityRaw;
-    const sourceTarget = sourceEntity && sourceRecordId ? `/data/${sourceEntity}/${sourceRecordId}` : "";
-    let target = raw || sourceTarget || "/home";
-    if (target.includes("{{trigger.entity_id}}")) {
-      target = target.replaceAll("{{trigger.entity_id}}", sourceEntityRaw || sourceEntity);
-    }
-    if (target.includes("{{trigger.record_id}}")) {
-      target = target.replaceAll("{{trigger.record_id}}", sourceRecordId);
-    }
-    const legacyEntityMatch = target.match(/^\/data\/entity\.([^/]+)\/(.+)$/i);
-    if (legacyEntityMatch) {
-      target = `/data/${legacyEntityMatch[1]}/${legacyEntityMatch[2]}`;
-    }
-    const recordMatch = target.match(/^\/data\/([^/]+)\/(.+)$/i);
-    if (recordMatch) {
-      const entityPart = (recordMatch[1] || "").replace(/^entity\./i, "");
-      const recordPart = (recordMatch[2] || "").trim();
-      if (!entityPart || !recordPart || recordPart === "record_id" || recordPart.includes("{{") || recordPart.includes("}}")) {
-        return sourceTarget || "/home";
-      }
-      return `/data/${entityPart}/${recordPart}`;
-    }
-    if (target.includes("{{") || target.includes("}}")) {
-      return sourceTarget || "/home";
-    }
-    return target;
-  }
-
   async function openNotification(item) {
     const id = item?.id;
     if (!id) return;
     await markRead(id);
-    const target = resolveNotificationTarget(item);
+    const target = await resolveNotificationTarget(item?.link_to, item?.source_event);
     setOpen(false);
     if (/^https?:\/\//i.test(target)) {
       window.location.assign(target);

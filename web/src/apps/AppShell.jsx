@@ -915,6 +915,16 @@ export default function AppShell({
       const ok = await confirmDialog({ title, body });
       if (!ok) return null;
     }
+    const shouldShowActionPending =
+      !previewMode &&
+      ["create_record", "update_record", "bulk_update", "transform_record"].includes(action.kind);
+    if (shouldShowActionPending) {
+      setActionState({
+        status: "running",
+        label: resolveActionLabel(action, manifest, views),
+        kind: action.kind,
+      });
+    }
     try {
       if (previewMode && previewAllowNav) {
         if (action.kind === "create_record") {
@@ -1031,6 +1041,10 @@ export default function AppShell({
     } catch (err) {
       pushToast("error", err.message || "Action failed");
       return null;
+    } finally {
+      if (shouldShowActionPending) {
+        setActionState((prev) => (prev.status === "running" ? { status: "idle", label: null, kind: null } : prev));
+      }
     }
   }
 
@@ -1114,7 +1128,8 @@ export default function AppShell({
       const missingSelection = resolvedAction.kind === "bulk_update" && (!selectedIds || selectedIds.length === 0);
       const disabled = !enabled || missingRecord || missingSelection;
       return (
-        <button className={SOFT_BUTTON_SM} onClick={() => runAction(resolvedAction)} key={resolvedAction.id || label} disabled={disabled || previewMode}>
+        <button className={SOFT_BUTTON_SM} onClick={() => runAction(resolvedAction)} key={resolvedAction.id || label} disabled={disabled || previewMode || actionRunning}>
+          {actionRunning && actionState.label === label ? <span className="loading loading-spinner loading-xs" /> : null}
           {label}
         </button>
       );
@@ -1505,6 +1520,7 @@ function AppView({
   const [selectedIds, setSelectedIds] = useState([]);
   const [clientFilters, setClientFilters] = useState([]);
   const [autoSaveState, setAutoSaveState] = useState("idle");
+  const [actionState, setActionState] = useState({ status: "idle", label: null, kind: null });
   const autoSaveTimerRef = useRef(null);
   const saveInFlightRef = useRef(false);
   const pendingAutoSaveRef = useRef(false);
@@ -1512,6 +1528,7 @@ function AppView({
   const perfMarkRef = useRef({ list: null, form: null });
   const openCreateModal = onLookupCreate;
   const [activeManifestModal, setActiveManifestModal] = useState(null);
+  const actionRunning = actionState.status === "running";
 
   const kind = view.kind || view.type;
   const views = Array.isArray(manifest?.views) ? manifest.views : [];
@@ -2510,8 +2527,9 @@ function AppView({
                   key={`${item.action?.id || item.label}`}
                   className={PRIMARY_BUTTON_SM}
                   onClick={() => handleHeaderAction(item.action)}
-                  disabled={!item.enabled}
+                  disabled={!item.enabled || actionRunning}
                 >
+                  {actionRunning && actionState.label === item.label ? <span className="loading loading-spinner loading-xs" /> : null}
                   {item.label}
                 </button>
               ))}
@@ -2559,7 +2577,7 @@ function AppView({
                     <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-50">
                       {bulkActions.map((item) => (
                         <li key={`${item.action?.id || item.label}`}>
-                          <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled}>
+                          <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled || actionRunning}>
                             {item.label}
                           </button>
                         </li>
@@ -2572,7 +2590,7 @@ function AppView({
 
             <div className="flex items-center gap-2 min-w-[10rem] justify-end">
               {canWriteRecords && selectedIds.length > 0 && (
-                <button className={SOFT_BUTTON_SM} onClick={handleBulkDelete}>
+                <button className={SOFT_BUTTON_SM} onClick={handleBulkDelete} disabled={actionRunning}>
                   Delete ({selectedIds.length})
                 </button>
               )}
@@ -2582,7 +2600,7 @@ function AppView({
                   <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-50">
                     {bulkActions.map((item) => (
                       <li key={`${item.action?.id || item.label}`}>
-                        <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled}>
+                        <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled || actionRunning}>
                           {item.label}
                         </button>
                       </li>
@@ -2592,11 +2610,11 @@ function AppView({
               )}
               {secondaryActions.length > 0 && (
                 <div className="dropdown dropdown-end">
-                  <button className={SOFT_BUTTON_SM}>More</button>
+                  <button className={SOFT_BUTTON_SM} disabled={actionRunning}>More</button>
                   <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-48 z-50">
                     {secondaryActions.map((item) => (
                       <li key={`${item.action?.id || item.label}`}>
-                        <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled}>
+                        <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled || actionRunning}>
                           {item.label}
                         </button>
                       </li>
@@ -2724,6 +2742,8 @@ function AppView({
               primaryActions={primaryActions}
               secondaryActions={secondaryActions}
               onActionClick={handleHeaderAction}
+              actionBusy={actionRunning}
+              actionBusyLabel={actionState.label}
               readonly={!canWriteRecords || (previewMode && !previewAllowNav)}
               showValidation={showValidation}
               applyDefaults={!recordId}
@@ -2759,6 +2779,11 @@ function AppView({
               )}
             />
           )}
+          {actionRunning && !showFormSkeleton ? (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-base-100/55 backdrop-blur-[1px]">
+              <span className="loading loading-spinner loading-lg"></span>
+            </div>
+          ) : null}
         </div>
       </div>
       {manifestModalNode}

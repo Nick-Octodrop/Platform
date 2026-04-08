@@ -33,6 +33,8 @@ export default function FormViewRenderer({
   primaryActions = [],
   secondaryActions = [],
   onActionClick,
+  actionBusy = false,
+  actionBusyLabel = null,
   isDirty = false,
   hideHeader = false,
   previewMode = false,
@@ -442,13 +444,14 @@ export default function FormViewRenderer({
                   className={SOFT_ICON_SM}
                   onClick={() => setMobileActionsOpen((open) => !open)}
                   aria-label="More actions"
+                  disabled={actionBusy}
                 >
                   <MoreHorizontal className="h-4 w-4" />
                 </button>
                 {mobileActionsOpen && (
                   <ul className="absolute right-0 top-full mt-2 menu p-2 shadow bg-base-100 rounded-box w-56 z-[220] border border-base-300">
                     {mobileHeaderActions.map((item) => {
-                      const disabled = !item.enabled || previewMode || readonly;
+                      const disabled = !item.enabled || previewMode || readonly || actionBusy;
                       return (
                         <li key={item.label}>
                           <button
@@ -471,7 +474,7 @@ export default function FormViewRenderer({
           </div>
           <div className={`flex flex-wrap items-center justify-end gap-2 shrink-0 w-full md:w-auto md:max-w-[60%] ${isMobile ? "hidden" : ""}`}>
             {primaryActions.map((item) => {
-              const disabled = !item.enabled || previewMode || readonly;
+              const disabled = !item.enabled || previewMode || readonly || actionBusy;
               const reason = readonly
                 ? "Read-only access."
                 : !item.enabled
@@ -487,6 +490,7 @@ export default function FormViewRenderer({
                   }}
                   disabled={disabled}
                 >
+                  {actionBusy && actionBusyLabel === item.label ? <span className="loading loading-spinner loading-xs" /> : null}
                   {item.label}
                 </button>
               );
@@ -500,7 +504,7 @@ export default function FormViewRenderer({
             {secondaryActions.length > 0 && (
               <div className="dropdown dropdown-end">
                 <DaisyTooltip label="More actions" placement="bottom">
-                  <button type="button" className={SOFT_ICON_SM} aria-label="More actions">
+                  <button type="button" className={SOFT_ICON_SM} aria-label="More actions" disabled={actionBusy}>
                     <MoreHorizontal className="h-4 w-4" />
                   </button>
                 </DaisyTooltip>
@@ -509,11 +513,12 @@ export default function FormViewRenderer({
                     <li key={item.label}>
                       <button
                         onClick={() => {
-                          if (previewMode || readonly || !item.enabled) return;
+                          if (previewMode || readonly || !item.enabled || actionBusy) return;
                           onActionClick?.(item.action);
                         }}
-                        disabled={!item.enabled || previewMode || readonly}
+                        disabled={!item.enabled || previewMode || readonly || actionBusy}
                       >
+                        {actionBusy && actionBusyLabel === item.label ? <span className="loading loading-spinner loading-xs" /> : null}
                         {item.label}
                       </button>
                     </li>
