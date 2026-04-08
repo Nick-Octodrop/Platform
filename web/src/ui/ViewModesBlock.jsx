@@ -26,6 +26,7 @@ import { apiFetch, deleteRecord, subscribeRecordMutations } from "../api.js";
 import { supabase } from "../supabase.js";
 import ListViewRenderer from "./ListViewRenderer.jsx";
 import PaginationControls from "../components/PaginationControls.jsx";
+import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { evalCondition } from "../utils/conditions.js";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_BUTTON_XS, SOFT_ICON_SM } from "../components/buttonStyles.js";
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
@@ -1556,6 +1557,7 @@ export default function ViewModesBlock({
   const actions = Array.isArray(manifest?.actions) ? manifest.actions : [];
 
   const [records, setRecords] = useState([]);
+  const [recordsLoading, setRecordsLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
   const [clientFilters, setClientFilters] = useState([]);
   const [savedFilters, setSavedFilters] = useState([]);
@@ -1611,10 +1613,15 @@ export default function ViewModesBlock({
   }, [resolvedModes, forceListOnly]);
 
   const defaultMode = forceListOnly ? "list" : (block?.default_mode || resolvedModes[0]?.mode || "list");
+  const activeMode = forceListOnly ? "list" : (resolvedModes.find((m) => m.mode === modeParam)?.mode || defaultMode);
+  const activeModeDef = resolvedModes.find((m) => m.mode === activeMode) || resolvedModes[0] || null;
+  const activeView = activeModeDef?.view || null;
+  const activeViewKind = String(activeView?.kind || activeView?.type || "").toLowerCase();
+  const effectiveGroupByParam = groupByParam || prefs?.default_group_by || activeModeDef?.default_group_by || block?.default_group_by || "";
 
   const groupByFieldDef = useMemo(
-    () => (Array.isArray(entityDef?.fields) ? entityDef.fields.find((f) => f?.id === groupByParam) : null),
-    [entityDef, groupByParam]
+    () => (Array.isArray(entityDef?.fields) ? entityDef.fields.find((f) => f?.id === effectiveGroupByParam) : null),
+    [entityDef, effectiveGroupByParam]
   );
   const workflowStatusField = useMemo(() => {
     const workflows = Array.isArray(manifest?.workflows) ? manifest.workflows : [];
@@ -1623,11 +1630,11 @@ export default function ViewModesBlock({
   }, [manifest, entityFullId]);
   const kanbanCanDrag = useMemo(() => {
     if (!canWriteRecords || previewMode) return false;
-    if (!groupByParam) return false;
+    if (!effectiveGroupByParam) return false;
     if (groupByFieldDef?.readonly) return false;
     const t = String(groupByFieldDef?.type || "").toLowerCase();
     return t === "enum" || t === "string" || t === "number" || t === "bool" || t === "user";
-  }, [canWriteRecords, previewMode, groupByParam, groupByFieldDef]);
+  }, [canWriteRecords, previewMode, effectiveGroupByParam, groupByFieldDef]);
 
   useEffect(() => {
     if (!settingsMenuOpen || isMobile) return undefined;
@@ -1665,8 +1672,8 @@ export default function ViewModesBlock({
       if (!action || action.kind !== "update_record" || action.entity_id !== entityFullId) return false;
       const patch = action.patch;
       if (!patch || typeof patch !== "object") return false;
-      if (!(groupByParam in patch)) return false;
-      if (patch[groupByParam] !== targetValue) return false;
+      if (!(effectiveGroupByParam in patch)) return false;
+      if (patch[effectiveGroupByParam] !== targetValue) return false;
       return true;
     });
     const visible = matches.filter((action) => {
@@ -1679,14 +1686,14 @@ export default function ViewModesBlock({
   async function handleKanbanMove(row, targetGroupKey) {
     const record = row?.record || {};
     const rowId = row?.record_id || record?.id;
-    if (!rowId || !groupByParam) return { ok: false, message: "Invalid record." };
+    if (!rowId || !effectiveGroupByParam) return { ok: false, message: "Invalid record." };
     const targetValue = castGroupValue(targetGroupKey);
-    const currentValue = record[groupByParam] ?? null;
+    const currentValue = record[effectiveGroupByParam] ?? null;
     if (currentValue === targetValue) return { ok: true };
 
     const transition = findTransitionAction(record, targetValue);
     const transitionAction = transition.action;
-    const isStatusMove = workflowStatusField && groupByParam === workflowStatusField;
+    const isStatusMove = workflowStatusField && effectiveGroupByParam === workflowStatusField;
     if (transitionAction?.modal_id) {
       return { ok: false, message: "This transition requires a modal. Open the record to continue." };
     }
@@ -1706,13 +1713,13 @@ export default function ViewModesBlock({
       }
       const result = await onRunAction(transitionAction, {
         recordId: rowId,
-        recordDraft: { ...(record || {}), [groupByParam]: targetValue },
+        recordDraft: { ...(record || {}), [effectiveGroupByParam]: targetValue },
       });
       if (!result) return { ok: false, message: "Transition failed." };
       const patch = transitionAction?.patch && typeof transitionAction.patch === "object" ? transitionAction.patch : null;
       const nextRecord = result?.record && typeof result.record === "object"
         ? result.record
-        : { ...(record || {}), ...(patch || {}), [groupByParam]: targetValue };
+        : { ...(record || {}), ...(patch || {}), [effectiveGroupByParam]: targetValue };
       setRecords((prev) =>
         (Array.isArray(prev) ? prev : []).map((entry) => {
           const entryId = entry?.record_id || entry?.record?.id;
@@ -1730,17 +1737,12 @@ export default function ViewModesBlock({
     }
   }
 
-  const activeMode = forceListOnly ? "list" : (resolvedModes.find((m) => m.mode === modeParam)?.mode || defaultMode);
-  const activeModeDef = resolvedModes.find((m) => m.mode === activeMode) || resolvedModes[0] || null;
-  const activeView = activeModeDef?.view || null;
-  const activeViewKind = String(activeView?.kind || activeView?.type || "").toLowerCase();
-
   const listView = resolvedModes.find((m) => m.mode === "list")?.view || activeView;
   const searchFields = Array.isArray(listView?.header?.search?.fields) ? listView.header.search.fields : [];
   const manifestFilters = Array.isArray(listView?.header?.filters) ? listView.header.filters : [];
   const graphDefault = activeView?.default || {};
   const graphType = graphTypeParam || graphDefault.type || "bar";
-  const graphGroupBy = graphGroupByParam || groupByParam || graphDefault.group_by || "";
+  const graphGroupBy = graphGroupByParam || effectiveGroupByParam || graphDefault.group_by || "";
   const graphMeasure = graphMeasureParam || graphDefault.measure || "count";
   const showGraphMode = activeMode === "graph";
   const showListMode = activeMode === "list";
@@ -1751,7 +1753,7 @@ export default function ViewModesBlock({
     : Number.isFinite(Number(listView?.page_size)) && Number(listView?.page_size) > 0
       ? Number(listView?.page_size)
       : 25;
-  const pivotRowGroupBy = pivotRowParam || groupByParam || activeModeDef?.default_group_by || block?.default_group_by || "";
+  const pivotRowGroupBy = pivotRowParam || effectiveGroupByParam || activeModeDef?.default_group_by || block?.default_group_by || "";
   const pivotColGroupBy = pivotColParam || "";
   const pivotMeasure = pivotMeasureParam || "count";
 
@@ -1805,7 +1807,7 @@ export default function ViewModesBlock({
   const waitingForInitialParams =
     !previewMode &&
     !forceListOnly &&
-    (!prefsLoaded || pendingDefaultMode || pendingDefaultFilter || pendingDefaultGroup);
+    (pendingDefaultFilter || (pendingDefaultGroup && !effectiveGroupByParam));
 
   useEffect(() => {
     if (previewMode || !entityFullId) return;
@@ -1906,43 +1908,55 @@ export default function ViewModesBlock({
       }
     }
     if (activeMode === "pivot") {
-      if (!params.get("pivot_row_group_by") && groupByParam) {
-        params.set("pivot_row_group_by", groupByParam);
+      if (!params.get("pivot_row_group_by") && effectiveGroupByParam) {
+        params.set("pivot_row_group_by", effectiveGroupByParam);
         changed = true;
       }
     }
     if (changed) setSearchParams(params, { replace: true });
-  }, [forceListOnly, activeMode, activeView, searchParams, setSearchParams, groupByParam]);
+  }, [forceListOnly, activeMode, activeView, searchParams, setSearchParams, effectiveGroupByParam]);
 
   useEffect(() => {
-    if (!activeView || previewMode) return;
-    if (waitingForInitialParams) return;
+    if (!activeView || previewMode) {
+      setRecordsLoading(false);
+      return undefined;
+    }
+    if (waitingForInitialParams) {
+      setRecordsLoading(true);
+      return undefined;
+    }
     const viewKind = activeView.kind || activeView.type;
-    if (viewKind === "graph" || activeMode === "pivot") return;
+    if (viewKind === "graph" || activeMode === "pivot") {
+      setRecordsLoading(false);
+      return undefined;
+    }
     const bootstrapList = bootstrap?.list;
     const allowBootstrapList =
       !domain &&
       !searchText &&
-      !groupByParam;
+      !effectiveGroupByParam;
     const bootstrapMatches =
       allowBootstrapList &&
       bootstrapList &&
       bootstrap?.viewId === activeView?.id &&
       bootstrapList?.entity_id === entityFullId &&
       bootstrapUsedRef.current !== bootstrapVersion;
-    if (bootstrapMatches && viewKind === "list") {
+    if (bootstrapMatches && ["list", "kanban", "calendar"].includes(String(viewKind))) {
       setRecords(bootstrapList.records || []);
       setSelectedIds([]);
       bootstrapUsedRef.current = bootstrapVersion;
-      return;
+      setRecordsLoading(false);
+      return undefined;
     }
     if (bootstrapLoading && viewKind === "list") {
-      return;
+      setRecordsLoading(true);
+      return undefined;
     }
     if (block?.record_domain && hasRecordRef(block.record_domain) && !recordScope?.id) {
       setRecords([]);
       setSelectedIds([]);
-      return;
+      setRecordsLoading(false);
+      return undefined;
     }
     const listFields = [];
     if (viewKind === "list") {
@@ -1965,7 +1979,7 @@ export default function ViewModesBlock({
       if (card.title_field) listFields.push(card.title_field);
       for (const fid of card.subtitle_fields || []) listFields.push(fid);
       for (const fid of card.badge_fields || []) listFields.push(fid);
-      if (groupByParam) listFields.push(groupByParam);
+      if (effectiveGroupByParam) listFields.push(effectiveGroupByParam);
     }
     if (viewKind === "calendar") {
       const calendar = activeView.calendar || {};
@@ -1985,13 +1999,24 @@ export default function ViewModesBlock({
     if (searchText) qs.set("q", searchText);
     if (searchFields.length) qs.set("search_fields", searchFields.join(","));
     if (domain) qs.set("domain", JSON.stringify(domain));
+    let cancelled = false;
+    setRecordsLoading(true);
     apiFetch(`/records/${entityFullId}${qs.toString() ? `?${qs.toString()}` : ""}`)
       .then((res) => {
+        if (cancelled) return;
         setRecords(res.records || []);
         setSelectedIds([]);
       })
-      .catch(() => setRecords([]));
-  }, [activeView, entityFullId, searchText, searchFields, domain, groupByParam, previewMode, entityDef, refreshTick, externalRefreshTick, bootstrap, bootstrapVersion, bootstrapLoading, block, recordScope, waitingForInitialParams]);
+      .catch(() => {
+        if (!cancelled) setRecords([]);
+      })
+      .finally(() => {
+        if (!cancelled) setRecordsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeView, entityFullId, searchText, searchFields, domain, effectiveGroupByParam, previewMode, entityDef, refreshTick, externalRefreshTick, bootstrap, bootstrapVersion, bootstrapLoading, block, recordScope, waitingForInitialParams]);
 
   useEffect(() => {
     if (previewMode) return undefined;
@@ -2346,7 +2371,7 @@ export default function ViewModesBlock({
       mode: activeMode || "",
       search: searchText || "",
       filter: filterParam || "",
-      group_by: groupByParam || "",
+      group_by: effectiveGroupByParam || "",
       graph_type: graphType,
       graph_measure: graphMeasure,
       graph_group_by: graphGroupBy,
@@ -2474,6 +2499,7 @@ export default function ViewModesBlock({
   const showGroupBy = !compact && !forceListOnly && (activeMode === "kanban" || activeMode === "graph" || activeMode === "pivot") && filterableFields.length > 0;
   const showGraphMeasure = activeMode === "graph" && measureOptions.length > 0;
   const showPivotMeasure = activeMode === "pivot" && measureOptions.length > 0;
+  const showRecordViewLoading = (showListMode || showKanbanMode || showCalendarMode) && recordsLoading;
   const showMobileToolbarActions = isMobile && (
     showFilters
     || showSavedViews
@@ -3332,7 +3358,11 @@ export default function ViewModesBlock({
       )}
 
       <div className={`flex-1 min-h-0 relative z-0 ${activeMode === "calendar" ? "overflow-hidden" : "overflow-auto"}`}>
-        {activeView && activeViewKind === "list" && showListMode && (
+        {showRecordViewLoading ? (
+          <LoadingSpinner className="h-full min-h-[40vh] rounded-box bg-base-100" />
+        ) : null}
+
+        {!showRecordViewLoading && activeView && activeViewKind === "list" && showListMode && (
           <div className="h-full min-h-0">
             <ListViewRenderer
               view={activeView}
@@ -3379,13 +3409,13 @@ export default function ViewModesBlock({
           </div>
         )}
 
-        {activeView && activeViewKind === "kanban" && showKanbanMode && (
+        {!showRecordViewLoading && activeView && activeViewKind === "kanban" && showKanbanMode && (
           <div className="h-full min-h-0">
             <KanbanView
               view={activeView}
               entityDef={entityDef}
               records={records}
-              groupBy={groupByParam}
+              groupBy={effectiveGroupByParam}
               canDragCards={kanbanCanDrag}
               onMoveCard={handleKanbanMove}
               onSelectRow={(row) => {
@@ -3399,7 +3429,7 @@ export default function ViewModesBlock({
           </div>
         )}
 
-        {activeView && activeViewKind === "calendar" && showCalendarMode && (
+        {!showRecordViewLoading && activeView && activeViewKind === "calendar" && showCalendarMode && (
           <div className="h-full min-h-0 overflow-hidden">
             <CalendarView
               view={activeView}

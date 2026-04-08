@@ -7,10 +7,7 @@ import {
   FileJson,
   KeyRound,
   Radio,
-  ShieldCheck,
   Terminal,
-  UploadCloud,
-  Workflow,
 } from "lucide-react";
 import { API_URL } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
@@ -37,51 +34,52 @@ function buildDocUrl(path) {
 
 function CodeBlock({ children }) {
   return (
-    <pre className="overflow-x-auto rounded-box border border-base-300 bg-base-200/70 p-4 text-xs leading-6">
+    <pre className="overflow-x-auto rounded-box border border-base-300 bg-base-200/70 p-3 text-xs leading-6">
       <code>{children}</code>
     </pre>
   );
 }
 
-function Section({ title, description, children }) {
+function DocCard({ icon: Icon, label, href, description }) {
   return (
-    <section className="rounded-box border border-base-300 bg-base-100 p-4 shadow-sm">
-      <div className="text-sm font-semibold">{title}</div>
-      {description ? <div className="mt-1 text-sm leading-6 opacity-70">{description}</div> : null}
-      <div className="mt-4">{children}</div>
-    </section>
+    <a
+      className="group flex min-h-24 flex-col justify-between rounded-box border border-base-300 bg-base-100 p-4 transition hover:border-success hover:bg-base-200/50"
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <Icon className="h-5 w-5 text-success" />
+        <ExternalLink className="h-4 w-4 opacity-35 transition group-hover:opacity-80" />
+      </div>
+      <div>
+        <div className="text-sm font-semibold">{label}</div>
+        <div className="mt-1 text-xs leading-5 opacity-65">{description}</div>
+      </div>
+    </a>
   );
 }
 
-function SurfaceCard({ icon: Icon, title, description, endpoints }) {
+function DetailRow({ label, value }) {
   return (
-    <div className="rounded-box border border-base-300 bg-base-100 p-4 shadow-sm">
-      <div className="flex items-start gap-3">
-        <div className="rounded-box bg-base-200 p-2">
-          <Icon className="h-5 w-5 text-success" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold">{title}</div>
-          <div className="mt-1 text-sm leading-5 opacity-70">{description}</div>
-          <div className="mt-3 space-y-1">
-            {endpoints.map((endpoint) => (
-              <div key={endpoint} className="truncate font-mono text-xs text-base-content/70">
-                {endpoint}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+    <div className="flex gap-3 text-sm">
+      <div className="w-28 shrink-0 font-medium opacity-60">{label}</div>
+      <div className="min-w-0 flex-1 leading-6">{value}</div>
     </div>
   );
 }
 
-function InfoTile({ label, value, description }) {
+function EndpointRow({ label, endpoints }) {
   return (
-    <div className="rounded-box border border-base-300 bg-base-200/35 p-3">
-      <div className="text-xs font-semibold uppercase tracking-[0.12em] opacity-55">{label}</div>
-      <div className="mt-2 text-sm font-semibold">{value}</div>
-      {description ? <div className="mt-1 text-xs leading-5 opacity-70">{description}</div> : null}
+    <div className="rounded-box border border-base-300 bg-base-100 p-3">
+      <div className="text-sm font-semibold">{label}</div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {endpoints.map((endpoint) => (
+          <span key={endpoint} className="rounded-btn bg-base-200 px-2 py-1 font-mono text-[11px] text-base-content/70">
+            {endpoint}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -130,11 +128,36 @@ export default function ExternalApiDocsPage() {
 
   const links = useMemo(
     () => [
-      { label: "Interactive Docs", href: buildDocUrl("/ext/v1/docs"), icon: Terminal },
-      { label: "Reference Docs", href: buildDocUrl("/ext/v1/redoc"), icon: BookOpen },
-      { label: "OpenAPI JSON", href: buildDocUrl("/ext/v1/openapi.json"), icon: FileJson },
-      { label: "Integration Guide", href: buildDocUrl("/ext/v1/guide.md"), icon: BookOpen },
-      { label: "Webhook Events", href: buildDocUrl("/ext/v1/events.md"), icon: Radio },
+      {
+        label: "Swagger UI",
+        description: "Interactive reference for testing calls with an API key.",
+        href: buildDocUrl("/ext/v1/docs"),
+        icon: Terminal,
+      },
+      {
+        label: "ReDoc",
+        description: "Clean reference view for reading the full public API.",
+        href: buildDocUrl("/ext/v1/redoc"),
+        icon: BookOpen,
+      },
+      {
+        label: "OpenAPI JSON",
+        description: "Machine-readable schema for SDKs and generated clients.",
+        href: buildDocUrl("/ext/v1/openapi.json"),
+        icon: FileJson,
+      },
+      {
+        label: "Guide",
+        description: "Production integration notes, auth, retries, and webhooks.",
+        href: buildDocUrl("/ext/v1/guide.md"),
+        icon: BookOpen,
+      },
+      {
+        label: "Events",
+        description: "Webhook event names and payload expectations.",
+        href: buildDocUrl("/ext/v1/events.md"),
+        icon: Radio,
+      },
     ],
     [],
   );
@@ -153,149 +176,100 @@ export default function ExternalApiDocsPage() {
     <div className="h-full min-h-0 overflow-y-auto bg-base-200 p-3 text-base-content sm:p-4 lg:p-6">
       <main className="mx-auto flex min-h-full max-w-6xl flex-col">
         <div className={DESKTOP_PAGE_SHELL}>
-          <div className={`${DESKTOP_PAGE_SHELL_BODY} gap-4 overflow-visible pb-8 md:overflow-auto`}>
-            <div className="flex flex-col gap-4 border-b border-base-300 pb-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className={`${DESKTOP_PAGE_SHELL_BODY} gap-4 overflow-visible pb-8`}>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="max-w-3xl">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="badge badge-success badge-outline">Octodrop API v1</span>
-                  <span className="badge badge-ghost">Client ready</span>
-                </div>
-                <h1 className="mt-3 text-3xl font-semibold tracking-tight">Public API documentation</h1>
-                <p className="mt-3 text-sm leading-6 opacity-70">
-                  Use the public API to read metadata, work with records, attach files, trigger published automations,
-                  and receive signed webhook events. Every request is scoped to the workspace behind the API key.
+                <span className="badge badge-success badge-outline">External API v1</span>
+                <h1 className="mt-3 text-3xl font-semibold tracking-tight">Octodrop External API</h1>
+                <p className="mt-3 max-w-2xl text-sm leading-6 opacity-70">
+                  Client-ready documentation for records, files, automations, and signed webhooks. The docs are public;
+                  the API itself requires a scoped <span className="font-mono text-xs">X-Api-Key</span>.
                 </p>
               </div>
-              <div className="rounded-box border border-base-300 bg-base-200/60 p-3 lg:min-w-96">
+              <div className="rounded-box border border-base-300 bg-base-200/60 p-4 lg:w-96">
                 <div className="text-xs font-semibold uppercase tracking-[0.14em] opacity-50">Base URL</div>
-                <div className="mt-2 break-all font-mono text-xs">{apiBaseUrl || "Not configured"}</div>
-                <button className="btn btn-ghost btn-xs mt-3 gap-1" type="button" onClick={() => copy(apiBaseUrl, "Base URL copied")}>
+                <div className="mt-2 break-all font-mono text-xs leading-5">{apiBaseUrl || "Not configured"}</div>
+                <button
+                  className="btn btn-ghost btn-xs mt-3 gap-1"
+                  type="button"
+                  onClick={() => copy(apiBaseUrl, "Base URL copied")}
+                >
                   <Copy className="h-3.5 w-3.5" />
                   Copy base URL
                 </button>
               </div>
             </div>
 
-            <Section title="Documentation links" description="Use these links when handing the API to a client or integration partner.">
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                {links.map((link) => {
-                  const Icon = link.icon;
-                  return (
-                    <a
-                      key={link.href}
-                      className="group rounded-box border border-base-300 bg-base-100 p-4 transition hover:border-success hover:bg-base-200/50"
-                      href={link.href}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <Icon className="h-5 w-5 text-success" />
-                        <ExternalLink className="h-3.5 w-3.5 opacity-40 transition group-hover:opacity-80" />
-                      </div>
-                      <div className="mt-3 text-sm font-semibold">{link.label}</div>
-                    </a>
-                  );
-                })}
-              </div>
-            </Section>
+            <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+              {links.map((link) => (
+                <DocCard key={link.href} {...link} />
+              ))}
+            </section>
 
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="rounded-box border border-base-300 bg-base-100 p-4 shadow-sm">
-                <KeyRound className="h-5 w-5 text-success" />
-                <div className="mt-3 text-sm font-semibold">API key auth</div>
-                <div className="mt-1 text-sm opacity-70">Send `X-Api-Key` with a scoped credential from Settings. Never use query string keys.</div>
-              </div>
-              <div className="rounded-box border border-base-300 bg-base-100 p-4 shadow-sm">
-                <ShieldCheck className="h-5 w-5 text-info" />
-                <div className="mt-3 text-sm font-semibold">Tenant scoped</div>
-                <div className="mt-1 text-sm opacity-70">Keys can only see records inside their workspace and scope.</div>
-              </div>
-              <div className="rounded-box border border-base-300 bg-base-100 p-4 shadow-sm">
-                <Radio className="h-5 w-5 text-warning" />
-                <div className="mt-3 text-sm font-semibold">Signed webhooks</div>
-                <div className="mt-1 text-sm opacity-70">Outbound events support HMAC signatures and replay checks.</div>
-              </div>
-            </div>
+            <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+              <section className="rounded-box border border-base-300 bg-base-100 p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <KeyRound className="h-4 w-4 text-success" />
+                  Production contract
+                </div>
+                <div className="mt-4 space-y-3">
+                  <DetailRow label="Auth" value="Send X-Api-Key on every /ext/v1 request. Do not put keys in query strings." />
+                  <DetailRow label="Scopes" value="Use one credential per integration with only the scopes it needs." />
+                  <DetailRow label="Rate limits" value="Default is 300 requests per 60 seconds per API credential. Handle 429 with Retry-After." />
+                  <DetailRow label="Pagination" value="Use limit and cursor. The current hard cap is 200 records per page." />
+                  <DetailRow label="Webhooks" value="Verify X-Octo-Timestamp and X-Octo-Signature before processing events." />
+                  <DetailRow label="Errors" value="Expect stable JSON errors with ok=false and errors[].code/message/path." />
+                </div>
+              </section>
 
-            <Section title="Production contract" description="The supported operational behavior clients should build against.">
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <InfoTile
-                  label="Authentication"
-                  value="X-Api-Key"
-                  description="Static per-system credentials. Create one key per integration and rotate/revoke from Settings."
-                />
-                <InfoTile
-                  label="Scopes"
-                  value="Least privilege"
-                  description="Use meta.read, records.read, records.write, automations.read, and automations.write as needed."
-                />
-                <InfoTile
-                  label="Rate limit"
-                  value="300 / 60s default"
-                  description="Per API credential. Handle 429 using Retry-After and X-RateLimit-* headers."
-                />
-                <InfoTile
-                  label="Pagination"
-                  value="limit + cursor"
-                  description="List responses include pagination and next_cursor. Current list cap is 200."
-                />
-                <InfoTile
-                  label="Errors"
-                  value="Stable JSON"
-                  description="Failures return ok=false with errors[].code, message, path, and optional detail."
-                />
-                <InfoTile
-                  label="Files"
-                  value="10MB default"
-                  description="Attachments are workspace scoped. Upload first, then link to a record."
-                />
-                <InfoTile
-                  label="Webhooks"
-                  value="HMAC SHA-256"
-                  description="Verify X-Octo-Timestamp and X-Octo-Signature over timestamp.raw_body."
-                />
-                <InfoTile
-                  label="Security"
-                  value="No shared keys"
-                  description="Do not reuse credentials between vendors. Store keys server-side only."
-                />
-              </div>
-            </Section>
-
-            <Section title="Quickstart" description="Create a scoped API credential, then call metadata first to discover installed entities and field IDs.">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
-                <div className="min-w-0 flex-1">
+              <section className="rounded-box border border-base-300 bg-base-100 p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <Terminal className="h-4 w-4 text-success" />
+                  Quickstart
+                </div>
+                <p className="mt-2 text-sm leading-6 opacity-70">
+                  Create a scoped API credential in Settings, then call metadata first to discover installed entity IDs.
+                </p>
+                <div className="mt-4">
                   <CodeBlock>{curlExample}</CodeBlock>
                 </div>
-                <button className="btn btn-primary btn-sm gap-2" type="button" onClick={() => copy(curlExample, "Quickstart copied")}>
+                <button
+                  className="btn btn-primary btn-sm mt-3 gap-2"
+                  type="button"
+                  onClick={() => copy(curlExample, "Quickstart copied")}
+                >
                   <Copy className="h-4 w-4" />
                   Copy
                 </button>
-              </div>
-            </Section>
+              </section>
+            </div>
 
-            <Section title="Public API surface" description="This is the supported client-facing surface for v1. Use the OpenAPI docs for parameters and response schemas.">
-              <div className="grid gap-3 lg:grid-cols-2">
-                <SurfaceCard
-                  icon={Database}
-                  title="Metadata"
-                  description="Discover installed entities and fields before reading or writing records."
-                  endpoints={["GET /ext/v1/meta/entities"]}
-                />
-                <SurfaceCard
-                  icon={Database}
-                  title="Records"
-                  description="List, search, read, create, replace, patch, and delete records through manifest validation."
+            <section className="rounded-box border border-base-300 bg-base-100 p-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <Database className="h-4 w-4 text-success" />
+                    Public API surface
+                  </div>
+                  <p className="mt-1 text-sm leading-6 opacity-70">Supported client-facing routes for v1.</p>
+                </div>
+                <a className="btn btn-outline btn-sm gap-2" href={buildDocUrl("/ext/v1/redoc")} target="_blank" rel="noreferrer">
+                  Full reference
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              </div>
+              <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                <EndpointRow label="Metadata" endpoints={["GET /ext/v1/meta/entities"]} />
+                <EndpointRow
+                  label="Records"
                   endpoints={[
                     "GET /ext/v1/records/{entity_id}",
                     "POST /ext/v1/records/{entity_id}",
                     "GET|PUT|PATCH|DELETE /ext/v1/records/{entity_id}/{record_id}",
                   ]}
                 />
-                <SurfaceCard
-                  icon={UploadCloud}
-                  title="Attachments"
-                  description="Upload files, link them to records, list record attachments, download, and unlink."
+                <EndpointRow
+                  label="Attachments"
                   endpoints={[
                     "POST /ext/v1/attachments/upload",
                     "POST /ext/v1/attachments/link",
@@ -303,10 +277,8 @@ export default function ExternalApiDocsPage() {
                     "GET /ext/v1/attachments/{attachment_id}/download",
                   ]}
                 />
-                <SurfaceCard
-                  icon={Workflow}
-                  title="Automations"
-                  description="List published automations, queue a run, and poll run status."
+                <EndpointRow
+                  label="Automations"
                   endpoints={[
                     "GET /ext/v1/automations",
                     "POST /ext/v1/automations/{automation_id}/runs",
@@ -314,19 +286,17 @@ export default function ExternalApiDocsPage() {
                   ]}
                 />
               </div>
-            </Section>
+            </section>
 
-            <Section title="Client handoff checklist">
-              <ul className="space-y-2 text-sm leading-6 opacity-75">
-                <li>Create one API credential per external system and grant the minimum scopes required.</li>
-                <li>Send `X-Api-Key` on every `/ext/v1` request. Do not put the key in query strings.</li>
-                <li>Use `/ext/v1/meta/entities` to discover entity and field IDs instead of hardcoding labels.</li>
-                <li>Expect `401` for missing/expired/revoked keys and `403` for missing scopes or blocked record access.</li>
-                <li>Use cursor pagination for lists and handle `429` with the `Retry-After` header.</li>
-                <li>Verify webhook signatures with `X-Octo-Timestamp` and `X-Octo-Signature` before processing events.</li>
-                <li>Store credentials in a server-side secret manager and rotate them on a regular schedule.</li>
-              </ul>
-            </Section>
+            <section className="rounded-box border border-base-300 bg-base-200/45 p-4">
+              <div className="text-sm font-semibold">Client handoff</div>
+              <div className="mt-2 grid gap-2 text-sm leading-6 opacity-75 md:grid-cols-2">
+                <div>Create one credential per external system and grant minimum scopes.</div>
+                <div>Store keys server-side only and rotate them on a regular schedule.</div>
+                <div>Use metadata routes to discover entity and field IDs instead of hardcoding labels.</div>
+                <div>Handle 401, 403, 429, and cursor pagination in the integration client.</div>
+              </div>
+            </section>
           </div>
         </div>
       </main>

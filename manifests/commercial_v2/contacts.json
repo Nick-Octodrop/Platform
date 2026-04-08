@@ -63,7 +63,9 @@
           "default": "EUR",
           "options": [
             { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" }
+            { "value": "USD", "label": "USD" },
+            { "value": "GBP", "label": "GBP" },
+            { "value": "AED", "label": "AED" }
           ]
         },
         { "id": "biz_contact.billing_street", "type": "string", "label": "Billing Street" },

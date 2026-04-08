@@ -238,6 +238,7 @@ _PUBLIC_EXT_DOC_PATHS = {
     "/ext/v1/docs/oauth2-redirect",
     "/ext/v1/redoc",
     "/ext/v1/guide.md",
+    "/ext/v1/events.md",
 }
 
 _APP_ENV_FOR_SECURITY = os.getenv("APP_ENV", os.getenv("ENV", "dev")).strip().lower() or "dev"
@@ -9909,15 +9910,33 @@ async def page_bootstrap(
     view_entity = view_obj.get("entity") or view_obj.get("entity_id") or view_obj.get("entityId")
     view_entity = _normalize_entity_id(view_entity) if isinstance(view_entity, str) else view_entity
 
-    if kind == "list" and view_entity:
+    if kind in {"list", "kanban", "calendar"} and view_entity:
         denied = _entity_access_denied_response(actor, module_id, view_entity, write=False)
         if denied:
             return denied
-        columns = view_obj.get("columns") if isinstance(view_obj.get("columns"), list) else []
         field_ids = []
-        for col in columns:
-            if isinstance(col, dict) and isinstance(col.get("field_id"), str):
-                field_ids.append(col.get("field_id"))
+        columns = view_obj.get("columns") if isinstance(view_obj.get("columns"), list) else []
+        if kind == "list":
+            for col in columns:
+                if isinstance(col, dict) and isinstance(col.get("field_id"), str):
+                    field_ids.append(col.get("field_id"))
+        elif kind == "kanban":
+            card = view_obj.get("card") if isinstance(view_obj.get("card"), dict) else {}
+            for key in ("title_field",):
+                if isinstance(card.get(key), str):
+                    field_ids.append(card[key])
+            for key in ("subtitle_fields", "badge_fields"):
+                for field_id in card.get(key) if isinstance(card.get(key), list) else []:
+                    if isinstance(field_id, str):
+                        field_ids.append(field_id)
+        elif kind == "calendar":
+            calendar = view_obj.get("calendar") if isinstance(view_obj.get("calendar"), dict) else {}
+            for key in ("title_field", "date_start", "date_end", "color_field", "all_day_field"):
+                if isinstance(calendar.get(key), str):
+                    field_ids.append(calendar[key])
+            for key in ("title_field", "date_start", "date_end"):
+                if isinstance(view_obj.get(key), str):
+                    field_ids.append(view_obj[key])
         entity_def = None
         for ent in manifest.get("entities", []) if isinstance(manifest.get("entities"), list) else []:
             if isinstance(ent, dict) and _match_entity_id(view_entity, ent.get("id")):
@@ -9926,6 +9945,17 @@ async def page_bootstrap(
         display_field = entity_def.get("display_field") if isinstance(entity_def, dict) else None
         if isinstance(display_field, str):
             field_ids.append(display_field)
+        if kind == "kanban" and isinstance(entity_def, dict):
+            for field in entity_def.get("fields") if isinstance(entity_def.get("fields"), list) else []:
+                if not isinstance(field, dict):
+                    continue
+                field_id = field.get("id")
+                if not isinstance(field_id, str) or not field_id:
+                    continue
+                field_type = str(field.get("type") or "").lower()
+                lowered_id = field_id.lower()
+                if field_type in {"enum", "user", "users"} or "status" in lowered_id or "stage" in lowered_id:
+                    field_ids.append(field_id)
         field_ids = list(dict.fromkeys([f for f in field_ids if isinstance(f, str) and f]))
         fields_list = [f.strip() for f in search_fields.split(",")] if isinstance(search_fields, str) and search_fields.strip() else None
         parsed_domain = None
@@ -36768,6 +36798,10 @@ def _external_docs_shell(*, title: str, active: str, head: str = "", body: str =
         --octo-green-strong: #15803d;
       }}
       * {{ box-sizing: border-box; }}
+      html {{
+        min-height: 100%;
+        scroll-padding-top: 122px;
+      }}
       body {{
         margin: 0;
         min-height: 100vh;
@@ -36804,7 +36838,7 @@ def _external_docs_shell(*, title: str, active: str, head: str = "", body: str =
       }}
       .octo-shell {{ padding: 20px; }}
       .octo-panel {{
-        overflow: hidden;
+        overflow: visible;
         min-height: calc(100vh - 86px);
         border: 1px solid var(--octo-border);
         border-radius: 16px;
@@ -36812,12 +36846,18 @@ def _external_docs_shell(*, title: str, active: str, head: str = "", body: str =
         box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
       }}
       .octo-header {{
+        position: sticky;
+        top: 46px;
+        z-index: 19;
         display: flex;
         align-items: flex-start;
         justify-content: space-between;
         gap: 18px;
         padding: 20px 24px;
         border-bottom: 1px solid var(--octo-border);
+        border-radius: 16px 16px 0 0;
+        background: rgba(255, 255, 255, 0.96);
+        backdrop-filter: blur(10px);
       }}
       .octo-kicker {{
         margin: 0 0 6px;
@@ -36865,7 +36905,11 @@ def _external_docs_shell(*, title: str, active: str, head: str = "", body: str =
         background: #ecfdf3;
         color: var(--octo-green-strong);
       }}
-      .octo-doc-body {{ background: #fff; }}
+      .octo-doc-body {{
+        min-height: calc(100vh - 220px);
+        overflow: visible;
+        background: #fff;
+      }}
       #swagger-ui .topbar {{ display: none; }}
       #swagger-ui .scheme-container {{
         border-top: 1px solid var(--octo-border);
@@ -36874,16 +36918,24 @@ def _external_docs_shell(*, title: str, active: str, head: str = "", body: str =
       }}
       #swagger-ui .info {{ margin: 24px 0; }}
       #swagger-ui .info .title {{ color: var(--octo-text); font-family: inherit; }}
-      redoc {{ display: block; min-height: 70vh; }}
+      #redoc-container,
+      redoc {{
+        display: block;
+        min-height: calc(100vh - 220px);
+      }}
+      body.octo-redoc .menu-content {{
+        top: 112px !important;
+        max-height: calc(100vh - 112px) !important;
+      }}
       @media (max-width: 760px) {{
         .octo-shell {{ padding: 0; }}
         .octo-panel {{ min-height: calc(100vh - 46px); border-width: 0; border-radius: 0; }}
-        .octo-header {{ flex-direction: column; padding: 18px; }}
+        .octo-header {{ top: 46px; flex-direction: column; padding: 18px; border-radius: 0; }}
         .octo-tabs {{ justify-content: flex-start; }}
       }}
     </style>
   </head>
-  <body>
+  <body class="octo-{active}">
     <div class="octo-topbar">
       <div class="octo-breadcrumb"><span>Home</span><span>&gt;</span><strong>External API</strong></div>
       <div class="octo-status">Docs</div>
@@ -36947,8 +36999,16 @@ async def ext_redoc() -> Response:
     return _external_docs_shell(
         title="ReDoc",
         active="redoc",
-        body='<redoc spec-url="/ext/v1/openapi.json"></redoc>',
-        scripts='<script src="https://cdn.jsdelivr.net/npm/redoc@2/bundles/redoc.standalone.js"></script>',
+        body='<div id="redoc-container"></div>',
+        scripts="""
+    <script src="https://cdn.jsdelivr.net/npm/redoc@2/bundles/redoc.standalone.js"></script>
+    <script>
+      Redoc.init("/ext/v1/openapi.json", {
+        scrollYOffset: 122,
+        nativeScrollbars: true,
+        hideDownloadButton: false
+      }, document.getElementById("redoc-container"));
+    </script>""",
     )
 
 

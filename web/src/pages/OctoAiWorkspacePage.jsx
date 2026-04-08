@@ -272,8 +272,13 @@ function messageRoleClass(msg) {
 }
 
 function messageBubbleClass(msg) {
-  if (msg?.role === "user") return "chat-bubble bg-primary text-primary-content";
-  return "chat-bubble border border-slate-300 bg-slate-100 text-slate-900 shadow-sm";
+  if (msg?.role === "user") return "chat-bubble max-w-[85%] bg-primary text-primary-content text-sm leading-5";
+  return "chat-bubble max-w-[85%] bg-base-200 text-base-content text-sm leading-5";
+}
+
+function messageRoleLabel(msg) {
+  if (msg?.role === "user") return "you";
+  return msg?.role || "assistant";
 }
 
 function buildWorkspaceFrameSrc({ sessionId, sandboxWorkspaceId }) {
@@ -945,7 +950,8 @@ export default function OctoAiWorkspacePage() {
         {renderedMessages.length > 0 ? (
           renderedMessages.map((msg) => (
             <div key={msg.id} className={`chat ${messageRoleClass(msg)}`}>
-              <div className={`${messageBubbleClass(msg)} whitespace-pre-wrap text-sm`}>
+              <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{messageRoleLabel(msg)}</div>
+              <div className={`${messageBubbleClass(msg)} whitespace-pre-wrap`}>
                 {msg.pending ? (
                   <div className="flex items-center gap-2">
                     <span className="loading loading-spinner loading-sm" aria-hidden="true" />
@@ -959,7 +965,8 @@ export default function OctoAiWorkspacePage() {
           ))
         ) : (
           <div className="chat chat-start">
-            <div className={`${messageBubbleClass({ role: "assistant" })} whitespace-pre-wrap text-sm`}>
+            <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">assistant</div>
+            <div className={`${messageBubbleClass({ role: "assistant" })} whitespace-pre-wrap`}>
               Describe the change you want to make. I will plan it first, then show the right workflow actions when there is something real to act on.
             </div>
           </div>

@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 from urllib import error as urlerror
@@ -87,6 +89,38 @@ def collect_error_text(payload: dict[str, Any]) -> str:
         else:
             parts.append(str(entry))
     return "; ".join(parts)
+
+
+def jwt_expiry_seconds(token: str | None) -> int | None:
+    if not token:
+        return None
+    parts = token.split(".")
+    if len(parts) < 2:
+        return None
+    try:
+        padded = parts[1] + ("=" * (-len(parts[1]) % 4))
+        claims = json.loads(base64.urlsafe_b64decode(padded.encode("utf-8")).decode("utf-8"))
+    except Exception:
+        return None
+    exp = claims.get("exp")
+    if isinstance(exp, (int, float)):
+        return int(exp) - int(time.time())
+    return None
+
+
+def require_token_window(token: str | None, *, min_seconds: int, label: str) -> None:
+    remaining = jwt_expiry_seconds(token)
+    if remaining is None:
+        return
+    if remaining <= 0:
+        raise SystemExit(f"{label}: OCTO_API_TOKEN is expired. Refresh it before running this script.")
+    if remaining < min_seconds:
+        minutes = max(1, remaining // 60)
+        required = max(1, min_seconds // 60)
+        raise SystemExit(
+            f"{label}: OCTO_API_TOKEN expires in about {minutes} minute(s). "
+            f"Refresh it before running this script; this run needs at least {required} minute(s)."
+        )
 
 
 def create_record(base_url: str, entity_id: str, record: dict[str, Any], *, token: str | None, workspace_id: str | None) -> CreatedRecord:
@@ -1885,6 +1919,8 @@ def main() -> None:
     workspace_id = (args.workspace_id or os.environ.get("OCTO_WORKSPACE_ID", "")).strip() or None
     if not base_url:
         raise SystemExit("--base-url or OCTO_BASE_URL is required")
+    if not args.dry_run:
+        require_token_window(token, min_seconds=15 * 60, label="seed")
     if not args.dry_run:
         verify_required_entities(base_url, token=token, workspace_id=workspace_id, include_calendar=True)
     aliases: dict[str, CreatedRecord] = {}

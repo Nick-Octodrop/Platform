@@ -134,6 +134,16 @@ function messageRoleClass(msg) {
   return msg?.role === "user" ? "chat-end" : "chat-start";
 }
 
+function messageBubbleClass(msg) {
+  if (msg?.role === "user") return "chat-bubble max-w-[85%] bg-primary text-primary-content text-sm leading-5";
+  return "chat-bubble max-w-[85%] bg-base-200 text-base-content text-sm leading-5";
+}
+
+function messageRoleLabel(msg) {
+  if (msg?.role === "user") return "you";
+  return msg?.role || "assistant";
+}
+
 function findFormSectionLabel(result) {
   const manifest = result?.manifest;
   const formView = Array.isArray(manifest?.views)
@@ -619,7 +629,8 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
           {(data.messages || []).length > 0 ? (
             (data.messages || []).map((msg) => (
               <div key={msg.id} className={`chat ${messageRoleClass(msg)}`}>
-                <div className={`chat-bubble max-w-full ${msg?.role === "assistant" ? "bg-base-200 text-base-content" : ""}`}>
+                <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{messageRoleLabel(msg)}</div>
+                <div className={messageBubbleClass(msg)}>
                   {msg?.role === "assistant" ? <AssistantNarrative text={chatMessageText(msg)} /> : <div className="whitespace-pre-wrap text-sm leading-6">{chatMessageText(msg)}</div>}
                 </div>
               </div>

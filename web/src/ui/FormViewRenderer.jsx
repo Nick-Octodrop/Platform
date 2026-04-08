@@ -968,10 +968,15 @@ function InlineLineItemsTable({
       )
     );
     try {
-      await updateRecord(childEntityId, recordId, buildRowPayload(nextRecord));
+      const updated = await updateRecord(childEntityId, recordId, buildRowPayload(nextRecord));
+      const updatedRecord = updated?.record && typeof updated.record === "object" ? updated.record : nextRecord;
+      setRows((prev) =>
+        prev.map((row) =>
+          row.record_id === recordId ? { ...row, record: updatedRecord } : row
+        )
+      );
       const column = columns.find((col) => col?.field_id === fieldId);
       await addParentActivity(`Line item updated: ${rowLabel(currentRow)} (${column?.label || fieldId}).`);
-      await fetchRows();
       await onRefreshParent?.();
     } catch {
       fetchRows();
@@ -1057,7 +1062,6 @@ function InlineLineItemsTable({
       }
       setAddLookupResetKey((prev) => prev + 1);
       await addParentActivity(`Line item added: ${option.label || option.value}.`);
-      await fetchRows();
       await onRefreshParent?.();
     } catch (err) {
       setError(err?.message || "Failed to add line item.");
@@ -1104,7 +1108,6 @@ function InlineLineItemsTable({
       }
       setAddLookupResetKey((prev) => prev + 1);
       await addParentActivity(`Custom line item added: ${description}.`);
-      await fetchRows();
       await onRefreshParent?.();
     } catch (err) {
       setError(err?.message || "Failed to add custom line.");
@@ -1121,19 +1124,7 @@ function InlineLineItemsTable({
     return <div className="text-sm opacity-70">Save this record first, then add line items.</div>;
   }
 
-  function columnStyle(col) {
-    const normalized = columnWidth(col);
-    if (!normalized) return undefined;
-    return { width: normalized, minWidth: normalized, maxWidth: normalized };
-  }
-
-  function columnWidth(col) {
-    const width = col?.width ?? col?.min_width ?? col?.minWidth;
-    if (!width) return undefined;
-    return typeof width === "number" ? `${width}px` : String(width);
-  }
-
-  function columnWidthNumber(col) {
+  function columnWeight(col) {
     const width = col?.width ?? col?.min_width ?? col?.minWidth;
     if (typeof width === "number" && Number.isFinite(width)) return width;
     if (typeof width === "string") {
@@ -1143,34 +1134,31 @@ function InlineLineItemsTable({
     return 180;
   }
 
-  const actionColumnWidth = readonly ? 0 : 52;
-  const tableWidth = columns.reduce((total, col) => total + columnWidthNumber(col), actionColumnWidth);
+  const actionColumnWeight = readonly ? 0 : 72;
+  const totalColumnWeight = columns.reduce((total, col) => total + columnWeight(col), actionColumnWeight) || 1;
+  const actionColumnStyle = { width: `${(actionColumnWeight / totalColumnWeight) * 100}%` };
 
-  function currencyLabel(rowRecord, col) {
-    const fieldId = col?.currency_field;
-    if (!fieldId || !rowRecord || typeof rowRecord !== "object") return "";
-    return rowRecord[fieldId] ? String(rowRecord[fieldId]) : "";
+  function columnStyle(col) {
+    return { width: `${(columnWeight(col) / totalColumnWeight) * 100}%` };
   }
 
-  function readOnlyCell(raw, col, rowRecord) {
-    const currency = currencyLabel(rowRecord, col);
+  function readOnlyCell(raw, col) {
     return (
       <div className={`min-h-8 flex items-center gap-2 ${col?.align === "right" ? "justify-end text-right" : ""}`}>
         <span className={col?.type === "number" ? "tabular-nums" : ""}>{String(raw ?? "")}</span>
-        {currency ? <span className="badge badge-ghost badge-sm font-mono">{currency}</span> : null}
       </div>
     );
   }
 
   return (
     <div className="h-full min-h-[520px] rounded-box border border-base-300 bg-base-100 flex flex-col overflow-hidden">
-      <div className="flex-1 min-h-0 w-full overflow-auto">
-        <table className="table table-sm table-fixed" style={{ width: "100%", minWidth: `${tableWidth}px` }}>
+      <div className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden">
+        <table className="table table-sm table-fixed w-full [&_td]:px-2 [&_th]:px-2">
           <colgroup>
             {columns.map((col, index) => (
               <col key={`col-${col.field_id || col.label || index}`} style={columnStyle(col)} />
             ))}
-            {!readonly ? <col style={{ width: `${actionColumnWidth}px`, minWidth: `${actionColumnWidth}px`, maxWidth: `${actionColumnWidth}px` }} /> : null}
+            {!readonly ? <col style={actionColumnStyle} /> : null}
           </colgroup>
           <thead>
             <tr>
@@ -1179,7 +1167,7 @@ function InlineLineItemsTable({
                   {col.label || col.field_id}
                 </th>
               ))}
-              {!readonly ? <th className="w-12"><span className="sr-only">Actions</span></th> : null}
+              {!readonly ? <th style={actionColumnStyle}><span className="sr-only">Actions</span></th> : null}
             </tr>
           </thead>
           <tbody>
@@ -1251,11 +1239,16 @@ function InlineLineItemsTable({
                               )
                             );
                             try {
-                              await updateRecord(childEntityId, row.record_id, buildRowPayload(nextRecord));
+                              const updated = await updateRecord(childEntityId, row.record_id, buildRowPayload(nextRecord));
+                              const updatedRecord = updated?.record && typeof updated.record === "object" ? updated.record : nextRecord;
                               const nextLabel = await resolveItemLabel(nextItemId);
+                              setRows((prev) =>
+                                prev.map((current) =>
+                                  current.record_id === row.record_id ? { ...current, record: updatedRecord } : current
+                                )
+                              );
                               setLookupCache((prev) => ({ ...prev, [row.record_id]: nextLabel }));
                               await addParentActivity(`Line item changed: ${rowLabel(row)} -> ${nextLabel || nextItemId}.`);
-                              await fetchRows();
                               await onRefreshParent?.();
                             } catch {
                               fetchRows();
@@ -1271,7 +1264,7 @@ function InlineLineItemsTable({
                     );
                   }
                   if (readonly || col.readonly) {
-                    return <td key={`${row.record_id}-${fieldId}`} style={columnStyle(col)}>{readOnlyCell(raw, col, row.record)}</td>;
+                    return <td key={`${row.record_id}-${fieldId}`} style={columnStyle(col)}>{readOnlyCell(raw, col)}</td>;
                   }
                   if (col.type === "enum" && Array.isArray(col.options)) {
                     return (
@@ -1301,33 +1294,29 @@ function InlineLineItemsTable({
                       </td>
                     );
                   }
-                  const currency = currencyLabel(row.record, col);
                   return (
                     <td key={`${row.record_id}-${fieldId}`} style={columnStyle(col)}>
-                      <div className="join w-full">
-                        <input
-                          className={`input input-bordered input-xs w-full ${currency ? "join-item" : ""} ${col.align === "right" ? "text-right tabular-nums" : ""}`}
-                          type={col.type === "number" ? "number" : "text"}
-                          value={raw ?? ""}
-                          onChange={(e) => {
-                            const next = e.target.value;
-                            setRows((prev) =>
-                              prev.map((r) =>
-                                r.record_id === row.record_id
-                                  ? { ...r, record: { ...r.record, [fieldId]: next } }
-                                  : r
-                              )
-                            );
-                          }}
-                          onBlur={(e) => patchRow(row.record_id, fieldId, e.target.value, col.type)}
-                        />
-                        {currency ? <span className="join-item badge badge-ghost h-6 rounded-l-none font-mono">{currency}</span> : null}
-                      </div>
+                      <input
+                        className={`input input-bordered input-xs w-full min-w-0 ${col.align === "right" ? "text-right tabular-nums" : ""}`}
+                        type={col.type === "number" ? "number" : "text"}
+                        value={raw ?? ""}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          setRows((prev) =>
+                            prev.map((r) =>
+                              r.record_id === row.record_id
+                                ? { ...r, record: { ...r.record, [fieldId]: next } }
+                                : r
+                            )
+                          );
+                        }}
+                        onBlur={(e) => patchRow(row.record_id, fieldId, e.target.value, col.type)}
+                      />
                     </td>
                   );
                 })}
                 {!readonly ? (
-                  <td className="text-right">
+                  <td className="text-right" style={actionColumnStyle}>
                     <button
                       type="button"
                       className="btn btn-ghost btn-xs text-error"

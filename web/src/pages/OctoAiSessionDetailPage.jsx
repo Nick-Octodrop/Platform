@@ -35,6 +35,20 @@ function messageText(message) {
   return typeof message?.body === "string" ? message.body : "";
 }
 
+function messageRoleClass(message) {
+  return message?.role === "user" ? "chat-end" : "chat-start";
+}
+
+function messageBubbleClass(message) {
+  if (message?.role === "user") return "chat-bubble max-w-[85%] bg-primary text-primary-content text-sm leading-5";
+  return "chat-bubble max-w-[85%] bg-base-200 text-base-content text-sm leading-5";
+}
+
+function messageRoleLabel(message) {
+  if (message?.role === "user") return "you";
+  return message?.role || "assistant";
+}
+
 export default function OctoAiSessionDetailPage() {
   const navigate = useNavigate();
   const { sessionId } = useParams();
@@ -156,9 +170,9 @@ export default function OctoAiSessionDetailPage() {
               <div className="space-y-3">
                 {(data.messages || []).length > 0 ? (
                   (data.messages || []).map((message) => (
-                    <div key={message.id} className="rounded-box border border-base-200 bg-base-100 p-3">
-                      <div className="text-xs uppercase opacity-60">{message.role || "assistant"}</div>
-                      <div className="mt-2 whitespace-pre-wrap text-sm">{messageText(message)}</div>
+                    <div key={message.id} className={`chat ${messageRoleClass(message)}`}>
+                      <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{messageRoleLabel(message)}</div>
+                      <div className={`${messageBubbleClass(message)} whitespace-pre-wrap`}>{messageText(message)}</div>
                     </div>
                   ))
                 ) : (
