@@ -302,6 +302,7 @@ export default function AppShell({
   const [errorFlash, setErrorFlash] = useState(null);
   const [errorFlashUntil, setErrorFlashUntil] = useState(0);
   const errorFlashTimerRef = useRef(null);
+  const [globalActionState, setGlobalActionState] = useState({ status: "idle", label: null, kind: null });
 
   const recordId = (previewMode ? previewSearchParams : searchParams).get("record");
   const { hasCapability, isSuperadmin } = useAccessContext();
@@ -373,6 +374,18 @@ export default function AppShell({
       }
     };
   }, [error]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const body = document.body;
+    const previousCursor = body.style.cursor;
+    if (globalActionState.status === "running") {
+      body.style.cursor = "progress";
+    }
+    return () => {
+      body.style.cursor = previousCursor;
+    };
+  }, [globalActionState.status]);
 
   useEffect(() => {
     let cancelled = false;
@@ -915,16 +928,6 @@ export default function AppShell({
       const ok = await confirmDialog({ title, body });
       if (!ok) return null;
     }
-    const shouldShowActionPending =
-      !previewMode &&
-      ["create_record", "update_record", "bulk_update", "transform_record"].includes(action.kind);
-    if (shouldShowActionPending) {
-      setActionState({
-        status: "running",
-        label: resolveActionLabel(action, manifest, views),
-        kind: action.kind,
-      });
-    }
     try {
       if (previewMode && previewAllowNav) {
         if (action.kind === "create_record") {
@@ -1041,10 +1044,6 @@ export default function AppShell({
     } catch (err) {
       pushToast("error", err.message || "Action failed");
       return null;
-    } finally {
-      if (shouldShowActionPending) {
-        setActionState((prev) => (prev.status === "running" ? { status: "idle", label: null, kind: null } : prev));
-      }
     }
   }
 
@@ -1128,7 +1127,7 @@ export default function AppShell({
       const missingSelection = resolvedAction.kind === "bulk_update" && (!selectedIds || selectedIds.length === 0);
       const disabled = !enabled || missingRecord || missingSelection;
       return (
-        <button className={SOFT_BUTTON_SM} onClick={() => runAction(resolvedAction)} key={resolvedAction.id || label} disabled={disabled || previewMode || actionRunning}>
+        <button className={SOFT_BUTTON_SM} onClick={() => runAction(resolvedAction)} key={resolvedAction.id || label} disabled={disabled || previewMode}>
           {actionRunning && actionState.label === label ? <span className="loading loading-spinner loading-xs" /> : null}
           {label}
         </button>
@@ -1187,6 +1186,7 @@ export default function AppShell({
         }
         moduleId={moduleId}
         renderAnyView={renderView}
+        onActionStateChange={setGlobalActionState}
       />
     );
   }
@@ -1301,7 +1301,7 @@ export default function AppShell({
   const mobilePageLayout = Boolean(isMobile && active?.type === "page");
 
   return (
-    <div className={mobilePageLayout ? "flex h-full min-h-full flex-col overflow-hidden" : "flex flex-col h-full min-h-0 overflow-hidden"}>
+    <div className={mobilePageLayout ? "relative flex h-full min-h-full flex-col overflow-hidden" : "relative flex flex-col h-full min-h-0 overflow-hidden"}>
       {errorBanner && <div className="alert alert-error mb-3">{errorBanner}</div>}
       {previewMode && previewAllowNav && previewNavItems.length > 0 && (
         <div className="mb-3">
@@ -1476,6 +1476,17 @@ export default function AppShell({
           </div>,
           document.body
         )}
+
+      {globalActionState.status === "running" &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[260] flex items-center justify-center bg-base-100/55 backdrop-blur-[2px]">
+            <div className="rounded-full bg-base-100/95 p-5 shadow-xl">
+              <LoadingSpinner className="min-h-0" />
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
@@ -1510,6 +1521,7 @@ function AppView({
   previewAllowNav = false,
   previewStore = null,
   renderAnyView = null,
+  onActionStateChange = null,
 }) {
   const { pushToast } = useToast();
   const [records, setRecords] = useState([]);
@@ -1529,6 +1541,29 @@ function AppView({
   const openCreateModal = onLookupCreate;
   const [activeManifestModal, setActiveManifestModal] = useState(null);
   const actionRunning = actionState.status === "running";
+
+  async function runViewAction(action, context = {}) {
+    if (!onRunAction) return null;
+    const shouldShowActionPending = action?.kind === "transform_record";
+    if (shouldShowActionPending) {
+      const nextState = {
+        status: "running",
+        label: resolveActionLabel(action, manifest, views),
+        kind: action.kind,
+      };
+      setActionState(nextState);
+      onActionStateChange?.(nextState);
+    }
+    try {
+      return await onRunAction(action, context);
+    } finally {
+      if (shouldShowActionPending) {
+        const idleState = { status: "idle", label: null, kind: null };
+        setActionState(idleState);
+        onActionStateChange?.(idleState);
+      }
+    }
+  }
 
   const kind = view.kind || view.type;
   const views = Array.isArray(manifest?.views) ? manifest.views : [];
@@ -1784,7 +1819,7 @@ function AppView({
       return;
     }
     setActiveManifestModal((prev) => (prev ? { ...prev, busy: true, error: "" } : prev));
-    const result = await onRunAction?.(resolvedAction, {
+    const result = await runViewAction(resolvedAction, {
       recordId: effectiveRecordId,
       recordDraft: modalDraft,
       selectedIds,
@@ -1809,7 +1844,7 @@ function AppView({
       // Run through the action pipeline so action.clicked triggers are emitted.
       if (onRunAction) {
         try {
-          await onRunAction(action, {
+          await runViewAction(action, {
             recordId: effectiveRecordId,
             recordDraft: draft || {},
             selectedIds,
@@ -1883,12 +1918,18 @@ function AppView({
         });
       return;
     }
-    onRunAction?.(action, {
-      recordId: effectiveRecordId,
-      recordDraft: draft || {},
-      selectedIds,
-      skipConfirm: true,
-    });
+    try {
+      return await runViewAction(action, {
+        recordId: effectiveRecordId,
+        recordDraft: draft || {},
+        selectedIds,
+        skipConfirm: true,
+      });
+    } catch (err) {
+      console.warn("action_run_failed", err);
+      pushToast("error", err?.message || "Action failed");
+      return null;
+    }
   }
 
   useEffect(() => {
@@ -2527,7 +2568,7 @@ function AppView({
                   key={`${item.action?.id || item.label}`}
                   className={PRIMARY_BUTTON_SM}
                   onClick={() => handleHeaderAction(item.action)}
-                  disabled={!item.enabled || actionRunning}
+                  disabled={!item.enabled}
                 >
                   {actionRunning && actionState.label === item.label ? <span className="loading loading-spinner loading-xs" /> : null}
                   {item.label}
@@ -2577,7 +2618,7 @@ function AppView({
                     <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-50">
                       {bulkActions.map((item) => (
                         <li key={`${item.action?.id || item.label}`}>
-                          <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled || actionRunning}>
+                          <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled}>
                             {item.label}
                           </button>
                         </li>
@@ -2590,7 +2631,7 @@ function AppView({
 
             <div className="flex items-center gap-2 min-w-[10rem] justify-end">
               {canWriteRecords && selectedIds.length > 0 && (
-                <button className={SOFT_BUTTON_SM} onClick={handleBulkDelete} disabled={actionRunning}>
+                <button className={SOFT_BUTTON_SM} onClick={handleBulkDelete}>
                   Delete ({selectedIds.length})
                 </button>
               )}
@@ -2600,7 +2641,7 @@ function AppView({
                   <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-50">
                     {bulkActions.map((item) => (
                       <li key={`${item.action?.id || item.label}`}>
-                        <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled || actionRunning}>
+                        <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled}>
                           {item.label}
                         </button>
                       </li>
@@ -2610,11 +2651,11 @@ function AppView({
               )}
               {secondaryActions.length > 0 && (
                 <div className="dropdown dropdown-end">
-                  <button className={SOFT_BUTTON_SM} disabled={actionRunning}>More</button>
+                  <button className={SOFT_BUTTON_SM}>More</button>
                   <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-48 z-50">
                     {secondaryActions.map((item) => (
                       <li key={`${item.action?.id || item.label}`}>
-                        <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled || actionRunning}>
+                        <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled}>
                           {item.label}
                         </button>
                       </li>
@@ -2779,11 +2820,6 @@ function AppView({
               )}
             />
           )}
-          {actionRunning && !showFormSkeleton ? (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-base-100/55 backdrop-blur-[1px]">
-              <span className="loading loading-spinner loading-lg"></span>
-            </div>
-          ) : null}
         </div>
       </div>
       {manifestModalNode}

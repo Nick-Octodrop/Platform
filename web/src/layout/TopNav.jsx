@@ -7,6 +7,87 @@ import { apiFetch, getManifest, listStudio2Modules } from "../api.js";
 import { appendOctoAiFrameParams, buildTargetRoute } from "../apps/appShellUtils.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 
+function isUuidLike(value) {
+  const text = String(value || "").trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text);
+}
+
+function findFirstViewTarget(blocks) {
+  const items = Array.isArray(blocks) ? blocks : [];
+  for (const block of items) {
+    if (!block || typeof block !== "object") continue;
+    if (block.kind === "view" && typeof block.target === "string" && block.target.startsWith("view:")) {
+      return block.target;
+    }
+    const nested = findFirstViewTarget(block.content);
+    if (nested) return nested;
+    if (Array.isArray(block.items)) {
+      for (const item of block.items) {
+        const fromItem = findFirstViewTarget(item?.content);
+        if (fromItem) return fromItem;
+      }
+    }
+    if (Array.isArray(block.tabs)) {
+      for (const tab of block.tabs) {
+        const fromTab = findFirstViewTarget(tab?.content);
+        if (fromTab) return fromTab;
+      }
+    }
+  }
+  return null;
+}
+
+function rankEntityLabelField(fieldId) {
+  const id = String(fieldId || "").toLowerCase();
+  if (!id) return -1;
+  if (id.endsWith(".name")) return 100;
+  if (id.endsWith(".title")) return 95;
+  if (id.endsWith(".invoice_number") || id.endsWith(".order_number") || id.endsWith(".quote_number") || id.endsWith(".po_number")) return 92;
+  if (id.endsWith(".number") || id.endsWith("_number")) return 90;
+  if (id.endsWith(".code")) return 85;
+  if (id.endsWith(".reference")) return 80;
+  if (id.endsWith(".subject")) return 75;
+  if (id.endsWith(".summary")) return 70;
+  return -1;
+}
+
+function buildRecordLabel(record, { preferredFields = [], entity = null, fallback = "Record", recordId = "" } = {}) {
+  const safeRecord = record && typeof record === "object" ? record : {};
+  const entityFields = Array.isArray(entity?.fields) ? entity.fields : [];
+  const rankedEntityFields = entityFields
+    .map((field) => ({ id: field?.id, rank: rankEntityLabelField(field?.id) }))
+    .filter((field) => field.id && field.rank >= 0)
+    .sort((a, b) => b.rank - a.rank)
+    .map((field) => field.id);
+
+  const candidates = [
+    ...preferredFields,
+    ...rankedEntityFields,
+    "display_name",
+    "full_name",
+    "name",
+    "title",
+    "number",
+    "code",
+    "reference",
+    "subject",
+    "summary",
+  ];
+  const seen = new Set();
+  for (const key of candidates) {
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const raw = safeRecord?.[key];
+    const text = String(raw || "").trim();
+    if (!text) continue;
+    if (text === String(safeRecord?.id || "").trim()) continue;
+    if (text === String(recordId || "").trim()) continue;
+    if (isUuidLike(text)) continue;
+    return text;
+  }
+  return String(fallback || "Record").trim() || "Record";
+}
+
 export default function TopNav({ user, onSignOut }) {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const location = useLocation();
@@ -231,16 +312,30 @@ export default function TopNav({ user, onSignOut }) {
     if (!currentPageId || !Array.isArray(manifest?.pages)) return null;
     return manifest.pages.find((p) => p?.id === currentPageId) || null;
   }, [manifest, currentPageId]);
-  const recordParamKey = currentPageDef?.content?.find((b) => b?.kind === "record")?.record_id_query || "record";
+  const recordBlock = useMemo(
+    () => (Array.isArray(currentPageDef?.content) ? currentPageDef.content.find((b) => b?.kind === "record") || null : null),
+    [currentPageDef]
+  );
+  const recordParamKey = recordBlock?.record_id_query || "record";
   const recordIdParam = currentPageId && recordParamKey ? searchParams.get(recordParamKey) : null;
   const isRecordPage = !!(currentPageId && recordParamKey && recordIdParam);
-  const recordEntityId = currentPageDef?.content?.find((b) => b?.kind === "record")?.entity_id || null;
+  const recordEntityId = recordBlock?.entity_id || null;
+  const recordEntityDef = useMemo(() => {
+    if (!recordEntityId || !Array.isArray(manifest?.entities)) return null;
+    return manifest.entities.find((entity) => entity?.id === recordEntityId) || null;
+  }, [manifest, recordEntityId]);
 
   const recordTitleField = useMemo(() => {
-    if (!recordEntityId || !Array.isArray(manifest?.entities)) return null;
-    const entity = manifest.entities.find((e) => e?.id === recordEntityId);
-    return entity?.display_field || null;
-  }, [manifest, recordEntityId]);
+    return recordEntityDef?.display_field || null;
+  }, [recordEntityDef]);
+
+  const recordViewTitleField = useMemo(() => {
+    const target = findFirstViewTarget(recordBlock?.content);
+    if (!target || !target.startsWith("view:") || !Array.isArray(manifest?.views)) return null;
+    const viewId = target.slice(5);
+    const view = manifest.views.find((entry) => entry?.id === viewId);
+    return view?.header?.title_field || null;
+  }, [manifest, recordBlock]);
 
   useEffect(() => {
     let mounted = true;
@@ -253,18 +348,22 @@ export default function TopNav({ user, onSignOut }) {
         const res = await apiFetch(`/records/${encodeURIComponent(recordEntityId)}/${encodeURIComponent(recordIdParam)}`);
         if (!mounted) return;
         const record = res?.record || {};
-        const raw = (recordTitleField && record?.[recordTitleField]) || record?.id || recordIdParam;
-        const text = String(raw || "").trim();
-        setRecordCrumbLabel(text || "Record");
+        const text = buildRecordLabel(record, {
+          preferredFields: [recordViewTitleField, recordTitleField],
+          entity: recordEntityDef,
+          fallback: currentPageDef?.title || "Record",
+          recordId: recordIdParam,
+        });
+        setRecordCrumbLabel(text);
       } catch {
-        if (mounted) setRecordCrumbLabel("Record");
+        if (mounted) setRecordCrumbLabel(currentPageDef?.title || "Record");
       }
     }
     loadRecordCrumb();
     return () => {
       mounted = false;
     };
-  }, [isAppRoute, isRecordPage, recordEntityId, recordIdParam, recordTitleField]);
+  }, [isAppRoute, isRecordPage, recordEntityId, recordIdParam, recordTitleField, recordViewTitleField, recordEntityDef, currentPageDef?.title]);
 
   useEffect(() => {
     let mounted = true;
@@ -707,7 +806,7 @@ export default function TopNav({ user, onSignOut }) {
               <li>
                 <CrumbLink to={appHomeRoute || appendOctoAiFrameParams(currentRoute)}>{appName || moduleId}</CrumbLink>
               </li>
-              {isRecordPage && !isMobile && <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{recordCrumbLabel || "Record"}</CrumbLink></li>}
+              {isRecordPage && !isMobile && <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{recordCrumbLabel || currentPageDef?.title || "Record"}</CrumbLink></li>}
             </ul>
           </div>
           )
