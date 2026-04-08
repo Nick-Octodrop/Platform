@@ -19,6 +19,8 @@ Move Octodrop from secure-by-design controls to production operating readiness: 
 - RLS and storage verification tooling exists:
   - `scripts/security_check.py --strict`
   - `scripts/runtime_security_verify.py`
+- A superadmin-only Security Center exists at `/security` for reviewing API denials, webhook failures, integration
+  failures, module audit events, and current superadmin role rows.
 
 ## Operational Gaps
 
@@ -34,6 +36,7 @@ Move Octodrop from secure-by-design controls to production operating readiness: 
 - Treat security logs and audit tables as operational signals, not just debugging output.
 - Aggregate API logs into the deployment logging platform.
 - Export database audit/activity tables to a retention layer if Supabase retention is insufficient.
+- Use `/security` for human investigation and periodic review, not as the only critical alert delivery mechanism.
 - Review alert thresholds monthly after observing real traffic.
 - Block go-live if runtime RLS verification fails or if the `attachments` bucket is public.
 
@@ -59,4 +62,3 @@ Move Octodrop from secure-by-design controls to production operating readiness: 
 - Any public `attachments` bucket is a Severity 1 incident until fixed.
 - Runtime DB role with `SUPERUSER` or `BYPASSRLS` is a Severity 1 incident.
 - Active token/secret leak is at least Severity 2, Severity 1 if customer data is reachable.
-

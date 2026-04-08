@@ -21,15 +21,16 @@ class RuleSpec:
 
 
 BUSINESS_MODULES = [
-    "biz_dashboard",
     "biz_contacts",
     "biz_products",
     "biz_quotes",
     "biz_orders",
     "biz_purchase_orders",
     "biz_invoices",
+    "biz_documents",
+    "biz_crm",
 ]
-SETTINGS_MODULE = "biz_settings"
+LEGACY_REMOVED_MODULES = ["biz_dashboard", "biz_settings"]
 
 CONTACT_ENTITIES = ["entity.biz_contact"]
 PRODUCT_ENTITIES = ["entity.biz_product"]
@@ -37,13 +38,8 @@ QUOTE_ENTITIES = ["entity.biz_quote", "entity.biz_quote_line"]
 ORDER_ENTITIES = ["entity.biz_order", "entity.biz_order_line"]
 PO_ENTITIES = ["entity.biz_purchase_order", "entity.biz_purchase_order_line"]
 INVOICE_ENTITIES = ["entity.biz_invoice", "entity.biz_invoice_line"]
-SETTINGS_ENTITIES = [
-    "entity.biz_operating_entity",
-    "entity.biz_payment_term",
-    "entity.biz_tax_code",
-    "entity.biz_document_template",
-    "entity.biz_integration_setting",
-]
+DOCUMENT_ENTITIES = ["entity.biz_document"]
+CRM_ENTITIES = ["entity.crm_lead", "entity.crm_opportunity", "entity.crm_activity", "entity.crm_site"]
 
 
 def api_call(
@@ -243,9 +239,9 @@ def in_condition(field_id: str, values: list[Any]) -> dict[str, Any]:
 
 
 def modules_visible(include_settings: bool) -> list[RuleSpec]:
-    rules = [module_rule(module_id, "visible") for module_id in BUSINESS_MODULES]
-    rules.append(module_rule(SETTINGS_MODULE, "visible" if include_settings else "hidden"))
-    return rules
+    return [module_rule(module_id, "visible") for module_id in BUSINESS_MODULES] + [
+        module_rule(module_id, "hidden") for module_id in LEGACY_REMOVED_MODULES
+    ]
 
 
 def entities_access(entity_ids: list[str], access_level: str) -> list[RuleSpec]:
@@ -277,13 +273,34 @@ def sales_hidden_fields() -> list[RuleSpec]:
     return [field_rule(field_id, "hidden") for field_id in hidden]
 
 
+def crm_write_actions() -> list[RuleSpec]:
+    return [
+        action_rule("action.crm_lead_new", "hidden"),
+        action_rule("action.crm_lead_mark_contacted", "hidden"),
+        action_rule("action.crm_lead_qualify", "hidden"),
+        action_rule("action.crm_lead_open_disqualify_modal", "hidden"),
+        action_rule("action.crm_opportunity_new", "hidden"),
+        action_rule("action.crm_opportunity_discovery", "hidden"),
+        action_rule("action.crm_opportunity_solution", "hidden"),
+        action_rule("action.crm_opportunity_quote_stage", "hidden"),
+        action_rule("action.crm_opportunity_create_quote", "hidden"),
+        action_rule("action.crm_opportunity_negotiation", "hidden"),
+        action_rule("action.crm_opportunity_open_won_modal", "hidden"),
+        action_rule("action.crm_opportunity_open_lost_modal", "hidden"),
+        action_rule("action.crm_opportunity_create_order", "hidden"),
+        action_rule("action.crm_activity_new", "hidden"),
+        action_rule("action.crm_activity_done", "hidden"),
+        action_rule("action.crm_activity_cancel", "hidden"),
+        action_rule("action.crm_site_new", "hidden"),
+    ]
+
+
 def procurement_hidden_actions() -> list[RuleSpec]:
     return [
         action_rule("action.invoice_new", "hidden"),
-        action_rule("action.dashboard_new_invoice", "hidden"),
         action_rule("action.customer_order_create_deposit_invoice", "hidden"),
         action_rule("action.customer_order_create_final_invoice", "hidden"),
-    ]
+    ] + crm_write_actions()
 
 
 def operations_hidden_actions() -> list[RuleSpec]:
@@ -292,12 +309,10 @@ def operations_hidden_actions() -> list[RuleSpec]:
         action_rule("action.product_new", "hidden"),
         action_rule("action.quote_new", "hidden"),
         action_rule("action.invoice_new", "hidden"),
-        action_rule("action.dashboard_new_quote", "hidden"),
-        action_rule("action.dashboard_new_invoice", "hidden"),
         action_rule("action.quote_accept_and_create_order", "hidden"),
         action_rule("action.customer_order_create_deposit_invoice", "hidden"),
         action_rule("action.customer_order_create_final_invoice", "hidden"),
-    ]
+    ] + crm_write_actions()
 
 
 def finance_hidden_actions() -> list[RuleSpec]:
@@ -306,13 +321,16 @@ def finance_hidden_actions() -> list[RuleSpec]:
         action_rule("action.product_new", "hidden"),
         action_rule("action.quote_new", "hidden"),
         action_rule("action.purchase_order_new", "hidden"),
-        action_rule("action.dashboard_new_quote", "hidden"),
-        action_rule("action.dashboard_new_po", "hidden"),
+        action_rule("action.document_new", "hidden"),
+        action_rule("action.document_approve", "hidden"),
+        action_rule("action.document_mark_sent", "hidden"),
+        action_rule("action.document_mark_signed", "hidden"),
+        action_rule("action.document_open_archive_modal", "hidden"),
         action_rule("action.customer_order_create_purchase_order", "hidden"),
         action_rule("action.customer_order_mark_in_production", "hidden"),
         action_rule("action.customer_order_mark_shipped", "hidden"),
         action_rule("action.customer_order_mark_completed", "hidden"),
-    ]
+    ] + crm_write_actions()
 
 
 def sales_hidden_actions() -> list[RuleSpec]:
@@ -320,8 +338,11 @@ def sales_hidden_actions() -> list[RuleSpec]:
         action_rule("action.product_new", "hidden"),
         action_rule("action.purchase_order_new", "hidden"),
         action_rule("action.invoice_new", "hidden"),
-        action_rule("action.dashboard_new_po", "hidden"),
-        action_rule("action.dashboard_new_invoice", "hidden"),
+        action_rule("action.document_new", "hidden"),
+        action_rule("action.document_approve", "hidden"),
+        action_rule("action.document_mark_sent", "hidden"),
+        action_rule("action.document_mark_signed", "hidden"),
+        action_rule("action.document_open_archive_modal", "hidden"),
         action_rule("action.customer_order_create_purchase_order", "hidden"),
         action_rule("action.customer_order_mark_in_production", "hidden"),
         action_rule("action.customer_order_mark_shipped", "hidden"),
@@ -334,34 +355,34 @@ def sales_hidden_actions() -> list[RuleSpec]:
 def desired_profiles() -> dict[str, dict[str, Any]]:
     directors_rules = (
         modules_visible(include_settings=True)
-        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + ORDER_ENTITIES + PO_ENTITIES + INVOICE_ENTITIES + SETTINGS_ENTITIES, "write")
+        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + ORDER_ENTITIES + PO_ENTITIES + INVOICE_ENTITIES + DOCUMENT_ENTITIES + CRM_ENTITIES, "write")
     )
     procurement_rules = (
         modules_visible(include_settings=False)
-        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + ORDER_ENTITIES + PO_ENTITIES, "write")
+        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + ORDER_ENTITIES + PO_ENTITIES + DOCUMENT_ENTITIES, "write")
+        + entities_access(CRM_ENTITIES, "read")
         + entities_access(INVOICE_ENTITIES, "read")
-        + entities_access(SETTINGS_ENTITIES, "none")
         + procurement_hidden_actions()
     )
     operations_rules = (
         modules_visible(include_settings=False)
-        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + INVOICE_ENTITIES, "read")
-        + entities_access(ORDER_ENTITIES + PO_ENTITIES, "write")
-        + entities_access(SETTINGS_ENTITIES, "none")
+        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + INVOICE_ENTITIES + CRM_ENTITIES, "read")
+        + entities_access(ORDER_ENTITIES + PO_ENTITIES + DOCUMENT_ENTITIES, "write")
         + operations_hidden_actions()
     )
     finance_rules = (
         modules_visible(include_settings=False)
-        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + PO_ENTITIES, "read")
+        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + PO_ENTITIES + DOCUMENT_ENTITIES + CRM_ENTITIES, "read")
         + entities_access(ORDER_ENTITIES, "write")
         + entities_access(INVOICE_ENTITIES, "write")
-        + entities_access(SETTINGS_ENTITIES, "none")
         + finance_hidden_actions()
     )
     sales_rules = (
-        [module_rule(module_id, "visible") for module_id in ["biz_dashboard", "biz_contacts", "biz_products", "biz_quotes", "biz_orders", "biz_invoices"]]
-        + [module_rule("biz_purchase_orders", "hidden"), module_rule("biz_settings", "hidden")]
+        [module_rule(module_id, "visible") for module_id in ["biz_contacts", "biz_products", "biz_quotes", "biz_orders", "biz_invoices", "biz_documents", "biz_crm"]]
+        + [module_rule("biz_purchase_orders", "hidden")]
+        + [module_rule(module_id, "hidden") for module_id in LEGACY_REMOVED_MODULES]
         + [entity_rule("entity.biz_contact", "write"), entity_rule("entity.biz_contact", "write", eq_condition("biz_contact.contact_type", "customer"))]
+        + entities_access(CRM_ENTITIES, "write")
         + entities_access(PRODUCT_ENTITIES, "read")
         + [entity_rule("entity.biz_quote", "write"), entity_rule("entity.biz_quote", "write", eq_condition("biz_quote.sales_entity", "NLight BV"))]
         + [entity_rule("entity.biz_quote_line", "write"), entity_rule("entity.biz_quote_line", "write", eq_condition("biz_quote_line.sales_entity_snapshot", "NLight BV"))]
@@ -369,7 +390,8 @@ def desired_profiles() -> dict[str, dict[str, Any]]:
         + [entity_rule("entity.biz_order_line", "write"), entity_rule("entity.biz_order_line", "write", eq_condition("biz_order_line.sales_entity_snapshot", "NLight BV"))]
         + [entity_rule("entity.biz_invoice", "read"), entity_rule("entity.biz_invoice", "read", eq_condition("biz_invoice.sales_entity", "NLight BV"))]
         + [entity_rule("entity.biz_invoice_line", "read"), entity_rule("entity.biz_invoice_line", "read", eq_condition("biz_invoice_line.sales_entity_snapshot", "NLight BV"))]
-        + entities_access(PO_ENTITIES + SETTINGS_ENTITIES, "none")
+        + [entity_rule("entity.biz_document", "read"), entity_rule("entity.biz_document", "read", eq_condition("biz_document.sales_entity", "NLight BV"))]
+        + entities_access(PO_ENTITIES, "none")
         + sales_hidden_fields()
         + sales_hidden_actions()
     )

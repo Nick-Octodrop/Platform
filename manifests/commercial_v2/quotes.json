@@ -5,7 +5,7 @@
     "key": "biz_quotes",
     "name": "Quotes",
     "version": "1.0.0",
-    "description": "Quote-first commercial workflow from quote through order, purchasing, and invoicing.",
+    "description": "NLight quote workflow from pricing and customer approval through order conversion.",
     "category": "Commercial",
     "icon_key": "lucide:FileCheck2"
   },
@@ -47,6 +47,7 @@
   "entities": [
     {
       "id": "entity.biz_quote",
+      "label": "Quote",
       "display_field": "biz_quote.quote_number",
       "fields": [
         { "id": "biz_quote.id", "type": "uuid", "label": "ID", "readonly": true },
@@ -95,7 +96,9 @@
           "default": "EUR",
           "options": [
             { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" }
+            { "value": "USD", "label": "USD" },
+            { "value": "GBP", "label": "GBP" },
+            { "value": "AED", "label": "AED" }
           ]
         },
         { "id": "biz_quote.sales_owner", "type": "string", "label": "Sales Owner" },
@@ -117,7 +120,7 @@
           "id": "biz_quote.loss_reason",
           "type": "text",
           "label": "Loss / Expiry Reason",
-          "visible_when": {
+          "required_when": {
             "op": "in",
             "field": "biz_quote.status",
             "value": ["lost", "expired"]
@@ -278,6 +281,7 @@
     },
     {
       "id": "entity.biz_quote_line",
+      "label": "Quote Line",
       "display_field": "biz_quote_line.description",
       "fields": [
         { "id": "biz_quote_line.id", "type": "uuid", "label": "ID", "readonly": true },
@@ -324,7 +328,9 @@
           "default": "EUR",
           "options": [
             { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" }
+            { "value": "USD", "label": "USD" },
+            { "value": "GBP", "label": "GBP" },
+            { "value": "AED", "label": "AED" }
           ]
         },
         {
@@ -336,7 +342,10 @@
             { "value": "EA", "label": "Each" },
             { "value": "SET", "label": "Set" },
             { "value": "KIT", "label": "Kit" },
-            { "value": "LOT", "label": "Lot" }
+            { "value": "LOT", "label": "Lot" },
+            { "value": "PALLET", "label": "Pallet" },
+            { "value": "CONTAINER", "label": "Container" },
+            { "value": "M", "label": "Meter" }
           ]
         },
         { "id": "biz_quote_line.quantity", "type": "number", "label": "Qty", "default": 1 },
@@ -390,7 +399,9 @@
           "default": "USD",
           "options": [
             { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" }
+            { "value": "USD", "label": "USD" },
+            { "value": "GBP", "label": "GBP" },
+            { "value": "AED", "label": "AED" }
           ]
         },
         {
@@ -470,7 +481,26 @@
             }
           }
         }
-      ]
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "biz_quote_line.quote_id",
+          "biz_quote_line.line_type",
+          "biz_quote_line.product_id",
+          "biz_quote_line.description",
+          "biz_quote_line.uom",
+          "biz_quote_line.quantity",
+          "biz_quote_line.unit_price",
+          "biz_quote_line.line_discount_percent",
+          "biz_quote_line.line_total",
+          "biz_quote_line.default_buy_price_snapshot",
+          "biz_quote_line.buy_total"
+        ]
+      }
     }
   ],
   "workflows": [
@@ -479,14 +509,22 @@
       "entity": "entity.biz_quote",
       "status_field": "biz_quote.status",
       "states": [
-        { "id": "draft", "label": "Draft" },
-        { "id": "sent", "label": "Sent" },
-        { "id": "accepted", "label": "Accepted" },
+        { "id": "draft", "label": "Draft", "required_fields": ["biz_quote.customer_id", "biz_quote.currency"] },
+        { "id": "sent", "label": "Sent", "required_fields": ["biz_quote.customer_id", "biz_quote.expiry_date"] },
+        { "id": "accepted", "label": "Accepted", "required_fields": ["biz_quote.customer_id", "biz_quote.expiry_date"] },
         { "id": "lost", "label": "Lost" },
         { "id": "expired", "label": "Expired" }
       ],
+      "transitions": [
+        { "from": "draft", "to": "sent", "label": "Send Quote" },
+        { "from": "sent", "to": "accepted", "label": "Mark Accepted" },
+        { "from": "draft", "to": "lost", "label": "Mark Lost" },
+        { "from": "sent", "to": "lost", "label": "Mark Lost" },
+        { "from": "sent", "to": "expired", "label": "Mark Expired" }
+      ],
       "required_fields_by_state": {
-        "sent": ["biz_quote.expiry_date"],
+        "sent": ["biz_quote.customer_id", "biz_quote.expiry_date"],
+        "accepted": ["biz_quote.customer_id", "biz_quote.expiry_date"],
         "lost": ["biz_quote.loss_reason"],
         "expired": ["biz_quote.loss_reason"]
       }
@@ -581,6 +619,14 @@
           { "op": "eq", "field": "biz_quote.status", "value": "sent" },
           { "op": "not", "condition": { "op": "exists", "field": "biz_quote.linked_customer_order_id" } }
         ]
+      },
+      "enabled_when": {
+        "op": "and",
+        "conditions": [
+          { "op": "exists", "field": "biz_quote.customer_id" },
+          { "op": "exists", "field": "biz_quote.expiry_date" },
+          { "op": "gt", "field": "biz_quote.grand_total", "value": 0 }
+        ]
       }
     },
     {
@@ -594,6 +640,13 @@
         "conditions": [
           { "op": "eq", "field": "biz_quote.status", "value": "accepted" },
           { "op": "not", "condition": { "op": "exists", "field": "biz_quote.linked_customer_order_id" } }
+        ]
+      },
+      "enabled_when": {
+        "op": "and",
+        "conditions": [
+          { "op": "exists", "field": "biz_quote.customer_id" },
+          { "op": "gt", "field": "biz_quote.grand_total", "value": 0 }
         ]
       },
       "confirm": {
@@ -654,7 +707,7 @@
             "domain": {
               "op": "in",
               "field": "biz_quote.status",
-              "value": ["draft", "sent"]
+              "value": ["draft", "sent", "accepted"]
             }
           },
           { "id": "draft", "label": "Draft Quotes", "domain": { "op": "eq", "field": "biz_quote.status", "value": "draft" } },
@@ -671,6 +724,7 @@
               ]
             }
           },
+          { "id": "expired", "label": "Expired Quotes", "domain": { "op": "eq", "field": "biz_quote.status", "value": "expired" } },
           { "id": "lost", "label": "Lost Quotes", "domain": { "op": "eq", "field": "biz_quote.status", "value": "lost" } }
         ]
       }

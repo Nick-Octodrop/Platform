@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { apiFetch } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
@@ -55,6 +55,7 @@ function DetailPanel({ title, description, children, tone = "bg-base-100" }) {
 
 export default function SettingsApiCredentialDetailPage() {
   const { credentialId } = useParams();
+  const navigate = useNavigate();
   const { pushToast } = useToast();
   const [items, setItems] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -64,6 +65,8 @@ export default function SettingsApiCredentialDetailPage() {
   const [activeTabId, setActiveTabId] = useState("details");
   const [revokingId, setRevokingId] = useState("");
   const [rotatingId, setRotatingId] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [revealedToken, setRevealedToken] = useState("");
 
   async function load() {
@@ -137,6 +140,21 @@ export default function SettingsApiCredentialDetailPage() {
     }
   }
 
+  async function deleteCredential() {
+    if (!item?.id || deleting || item.status !== "revoked") return;
+    setDeleting(true);
+    setError("");
+    try {
+      await apiFetch(`/settings/api-credentials/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+      pushToast("success", "API credential deleted.");
+      navigate("/settings/api-credentials");
+    } catch (err) {
+      setError(err?.message || "Failed to delete API credential");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <TabbedPaneShell
       title=""
@@ -200,6 +218,15 @@ export default function SettingsApiCredentialDetailPage() {
                   disabled={item.status !== "active" || revokingId === item.id}
                 >
                   {revokingId === item.id ? "Revoking..." : "Revoke Key"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-error"
+                  onClick={() => setShowDeleteModal(true)}
+                  disabled={item.status !== "revoked" || deleting}
+                  title={item.status === "revoked" ? "Delete API credential" : "Revoke this API credential before deleting it"}
+                >
+                  {deleting ? "Deleting..." : "Delete Key"}
                 </button>
               </div>
             </div>
@@ -269,6 +296,31 @@ export default function SettingsApiCredentialDetailPage() {
       )}
 
       {revealedToken ? <TokenModal token={revealedToken} onClose={() => setRevealedToken("")} /> : null}
+
+      {showDeleteModal ? (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-md">
+            <h3 className="text-lg font-semibold">Delete API credential?</h3>
+            <p className="mt-2 text-sm opacity-70">
+              This will permanently remove this revoked API credential. Request logs will remain for audit history.
+            </p>
+            {item?.status !== "revoked" ? (
+              <div className="alert alert-warning mt-4 text-sm">Revoke this API credential before deleting it.</div>
+            ) : null}
+            <div className="modal-action">
+              <button className="btn btn-ghost btn-sm" type="button" onClick={() => !deleting && setShowDeleteModal(false)} disabled={deleting}>
+                Cancel
+              </button>
+              <button className="btn btn-error btn-sm" type="button" onClick={deleteCredential} disabled={deleting || item?.status !== "revoked"}>
+                {deleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+          <button className="modal-backdrop" type="button" onClick={() => !deleting && setShowDeleteModal(false)}>
+            close
+          </button>
+        </div>
+      ) : null}
     </TabbedPaneShell>
   );
 }

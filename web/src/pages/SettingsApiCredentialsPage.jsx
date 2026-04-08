@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { MoreHorizontal } from "lucide-react";
 import { apiFetch } from "../api.js";
+import { useToast } from "../components/Toast.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
@@ -130,6 +131,7 @@ function TokenModal({ token, onClose }) {
 
 export default function SettingsApiCredentialsPage() {
   const navigate = useNavigate();
+  const { pushToast } = useToast();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -139,7 +141,9 @@ export default function SettingsApiCredentialsPage() {
   const [page, setPage] = useState(0);
   const [totalItems, setTotalItems] = useState(0);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState(["meta.read", "records.read"]);
   const [expiresInDays, setExpiresInDays] = useState("");
@@ -203,6 +207,46 @@ export default function SettingsApiCredentialsPage() {
     })),
     [items],
   );
+
+  const selectedRows = useMemo(() => {
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    return selectedIds.map((id) => byId.get(id)).filter(Boolean);
+  }, [rows, selectedIds]);
+  const singleSelected = selectedRows.length === 1 ? selectedRows[0] : null;
+  const selectedActiveRows = selectedRows.filter((row) => row.status === "active");
+  const allSelectedRevoked = selectedRows.length > 0 && selectedRows.every((row) => row.status === "revoked");
+
+  async function revokeSelectedCredentials() {
+    if (saving || selectedActiveRows.length === 0) return;
+    setSaving(true);
+    setError("");
+    try {
+      await Promise.all(selectedActiveRows.map((row) => apiFetch(`/settings/api-credentials/${encodeURIComponent(row.id)}/revoke`, { method: "POST" })));
+      pushToast("success", selectedActiveRows.length === 1 ? "API credential revoked." : "API credentials revoked.");
+      await load();
+    } catch (err) {
+      setError(err?.message || "Failed to revoke API credential(s)");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteSelectedCredentials() {
+    if (saving || selectedIds.length === 0 || !allSelectedRevoked) return;
+    setSaving(true);
+    setError("");
+    try {
+      await Promise.all(selectedIds.map((id) => apiFetch(`/settings/api-credentials/${encodeURIComponent(id)}`, { method: "DELETE" })));
+      setShowDeleteModal(false);
+      setSelectedIds([]);
+      pushToast("success", selectedIds.length === 1 ? "API credential deleted." : "API credentials deleted.");
+      await load();
+    } catch (err) {
+      setError(err?.message || "Failed to delete API credential(s)");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const listFieldIndex = useMemo(
     () => ({
@@ -300,13 +344,32 @@ export default function SettingsApiCredentialsPage() {
                       <li className="menu-title">
                         <span>Selection</span>
                       </li>
-                      {selectedIds.length === 1 ? (
+                      {singleSelected ? (
                         <li>
-                          <button onClick={() => navigate(`/settings/api-credentials/${selectedIds[0]}`)}>
+                          <button onClick={() => navigate(`/settings/api-credentials/${singleSelected.id}`)}>
                             Open credential
                           </button>
                         </li>
                       ) : null}
+                      {selectedActiveRows.length > 0 ? (
+                        <li>
+                          <button onClick={revokeSelectedCredentials} disabled={saving}>
+                            {selectedActiveRows.length === 1 ? "Revoke" : `Revoke active (${selectedActiveRows.length})`}
+                          </button>
+                        </li>
+                      ) : null}
+                      <li>
+                        <button
+                          className="text-error"
+                          onClick={() => setShowDeleteModal(true)}
+                          disabled={!allSelectedRevoked || saving}
+                          title={allSelectedRevoked ? "Delete revoked credential(s)" : "Revoke credentials before deleting them"}
+                        >
+                          {allSelectedRevoked
+                            ? selectedIds.length === 1 ? "Delete" : `Delete selected (${selectedIds.length})`
+                            : "Delete (revoke first)"}
+                        </button>
+                      </li>
                     </ul>
                   </div>
                 ) : null
@@ -383,6 +446,33 @@ export default function SettingsApiCredentialsPage() {
             }
           }}
         />
+      ) : null}
+
+      {showDeleteModal ? (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-md">
+            <h3 className="font-semibold text-lg">Delete API Credential{selectedIds.length > 1 ? "s" : ""}</h3>
+            <div className="mt-3 text-sm">
+              This will permanently remove {selectedIds.length} revoked API credential{selectedIds.length > 1 ? "s" : ""}. Request logs will remain for audit history.
+            </div>
+            {!allSelectedRevoked ? (
+              <div className="alert alert-warning mt-4 text-sm">
+                Active API credentials must be revoked before they can be deleted.
+              </div>
+            ) : null}
+            <div className="modal-action">
+              <button className="btn btn-ghost btn-sm" type="button" onClick={() => !saving && setShowDeleteModal(false)} disabled={saving}>
+                Cancel
+              </button>
+              <button className="btn btn-error btn-sm" type="button" onClick={deleteSelectedCredentials} disabled={saving || !allSelectedRevoked}>
+                {saving ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+          <button className="modal-backdrop" type="button" onClick={() => !saving && setShowDeleteModal(false)}>
+            close
+          </button>
+        </div>
       ) : null}
     </div>
   );

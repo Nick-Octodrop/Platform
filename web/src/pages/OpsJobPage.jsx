@@ -5,6 +5,8 @@ import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import Tabs from "../components/Tabs.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
 
+const TERMINAL_JOB_STATUSES = new Set(["succeeded", "failed", "dead"]);
+
 export default function OpsJobPage() {
   const { jobId } = useParams();
   const navigate = useNavigate();
@@ -13,6 +15,7 @@ export default function OpsJobPage() {
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("preview");
   const [acting, setActing] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [preview, setPreview] = useState(null);
   const [previewKind, setPreviewKind] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -106,6 +109,22 @@ export default function OpsJobPage() {
     }
   }
 
+  async function deleteJob() {
+    if (!job?.id || acting || !TERMINAL_JOB_STATUSES.has(job.status)) return;
+    setActing(true);
+    try {
+      await apiFetch(`/ops/jobs/${job.id}`, { method: "DELETE" });
+      navigate("/ops");
+    } catch (err) {
+      setError(err?.message || "Delete failed");
+    } finally {
+      setActing(false);
+      setShowDeleteModal(false);
+    }
+  }
+
+  const canDelete = Boolean(job?.id && TERMINAL_JOB_STATUSES.has(job.status));
+
   return (
     <TabbedPaneShell
       title={job?.type || "Job"}
@@ -127,6 +146,11 @@ export default function OpsJobPage() {
           disabled: !job || acting,
         },
         {
+          label: canDelete ? "Delete" : "Delete (terminal jobs only)",
+          onClick: () => setShowDeleteModal(true),
+          disabled: !canDelete || acting,
+        },
+        {
           label: "Back",
           onClick: () => navigate(-1),
         },
@@ -141,6 +165,9 @@ export default function OpsJobPage() {
           </button>
           <button className="btn btn-sm btn-outline" type="button" onClick={cancel} disabled={!job || acting}>
             Cancel
+          </button>
+          <button className="btn btn-sm btn-error" type="button" onClick={() => setShowDeleteModal(true)} disabled={!canDelete || acting}>
+            Delete
           </button>
           <button className="btn btn-sm" type="button" onClick={() => navigate(-1)}>
             Back
@@ -240,6 +267,25 @@ export default function OpsJobPage() {
           </div>
         )}
       </div>
+      {showDeleteModal ? (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-md">
+            <h3 className="text-lg font-semibold">Delete job?</h3>
+            <p className="mt-2 text-sm opacity-70">This will permanently remove this terminal job record and its events. This cannot be undone.</p>
+            <div className="modal-action">
+              <button className="btn btn-ghost btn-sm" type="button" onClick={() => setShowDeleteModal(false)} disabled={acting}>
+                Cancel
+              </button>
+              <button className="btn btn-error btn-sm" type="button" onClick={deleteJob} disabled={!canDelete || acting}>
+                {acting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+          <button className="modal-backdrop" type="button" onClick={() => !acting && setShowDeleteModal(false)}>
+            close
+          </button>
+        </div>
+      ) : null}
     </TabbedPaneShell>
   );
 }

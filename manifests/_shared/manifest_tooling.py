@@ -250,6 +250,43 @@ def _installed_module_ids(installed: list[dict[str, Any]]) -> set[str]:
     return out
 
 
+def _module_installed(
+    base_url: str,
+    token: str | None,
+    workspace_id: str | None,
+    module_id: str,
+    *,
+    retries: int = 5,
+    delay_seconds: float = 1.0,
+) -> bool:
+    for attempt in range(max(1, retries)):
+        installed = _fetch_installed_modules(base_url, token, workspace_id)
+        if module_id in _installed_module_ids(installed):
+            return True
+
+        status, payload = api_call(
+            "GET",
+            f"{base_url}/studio2/modules/{urlparse.quote(module_id, safe='')}/manifest",
+            token=token,
+            workspace_id=workspace_id,
+            timeout=120,
+        )
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if (
+            status < 400
+            and is_ok(payload)
+            and isinstance(data, dict)
+            and data.get("module_id") == module_id
+            and isinstance(data.get("manifest_hash"), str)
+            and data.get("manifest_hash")
+        ):
+            return True
+
+        if attempt < retries - 1:
+            time.sleep(delay_seconds)
+    return False
+
+
 def _archive_module(base_url: str, token: str | None, workspace_id: str | None, module_id: str) -> None:
     status, payload = api_call(
         "DELETE",
@@ -365,8 +402,7 @@ def install_folder(folder: Path, *, dry_run: bool = False, base_url: str | None 
                 timeout=240,
             )
             if status < 400 and is_ok(payload):
-                installed_after = _fetch_installed_modules(base_url, token, workspace_id)
-                if module_id not in _installed_module_ids(installed_after):
+                if not _module_installed(base_url, token, workspace_id, module_id):
                     raise SystemExit(
                         f"Install reported success for {module_id}, but it is not present in /studio2/modules for workspace {workspace_id or 'default'}"
                     )

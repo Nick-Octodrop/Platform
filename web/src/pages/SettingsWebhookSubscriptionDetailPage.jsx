@@ -132,46 +132,54 @@ export default function SettingsWebhookSubscriptionDetailPage() {
       ) : activeTabId === "details" ? (
         <div className="space-y-4">
           <DetailPanel title="Subscription Details" description="Control target, pattern, status, signing, and header overrides here.">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <label className="form-control">
-                <span className="label-text text-sm">Name</span>
-                <input className="input input-bordered input-sm" value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} disabled={saving} />
-              </label>
-              <label className="form-control">
-                <span className="label-text text-sm">Status</span>
-                <select className="select select-bordered select-sm" value={form.status} onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value }))} disabled={saving}>
-                  <option value="active">Active</option>
-                  <option value="disabled">Disabled</option>
-                </select>
-              </label>
-              <label className="form-control md:col-span-2">
-                <span className="label-text text-sm">Target URL</span>
-                <input className="input input-bordered input-sm" value={form.target_url} onChange={(e) => setForm((prev) => ({ ...prev, target_url: e.target.value }))} disabled={saving} />
-              </label>
-              <label className="form-control">
-                <span className="label-text text-sm">Event Pattern</span>
-                <input className="input input-bordered input-sm" value={form.event_pattern} onChange={(e) => setForm((prev) => ({ ...prev, event_pattern: e.target.value }))} disabled={saving} />
-              </label>
-              <label className="form-control">
-                <span className="label-text text-sm">Signing Secret</span>
-                <select className="select select-bordered select-sm" value={form.signing_secret_id} onChange={(e) => setForm((prev) => ({ ...prev, signing_secret_id: e.target.value }))} disabled={saving}>
-                  <option value="">No signing secret</option>
-                  {secrets.map((secret) => (
-                    <option key={secret.id} value={secret.id}>{secret.name || secret.id}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="form-control md:col-span-2">
-                <span className="label-text text-sm">Extra Headers JSON</span>
-                <textarea className="textarea textarea-bordered min-h-[8rem] font-mono text-xs" value={form.headers_json_text} onChange={(e) => setForm((prev) => ({ ...prev, headers_json_text: e.target.value }))} disabled={saving} />
-              </label>
-            </div>
+            <form
+              className="space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                saveSubscription();
+              }}
+            >
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <label className="form-control">
+                  <span className="label-text text-sm">Name</span>
+                  <input className="input input-bordered input-sm" value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} disabled={saving} />
+                </label>
+                <label className="form-control">
+                  <span className="label-text text-sm">Status</span>
+                  <select className="select select-bordered select-sm" value={form.status} onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value }))} disabled={saving}>
+                    <option value="active">Active</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                </label>
+                <label className="form-control md:col-span-2">
+                  <span className="label-text text-sm">Target URL</span>
+                  <input className="input input-bordered input-sm" value={form.target_url} onChange={(e) => setForm((prev) => ({ ...prev, target_url: e.target.value }))} disabled={saving} />
+                </label>
+                <label className="form-control">
+                  <span className="label-text text-sm">Event Pattern</span>
+                  <input className="input input-bordered input-sm" value={form.event_pattern} onChange={(e) => setForm((prev) => ({ ...prev, event_pattern: e.target.value }))} disabled={saving} />
+                </label>
+                <label className="form-control">
+                  <span className="label-text text-sm">Signing Secret</span>
+                  <select className="select select-bordered select-sm" value={form.signing_secret_id} onChange={(e) => setForm((prev) => ({ ...prev, signing_secret_id: e.target.value }))} disabled={saving}>
+                    <option value="">No signing secret</option>
+                    {secrets.map((secret) => (
+                      <option key={secret.id} value={secret.id}>{secret.name || secret.id}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-control md:col-span-2">
+                  <span className="label-text text-sm">Extra Headers JSON</span>
+                  <textarea className="textarea textarea-bordered min-h-[8rem] font-mono text-xs" value={form.headers_json_text} onChange={(e) => setForm((prev) => ({ ...prev, headers_json_text: e.target.value }))} disabled={saving} />
+                </label>
+              </div>
 
-            <div className="flex flex-wrap gap-2">
-              <button className="btn btn-sm btn-primary" type="button" onClick={saveSubscription} disabled={saving || !form.name.trim() || !form.target_url.trim() || !form.event_pattern.trim()}>
-                {saving ? "Saving..." : "Save"}
-              </button>
-            </div>
+              <div className="flex flex-wrap gap-2">
+                <button className="btn btn-sm btn-primary" type="submit" disabled={saving || !form.name.trim() || !form.target_url.trim() || !form.event_pattern.trim()}>
+                  {saving ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </form>
           </DetailPanel>
         </div>
       ) : (

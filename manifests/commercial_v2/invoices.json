@@ -5,7 +5,7 @@
     "key": "biz_invoices",
     "name": "Invoices",
     "version": "1.0.0",
-    "description": "Deposit, progress, final, and credit-note style billing for a commercial workflow workspace.",
+    "description": "NLight deposit, progress, final, and credit-note customer invoicing.",
     "category": "Commercial",
     "icon_key": "lucide:Receipt"
   },
@@ -44,6 +44,7 @@
   "entities": [
     {
       "id": "entity.biz_invoice",
+      "label": "Invoice",
       "display_field": "biz_invoice.invoice_number",
       "fields": [
         { "id": "biz_invoice.id", "type": "uuid", "label": "ID", "readonly": true },
@@ -132,7 +133,9 @@
           "default": "EUR",
           "options": [
             { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" }
+            { "value": "USD", "label": "USD" },
+            { "value": "GBP", "label": "GBP" },
+            { "value": "AED", "label": "AED" }
           ]
         },
         { "id": "biz_invoice.customer_reference", "type": "string", "label": "Customer Reference" },
@@ -141,7 +144,7 @@
           "id": "biz_invoice.cancellation_reason",
           "type": "text",
           "label": "Cancellation Reason",
-          "visible_when": { "op": "eq", "field": "biz_invoice.status", "value": "cancelled" }
+          "required_when": { "op": "eq", "field": "biz_invoice.status", "value": "cancelled" }
         },
         {
           "id": "biz_invoice.source_order_total_snapshot",
@@ -284,6 +287,7 @@
     },
     {
       "id": "entity.biz_invoice_line",
+      "label": "Invoice Line",
       "display_field": "biz_invoice_line.description",
       "fields": [
         { "id": "biz_invoice_line.id", "type": "uuid", "label": "ID", "readonly": true },
@@ -320,7 +324,9 @@
           "default": "EUR",
           "options": [
             { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" }
+            { "value": "USD", "label": "USD" },
+            { "value": "GBP", "label": "GBP" },
+            { "value": "AED", "label": "AED" }
           ]
         },
         {
@@ -332,7 +338,10 @@
             { "value": "EA", "label": "Each" },
             { "value": "SET", "label": "Set" },
             { "value": "KIT", "label": "Kit" },
-            { "value": "LOT", "label": "Lot" }
+            { "value": "LOT", "label": "Lot" },
+            { "value": "PALLET", "label": "Pallet" },
+            { "value": "CONTAINER", "label": "Container" },
+            { "value": "M", "label": "Meter" }
           ]
         },
         { "id": "biz_invoice_line.quantity", "type": "number", "label": "Qty", "default": 1 },
@@ -359,7 +368,22 @@
             }
           }
         }
-      ]
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "biz_invoice_line.invoice_id",
+          "biz_invoice_line.product_id",
+          "biz_invoice_line.description",
+          "biz_invoice_line.uom",
+          "biz_invoice_line.quantity",
+          "biz_invoice_line.unit_price",
+          "biz_invoice_line.line_total"
+        ]
+      }
     }
   ],
   "workflows": [
@@ -368,14 +392,28 @@
       "entity": "entity.biz_invoice",
       "status_field": "biz_invoice.status",
       "states": [
-        { "id": "draft", "label": "Draft" },
-        { "id": "issued", "label": "Issued" },
+        { "id": "draft", "label": "Draft", "required_fields": ["biz_invoice.customer_id", "biz_invoice.currency"] },
+        { "id": "issued", "label": "Issued", "required_fields": ["biz_invoice.customer_id", "biz_invoice.invoice_date", "biz_invoice.due_date"] },
         { "id": "part_paid", "label": "Part Paid" },
         { "id": "paid", "label": "Paid" },
         { "id": "cancelled", "label": "Cancelled" },
         { "id": "credited", "label": "Credited" }
       ],
+      "transitions": [
+        { "from": "draft", "to": "issued", "label": "Issue Invoice" },
+        { "from": "issued", "to": "part_paid", "label": "Mark Part Paid" },
+        { "from": "issued", "to": "paid", "label": "Mark Paid" },
+        { "from": "part_paid", "to": "paid", "label": "Mark Paid" },
+        { "from": "draft", "to": "cancelled", "label": "Cancel Invoice" },
+        { "from": "issued", "to": "cancelled", "label": "Cancel Invoice" },
+        { "from": "issued", "to": "credited", "label": "Mark Credited" },
+        { "from": "part_paid", "to": "credited", "label": "Mark Credited" },
+        { "from": "paid", "to": "credited", "label": "Mark Credited" }
+      ],
       "required_fields_by_state": {
+        "issued": ["biz_invoice.customer_id", "biz_invoice.invoice_date", "biz_invoice.due_date"],
+        "part_paid": ["biz_invoice.amount_paid"],
+        "paid": ["biz_invoice.amount_paid"],
         "cancelled": ["biz_invoice.cancellation_reason"]
       }
     }
@@ -453,7 +491,8 @@
       "entity_id": "entity.biz_invoice",
       "label": "Mark Part Paid",
       "patch": { "biz_invoice.status": "part_paid" },
-      "visible_when": { "op": "eq", "field": "biz_invoice.status", "value": "issued" }
+      "visible_when": { "op": "eq", "field": "biz_invoice.status", "value": "issued" },
+      "enabled_when": { "op": "gt", "field": "biz_invoice.amount_paid", "value": 0 }
     },
     {
       "id": "action.invoice_mark_paid",
@@ -467,7 +506,8 @@
           { "op": "eq", "field": "biz_invoice.status", "value": "issued" },
           { "op": "eq", "field": "biz_invoice.status", "value": "part_paid" }
         ]
-      }
+      },
+      "enabled_when": { "op": "gt", "field": "biz_invoice.amount_paid", "value": 0 }
     },
     {
       "id": "action.invoice_open_cancel_modal",
@@ -510,7 +550,8 @@
             "condition": { "op": "exists", "field": "biz_invoice.credit_note_id" }
           }
         ]
-      }
+      },
+      "enabled_when": { "op": "gt", "field": "biz_invoice.invoice_total", "value": 0 }
     },
     {
       "id": "action.invoice_mark_credited",

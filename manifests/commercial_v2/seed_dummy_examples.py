@@ -161,7 +161,7 @@ def find_existing_record(
         entity_id,
         token=token,
         workspace_id=workspace_id,
-        fields=list(match_fields.keys()),
+        fields=None,
     ):
         if all(existing.record.get(field_id) == expected for field_id, expected in match_fields.items()):
             return existing
@@ -224,8 +224,12 @@ CONTACTS = [
             "biz_contact.website": "https://greengrow.example",
             "biz_contact.country": "Netherlands",
             "biz_contact.currency_preference": "EUR",
-            "biz_contact.billing_address": "Keizersgracht 100, Amsterdam, Netherlands",
-            "biz_contact.shipping_address": "Aalsmeer Trade Park 4, Aalsmeer, Netherlands",
+            "biz_contact.billing_street": "Keizersgracht 100",
+            "biz_contact.billing_city": "Amsterdam",
+            "biz_contact.billing_country": "Netherlands",
+            "biz_contact.shipping_street": "Aalsmeer Trade Park 4",
+            "biz_contact.shipping_city": "Aalsmeer",
+            "biz_contact.shipping_country": "Netherlands",
             "biz_contact.notes": "Lead customer for demo scenario A.",
             "biz_contact.is_active": True
         }
@@ -243,8 +247,12 @@ CONTACTS = [
             "biz_contact.website": "https://desertbloom.example",
             "biz_contact.country": "United Arab Emirates",
             "biz_contact.currency_preference": "USD",
-            "biz_contact.billing_address": "Dubai Investment Park, Dubai, UAE",
-            "biz_contact.shipping_address": "Jebel Ali South, Dubai, UAE",
+            "biz_contact.billing_street": "Dubai Investment Park",
+            "biz_contact.billing_city": "Dubai",
+            "biz_contact.billing_country": "United Arab Emirates",
+            "biz_contact.shipping_street": "Jebel Ali South",
+            "biz_contact.shipping_city": "Dubai",
+            "biz_contact.shipping_country": "United Arab Emirates",
             "biz_contact.notes": "Quote scenario B.",
             "biz_contact.is_active": True
         }
@@ -262,8 +270,12 @@ CONTACTS = [
             "biz_contact.website": "https://volga.example",
             "biz_contact.country": "Kazakhstan",
             "biz_contact.currency_preference": "EUR",
-            "biz_contact.billing_address": "Astana Business Centre, Astana, Kazakhstan",
-            "biz_contact.shipping_address": "Karaganda Logistics Hub, Karaganda, Kazakhstan",
+            "biz_contact.billing_street": "Astana Business Centre",
+            "biz_contact.billing_city": "Astana",
+            "biz_contact.billing_country": "Kazakhstan",
+            "biz_contact.shipping_street": "Karaganda Logistics Hub",
+            "biz_contact.shipping_city": "Karaganda",
+            "biz_contact.shipping_country": "Kazakhstan",
             "biz_contact.notes": "Order and invoice scenario C.",
             "biz_contact.is_active": True
         }
@@ -281,8 +293,12 @@ CONTACTS = [
             "biz_contact.website": "https://lumatek.example",
             "biz_contact.country": "China",
             "biz_contact.currency_preference": "USD",
-            "biz_contact.billing_address": "Bao'an District, Shenzhen, China",
-            "biz_contact.shipping_address": "Yantian Port, Shenzhen, China",
+            "biz_contact.billing_street": "Bao'an District",
+            "biz_contact.billing_city": "Shenzhen",
+            "biz_contact.billing_country": "China",
+            "biz_contact.shipping_street": "Yantian Port",
+            "biz_contact.shipping_city": "Shenzhen",
+            "biz_contact.shipping_country": "China",
             "biz_contact.notes": "Main supplier for scenario A.",
             "biz_contact.is_active": True
         }
@@ -300,179 +316,17 @@ CONTACTS = [
             "biz_contact.website": "https://guangzhouled.example",
             "biz_contact.country": "China",
             "biz_contact.currency_preference": "USD",
-            "biz_contact.billing_address": "Panyu District, Guangzhou, China",
-            "biz_contact.shipping_address": "Nansha Port, Guangzhou, China",
+            "biz_contact.billing_street": "Panyu District",
+            "biz_contact.billing_city": "Guangzhou",
+            "biz_contact.billing_country": "China",
+            "biz_contact.shipping_street": "Nansha Port",
+            "biz_contact.shipping_city": "Guangzhou",
+            "biz_contact.shipping_country": "China",
             "biz_contact.notes": "Factory partner for scenario C.",
             "biz_contact.is_active": True
         }
     }
 ]
-
-
-SETTINGS_SPECS = [
-    {
-        "alias": "entity.nlight_bv",
-        "entity_id": "entity.biz_operating_entity",
-        "match": {"biz_operating_entity.name": "NLight BV"},
-        "record": {
-            "biz_operating_entity.name": "NLight BV",
-            "biz_operating_entity.legal_name": "NLight BV",
-            "biz_operating_entity.base_currency": "EUR",
-            "biz_operating_entity.tax_number": "NL999999999B01",
-            "biz_operating_entity.quote_prefix": "Q-NL-",
-            "biz_operating_entity.order_prefix": "SO-NL-",
-            "biz_operating_entity.invoice_prefix": "INV-NL-",
-            "biz_operating_entity.address": "Amsterdam, Netherlands",
-            "biz_operating_entity.active": True,
-        },
-    },
-    {
-        "alias": "entity.ecotech_fzco",
-        "entity_id": "entity.biz_operating_entity",
-        "match": {"biz_operating_entity.name": "EcoTech FZCO"},
-        "record": {
-            "biz_operating_entity.name": "EcoTech FZCO",
-            "biz_operating_entity.legal_name": "EcoTech FZCO",
-            "biz_operating_entity.base_currency": "USD",
-            "biz_operating_entity.tax_number": "AE999999999999999",
-            "biz_operating_entity.quote_prefix": "Q-ET-",
-            "biz_operating_entity.order_prefix": "SO-ET-",
-            "biz_operating_entity.invoice_prefix": "INV-ET-",
-            "biz_operating_entity.address": "Dubai, United Arab Emirates",
-            "biz_operating_entity.active": True,
-        },
-    },
-    {
-        "alias": "payment.net14",
-        "entity_id": "entity.biz_payment_term",
-        "match": {"biz_payment_term.name": "Net 14"},
-        "record": {
-            "biz_payment_term.name": "Net 14",
-            "biz_payment_term.description": "Payment due 14 days after invoice date.",
-            "biz_payment_term.days_until_due": 14,
-            "biz_payment_term.deposit_percent_default": 0,
-            "biz_payment_term.active": True,
-        },
-    },
-    {
-        "alias": "payment.net30",
-        "entity_id": "entity.biz_payment_term",
-        "match": {"biz_payment_term.name": "Net 30"},
-        "record": {
-            "biz_payment_term.name": "Net 30",
-            "biz_payment_term.description": "Payment due 30 days after invoice date.",
-            "biz_payment_term.days_until_due": 30,
-            "biz_payment_term.deposit_percent_default": 0,
-            "biz_payment_term.active": True,
-        },
-    },
-    {
-        "alias": "payment.deposit_30",
-        "entity_id": "entity.biz_payment_term",
-        "match": {"biz_payment_term.name": "30% Deposit + Balance"},
-        "record": {
-            "biz_payment_term.name": "30% Deposit + Balance",
-            "biz_payment_term.description": "30% deposit up front, balance before shipment or on final invoice.",
-            "biz_payment_term.days_until_due": 30,
-            "biz_payment_term.deposit_percent_default": 30,
-            "biz_payment_term.active": True,
-        },
-    },
-    {
-        "alias": "tax.zero",
-        "entity_id": "entity.biz_tax_code",
-        "match": {"biz_tax_code.code": "ZERO"},
-        "record": {
-            "biz_tax_code.code": "ZERO",
-            "biz_tax_code.name": "Zero Rated",
-            "biz_tax_code.rate": 0,
-            "biz_tax_code.scope": "both",
-            "biz_tax_code.active": True,
-        },
-    },
-    {
-        "alias": "tax.sales_21",
-        "entity_id": "entity.biz_tax_code",
-        "match": {"biz_tax_code.code": "VAT21"},
-        "record": {
-            "biz_tax_code.code": "VAT21",
-            "biz_tax_code.name": "VAT 21%",
-            "biz_tax_code.rate": 21,
-            "biz_tax_code.scope": "sales",
-            "biz_tax_code.active": True,
-        },
-    },
-    {
-        "alias": "tax.purchase_0",
-        "entity_id": "entity.biz_tax_code",
-        "match": {"biz_tax_code.code": "PUR0"},
-        "record": {
-            "biz_tax_code.code": "PUR0",
-            "biz_tax_code.name": "Import / Purchase 0%",
-            "biz_tax_code.rate": 0,
-            "biz_tax_code.scope": "purchase",
-            "biz_tax_code.active": True,
-        },
-    },
-    {
-        "alias": "template.quote_standard",
-        "entity_id": "entity.biz_document_template",
-        "match": {"biz_document_template.name": "Standard Quote"},
-        "record": {
-            "biz_document_template.name": "Standard Quote",
-            "biz_document_template.template_type": "quote",
-            "biz_document_template.default_notes": "Pricing excludes local duties unless stated otherwise.",
-            "biz_document_template.footer_text": "Thank you for the opportunity to quote.",
-            "biz_document_template.active": True,
-        },
-    },
-    {
-        "alias": "template.invoice_standard",
-        "entity_id": "entity.biz_document_template",
-        "match": {"biz_document_template.name": "Standard Invoice"},
-        "record": {
-            "biz_document_template.name": "Standard Invoice",
-            "biz_document_template.template_type": "invoice",
-            "biz_document_template.default_notes": "Please remit payment according to the agreed terms.",
-            "biz_document_template.footer_text": "Payment details available on request.",
-            "biz_document_template.active": True,
-        },
-    },
-    {
-        "alias": "integration.pipedrive",
-        "entity_id": "entity.biz_integration_setting",
-        "match": {"biz_integration_setting.provider": "pipedrive"},
-        "record": {
-            "biz_integration_setting.provider": "pipedrive",
-            "biz_integration_setting.status": "connected",
-            "biz_integration_setting.external_org_name": "Commercial CRM",
-            "biz_integration_setting.sync_notes": "Deals and organizations linked for quote creation.",
-        },
-    },
-    {
-        "alias": "integration.xero",
-        "entity_id": "entity.biz_integration_setting",
-        "match": {"biz_integration_setting.provider": "xero"},
-        "record": {
-            "biz_integration_setting.provider": "xero",
-            "biz_integration_setting.status": "connected",
-            "biz_integration_setting.external_org_name": "Finance Ledger",
-            "biz_integration_setting.sync_notes": "Invoice and payment sync active for demo state visibility.",
-        },
-    },
-    {
-        "alias": "integration.clickup",
-        "entity_id": "entity.biz_integration_setting",
-        "match": {"biz_integration_setting.provider": "clickup"},
-        "record": {
-            "biz_integration_setting.provider": "clickup",
-            "biz_integration_setting.status": "disconnected",
-            "biz_integration_setting.external_org_name": "Operations Workspace",
-            "biz_integration_setting.sync_notes": "Prepared for later post-deposit task creation.",
-        },
-    },
-]
-
 
 PRODUCTS = [
     ("product.led600", "NL-LED-600W", "N-Light LED 600W", "EA", 420, 275, "contact.shenzhen"),
@@ -518,9 +372,8 @@ SEED_SPECS = [
     {
         "alias": "quote.a",
         "entity_id": "entity.biz_quote",
-        "match": {"biz_quote.quote_number": "NQ-1001"},
+        "match": {"biz_quote.customer_reference": "GG-POC-2026-01"},
         "record": {
-            "biz_quote.quote_number": "NQ-1001",
             "biz_quote.status": "accepted",
             "biz_quote.quote_date": "2026-03-20",
             "biz_quote.expiry_date": "2026-04-10",
@@ -541,9 +394,8 @@ SEED_SPECS = [
     {
         "alias": "quote.b",
         "entity_id": "entity.biz_quote",
-        "match": {"biz_quote.quote_number": "NQ-1002"},
+        "match": {"biz_quote.customer_reference": "DBT-RFQ-44"},
         "record": {
-            "biz_quote.quote_number": "NQ-1002",
             "biz_quote.status": "sent",
             "biz_quote.quote_date": "2026-03-25",
             "biz_quote.expiry_date": "2026-04-15",
@@ -563,9 +415,8 @@ SEED_SPECS = [
     {
         "alias": "quote.c",
         "entity_id": "entity.biz_quote",
-        "match": {"biz_quote.quote_number": "NQ-1003"},
+        "match": {"biz_quote.customer_reference": "VOLGA-GROW-09"},
         "record": {
-            "biz_quote.quote_number": "NQ-1003",
             "biz_quote.status": "accepted",
             "biz_quote.quote_date": "2026-03-10",
             "biz_quote.expiry_date": "2026-03-31",
@@ -713,13 +564,11 @@ SEED_SPECS = [
     {
         "alias": "order.a",
         "entity_id": "entity.biz_order",
-        "match": {"biz_order.order_number": "CO-1001"},
+        "match": {"biz_order.customer_reference": "GG-POC-2026-01"},
         "record": {
-            "biz_order.order_number": "CO-1001",
             "biz_order.status": "confirmed",
             "biz_order.customer_id": {"$ref": "contact.greengrow"},
             "biz_order.source_quote_id": {"$ref": "quote.a"},
-            "biz_order.source_quote_number": "NQ-1001",
             "biz_order.sales_entity": "NLight BV",
             "biz_order.order_date": "2026-03-22",
             "biz_order.currency": "EUR",
@@ -735,13 +584,11 @@ SEED_SPECS = [
     {
         "alias": "order.c",
         "entity_id": "entity.biz_order",
-        "match": {"biz_order.order_number": "CO-1003"},
+        "match": {"biz_order.customer_reference": "VOLGA-GROW-09"},
         "record": {
-            "biz_order.order_number": "CO-1003",
-            "biz_order.status": "shipped",
+            "biz_order.status": "confirmed",
             "biz_order.customer_id": {"$ref": "contact.volga"},
             "biz_order.source_quote_id": {"$ref": "quote.c"},
-            "biz_order.source_quote_number": "NQ-1003",
             "biz_order.sales_entity": "NLight BV",
             "biz_order.order_date": "2026-03-12",
             "biz_order.currency": "EUR",
@@ -841,14 +688,12 @@ SEED_SPECS = [
     {
         "alias": "po.a",
         "entity_id": "entity.biz_purchase_order",
-        "match": {"biz_purchase_order.po_number": "PO-1001"},
+        "match": {"biz_purchase_order.supplier_reference": "SZ-LUM-1001"},
         "record": {
-            "biz_purchase_order.po_number": "PO-1001",
             "biz_purchase_order.status": "sent_to_supplier",
             "biz_purchase_order.supplier_id": {"$ref": "contact.shenzhen"},
             "biz_purchase_order.purchasing_entity": "EcoTech FZCO",
             "biz_purchase_order.source_customer_order_id": {"$ref": "order.a"},
-            "biz_purchase_order.source_customer_order_number": "CO-1001",
             "biz_purchase_order.po_date": "2026-03-24",
             "biz_purchase_order.currency": "USD",
             "biz_purchase_order.supplier_reference": "SZ-LUM-1001",
@@ -862,14 +707,12 @@ SEED_SPECS = [
     {
         "alias": "po.c",
         "entity_id": "entity.biz_purchase_order",
-        "match": {"biz_purchase_order.po_number": "PO-1003"},
+        "match": {"biz_purchase_order.supplier_reference": "GZ-LED-1003"},
         "record": {
-            "biz_purchase_order.po_number": "PO-1003",
             "biz_purchase_order.status": "confirmed",
             "biz_purchase_order.supplier_id": {"$ref": "contact.guangzhou"},
             "biz_purchase_order.purchasing_entity": "EcoTech FZCO",
             "biz_purchase_order.source_customer_order_id": {"$ref": "order.c"},
-            "biz_purchase_order.source_customer_order_number": "CO-1003",
             "biz_purchase_order.po_date": "2026-03-14",
             "biz_purchase_order.currency": "USD",
             "biz_purchase_order.supplier_reference": "GZ-LED-1003",
@@ -947,14 +790,12 @@ SEED_SPECS = [
     {
         "alias": "invoice.a.deposit",
         "entity_id": "entity.biz_invoice",
-        "match": {"biz_invoice.invoice_number": "INV-1001-D"},
+        "match": {"biz_invoice.customer_reference": "GG-POC-2026-01", "biz_invoice.invoice_type": "deposit"},
         "record": {
-            "biz_invoice.invoice_number": "INV-1001-D",
             "biz_invoice.status": "issued",
             "biz_invoice.invoice_type": "deposit",
             "biz_invoice.customer_id": {"$ref": "contact.greengrow"},
             "biz_invoice.source_order_id": {"$ref": "order.a"},
-            "biz_invoice.source_order_number": "CO-1001",
             "biz_invoice.sales_entity": "NLight BV",
             "biz_invoice.invoice_date": "2026-03-26",
             "biz_invoice.due_date": "2026-04-05",
@@ -969,14 +810,12 @@ SEED_SPECS = [
     {
         "alias": "invoice.c.final",
         "entity_id": "entity.biz_invoice",
-        "match": {"biz_invoice.invoice_number": "INV-1003-F"},
+        "match": {"biz_invoice.customer_reference": "VOLGA-GROW-09", "biz_invoice.invoice_type": "final"},
         "record": {
-            "biz_invoice.invoice_number": "INV-1003-F",
-            "biz_invoice.status": "part_paid",
+            "biz_invoice.status": "issued",
             "biz_invoice.invoice_type": "final",
             "biz_invoice.customer_id": {"$ref": "contact.volga"},
             "biz_invoice.source_order_id": {"$ref": "order.c"},
-            "biz_invoice.source_order_number": "CO-1003",
             "biz_invoice.sales_entity": "NLight BV",
             "biz_invoice.invoice_date": "2026-03-28",
             "biz_invoice.due_date": "2026-04-12",
@@ -991,6 +830,408 @@ SEED_SPECS = [
 ]
 
 
+def record_number(aliases: dict[str, CreatedRecord], alias: str, field_id: str, fallback: str) -> str:
+    record = aliases.get(alias)
+    if not record:
+        return fallback
+    value = record.record.get(field_id)
+    return value if isinstance(value, str) and value else fallback
+
+
+def document_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
+    quote_a = record_number(aliases, "quote.a", "biz_quote.quote_number", "Quote A")
+    order_a = record_number(aliases, "order.a", "biz_order.order_number", "Order A")
+    po_a = record_number(aliases, "po.a", "biz_purchase_order.po_number", "PO A")
+    invoice_deposit = record_number(aliases, "invoice.a.deposit", "biz_invoice.invoice_number", "Deposit Invoice")
+    order_c = record_number(aliases, "order.c", "biz_order.order_number", "Order C")
+    return [
+        {
+            "alias": "document.quote.a",
+            "entity_id": "entity.biz_document",
+            "match": {"biz_document.name": f"Quote {quote_a} - GreenGrow BV"},
+            "record": {
+                "biz_document.name": f"Quote {quote_a} - GreenGrow BV",
+                "biz_document.document_type": "quote_pdf",
+                "biz_document.status": "sent",
+                "biz_document.related_contact_id": {"$ref": "contact.greengrow"},
+                "biz_document.related_quote_id": {"$ref": "quote.a"},
+                "biz_document.sales_entity": "NLight BV",
+                "biz_document.document_date": "2026-03-20",
+                "biz_document.external_system": "email",
+                "biz_document.external_reference": f"customer-email:{quote_a}",
+                "biz_document.notes": "Customer-facing quote pack sent before acceptance.",
+            },
+        },
+        {
+            "alias": "document.order.a",
+            "entity_id": "entity.biz_document",
+            "match": {"biz_document.name": f"Order {order_a} - Confirmation Pack"},
+            "record": {
+                "biz_document.name": f"Order {order_a} - Confirmation Pack",
+                "biz_document.document_type": "order_confirmation",
+                "biz_document.status": "approved",
+                "biz_document.related_contact_id": {"$ref": "contact.greengrow"},
+                "biz_document.related_order_id": {"$ref": "order.a"},
+                "biz_document.sales_entity": "NLight BV",
+                "biz_document.document_date": "2026-03-22",
+                "biz_document.external_system": "none",
+                "biz_document.notes": "Internal and customer order confirmation pack.",
+            },
+        },
+        {
+            "alias": "document.po.a",
+            "entity_id": "entity.biz_document",
+            "match": {"biz_document.name": f"{po_a} - Supplier Pack"},
+            "record": {
+                "biz_document.name": f"{po_a} - Supplier Pack",
+                "biz_document.document_type": "purchase_order_pdf",
+                "biz_document.status": "sent",
+                "biz_document.related_contact_id": {"$ref": "contact.shenzhen"},
+                "biz_document.related_order_id": {"$ref": "order.a"},
+                "biz_document.related_purchase_order_id": {"$ref": "po.a"},
+                "biz_document.sales_entity": "EcoTech FZCO",
+                "biz_document.document_date": "2026-03-24",
+                "biz_document.external_system": "email",
+                "biz_document.external_reference": f"supplier-email:{po_a}",
+                "biz_document.notes": "Supplier purchase order and specification pack.",
+            },
+        },
+        {
+            "alias": "document.invoice.deposit",
+            "entity_id": "entity.biz_document",
+            "match": {"biz_document.name": f"{invoice_deposit} - Deposit Invoice"},
+            "record": {
+                "biz_document.name": f"{invoice_deposit} - Deposit Invoice",
+                "biz_document.document_type": "invoice_pdf",
+                "biz_document.status": "sent",
+                "biz_document.related_contact_id": {"$ref": "contact.greengrow"},
+                "biz_document.related_order_id": {"$ref": "order.a"},
+                "biz_document.related_invoice_id": {"$ref": "invoice.a.deposit"},
+                "biz_document.sales_entity": "NLight BV",
+                "biz_document.document_date": "2026-03-26",
+                "biz_document.external_system": "xero",
+                "biz_document.external_reference": f"xero:{invoice_deposit}",
+                "biz_document.notes": "Deposit invoice synced for payment tracking.",
+            },
+        },
+        {
+            "alias": "document.shipping.c",
+            "entity_id": "entity.biz_document",
+            "match": {"biz_document.name": f"{order_c} - Shipping Documents"},
+            "record": {
+                "biz_document.name": f"{order_c} - Shipping Documents",
+                "biz_document.document_type": "shipping_document",
+                "biz_document.status": "signed",
+                "biz_document.related_contact_id": {"$ref": "contact.volga"},
+                "biz_document.related_order_id": {"$ref": "order.c"},
+                "biz_document.related_purchase_order_id": {"$ref": "po.c"},
+                "biz_document.sales_entity": "EcoTech FZCO",
+                "biz_document.document_date": "2026-04-02",
+                "biz_document.external_system": "none",
+                "biz_document.notes": "Signed shipping documents for the Kazakhstan order.",
+            },
+        },
+    ]
+
+
+def crm_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
+    quote_a = record_number(aliases, "quote.a", "biz_quote.quote_number", "Quote A")
+    quote_b = record_number(aliases, "quote.b", "biz_quote.quote_number", "Quote B")
+    quote_c = record_number(aliases, "quote.c", "biz_quote.quote_number", "Quote C")
+    order_a = record_number(aliases, "order.a", "biz_order.order_number", "Order A")
+    return [
+        {
+            "alias": "site.greengrow.aalsmeer",
+            "entity_id": "entity.crm_site",
+            "match": {"crm_site.name": "GreenGrow Aalsmeer Expansion"},
+            "record": {
+                "crm_site.name": "GreenGrow Aalsmeer Expansion",
+                "crm_site.company_id": {"$ref": "contact.greengrow"},
+                "crm_site.address_line_1": "Aalsmeer Trade Park 4",
+                "crm_site.address_line_2": "Zone B - glasshouse expansion",
+                "crm_site.city": "Aalsmeer",
+                "crm_site.region": "North Holland",
+                "crm_site.postcode": "1431",
+                "crm_site.country": "Netherlands",
+                "crm_site.site_notes": "Expansion area for the accepted NLight 720W install handoff.",
+                "crm_site.is_active": True,
+            },
+        },
+        {
+            "alias": "site.desert_bloom.dubai",
+            "entity_id": "entity.crm_site",
+            "match": {"crm_site.name": "Desert Bloom Dubai Trial House"},
+            "record": {
+                "crm_site.name": "Desert Bloom Dubai Trial House",
+                "crm_site.company_id": {"$ref": "contact.desert_bloom"},
+                "crm_site.address_line_1": "Jebel Ali South",
+                "crm_site.address_line_2": "Trial greenhouse block 2",
+                "crm_site.city": "Dubai",
+                "crm_site.region": "Dubai",
+                "crm_site.country": "United Arab Emirates",
+                "crm_site.site_notes": "Customer is comparing 600W fixture packages before deposit approval.",
+                "crm_site.is_active": True,
+            },
+        },
+        {
+            "alias": "site.volga.karaganda",
+            "entity_id": "entity.crm_site",
+            "match": {"crm_site.name": "Volga Karaganda Grow Facility"},
+            "record": {
+                "crm_site.name": "Volga Karaganda Grow Facility",
+                "crm_site.company_id": {"$ref": "contact.volga"},
+                "crm_site.address_line_1": "Karaganda Logistics Hub",
+                "crm_site.city": "Karaganda",
+                "crm_site.country": "Kazakhstan",
+                "crm_site.site_notes": "Existing project site with one active order and a separate expansion opportunity.",
+                "crm_site.is_active": True,
+            },
+        },
+        {
+            "alias": "lead.trade_show.aurora",
+            "entity_id": "entity.crm_lead",
+            "match": {"crm_lead.title": "Aurora Herbs - Benelux trade show enquiry"},
+            "record": {
+                "crm_lead.title": "Aurora Herbs - Benelux trade show enquiry",
+                "crm_lead.status": "new",
+                "crm_lead.source": "trade_show",
+                "crm_lead.contact_name": "Sanne Vermeer",
+                "crm_lead.contact_email": "sanne@auroraherbs.example",
+                "crm_lead.contact_phone": "+31 6 5550 4488",
+                "crm_lead.owner_user_id": "Sales Team",
+                "crm_lead.currency": "EUR",
+                "crm_lead.estimated_value": 38500,
+                "crm_lead.next_action": "Confirm crop area and target light levels.",
+                "crm_lead.next_activity_date": "2026-04-10",
+                "crm_lead.notes": "Met at greenhouse technology stand; interested in a small starter package.",
+            },
+        },
+        {
+            "alias": "lead.website.desert_extension",
+            "entity_id": "entity.crm_lead",
+            "match": {"crm_lead.title": "Desert Bloom - second bay expansion enquiry"},
+            "record": {
+                "crm_lead.title": "Desert Bloom - second bay expansion enquiry",
+                "crm_lead.status": "contacted",
+                "crm_lead.source": "website",
+                "crm_lead.company_id": {"$ref": "contact.desert_bloom"},
+                "crm_lead.contact_name": "Omar Al Hadi",
+                "crm_lead.contact_email": "omar@desertbloom.example",
+                "crm_lead.contact_phone": "+971 50 555 0121",
+                "crm_lead.owner_user_id": "Sales Team",
+                "crm_lead.currency": "USD",
+                "crm_lead.estimated_value": 87500,
+                "crm_lead.next_action": "Confirm whether quote DBT-RFQ-44 covers bay two.",
+                "crm_lead.next_activity_date": "2026-04-09",
+                "crm_lead.notes": "Inbound website form after commercial team sent the first bay quote.",
+            },
+        },
+        {
+            "alias": "lead.parts_only.disqualified",
+            "entity_id": "entity.crm_lead",
+            "match": {"crm_lead.title": "Spare driver parts-only request"},
+            "record": {
+                "crm_lead.title": "Spare driver parts-only request",
+                "crm_lead.status": "disqualified",
+                "crm_lead.source": "referral",
+                "crm_lead.contact_name": "Milan Petrov",
+                "crm_lead.contact_email": "milan@example-grower.example",
+                "crm_lead.owner_user_id": "Sales Team",
+                "crm_lead.currency": "EUR",
+                "crm_lead.estimated_value": 950,
+                "crm_lead.next_action": "No sales follow-up required.",
+                "crm_lead.next_activity_date": "2026-04-06",
+                "crm_lead.disqualification_reason": "Parts-only enquiry below commercial threshold; referred to reseller.",
+                "crm_lead.notes": "Kept for audit trail and source reporting.",
+            },
+        },
+        {
+            "alias": "opportunity.greengrow.won",
+            "entity_id": "entity.crm_opportunity",
+            "match": {"crm_opportunity.title": "GreenGrow Aalsmeer LED Expansion"},
+            "record": {
+                "crm_opportunity.title": "GreenGrow Aalsmeer LED Expansion",
+                "crm_opportunity.company_id": {"$ref": "contact.greengrow"},
+                "crm_opportunity.primary_contact_name": "Eva van Dijk",
+                "crm_opportunity.primary_contact_email": "eva@greengrow.example",
+                "crm_opportunity.site_id": {"$ref": "site.greengrow.aalsmeer"},
+                "crm_opportunity.owner_user_id": "Sales Team",
+                "crm_opportunity.pipeline": "nlight_sales",
+                "crm_opportunity.stage": "won",
+                "crm_opportunity.status": "won",
+                "crm_opportunity.currency": "EUR",
+                "crm_opportunity.value": 66730,
+                "crm_opportunity.probability": 100,
+                "crm_opportunity.expected_close_date": "2026-03-22",
+                "crm_opportunity.next_activity_date": "2026-04-11",
+                "crm_opportunity.source": "referral",
+                "crm_opportunity.quote_state": "accepted",
+                "crm_opportunity.linked_quote_id": {"$ref": "quote.a"},
+                "crm_opportunity.linked_order_id": {"$ref": "order.a"},
+                "crm_opportunity.won_lost_reason": f"Accepted {quote_a}; operations handoff created as {order_a}.",
+                "crm_opportunity.description": "Customer accepted the 720W expansion package for the Aalsmeer site.",
+                "crm_opportunity.notes": "Demo story: Pipedrive replacement can show the won deal, quote, order, PO, invoice, and documents together.",
+            },
+        },
+        {
+            "alias": "opportunity.desert_bloom.quoted",
+            "entity_id": "entity.crm_opportunity",
+            "match": {"crm_opportunity.title": "Desert Bloom Dubai Trial House"},
+            "record": {
+                "crm_opportunity.title": "Desert Bloom Dubai Trial House",
+                "crm_opportunity.company_id": {"$ref": "contact.desert_bloom"},
+                "crm_opportunity.primary_contact_name": "Omar Al Hadi",
+                "crm_opportunity.primary_contact_email": "omar@desertbloom.example",
+                "crm_opportunity.site_id": {"$ref": "site.desert_bloom.dubai"},
+                "crm_opportunity.owner_user_id": "Sales Team",
+                "crm_opportunity.pipeline": "nlight_sales",
+                "crm_opportunity.stage": "quote",
+                "crm_opportunity.status": "open",
+                "crm_opportunity.currency": "USD",
+                "crm_opportunity.value": 87600,
+                "crm_opportunity.probability": 60,
+                "crm_opportunity.expected_close_date": "2026-04-24",
+                "crm_opportunity.next_activity_date": "2026-04-09",
+                "crm_opportunity.source": "website",
+                "crm_opportunity.quote_state": "quoted",
+                "crm_opportunity.linked_quote_id": {"$ref": "quote.b"},
+                "crm_opportunity.description": f"Customer reviewing {quote_b} for a Dubai trial house.",
+                "crm_opportunity.notes": "Needs deposit decision before procurement can start.",
+            },
+        },
+        {
+            "alias": "opportunity.volga.lost",
+            "entity_id": "entity.crm_opportunity",
+            "match": {"crm_opportunity.title": "Volga Karaganda Phase Two"},
+            "record": {
+                "crm_opportunity.title": "Volga Karaganda Phase Two",
+                "crm_opportunity.company_id": {"$ref": "contact.volga"},
+                "crm_opportunity.primary_contact_name": "Irina Sokolova",
+                "crm_opportunity.primary_contact_email": "irina@volga.example",
+                "crm_opportunity.site_id": {"$ref": "site.volga.karaganda"},
+                "crm_opportunity.owner_user_id": "Sales Team",
+                "crm_opportunity.pipeline": "nlight_sales",
+                "crm_opportunity.stage": "lost",
+                "crm_opportunity.status": "lost",
+                "crm_opportunity.currency": "EUR",
+                "crm_opportunity.value": 42520,
+                "crm_opportunity.probability": 0,
+                "crm_opportunity.expected_close_date": "2026-03-31",
+                "crm_opportunity.next_activity_date": "2026-04-14",
+                "crm_opportunity.source": "existing_customer",
+                "crm_opportunity.quote_state": "accepted",
+                "crm_opportunity.linked_quote_id": {"$ref": "quote.c"},
+                "crm_opportunity.won_lost_reason": f"Phase two paused after {quote_c}; customer kept existing order only.",
+                "crm_opportunity.description": "Follow-on expansion enquiry separate from the active Volga order.",
+                "crm_opportunity.notes": "Useful demo example for lost-reason reporting without losing customer/order context.",
+            },
+        },
+        {
+            "alias": "opportunity.greengrow.service",
+            "entity_id": "entity.crm_opportunity",
+            "match": {"crm_opportunity.title": "GreenGrow Control Unit Upgrade"},
+            "record": {
+                "crm_opportunity.title": "GreenGrow Control Unit Upgrade",
+                "crm_opportunity.company_id": {"$ref": "contact.greengrow"},
+                "crm_opportunity.primary_contact_name": "Eva van Dijk",
+                "crm_opportunity.primary_contact_email": "eva@greengrow.example",
+                "crm_opportunity.site_id": {"$ref": "site.greengrow.aalsmeer"},
+                "crm_opportunity.owner_user_id": "Sales Team",
+                "crm_opportunity.pipeline": "after_sales",
+                "crm_opportunity.stage": "solution",
+                "crm_opportunity.status": "open",
+                "crm_opportunity.currency": "EUR",
+                "crm_opportunity.value": 18450,
+                "crm_opportunity.probability": 40,
+                "crm_opportunity.expected_close_date": "2026-05-08",
+                "crm_opportunity.next_activity_date": "2026-04-16",
+                "crm_opportunity.source": "existing_customer",
+                "crm_opportunity.quote_state": "quote_needed",
+                "crm_opportunity.description": "Potential add-on control unit package after the main lighting expansion.",
+                "crm_opportunity.notes": "Shows second pipeline/use case without duplicating the customer or site.",
+            },
+        },
+        {
+            "alias": "activity.desert_bloom.followup",
+            "entity_id": "entity.crm_activity",
+            "match": {"crm_activity.title": "Follow up on Desert Bloom quote approval"},
+            "record": {
+                "crm_activity.title": "Follow up on Desert Bloom quote approval",
+                "crm_activity.activity_type": "quote_follow_up",
+                "crm_activity.status": "planned",
+                "crm_activity.due_date": "2026-04-09",
+                "crm_activity.owner_user_id": "Sales Team",
+                "crm_activity.company_id": {"$ref": "contact.desert_bloom"},
+                "crm_activity.opportunity_id": {"$ref": "opportunity.desert_bloom.quoted"},
+                "crm_activity.site_id": {"$ref": "site.desert_bloom.dubai"},
+                "crm_activity.notes": "Ask whether deposit approval is on this week's finance agenda.",
+            },
+        },
+        {
+            "alias": "activity.greengrow.site_handoff",
+            "entity_id": "entity.crm_activity",
+            "match": {"crm_activity.title": "Operations handoff for GreenGrow Aalsmeer"},
+            "record": {
+                "crm_activity.title": "Operations handoff for GreenGrow Aalsmeer",
+                "crm_activity.activity_type": "site_visit",
+                "crm_activity.status": "planned",
+                "crm_activity.due_date": "2026-04-11",
+                "crm_activity.owner_user_id": "Operations Team",
+                "crm_activity.company_id": {"$ref": "contact.greengrow"},
+                "crm_activity.opportunity_id": {"$ref": "opportunity.greengrow.won"},
+                "crm_activity.site_id": {"$ref": "site.greengrow.aalsmeer"},
+                "crm_activity.notes": "Review delivery constraints and install access before the supplier shipment lands.",
+            },
+        },
+        {
+            "alias": "activity.volga.loss_review",
+            "entity_id": "entity.crm_activity",
+            "match": {"crm_activity.title": "Log Volga phase-two loss reason"},
+            "record": {
+                "crm_activity.title": "Log Volga phase-two loss reason",
+                "crm_activity.activity_type": "call",
+                "crm_activity.status": "done",
+                "crm_activity.due_date": "2026-04-04",
+                "crm_activity.owner_user_id": "Sales Team",
+                "crm_activity.company_id": {"$ref": "contact.volga"},
+                "crm_activity.opportunity_id": {"$ref": "opportunity.volga.lost"},
+                "crm_activity.site_id": {"$ref": "site.volga.karaganda"},
+                "crm_activity.notes": "Customer confirmed phase two is deferred, not awarded to competitor.",
+            },
+        },
+        {
+            "alias": "activity.aurora.qualify",
+            "entity_id": "entity.crm_activity",
+            "match": {"crm_activity.title": "Qualify Aurora Herbs enquiry"},
+            "record": {
+                "crm_activity.title": "Qualify Aurora Herbs enquiry",
+                "crm_activity.activity_type": "call",
+                "crm_activity.status": "planned",
+                "crm_activity.due_date": "2026-04-10",
+                "crm_activity.owner_user_id": "Sales Team",
+                "crm_activity.lead_id": {"$ref": "lead.trade_show.aurora"},
+                "crm_activity.notes": "Confirm whether this should become a formal opportunity or stay as a reseller lead.",
+            },
+        },
+        {
+            "alias": "activity.desert_bloom.overdue",
+            "entity_id": "entity.crm_activity",
+            "match": {"crm_activity.title": "Send Desert Bloom spec comparison"},
+            "record": {
+                "crm_activity.title": "Send Desert Bloom spec comparison",
+                "crm_activity.activity_type": "email_follow_up",
+                "crm_activity.status": "planned",
+                "crm_activity.due_date": "2026-04-05",
+                "crm_activity.owner_user_id": "Sales Team",
+                "crm_activity.company_id": {"$ref": "contact.desert_bloom"},
+                "crm_activity.opportunity_id": {"$ref": "opportunity.desert_bloom.quoted"},
+                "crm_activity.site_id": {"$ref": "site.desert_bloom.dubai"},
+                "crm_activity.notes": "Intentionally overdue demo task for dashboard visibility.",
+            },
+        },
+    ]
+
+
 def patch_quote_links(
     base_url: str,
     aliases: dict[str, CreatedRecord],
@@ -1000,30 +1241,43 @@ def patch_quote_links(
     dry_run: bool,
 ) -> None:
     links = [
-        ("quote.a", "order.a", "CO-1001"),
-        ("quote.c", "order.c", "CO-1003"),
+        ("quote.a", "order.a"),
+        ("quote.c", "order.c"),
     ]
-    for quote_alias, order_alias, order_number in links:
+    for quote_alias, order_alias in links:
         quote = aliases.get(quote_alias)
         order = aliases.get(order_alias)
         if not quote or not order:
             continue
+        order_number = record_number(aliases, order_alias, "biz_order.order_number", order_alias)
+        quote_number = record_number(aliases, quote_alias, "biz_quote.quote_number", quote_alias)
         if dry_run:
             print(f"[seed] plan link {quote_alias} -> {order_number}")
             continue
-        payload = dict(quote.record)
-        payload["biz_quote.status"] = "accepted"
-        payload["biz_quote.linked_customer_order_id"] = order.record_id
-        payload["biz_quote.linked_customer_order_number"] = order_number
-        updated = update_record(
+        quote_payload = dict(quote.record)
+        quote_payload["biz_quote.status"] = "accepted"
+        quote_payload["biz_quote.linked_customer_order_id"] = order.record_id
+        quote_payload["biz_quote.linked_customer_order_number"] = order_number
+        updated_quote = update_record(
             base_url,
             "entity.biz_quote",
             quote.record_id,
-            payload,
+            quote_payload,
             token=token,
             workspace_id=workspace_id,
         )
-        aliases[quote_alias] = updated
+        aliases[quote_alias] = updated_quote
+        order_payload = dict(order.record)
+        order_payload["biz_order.source_quote_number"] = quote_number
+        updated_order = update_record(
+            base_url,
+            "entity.biz_order",
+            order.record_id,
+            order_payload,
+            token=token,
+            workspace_id=workspace_id,
+        )
+        aliases[order_alias] = updated_order
         print(f"[seed] linked   {quote_alias} -> {order_number}")
 
 
@@ -1037,7 +1291,7 @@ def patch_order_links(
 ) -> None:
     links = [
         ("order.a", {"biz_order.primary_purchase_order_id": "po.a", "biz_order.deposit_invoice_id": "invoice.a.deposit"}),
-        ("order.c", {"biz_order.primary_purchase_order_id": "po.c", "biz_order.final_invoice_id": "invoice.c.final"}),
+        ("order.c", {"biz_order.primary_purchase_order_id": "po.c", "biz_order.final_invoice_id": "invoice.c.final", "biz_order.status": "shipped"}),
     ]
     for order_alias, field_aliases in links:
         order = aliases.get(order_alias)
@@ -1046,6 +1300,10 @@ def patch_order_links(
         payload = dict(order.record)
         changed = False
         for field_id, related_alias in field_aliases.items():
+            if field_id == "biz_order.status":
+                payload[field_id] = related_alias
+                changed = True
+                continue
             related = aliases.get(related_alias)
             if not related:
                 continue
@@ -1053,6 +1311,7 @@ def patch_order_links(
             changed = True
         if not changed:
             continue
+        order_number = record_number(aliases, order_alias, "biz_order.order_number", order_alias)
         if dry_run:
             print(f"[seed] plan link {order_alias} workflow ids")
             continue
@@ -1066,6 +1325,36 @@ def patch_order_links(
         )
         aliases[order_alias] = updated
         print(f"[seed] linked   {order_alias} workflow ids")
+        for related_alias in ("po.a", "po.c"):
+            po = aliases.get(related_alias)
+            if not po or po.record.get("biz_purchase_order.source_customer_order_id") != order.record_id:
+                continue
+            po_payload = dict(po.record)
+            po_payload["biz_purchase_order.source_customer_order_number"] = order_number
+            aliases[related_alias] = update_record(
+                base_url,
+                "entity.biz_purchase_order",
+                po.record_id,
+                po_payload,
+                token=token,
+                workspace_id=workspace_id,
+            )
+        for related_alias in ("invoice.a.deposit", "invoice.c.final"):
+            invoice = aliases.get(related_alias)
+            if not invoice or invoice.record.get("biz_invoice.source_order_id") != order.record_id:
+                continue
+            invoice_payload = dict(invoice.record)
+            invoice_payload["biz_invoice.source_order_number"] = order_number
+            if related_alias == "invoice.c.final":
+                invoice_payload["biz_invoice.status"] = "part_paid"
+            aliases[related_alias] = update_record(
+                base_url,
+                "entity.biz_invoice",
+                invoice.record_id,
+                invoice_payload,
+                token=token,
+                workspace_id=workspace_id,
+            )
 
 
 def main() -> None:
@@ -1083,8 +1372,6 @@ def main() -> None:
         raise SystemExit("--base-url or OCTO_BASE_URL is required")
     aliases: dict[str, CreatedRecord] = {}
 
-    for spec in SETTINGS_SPECS:
-        create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run)
     for spec in CONTACTS:
         create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run)
     for spec in product_specs():
@@ -1094,6 +1381,10 @@ def main() -> None:
 
     patch_quote_links(base_url, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run)
     patch_order_links(base_url, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run)
+    for spec in document_specs(aliases):
+        create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run)
+    for spec in crm_specs(aliases):
+        create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run)
     print("[seed] complete")
 
 

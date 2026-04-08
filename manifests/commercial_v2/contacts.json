@@ -5,7 +5,7 @@
     "key": "biz_contacts",
     "name": "Contacts",
     "version": "1.0.0",
-    "description": "Customers, suppliers, and factory partners for a commercial workflow workspace.",
+    "description": "NLight and EcoTech customers, suppliers, and factory partners for the commercial workflow.",
     "category": "Commercial",
     "icon_key": "lucide:Users"
   },
@@ -34,6 +34,7 @@
   "entities": [
     {
       "id": "entity.biz_contact",
+      "label": "Contact",
       "display_field": "biz_contact.name",
       "fields": [
         { "id": "biz_contact.id", "type": "uuid", "label": "ID", "readonly": true },
@@ -65,15 +66,24 @@
             { "value": "USD", "label": "USD" }
           ]
         },
-        { "id": "biz_contact.billing_address", "type": "text", "label": "Billing Address" },
-        { "id": "biz_contact.shipping_address", "type": "text", "label": "Shipping Address" },
+        { "id": "biz_contact.billing_street", "type": "string", "label": "Billing Street" },
+        { "id": "biz_contact.billing_street2", "type": "string", "label": "Billing Street 2" },
+        { "id": "biz_contact.billing_city", "type": "string", "label": "Billing City" },
+        { "id": "biz_contact.billing_state", "type": "string", "label": "Billing State / Region" },
+        { "id": "biz_contact.billing_postcode", "type": "string", "label": "Billing Postcode" },
+        { "id": "biz_contact.billing_country", "type": "string", "label": "Billing Country" },
+        { "id": "biz_contact.shipping_street", "type": "string", "label": "Shipping Street" },
+        { "id": "biz_contact.shipping_street2", "type": "string", "label": "Shipping Street 2" },
+        { "id": "biz_contact.shipping_city", "type": "string", "label": "Shipping City" },
+        { "id": "biz_contact.shipping_state", "type": "string", "label": "Shipping State / Region" },
+        { "id": "biz_contact.shipping_postcode", "type": "string", "label": "Shipping Postcode" },
+        { "id": "biz_contact.shipping_country", "type": "string", "label": "Shipping Country" },
         { "id": "biz_contact.notes", "type": "text", "label": "Notes" },
         { "id": "biz_contact.is_active", "type": "bool", "label": "Active", "default": true }
       ]
     }
   ],
   "actions": [
-    { "id": "action.refresh", "kind": "refresh", "label": "Refresh" },
     { "id": "action.contact_new", "kind": "open_form", "label": "New Contact", "target": "biz_contact.form" },
     {
       "id": "action.contact_deactivate",
@@ -111,7 +121,7 @@
         "search": {
           "enabled": true,
           "placeholder": "Search contacts...",
-          "fields": ["biz_contact.name", "biz_contact.email", "biz_contact.country"]
+          "fields": ["biz_contact.name", "biz_contact.email", "biz_contact.country", "biz_contact.billing_city", "biz_contact.shipping_city"]
         },
         "filters": [
           { "id": "all", "label": "All Contacts", "domain": { "op": "exists", "field": "biz_contact.name" } },
@@ -149,8 +159,18 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
-            "biz_contact.billing_address",
-            "biz_contact.shipping_address"
+            "biz_contact.billing_street",
+            "biz_contact.billing_street2",
+            "biz_contact.billing_city",
+            "biz_contact.billing_state",
+            "biz_contact.billing_postcode",
+            "biz_contact.billing_country",
+            "biz_contact.shipping_street",
+            "biz_contact.shipping_street2",
+            "biz_contact.shipping_city",
+            "biz_contact.shipping_state",
+            "biz_contact.shipping_postcode",
+            "biz_contact.shipping_country"
           ]
         },
         {
@@ -165,8 +185,37 @@
       "header": {
         "secondary_actions": [
           { "action_id": "action.contact_activate" },
-          { "action_id": "action.contact_deactivate" },
-          { "action_id": "action.refresh" }
+          { "action_id": "action.contact_deactivate" }
+        ]
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "biz_contact.name",
+          "biz_contact.contact_type",
+          "biz_contact.company_entity_scope",
+          "biz_contact.email",
+          "biz_contact.phone",
+          "biz_contact.website",
+          "biz_contact.country",
+          "biz_contact.currency_preference",
+          "biz_contact.billing_street",
+          "biz_contact.billing_street2",
+          "biz_contact.billing_city",
+          "biz_contact.billing_state",
+          "biz_contact.billing_postcode",
+          "biz_contact.billing_country",
+          "biz_contact.shipping_street",
+          "biz_contact.shipping_street2",
+          "biz_contact.shipping_city",
+          "biz_contact.shipping_state",
+          "biz_contact.shipping_postcode",
+          "biz_contact.shipping_country",
+          "biz_contact.notes",
+          "biz_contact.is_active"
         ]
       }
     },

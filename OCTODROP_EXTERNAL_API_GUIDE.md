@@ -61,10 +61,12 @@ Metadata list pagination params:
 
 ## Records API
 
+Records are addressed by manifest entity id. Use `/ext/v1/meta/entities` first to discover installed entity ids and field ids.
+
 ### List records
 
 ```bash
-curl "https://your-octodrop.example.com/ext/v1/records/entity.construction_project?limit=25" \
+curl "https://your-octodrop.example.com/ext/v1/records/ENTITY_ID?limit=25" \
   -H "X-Api-Key: octo_live_..."
 ```
 
@@ -87,20 +89,20 @@ Record list responses include:
 ### Get one record
 
 ```bash
-curl https://your-octodrop.example.com/ext/v1/records/entity.construction_project/RECORD_ID \
+curl https://your-octodrop.example.com/ext/v1/records/ENTITY_ID/RECORD_ID \
   -H "X-Api-Key: octo_live_..."
 ```
 
 ### Create a record
 
 ```bash
-curl https://your-octodrop.example.com/ext/v1/records/entity.construction_project \
+curl https://your-octodrop.example.com/ext/v1/records/ENTITY_ID \
   -H "X-Api-Key: octo_live_..." \
   -H "Content-Type: application/json" \
   -d '{
     "record": {
-      "construction_project.name": "West Yard Upgrade",
-      "construction_project.status": "planned"
+      "entity.name": "Example record",
+      "entity.status": "draft"
     }
   }'
 ```
@@ -110,13 +112,13 @@ curl https://your-octodrop.example.com/ext/v1/records/entity.construction_projec
 `PUT` replaces the full validated payload.
 
 ```bash
-curl -X PUT https://your-octodrop.example.com/ext/v1/records/entity.construction_project/RECORD_ID \
+curl -X PUT https://your-octodrop.example.com/ext/v1/records/ENTITY_ID/RECORD_ID \
   -H "X-Api-Key: octo_live_..." \
   -H "Content-Type: application/json" \
   -d '{
     "record": {
-      "construction_project.name": "West Yard Upgrade",
-      "construction_project.status": "active"
+      "entity.name": "Example record",
+      "entity.status": "active"
     }
   }'
 ```
@@ -126,15 +128,78 @@ curl -X PUT https://your-octodrop.example.com/ext/v1/records/entity.construction
 `PATCH` merges only the provided fields, then validates the final record.
 
 ```bash
-curl -X PATCH https://your-octodrop.example.com/ext/v1/records/entity.construction_project/RECORD_ID \
+curl -X PATCH https://your-octodrop.example.com/ext/v1/records/ENTITY_ID/RECORD_ID \
   -H "X-Api-Key: octo_live_..." \
   -H "Content-Type: application/json" \
   -d '{
     "record": {
-      "construction_project.status": "completed"
+      "entity.status": "completed"
     }
   }'
 ```
+
+### Delete a record
+
+```bash
+curl -X DELETE https://your-octodrop.example.com/ext/v1/records/ENTITY_ID/RECORD_ID \
+  -H "X-Api-Key: octo_live_..."
+```
+
+Record writes and deletes require the `records.write` scope. All writes run through the same entity access, field visibility, validation, lookup-domain, and document-numbering rules as the main Octodrop app.
+
+## Attachments API
+
+### Upload an attachment
+
+```bash
+curl -X POST https://your-octodrop.example.com/ext/v1/attachments/upload \
+  -H "X-Api-Key: octo_live_..." \
+  -F "file=@/path/to/file.pdf"
+```
+
+The response includes an `attachment.id`. Uploading creates the file but does not automatically link it to a record.
+
+### Link an attachment to a record
+
+```bash
+curl -X POST https://your-octodrop.example.com/ext/v1/attachments/link \
+  -H "X-Api-Key: octo_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "attachment_id": "ATTACHMENT_ID",
+    "entity_id": "ENTITY_ID",
+    "record_id": "RECORD_ID",
+    "purpose": "default"
+  }'
+```
+
+### List record attachments
+
+```bash
+curl https://your-octodrop.example.com/ext/v1/records/ENTITY_ID/RECORD_ID/attachments \
+  -H "X-Api-Key: octo_live_..."
+```
+
+Optional query param:
+
+- `purpose`
+
+### Download an attachment
+
+```bash
+curl -L https://your-octodrop.example.com/ext/v1/attachments/ATTACHMENT_ID/download \
+  -H "X-Api-Key: octo_live_..." \
+  -o attachment.bin
+```
+
+### Unlink an attachment from a record
+
+```bash
+curl -X DELETE https://your-octodrop.example.com/ext/v1/records/ENTITY_ID/RECORD_ID/attachments/ATTACHMENT_ID \
+  -H "X-Api-Key: octo_live_..."
+```
+
+If the attachment has no remaining links, Octodrop may remove the stored file as part of cleanup.
 
 ## Automations API
 
@@ -173,6 +238,22 @@ curl -X POST https://your-octodrop.example.com/ext/v1/automations/AUTOMATION_ID/
 ```
 
 This queues a run, it does not execute inline.
+
+### List automation runs
+
+```bash
+curl "https://your-octodrop.example.com/ext/v1/automations/AUTOMATION_ID/runs?limit=50" \
+  -H "X-Api-Key: octo_live_..."
+```
+
+### Get one automation run
+
+```bash
+curl https://your-octodrop.example.com/ext/v1/automation-runs/RUN_ID \
+  -H "X-Api-Key: octo_live_..."
+```
+
+Use these endpoints to poll a queued automation run after receiving the `run.id` from the queue response.
 
 ## Webhook Subscriptions
 

@@ -1,5 +1,17 @@
 import React, { useEffect, useMemo } from "react";
-import { BookOpen, Braces, Copy, ExternalLink, FileJson, KeyRound, Radio, ShieldCheck, Terminal } from "lucide-react";
+import {
+  BookOpen,
+  Copy,
+  Database,
+  ExternalLink,
+  FileJson,
+  KeyRound,
+  Radio,
+  ShieldCheck,
+  Terminal,
+  UploadCloud,
+  Workflow,
+} from "lucide-react";
 import { API_URL } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
@@ -23,6 +35,47 @@ function buildDocUrl(path) {
   return `${resolveApiBaseUrl()}${path}`;
 }
 
+function CodeBlock({ children }) {
+  return (
+    <pre className="overflow-x-auto rounded-box border border-base-300 bg-base-200/70 p-4 text-xs leading-6">
+      <code>{children}</code>
+    </pre>
+  );
+}
+
+function Section({ title, description, children }) {
+  return (
+    <section className="rounded-box border border-base-300 bg-base-100 p-4">
+      <div className="text-sm font-semibold">{title}</div>
+      {description ? <div className="mt-1 text-sm leading-6 opacity-70">{description}</div> : null}
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
+function SurfaceCard({ icon: Icon, title, description, endpoints }) {
+  return (
+    <div className="rounded-box border border-base-300 bg-base-100 p-4">
+      <div className="flex items-start gap-3">
+        <div className="rounded-box bg-base-200 p-2">
+          <Icon className="h-5 w-5 text-success" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold">{title}</div>
+          <div className="mt-1 text-sm leading-5 opacity-70">{description}</div>
+          <div className="mt-3 space-y-1">
+            {endpoints.map((endpoint) => (
+              <div key={endpoint} className="truncate font-mono text-xs text-base-content/70">
+                {endpoint}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ExternalApiDocsRedirectPage({ path, label }) {
   const url = useMemo(() => buildDocUrl(path), [path]);
 
@@ -33,29 +86,25 @@ export function ExternalApiDocsRedirectPage({ path, label }) {
 
   return (
     <div className="min-h-screen bg-base-200 p-4 text-base-content md:p-6">
-      <div className="mx-auto max-w-4xl">
+      <div className="mx-auto max-w-3xl">
         <div className={DESKTOP_PAGE_SHELL}>
           <div className={DESKTOP_PAGE_SHELL_BODY}>
-            <div className="flex items-start justify-between gap-4 border-b border-base-300 pb-4">
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">External API</p>
-                <h1 className="mt-1 text-2xl font-semibold tracking-tight">{label || "Redirecting"}</h1>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-base-content/70">
-                  This frontend route is handing off to the backend API documentation host.
-                </p>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] opacity-50">Octodrop API</p>
+                <h1 className="mt-2 text-2xl font-semibold tracking-tight">{label || "Redirecting"}</h1>
+                <p className="mt-2 text-sm leading-6 opacity-70">Opening the backend documentation endpoint.</p>
               </div>
               <span className="badge badge-success badge-outline">v1</span>
             </div>
             <div className="mt-5 rounded-box border border-base-300 bg-base-200/60 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">Destination</p>
-              <p className="mt-2 break-all font-mono text-sm">{url}</p>
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] opacity-50">Destination</div>
+              <div className="mt-2 break-all font-mono text-sm">{url}</div>
             </div>
-            <div className="mt-5">
-              <a className="btn btn-primary btn-sm gap-2" href={url}>
-                <ExternalLink className="h-4 w-4" />
-                Open now
-              </a>
-            </div>
+            <a className="btn btn-primary btn-sm mt-5 gap-2" href={url}>
+              <ExternalLink className="h-4 w-4" />
+              Open now
+            </a>
           </div>
         </div>
       </div>
@@ -66,173 +115,158 @@ export function ExternalApiDocsRedirectPage({ path, label }) {
 export default function ExternalApiDocsPage() {
   const { pushToast } = useToast();
   const apiBaseUrl = useMemo(() => resolveApiBaseUrl(), []);
+  const curlExample = `curl "${apiBaseUrl || "https://api.example.com"}/ext/v1/meta/entities?limit=50" \\
+  -H "X-Api-Key: octo_live_..."`;
+
   const links = useMemo(
     () => [
-      {
-        id: "docs",
-        label: "Swagger UI",
-        description: "Interactive REST docs for the public Octodrop API.",
-        icon: Terminal,
-        url: buildDocUrl("/ext/v1/docs"),
-        tone: "text-success",
-      },
-      {
-        id: "redoc",
-        label: "ReDoc",
-        description: "Reference-style documentation for the same external API.",
-        icon: BookOpen,
-        url: buildDocUrl("/ext/v1/redoc"),
-        tone: "text-info",
-      },
-      {
-        id: "openapi",
-        label: "OpenAPI JSON",
-        description: "Machine-readable schema for SDKs, Postman imports, and code generation.",
-        icon: FileJson,
-        url: buildDocUrl("/ext/v1/openapi.json"),
-        tone: "text-warning",
-      },
-      {
-        id: "guide",
-        label: "Guide",
-        description: "Human-readable quickstart with auth, records, automations, and webhooks.",
-        icon: Braces,
-        url: buildDocUrl("/ext/v1/guide.md"),
-        tone: "text-primary",
-      },
-      {
-        id: "events",
-        label: "Event Catalog",
-        description: "Public webhook event names, payload envelope, and example event shapes for subscribers.",
-        icon: Radio,
-        url: buildDocUrl("/ext/v1/events.md"),
-        tone: "text-error",
-      },
+      { label: "Interactive Docs", href: buildDocUrl("/ext/v1/docs"), icon: Terminal },
+      { label: "Reference Docs", href: buildDocUrl("/ext/v1/redoc"), icon: BookOpen },
+      { label: "OpenAPI JSON", href: buildDocUrl("/ext/v1/openapi.json"), icon: FileJson },
+      { label: "Integration Guide", href: buildDocUrl("/ext/v1/guide.md"), icon: BookOpen },
+      { label: "Webhook Events", href: buildDocUrl("/ext/v1/events.md"), icon: Radio },
     ],
     [],
   );
 
-  async function handleCopy(value) {
+  async function copy(value, label = "Copied") {
     try {
       if (typeof navigator === "undefined" || !navigator.clipboard) throw new Error("Clipboard unavailable");
       await navigator.clipboard.writeText(value);
-      pushToast("success", "Copied link");
+      pushToast("success", label);
     } catch {
-      pushToast("error", "Could not copy link");
+      pushToast("error", "Could not copy");
     }
   }
 
   return (
     <div className="min-h-screen bg-base-200 p-4 text-base-content md:p-6">
-      <div className="mx-auto max-w-6xl">
+      <main className="mx-auto max-w-6xl">
         <div className={DESKTOP_PAGE_SHELL}>
-          <div className={`${DESKTOP_PAGE_SHELL_BODY} gap-5`}>
-            <div className="flex flex-col gap-4 border-b border-base-300 pb-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
+          <div className={`${DESKTOP_PAGE_SHELL_BODY} gap-4`}>
+            <div className="flex flex-col gap-4 border-b border-base-300 pb-5 lg:flex-row lg:items-start lg:justify-between">
+              <div className="max-w-3xl">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">
-                    Octodrop External API
-                  </p>
-                  <span className="badge badge-success badge-outline">v1</span>
+                  <span className="badge badge-success badge-outline">Octodrop API v1</span>
+                  <span className="badge badge-ghost">Client ready</span>
                 </div>
-                <h1 className="mt-2 text-2xl font-semibold tracking-tight md:text-3xl">Developer documentation</h1>
-                <p className="mt-3 max-w-3xl text-sm leading-6 text-base-content/70">
-                  API reference, schema exports, webhook event docs, and implementation guidance for external systems
-                  integrating with Octodrop.
+                <h1 className="mt-3 text-3xl font-semibold tracking-tight">Public API documentation</h1>
+                <p className="mt-3 text-sm leading-6 opacity-70">
+                  Use the public API to read metadata, work with records, attach files, trigger published automations,
+                  and receive signed webhook events. Every request is scoped to the workspace behind the API key.
                 </p>
               </div>
-              <div className="rounded-box border border-base-300 bg-base-200/60 p-3 text-left lg:min-w-80">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/50">API host</p>
-                <p className="mt-2 break-all font-mono text-xs text-base-content/80">{apiBaseUrl || "Not configured"}</p>
+              <div className="rounded-box border border-base-300 bg-base-200/60 p-3 lg:min-w-96">
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] opacity-50">Base URL</div>
+                <div className="mt-2 break-all font-mono text-xs">{apiBaseUrl || "Not configured"}</div>
+                <button className="btn btn-ghost btn-xs mt-3 gap-1" type="button" onClick={() => copy(apiBaseUrl, "Base URL copied")}>
+                  <Copy className="h-3.5 w-3.5" />
+                  Copy base URL
+                </button>
               </div>
             </div>
 
             <div className="grid gap-3 md:grid-cols-3">
-              <div className="rounded-box border border-base-300 bg-base-100 p-4 shadow-sm">
-                <div className="flex items-center gap-3">
-                  <KeyRound className="h-5 w-5 text-success" />
-                  <div>
-                    <p className="text-sm font-semibold">API key auth</p>
-                    <p className="text-xs text-base-content/60">Use scoped `X-Api-Key` credentials.</p>
-                  </div>
-                </div>
+              <div className="rounded-box border border-base-300 bg-base-100 p-4">
+                <KeyRound className="h-5 w-5 text-success" />
+                <div className="mt-3 text-sm font-semibold">API key auth</div>
+                <div className="mt-1 text-sm opacity-70">Send `X-Api-Key` with a scoped credential from Settings.</div>
               </div>
-              <div className="rounded-box border border-base-300 bg-base-100 p-4 shadow-sm">
-                <div className="flex items-center gap-3">
-                  <ShieldCheck className="h-5 w-5 text-info" />
-                  <div>
-                    <p className="text-sm font-semibold">Tenant-scoped</p>
-                    <p className="text-xs text-base-content/60">Records resolve inside the credential workspace.</p>
-                  </div>
-                </div>
+              <div className="rounded-box border border-base-300 bg-base-100 p-4">
+                <ShieldCheck className="h-5 w-5 text-info" />
+                <div className="mt-3 text-sm font-semibold">Tenant scoped</div>
+                <div className="mt-1 text-sm opacity-70">Keys can only see records inside their workspace and scope.</div>
               </div>
-              <div className="rounded-box border border-base-300 bg-base-100 p-4 shadow-sm">
-                <div className="flex items-center gap-3">
-                  <Radio className="h-5 w-5 text-warning" />
-                  <div>
-                    <p className="text-sm font-semibold">Signed webhooks</p>
-                    <p className="text-xs text-base-content/60">Verify signatures and replay windows.</p>
-                  </div>
-                </div>
+              <div className="rounded-box border border-base-300 bg-base-100 p-4">
+                <Radio className="h-5 w-5 text-warning" />
+                <div className="mt-3 text-sm font-semibold">Signed webhooks</div>
+                <div className="mt-1 text-sm opacity-70">Outbound events support HMAC signatures and replay checks.</div>
               </div>
             </div>
 
-            <div>
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-semibold">Documentation endpoints</h2>
-                  <p className="text-sm text-base-content/60">Open the interactive docs or copy stable backend URLs.</p>
+            <Section title="Quickstart" description="Create a scoped API credential, then call metadata first to discover installed entities and field IDs.">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+                <div className="min-w-0 flex-1">
+                  <CodeBlock>{curlExample}</CodeBlock>
                 </div>
+                <button className="btn btn-primary btn-sm gap-2" type="button" onClick={() => copy(curlExample, "Quickstart copied")}>
+                  <Copy className="h-4 w-4" />
+                  Copy
+                </button>
               </div>
+            </Section>
+
+            <Section title="Public API surface" description="This is the supported client-facing surface for v1. Use the OpenAPI docs for parameters and response schemas.">
               <div className="grid gap-3 lg:grid-cols-2">
+                <SurfaceCard
+                  icon={Database}
+                  title="Metadata"
+                  description="Discover installed entities and fields before reading or writing records."
+                  endpoints={["GET /ext/v1/meta/entities"]}
+                />
+                <SurfaceCard
+                  icon={Database}
+                  title="Records"
+                  description="List, search, read, create, replace, patch, and delete records through manifest validation."
+                  endpoints={[
+                    "GET /ext/v1/records/{entity_id}",
+                    "POST /ext/v1/records/{entity_id}",
+                    "GET|PUT|PATCH|DELETE /ext/v1/records/{entity_id}/{record_id}",
+                  ]}
+                />
+                <SurfaceCard
+                  icon={UploadCloud}
+                  title="Attachments"
+                  description="Upload files, link them to records, list record attachments, download, and unlink."
+                  endpoints={[
+                    "POST /ext/v1/attachments/upload",
+                    "POST /ext/v1/attachments/link",
+                    "GET /ext/v1/records/{entity_id}/{record_id}/attachments",
+                    "GET /ext/v1/attachments/{attachment_id}/download",
+                  ]}
+                />
+                <SurfaceCard
+                  icon={Workflow}
+                  title="Automations"
+                  description="List published automations, queue a run, and poll run status."
+                  endpoints={[
+                    "GET /ext/v1/automations",
+                    "POST /ext/v1/automations/{automation_id}/runs",
+                    "GET /ext/v1/automation-runs/{run_id}",
+                  ]}
+                />
+              </div>
+            </Section>
+
+            <Section title="Reference links" description="Stable backend links for clients, SDK generation, and webhook implementation.">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                 {links.map((link) => {
                   const Icon = link.icon;
                   return (
-                    <div key={link.id} className="rounded-box border border-base-300 bg-base-100 p-4 shadow-sm">
-                      <div className="flex items-start gap-3">
-                        <div className="rounded-box bg-base-200 p-2">
-                          <Icon className={`h-5 w-5 ${link.tone}`} />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div>
-                              <h3 className="text-sm font-semibold">{link.label}</h3>
-                              <p className="mt-1 text-sm leading-5 text-base-content/65">{link.description}</p>
-                            </div>
-                            <a className="btn btn-primary btn-xs gap-1" href={link.url} target="_blank" rel="noreferrer">
-                              <ExternalLink className="h-3.5 w-3.5" />
-                              Open
-                            </a>
-                          </div>
-                          <div className="mt-3 flex items-center gap-2 rounded-box border border-base-300 bg-base-200/50 px-3 py-2">
-                            <p className="min-w-0 flex-1 truncate font-mono text-xs text-base-content/75">{link.url}</p>
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-xs gap-1"
-                              onClick={() => handleCopy(link.url)}
-                            >
-                              <Copy className="h-3.5 w-3.5" />
-                              Copy
-                            </button>
-                          </div>
-                        </div>
+                    <a key={link.href} className="rounded-box border border-base-300 bg-base-100 p-4 transition hover:border-success" href={link.href} target="_blank" rel="noreferrer">
+                      <Icon className="h-5 w-5 text-success" />
+                      <div className="mt-3 flex items-center justify-between gap-2 text-sm font-semibold">
+                        <span>{link.label}</span>
+                        <ExternalLink className="h-3.5 w-3.5 opacity-60" />
                       </div>
-                    </div>
+                    </a>
                   );
                 })}
               </div>
-            </div>
+            </Section>
 
-            <div className="rounded-box border border-base-300 bg-base-200/60 p-4">
-              <h2 className="text-sm font-semibold">Deployment note</h2>
-              <p className="mt-1 text-sm leading-6 text-base-content/65">
-                These links resolve against the configured backend API host. If the web and API hosts differ, this page
-                still sends developers to the service that owns the OpenAPI schema and webhook docs.
-              </p>
-            </div>
+            <Section title="Client handoff checklist">
+              <ul className="space-y-2 text-sm leading-6 opacity-75">
+                <li>Create one API credential per external system and grant the minimum scopes required.</li>
+                <li>Send `X-Api-Key` on every `/ext/v1` request. Do not put the key in query strings.</li>
+                <li>Use `/ext/v1/meta/entities` to discover entity and field IDs instead of hardcoding labels.</li>
+                <li>Use cursor pagination for lists and handle `429` with the `Retry-After` header.</li>
+                <li>Verify webhook signatures with `X-Octo-Timestamp` and `X-Octo-Signature` before processing events.</li>
+              </ul>
+            </Section>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

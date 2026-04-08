@@ -64,3 +64,17 @@ order by created_at desc;
 - Add dashboard/alert wiring in the chosen logging platform.
 - Add request id, workspace id, actor id, route, status code, and client IP to every security-relevant log.
 
+## Security Center
+
+Octodrop includes a superadmin-only Security Center at `/security`.
+
+Use it for investigation and review of existing security-relevant telemetry:
+
+- external API request denials and 5xx responses from `api_request_logs`
+- rejected or failed webhook events from `webhook_events`
+- failed integration calls from `integration_request_logs`
+- module install/apply/rollback activity from `module_audit`
+- current `superadmin` platform role rows
+
+This page is not the paging channel. Production critical alerts should still be routed through the deployment/logging
+provider to Slack, email, or on-call tooling.

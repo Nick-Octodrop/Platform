@@ -1,0 +1,1439 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "biz_crm",
+    "key": "biz_crm",
+    "name": "CRM",
+    "version": "1.0.0",
+    "description": "NLight sales workspace replacing Pipedrive, with quote and order handoff built in.",
+    "category": "Commercial",
+    "icon_key": "lucide:Handshake"
+  },
+  "depends_on": {
+    "required": [
+      { "module": "biz_contacts", "version": ">=1.0.0" },
+      { "module": "biz_quotes", "version": ">=1.0.0" },
+      { "module": "biz_orders", "version": ">=1.0.0" },
+      { "module": "biz_documents", "version": ">=1.0.0" }
+    ]
+  },
+  "app": {
+    "home": "page:crm.dashboard_page",
+    "defaults": {
+      "entity_home_page": "page:crm_opportunity.list_page",
+      "entity_form_page": "page:crm_opportunity.form_page",
+      "entities": {
+        "entity.crm_lead": {
+          "entity_home_page": "page:crm_lead.list_page",
+          "entity_form_page": "page:crm_lead.form_page"
+        },
+        "entity.crm_opportunity": {
+          "entity_home_page": "page:crm_opportunity.list_page",
+          "entity_form_page": "page:crm_opportunity.form_page"
+        },
+        "entity.crm_activity": {
+          "entity_home_page": "page:crm_activity.list_page",
+          "entity_form_page": "page:crm_activity.form_page"
+        },
+        "entity.crm_site": {
+          "entity_home_page": "page:crm_site.list_page",
+          "entity_form_page": "page:crm_site.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Commercial",
+        "mode": "inline",
+        "items": [
+          { "label": "CRM", "to": "page:crm.dashboard_page" },
+          { "label": "Leads", "to": "page:crm_lead.list_page" },
+          { "label": "Opportunities", "to": "page:crm_opportunity.list_page" },
+          { "label": "Activities", "to": "page:crm_activity.list_page" },
+          { "label": "Sites", "to": "page:crm_site.list_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.crm_site",
+      "label": "Site",
+      "display_field": "crm_site.name",
+      "fields": [
+        { "id": "crm_site.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "crm_site.name", "type": "string", "label": "Site Name", "required": true },
+        {
+          "id": "crm_site.company_id",
+          "type": "lookup",
+          "label": "Company",
+          "entity": "entity.biz_contact",
+          "display_field": "biz_contact.name",
+          "required": true
+        },
+        { "id": "crm_site.address_line_1", "type": "string", "label": "Address Line 1" },
+        { "id": "crm_site.address_line_2", "type": "string", "label": "Address Line 2" },
+        { "id": "crm_site.city", "type": "string", "label": "City" },
+        { "id": "crm_site.region", "type": "string", "label": "Region / State" },
+        { "id": "crm_site.postcode", "type": "string", "label": "Postcode" },
+        { "id": "crm_site.country", "type": "string", "label": "Country" },
+        { "id": "crm_site.site_notes", "type": "text", "label": "Site Notes" },
+        { "id": "crm_site.is_active", "type": "bool", "label": "Active", "default": true }
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "crm_site.name",
+          "crm_site.company_id",
+          "crm_site.city",
+          "crm_site.country",
+          "crm_site.site_notes",
+          "crm_site.is_active"
+        ]
+      }
+    },
+    {
+      "id": "entity.crm_lead",
+      "label": "Lead",
+      "display_field": "crm_lead.title",
+      "fields": [
+        { "id": "crm_lead.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "crm_lead.title", "type": "string", "label": "Lead", "required": true },
+        {
+          "id": "crm_lead.status",
+          "type": "enum",
+          "label": "Status",
+          "ui": { "widget": "steps" },
+          "default": "new",
+          "options": [
+            { "value": "new", "label": "New" },
+            { "value": "contacted", "label": "Contacted" },
+            { "value": "qualified", "label": "Qualified" },
+            { "value": "disqualified", "label": "Disqualified" }
+          ]
+        },
+        {
+          "id": "crm_lead.source",
+          "type": "enum",
+          "label": "Source",
+          "default": "website",
+          "options": [
+            { "value": "website", "label": "Website" },
+            { "value": "referral", "label": "Referral" },
+            { "value": "trade_show", "label": "Trade Show" },
+            { "value": "pipedrive_import", "label": "Pipedrive Import" },
+            { "value": "repeat_customer", "label": "Repeat Customer" },
+            { "value": "manual", "label": "Manual" }
+          ]
+        },
+        {
+          "id": "crm_lead.company_id",
+          "type": "lookup",
+          "label": "Company",
+          "entity": "entity.biz_contact",
+          "display_field": "biz_contact.name"
+        },
+        { "id": "crm_lead.contact_name", "type": "string", "label": "Contact Name" },
+        { "id": "crm_lead.contact_email", "type": "string", "label": "Contact Email" },
+        { "id": "crm_lead.contact_phone", "type": "string", "label": "Contact Phone" },
+        { "id": "crm_lead.owner_user_id", "type": "user", "label": "Owner" },
+        {
+          "id": "crm_lead.currency",
+          "type": "enum",
+          "label": "Currency",
+          "default": "EUR",
+          "options": [
+            { "value": "EUR", "label": "EUR" },
+            { "value": "USD", "label": "USD" },
+            { "value": "GBP", "label": "GBP" },
+            { "value": "AED", "label": "AED" }
+          ]
+        },
+        {
+          "id": "crm_lead.estimated_value",
+          "type": "number",
+          "label": "Estimated Value",
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "crm_lead.currency", "precision": 2 }
+        },
+        { "id": "crm_lead.next_action", "type": "string", "label": "Next Action" },
+        { "id": "crm_lead.next_activity_date", "type": "date", "label": "Next Activity Date" },
+        { "id": "crm_lead.disqualification_reason", "type": "text", "label": "Disqualification Reason", "required_when": { "op": "eq", "field": "crm_lead.status", "value": "disqualified" } },
+        {
+          "id": "crm_lead.linked_opportunity_id",
+          "type": "lookup",
+          "label": "Linked Opportunity",
+          "entity": "entity.crm_opportunity",
+          "display_field": "crm_opportunity.title",
+          "readonly": true
+        },
+        { "id": "crm_lead.notes", "type": "text", "label": "Notes" }
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "crm_lead.title",
+          "crm_lead.status",
+          "crm_lead.source",
+          "crm_lead.company_id",
+          "crm_lead.contact_name",
+          "crm_lead.owner_user_id",
+          "crm_lead.estimated_value",
+          "crm_lead.next_action",
+          "crm_lead.next_activity_date",
+          "crm_lead.linked_opportunity_id",
+          "crm_lead.disqualification_reason",
+          "crm_lead.notes"
+        ]
+      }
+    },
+    {
+      "id": "entity.crm_opportunity",
+      "label": "Opportunity",
+      "display_field": "crm_opportunity.title",
+      "fields": [
+        { "id": "crm_opportunity.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "crm_opportunity.title", "type": "string", "label": "Opportunity", "required": true },
+        {
+          "id": "crm_opportunity.company_id",
+          "type": "lookup",
+          "label": "Company",
+          "entity": "entity.biz_contact",
+          "display_field": "biz_contact.name",
+          "required": true
+        },
+        { "id": "crm_opportunity.primary_contact_name", "type": "string", "label": "Primary Contact" },
+        { "id": "crm_opportunity.primary_contact_email", "type": "string", "label": "Contact Email" },
+        {
+          "id": "crm_opportunity.site_id",
+          "type": "lookup",
+          "label": "Site",
+          "entity": "entity.crm_site",
+          "display_field": "crm_site.name"
+        },
+        { "id": "crm_opportunity.owner_user_id", "type": "user", "label": "Owner" },
+        {
+          "id": "crm_opportunity.pipeline",
+          "type": "enum",
+          "label": "Pipeline",
+          "default": "nlight_sales",
+          "options": [
+            { "value": "nlight_sales", "label": "NLight Sales" },
+            { "value": "ecotech_supply", "label": "EcoTech Supply" },
+            { "value": "after_sales", "label": "After Sales" }
+          ]
+        },
+        {
+          "id": "crm_opportunity.stage",
+          "type": "enum",
+          "label": "Stage",
+          "ui": { "widget": "steps" },
+          "default": "new",
+          "options": [
+            { "value": "new", "label": "New" },
+            { "value": "discovery", "label": "Discovery" },
+            { "value": "solution", "label": "Solution Fit" },
+            { "value": "quote", "label": "Quote" },
+            { "value": "negotiation", "label": "Negotiation" },
+            { "value": "won", "label": "Won" },
+            { "value": "lost", "label": "Lost" }
+          ]
+        },
+        {
+          "id": "crm_opportunity.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "open",
+          "options": [
+            { "value": "open", "label": "Open" },
+            { "value": "won", "label": "Won" },
+            { "value": "lost", "label": "Lost" }
+          ]
+        },
+        {
+          "id": "crm_opportunity.currency",
+          "type": "enum",
+          "label": "Currency",
+          "default": "EUR",
+          "options": [
+            { "value": "EUR", "label": "EUR" },
+            { "value": "USD", "label": "USD" },
+            { "value": "GBP", "label": "GBP" },
+            { "value": "AED", "label": "AED" }
+          ]
+        },
+        {
+          "id": "crm_opportunity.value",
+          "type": "number",
+          "label": "Deal Value",
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "crm_opportunity.currency", "precision": 2 }
+        },
+        { "id": "crm_opportunity.probability", "type": "number", "label": "Probability %", "default": 25, "format": { "kind": "percent", "precision": 0 } },
+        {
+          "id": "crm_opportunity.weighted_value",
+          "type": "number",
+          "label": "Weighted Value",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "crm_opportunity.currency", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    { "ref": "$current.crm_opportunity.value" },
+                    {
+                      "op": "div",
+                      "args": [
+                        { "ref": "$current.crm_opportunity.probability" },
+                        100
+                      ]
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        { "id": "crm_opportunity.expected_close_date", "type": "date", "label": "Expected Close" },
+        { "id": "crm_opportunity.next_activity_date", "type": "date", "label": "Next Activity" },
+        {
+          "id": "crm_opportunity.source",
+          "type": "enum",
+          "label": "Source",
+          "default": "website",
+          "options": [
+            { "value": "website", "label": "Website" },
+            { "value": "referral", "label": "Referral" },
+            { "value": "trade_show", "label": "Trade Show" },
+            { "value": "pipedrive_import", "label": "Pipedrive Import" },
+            { "value": "repeat_customer", "label": "Repeat Customer" },
+            { "value": "existing_customer", "label": "Existing Customer" },
+            { "value": "manual", "label": "Manual" }
+          ]
+        },
+        {
+          "id": "crm_opportunity.quote_state",
+          "type": "enum",
+          "label": "Quote State",
+          "default": "unquoted",
+          "options": [
+            { "value": "unquoted", "label": "Unquoted" },
+            { "value": "quote_needed", "label": "Quote Needed" },
+            { "value": "quoted", "label": "Quoted" },
+            { "value": "accepted", "label": "Accepted" }
+          ]
+        },
+        {
+          "id": "crm_opportunity.linked_quote_id",
+          "type": "lookup",
+          "label": "Linked Quote",
+          "entity": "entity.biz_quote",
+          "display_field": "biz_quote.quote_number",
+          "readonly": true
+        },
+        {
+          "id": "crm_opportunity.linked_order_id",
+          "type": "lookup",
+          "label": "Linked Order",
+          "entity": "entity.biz_order",
+          "display_field": "biz_order.order_number",
+          "readonly": true
+        },
+        { "id": "crm_opportunity.won_lost_reason", "type": "text", "label": "Won / Lost Reason", "required_when": { "op": "in", "field": "crm_opportunity.stage", "value": ["won", "lost"] } },
+        { "id": "crm_opportunity.description", "type": "text", "label": "Description" },
+        { "id": "crm_opportunity.notes", "type": "text", "label": "Notes" },
+        { "id": "crm_opportunity.attachments", "type": "attachments", "label": "Attachments" }
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "crm_opportunity.title",
+          "crm_opportunity.company_id",
+          "crm_opportunity.site_id",
+          "crm_opportunity.owner_user_id",
+          "crm_opportunity.pipeline",
+          "crm_opportunity.stage",
+          "crm_opportunity.status",
+          "crm_opportunity.value",
+          "crm_opportunity.probability",
+          "crm_opportunity.expected_close_date",
+          "crm_opportunity.next_activity_date",
+          "crm_opportunity.quote_state",
+          "crm_opportunity.linked_quote_id",
+          "crm_opportunity.linked_order_id",
+          "crm_opportunity.won_lost_reason",
+          "crm_opportunity.notes"
+        ]
+      }
+    },
+    {
+      "id": "entity.crm_activity",
+      "label": "Activity",
+      "display_field": "crm_activity.title",
+      "fields": [
+        { "id": "crm_activity.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "crm_activity.title", "type": "string", "label": "Activity", "required": true },
+        {
+          "id": "crm_activity.activity_type",
+          "type": "enum",
+          "label": "Type",
+          "default": "task",
+          "options": [
+            { "value": "call", "label": "Call" },
+            { "value": "meeting", "label": "Meeting" },
+            { "value": "task", "label": "Task" },
+            { "value": "email_follow_up", "label": "Email Follow-Up" },
+            { "value": "site_visit", "label": "Site Visit" },
+            { "value": "quote_follow_up", "label": "Quote Follow-Up" }
+          ]
+        },
+        {
+          "id": "crm_activity.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "planned",
+          "options": [
+            { "value": "planned", "label": "Planned" },
+            { "value": "done", "label": "Done" },
+            { "value": "cancelled", "label": "Cancelled" }
+          ]
+        },
+        { "id": "crm_activity.due_date", "type": "date", "label": "Due Date", "required": true },
+        { "id": "crm_activity.owner_user_id", "type": "user", "label": "Owner" },
+        { "id": "crm_activity.company_id", "type": "lookup", "label": "Company", "entity": "entity.biz_contact", "display_field": "biz_contact.name" },
+        { "id": "crm_activity.lead_id", "type": "lookup", "label": "Lead", "entity": "entity.crm_lead", "display_field": "crm_lead.title" },
+        { "id": "crm_activity.opportunity_id", "type": "lookup", "label": "Opportunity", "entity": "entity.crm_opportunity", "display_field": "crm_opportunity.title" },
+        { "id": "crm_activity.site_id", "type": "lookup", "label": "Site", "entity": "entity.crm_site", "display_field": "crm_site.name" },
+        { "id": "crm_activity.notes", "type": "text", "label": "Notes" }
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "crm_activity.title",
+          "crm_activity.activity_type",
+          "crm_activity.status",
+          "crm_activity.due_date",
+          "crm_activity.owner_user_id",
+          "crm_activity.company_id",
+          "crm_activity.lead_id",
+          "crm_activity.opportunity_id",
+          "crm_activity.site_id",
+          "crm_activity.notes"
+        ]
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "id": "crm_lead_status_workflow",
+      "entity": "entity.crm_lead",
+      "status_field": "crm_lead.status",
+      "states": [
+        { "id": "new", "label": "New", "required_fields": ["crm_lead.title"] },
+        { "id": "contacted", "label": "Contacted" },
+        { "id": "qualified", "label": "Qualified", "required_fields": ["crm_lead.company_id"] },
+        { "id": "disqualified", "label": "Disqualified" }
+      ],
+      "transitions": [
+        { "from": "new", "to": "contacted", "label": "Mark Contacted" },
+        { "from": "new", "to": "qualified", "label": "Qualify" },
+        { "from": "contacted", "to": "qualified", "label": "Qualify" },
+        { "from": "new", "to": "disqualified", "label": "Disqualify" },
+        { "from": "contacted", "to": "disqualified", "label": "Disqualify" }
+      ],
+      "required_fields_by_state": {
+        "qualified": ["crm_lead.company_id"],
+        "disqualified": ["crm_lead.disqualification_reason"]
+      }
+    },
+    {
+      "id": "crm_opportunity_stage_workflow",
+      "entity": "entity.crm_opportunity",
+      "status_field": "crm_opportunity.stage",
+      "states": [
+        { "id": "new", "label": "New", "required_fields": ["crm_opportunity.title", "crm_opportunity.company_id"] },
+        { "id": "discovery", "label": "Discovery" },
+        { "id": "solution", "label": "Solution Fit" },
+        { "id": "quote", "label": "Quote" },
+        { "id": "negotiation", "label": "Negotiation" },
+        { "id": "won", "label": "Won" },
+        { "id": "lost", "label": "Lost" }
+      ],
+      "transitions": [
+        { "from": "new", "to": "discovery", "label": "Start Discovery" },
+        { "from": "discovery", "to": "solution", "label": "Solution Fit" },
+        { "from": "solution", "to": "quote", "label": "Quote" },
+        { "from": "quote", "to": "negotiation", "label": "Negotiation" },
+        { "from": "quote", "to": "won", "label": "Mark Won" },
+        { "from": "negotiation", "to": "won", "label": "Mark Won" },
+        { "from": "new", "to": "lost", "label": "Mark Lost" },
+        { "from": "discovery", "to": "lost", "label": "Mark Lost" },
+        { "from": "solution", "to": "lost", "label": "Mark Lost" },
+        { "from": "quote", "to": "lost", "label": "Mark Lost" },
+        { "from": "negotiation", "to": "lost", "label": "Mark Lost" }
+      ],
+      "required_fields_by_state": {
+        "quote": ["crm_opportunity.company_id"],
+        "won": ["crm_opportunity.won_lost_reason"],
+        "lost": ["crm_opportunity.won_lost_reason"]
+      }
+    }
+  ],
+  "transformations": [
+    {
+      "key": "lead_to_opportunity",
+      "source_entity_id": "entity.crm_lead",
+      "target_entity_id": "entity.crm_opportunity",
+      "field_mappings": {
+        "crm_opportunity.title": { "from": "crm_lead.title" },
+        "crm_opportunity.company_id": { "from": "crm_lead.company_id" },
+        "crm_opportunity.primary_contact_name": { "from": "crm_lead.contact_name" },
+        "crm_opportunity.primary_contact_email": { "from": "crm_lead.contact_email" },
+        "crm_opportunity.owner_user_id": { "from": "crm_lead.owner_user_id" },
+        "crm_opportunity.currency": { "from": "crm_lead.currency" },
+        "crm_opportunity.value": { "from": "crm_lead.estimated_value" },
+        "crm_opportunity.source": { "from": "crm_lead.source" },
+        "crm_opportunity.next_activity_date": { "from": "crm_lead.next_activity_date" },
+        "crm_opportunity.description": { "from": "crm_lead.notes" },
+        "crm_opportunity.stage": { "value": "discovery" },
+        "crm_opportunity.status": { "value": "open" },
+        "crm_opportunity.probability": { "value": 25 },
+        "crm_opportunity.quote_state": { "value": "unquoted" }
+      },
+      "link_fields": {
+        "source_to_target": "crm_lead.linked_opportunity_id"
+      },
+      "source_update": {
+        "patch": { "crm_lead.status": "qualified" }
+      },
+      "validation": {
+        "require_source_fields": ["crm_lead.title", "crm_lead.company_id"],
+        "prevent_if_target_linked": true
+      }
+    },
+    {
+      "key": "opportunity_to_quote",
+      "source_entity_id": "entity.crm_opportunity",
+      "target_entity_id": "entity.biz_quote",
+      "field_mappings": {
+        "biz_quote.status": { "value": "draft" },
+        "biz_quote.quote_date": { "ref": "$today" },
+        "biz_quote.sales_entity": { "value": "NLight BV" },
+        "biz_quote.customer_id": { "from": "crm_opportunity.company_id" },
+        "biz_quote.customer_contact_name": { "from": "crm_opportunity.primary_contact_name" },
+        "biz_quote.customer_reference": { "from": "crm_opportunity.title" },
+        "biz_quote.currency": { "from": "crm_opportunity.currency" },
+        "biz_quote.follow_up_date": { "from": "crm_opportunity.next_activity_date" },
+        "biz_quote.internal_notes": { "from": "crm_opportunity.notes" },
+        "biz_quote.customer_notes": { "from": "crm_opportunity.description" }
+      },
+      "link_fields": {
+        "source_to_target": "crm_opportunity.linked_quote_id"
+      },
+      "source_update": {
+        "patch": {
+          "crm_opportunity.stage": "quote",
+          "crm_opportunity.quote_state": "quoted",
+          "crm_opportunity.probability": 60
+        }
+      },
+      "validation": {
+        "require_source_fields": ["crm_opportunity.title", "crm_opportunity.company_id"],
+        "prevent_if_target_linked": true
+      }
+    },
+    {
+      "key": "opportunity_to_order",
+      "source_entity_id": "entity.crm_opportunity",
+      "target_entity_id": "entity.biz_order",
+      "field_mappings": {
+        "biz_order.status": { "value": "draft" },
+        "biz_order.customer_id": { "from": "crm_opportunity.company_id" },
+        "biz_order.source_quote_id": { "from": "crm_opportunity.linked_quote_id" },
+        "biz_order.sales_entity": { "value": "NLight BV" },
+        "biz_order.order_date": { "ref": "$today" },
+        "biz_order.currency": { "from": "crm_opportunity.currency" },
+        "biz_order.customer_reference": { "from": "crm_opportunity.title" },
+        "biz_order.notes": { "from": "crm_opportunity.notes" },
+        "biz_order.requested_delivery_date": { "from": "crm_opportunity.expected_close_date" }
+      },
+      "link_fields": {
+        "source_to_target": "crm_opportunity.linked_order_id"
+      },
+      "source_update": {
+        "patch": {
+          "crm_opportunity.stage": "won",
+          "crm_opportunity.status": "won",
+          "crm_opportunity.probability": 100
+        }
+      },
+      "validation": {
+        "require_source_fields": ["crm_opportunity.title", "crm_opportunity.company_id"],
+        "prevent_if_target_linked": true
+      }
+    }
+  ],
+  "actions": [
+    { "id": "action.crm_lead_new", "kind": "open_form", "label": "New Lead", "target": "crm_lead.form" },
+    { "id": "action.crm_opportunity_new", "kind": "open_form", "label": "New Opportunity", "target": "crm_opportunity.form" },
+    { "id": "action.crm_activity_new", "kind": "open_form", "label": "New Activity", "target": "crm_activity.form" },
+    { "id": "action.crm_site_new", "kind": "open_form", "label": "New Site", "target": "crm_site.form" },
+    {
+      "id": "action.crm_lead_mark_contacted",
+      "kind": "update_record",
+      "entity_id": "entity.crm_lead",
+      "label": "Mark Contacted",
+      "patch": { "crm_lead.status": "contacted" },
+      "visible_when": { "op": "eq", "field": "crm_lead.status", "value": "new" }
+    },
+    {
+      "id": "action.crm_lead_qualify",
+      "kind": "transform_record",
+      "entity_id": "entity.crm_lead",
+      "label": "Qualify Lead",
+      "transformation_key": "lead_to_opportunity",
+      "visible_when": {
+        "op": "and",
+        "conditions": [
+          { "op": "in", "field": "crm_lead.status", "value": ["new", "contacted"] },
+          { "op": "not", "condition": { "op": "exists", "field": "crm_lead.linked_opportunity_id" } }
+        ]
+      },
+      "enabled_when": {
+        "op": "and",
+        "conditions": [
+          { "op": "exists", "field": "crm_lead.title" },
+          { "op": "exists", "field": "crm_lead.company_id" }
+        ]
+      }
+    },
+    {
+      "id": "action.crm_lead_open_disqualify_modal",
+      "kind": "update_record",
+      "entity_id": "entity.crm_lead",
+      "label": "Disqualify",
+      "modal_id": "modal.crm_lead_disqualify",
+      "visible_when": { "op": "in", "field": "crm_lead.status", "value": ["new", "contacted"] }
+    },
+    {
+      "id": "action.crm_opportunity_discovery",
+      "kind": "update_record",
+      "entity_id": "entity.crm_opportunity",
+      "label": "Start Discovery",
+      "patch": { "crm_opportunity.stage": "discovery", "crm_opportunity.status": "open", "crm_opportunity.probability": 25 },
+      "visible_when": { "op": "eq", "field": "crm_opportunity.stage", "value": "new" }
+    },
+    {
+      "id": "action.crm_opportunity_solution",
+      "kind": "update_record",
+      "entity_id": "entity.crm_opportunity",
+      "label": "Solution Fit",
+      "patch": { "crm_opportunity.stage": "solution", "crm_opportunity.status": "open", "crm_opportunity.probability": 40 },
+      "visible_when": { "op": "eq", "field": "crm_opportunity.stage", "value": "discovery" }
+    },
+    {
+      "id": "action.crm_opportunity_quote_stage",
+      "kind": "update_record",
+      "entity_id": "entity.crm_opportunity",
+      "label": "Move To Quote",
+      "patch": { "crm_opportunity.stage": "quote", "crm_opportunity.status": "open", "crm_opportunity.quote_state": "quote_needed", "crm_opportunity.probability": 55 },
+      "visible_when": { "op": "eq", "field": "crm_opportunity.stage", "value": "solution" }
+    },
+    {
+      "id": "action.crm_opportunity_create_quote",
+      "kind": "transform_record",
+      "entity_id": "entity.crm_opportunity",
+      "label": "Create Quote",
+      "transformation_key": "opportunity_to_quote",
+      "visible_when": {
+        "op": "and",
+        "conditions": [
+          { "op": "in", "field": "crm_opportunity.stage", "value": ["solution", "quote", "negotiation"] },
+          { "op": "not", "condition": { "op": "exists", "field": "crm_opportunity.linked_quote_id" } }
+        ]
+      },
+      "enabled_when": { "op": "exists", "field": "crm_opportunity.company_id" }
+    },
+    {
+      "id": "action.crm_opportunity_negotiation",
+      "kind": "update_record",
+      "entity_id": "entity.crm_opportunity",
+      "label": "Move To Negotiation",
+      "patch": { "crm_opportunity.stage": "negotiation", "crm_opportunity.status": "open", "crm_opportunity.probability": 75 },
+      "visible_when": { "op": "eq", "field": "crm_opportunity.stage", "value": "quote" }
+    },
+    {
+      "id": "action.crm_opportunity_open_won_modal",
+      "kind": "update_record",
+      "entity_id": "entity.crm_opportunity",
+      "label": "Mark Won",
+      "modal_id": "modal.crm_opportunity_won",
+      "visible_when": { "op": "in", "field": "crm_opportunity.stage", "value": ["quote", "negotiation"] }
+    },
+    {
+      "id": "action.crm_opportunity_open_lost_modal",
+      "kind": "update_record",
+      "entity_id": "entity.crm_opportunity",
+      "label": "Mark Lost",
+      "modal_id": "modal.crm_opportunity_lost",
+      "visible_when": { "op": "in", "field": "crm_opportunity.stage", "value": ["new", "discovery", "solution", "quote", "negotiation"] }
+    },
+    {
+      "id": "action.crm_opportunity_create_order",
+      "kind": "transform_record",
+      "entity_id": "entity.crm_opportunity",
+      "label": "Create Order",
+      "transformation_key": "opportunity_to_order",
+      "visible_when": {
+        "op": "and",
+        "conditions": [
+          { "op": "eq", "field": "crm_opportunity.stage", "value": "won" },
+          { "op": "not", "condition": { "op": "exists", "field": "crm_opportunity.linked_order_id" } }
+        ]
+      },
+      "enabled_when": { "op": "exists", "field": "crm_opportunity.company_id" }
+    },
+    {
+      "id": "action.crm_activity_done",
+      "kind": "update_record",
+      "entity_id": "entity.crm_activity",
+      "label": "Mark Done",
+      "patch": { "crm_activity.status": "done" },
+      "visible_when": { "op": "eq", "field": "crm_activity.status", "value": "planned" }
+    },
+    {
+      "id": "action.crm_activity_cancel",
+      "kind": "update_record",
+      "entity_id": "entity.crm_activity",
+      "label": "Cancel",
+      "patch": { "crm_activity.status": "cancelled" },
+      "visible_when": { "op": "eq", "field": "crm_activity.status", "value": "planned" }
+    }
+  ],
+  "views": [
+    {
+      "id": "crm_lead.list",
+      "kind": "list",
+      "entity": "entity.crm_lead",
+      "columns": [
+        { "field_id": "crm_lead.title" },
+        { "field_id": "crm_lead.company_id" },
+        { "field_id": "crm_lead.status" },
+        { "field_id": "crm_lead.source" },
+        { "field_id": "crm_lead.estimated_value" },
+        { "field_id": "crm_lead.next_activity_date" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.crm_lead_new" }],
+        "open_record_target": "page:crm_lead.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search leads...",
+          "fields": ["crm_lead.title", "crm_lead.contact_name", "crm_lead.contact_email", "crm_lead.notes"]
+        },
+        "filters": [
+          { "id": "active", "label": "Active Leads", "domain": { "op": "in", "field": "crm_lead.status", "value": ["new", "contacted"] } },
+          { "id": "new", "label": "New", "domain": { "op": "eq", "field": "crm_lead.status", "value": "new" } },
+          { "id": "contacted", "label": "Contacted", "domain": { "op": "eq", "field": "crm_lead.status", "value": "contacted" } },
+          { "id": "qualified", "label": "Qualified", "domain": { "op": "eq", "field": "crm_lead.status", "value": "qualified" } },
+          { "id": "disqualified", "label": "Disqualified", "domain": { "op": "eq", "field": "crm_lead.status", "value": "disqualified" } }
+        ]
+      }
+    },
+    {
+      "id": "crm_lead.kanban",
+      "kind": "kanban",
+      "entity": "entity.crm_lead",
+      "card": {
+        "title_field": "crm_lead.title",
+        "subtitle_fields": ["crm_lead.company_id", "crm_lead.next_activity_date"],
+        "badge_fields": ["crm_lead.status", "crm_lead.estimated_value"]
+      }
+    },
+    {
+      "id": "crm_lead.form",
+      "kind": "form",
+      "entity": "entity.crm_lead",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Lead",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "crm_lead.title",
+            "crm_lead.status",
+            "crm_lead.source",
+            "crm_lead.company_id",
+            "crm_lead.contact_name",
+            "crm_lead.contact_email",
+            "crm_lead.contact_phone",
+            "crm_lead.owner_user_id",
+            "crm_lead.currency",
+            "crm_lead.estimated_value",
+            "crm_lead.next_action",
+            "crm_lead.next_activity_date",
+            "crm_lead.linked_opportunity_id"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": ["crm_lead.disqualification_reason", "crm_lead.notes"]
+        }
+      ],
+      "header": {
+        "statusbar": { "field_id": "crm_lead.status" },
+        "secondary_actions": [
+          { "action_id": "action.crm_lead_mark_contacted" },
+          { "action_id": "action.crm_lead_qualify" },
+          { "action_id": "action.crm_lead_open_disqualify_modal" }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "summary",
+          "tabs": [
+            { "id": "summary", "label": "Summary", "sections": ["summary"] },
+            { "id": "notes", "label": "Notes", "sections": ["notes"] }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true
+      }
+    },
+    {
+      "id": "crm_opportunity.list",
+      "kind": "list",
+      "entity": "entity.crm_opportunity",
+      "columns": [
+        { "field_id": "crm_opportunity.title" },
+        { "field_id": "crm_opportunity.company_id" },
+        { "field_id": "crm_opportunity.stage" },
+        { "field_id": "crm_opportunity.value" },
+        { "field_id": "crm_opportunity.weighted_value" },
+        { "field_id": "crm_opportunity.expected_close_date" },
+        { "field_id": "crm_opportunity.next_activity_date" },
+        { "field_id": "crm_opportunity.quote_state" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.crm_opportunity_new" }],
+        "open_record_target": "page:crm_opportunity.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search opportunities...",
+          "fields": ["crm_opportunity.title", "crm_opportunity.primary_contact_name", "crm_opportunity.description", "crm_opportunity.notes"]
+        },
+        "filters": [
+          { "id": "open", "label": "Open Opportunities", "domain": { "op": "in", "field": "crm_opportunity.stage", "value": ["new", "discovery", "solution", "quote", "negotiation"] } },
+          { "id": "needs_quote", "label": "Needs Quote", "domain": { "op": "eq", "field": "crm_opportunity.quote_state", "value": "quote_needed" } },
+          { "id": "no_next_activity", "label": "No Next Activity", "domain": { "op": "not", "condition": { "op": "exists", "field": "crm_opportunity.next_activity_date" } } },
+          { "id": "closing_this_month", "label": "Closing This Month", "domain": { "op": "lte", "field": "crm_opportunity.expected_close_date", "value": { "ref": "$today" } } },
+          { "id": "won", "label": "Won", "domain": { "op": "eq", "field": "crm_opportunity.stage", "value": "won" } },
+          { "id": "lost", "label": "Lost", "domain": { "op": "eq", "field": "crm_opportunity.stage", "value": "lost" } }
+        ]
+      }
+    },
+    {
+      "id": "crm_opportunity.kanban",
+      "kind": "kanban",
+      "entity": "entity.crm_opportunity",
+      "card": {
+        "title_field": "crm_opportunity.title",
+        "subtitle_fields": ["crm_opportunity.company_id", "crm_opportunity.expected_close_date"],
+        "badge_fields": ["crm_opportunity.stage", "crm_opportunity.value", "crm_opportunity.quote_state"]
+      }
+    },
+    {
+      "id": "crm_opportunity.graph",
+      "kind": "graph",
+      "entity": "entity.crm_opportunity",
+      "default": {
+        "type": "bar",
+        "group_by": "crm_opportunity.stage",
+        "measure": "sum:crm_opportunity.value"
+      }
+    },
+    {
+      "id": "crm_opportunity.form",
+      "kind": "form",
+      "entity": "entity.crm_opportunity",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Opportunity",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "crm_opportunity.title",
+            "crm_opportunity.stage",
+            "crm_opportunity.status",
+            "crm_opportunity.company_id",
+            "crm_opportunity.primary_contact_name",
+            "crm_opportunity.primary_contact_email",
+            "crm_opportunity.site_id",
+            "crm_opportunity.owner_user_id",
+            "crm_opportunity.pipeline",
+            "crm_opportunity.source",
+            "crm_opportunity.expected_close_date",
+            "crm_opportunity.next_activity_date"
+          ]
+        },
+        {
+          "id": "commercial",
+          "title": "Commercial",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "crm_opportunity.currency",
+            "crm_opportunity.value",
+            "crm_opportunity.probability",
+            "crm_opportunity.weighted_value",
+            "crm_opportunity.quote_state",
+            "crm_opportunity.linked_quote_id",
+            "crm_opportunity.linked_order_id"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": [
+            "crm_opportunity.won_lost_reason",
+            "crm_opportunity.description",
+            "crm_opportunity.notes",
+            "crm_opportunity.attachments"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": { "field_id": "crm_opportunity.stage" },
+        "secondary_actions": [
+          { "action_id": "action.crm_opportunity_discovery" },
+          { "action_id": "action.crm_opportunity_solution" },
+          { "action_id": "action.crm_opportunity_quote_stage" },
+          { "action_id": "action.crm_opportunity_create_quote" },
+          { "action_id": "action.crm_opportunity_negotiation" },
+          { "action_id": "action.crm_opportunity_open_won_modal" },
+          { "action_id": "action.crm_opportunity_create_order" },
+          { "action_id": "action.crm_opportunity_open_lost_modal" }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "summary",
+          "tabs": [
+            { "id": "summary", "label": "Summary", "sections": ["summary"] },
+            { "id": "commercial", "label": "Commercial", "sections": ["commercial"] },
+            { "id": "notes", "label": "Notes & Files", "sections": ["notes"] }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true
+      }
+    },
+    {
+      "id": "crm_activity.list",
+      "kind": "list",
+      "entity": "entity.crm_activity",
+      "columns": [
+        { "field_id": "crm_activity.title" },
+        { "field_id": "crm_activity.activity_type" },
+        { "field_id": "crm_activity.status" },
+        { "field_id": "crm_activity.due_date" },
+        { "field_id": "crm_activity.company_id" },
+        { "field_id": "crm_activity.opportunity_id" },
+        { "field_id": "crm_activity.owner_user_id" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.crm_activity_new" }],
+        "open_record_target": "page:crm_activity.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search activities...",
+          "fields": ["crm_activity.title", "crm_activity.notes"]
+        },
+        "filters": [
+          { "id": "planned", "label": "Planned", "domain": { "op": "eq", "field": "crm_activity.status", "value": "planned" } },
+          { "id": "overdue", "label": "Overdue", "domain": { "op": "and", "conditions": [{ "op": "eq", "field": "crm_activity.status", "value": "planned" }, { "op": "lte", "field": "crm_activity.due_date", "value": { "ref": "$today" } }] } },
+          { "id": "done", "label": "Done", "domain": { "op": "eq", "field": "crm_activity.status", "value": "done" } },
+          { "id": "site_visits", "label": "Site Visits", "domain": { "op": "eq", "field": "crm_activity.activity_type", "value": "site_visit" } }
+        ]
+      }
+    },
+    {
+      "id": "crm_activity.calendar",
+      "kind": "calendar",
+      "entity": "entity.crm_activity",
+      "calendar": {
+        "title_field": "crm_activity.title",
+        "date_start": "crm_activity.due_date",
+        "color_field": "crm_activity.activity_type",
+        "default_scale": "week"
+      }
+    },
+    {
+      "id": "crm_activity.form",
+      "kind": "form",
+      "entity": "entity.crm_activity",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Activity",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "crm_activity.title",
+            "crm_activity.activity_type",
+            "crm_activity.status",
+            "crm_activity.due_date",
+            "crm_activity.owner_user_id",
+            "crm_activity.company_id",
+            "crm_activity.lead_id",
+            "crm_activity.opportunity_id",
+            "crm_activity.site_id"
+          ]
+        },
+        { "id": "notes", "title": "Notes", "fields": ["crm_activity.notes"] }
+      ],
+      "header": {
+        "secondary_actions": [
+          { "action_id": "action.crm_activity_done" },
+          { "action_id": "action.crm_activity_cancel" }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "summary",
+          "tabs": [
+            { "id": "summary", "label": "Summary", "sections": ["summary"] },
+            { "id": "notes", "label": "Notes", "sections": ["notes"] }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true
+      }
+    },
+    {
+      "id": "crm_site.list",
+      "kind": "list",
+      "entity": "entity.crm_site",
+      "columns": [
+        { "field_id": "crm_site.name" },
+        { "field_id": "crm_site.company_id" },
+        { "field_id": "crm_site.city" },
+        { "field_id": "crm_site.country" },
+        { "field_id": "crm_site.is_active" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.crm_site_new" }],
+        "open_record_target": "page:crm_site.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search sites...",
+          "fields": ["crm_site.name", "crm_site.city", "crm_site.country", "crm_site.site_notes"]
+        },
+        "filters": [
+          { "id": "active", "label": "Active Sites", "domain": { "op": "eq", "field": "crm_site.is_active", "value": true } }
+        ]
+      }
+    },
+    {
+      "id": "crm_site.form",
+      "kind": "form",
+      "entity": "entity.crm_site",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Site",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "crm_site.name",
+            "crm_site.company_id",
+            "crm_site.address_line_1",
+            "crm_site.address_line_2",
+            "crm_site.city",
+            "crm_site.region",
+            "crm_site.postcode",
+            "crm_site.country",
+            "crm_site.is_active"
+          ]
+        },
+        { "id": "notes", "title": "Site Notes", "fields": ["crm_site.site_notes"] }
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "crm.dashboard_page",
+      "title": "CRM",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "kind": "navigate", "label": "New Lead", "target": "page:crm_lead.form_page" },
+          { "kind": "navigate", "label": "New Opportunity", "target": "page:crm_opportunity.form_page" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "stat_cards",
+          "columns": 4,
+          "cards": [
+            {
+              "id": "crm_open_pipeline_value",
+              "label": "Open Pipeline",
+              "subtitle": "Active deal value",
+              "entity_id": "entity.crm_opportunity",
+              "measure": "sum:crm_opportunity.value",
+              "domain": { "op": "in", "field": "crm_opportunity.stage", "value": ["new", "discovery", "solution", "quote", "negotiation"] },
+              "icon": "lucide:TrendingUp",
+              "tone": "primary",
+              "format": "currency"
+            },
+            {
+              "id": "crm_weighted_pipeline_value",
+              "label": "Weighted Pipeline",
+              "subtitle": "Probability adjusted",
+              "entity_id": "entity.crm_opportunity",
+              "measure": "sum:crm_opportunity.weighted_value",
+              "domain": { "op": "in", "field": "crm_opportunity.stage", "value": ["new", "discovery", "solution", "quote", "negotiation"] },
+              "icon": "lucide:Scale",
+              "tone": "success",
+              "format": "currency"
+            },
+            {
+              "id": "crm_needs_quote",
+              "label": "Needs Quote",
+              "subtitle": "Sales-ready handoff",
+              "entity_id": "entity.crm_opportunity",
+              "measure": "count",
+              "domain": { "op": "eq", "field": "crm_opportunity.quote_state", "value": "quote_needed" },
+              "icon": "lucide:FilePlus2",
+              "tone": "warning",
+              "format": "number"
+            },
+            {
+              "id": "crm_overdue_activities",
+              "label": "Overdue Activities",
+              "subtitle": "Planned follow-ups due",
+              "entity_id": "entity.crm_activity",
+              "measure": "count",
+              "domain": { "op": "and", "conditions": [{ "op": "eq", "field": "crm_activity.status", "value": "planned" }, { "op": "lte", "field": "crm_activity.due_date", "value": { "ref": "$today" } }] },
+              "icon": "lucide:AlarmClock",
+              "tone": "accent",
+              "format": "number"
+            }
+          ]
+        },
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.crm_opportunity",
+              "default_mode": "kanban",
+              "default_filter_id": "open",
+              "modes": [
+                { "mode": "list", "target": "view:crm_opportunity.list" },
+                { "mode": "kanban", "target": "view:crm_opportunity.kanban", "default_group_by": "crm_opportunity.stage" },
+                { "mode": "graph", "target": "view:crm_opportunity.graph" },
+                { "mode": "pivot", "target": "view:crm_opportunity.list", "default_group_by": "crm_opportunity.stage" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "crm_lead.list_page",
+      "title": "Leads",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.crm_lead",
+              "default_mode": "kanban",
+              "default_filter_id": "active",
+              "modes": [
+                { "mode": "list", "target": "view:crm_lead.list" },
+                { "mode": "kanban", "target": "view:crm_lead.kanban", "default_group_by": "crm_lead.status" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "crm_lead.form_page",
+      "title": "Lead",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.crm_lead",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                { "span": 8, "content": [{ "kind": "container", "variant": "card", "content": [{ "kind": "view", "target": "view:crm_lead.form" }] }] },
+                { "span": 4, "content": [{ "kind": "container", "variant": "card", "content": [{ "kind": "chatter", "entity_id": "entity.crm_lead", "record_ref": "$record.id" }] }] }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "crm_opportunity.list_page",
+      "title": "Opportunities",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.crm_opportunity",
+              "default_mode": "kanban",
+              "default_filter_id": "open",
+              "modes": [
+                { "mode": "list", "target": "view:crm_opportunity.list" },
+                { "mode": "kanban", "target": "view:crm_opportunity.kanban", "default_group_by": "crm_opportunity.stage" },
+                { "mode": "graph", "target": "view:crm_opportunity.graph" },
+                { "mode": "pivot", "target": "view:crm_opportunity.list", "default_group_by": "crm_opportunity.stage" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "crm_opportunity.form_page",
+      "title": "Opportunity",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.crm_opportunity",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                { "span": 8, "content": [{ "kind": "container", "variant": "card", "content": [{ "kind": "view", "target": "view:crm_opportunity.form" }] }] },
+                { "span": 4, "content": [{ "kind": "container", "variant": "card", "content": [{ "kind": "chatter", "entity_id": "entity.crm_opportunity", "record_ref": "$record.id" }] }] }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "crm_activity.list_page",
+      "title": "Activities",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.crm_activity",
+              "default_mode": "list",
+              "default_filter_id": "planned",
+              "modes": [
+                { "mode": "list", "target": "view:crm_activity.list" },
+                { "mode": "calendar", "target": "view:crm_activity.calendar" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "crm_activity.form_page",
+      "title": "Activity",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.crm_activity",
+          "record_id_query": "record",
+          "content": [{ "kind": "container", "variant": "card", "content": [{ "kind": "view", "target": "view:crm_activity.form" }] }]
+        }
+      ]
+    },
+    {
+      "id": "crm_site.list_page",
+      "title": "Sites",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.crm_site",
+              "default_mode": "list",
+              "default_filter_id": "active",
+              "modes": [{ "mode": "list", "target": "view:crm_site.list" }]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "crm_site.form_page",
+      "title": "Site",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.crm_site",
+          "record_id_query": "record",
+          "content": [{ "kind": "container", "variant": "card", "content": [{ "kind": "view", "target": "view:crm_site.form" }] }]
+        }
+      ]
+    }
+  ],
+  "modals": [
+    {
+      "id": "modal.crm_lead_disqualify",
+      "title": "Disqualify Lead",
+      "description": "Capture why this enquiry should not move into the sales pipeline.",
+      "entity_id": "entity.crm_lead",
+      "fields": ["crm_lead.disqualification_reason"],
+      "actions": [
+        {
+          "kind": "update_record",
+          "entity_id": "entity.crm_lead",
+          "label": "Disqualify Lead",
+          "patch": {
+            "crm_lead.status": "disqualified",
+            "crm_lead.disqualification_reason": { "ref": "$record.crm_lead.disqualification_reason" }
+          },
+          "close_on_success": true
+        },
+        { "kind": "close_modal", "label": "Keep Open", "variant": "ghost" }
+      ]
+    },
+    {
+      "id": "modal.crm_opportunity_won",
+      "title": "Mark Opportunity Won",
+      "description": "Capture the commercial reason before moving the deal into operational handoff.",
+      "entity_id": "entity.crm_opportunity",
+      "fields": ["crm_opportunity.won_lost_reason"],
+      "actions": [
+        {
+          "kind": "update_record",
+          "entity_id": "entity.crm_opportunity",
+          "label": "Mark Won",
+          "patch": {
+            "crm_opportunity.stage": "won",
+            "crm_opportunity.status": "won",
+            "crm_opportunity.probability": 100,
+            "crm_opportunity.won_lost_reason": { "ref": "$record.crm_opportunity.won_lost_reason" }
+          },
+          "close_on_success": true
+        },
+        { "kind": "close_modal", "label": "Keep Open", "variant": "ghost" }
+      ]
+    },
+    {
+      "id": "modal.crm_opportunity_lost",
+      "title": "Mark Opportunity Lost",
+      "description": "Capture the loss reason so the pipeline remains useful.",
+      "entity_id": "entity.crm_opportunity",
+      "fields": ["crm_opportunity.won_lost_reason"],
+      "actions": [
+        {
+          "kind": "update_record",
+          "entity_id": "entity.crm_opportunity",
+          "label": "Mark Lost",
+          "patch": {
+            "crm_opportunity.stage": "lost",
+            "crm_opportunity.status": "lost",
+            "crm_opportunity.probability": 0,
+            "crm_opportunity.won_lost_reason": { "ref": "$record.crm_opportunity.won_lost_reason" }
+          },
+          "close_on_success": true
+        },
+        { "kind": "close_modal", "label": "Keep Open", "variant": "ghost" }
+      ]
+    }
+  ],
+  "interfaces": {
+    "dashboardable": [
+      {
+        "entity_id": "entity.crm_opportunity",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "crm_opportunity.expected_close_date",
+        "measures": ["count", "sum:crm_opportunity.value", "sum:crm_opportunity.weighted_value"],
+        "group_bys": ["crm_opportunity.stage", "crm_opportunity.pipeline", "crm_opportunity.source", "crm_opportunity.owner_user_id"]
+      },
+      {
+        "entity_id": "entity.crm_activity",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "crm_activity.due_date",
+        "measures": ["count"],
+        "group_bys": ["crm_activity.status", "crm_activity.activity_type", "crm_activity.owner_user_id"]
+      }
+    ]
+  }
+}

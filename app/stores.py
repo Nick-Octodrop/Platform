@@ -392,6 +392,13 @@ class MemoryJobStore:
         items = self._events.get(job_id, [])
         return [copy.deepcopy(e) for e in items[:limit]]
 
+    def delete(self, job_id: str) -> bool:
+        if job_id not in self._jobs:
+            return False
+        del self._jobs[job_id]
+        self._events.pop(job_id, None)
+        return True
+
 
 class MemoryNotificationStore:
     def __init__(self) -> None:

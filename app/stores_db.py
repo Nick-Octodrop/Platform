@@ -2023,6 +2023,30 @@ class DbApiCredentialStore:
             )
             return self._row_to_credential(dict(row)) if row else None
 
+    def delete(self, credential_id: str) -> bool:
+        with get_conn() as conn:
+            execute(
+                conn,
+                """
+                update api_request_logs
+                set api_credential_id=null
+                where org_id=%s and api_credential_id=%s
+                """,
+                [get_org_id(), credential_id],
+                query_name="api_request_logs.clear_deleted_credential",
+            )
+            row = fetch_one(
+                conn,
+                """
+                delete from api_credentials
+                where org_id=%s and id=%s
+                returning id
+                """,
+                [get_org_id(), credential_id],
+                query_name="api_credentials.delete",
+            )
+            return bool(row)
+
     def get_by_key_hash_any(self, key_hash: str) -> dict | None:
         with get_conn() as conn:
             row = fetch_one(
@@ -3612,6 +3636,20 @@ class DbJobStore:
                 query_name="job_events.list",
             )
             return [dict(r) for r in rows]
+
+    def delete(self, job_id: str) -> bool:
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                delete from jobs
+                where org_id=%s and id=%s
+                returning id
+                """,
+                [get_org_id(), job_id],
+                query_name="jobs.delete",
+            )
+            return bool(row)
 
 
 class DbNotificationStore:

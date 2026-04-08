@@ -3,7 +3,7 @@ import SettingsShell from "../ui/SettingsShell.jsx";
 import { useAccessContext } from "../access.js";
 
 export default function SettingsPage() {
-  const { loading, hasCapability } = useAccessContext();
+  const { hasCapability, isSuperadmin } = useAccessContext();
   const wiredPages = new Set([
     "/settings/settings",
     "/settings/password",
@@ -25,6 +25,7 @@ export default function SettingsPage() {
     "/settings/documents/templates",
     "/ops",
     "/settings/diagnostics",
+    "/settings/security",
   ]);
   const placeholderPages = new Set([
   ]);
@@ -32,6 +33,7 @@ export default function SettingsPage() {
   const categories = [
     { id: "general", label: "General" },
     { id: "users", label: "Users & Access" },
+    ...(isSuperadmin ? [{ id: "security", label: "Security" }] : []),
     { id: "email", label: "Email" },
     { id: "documents", label: "Documents" },
     { id: "automations", label: "Automations" },
@@ -64,6 +66,15 @@ export default function SettingsPage() {
       primary: { label: "Manage Policies", to_page: "/settings/access-policies" },
       keywords: ["profiles", "policies", "field access", "app visibility"],
       required_capability: "workspace.manage_members",
+    },
+    {
+      id: "security",
+      category_id: "security",
+      title: "Security Center",
+      description: "Superadmin-only monitoring for API denials, webhook failures, integration failures, module audit, and platform access.",
+      primary: { label: "Open Security", to_page: "/settings/security" },
+      keywords: ["alerts", "monitoring", "security", "webhooks", "audit", "superadmin"],
+      superadmin_only: true,
     },
     {
       id: "workspaces",
@@ -200,6 +211,7 @@ export default function SettingsPage() {
     })(),
   }))
     // Deny-by-default: don't render privileged settings blocks until access context loads.
+    .filter((block) => !block.superadmin_only || isSuperadmin)
     .filter((block) => !block.required_capability || hasCapability(block.required_capability));
 
   return (

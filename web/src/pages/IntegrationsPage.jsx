@@ -29,6 +29,7 @@ export default function IntegrationsPage() {
   const [providers, setProviders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(0);
@@ -114,7 +115,15 @@ export default function IntegrationsPage() {
   }
 
   async function deleteSelected() {
-    if (!selectedIds.length) return;
+    if (!selectedIds.length || saving) return;
+    const selectedConnections = (items || []).filter((item) => selectedIds.includes(item.id));
+    if (selectedConnections.some((item) => item.status !== "disabled")) {
+      setError("Disable integration connections before deleting them.");
+      setShowDeleteModal(false);
+      return;
+    }
+    setSaving(true);
+    setError("");
     try {
       await Promise.all(selectedIds.map((id) => apiFetch(`/integrations/connections/${encodeURIComponent(id)}`, { method: "DELETE" })));
       setSelectedIds([]);
@@ -122,6 +131,29 @@ export default function IntegrationsPage() {
       await load();
     } catch (err) {
       setError(err?.message || "Delete failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function disableSelected() {
+    if (!selectedIds.length || saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      await Promise.all(
+        selectedIds.map((id) =>
+          apiFetch(`/integrations/connections/${encodeURIComponent(id)}`, {
+            method: "PATCH",
+            body: { status: "disabled" },
+          }),
+        ),
+      );
+      await load();
+    } catch (err) {
+      setError(err?.message || "Disable failed");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -195,6 +227,12 @@ export default function IntegrationsPage() {
   );
 
   const activeFilter = useMemo(() => filters.find((f) => f.id === statusFilter) || null, [filters, statusFilter]);
+  const selectedConnections = useMemo(
+    () => (items || []).filter((item) => selectedIds.includes(item.id)),
+    [items, selectedIds],
+  );
+  const allSelectedDisabled = selectedConnections.length > 0 && selectedConnections.every((item) => item.status === "disabled");
+  const hasSelectedEnabled = selectedConnections.some((item) => item.status !== "disabled");
 
   return (
     <div className="min-h-full md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
@@ -246,9 +284,25 @@ export default function IntegrationsPage() {
                           </button>
                         </li>
                       ) : null}
+                      {hasSelectedEnabled ? (
+                        <li>
+                          <button onClick={disableSelected} disabled={saving}>
+                            {selectedIds.length === 1 ? "Disable" : `Disable selected (${selectedIds.length})`}
+                          </button>
+                        </li>
+                      ) : null}
                       <li>
-                        <button className="text-error" onClick={() => setShowDeleteModal(true)} disabled={creating}>
-                          {selectedIds.length === 1 ? "Delete" : `Delete selected (${selectedIds.length})`}
+                        <button
+                          className="text-error"
+                          onClick={() => setShowDeleteModal(true)}
+                          disabled={creating || saving || !allSelectedDisabled}
+                          title={!allSelectedDisabled ? "Disable selected connections before deleting them." : undefined}
+                        >
+                          {allSelectedDisabled
+                            ? selectedIds.length === 1
+                              ? "Delete"
+                              : `Delete selected (${selectedIds.length})`
+                            : "Delete (disable first)"}
                         </button>
                       </li>
                     </ul>
@@ -384,14 +438,14 @@ export default function IntegrationsPage() {
           <div className="modal-box max-w-md">
             <h3 className="text-lg font-semibold">Delete integration connection{selectedIds.length > 1 ? "s" : ""}?</h3>
             <p className="mt-2 text-sm opacity-70">
-              This will permanently remove {selectedIds.length} integration connection{selectedIds.length > 1 ? "s" : ""}. This cannot be undone.
+              This will permanently remove {selectedIds.length} disabled integration connection{selectedIds.length > 1 ? "s" : ""}. This cannot be undone.
             </p>
             <div className="modal-action">
-              <button className="btn btn-ghost" type="button" onClick={() => setShowDeleteModal(false)}>
+              <button className="btn btn-ghost" type="button" onClick={() => setShowDeleteModal(false)} disabled={saving}>
                 Cancel
               </button>
-              <button className="btn btn-error" type="button" onClick={deleteSelected}>
-                Delete
+              <button className="btn btn-error" type="button" onClick={deleteSelected} disabled={saving || !allSelectedDisabled}>
+                {saving ? "Deleting..." : "Delete"}
               </button>
             </div>
           </div>

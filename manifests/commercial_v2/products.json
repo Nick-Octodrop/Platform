@@ -5,7 +5,7 @@
     "key": "biz_products",
     "name": "Products",
     "version": "1.0.0",
-    "description": "Product catalogue items for quoting and purchasing.",
+    "description": "NLight product catalogue items for quoting and supplier purchasing.",
     "category": "Commercial",
     "icon_key": "lucide:Package2"
   },
@@ -39,6 +39,7 @@
   "entities": [
     {
       "id": "entity.biz_product",
+      "label": "Product",
       "display_field": "biz_product.name",
       "fields": [
         { "id": "biz_product.id", "type": "uuid", "label": "ID", "readonly": true },
@@ -55,7 +56,10 @@
             { "value": "EA", "label": "Each" },
             { "value": "SET", "label": "Set" },
             { "value": "KIT", "label": "Kit" },
-            { "value": "LOT", "label": "Lot" }
+            { "value": "LOT", "label": "Lot" },
+            { "value": "PALLET", "label": "Pallet" },
+            { "value": "CONTAINER", "label": "Container" },
+            { "value": "M", "label": "Meter" }
           ]
         },
         {
@@ -65,7 +69,9 @@
           "default": "EUR",
           "options": [
             { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" }
+            { "value": "USD", "label": "USD" },
+            { "value": "GBP", "label": "GBP" },
+            { "value": "AED", "label": "AED" }
           ]
         },
         {
@@ -82,7 +88,9 @@
           "default": "USD",
           "options": [
             { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" }
+            { "value": "USD", "label": "USD" },
+            { "value": "GBP", "label": "GBP" },
+            { "value": "AED", "label": "AED" }
           ]
         },
         {
@@ -106,7 +114,6 @@
     }
   ],
   "actions": [
-    { "id": "action.refresh", "kind": "refresh", "label": "Refresh" },
     { "id": "action.product_new", "kind": "open_form", "label": "New Product", "target": "biz_product.form" },
     {
       "id": "action.product_activate",
@@ -202,8 +209,7 @@
       "header": {
         "secondary_actions": [
           { "action_id": "action.product_activate" },
-          { "action_id": "action.product_deactivate" },
-          { "action_id": "action.refresh" }
+          { "action_id": "action.product_deactivate" }
         ],
         "tabs": {
           "style": "lifted",
@@ -214,6 +220,27 @@
             { "id": "purchasing", "label": "Purchasing", "sections": ["purchasing"] }
           ]
         }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "biz_product.code",
+          "biz_product.name",
+          "biz_product.description",
+          "biz_product.category",
+          "biz_product.uom",
+          "biz_product.default_sales_currency",
+          "biz_product.default_sales_price",
+          "biz_product.default_purchase_currency",
+          "biz_product.default_buy_price",
+          "biz_product.preferred_supplier_id",
+          "biz_product.supplier_factory_reference",
+          "biz_product.internal_notes",
+          "biz_product.is_active"
+        ]
       }
     },
     {

@@ -15150,6 +15150,228 @@ async def audit_feed(request: Request, limit: int = 50, module_id: str | None = 
     return _ok_response({"data": {"events": events}}, warnings=warnings)
 
 
+@app.get("/security/overview")
+async def security_overview(request: Request, limit: int = 100) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_superadmin(actor, "Superadmin role required")
+    if denied:
+        return denied
+    limit = max(1, min(int(limit or 100), 500))
+    if not USE_DB:
+        return _ok_response(
+            {
+                "data": {
+                    "summary": {},
+                    "api_requests": [],
+                    "webhook_events": [],
+                    "integration_failures": [],
+                    "module_audit": [],
+                    "superadmins": [],
+                }
+            },
+            warnings=[
+                {
+                    "code": "SECURITY_CENTER_DB_DISABLED",
+                    "message": "Security Center requires database-backed stores.",
+                    "path": None,
+                    "detail": None,
+                }
+            ],
+        )
+
+    required_tables = {
+        "api_request_logs",
+        "webhook_events",
+        "integration_request_logs",
+        "module_audit",
+        "user_platform_roles",
+    }
+    data: dict[str, Any] = {
+        "summary": {
+            "api_denied_24h": 0,
+            "api_5xx_24h": 0,
+            "webhook_rejections_24h": 0,
+            "integration_failures_24h": 0,
+            "module_changes_24h": 0,
+            "superadmin_count": 0,
+        },
+        "api_requests": [],
+        "webhook_events": [],
+        "integration_failures": [],
+        "module_audit": [],
+        "superadmins": [],
+    }
+    warnings: list[dict] = []
+
+    with db_internal_service():
+        with get_conn() as conn:
+            existing_rows = fetch_all(
+                conn,
+                """
+                select table_name
+                from information_schema.tables
+                where table_schema='public'
+                  and table_name in (
+                    'api_request_logs',
+                    'webhook_events',
+                    'integration_request_logs',
+                    'module_audit',
+                    'user_platform_roles'
+                  )
+                """,
+                query_name="security_center.tables",
+            )
+            existing_tables = {str(row.get("table_name")) for row in existing_rows}
+            missing_tables = sorted(required_tables - existing_tables)
+            for table_name in missing_tables:
+                warnings.append(
+                    {
+                        "code": "SECURITY_CENTER_TABLE_MISSING",
+                        "message": f"{table_name} is not available in this environment.",
+                        "path": table_name,
+                        "detail": None,
+                    }
+                )
+
+            if "api_request_logs" in existing_tables:
+                data["summary"].update(
+                    fetch_one(
+                        conn,
+                        """
+                        select
+                          count(*) filter (where status_code in (401, 403))::int as api_denied_24h,
+                          count(*) filter (where status_code >= 500)::int as api_5xx_24h
+                        from api_request_logs
+                        where created_at >= now() - interval '24 hours'
+                        """,
+                        query_name="security_center.api_summary",
+                    )
+                    or {}
+                )
+                data["api_requests"] = [
+                    dict(row)
+                    for row in fetch_all(
+                        conn,
+                        """
+                        select id, org_id, api_credential_id, method, path, status_code,
+                               duration_ms, ip_address, user_agent, created_at
+                        from api_request_logs
+                        order by created_at desc
+                        limit %s
+                        """,
+                        [limit],
+                        query_name="security_center.api_requests",
+                    )
+                ]
+
+            if "webhook_events" in existing_tables:
+                row = fetch_one(
+                    conn,
+                    """
+                    select count(*)::int as webhook_rejections_24h
+                    from webhook_events
+                    where received_at >= now() - interval '24 hours'
+                      and (signature_valid is false or status in ('rejected', 'failed', 'error'))
+                    """,
+                    query_name="security_center.webhook_summary",
+                )
+                if row:
+                    data["summary"].update(dict(row))
+                data["webhook_events"] = [
+                    dict(row)
+                    for row in fetch_all(
+                        conn,
+                        """
+                        select id, org_id, connection_id, provider_event_id, event_key,
+                               signature_valid, status, error_message, received_at, processed_at
+                        from webhook_events
+                        where signature_valid is false or status in ('rejected', 'failed', 'error')
+                        order by received_at desc
+                        limit %s
+                        """,
+                        [limit],
+                        query_name="security_center.webhook_events",
+                    )
+                ]
+
+            if "integration_request_logs" in existing_tables:
+                row = fetch_one(
+                    conn,
+                    """
+                    select count(*)::int as integration_failures_24h
+                    from integration_request_logs
+                    where created_at >= now() - interval '24 hours'
+                      and (ok is false or response_status >= 400)
+                    """,
+                    query_name="security_center.integration_summary",
+                )
+                if row:
+                    data["summary"].update(dict(row))
+                data["integration_failures"] = [
+                    dict(row)
+                    for row in fetch_all(
+                        conn,
+                        """
+                        select id, org_id, connection_id, source, direction, method, url,
+                               response_status, ok, error_message, created_at
+                        from integration_request_logs
+                        where ok is false or response_status >= 400
+                        order by created_at desc
+                        limit %s
+                        """,
+                        [limit],
+                        query_name="security_center.integration_failures",
+                    )
+                ]
+
+            if "module_audit" in existing_tables:
+                row = fetch_one(
+                    conn,
+                    """
+                    select count(*)::int as module_changes_24h
+                    from module_audit
+                    where created_at >= now() - interval '24 hours'
+                    """,
+                    query_name="security_center.module_summary",
+                )
+                if row:
+                    data["summary"].update(dict(row))
+                data["module_audit"] = [
+                    dict(row)
+                    for row in fetch_all(
+                        conn,
+                        """
+                        select org_id, module_id, audit_id, audit, created_at
+                        from module_audit
+                        order by created_at desc
+                        limit %s
+                        """,
+                        [limit],
+                        query_name="security_center.module_audit",
+                    )
+                ]
+
+            if "user_platform_roles" in existing_tables:
+                superadmin_rows = fetch_all(
+                    conn,
+                    """
+                    select user_id, platform_role, created_at, updated_at
+                    from user_platform_roles
+                    where platform_role='superadmin'
+                    order by updated_at desc
+                    limit %s
+                    """,
+                    [limit],
+                    query_name="security_center.superadmins",
+                )
+                data["superadmins"] = [dict(row) for row in superadmin_rows]
+                data["summary"]["superadmin_count"] = len(superadmin_rows)
+
+    return _ok_response({"data": data}, warnings=warnings)
+
+
 @app.get("/debug/diagnostics")
 async def debug_diagnostics(request: Request) -> dict:
     data = build_diagnostics(
@@ -33675,6 +33897,9 @@ async def delete_document_numbering_settings(request: Request, sequence_id: str)
 # ---- Phase 1: Ops / Jobs ----
 
 
+TERMINAL_JOB_STATUSES = {"succeeded", "failed", "dead"}
+
+
 @app.get("/ops/health")
 async def ops_health(request: Request) -> dict:
     actor = _resolve_actor(request)
@@ -33756,6 +33981,28 @@ async def cancel_job(request: Request, job_id: str) -> dict:
     return _ok_response({"job": updated})
 
 
+@app.delete("/ops/jobs/{job_id}")
+async def delete_job(request: Request, job_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    job = job_store.get(job_id)
+    if not job:
+        return _error_response("JOB_NOT_FOUND", "Job not found", "job_id", status=404)
+    if job.get("status") not in TERMINAL_JOB_STATUSES:
+        return _error_response(
+            "JOB_DELETE_FORBIDDEN",
+            "Only terminal jobs can be deleted. Cancel queued or running jobs first.",
+            "status",
+            status=400,
+        )
+    deleted = job_store.delete(job_id) if hasattr(job_store, "delete") else False
+    if not deleted:
+        return _error_response("JOB_DELETE_FAILED", "Job could not be deleted", "job_id", status=500)
+    return _ok_response({"deleted": True, "job_id": job_id})
+
+
 # ---- Secrets + Connections (admin) ----
 
 
@@ -33827,6 +34074,32 @@ async def revoke_settings_api_credential(request: Request, credential_id: str) -
     if not item:
         return _error_response("API_CREDENTIAL_NOT_FOUND", "API credential not found", "credential_id", status=404)
     return _ok_response({"api_credential": item})
+
+
+@app.delete("/settings/api-credentials/{credential_id}")
+async def delete_settings_api_credential(request: Request, credential_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "workspace.manage_settings", "Settings permission required")
+    if denied:
+        return denied
+    if not api_credential_store or not hasattr(api_credential_store, "delete"):
+        return _error_response("NOT_SUPPORTED", "API credentials require DB-backed settings", status=400)
+    existing = api_credential_store.get(credential_id)
+    if not existing:
+        return _error_response("API_CREDENTIAL_NOT_FOUND", "API credential not found", "credential_id", status=404)
+    if existing.get("status") != "revoked":
+        return _error_response(
+            "API_CREDENTIAL_DELETE_FORBIDDEN",
+            "Revoke API credentials before deleting them.",
+            "status",
+            status=400,
+        )
+    deleted = api_credential_store.delete(credential_id)
+    if not deleted:
+        return _error_response("API_CREDENTIAL_DELETE_FAILED", "API credential could not be deleted", "credential_id", status=500)
+    return _ok_response({"deleted": True, "credential_id": credential_id})
 
 
 @app.post("/settings/api-credentials/{credential_id}/rotate")
@@ -35320,6 +35593,23 @@ async def update_email_connection(request: Request, connection_id: str) -> dict:
     return _ok_response({"connection": updated})
 
 
+@app.delete("/email/connections/{connection_id}")
+async def delete_email_connection(request: Request, connection_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "templates.manage", "Email templates permission required")
+    if denied:
+        return denied
+    conn = connection_store.get(connection_id)
+    if not conn or conn.get("type") != "smtp":
+        return _error_response("CONNECTION_NOT_FOUND", "Connection not found", "connection_id", status=404)
+    deleted = connection_store.delete(connection_id) if hasattr(connection_store, "delete") else False
+    if not deleted:
+        return _error_response("CONNECTION_DELETE_FAILED", "Connection could not be deleted", "connection_id", status=500)
+    return _ok_response({"deleted": True})
+
+
 @app.get("/templates/meta")
 async def templates_meta(request: Request) -> dict:
     actor = _resolve_actor(request)
@@ -36369,6 +36659,20 @@ def _ext_openapi_schema() -> dict:
         routes=routes,
     )
     schema["servers"] = [{"url": "/"}]
+    components = schema.setdefault("components", {})
+    security_schemes = components.setdefault("securitySchemes", {})
+    security_schemes["ApiKeyAuth"] = {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Api-Key",
+        "description": "Scoped Octodrop API credential created in Settings -> Developer -> API Credentials.",
+    }
+    for path_item in (schema.get("paths") or {}).values():
+        if not isinstance(path_item, dict):
+            continue
+        for operation in path_item.values():
+            if isinstance(operation, dict):
+                operation.setdefault("security", [{"ApiKeyAuth": []}])
     app.state.ext_openapi_schema = schema
     return schema
 
@@ -36693,12 +36997,17 @@ async def ext_patch_record(request: Request, entity_id: str, record_id: str) -> 
     found = _find_entity_def(request, entity_id)
     if not found:
         return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "entity_id", status=404)
+    denied = _entity_access_denied_response(actor, found[0], entity_id, write=True)
+    if denied:
+        return denied
     existing = generic_records.get(entity_id, record_id)
     if not existing:
         return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
     before_record = existing.get("record") if isinstance(existing, dict) else None
-    if not isinstance(before_record, dict):
+    if not isinstance(before_record, dict) or not _record_visible_for_actor(actor, found[0], entity_id, before_record):
         return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
+    if not _record_write_allowed_for_actor(actor, found[0], entity_id, before_record):
+        return _error_response("FORBIDDEN", "Record write access denied", "record_id", status=403)
     body = await _safe_json(request)
     patch = body.get("record") if isinstance(body, dict) and "record" in body else body
     if not isinstance(patch, dict):
@@ -36768,7 +37077,37 @@ async def ext_patch_record(request: Request, entity_id: str, record_id: str) -> 
             },
             entity_id=found[1].get("id"),
         )
-    return _ok_response({"record": record["record"], "record_id": record["record_id"]})
+    return _ok_response({"record": _mask_record_for_actor(actor, found[0], found[1], record["record"]), "record_id": record["record_id"]})
+
+
+@app.delete("/ext/v1/records/{entity_id}/{record_id}", tags=["External API"], summary="Delete Record")
+async def ext_delete_record(request: Request, entity_id: str, record_id: str) -> dict:
+    return await delete_generic_record(request, entity_id, record_id)
+
+
+@app.post("/ext/v1/attachments/upload", tags=["External API"], summary="Upload Attachment")
+async def ext_upload_attachment(request: Request, file: UploadFile = File(...)) -> dict:
+    return await upload_attachment(request, file)
+
+
+@app.post("/ext/v1/attachments/link", tags=["External API"], summary="Link Attachment To Record")
+async def ext_link_attachment(request: Request) -> dict:
+    return await link_attachment(request)
+
+
+@app.get("/ext/v1/attachments/{attachment_id}/download", tags=["External API"], summary="Download Attachment")
+async def ext_download_attachment(request: Request, attachment_id: str):
+    return await download_attachment(request, attachment_id)
+
+
+@app.get("/ext/v1/records/{entity_id}/{record_id}/attachments", tags=["External API"], summary="List Record Attachments")
+async def ext_list_record_attachments(request: Request, entity_id: str, record_id: str) -> dict:
+    return await list_record_attachments(request, entity_id, record_id)
+
+
+@app.delete("/ext/v1/records/{entity_id}/{record_id}/attachments/{attachment_id}", tags=["External API"], summary="Unlink Record Attachment")
+async def ext_delete_record_attachment(request: Request, entity_id: str, record_id: str, attachment_id: str) -> dict:
+    return await delete_record_attachment(request, entity_id, record_id, attachment_id)
 
 
 @app.get("/ext/v1/automations", tags=["External API"], summary="List Published Automations")
@@ -36846,6 +37185,52 @@ async def ext_run_automation(request: Request, automation_id: str) -> dict:
     return _ok_response({"run": run, "job": job}, status=202)
 
 
+@app.get("/ext/v1/automations/{automation_id}/runs", tags=["External API"], summary="List Automation Runs")
+async def ext_list_automation_runs(
+    request: Request,
+    automation_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    cursor: str | None = None,
+) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "automations.read", "External API automation access required")
+    if denied:
+        return denied
+    item = automation_store.get(automation_id)
+    if not item or (actor.get("actor_type") == "api_credential" and item.get("status") != "published"):
+        return _error_response("AUTOMATION_NOT_FOUND", "Automation not found", "automation_id", status=404)
+    items = automation_store.list_runs(automation_id=automation_id)
+    try:
+        page, pagination = _ext_api_paginate(items, limit=limit, offset=offset, cursor=cursor)
+    except ValueError as exc:
+        return _error_response("CURSOR_INVALID", str(exc), "cursor", status=400)
+    payload = {"runs": page, "pagination": pagination}
+    if pagination.get("next_cursor"):
+        payload["next_cursor"] = pagination.get("next_cursor")
+    return _ok_response(payload)
+
+
+@app.get("/ext/v1/automation-runs/{run_id}", tags=["External API"], summary="Get Automation Run")
+async def ext_get_automation_run(request: Request, run_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "automations.read", "External API automation access required")
+    if denied:
+        return denied
+    run = automation_store.get_run(run_id)
+    if not run:
+        return _error_response("AUTOMATION_RUN_NOT_FOUND", "Run not found", "run_id", status=404)
+    automation_id = run.get("automation_id")
+    item = automation_store.get(automation_id) if automation_id else None
+    if not item or (actor.get("actor_type") == "api_credential" and item.get("status") != "published"):
+        return _error_response("AUTOMATION_RUN_NOT_FOUND", "Run not found", "run_id", status=404)
+    return _ok_response({"run": run})
+
+
 @app.get("/automations/{automation_id}/runs")
 async def list_automation_runs(request: Request, automation_id: str) -> dict:
     actor = _resolve_actor(request)
@@ -36921,6 +37306,9 @@ async def upload_attachment(request: Request, file: UploadFile = File(...)) -> d
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_capability(actor, "records.write", "Write access required")
+    if denied:
+        return denied
     data = await file.read()
     if _uploaded_file_too_large(data):
         return _error_response(

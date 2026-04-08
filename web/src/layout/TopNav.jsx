@@ -32,6 +32,8 @@ export default function TopNav({ user, onSignOut }) {
   const isSettingsWebhookSubscriptions = location.pathname.startsWith("/settings/webhook-subscriptions");
   const isDiagnostics = location.pathname.startsWith("/settings/diagnostics");
   const isAudit = location.pathname.startsWith("/audit");
+  const isSettingsSecurity = location.pathname.startsWith("/settings/security");
+  const isSecurity = location.pathname.startsWith("/security") || isSettingsSecurity;
   const isIntegrations = location.pathname.startsWith("/integrations");
   const isOps = location.pathname.startsWith("/ops");
   const isEmailHome = location.pathname === "/settings/email";
@@ -63,6 +65,8 @@ export default function TopNav({ user, onSignOut }) {
             ? "Diagnostics"
             : isAudit
               ? "Audit"
+              : isSecurity
+                ? "Security"
               : isEmailHome
                   ? "Email"
                   : isEmailConnections
@@ -94,6 +98,7 @@ export default function TopNav({ user, onSignOut }) {
     || isSettingsWebhookSubscriptions
     || isDiagnostics
     || isAudit
+    || isSecurity
     || isEmailHome
     || isEmailConnections
     || isEmailTemplates

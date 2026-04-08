@@ -80,6 +80,7 @@ export default function SideNav() {
         <div>
           <div className="text-xs uppercase opacity-60 mb-2">Settings</div>
           <NavLink to={appendOctoAiFrameParams("/settings")} className={navLinkClass}>Settings</NavLink>
+          {canSeeOctoAi ? <NavLink to={appendOctoAiFrameParams("/settings/security")} className={navLinkClass}>Security</NavLink> : null}
         </div>
         <div className="divider"></div>
         <div>

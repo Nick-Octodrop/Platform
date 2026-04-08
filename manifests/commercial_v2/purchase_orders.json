@@ -5,7 +5,7 @@
     "key": "biz_purchase_orders",
     "name": "Purchase Orders",
     "version": "1.0.0",
-    "description": "Supplier purchasing for a commercial workflow workspace.",
+    "description": "EcoTech supplier purchasing linked back to NLight customer orders.",
     "category": "Commercial",
     "icon_key": "lucide:Truck"
   },
@@ -44,6 +44,7 @@
   "entities": [
     {
       "id": "entity.biz_purchase_order",
+      "label": "Purchase Order",
       "display_field": "biz_purchase_order.po_number",
       "fields": [
         { "id": "biz_purchase_order.id", "type": "uuid", "label": "ID", "readonly": true },
@@ -103,7 +104,9 @@
           "default": "USD",
           "options": [
             { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" }
+            { "value": "USD", "label": "USD" },
+            { "value": "GBP", "label": "GBP" },
+            { "value": "AED", "label": "AED" }
           ]
         },
         { "id": "biz_purchase_order.supplier_reference", "type": "string", "label": "Supplier Reference" },
@@ -115,13 +118,13 @@
           "id": "biz_purchase_order.hold_reason",
           "type": "text",
           "label": "On Hold Reason",
-          "visible_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "on_hold" }
+          "required_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "on_hold" }
         },
         {
           "id": "biz_purchase_order.cancellation_reason",
           "type": "text",
           "label": "Cancellation Reason",
-          "visible_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "cancelled" }
+          "required_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "cancelled" }
         },
         { "id": "biz_purchase_order.status_before_hold", "type": "string", "label": "Previous Status", "readonly": true },
         {
@@ -178,6 +181,7 @@
     },
     {
       "id": "entity.biz_purchase_order_line",
+      "label": "Purchase Order Line",
       "display_field": "biz_purchase_order_line.description",
       "fields": [
         { "id": "biz_purchase_order_line.id", "type": "uuid", "label": "ID", "readonly": true },
@@ -214,7 +218,9 @@
           "default": "USD",
           "options": [
             { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" }
+            { "value": "USD", "label": "USD" },
+            { "value": "GBP", "label": "GBP" },
+            { "value": "AED", "label": "AED" }
           ]
         },
         {
@@ -226,7 +232,10 @@
             { "value": "EA", "label": "Each" },
             { "value": "SET", "label": "Set" },
             { "value": "KIT", "label": "Kit" },
-            { "value": "LOT", "label": "Lot" }
+            { "value": "LOT", "label": "Lot" },
+            { "value": "PALLET", "label": "Pallet" },
+            { "value": "CONTAINER", "label": "Container" },
+            { "value": "M", "label": "Meter" }
           ]
         },
         { "id": "biz_purchase_order_line.quantity", "type": "number", "label": "Qty", "default": 1 },
@@ -263,9 +272,9 @@
       "entity": "entity.biz_purchase_order",
       "status_field": "biz_purchase_order.status",
       "states": [
-        { "id": "draft", "label": "Draft" },
-        { "id": "sent_to_supplier", "label": "Sent to Supplier" },
-        { "id": "confirmed", "label": "Confirmed" },
+        { "id": "draft", "label": "Draft", "required_fields": ["biz_purchase_order.supplier_id", "biz_purchase_order.currency"] },
+        { "id": "sent_to_supplier", "label": "Sent to Supplier", "required_fields": ["biz_purchase_order.supplier_id", "biz_purchase_order.po_date"] },
+        { "id": "confirmed", "label": "Confirmed", "required_fields": ["biz_purchase_order.supplier_id", "biz_purchase_order.po_date"] },
         { "id": "on_hold", "label": "On Hold" },
         { "id": "in_production", "label": "In Production" },
         { "id": "shipped", "label": "Shipped" },
@@ -273,7 +282,28 @@
         { "id": "closed", "label": "Closed" },
         { "id": "cancelled", "label": "Cancelled" }
       ],
+      "transitions": [
+        { "from": "draft", "to": "sent_to_supplier", "label": "Send PO" },
+        { "from": "sent_to_supplier", "to": "confirmed", "label": "Supplier Confirmed" },
+        { "from": "confirmed", "to": "on_hold", "label": "Put On Hold" },
+        { "from": "confirmed", "to": "in_production", "label": "Start Production" },
+        { "from": "in_production", "to": "on_hold", "label": "Put On Hold" },
+        { "from": "in_production", "to": "shipped", "label": "Mark Shipped" },
+        { "from": "shipped", "to": "on_hold", "label": "Put On Hold" },
+        { "from": "shipped", "to": "received", "label": "Mark Received" },
+        { "from": "received", "to": "closed", "label": "Close PO" },
+        { "from": "on_hold", "to": "confirmed", "label": "Resume to Confirmed" },
+        { "from": "on_hold", "to": "in_production", "label": "Resume to Production" },
+        { "from": "on_hold", "to": "shipped", "label": "Resume to Shipped" },
+        { "from": "draft", "to": "cancelled", "label": "Cancel PO" },
+        { "from": "sent_to_supplier", "to": "cancelled", "label": "Cancel PO" },
+        { "from": "confirmed", "to": "cancelled", "label": "Cancel PO" },
+        { "from": "in_production", "to": "cancelled", "label": "Cancel PO" },
+        { "from": "on_hold", "to": "cancelled", "label": "Cancel PO" }
+      ],
       "required_fields_by_state": {
+        "sent_to_supplier": ["biz_purchase_order.supplier_id", "biz_purchase_order.po_date"],
+        "confirmed": ["biz_purchase_order.supplier_id", "biz_purchase_order.po_date"],
         "on_hold": ["biz_purchase_order.hold_reason"],
         "cancelled": ["biz_purchase_order.cancellation_reason"]
       }
@@ -306,7 +336,14 @@
       "entity_id": "entity.biz_purchase_order",
       "label": "Confirm PO",
       "patch": { "biz_purchase_order.status": "confirmed" },
-      "visible_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "sent_to_supplier" }
+      "visible_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "sent_to_supplier" },
+      "enabled_when": {
+        "op": "and",
+        "conditions": [
+          { "op": "exists", "field": "biz_purchase_order.supplier_id" },
+          { "op": "gt", "field": "biz_purchase_order.po_total", "value": 0 }
+        ]
+      }
     },
     {
       "id": "action.purchase_order_open_hold_modal",
@@ -338,7 +375,8 @@
       "entity_id": "entity.biz_purchase_order",
       "label": "Mark In Production",
       "patch": { "biz_purchase_order.status": "in_production" },
-      "visible_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "confirmed" }
+      "visible_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "confirmed" },
+      "enabled_when": { "op": "gt", "field": "biz_purchase_order.po_total", "value": 0 }
     },
     {
       "id": "action.purchase_order_mark_shipped",
@@ -346,7 +384,8 @@
       "entity_id": "entity.biz_purchase_order",
       "label": "Mark Shipped",
       "patch": { "biz_purchase_order.status": "shipped" },
-      "visible_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "in_production" }
+      "visible_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "in_production" },
+      "enabled_when": { "op": "exists", "field": "biz_purchase_order.expected_ship_date" }
     },
     {
       "id": "action.purchase_order_mark_received",
@@ -354,7 +393,8 @@
       "entity_id": "entity.biz_purchase_order",
       "label": "Mark Received",
       "patch": { "biz_purchase_order.status": "received" },
-      "visible_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "shipped" }
+      "visible_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "shipped" },
+      "enabled_when": { "op": "exists", "field": "biz_purchase_order.expected_arrival_date" }
     },
     {
       "id": "action.purchase_order_close",
@@ -416,11 +456,12 @@
             "domain": {
               "op": "in",
               "field": "biz_purchase_order.status",
-              "value": ["draft", "sent_to_supplier", "confirmed", "in_production", "shipped", "received"]
+              "value": ["draft", "sent_to_supplier", "confirmed", "on_hold", "in_production", "shipped", "received"]
             }
           },
           { "id": "draft", "label": "Draft POs", "domain": { "op": "eq", "field": "biz_purchase_order.status", "value": "draft" } },
           { "id": "sent", "label": "Sent POs", "domain": { "op": "eq", "field": "biz_purchase_order.status", "value": "sent_to_supplier" } },
+          { "id": "on_hold", "label": "On Hold", "domain": { "op": "eq", "field": "biz_purchase_order.status", "value": "on_hold" } },
           { "id": "production", "label": "In Production", "domain": { "op": "eq", "field": "biz_purchase_order.status", "value": "in_production" } },
           { "id": "shipped", "label": "Shipped", "domain": { "op": "eq", "field": "biz_purchase_order.status", "value": "shipped" } },
           { "id": "received", "label": "Received", "domain": { "op": "eq", "field": "biz_purchase_order.status", "value": "received" } }
@@ -637,7 +678,22 @@
             "biz_purchase_order_line.source_order_line_ref"
           ]
         }
-      ]
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "biz_purchase_order_line.purchase_order_id",
+          "biz_purchase_order_line.product_id",
+          "biz_purchase_order_line.description",
+          "biz_purchase_order_line.uom",
+          "biz_purchase_order_line.quantity",
+          "biz_purchase_order_line.unit_cost",
+          "biz_purchase_order_line.line_total"
+        ]
+      }
     }
   ],
   "pages": [

@@ -1823,13 +1823,13 @@ export default function ViewModesBlock({
         if (mounted) setPrefsLoaded(true);
         return;
       }
-      apiFetch(`/filters/${entityFullId}`)
+      apiFetch(`/filters/${encodeURIComponent(entityFullId)}`)
         .then((res) => {
           if (!mounted) return;
           setSavedFilters(Array.isArray(res?.filters) ? res.filters.map(normalizeSavedFilterRow).filter(Boolean) : []);
         })
         .catch(() => {});
-      apiFetch(`/prefs/entity/${entityFullId}`)
+      apiFetch(`/prefs/entity/${encodeURIComponent(entityFullId)}`)
         .then((res) => {
           if (!mounted) return;
           setPrefs(res.prefs || {});
@@ -1850,7 +1850,7 @@ export default function ViewModesBlock({
   async function reloadSavedFilters() {
     if (previewMode || !entityFullId) return;
     try {
-      const res = await apiFetch(`/filters/${entityFullId}`);
+      const res = await apiFetch(`/filters/${encodeURIComponent(entityFullId)}`);
       setSavedFilters(Array.isArray(res?.filters) ? res.filters.map(normalizeSavedFilterRow).filter(Boolean) : []);
     } catch {
       // ignore
@@ -2229,7 +2229,7 @@ export default function ViewModesBlock({
 
   function handleModeChange(mode) {
     updateParam("mode", mode);
-    apiFetch(`/prefs/entity/${entityFullId}`, {
+    apiFetch(`/prefs/entity/${encodeURIComponent(entityFullId)}`, {
       method: "PUT",
       body: JSON.stringify({ default_mode: mode }),
     }).catch(() => {});
@@ -2249,7 +2249,7 @@ export default function ViewModesBlock({
       return;
     }
     updateParam("group_by", value);
-    apiFetch(`/prefs/entity/${entityFullId}`, {
+    apiFetch(`/prefs/entity/${encodeURIComponent(entityFullId)}`, {
       method: "PUT",
       body: JSON.stringify({ default_group_by: value || null, default_mode: activeMode }),
     }).catch(() => {});
@@ -2289,13 +2289,13 @@ export default function ViewModesBlock({
     if (!filterParam) return;
     const saved = savedFilters.find((f) => f.id === filterParam);
     if (saved) {
-      apiFetch(`/filters/${filterParam}`, {
+      apiFetch(`/filters/${encodeURIComponent(filterParam)}`, {
         method: "PUT",
         body: JSON.stringify({ is_default: true }),
       }).catch(() => {});
       return;
     }
-    apiFetch(`/prefs/entity/${entityFullId}`, {
+    apiFetch(`/prefs/entity/${encodeURIComponent(entityFullId)}`, {
       method: "PUT",
       body: JSON.stringify({ default_filter_key: filterParam, default_mode: activeMode }),
     }).catch(() => {});
@@ -2354,7 +2354,7 @@ export default function ViewModesBlock({
       pivot_col_group_by: pivotColGroupBy,
       pivot_measure: pivotMeasure,
     };
-    apiFetch(`/filters/${entityFullId}`, {
+    apiFetch(`/filters/${encodeURIComponent(entityFullId)}`, {
       method: "POST",
       body: JSON.stringify({ name, domain: domain || {}, state }),
     })
@@ -2371,7 +2371,7 @@ export default function ViewModesBlock({
 
   function handleDeleteSavedView(viewId) {
     if (!viewId) return;
-    apiFetch(`/filters/${viewId}`, { method: "DELETE" })
+    apiFetch(`/filters/${encodeURIComponent(viewId)}`, { method: "DELETE" })
       .then(async () => {
         setSavedFilters((prev) => prev.filter((f) => f.id !== viewId));
         await reloadSavedFilters();

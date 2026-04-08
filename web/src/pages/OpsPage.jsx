@@ -1,19 +1,25 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { MoreHorizontal } from "lucide-react";
 import { apiFetch } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
+import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
+
+const TERMINAL_JOB_STATUSES = new Set(["succeeded", "failed", "dead"]);
 
 export default function OpsPage() {
   const { pushToast } = useToast();
   const [jobs, setJobs] = useState([]);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState([]);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [clientFilters, setClientFilters] = useState([]);
   const [page, setPage] = useState(0);
   const [totalItems, setTotalItems] = useState(0);
@@ -38,6 +44,30 @@ export default function OpsPage() {
   useEffect(() => {
     loadJobs();
   }, []);
+
+  async function deleteSelectedJobs() {
+    if (!selectedIds.length || saving) return;
+    const selectedJobs = (jobs || []).filter((job) => selectedIds.includes(job.id));
+    if (selectedJobs.some((job) => !TERMINAL_JOB_STATUSES.has(job.status))) {
+      setError("Only terminal jobs can be deleted. Cancel queued or running jobs first.");
+      setShowDeleteModal(false);
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await Promise.all(selectedIds.map((id) => apiFetch(`/ops/jobs/${encodeURIComponent(id)}`, { method: "DELETE" })));
+      setSelectedIds([]);
+      setShowDeleteModal(false);
+      pushToast("success", selectedIds.length === 1 ? "Job deleted." : "Jobs deleted.");
+      await loadJobs();
+    } catch (err) {
+      setError(err?.message || "Delete failed");
+      pushToast("error", err?.message || "Delete failed");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const rows = useMemo(
     () => (jobs || []).map((j) => ({
@@ -109,6 +139,8 @@ export default function OpsPage() {
     if (!status) return filters.find((f) => f.id === "all") || null;
     return filters.find((f) => f.id === status) || null;
   }, [filters, status]);
+  const selectedJobs = useMemo(() => (jobs || []).filter((job) => selectedIds.includes(job.id)), [jobs, selectedIds]);
+  const allSelectedTerminal = selectedJobs.length > 0 && selectedJobs.every((job) => TERMINAL_JOB_STATUSES.has(job.status));
 
   return (
     <div className="min-h-full md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
@@ -157,6 +189,39 @@ export default function OpsPage() {
                     totalItems,
                     onPageChange: setPage,
                   }}
+                  rightActions={
+                    selectedIds.length > 0 ? (
+                      <div className="dropdown dropdown-end">
+                        <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </button>
+                        <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
+                          <li className="menu-title">
+                            <span>Selection</span>
+                          </li>
+                          {selectedIds.length === 1 ? (
+                            <li>
+                              <button onClick={() => navigate(`/ops/jobs/${selectedIds[0]}`)}>Open job</button>
+                            </li>
+                          ) : null}
+                          <li>
+                            <button
+                              className="text-error"
+                              onClick={() => setShowDeleteModal(true)}
+                              disabled={saving || !allSelectedTerminal}
+                              title={!allSelectedTerminal ? "Cancel queued or running jobs before deleting them." : undefined}
+                            >
+                              {allSelectedTerminal
+                                ? selectedIds.length === 1
+                                  ? "Delete"
+                                  : `Delete selected (${selectedIds.length})`
+                                : "Delete (terminal jobs only)"}
+                            </button>
+                          </li>
+                        </ul>
+                      </div>
+                    ) : null
+                  }
                 />
 
                 <ListViewRenderer
@@ -200,6 +265,27 @@ export default function OpsPage() {
           </div>
         </div>
       </div>
+      {showDeleteModal ? (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-md">
+            <h3 className="text-lg font-semibold">Delete job{selectedIds.length > 1 ? "s" : ""}?</h3>
+            <p className="mt-2 text-sm opacity-70">
+              This will permanently remove {selectedIds.length} terminal job record{selectedIds.length > 1 ? "s" : ""} and its events. This cannot be undone.
+            </p>
+            <div className="modal-action">
+              <button className="btn btn-ghost btn-sm" type="button" onClick={() => setShowDeleteModal(false)} disabled={saving}>
+                Cancel
+              </button>
+              <button className="btn btn-error btn-sm" type="button" onClick={deleteSelectedJobs} disabled={saving || !allSelectedTerminal}>
+                {saving ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+          <button className="modal-backdrop" type="button" onClick={() => !saving && setShowDeleteModal(false)}>
+            close
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

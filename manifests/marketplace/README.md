@@ -39,5 +39,4 @@ python3 manifests/marketplace/install_all.py
 
 $env:OCTO_BASE_URL="https://octodrop-platform-api.fly.dev"
 $env:OCTO_API_TOKEN=""
-$env:OCTO_WORKSPACE_ID="d9c304c8-508a-4713-aa6d-02b01907fd40"
 python manifests/marketplace/install_all.py

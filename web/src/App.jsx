@@ -69,6 +69,7 @@ import OctoAiSessionsPage from "./pages/OctoAiSessionsPage.jsx";
 import OctoAiSessionDetailPage from "./pages/OctoAiSessionDetailPage.jsx";
 import OctoAiWorkspacePage from "./pages/OctoAiWorkspacePage.jsx";
 import ExternalApiDocsPage, { ExternalApiDocsRedirectPage } from "./pages/ExternalApiDocsPage.jsx";
+import SecurityCenterPage from "./pages/SecurityCenterPage.jsx";
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -397,7 +398,16 @@ export default function App() {
             <Route path="studio2" element={<Navigate to="/studio" replace />} />
             <Route path="studio2/:moduleId" element={<Navigate to="/studio" replace />} />
             <Route path="audit" element={<AuditPage />} />
+            <Route path="security" element={<Navigate to="/settings/security" replace />} />
             <Route path="settings" element={<SettingsPage />} />
+            <Route
+              path="settings/security"
+              element={(
+                <SuperadminRoute>
+                  <SecurityCenterPage />
+                </SuperadminRoute>
+              )}
+            />
             <Route path="settings/settings" element={<SettingsSettingsPage user={user} onSignOut={handleSignOut} />} />
             <Route path="settings/preferences" element={<Navigate to="/settings/settings" replace />} />
             <Route path="settings/password" element={<SettingsPasswordPage user={user} />} />
