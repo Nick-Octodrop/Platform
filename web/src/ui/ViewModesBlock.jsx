@@ -507,25 +507,52 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
       cancelled = true;
     };
   }, [titleField, subtitleFields, badgeFields, groupBy, fieldMap]);
+  const KANBAN_BADGE_BASE =
+    "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium leading-4 shadow-sm";
   const priorityTone = (value) => {
     const v = String(value || "").toLowerCase();
-    if (v === "urgent" || v === "critical") return "badge-error";
-    if (v === "high") return "badge-warning";
-    if (v === "low") return "badge-ghost";
-    return "badge-neutral";
+    if (v === "urgent" || v === "critical") return `${KANBAN_BADGE_BASE} border-error/20 bg-error/10 text-error`;
+    if (v === "high") return `${KANBAN_BADGE_BASE} border-warning/20 bg-warning/12 text-warning-content`;
+    if (v === "low") return `${KANBAN_BADGE_BASE} border-base-300 bg-base-100 text-base-content/60`;
+    return `${KANBAN_BADGE_BASE} border-base-300 bg-base-100 text-base-content/70`;
   };
   const statusTone = (value) => {
     const v = String(value || "").toLowerCase();
-    if (["done", "completed", "approved", "won", "resolved", "confirmed", "active"].includes(v)) return "badge-success";
-    if (["cancelled", "canceled", "rejected", "lost", "inactive", "expired"].includes(v)) return "badge-error";
-    if (["draft", "new", "planned", "pending"].includes(v)) return "badge-ghost";
-    return "badge-neutral";
+    if (["done", "completed", "approved", "won", "resolved", "confirmed", "active"].includes(v)) {
+      return `${KANBAN_BADGE_BASE} border-success/20 bg-success/12 text-success-content`;
+    }
+    if (["cancelled", "canceled", "rejected", "lost", "inactive", "expired"].includes(v)) {
+      return `${KANBAN_BADGE_BASE} border-error/20 bg-error/10 text-error`;
+    }
+    if (["draft", "new", "planned", "pending"].includes(v)) {
+      return `${KANBAN_BADGE_BASE} border-base-300 bg-base-100 text-base-content/65`;
+    }
+    return `${KANBAN_BADGE_BASE} border-base-300 bg-base-100 text-base-content/70`;
+  };
+  const badgeKind = (fieldId, rawValue) => {
+    const fieldIdText = String(fieldId || "").toLowerCase();
+    const fieldDef = fieldMap[fieldId] || null;
+    if (fieldIdText.includes("priority")) return "priority";
+    if (fieldIdText.includes("status") || fieldIdText.includes("stage")) return "status";
+    if (
+      fieldDef?.type === "number" ||
+      fieldIdText.includes("amount") ||
+      fieldIdText.includes("value") ||
+      fieldIdText.includes("total") ||
+      fieldIdText.includes("price") ||
+      fieldIdText.includes("cost") ||
+      fieldIdText.includes("margin")
+    ) {
+      return "metric";
+    }
+    return "meta";
   };
   const badgeTone = (fieldId, rawValue) => {
-    const fieldIdText = String(fieldId || "").toLowerCase();
-    if (fieldIdText.includes("priority")) return priorityTone(rawValue);
-    if (fieldIdText.includes("status") || fieldIdText.includes("stage")) return statusTone(rawValue);
-    return "badge-neutral";
+    const kind = badgeKind(fieldId, rawValue);
+    if (kind === "priority") return priorityTone(rawValue);
+    if (kind === "status") return statusTone(rawValue);
+    if (kind === "metric") return "text-[12px] font-semibold leading-5 text-base-content/80 tabular-nums";
+    return `${KANBAN_BADGE_BASE} border-base-300 bg-base-100 text-base-content/68`;
   };
   const formatCardValue = (fieldId, rawValue) => {
     if (rawValue === null || rawValue === undefined || rawValue === "") return "";
@@ -670,12 +697,18 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
                             )}
                           </div>
                           {badgeValues.length > 0 ? (
-                            <div className="mt-3 flex flex-wrap items-center gap-2">
-                              {badgeValues.map((item) => (
-                                <span key={`${rowId}-${item.fieldId}`} className={`badge badge-sm ${badgeTone(item.fieldId, item.raw)}`}>
-                                  {item.value}
-                                </span>
-                              ))}
+                            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                              {badgeValues.map((item) => {
+                                const kind = badgeKind(item.fieldId, item.raw);
+                                return (
+                                  <span
+                                    key={`${rowId}-${item.fieldId}`}
+                                    className={badgeTone(item.fieldId, item.raw)}
+                                  >
+                                    {kind === "metric" ? item.value : item.value}
+                                  </span>
+                                );
+                              })}
                             </div>
                           ) : null}
                         </div>

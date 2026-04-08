@@ -42,7 +42,8 @@ Expected key names (Worker):
 - all core Supabase/OpenAI keys above (except `SUPABASE_ANON_KEY` optional for worker)
 - `WORKER_POLL_MS`
 - `WORKER_BATCH`
-- `WORKER_ORG_ID`
+
+Do not set `WORKER_ORG_ID` for the normal shared production worker. If it is set, the worker only claims jobs for that one workspace/org and will ignore automation jobs from every other workspace.
 
 ## 3) Update secrets (only when needed)
 

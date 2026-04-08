@@ -133,9 +133,12 @@ Expected minimum:
 - `WORKER_POLL_MS`
 - `WORKER_BATCH`
 
-Optional:
+Normally unset:
 
 - `WORKER_ORG_ID`
+- `OCTO_WORKER_ORG_ID`
+
+Only set these for a deliberately tenant-dedicated worker. The production shared worker must leave them unset so it can claim jobs across all workspaces.
 
 Check:
 

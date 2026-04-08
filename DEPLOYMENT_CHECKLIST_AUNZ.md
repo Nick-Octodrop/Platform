@@ -185,7 +185,7 @@ flyctl secrets set OPENAI_MODEL=gpt-4o-mini -a octodrop-platform-worker
 
 flyctl secrets set WORKER_POLL_MS=1000 -a octodrop-platform-worker
 flyctl secrets set WORKER_BATCH=5 -a octodrop-platform-worker
-flyctl secrets set WORKER_ORG_ID="<WORKER_ORG_ID>" -a octodrop-platform-worker
+# Leave WORKER_ORG_ID unset for the shared worker. Setting it restricts job claiming to one workspace/org.
 
 
 flyctl secrets set SUPABASE_DB_URL="<SUPABASE_DB_URL_ENCODED_SSL>" -a octodrop-platform-api

@@ -6099,6 +6099,7 @@ export default function AutomationEditorPage({ user }) {
   const automationProfile = useMemo(() => ({
     kind: "automation",
     defaultTabId: defaultAutomationTabId,
+    desktopScrollableTabs: ["flow", "runs"],
     rightTabs: [
       { id: "flow", label: "Flow", render: () => flowTab },
       { id: "json", label: "JSON", render: () => jsonTab },

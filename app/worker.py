@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import os
 import json
+import logging
 import httpx
 import sys
 import time
@@ -64,6 +65,9 @@ from app.stores_db import (
     reset_org_id,
 )
 from app.webhook_signing import build_webhook_signature_headers
+
+
+logger = logging.getLogger("octo.worker")
 
 
 def _get_attachment_helpers():
@@ -1822,6 +1826,14 @@ def main() -> None:
     batch_size = int(os.getenv("WORKER_BATCH", "5"))
     job_store = DbJobStore()
     shared_mode = not bool(scoped_org_id.strip())
+    logger.info(
+        "worker_start worker_id=%s mode=%s scoped_org_id=%s poll_ms=%s batch_size=%s",
+        worker_id,
+        "shared" if shared_mode else "scoped",
+        scoped_org_id or None,
+        poll_ms,
+        batch_size,
+    )
 
     while True:
         if shared_mode:

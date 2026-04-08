@@ -17,15 +17,15 @@ def handle_event(automation_store: Any, job_store: Any, event: dict) -> list[dic
         return []
     org_id = event.get("meta", {}).get("org_id")
     logger.info("automation_event_received event=%s org_id=%s", event_type, org_id)
-    automations = automation_store.list(status="published")
-    if not automations:
-        logger.info("automation_no_published event=%s org_id=%s", event_type, org_id)
-        return []
     runs = []
     token = None
     if isinstance(org_id, str) and org_id:
         token = set_org_id(org_id)
     try:
+        automations = automation_store.list(status="published")
+        if not automations:
+            logger.info("automation_no_published event=%s org_id=%s", event_type, org_id)
+            return []
         for automation in automations:
             trigger = automation.get("trigger") or {}
             if not match_event(trigger, event_type, payload):

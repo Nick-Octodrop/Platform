@@ -167,6 +167,7 @@ export const emailTemplateProfile = {
   samplePicker: { enabled: true },
   autoPreview: false,
   autoPreviewMode: "placeholder",
+  desktopScrollableTabs: ["compose", "test", "history"],
   agentMessage: "Describe the email template change you want and I will draft an update.",
   actions: [
     { id: "save", label: "Save", kind: "secondary", onClick: (ctx) => ctx.saveNow?.() },
@@ -311,6 +312,7 @@ export const documentTemplateProfile = {
   samplePicker: { enabled: true },
   autoPreview: true,
   autoPreviewMode: "placeholder",
+  desktopScrollableTabs: ["template"],
   agentMessage: "Describe the document template change you want and I will draft an update.",
   actions: [
     { id: "save", label: "Save", kind: "secondary", onClick: (ctx) => ctx.saveNow?.() },

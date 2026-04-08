@@ -286,6 +286,7 @@ export default function TemplateStudioShell({
   const actions = [...(profile?.actions || []), ...(extraActions || [])];
   const activeTabId = externalActiveTab ?? activeTab;
   const handleTabChange = onTabChange ?? setActiveTab;
+  const desktopScrollableTabs = Array.isArray(profile?.desktopScrollableTabs) ? profile.desktopScrollableTabs : [];
   const leftPaneContent = renderLeftPane
     ? renderLeftPane(ctx)
     : (
@@ -559,8 +560,11 @@ export default function TemplateStudioShell({
                       </div>
                     );
                   }
+                  const tabClass = desktopScrollableTabs.includes(tab.id)
+                    ? "h-full min-h-0 overflow-y-auto pr-1"
+                    : "h-full min-h-0";
                   return tab.id === activeTabId ? (
-                    <div key={tab.id} className="h-full min-h-0">
+                    <div key={tab.id} className={tabClass}>
                       {tab.render(ctx)}
                     </div>
                   ) : null;
