@@ -62,6 +62,27 @@ body {
     @apply w-full;
   }
 
+  .input,
+  .select,
+  .textarea,
+  .file-input {
+    position: relative;
+    z-index: 0;
+  }
+
+  .input:focus,
+  .input:focus-within,
+  .select:focus,
+  .select:focus-within,
+  .textarea:focus,
+  .textarea:focus-within,
+  .file-input:focus,
+  .file-input:focus-within {
+    outline: none;
+    border-color: hsl(var(--p) / 0.45);
+    box-shadow: inset 0 0 0 1px hsl(var(--p) / 0.28);
+  }
+
   .badge-dismissible {
     @apply inline-flex items-center gap-1.5 px-2 py-1;
     min-height: 2rem;

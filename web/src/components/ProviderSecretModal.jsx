@@ -11,7 +11,7 @@ const PROVIDER_COPY = {
   },
   google_maps: {
     title: "Connect Google Maps",
-    description: "Add the workspace Google Maps API key to enable address autocomplete in forms.",
+    description: "Add a workspace server-side Google Maps / Places API key with billing and Places API enabled to use address autocomplete in forms.",
     providerKey: "google_maps",
     secretKey: "api_key",
     placeholder: "AIza...",

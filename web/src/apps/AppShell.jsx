@@ -1570,6 +1570,7 @@ function AppView({
   const [clientFilters, setClientFilters] = useState([]);
   const [autoSaveState, setAutoSaveState] = useState("idle");
   const [actionState, setActionState] = useState({ status: "idle", label: null, kind: null });
+  const [isFormFieldFocused, setIsFormFieldFocused] = useState(false);
   const autoSaveTimerRef = useRef(null);
   const saveInFlightRef = useRef(false);
   const pendingAutoSaveRef = useRef(false);
@@ -2352,6 +2353,7 @@ function AppView({
     if (!view?.header?.auto_save) return;
     if (!effectiveRecordId) return;
     if (!isDirty) return;
+    if (isFormFieldFocused) return;
     const debounceMs = Number(view?.header?.auto_save_debounce_ms) || 750;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(async () => {
@@ -2368,7 +2370,7 @@ function AppView({
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [kind, previewMode, canWriteRecords, view?.header?.auto_save, view?.header?.auto_save_debounce_ms, effectiveRecordId, draft, isDirty]);
+  }, [kind, previewMode, canWriteRecords, view?.header?.auto_save, view?.header?.auto_save_debounce_ms, effectiveRecordId, draft, isDirty, isFormFieldFocused]);
 
   if (state.error) return <div className="alert alert-error">{state.error}</div>;
 
@@ -2880,6 +2882,7 @@ function AppView({
               canCreateLookup={(lookupEntityId) => canWriteRecords && Boolean(canCreateLookup?.(lookupEntityId))}
               onLookupCreate={onLookupCreate}
               onRefreshRecord={refreshCurrentRecord}
+              onFieldFocusChange={setIsFormFieldFocused}
               renderBlocks={(blocks, nestedRecordContext = null) => (
                 <ContentBlocksRenderer
                   blocks={blocks}

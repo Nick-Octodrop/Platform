@@ -64,13 +64,14 @@ function applyAddressMapping(record, mapping, address) {
 
 function AddressAutocompleteField({ field, value, onChange, onRecordChange, readonly, record, previewMode = false }) {
   const { hasCapability } = useAccessContext();
-  const { providers, loading: providerStatusLoading, reload: reloadProviderStatus } = useWorkspaceProviderStatus(["google_maps"]);
+  const { providers, reload: reloadProviderStatus } = useWorkspaceProviderStatus(["google_maps"]);
   const containerRef = useRef(null);
   const sessionTokenRef = useRef(`gmaps-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const [search, setSearch] = useState(value || "");
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
+  const [lookupError, setLookupError] = useState("");
   const [mapsModalOpen, setMapsModalOpen] = useState(false);
   const mapping = useMemo(() => resolveAddressAutocompleteMapping(field?.id), [field?.id]);
   const mapsConnected = Boolean(providers?.google_maps?.connected);
@@ -100,24 +101,30 @@ function AddressAutocompleteField({ field, value, onChange, onRecordChange, read
     let cancelled = false;
     if (!open || disabled || !mapsConnected) {
       setSuggestions([]);
+      setLookupError("");
       setLoading(false);
       return undefined;
     }
     const query = String(search || "").trim();
     if (query.length < 3) {
       setSuggestions([]);
+      setLookupError("");
       setLoading(false);
       return undefined;
     }
     const timer = window.setTimeout(async () => {
       setLoading(true);
+      setLookupError("");
       try {
         const res = await googlePlacesAutocomplete(query, sessionTokenRef.current);
         if (!cancelled) {
           setSuggestions(Array.isArray(res?.suggestions) ? res.suggestions : []);
         }
-      } catch {
-        if (!cancelled) setSuggestions([]);
+      } catch (err) {
+        if (!cancelled) {
+          setSuggestions([]);
+          setLookupError(err?.message || "Address lookup failed. Check your Google Maps key, billing, and Places API access.");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -139,7 +146,8 @@ function AddressAutocompleteField({ field, value, onChange, onRecordChange, read
       setSearch(address?.line_1 || suggestion?.main_text || suggestion?.description || "");
       setOpen(false);
       sessionTokenRef.current = `gmaps-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    } catch {
+    } catch (err) {
+      setLookupError(err?.message || "Address details lookup failed. Check your Google Maps key, billing, and Places API access.");
       onChange(suggestion?.description || search);
       setOpen(false);
     } finally {
@@ -149,7 +157,7 @@ function AddressAutocompleteField({ field, value, onChange, onRecordChange, read
 
   return (
     <>
-      <div ref={containerRef} className="relative">
+      <div ref={containerRef} className="relative space-y-1">
         <input
           className="input input-bordered w-full"
           disabled={disabled}
@@ -167,10 +175,13 @@ function AddressAutocompleteField({ field, value, onChange, onRecordChange, read
             {mapsConnected ? (
               <ul className="menu menu-compact menu-vertical w-full max-h-72 overflow-y-auto">
                 {loading ? <li className="menu-title"><span>Searching addresses…</span></li> : null}
+                {!loading && lookupError ? (
+                  <li className="menu-title text-error"><span>{lookupError}</span></li>
+                ) : null}
                 {!loading && String(search || "").trim().length < 3 ? (
                   <li className="menu-title"><span>Type at least 3 characters</span></li>
                 ) : null}
-                {!loading && String(search || "").trim().length >= 3 && suggestions.length === 0 ? (
+                {!loading && !lookupError && String(search || "").trim().length >= 3 && suggestions.length === 0 ? (
                   <li className="menu-title"><span>No address matches</span></li>
                 ) : null}
                 {suggestions.map((item) => (
@@ -190,7 +201,6 @@ function AddressAutocompleteField({ field, value, onChange, onRecordChange, read
                   <button
                     type="button"
                     className="btn btn-sm btn-outline w-full justify-start"
-                    disabled={providerStatusLoading}
                     onClick={() => setMapsModalOpen(true)}
                   >
                     Create Google Maps key
@@ -251,6 +261,7 @@ export default function FormViewRenderer({
   canCreateLookup,
   onLookupCreate,
   onRefreshRecord,
+  onFieldFocusChange,
   bottomActionsMode = "inline",
   renderBlocks = null,
 }) {
@@ -350,6 +361,7 @@ export default function FormViewRenderer({
   const [mobileAttachmentSheet, setMobileAttachmentSheet] = useState(null);
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const mobileActionsRef = useRef(null);
+  const formRootRef = useRef(null);
   const computedRecord = useMemo(
     () => applyComputedFields(fieldIndex || {}, record || {}),
     [fieldIndex, record]
@@ -357,6 +369,17 @@ export default function FormViewRenderer({
   const applyRecordChange = React.useCallback(
     (nextRecord) => onChange?.(applyComputedFields(fieldIndex || {}, nextRecord || {})),
     [onChange, fieldIndex]
+  );
+  const handleFocusCapture = React.useCallback(() => {
+    onFieldFocusChange?.(true);
+  }, [onFieldFocusChange]);
+  const handleBlurCapture = React.useCallback(
+    (event) => {
+      const nextTarget = event.relatedTarget;
+      if (nextTarget && formRootRef.current?.contains(nextTarget)) return;
+      onFieldFocusChange?.(false);
+    },
+    [onFieldFocusChange]
   );
 
   if (sections.length === 0 && !activityConfig) {
@@ -619,7 +642,12 @@ export default function FormViewRenderer({
   }, [mobileActionsOpen]);
 
   return (
-    <div className={`h-full min-h-0 flex flex-col ${isMobile ? "gap-4" : "gap-4"}`}>
+    <div
+      ref={formRootRef}
+      onFocusCapture={handleFocusCapture}
+      onBlurCapture={handleBlurCapture}
+      className={`h-full min-h-0 flex flex-col ${isMobile ? "gap-4" : "gap-4"}`}
+    >
       {header && !hideHeader && (
         <div className="shrink-0 flex flex-wrap items-start justify-between gap-3">
           <div className="flex flex-1 flex-wrap items-center gap-3 min-w-0">

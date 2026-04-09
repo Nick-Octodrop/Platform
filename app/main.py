@@ -11434,7 +11434,7 @@ def _provider_status_payload(actor: dict | None, provider_key: str, *, secret_ke
 
 
 def _openai_configured() -> bool:
-    return bool(_resolve_provider_secret_value("openai", env_key="OPENAI_API_KEY"))
+    return bool(_resolve_provider_secret_value("openai"))
 
 
 def _openai_not_configured() -> JSONResponse:
@@ -11460,7 +11460,7 @@ def _openai_chat_completion(
     temperature: float = 0.2,
     response_format: dict | None = None,
 ) -> dict:
-    api_key = _resolve_provider_secret_value("openai", env_key="OPENAI_API_KEY")
+    api_key = _resolve_provider_secret_value("openai")
     if not api_key:
         raise SecretStoreError("OpenAI API key is not configured for this workspace")
     payload = {
@@ -29650,7 +29650,7 @@ async def octo_ai_workspace_graph(request: Request) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
-    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    denied = _require_superadmin(actor, "Superadmin role required")
     if denied:
         return denied
     graph = _ai_build_workspace_graph(request)
@@ -29662,7 +29662,7 @@ async def octo_ai_explorer(request: Request) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
-    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    denied = _require_superadmin(actor, "Superadmin role required")
     if denied:
         return denied
     modules = [
@@ -29692,7 +29692,7 @@ async def list_octo_ai_sessions(request: Request) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
-    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    denied = _require_superadmin(actor, "Superadmin role required")
     if denied:
         return denied
     items = _ai_sort(_ai_list_records(_AI_ENTITY_SESSION, limit=1000), field="last_activity_at")
@@ -29705,7 +29705,7 @@ async def create_octo_ai_session(request: Request) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
-    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    denied = _require_superadmin(actor, "Superadmin role required")
     if denied:
         return denied
     body = await _safe_json(request)
@@ -29759,7 +29759,7 @@ async def get_octo_ai_session(request: Request, session_id: str) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
-    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    denied = _require_superadmin(actor, "Superadmin role required")
     if denied:
         return denied
     with _ai_session_scope(request, session_id, actor) as bound:
@@ -29805,7 +29805,7 @@ async def update_octo_ai_session(request: Request, session_id: str) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
-    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    denied = _require_superadmin(actor, "Superadmin role required")
     if denied:
         return denied
     body = await _safe_json(request)
@@ -29856,7 +29856,7 @@ async def ensure_octo_ai_session_sandbox(request: Request, session_id: str) -> d
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
-    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    denied = _require_superadmin(actor, "Superadmin role required")
     if denied:
         return denied
     with _ai_session_scope(request, session_id, actor) as bound:
@@ -29914,7 +29914,7 @@ async def discard_octo_ai_session_sandbox(request: Request, session_id: str) -> 
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
-    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    denied = _require_superadmin(actor, "Superadmin role required")
     if denied:
         return denied
     with _ai_session_scope(request, session_id, actor) as bound:
@@ -29962,7 +29962,7 @@ async def delete_octo_ai_session(request: Request, session_id: str) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
-    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    denied = _require_superadmin(actor, "Superadmin role required")
     if denied:
         return denied
     with _ai_session_scope(request, session_id, actor) as bound:
@@ -30095,7 +30095,7 @@ async def octo_ai_chat(request: Request, session_id: str) -> dict:
     if isinstance(actor, JSONResponse):
         return actor
     request_actor = actor
-    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    denied = _require_superadmin(actor, "Superadmin role required")
     if denied:
         return denied
     with _ai_session_scope(request, session_id, actor) as bound:
@@ -30162,7 +30162,7 @@ async def octo_ai_chat_stream(request: Request, session_id: str) -> StreamingRes
     if isinstance(actor, JSONResponse):
         return actor
     request_actor = actor
-    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    denied = _require_superadmin(actor, "Superadmin role required")
     if denied:
         async def denied_stream():
             payload = denied.body.decode("utf-8") if hasattr(denied.body, "decode") else "{}"
@@ -30250,7 +30250,7 @@ async def octo_ai_answer_question(request: Request, session_id: str) -> dict:
     if isinstance(actor, JSONResponse):
         return actor
     request_actor = actor
-    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    denied = _require_superadmin(actor, "Superadmin role required")
     if denied:
         return denied
     with _ai_session_scope(request, session_id, actor) as bound:
@@ -30479,7 +30479,7 @@ async def octo_ai_generate_patchset(request: Request, session_id: str) -> dict:
     if isinstance(actor, JSONResponse):
         return actor
     request_actor = actor
-    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    denied = _require_superadmin(actor, "Superadmin role required")
     if denied:
         return denied
     with _ai_session_scope(request, session_id, actor) as bound:
@@ -30595,7 +30595,7 @@ async def octo_ai_validate_patchset(request: Request, patchset_id: str) -> dict:
     if isinstance(actor, JSONResponse):
         return actor
     request_actor = actor
-    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    denied = _require_superadmin(actor, "Superadmin role required")
     if denied:
         return denied
     with _ai_record_scope(request, _AI_ENTITY_PATCHSET, patchset_id, actor) as bound:
@@ -30656,7 +30656,7 @@ async def octo_ai_apply_patchset(request: Request, patchset_id: str) -> dict:
     if isinstance(actor, JSONResponse):
         return actor
     request_actor = actor
-    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    denied = _require_superadmin(actor, "Superadmin role required")
     if denied:
         return denied
     with _ai_record_scope(request, _AI_ENTITY_PATCHSET, patchset_id, actor) as bound:
@@ -30873,7 +30873,7 @@ async def octo_ai_rollback_patchset(request: Request, patchset_id: str) -> dict:
     if isinstance(actor, JSONResponse):
         return actor
     request_actor = actor
-    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    denied = _require_superadmin(actor, "Superadmin role required")
     if denied:
         return denied
     with _ai_record_scope(request, _AI_ENTITY_PATCHSET, patchset_id, actor) as bound:
@@ -30984,7 +30984,7 @@ async def octo_ai_create_release(request: Request, session_id: str) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
-    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    denied = _require_superadmin(actor, "Superadmin role required")
     if denied:
         return denied
     denied = _ai_release_admin_denied(actor)
@@ -31076,7 +31076,7 @@ async def octo_ai_promote_release(request: Request, release_id: str) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
-    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    denied = _require_superadmin(actor, "Superadmin role required")
     if denied:
         return denied
     denied = _ai_release_admin_denied(actor)
@@ -31250,7 +31250,7 @@ async def octo_ai_rollback_release(request: Request, release_id: str) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
-    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    denied = _require_superadmin(actor, "Superadmin role required")
     if denied:
         return denied
     denied = _ai_release_admin_denied(actor)
@@ -31331,7 +31331,7 @@ async def octo_ai_get_artifact(request: Request, artifact_type: str, artifact_ke
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
-    denied = _require_capability(actor, "modules.manage", "Admin role required")
+    denied = _require_superadmin(actor, "Superadmin role required")
     if denied:
         return denied
     if artifact_type == "module":
@@ -34509,7 +34509,7 @@ async def get_settings_provider_status(request: Request, providers: str = "opena
     response: dict[str, dict] = {}
     for provider_key in requested:
         if provider_key == "openai":
-            response[provider_key] = _provider_status_payload(actor, provider_key, env_key="OPENAI_API_KEY")
+            response[provider_key] = _provider_status_payload(actor, provider_key)
         elif provider_key in {"google_maps", "google_places"}:
             response["google_maps"] = _provider_status_payload(actor, "google_maps", env_key="GOOGLE_MAPS_API_KEY")
         else:
@@ -34537,7 +34537,7 @@ async def google_places_autocomplete(request: Request, input: str, session_token
     except SecretStoreError:
         return _error_response("MAPS_NOT_CONFIGURED", "Google Maps API key is not configured for this workspace", status=501)
     except Exception as exc:
-        return _error_response("MAPS_LOOKUP_FAILED", "Google Places lookup failed", detail={"error": str(exc)}, status=502)
+        return _error_response("MAPS_LOOKUP_FAILED", f"Google Places lookup failed: {exc}", detail={"error": str(exc)}, status=502)
     suggestions = []
     for item in payload.get("predictions") or []:
         if not isinstance(item, dict):
@@ -34574,7 +34574,7 @@ async def google_places_details(request: Request, place_id: str, session_token: 
     except SecretStoreError:
         return _error_response("MAPS_NOT_CONFIGURED", "Google Maps API key is not configured for this workspace", status=501)
     except Exception as exc:
-        return _error_response("MAPS_LOOKUP_FAILED", "Google Place details lookup failed", detail={"error": str(exc)}, status=502)
+        return _error_response("MAPS_LOOKUP_FAILED", f"Google Place details lookup failed: {exc}", detail={"error": str(exc)}, status=502)
     result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
     address = _google_address_from_components(
         result.get("address_components"),
