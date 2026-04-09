@@ -1,8 +1,3 @@
-import * as HeroOutline24 from "@heroicons/react/24/outline";
-import * as HeroSolid24 from "@heroicons/react/24/solid";
-import * as HeroSolid20 from "@heroicons/react/20/solid";
-import * as HeroSolid16 from "@heroicons/react/16/solid";
-
 const DEFAULT_FAMILY = "24/outline";
 
 export const HERO_ICON_FAMILIES = [
@@ -12,14 +7,17 @@ export const HERO_ICON_FAMILIES = [
   { id: "16/solid", label: "Hero 16 Solid" },
 ];
 
+const familyCatalogPromises = new Map();
+
 function normalizeIcon(Icon) {
   if (typeof Icon === "function") return Icon;
   if (Icon && typeof Icon === "object") return Icon;
+  if (Icon && typeof Icon.default === "function") return Icon.default;
   return null;
 }
 
-function createFamilyMap(source) {
-  return Object.entries(source || {}).reduce((acc, [name, Icon]) => {
+function createFamilyCatalog(source) {
+  const familyMap = Object.entries(source || {}).reduce((acc, [name, Icon]) => {
     if (!name.endsWith("Icon")) return acc;
     const base = name.slice(0, -4);
     const normalized = normalizeIcon(Icon);
@@ -27,27 +25,41 @@ function createFamilyMap(source) {
     acc[base] = normalized;
     return acc;
   }, {});
+  return {
+    familyMap,
+    iconList: Object.keys(familyMap).map((name) => ({ name })),
+  };
 }
 
-export const HERO_ICON_MAP_BY_FAMILY = {
-  "24/outline": createFamilyMap(HeroOutline24),
-  "24/solid": createFamilyMap(HeroSolid24),
-  "20/solid": createFamilyMap(HeroSolid20),
-  "16/solid": createFamilyMap(HeroSolid16),
-};
+async function importHeroFamily(family) {
+  switch (family) {
+    case "24/solid":
+      return import("@heroicons/react/24/solid");
+    case "20/solid":
+      return import("@heroicons/react/20/solid");
+    case "16/solid":
+      return import("@heroicons/react/16/solid");
+    case "24/outline":
+    default:
+      return import("@heroicons/react/24/outline");
+  }
+}
 
-export const HERO_ICON_LIST_BY_FAMILY = Object.fromEntries(
-  Object.entries(HERO_ICON_MAP_BY_FAMILY).map(([family, familyMap]) => [
-    family,
-    Object.keys(familyMap).map((name) => ({ name })),
-  ])
-);
+async function loadHeroFamilyCatalog(family) {
+  const normalizedFamily = normalizeHeroFamily(family);
+  if (!familyCatalogPromises.has(normalizedFamily)) {
+    familyCatalogPromises.set(
+      normalizedFamily,
+      importHeroFamily(normalizedFamily).then((mod) => createFamilyCatalog(mod))
+    );
+  }
+  return familyCatalogPromises.get(normalizedFamily);
+}
 
 export function normalizeHeroFamily(raw) {
   const value = String(raw || "").trim();
   if (!value) return DEFAULT_FAMILY;
-  if (HERO_ICON_MAP_BY_FAMILY[value]) return value;
-  return DEFAULT_FAMILY;
+  return HERO_ICON_FAMILIES.some((family) => family.id === value) ? value : DEFAULT_FAMILY;
 }
 
 export function normalizeHeroKey(raw) {
@@ -72,12 +84,17 @@ export function heroKey(family, name) {
   return `hero:${normalizedFamily}:${normalizedName}`;
 }
 
-export function resolveHeroIcon(input, familyOverride = null) {
+export async function loadHeroIconList(family) {
+  const catalog = await loadHeroFamilyCatalog(family);
+  return catalog.iconList;
+}
+
+export async function resolveHeroIcon(input, familyOverride = null) {
   const parsed = normalizeHeroKey(input);
   if (!parsed) return null;
   const family = normalizeHeroFamily(familyOverride || parsed.family);
   const name = String(parsed.name || "").trim();
   if (!name) return null;
-  return HERO_ICON_MAP_BY_FAMILY[family]?.[name] || null;
+  const catalog = await loadHeroFamilyCatalog(family);
+  return catalog.familyMap[name] || null;
 }
-

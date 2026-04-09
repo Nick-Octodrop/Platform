@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../api.js";
+import AppSelect from "../../components/AppSelect.jsx";
 
 function looksLikeUuid(value) {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -148,7 +149,7 @@ export default function SamplePicker({
         {showEntitySelect && (
           <label className="form-control">
             <span className="label-text">Entity</span>
-            <select
+            <AppSelect
               className={`select select-bordered ${size === "sm" ? "select-sm" : ""}`}
               value={entityId}
               onChange={(e) => setSample((prev) => ({ ...(prev || {}), entity_id: e.target.value, record_id: "" }))}
@@ -159,7 +160,7 @@ export default function SamplePicker({
                   {ent.label || ent.id}
                 </option>
               ))}
-            </select>
+            </AppSelect>
           </label>
         )}
         <label className={`form-control ${showEntitySelect && !rightAction ? "md:col-span-2" : ""}`}>

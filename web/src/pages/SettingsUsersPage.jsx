@@ -3,6 +3,7 @@ import { apiFetch } from "../api";
 import { useToast } from "../components/Toast.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import PaginationControls from "../components/PaginationControls.jsx";
+import AppSelect from "../components/AppSelect.jsx";
 
 const ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
@@ -279,7 +280,7 @@ export default function SettingsUsersPage() {
                 </label>
                 <label className="form-control md:col-span-3">
                   <span className="label-text text-sm">Role</span>
-                  <select
+                  <AppSelect
                     className="select select-bordered select-sm"
                     value={inviteRole}
                     disabled={saving}
@@ -290,7 +291,7 @@ export default function SettingsUsersPage() {
                         {role.label}
                       </option>
                     ))}
-                  </select>
+                  </AppSelect>
                 </label>
                 <div className="md:col-span-3 flex items-end">
                   <button
@@ -327,7 +328,7 @@ export default function SettingsUsersPage() {
                 </label>
                 <label className="form-control md:col-span-3">
                   <span className="label-text text-sm">Platform role</span>
-                  <select
+                  <AppSelect
                     className="select select-bordered select-sm"
                     value={platformInviteRole}
                     disabled={saving}
@@ -338,7 +339,7 @@ export default function SettingsUsersPage() {
                         {role.label}
                       </option>
                     ))}
-                  </select>
+                  </AppSelect>
                 </label>
                 <div className="md:col-span-3 flex items-end">
                   <button
@@ -396,7 +397,7 @@ export default function SettingsUsersPage() {
                       </td>
                       <td>
                         {canManage ? (
-                          <select
+                          <AppSelect
                             className="select select-bordered select-sm w-full max-w-[11rem]"
                             value={member.role || "member"}
                             disabled={saving || ((member.role || "") === "admin" && adminCount <= 1)}
@@ -410,7 +411,7 @@ export default function SettingsUsersPage() {
                                 {role.label}
                                 </option>
                               ))}
-                            </select>
+                            </AppSelect>
                           ) : (
                           <span>{roleLabel(member.role)}</span>
                         )}

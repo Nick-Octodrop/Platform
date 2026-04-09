@@ -40,22 +40,24 @@ function CodeBlock({ children }) {
   );
 }
 
-function DocCard({ icon: Icon, label, href, description }) {
+function DocLinkRow({ icon: Icon, label, href, description }) {
   return (
     <a
-      className="group flex min-h-24 flex-col justify-between rounded-box border border-base-300 bg-base-100 p-4 transition hover:border-success hover:bg-base-200/50"
+      className="group flex items-start justify-between gap-4 rounded-box border border-base-300 bg-base-100 px-4 py-3 transition hover:border-success/50 hover:bg-base-200/40"
       href={href}
       target="_blank"
       rel="noreferrer"
     >
-      <div className="flex items-start justify-between gap-3">
-        <Icon className="h-5 w-5 text-success" />
-        <ExternalLink className="h-4 w-4 opacity-35 transition group-hover:opacity-80" />
+      <div className="flex min-w-0 items-start gap-3">
+        <div className="mt-0.5 shrink-0 text-success">
+          <Icon className="h-4 w-4" />
+        </div>
+        <div className="min-w-0">
+          <div className="text-sm font-semibold">{label}</div>
+          <div className="mt-1 text-xs leading-5 opacity-65">{description}</div>
+        </div>
       </div>
-      <div>
-        <div className="text-sm font-semibold">{label}</div>
-        <div className="mt-1 text-xs leading-5 opacity-65">{description}</div>
-      </div>
+      <ExternalLink className="mt-0.5 h-4 w-4 shrink-0 opacity-35 transition group-hover:opacity-80" />
     </a>
   );
 }
@@ -73,7 +75,7 @@ function EndpointRow({ label, endpoints }) {
   return (
     <div className="rounded-box border border-base-300 bg-base-100 p-3">
       <div className="text-sm font-semibold">{label}</div>
-      <div className="mt-2 flex flex-wrap gap-2">
+      <div className="mt-2 flex flex-col gap-2">
         {endpoints.map((endpoint) => (
           <span key={endpoint} className="rounded-btn bg-base-200 px-2 py-1 font-mono text-[11px] text-base-content/70">
             {endpoint}
@@ -174,10 +176,10 @@ export default function ExternalApiDocsPage() {
 
   return (
     <div className="h-full min-h-0 overflow-y-auto bg-base-200 p-3 text-base-content sm:p-4 lg:p-6">
-      <main className="mx-auto flex min-h-full max-w-6xl flex-col">
+      <main className="mx-auto flex min-h-full max-w-5xl flex-col">
         <div className={DESKTOP_PAGE_SHELL}>
           <div className={`${DESKTOP_PAGE_SHELL_BODY} gap-4 overflow-visible pb-8`}>
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-4">
               <div className="max-w-3xl">
                 <span className="badge badge-success badge-outline">External API v1</span>
                 <h1 className="mt-3 text-3xl font-semibold tracking-tight">Octodrop External API</h1>
@@ -186,7 +188,7 @@ export default function ExternalApiDocsPage() {
                   the API itself requires a scoped <span className="font-mono text-xs">X-Api-Key</span>.
                 </p>
               </div>
-              <div className="rounded-box border border-base-300 bg-base-200/60 p-4 lg:w-96">
+              <div className="rounded-box border border-base-300 bg-base-200/60 p-4">
                 <div className="text-xs font-semibold uppercase tracking-[0.14em] opacity-50">Base URL</div>
                 <div className="mt-2 break-all font-mono text-xs leading-5">{apiBaseUrl || "Not configured"}</div>
                 <button
@@ -200,13 +202,22 @@ export default function ExternalApiDocsPage() {
               </div>
             </div>
 
-            <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <section className="rounded-box border border-base-300 bg-base-100 p-4">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <BookOpen className="h-4 w-4 text-success" />
+                Reference docs
+              </div>
+              <p className="mt-1 text-sm leading-6 opacity-70">
+                Use these links to read the full contract, test requests, or generate clients.
+              </p>
+              <div className="mt-4 space-y-3">
               {links.map((link) => (
-                <DocCard key={link.href} {...link} />
+                  <DocLinkRow key={link.href} {...link} />
               ))}
+              </div>
             </section>
 
-            <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+            <div className="space-y-4">
               <section className="rounded-box border border-base-300 bg-base-100 p-4">
                 <div className="flex items-center gap-2 text-sm font-semibold">
                   <KeyRound className="h-4 w-4 text-success" />
@@ -258,7 +269,7 @@ export default function ExternalApiDocsPage() {
                   <ExternalLink className="h-4 w-4" />
                 </a>
               </div>
-              <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              <div className="mt-4 space-y-3">
                 <EndpointRow label="Metadata" endpoints={["GET /ext/v1/meta/entities"]} />
                 <EndpointRow
                   label="Records"

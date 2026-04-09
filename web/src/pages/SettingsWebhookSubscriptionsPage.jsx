@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { MoreHorizontal } from "lucide-react";
 import { apiFetch } from "../api.js";
+import AppSelect from "../components/AppSelect.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
@@ -52,14 +53,14 @@ function SubscriptionModal({
 
           <label className="form-control">
             <span className="label-text text-sm">Signing Secret</span>
-            <select className="select select-bordered" value={form.signing_secret_id} onChange={(e) => setForm((prev) => ({ ...prev, signing_secret_id: e.target.value }))}>
+            <AppSelect className="select select-bordered" value={form.signing_secret_id} onChange={(e) => setForm((prev) => ({ ...prev, signing_secret_id: e.target.value }))}>
               <option value="">No signing secret</option>
               {(secrets || []).map((secret) => (
                 <option key={secret.id} value={secret.id}>
                   {secret.name || secret.id}
                 </option>
               ))}
-            </select>
+            </AppSelect>
           </label>
 
           <label className="form-control">

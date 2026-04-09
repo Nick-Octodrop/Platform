@@ -10,7 +10,7 @@ import { formatDateTime } from "../utils/dateTime.js";
 import AttachmentGallery from "./AttachmentGallery.jsx";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
-import { resolveLucideIcon } from "../state/lucideIconCatalog.js";
+import AppModuleIcon from "../components/AppModuleIcon.jsx";
 
 const GAP_MAP = {
   sm: "gap-2",
@@ -116,7 +116,22 @@ function blockPrefersFill(block) {
   return false;
 }
 
-export default function ContentBlocksRenderer({ blocks, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, onNavigate, onRunAction, onConfirm, onPrompt, onLookupCreate, externalRefreshTick = 0, previewMode = false, bootstrap = null, bootstrapVersion = 0, bootstrapLoading = false, canWriteRecords = null, recordContext = null }) {
+function StatValueSkeleton() {
+  return <div className="h-8 w-20 animate-pulse rounded-md bg-base-200/80" />;
+}
+
+function ActivityItemSkeleton({ wide = false }) {
+  return (
+    <div className="card card-compact rounded-box border border-base-300 bg-base-100 text-sm">
+      <div className="card-body gap-2 p-3">
+        <div className={`h-3 animate-pulse rounded bg-base-200/80 ${wide ? "w-40" : "w-32"}`} />
+        <div className="h-4 w-3/4 animate-pulse rounded bg-base-200/70" />
+      </div>
+    </div>
+  );
+}
+
+export default function ContentBlocksRenderer({ blocks, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, onNavigate, onRunAction, onConfirm, onPrompt, onLookupCreate, externalRefreshTick = 0, previewMode = false, bootstrap = null, bootstrapVersion = 0, bootstrapLoading = false, canWriteRecords = null, recordContext = null, onPageSectionLoadingChange = null }) {
   const safeBlocks = Array.isArray(blocks) ? blocks : [];
   const isMobile = useMediaQuery("(max-width: 768px)");
   const mobileRecordPage = isMobile && (safeBlocks.some((block) => block?.kind === "record") || Boolean(recordContext?.recordId) || Boolean(recordId));
@@ -155,6 +170,7 @@ export default function ContentBlocksRenderer({ blocks, renderView, recordId, se
             bootstrapVersion={bootstrapVersion}
             bootstrapLoading={bootstrapLoading}
             canWriteRecords={effectiveCanWriteRecords}
+            onPageSectionLoadingChange={onPageSectionLoadingChange}
           />
         );
         if (!fullHeight || !blockPrefersFill(block)) return node;
@@ -172,7 +188,7 @@ export default function ContentBlocksRenderer({ blocks, renderView, recordId, se
   return content;
 }
 
-function BlockRenderer({ block, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, recordContext, onNavigate, onRunAction, onConfirm, onPrompt, onLookupCreate, externalRefreshTick = 0, previewMode = false, bootstrap, bootstrapVersion, bootstrapLoading, canWriteRecords }) {
+function BlockRenderer({ block, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, recordContext, onNavigate, onRunAction, onConfirm, onPrompt, onLookupCreate, externalRefreshTick = 0, previewMode = false, bootstrap, bootstrapVersion, bootstrapLoading, canWriteRecords, onPageSectionLoadingChange = null }) {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const mobileRecordPage = isMobile && Boolean(recordContext?.recordId || recordId);
   const constrainHeight = !mobileRecordPage && (!isMobile || blockPrefersFill(block));
@@ -254,7 +270,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
   if (kind === "stack") {
     return (
       <div className={`${constrainHeight ? "h-full min-h-0" : ""} flex flex-col ${gapClass(block.gap)}`}>
-        <ContentBlocksRenderer blocks={block.content} renderView={renderView} recordId={recordId} searchParams={searchParams} setSearchParams={setSearchParams} manifest={manifest} moduleId={moduleId} actionsMap={actionsMap} onNavigate={onNavigate} onRunAction={onRunAction} onConfirm={onConfirm} onPrompt={onPrompt} onLookupCreate={onLookupCreate} externalRefreshTick={externalRefreshTick} previewMode={previewMode} bootstrap={bootstrap} bootstrapVersion={bootstrapVersion} bootstrapLoading={bootstrapLoading} canWriteRecords={canWriteRecords} />
+        <ContentBlocksRenderer blocks={block.content} renderView={renderView} recordId={recordId} searchParams={searchParams} setSearchParams={setSearchParams} manifest={manifest} moduleId={moduleId} actionsMap={actionsMap} onNavigate={onNavigate} onRunAction={onRunAction} onConfirm={onConfirm} onPrompt={onPrompt} onLookupCreate={onLookupCreate} externalRefreshTick={externalRefreshTick} previewMode={previewMode} bootstrap={bootstrap} bootstrapVersion={bootstrapVersion} bootstrapLoading={bootstrapLoading} canWriteRecords={canWriteRecords} onPageSectionLoadingChange={onPageSectionLoadingChange} />
       </div>
     );
   }
@@ -285,6 +301,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
                 bootstrapVersion={bootstrapVersion}
                 bootstrapLoading={bootstrapLoading}
                 canWriteRecords={canWriteRecords}
+                onPageSectionLoadingChange={onPageSectionLoadingChange}
               />
             </div>
           </div>
@@ -307,7 +324,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
         <div className={shouldFill ? "mt-4 flex-1 min-h-0 overflow-hidden" : "mt-4"}>
           {tabs.map((tab) =>
             tab.id === activeId ? (
-              <ContentBlocksRenderer key={tab.id} blocks={tab.content} renderView={renderView} recordId={recordId} searchParams={searchParams} setSearchParams={setSearchParams} manifest={manifest} moduleId={moduleId} actionsMap={actionsMap} onNavigate={onNavigate} onRunAction={onRunAction} onConfirm={onConfirm} onPrompt={onPrompt} onLookupCreate={onLookupCreate} externalRefreshTick={externalRefreshTick} previewMode={previewMode} bootstrap={bootstrap} bootstrapVersion={bootstrapVersion} bootstrapLoading={bootstrapLoading} canWriteRecords={canWriteRecords} />
+              <ContentBlocksRenderer key={tab.id} blocks={tab.content} renderView={renderView} recordId={recordId} searchParams={searchParams} setSearchParams={setSearchParams} manifest={manifest} moduleId={moduleId} actionsMap={actionsMap} onNavigate={onNavigate} onRunAction={onRunAction} onConfirm={onConfirm} onPrompt={onPrompt} onLookupCreate={onLookupCreate} externalRefreshTick={externalRefreshTick} previewMode={previewMode} bootstrap={bootstrap} bootstrapVersion={bootstrapVersion} bootstrapLoading={bootstrapLoading} canWriteRecords={canWriteRecords} onPageSectionLoadingChange={onPageSectionLoadingChange} />
             ) : null
           )}
         </div>
@@ -326,6 +343,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
         moduleId={moduleId}
         recordContext={recordContext}
         onNavigate={onNavigate}
+        onPageSectionLoadingChange={onPageSectionLoadingChange}
       />
     );
   }
@@ -357,6 +375,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
         bootstrapVersion={bootstrapVersion}
         bootstrapLoading={bootstrapLoading}
         canWriteRecords={canWriteRecords}
+        onPageSectionLoadingChange={onPageSectionLoadingChange}
       />
     );
     if (variant === "panel") {
@@ -425,6 +444,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
             bootstrapVersion={bootstrapVersion}
             bootstrapLoading={bootstrapLoading}
             canWriteRecords={canWriteRecords}
+            onPageSectionLoadingChange={onPageSectionLoadingChange}
           />
         </RecordScopeProvider>
       );
@@ -457,6 +477,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
               bootstrapVersion={bootstrapVersion}
               bootstrapLoading={bootstrapLoading}
               canWriteRecords={canWriteRecords}
+              onPageSectionLoadingChange={onPageSectionLoadingChange}
             />
           </div>
         </RecordScopeProvider>
@@ -490,11 +511,11 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
       return (
         <div className="pt-1">
           <div className="text-sm font-semibold mb-2">Activity & Attachments</div>
-          <ChatterPanel entityId={entityId} recordId={resolvedId} />
+          <ChatterPanel entityId={entityId} recordId={resolvedId} onPageSectionLoadingChange={onPageSectionLoadingChange} />
         </div>
       );
     }
-    return <ChatterPanel entityId={entityId} recordId={resolvedId} />;
+    return <ChatterPanel entityId={entityId} recordId={resolvedId} onPageSectionLoadingChange={onPageSectionLoadingChange} />;
   }
 
   if (previewMode) {
@@ -650,17 +671,26 @@ function buildStatCardShells(block) {
   }));
 }
 
-function StatCardsBlock({ block, moduleId, recordContext, onNavigate }) {
+function StatCardsBlock({ block, moduleId, recordContext, onNavigate, onPageSectionLoadingChange = null }) {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [cards, setCards] = useState(() => buildStatCardShells(block));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const sectionKey = useMemo(
+    () => `stat_cards:${moduleId || "module"}:${block?.id || block?.title || "cards"}`,
+    [moduleId, block?.id, block?.title]
+  );
 
   useEffect(() => {
     setCards(buildStatCardShells(block));
     setError("");
     setLoading(Array.isArray(block?.cards) && block.cards.length > 0);
   }, [block]);
+
+  useEffect(() => {
+    onPageSectionLoadingChange?.(sectionKey, loading);
+    return () => onPageSectionLoadingChange?.(sectionKey, false);
+  }, [onPageSectionLoadingChange, sectionKey, loading]);
 
   useEffect(() => {
     let cancelled = false;
@@ -763,7 +793,6 @@ function StatCardsBlock({ block, moduleId, recordContext, onNavigate }) {
       {error ? <div className="alert alert-error">{error}</div> : null}
       <div className={`grid ${gridClass} gap-4`}>
         {cards.map((card) => {
-          const Icon = resolveLucideIcon(card.icon);
           const clickable = typeof card.target === "string" && card.target && typeof onNavigate === "function";
           const toneClass =
             card.tone === "success"
@@ -781,15 +810,15 @@ function StatCardsBlock({ block, moduleId, recordContext, onNavigate }) {
                     <div className="text-xs uppercase tracking-wide text-base-content/60 break-words">{card.label}</div>
                     {card.subtitle ? <div className="mt-1 text-xs text-base-content/50">{card.subtitle}</div> : null}
                   </div>
-                  {Icon ? (
+                  {card.icon ? (
                     <div className={`shrink-0 ${toneClass}`}>
-                      <Icon size={18} strokeWidth={2} />
+                      <AppModuleIcon iconUrl={`lucide:${card.icon}`} size={18} strokeWidth={2} iconClassName={toneClass} fallback={null} />
                     </div>
                   ) : null}
                 </div>
                 <div className="text-3xl font-semibold leading-none">
                   {loading ? (
-                    <span className="loading loading-dots loading-sm" />
+                    <StatValueSkeleton />
                   ) : card.error ? (
                     <span className="text-base-content/35">-</span>
                   ) : (
@@ -881,7 +910,7 @@ function StatusBarBlock({ block, manifest, recordContext }) {
   return <StatusBar field={field} value={value} />;
 }
 
-function ChatterPanel({ entityId, recordId }) {
+function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null }) {
   const { hasCapability } = useAccessContext();
   const canWriteRecords = hasCapability("records.write");
   const [items, setItems] = useState([]);
@@ -897,6 +926,10 @@ function ChatterPanel({ entityId, recordId }) {
   const [currentUserLabel, setCurrentUserLabel] = useState("You");
   const [members, setMembers] = useState([]);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const sectionKey = useMemo(
+    () => `chatter:${entityId || "entity"}:${recordId || "record"}`,
+    [entityId, recordId]
+  );
   const quickAttachInputRef = useRef(null);
   const listRef = useRef(null);
   const pollTimerRef = useRef(null);
@@ -981,6 +1014,11 @@ function ChatterPanel({ entityId, recordId }) {
     }
     load();
   }, [entityId, recordId]);
+
+  useEffect(() => {
+    onPageSectionLoadingChange?.(sectionKey, loading);
+    return () => onPageSectionLoadingChange?.(sectionKey, false);
+  }, [onPageSectionLoadingChange, sectionKey, loading]);
 
   useEffect(() => {
     if (!entityId || !recordId) return undefined;
@@ -1411,7 +1449,13 @@ function ChatterPanel({ entityId, recordId }) {
       {error && <div className="text-xs text-error pt-2">{error}</div>}
       {activeTab === "activity" && (
       <div ref={listRef} className="flex-1 min-h-0 overflow-auto space-y-2 pt-4">
-        {loading && <div className="text-xs opacity-60">Activity loading...</div>}
+        {loading && (
+          <>
+            <ActivityItemSkeleton />
+            <ActivityItemSkeleton />
+            <ActivityItemSkeleton wide />
+          </>
+        )}
         {!loading && items.length === 0 && <div className="text-xs opacity-60">No activity yet.</div>}
         {items.map((item) => {
           const payload = item?.payload || {};

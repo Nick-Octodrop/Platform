@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { Link, useLocation, useMatch, useParams } from "react-router-dom";
 import { ChevronLeft, Menu, X } from "lucide-react";
 import UserMenu from "../components/UserMenu.jsx";
@@ -6,6 +6,7 @@ import NotificationBell from "../components/NotificationBell.jsx";
 import { apiFetch, getManifest, listStudio2Modules } from "../api.js";
 import { appendOctoAiFrameParams, buildTargetRoute } from "../apps/appShellUtils.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
+import { readStudioPreviewManifest } from "../pages/studio/studioPreviewStore.js";
 
 function isUuidLike(value) {
   const text = String(value || "").trim();
@@ -30,6 +31,29 @@ function findFirstViewTarget(blocks) {
     if (Array.isArray(block.tabs)) {
       for (const tab of block.tabs) {
         const fromTab = findFirstViewTarget(tab?.content);
+        if (fromTab) return fromTab;
+      }
+    }
+  }
+  return null;
+}
+
+function findFirstRecordBlock(blocks) {
+  const items = Array.isArray(blocks) ? blocks : [];
+  for (const block of items) {
+    if (!block || typeof block !== "object") continue;
+    if (block.kind === "record") return block;
+    const nested = findFirstRecordBlock(block.content);
+    if (nested) return nested;
+    if (Array.isArray(block.items)) {
+      for (const item of block.items) {
+        const fromItem = findFirstRecordBlock(item?.content);
+        if (fromItem) return fromItem;
+      }
+    }
+    if (Array.isArray(block.tabs)) {
+      for (const tab of block.tabs) {
+        const fromTab = findFirstRecordBlock(tab?.content);
         if (fromTab) return fromTab;
       }
     }
@@ -88,17 +112,19 @@ function buildRecordLabel(record, { preferredFields = [], entity = null, fallbac
   return String(fallback || "Record").trim() || "Record";
 }
 
-export default function TopNav({ user, onSignOut }) {
+export default function TopNav({ user, onSignOut, frameMode = false }) {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const location = useLocation();
   const { moduleId } = useParams();
   const isAppRoute = !!useMatch("/apps/:moduleId/*");
+  const studioPreviewMatch = useMatch("/studio/preview/:moduleId");
+  const isStudioPreviewRoute = !!studioPreviewMatch;
   const pageMatch = useMatch("/apps/:moduleId/page/:pageId");
   const viewMatch = useMatch("/apps/:moduleId/view/:viewId");
   const studioMatch = useMatch("/studio/:moduleId");
   const isStudioList = location.pathname === "/studio";
   const isStudioEditor = !!studioMatch;
-  const isStudioRoute = isStudioList || isStudioEditor;
+  const isStudioRoute = !isStudioPreviewRoute && (isStudioList || isStudioEditor);
   const isHome = location.pathname === "/home";
   const isAppsStore = location.pathname === "/apps";
   const isSettingsRoot = location.pathname === "/settings";
@@ -215,7 +241,12 @@ export default function TopNav({ user, onSignOut }) {
   const emailOutboxIdParam = emailOutboxMatch?.params?.outboxId || "";
   const docTemplateIdParam = docTemplateMatch?.params?.templateId || "";
   const documentNumberingIdParam = documentNumberingMatch?.params?.sequenceId || "";
-  const [manifest, setManifest] = useState(null);
+  const [manifest, setManifest] = useState(() => {
+    if (isStudioPreviewRoute && moduleId) {
+      return readStudioPreviewManifest(moduleId);
+    }
+    return null;
+  });
   const [studioModules, setStudioModules] = useState([]);
   const [studioLoading, setStudioLoading] = useState(false);
   const [recordCrumbLabel, setRecordCrumbLabel] = useState("");
@@ -236,12 +267,31 @@ export default function TopNav({ user, onSignOut }) {
   const accountEmail = user?.email || "Account";
   const accountLabel = user?.email ? user.email.split("@")[0] : "Account";
 
+  useLayoutEffect(() => {
+    if (isStudioPreviewRoute && moduleId) {
+      setManifest(readStudioPreviewManifest(moduleId));
+      return;
+    }
+    setManifest(null);
+  }, [moduleId, isAppRoute, isStudioPreviewRoute]);
+
+  useLayoutEffect(() => {
+    setRecordCrumbLabel("");
+  }, [location.pathname, location.search]);
+
   useEffect(() => {
     let mounted = true;
     async function loadManifest() {
-      if (!isAppRoute || !moduleId) {
+      if ((!isAppRoute && !isStudioPreviewRoute) || !moduleId) {
         setManifest(null);
         return;
+      }
+      if (isStudioPreviewRoute) {
+        const previewManifest = readStudioPreviewManifest(moduleId);
+        if (previewManifest) {
+          setManifest(previewManifest);
+          return;
+        }
       }
       try {
         const res = await getManifest(moduleId);
@@ -252,10 +302,24 @@ export default function TopNav({ user, onSignOut }) {
       }
     }
     loadManifest();
+    function handlePreviewMessage(event) {
+      if (!isStudioPreviewRoute) return;
+      const payload = event?.data;
+      if (!payload || payload.type !== "octo:studio-preview-manifest") return;
+      if (payload.moduleId !== moduleId) return;
+      if (!mounted) return;
+      setManifest(payload.manifest && typeof payload.manifest === "object" ? payload.manifest : null);
+    }
+    if (isStudioPreviewRoute) {
+      window.addEventListener("message", handlePreviewMessage);
+    }
     return () => {
       mounted = false;
+      if (isStudioPreviewRoute) {
+        window.removeEventListener("message", handlePreviewMessage);
+      }
     };
-  }, [isAppRoute, moduleId]);
+  }, [isAppRoute, isStudioPreviewRoute, moduleId]);
 
   useEffect(() => {
     if (!isStudioRoute) return;
@@ -313,7 +377,7 @@ export default function TopNav({ user, onSignOut }) {
     return manifest.pages.find((p) => p?.id === currentPageId) || null;
   }, [manifest, currentPageId]);
   const recordBlock = useMemo(
-    () => (Array.isArray(currentPageDef?.content) ? currentPageDef.content.find((b) => b?.kind === "record") || null : null),
+    () => findFirstRecordBlock(currentPageDef?.content),
     [currentPageDef]
   );
   const recordParamKey = recordBlock?.record_id_query || "record";
@@ -633,6 +697,16 @@ export default function TopNav({ user, onSignOut }) {
   }, [documentNumberingIdParam]);
 
   const currentPath = location.pathname;
+  const previewTarget = isStudioPreviewRoute ? searchParams.get("preview_target") || appHomeTarget || "" : "";
+  const buildPreviewRoute = (target) => {
+    if (!moduleId) return "#";
+    const params = new URLSearchParams(location.search || "");
+    params.set("octo_ai_frame", "1");
+    if (target) params.set("preview_target", target);
+    else params.delete("preview_target");
+    const suffix = params.toString();
+    return `/studio/preview/${moduleId}${suffix ? `?${suffix}` : ""}`;
+  };
   const navItems = useMemo(() => {
     if (!moduleId) return [];
     const items = [];
@@ -750,282 +824,286 @@ export default function TopNav({ user, onSignOut }) {
     };
   }, [mobileAppMenuOpen, mobileHomeMenuOpen]);
 
+  const hideLeftChrome = frameMode && (isAppRoute || isStudioPreviewRoute);
+  const hideRightChrome = frameMode;
+  const leftChromeContent = isStudioRoute ? (
+    isMobile ? (
+      <div className="min-w-0 flex items-center gap-2">
+        {mobileBackTarget ? (
+          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
+            <ChevronLeft className="w-4 h-4" />
+          </Link>
+        ) : null}
+        <div className="min-w-0">
+          <div className="text-sm font-semibold truncate">{mobileTitle}</div>
+          {mobileSubtitle ? <div className="text-[11px] opacity-60 truncate">{mobileSubtitle}</div> : null}
+        </div>
+      </div>
+    ) : (
+      <div className={breadcrumbClass}>
+        <ul>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/studio")}>Studio</CrumbLink></li>
+          {isStudioEditor && !isMobile && <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{studioModuleName}</CrumbLink></li>}
+        </ul>
+      </div>
+    )
+  ) : isAppRoute ? (
+    isMobile ? (
+      <div className="min-w-0 flex items-center gap-2">
+        {navItems.length > 0 ? (
+          <button
+            className="btn btn-ghost btn-sm btn-square shrink-0"
+            type="button"
+            aria-label="App navigation"
+            onClick={() => setMobileAppMenuOpen((open) => !open)}
+          >
+            <Menu className="w-4 h-4" />
+          </button>
+        ) : null}
+        {mobileBackTarget ? (
+          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square shrink-0" aria-label="Back">
+            <ChevronLeft className="w-4 h-4" />
+          </Link>
+        ) : null}
+        <div className="min-w-0">
+          <div className="text-sm font-semibold truncate">{mobileTitle}</div>
+          {mobileSubtitle ? <div className="text-[11px] opacity-60 truncate">{mobileSubtitle}</div> : null}
+        </div>
+      </div>
+    ) : (
+      <div className={breadcrumbClass}>
+        <ul>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
+          <li>
+            <CrumbLink to={appHomeRoute || appendOctoAiFrameParams(currentRoute)}>{appName || moduleId}</CrumbLink>
+          </li>
+          {isRecordPage && !isMobile && <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{recordCrumbLabel || currentPageDef?.title || "Record"}</CrumbLink></li>}
+        </ul>
+      </div>
+    )
+  ) : isAppsStore ? (
+    isMobile ? (
+      <div className="min-w-0 flex items-center gap-2">
+        {mobileBackTarget ? (
+          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
+            <ChevronLeft className="w-4 h-4" />
+          </Link>
+        ) : null}
+        <div className="text-sm font-semibold truncate">{mobileTitle}</div>
+      </div>
+    ) : (
+      <div className={breadcrumbClass}>
+        <ul>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/apps")}>Apps</CrumbLink></li>
+        </ul>
+      </div>
+    )
+  ) : isSettingsRoute ? (
+    isMobile ? (
+      <div className="min-w-0 flex items-center gap-2">
+        {mobileBackTarget ? (
+          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
+            <ChevronLeft className="w-4 h-4" />
+          </Link>
+        ) : null}
+        <div className="text-sm font-semibold truncate">{mobileTitle}</div>
+      </div>
+    ) : (
+      <div className={breadcrumbClass}>
+        <ul>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/settings")}>Settings</CrumbLink></li>
+          {settingsLeafLabel && (
+            <li>
+              <CrumbLink
+                to={
+                  isSettingsAccessPolicies && accessPolicyIdParam
+                    ? appendOctoAiFrameParams("/settings/access-policies")
+                    : location.pathname.startsWith("/settings/api-credentials") && apiCredentialIdParam
+                      ? appendOctoAiFrameParams("/settings/api-credentials")
+                    : isEmailConnections && emailConnectionIdParam
+                      ? appendOctoAiFrameParams("/settings/email/connections")
+                    : location.pathname.startsWith("/settings/webhook-subscriptions") && webhookSubscriptionIdParam
+                      ? appendOctoAiFrameParams("/settings/webhook-subscriptions")
+                    : isEmailTemplateStudio && emailTemplateIdParam
+                      ? appendOctoAiFrameParams("/settings/email-templates")
+                    : isEmailOutbox && emailOutboxIdParam
+                      ? appendOctoAiFrameParams("/settings/email-outbox")
+                    : isDocTemplateStudio && docTemplateIdParam
+                      ? appendOctoAiFrameParams("/settings/documents/templates")
+                    : appendOctoAiFrameParams(currentRoute)
+                }
+              >
+                {settingsLeafLabel}
+              </CrumbLink>
+            </li>
+          )}
+          {isSettingsAccessPolicies && accessPolicyIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{accessPolicyCrumbLabel || "Access Profile"}</CrumbLink></li> : null}
+          {location.pathname.startsWith("/settings/api-credentials") && apiCredentialIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{apiCredentialCrumbLabel || "API Credential"}</CrumbLink></li> : null}
+          {isEmailConnections && emailConnectionIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{emailConnectionCrumbLabel || "Connection"}</CrumbLink></li> : null}
+          {location.pathname.startsWith("/settings/webhook-subscriptions") && webhookSubscriptionIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{webhookSubscriptionCrumbLabel || "Webhook Subscription"}</CrumbLink></li> : null}
+          {isEmailTemplateStudio && emailTemplateIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{emailTemplateCrumbLabel || "Email Template"}</CrumbLink></li> : null}
+          {isEmailOutbox && emailOutboxIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{emailOutboxCrumbLabel || "Email"}</CrumbLink></li> : null}
+          {isDocTemplateStudio && docTemplateIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{docTemplateCrumbLabel || "Document Template"}</CrumbLink></li> : null}
+          {isSettingsDocumentNumbering && documentNumberingIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{documentNumberingCrumbLabel || "Sequence"}</CrumbLink></li> : null}
+        </ul>
+      </div>
+    )
+  ) : isNotifications ? (
+    isMobile ? (
+      <div className="min-w-0 flex items-center gap-2">
+        {mobileBackTarget ? (
+          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
+            <ChevronLeft className="w-4 h-4" />
+          </Link>
+        ) : null}
+        <div className="text-sm font-semibold truncate">{mobileTitle}</div>
+      </div>
+    ) : (
+      <div className={breadcrumbClass}>
+        <ul>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/notifications")}>Notifications</CrumbLink></li>
+        </ul>
+      </div>
+    )
+  ) : isAutomations ? (
+    isMobile ? (
+      <div className="min-w-0 flex items-center gap-2">
+        {mobileBackTarget ? (
+          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
+            <ChevronLeft className="w-4 h-4" />
+          </Link>
+        ) : null}
+        <div className="text-sm font-semibold truncate">{mobileTitle}</div>
+      </div>
+    ) : (
+      <div className={breadcrumbClass}>
+        <ul>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/automations")}>Automations</CrumbLink></li>
+          {automationIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{automationCrumbLabel || "Automation"}</CrumbLink></li> : null}
+        </ul>
+      </div>
+    )
+  ) : isOctoAi ? (
+    isMobile ? (
+      <div className="min-w-0 flex items-center gap-2">
+        {mobileBackTarget ? (
+          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
+            <ChevronLeft className="w-4 h-4" />
+          </Link>
+        ) : null}
+        <div className="text-sm font-semibold truncate">{mobileTitle}</div>
+      </div>
+    ) : (
+      <div className={breadcrumbClass}>
+        <ul>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/octo-ai")}>Octo AI</CrumbLink></li>
+        </ul>
+      </div>
+    )
+  ) : isIntegrations ? (
+    isMobile ? (
+      <div className="min-w-0 flex items-center gap-2">
+        {mobileBackTarget ? (
+          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
+            <ChevronLeft className="w-4 h-4" />
+          </Link>
+        ) : null}
+        <div className="text-sm font-semibold truncate">{mobileTitle}</div>
+      </div>
+    ) : (
+      <div className={breadcrumbClass}>
+        <ul>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/integrations")}>Integrations</CrumbLink></li>
+          {integrationConnectionIdParam ? (
+            <li>
+              <CrumbLink to={appendOctoAiFrameParams(currentRoute)}>
+                {integrationConnectionCrumbLabel || "Connection"}
+              </CrumbLink>
+            </li>
+          ) : null}
+        </ul>
+      </div>
+    )
+  ) : isAutomationRuns ? (
+    isMobile ? (
+      <div className="min-w-0 flex items-center gap-2">
+        {mobileBackTarget ? (
+          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
+            <ChevronLeft className="w-4 h-4" />
+          </Link>
+        ) : null}
+        <div className="text-sm font-semibold truncate">{mobileTitle}</div>
+      </div>
+    ) : (
+      <div className={breadcrumbClass}>
+        <ul>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/automations")}>Automations</CrumbLink></li>
+          <li>
+            <CrumbLink to={automationCrumbId ? appendOctoAiFrameParams(`/automations/${automationCrumbId}`) : appendOctoAiFrameParams(currentRoute)}>
+              {automationCrumbLabel || "Automation"}
+            </CrumbLink>
+          </li>
+          <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{automationRunCrumbLabel || "Run"}</CrumbLink></li>
+        </ul>
+      </div>
+    )
+  ) : isOps ? (
+    isMobile ? (
+      <div className="min-w-0 flex items-center gap-2">
+        {mobileBackTarget ? (
+          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
+            <ChevronLeft className="w-4 h-4" />
+          </Link>
+        ) : null}
+        <div className="text-sm font-semibold truncate">{mobileTitle}</div>
+      </div>
+    ) : (
+      <div className={breadcrumbClass}>
+        <ul>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/ops")}>Ops</CrumbLink></li>
+        </ul>
+      </div>
+    )
+  ) : isHome && isMobile ? (
+    <div className="min-w-0 flex items-center gap-2">
+      <button
+        className="btn btn-ghost btn-sm btn-square shrink-0"
+        type="button"
+        aria-label="Open menu"
+        onClick={() => setMobileHomeMenuOpen(true)}
+      >
+        <Menu className="w-4 h-4" />
+      </button>
+      <div className="text-sm font-semibold truncate">{mobileTitle}</div>
+    </div>
+  ) : (
+    !isHome && (
+      <Link to={appendOctoAiFrameParams("/home")} className="btn btn-ghost btn-sm">← Home</Link>
+    )
+  );
+
   return (
     <div className="bg-base-100 shadow overflow-visible relative z-40">
       <div className="navbar px-2 sm:px-4">
-      <div className="flex-1 min-w-0 gap-2">
-        {isStudioRoute ? (
-          isMobile ? (
-            <div className="min-w-0 flex items-center gap-2">
-              {mobileBackTarget ? (
-                <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
-                  <ChevronLeft className="w-4 h-4" />
-                </Link>
-              ) : null}
-              <div className="min-w-0">
-                <div className="text-sm font-semibold truncate">{mobileTitle}</div>
-                {mobileSubtitle ? <div className="text-[11px] opacity-60 truncate">{mobileSubtitle}</div> : null}
-              </div>
-            </div>
-          ) : (
-          <div className={breadcrumbClass}>
-            <ul>
-              <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
-              <li><CrumbLink to={appendOctoAiFrameParams("/studio")}>Studio</CrumbLink></li>
-              {isStudioEditor && !isMobile && <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{studioModuleName}</CrumbLink></li>}
-            </ul>
-          </div>
-          )
-        ) : isAppRoute ? (
-          isMobile ? (
-            <div className="min-w-0 flex items-center gap-2">
-              {navItems.length > 0 ? (
-                <button
-                  className="btn btn-ghost btn-sm btn-square shrink-0"
-                  type="button"
-                  aria-label="App navigation"
-                  onClick={() => setMobileAppMenuOpen((open) => !open)}
-                >
-                  <Menu className="w-4 h-4" />
-                </button>
-              ) : null}
-              {mobileBackTarget ? (
-                <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square shrink-0" aria-label="Back">
-                  <ChevronLeft className="w-4 h-4" />
-                </Link>
-              ) : null}
-              <div className="min-w-0">
-                <div className="text-sm font-semibold truncate">{mobileTitle}</div>
-                {mobileSubtitle ? <div className="text-[11px] opacity-60 truncate">{mobileSubtitle}</div> : null}
-              </div>
-            </div>
-          ) : (
-          <div className={breadcrumbClass}>
-            <ul>
-              <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
-              <li>
-                <CrumbLink to={appHomeRoute || appendOctoAiFrameParams(currentRoute)}>{appName || moduleId}</CrumbLink>
-              </li>
-              {isRecordPage && !isMobile && <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{recordCrumbLabel || currentPageDef?.title || "Record"}</CrumbLink></li>}
-            </ul>
-          </div>
-          )
-        ) : isAppsStore ? (
-          isMobile ? (
-            <div className="min-w-0 flex items-center gap-2">
-              {mobileBackTarget ? (
-                <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
-                  <ChevronLeft className="w-4 h-4" />
-                </Link>
-              ) : null}
-              <div className="text-sm font-semibold truncate">{mobileTitle}</div>
-            </div>
-          ) : (
-          <div className={breadcrumbClass}>
-            <ul>
-              <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
-              <li><CrumbLink to={appendOctoAiFrameParams("/apps")}>Apps</CrumbLink></li>
-            </ul>
-          </div>
-          )
-        ) : isSettingsRoute ? (
-          isMobile ? (
-            <div className="min-w-0 flex items-center gap-2">
-              {mobileBackTarget ? (
-                <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
-                  <ChevronLeft className="w-4 h-4" />
-                </Link>
-              ) : null}
-              <div className="text-sm font-semibold truncate">{mobileTitle}</div>
-            </div>
-          ) : (
-          <div className={breadcrumbClass}>
-            <ul>
-              <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
-              <li><CrumbLink to={appendOctoAiFrameParams("/settings")}>Settings</CrumbLink></li>
-              {settingsLeafLabel && (
-                <li>
-                  <CrumbLink
-                    to={
-                      isSettingsAccessPolicies && accessPolicyIdParam
-                        ? appendOctoAiFrameParams("/settings/access-policies")
-                        : location.pathname.startsWith("/settings/api-credentials") && apiCredentialIdParam
-                          ? appendOctoAiFrameParams("/settings/api-credentials")
-                        : isEmailConnections && emailConnectionIdParam
-                          ? appendOctoAiFrameParams("/settings/email/connections")
-                        : location.pathname.startsWith("/settings/webhook-subscriptions") && webhookSubscriptionIdParam
-                          ? appendOctoAiFrameParams("/settings/webhook-subscriptions")
-                        : isEmailTemplateStudio && emailTemplateIdParam
-                          ? appendOctoAiFrameParams("/settings/email-templates")
-                        : isEmailOutbox && emailOutboxIdParam
-                          ? appendOctoAiFrameParams("/settings/email-outbox")
-                        : isDocTemplateStudio && docTemplateIdParam
-                          ? appendOctoAiFrameParams("/settings/documents/templates")
-                        : appendOctoAiFrameParams(currentRoute)
-                    }
-                  >
-                    {settingsLeafLabel}
-                  </CrumbLink>
-                </li>
-              )}
-              {isSettingsAccessPolicies && accessPolicyIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{accessPolicyCrumbLabel || "Access Profile"}</CrumbLink></li> : null}
-              {location.pathname.startsWith("/settings/api-credentials") && apiCredentialIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{apiCredentialCrumbLabel || "API Credential"}</CrumbLink></li> : null}
-              {isEmailConnections && emailConnectionIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{emailConnectionCrumbLabel || "Connection"}</CrumbLink></li> : null}
-              {location.pathname.startsWith("/settings/webhook-subscriptions") && webhookSubscriptionIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{webhookSubscriptionCrumbLabel || "Webhook Subscription"}</CrumbLink></li> : null}
-              {isEmailTemplateStudio && emailTemplateIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{emailTemplateCrumbLabel || "Email Template"}</CrumbLink></li> : null}
-              {isEmailOutbox && emailOutboxIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{emailOutboxCrumbLabel || "Email"}</CrumbLink></li> : null}
-              {isDocTemplateStudio && docTemplateIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{docTemplateCrumbLabel || "Document Template"}</CrumbLink></li> : null}
-              {isSettingsDocumentNumbering && documentNumberingIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{documentNumberingCrumbLabel || "Sequence"}</CrumbLink></li> : null}
-            </ul>
-          </div>
-          )
-        ) : isNotifications ? (
-          isMobile ? (
-          <div className="min-w-0 flex items-center gap-2">
-            {mobileBackTarget ? (
-              <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
-                <ChevronLeft className="w-4 h-4" />
-              </Link>
-            ) : null}
-            <div className="text-sm font-semibold truncate">{mobileTitle}</div>
-          </div>
-          ) : (
-          <div className={breadcrumbClass}>
-            <ul>
-              <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
-              <li><CrumbLink to={appendOctoAiFrameParams("/notifications")}>Notifications</CrumbLink></li>
-            </ul>
-          </div>
-          )
-        ) : isAutomations ? (
-          isMobile ? (
-          <div className="min-w-0 flex items-center gap-2">
-            {mobileBackTarget ? (
-              <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
-                <ChevronLeft className="w-4 h-4" />
-              </Link>
-            ) : null}
-            <div className="text-sm font-semibold truncate">{mobileTitle}</div>
-          </div>
-          ) : (
-          <div className={breadcrumbClass}>
-            <ul>
-              <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
-              <li><CrumbLink to={appendOctoAiFrameParams("/automations")}>Automations</CrumbLink></li>
-              {automationIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{automationCrumbLabel || "Automation"}</CrumbLink></li> : null}
-            </ul>
-          </div>
-          )
-        ) : isOctoAi ? (
-          isMobile ? (
-          <div className="min-w-0 flex items-center gap-2">
-            {mobileBackTarget ? (
-              <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
-                <ChevronLeft className="w-4 h-4" />
-              </Link>
-            ) : null}
-            <div className="text-sm font-semibold truncate">{mobileTitle}</div>
-          </div>
-          ) : (
-          <div className={breadcrumbClass}>
-            <ul>
-              <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
-              <li><CrumbLink to={appendOctoAiFrameParams("/octo-ai")}>Octo AI</CrumbLink></li>
-            </ul>
-          </div>
-          )
-        ) : isIntegrations ? (
-          isMobile ? (
-          <div className="min-w-0 flex items-center gap-2">
-            {mobileBackTarget ? (
-              <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
-                <ChevronLeft className="w-4 h-4" />
-              </Link>
-            ) : null}
-            <div className="text-sm font-semibold truncate">{mobileTitle}</div>
-          </div>
-          ) : (
-          <div className={breadcrumbClass}>
-            <ul>
-              <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
-              <li><CrumbLink to={appendOctoAiFrameParams("/integrations")}>Integrations</CrumbLink></li>
-              {integrationConnectionIdParam ? (
-                <li>
-                  <CrumbLink to={appendOctoAiFrameParams(currentRoute)}>
-                    {integrationConnectionCrumbLabel || "Connection"}
-                  </CrumbLink>
-                </li>
-              ) : null}
-            </ul>
-          </div>
-          )
-        ) : isAutomationRuns ? (
-          isMobile ? (
-          <div className="min-w-0 flex items-center gap-2">
-            {mobileBackTarget ? (
-              <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
-                <ChevronLeft className="w-4 h-4" />
-              </Link>
-            ) : null}
-            <div className="text-sm font-semibold truncate">{mobileTitle}</div>
-          </div>
-          ) : (
-          <div className={breadcrumbClass}>
-            <ul>
-              <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
-              <li><CrumbLink to={appendOctoAiFrameParams("/automations")}>Automations</CrumbLink></li>
-              <li>
-                <CrumbLink to={automationCrumbId ? appendOctoAiFrameParams(`/automations/${automationCrumbId}`) : appendOctoAiFrameParams(currentRoute)}>
-                  {automationCrumbLabel || "Automation"}
-                </CrumbLink>
-              </li>
-              <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{automationRunCrumbLabel || "Run"}</CrumbLink></li>
-            </ul>
-          </div>
-          )
-        ) : isOps ? (
-          isMobile ? (
-          <div className="min-w-0 flex items-center gap-2">
-            {mobileBackTarget ? (
-              <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
-                <ChevronLeft className="w-4 h-4" />
-              </Link>
-            ) : null}
-            <div className="text-sm font-semibold truncate">{mobileTitle}</div>
-          </div>
-          ) : (
-          <div className={breadcrumbClass}>
-            <ul>
-              <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
-              <li><CrumbLink to={appendOctoAiFrameParams("/ops")}>Ops</CrumbLink></li>
-            </ul>
-          </div>
-          )
-        ) : isHome && isMobile ? (
-          <div className="min-w-0 flex items-center gap-2">
-            <button
-              className="btn btn-ghost btn-sm btn-square shrink-0"
-              type="button"
-              aria-label="Open menu"
-              onClick={() => setMobileHomeMenuOpen(true)}
-            >
-              <Menu className="w-4 h-4" />
-            </button>
-            <div className="text-sm font-semibold truncate">{mobileTitle}</div>
-          </div>
-        ) : (
-          !isHome && (
-            <Link to={appendOctoAiFrameParams("/home")} className="btn btn-ghost btn-sm">← Home</Link>
-          )
-        )}
-      </div>
+        <div className="flex-1 min-w-0 gap-2">
+          {hideLeftChrome ? <div className="h-8" aria-hidden="true" /> : leftChromeContent}
+        </div>
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 hidden md:flex items-center justify-center z-[1] max-w-[50vw] pointer-events-none">
         {isStudioRoute && (
           <div className="text-sm font-medium text-primary pointer-events-auto truncate">
             {isStudioEditor ? studioModuleName : "Studio"}
           </div>
         )}
-        {isAppRoute && !isStudioRoute && navItems.length > 0 && (
+        {(isAppRoute || isStudioPreviewRoute) && navItems.length > 0 && (
           <div className="flex items-center gap-4 pointer-events-auto">
             {navItems.map((group) => {
               const items = group.items || [];
@@ -1036,8 +1114,10 @@ export default function TopNav({ user, onSignOut }) {
                 return (
                   <div className="flex items-center gap-6" key={`${group.groupLabel}-inline`}>
                     {items.map((item) => {
-                      const target = buildTargetRoute(moduleId, item.to);
-                      const active = target && currentPath.startsWith(target);
+                      const target = isStudioPreviewRoute ? buildPreviewRoute(item.to) : buildTargetRoute(moduleId, item.to);
+                      const active = isStudioPreviewRoute
+                        ? previewTarget === item.to
+                        : (target && currentPath.startsWith(target));
                       return (
                         <Link
                           key={`${group.groupLabel}-${item.label}`}
@@ -1053,8 +1133,10 @@ export default function TopNav({ user, onSignOut }) {
               }
               const single = items.length === 1 || (explicitLink && items.length > 0);
               if (single) {
-                const target = buildTargetRoute(moduleId, items[0].to);
-                const active = target && currentPath.startsWith(target);
+                const target = isStudioPreviewRoute ? buildPreviewRoute(items[0].to) : buildTargetRoute(moduleId, items[0].to);
+                const active = isStudioPreviewRoute
+                  ? previewTarget === items[0].to
+                  : (target && currentPath.startsWith(target));
                 return (
                   <Link
                     key={`${group.groupLabel}-single`}
@@ -1072,8 +1154,10 @@ export default function TopNav({ user, onSignOut }) {
                   </label>
                   <ul tabIndex={0} className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-50">
                     {items.map((item) => {
-                      const target = buildTargetRoute(moduleId, item.to);
-                      const active = target && currentPath.startsWith(target);
+                      const target = isStudioPreviewRoute ? buildPreviewRoute(item.to) : buildTargetRoute(moduleId, item.to);
+                      const active = isStudioPreviewRoute
+                        ? previewTarget === item.to
+                        : (target && currentPath.startsWith(target));
                       return (
                         <li key={item.label}>
                           <Link to={target || "#"} className={active ? "text-primary" : ""}>
@@ -1089,12 +1173,14 @@ export default function TopNav({ user, onSignOut }) {
           </div>
         )}
       </div>
-      <div className="flex-none flex items-center gap-1 sm:gap-2 ml-2">
-        <NotificationBell />
-        {!isMobile ? <UserMenu user={user} onSignOut={onSignOut} /> : null}
-      </div>
+      {!hideRightChrome && (
+        <div className="flex-none flex items-center gap-1 sm:gap-2 ml-2">
+          <NotificationBell />
+          {!isMobile ? <UserMenu user={user} onSignOut={onSignOut} /> : null}
+        </div>
+      )}
     </div>
-      {isMobile && isAppRoute && !isStudioRoute && mobileAppMenuOpen && navItems.length > 0 && (
+      {isMobile && (isAppRoute || isStudioPreviewRoute) && mobileAppMenuOpen && navItems.length > 0 && (
         <div className="fixed inset-0 z-[120]">
           <button
             type="button"
@@ -1129,8 +1215,10 @@ export default function TopNav({ user, onSignOut }) {
                   <div className="text-sm font-semibold">{group.groupLabel}</div>
                   <div className="space-y-1">
                     {group.items.map((item) => {
-                      const target = buildTargetRoute(moduleId, item.to);
-                      const active = target && currentPath.startsWith(target);
+                      const target = isStudioPreviewRoute ? buildPreviewRoute(item.to) : buildTargetRoute(moduleId, item.to);
+                      const active = isStudioPreviewRoute
+                        ? previewTarget === item.to
+                        : (target && currentPath.startsWith(target));
                       return (
                         <Link
                           key={`mobile-${group.groupLabel}-${item.label}`}

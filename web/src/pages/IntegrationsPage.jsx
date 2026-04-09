@@ -6,6 +6,7 @@ import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
+import AppSelect from "../components/AppSelect.jsx";
 
 function providerKeyFromType(type) {
   const raw = String(type || "");
@@ -370,7 +371,7 @@ export default function IntegrationsPage() {
 
               <label className="form-control">
                 <span className="label-text text-sm">Provider</span>
-                <select
+                <AppSelect
                   className="select select-bordered"
                   value={createForm.provider}
                   onChange={(e) => setCreateForm((prev) => ({ ...prev, provider: e.target.value }))}
@@ -381,7 +382,7 @@ export default function IntegrationsPage() {
                       {providerLabel(provider)}
                     </option>
                   ))}
-                </select>
+                </AppSelect>
               </label>
 
               {createProvider ? (

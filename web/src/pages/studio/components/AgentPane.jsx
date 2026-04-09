@@ -4,6 +4,7 @@ import { useAccessContext } from "../../../access.js";
 import useWorkspaceProviderStatus from "../../../hooks/useWorkspaceProviderStatus.js";
 import ProviderSecretModal from "../../../components/ProviderSecretModal.jsx";
 import ProviderUnavailableState from "../../../components/ProviderUnavailableState.jsx";
+import LoadingSpinner from "../../../components/LoadingSpinner.jsx";
 
 export default function AgentPane({ onApply, onValidate, onPreview, disabled }) {
   const { hasCapability } = useAccessContext();
@@ -21,7 +22,9 @@ export default function AgentPane({ onApply, onValidate, onPreview, disabled }) 
             <h3 className="card-title">Agent</h3>
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
-            {openAiConnected ? (
+            {loading ? (
+              <LoadingSpinner className="min-h-0 h-full" />
+            ) : openAiConnected ? (
               <>
                 <div className="text-sm opacity-60">Ask for changes and get PatchSets.</div>
                 <div className="chat chat-start">

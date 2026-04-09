@@ -7,22 +7,14 @@ import { getAppIcon, subscribeAppIcons } from "../state/appIcons.js";
 import { getDefaultOpenRoute, loadEntityIndex } from "../data/entityIndex.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { LayoutGrid, Package, Settings as SettingsIcon, Sparkles } from "lucide-react";
-import { normalizeLucideKey, resolveLucideIcon } from "../state/lucideIconCatalog.js";
-import { normalizeHeroKey, resolveHeroIcon } from "../state/heroIconCatalog.js";
 import { useAccessContext } from "../access.js";
 import { appendOctoAiFrameParams } from "../apps/appShellUtils.js";
+import AppModuleIcon from "../components/AppModuleIcon.jsx";
 
 function AppTile({ app, module, onOpen }) {
   const disabled = module && !module.enabled;
   const icon = app.icon;
   const iconUrl = app.icon_url;
-  const lucideKey = normalizeLucideKey(iconUrl);
-  const LucideIcon = lucideKey ? resolveLucideIcon(lucideKey) : null;
-  const heroParsed = normalizeHeroKey(iconUrl);
-  const HeroIcon = heroParsed ? resolveHeroIcon(iconUrl) : null;
-  const isImageUrl = typeof iconUrl === "string" && !LucideIcon && !HeroIcon && !iconUrl.includes("lucide:") && !iconUrl.includes("hero:") && (
-    iconUrl.startsWith("data:") || iconUrl.startsWith("http")
-  );
   return (
     <div className={`flex flex-col items-center text-center ${disabled ? "opacity-60" : ""}`}>
       <button
@@ -30,19 +22,14 @@ function AppTile({ app, module, onOpen }) {
         onClick={() => onOpen(app)}
         type="button"
       >
-        {LucideIcon ? (
-          <div className="text-primary">
-            <LucideIcon size={44} strokeWidth={1.4} className="sm:w-12 sm:h-12 md:w-14 md:h-14" />
-          </div>
-        ) : HeroIcon ? (
-          <div className="text-primary">
-            <HeroIcon className="w-11 h-11 sm:w-12 sm:h-12 md:w-14 md:h-14" />
-          </div>
-        ) : isImageUrl ? (
-          <img src={iconUrl} alt={app.name} className="w-16 h-16 sm:w-18 sm:h-18 md:w-24 md:h-24 object-contain" />
-        ) : (
-          <div className="text-[2.75rem] sm:text-5xl text-primary">{icon}</div>
-        )}
+        <AppModuleIcon
+          iconUrl={iconUrl}
+          size={44}
+          strokeWidth={1.4}
+          iconClassName="text-primary"
+          imageClassName="w-16 h-16 sm:w-18 sm:h-18 md:w-24 md:h-24 object-contain"
+          fallback={<div className="text-[2.75rem] sm:text-5xl text-primary">{icon}</div>}
+        />
       </button>
       <div className="mt-2 w-24 sm:w-24 md:w-28 text-[11px] sm:text-xs font-semibold leading-tight line-clamp-2">{app.name}</div>
     </div>
@@ -55,9 +42,11 @@ export default function HomePage({ user }) {
   const location = useLocation();
   const [entityIndex, setEntityIndex] = useState(null);
   const [iconVersion, setIconVersion] = useState(0);
+  const [openingAppId, setOpeningAppId] = useState("");
   const { loading: accessLoading, hasCapability, isSuperadmin } = useAccessContext();
   const canSeeOctoAi = !accessLoading && isSuperadmin;
   const homeLoading = loading || accessLoading;
+  const transitioningToApp = Boolean(openingAppId);
 
   useEffect(() => {
     async function buildIndex() {
@@ -92,6 +81,7 @@ export default function HomePage({ user }) {
   }, [iconVersion, isSuperadmin, modules, user]);
 
   function handleOpen(app) {
+    setOpeningAppId(app.id || "app");
     if (app.system) {
       navigate(appendOctoAiFrameParams(app.route));
       return;
@@ -106,8 +96,8 @@ export default function HomePage({ user }) {
 
   return (
     <div className="w-full overflow-x-hidden min-h-full md:h-full flex justify-center overflow-y-auto md:overflow-hidden">
-      {homeLoading && <LoadingSpinner className="min-h-full w-full" />}
-      {!homeLoading && (
+      {(homeLoading || transitioningToApp) && <LoadingSpinner className="min-h-full w-full" />}
+      {!homeLoading && !transitioningToApp && (
         <div className="w-full flex justify-center items-start pt-4 sm:pt-[12vh] pb-6 sm:pb-0">
           {allApps.length === 0 ? (
             <div className="card bg-base-100 shadow p-6">

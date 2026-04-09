@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { apiFetch } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
+import AppSelect from "../components/AppSelect.jsx";
 
 const DEFAULT_CONFIG = {
   host: "",
@@ -149,7 +150,7 @@ export default function EmailConnectionDetailPage() {
                     </label>
                     <label className="form-control">
                       <span className="label-text text-sm">Status</span>
-                      <select
+                      <AppSelect
                         className="select select-bordered select-sm"
                         value={status}
                         onChange={(e) => setStatus(e.target.value)}
@@ -157,7 +158,7 @@ export default function EmailConnectionDetailPage() {
                       >
                         <option value="active">Active</option>
                         <option value="disabled">Disabled</option>
-                      </select>
+                      </AppSelect>
                       <span className="label label-text-alt opacity-50">Optional. Disable the connection without deleting it.</span>
                     </label>
                   </div>
@@ -189,7 +190,7 @@ export default function EmailConnectionDetailPage() {
                     </label>
                     <label className="form-control">
                       <span className="label-text text-sm">Security</span>
-                      <select
+                      <AppSelect
                         className="select select-bordered select-sm"
                         value={config.security}
                         onChange={(e) => setConfig((prev) => ({ ...prev, security: e.target.value }))}
@@ -198,7 +199,7 @@ export default function EmailConnectionDetailPage() {
                         <option value="starttls">STARTTLS</option>
                         <option value="ssl">SSL/TLS</option>
                         <option value="none">None</option>
-                      </select>
+                      </AppSelect>
                       <span className="label label-text-alt opacity-50">Choose the transport security required by the server.</span>
                     </label>
                   </div>
@@ -208,7 +209,7 @@ export default function EmailConnectionDetailPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label className="form-control md:col-span-2">
                       <span className="label-text text-sm">Password Source</span>
-                      <select
+                      <AppSelect
                         className="select select-bordered select-sm"
                         value={authMode}
                         onChange={(e) => setAuthMode(e.target.value)}
@@ -216,7 +217,7 @@ export default function EmailConnectionDetailPage() {
                       >
                         <option value="password">Direct Password</option>
                         <option value="secret">Saved Secret</option>
-                      </select>
+                      </AppSelect>
                       <span className="label label-text-alt opacity-50">Choose whether the SMTP password is stored directly here or pulled from Secrets.</span>
                     </label>
                     <label className="form-control">
@@ -233,7 +234,7 @@ export default function EmailConnectionDetailPage() {
                       <>
                         <label className="form-control md:col-span-2">
                           <span className="label-text text-sm">Saved Secret</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered select-sm"
                             value={secretRef}
                             onChange={(e) => setSecretRef(e.target.value)}
@@ -245,7 +246,7 @@ export default function EmailConnectionDetailPage() {
                                 {s.name || s.id}
                               </option>
                             ))}
-                          </select>
+                          </AppSelect>
                           <span className="label label-text-alt opacity-50">Optional. Pick a stored secret instead of entering the password directly.</span>
                         </label>
                         <label className="form-control md:col-span-2">

@@ -5,6 +5,7 @@ import { API_URL, getActiveWorkspaceId } from "../../api.js";
 import { supabase } from "../../supabase.js";
 import { apiFetch } from "../../api.js";
 import CodeTextarea from "../../components/CodeTextarea.jsx";
+import AppSelect from "../../components/AppSelect.jsx";
 import { formatDateTime } from "../../utils/dateTime.js";
 import ListViewRenderer from "../../ui/ListViewRenderer.jsx";
 import SystemListToolbar from "../../ui/SystemListToolbar.jsx";
@@ -60,7 +61,7 @@ function DocumentTemplateTab({ draft, setDraft, sample, setSample, entities }) {
             />
           </Fieldset>
           <Fieldset label="Entity" hint="Templates render fields from one entity.">
-            <select
+            <AppSelect
               className="select select-bordered"
               value={sample?.entity_id || ""}
               onChange={(e) => setSample({ ...sample, entity_id: e.target.value, record_id: "" })}
@@ -71,7 +72,7 @@ function DocumentTemplateTab({ draft, setDraft, sample, setSample, entities }) {
                   {ent.label || ent.id}
                 </option>
               ))}
-            </select>
+            </AppSelect>
           </Fieldset>
           <Fieldset label="Filename pattern (Jinja)" hint="Tip: use record fields to make filenames unique." className="md:col-span-2">
             <input
@@ -117,14 +118,14 @@ function DocumentTemplateTab({ draft, setDraft, sample, setSample, entities }) {
       >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Fieldset label="Paper size">
-            <select
+            <AppSelect
               className="select select-bordered"
               value={draft?.paper_size || "A4"}
               onChange={(e) => setDraft((prev) => ({ ...(prev || {}), paper_size: e.target.value }))}
             >
               <option value="A4">A4</option>
               <option value="Letter">Letter</option>
-            </select>
+            </AppSelect>
           </Fieldset>
           <Fieldset label="Top margin">
             <input
@@ -198,7 +199,7 @@ export const emailTemplateProfile = {
                 />
               </Fieldset>
               <Fieldset label="Entity" hint="Templates render fields from one entity." className="md:col-start-1">
-                <select
+                <AppSelect
                   className="select select-bordered"
                   value={sample?.entity_id || ""}
                   onChange={(e) => setSample({ ...sample, entity_id: e.target.value, record_id: "" })}
@@ -209,11 +210,11 @@ export const emailTemplateProfile = {
                       {ent.label || ent.id}
                     </option>
                   ))}
-                </select>
+                </AppSelect>
               </Fieldset>
               <Fieldset label="Default connection" optional>
                 {connections.length > 0 ? (
-                  <select
+                  <AppSelect
                     className="select select-bordered"
                     value={draft?.default_connection_id || ""}
                     onChange={(e) => setDraft((prev) => ({ ...(prev || {}), default_connection_id: e.target.value || null }))}
@@ -224,7 +225,7 @@ export const emailTemplateProfile = {
                         {conn.name || conn.id}
                       </option>
                     ))}
-                  </select>
+                  </AppSelect>
                 ) : (
                   <input
                     className="input input-bordered"
@@ -466,7 +467,7 @@ function EmailPreviewTab({
           <>
           <div className="px-3 py-2 border-b border-base-200 flex items-center justify-end gap-2">
             <span className="text-xs opacity-70">Zoom</span>
-            <select
+            <AppSelect
               className="select select-bordered select-xs w-20"
               value={zoomPct}
               onChange={(e) => setZoomPct(Number(e.target.value) || 100)}
@@ -476,7 +477,7 @@ function EmailPreviewTab({
               <option value={80}>80%</option>
               <option value={90}>90%</option>
               <option value={100}>100%</option>
-            </select>
+            </AppSelect>
           </div>
           <iframe
             title="Email Preview"

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { apiFetch } from "../api.js";
+import AppSelect from "../components/AppSelect.jsx";
 import { useToast } from "../components/Toast.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
@@ -146,10 +147,10 @@ export default function SettingsWebhookSubscriptionDetailPage() {
                 </label>
                 <label className="form-control">
                   <span className="label-text text-sm">Status</span>
-                  <select className="select select-bordered select-sm" value={form.status} onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value }))} disabled={saving}>
+                  <AppSelect className="select select-bordered select-sm" value={form.status} onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value }))} disabled={saving}>
                     <option value="active">Active</option>
                     <option value="disabled">Disabled</option>
-                  </select>
+                  </AppSelect>
                 </label>
                 <label className="form-control md:col-span-2">
                   <span className="label-text text-sm">Target URL</span>
@@ -161,12 +162,12 @@ export default function SettingsWebhookSubscriptionDetailPage() {
                 </label>
                 <label className="form-control">
                   <span className="label-text text-sm">Signing Secret</span>
-                  <select className="select select-bordered select-sm" value={form.signing_secret_id} onChange={(e) => setForm((prev) => ({ ...prev, signing_secret_id: e.target.value }))} disabled={saving}>
+                  <AppSelect className="select select-bordered select-sm" value={form.signing_secret_id} onChange={(e) => setForm((prev) => ({ ...prev, signing_secret_id: e.target.value }))} disabled={saving}>
                     <option value="">No signing secret</option>
                     {secrets.map((secret) => (
                       <option key={secret.id} value={secret.id}>{secret.name || secret.id}</option>
                     ))}
-                  </select>
+                  </AppSelect>
                 </label>
                 <label className="form-control md:col-span-2">
                   <span className="label-text text-sm">Extra Headers JSON</span>

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiFetch } from "../api.js";
+import AppSelect from "../components/AppSelect.jsx";
 import { useToast } from "../components/Toast.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 
@@ -230,7 +231,7 @@ export default function SettingsDocumentNumberingDetailPage() {
               </label>
               <label className="form-control">
                 <span className="label-text text-sm">Target entity</span>
-                <select
+                <AppSelect
                   className="select select-bordered"
                   value={draft.target_entity_id}
                   onChange={(event) => setDraft((current) => ({ ...current, target_entity_id: event.target.value, number_field_id: "", scope_field_id: "", trigger_status_values: [] }))}
@@ -242,12 +243,12 @@ export default function SettingsDocumentNumberingDetailPage() {
                       {entity.label || entity.entity_id}
                     </option>
                     ))}
-                  </select>
+                  </AppSelect>
                 <span className="label label-text-alt opacity-50">Required. Choose the record type that should receive this number.</span>
               </label>
               <label className="form-control">
                 <span className="label-text text-sm">Number field</span>
-                <select
+                <AppSelect
                   className="select select-bordered"
                   value={draft.number_field_id}
                   onChange={(event) => setDraft((current) => ({ ...current, number_field_id: event.target.value }))}
@@ -259,7 +260,7 @@ export default function SettingsDocumentNumberingDetailPage() {
                       {field.label}
                     </option>
                     ))}
-                  </select>
+                  </AppSelect>
                 <span className="label label-text-alt opacity-50">Required. This field will store the generated document number on the record.</span>
               </label>
               <label className="form-control">
@@ -274,35 +275,35 @@ export default function SettingsDocumentNumberingDetailPage() {
               </label>
               <label className="form-control">
                 <span className="label-text text-sm">Scope</span>
-                <select className="select select-bordered" value={draft.scope_type} onChange={(event) => setDraft((current) => ({ ...current, scope_type: event.target.value, scope_field_id: event.target.value === "entity" ? current.scope_field_id : "" }))} disabled={saving}>
+                <AppSelect className="select select-bordered" value={draft.scope_type} onChange={(event) => setDraft((current) => ({ ...current, scope_type: event.target.value, scope_field_id: event.target.value === "entity" ? current.scope_field_id : "" }))} disabled={saving}>
                   {SCOPE_OPTIONS.map((item) => (
                     <option key={item.value} value={item.value}>{item.label}</option>
                   ))}
-                </select>
+                </AppSelect>
                 <span className="label label-text-alt opacity-50">Choose whether one counter is shared globally, per entity value, or per workspace.</span>
               </label>
               <label className="form-control">
                 <span className="label-text text-sm">Reset policy</span>
-                <select className="select select-bordered" value={draft.reset_policy} onChange={(event) => setDraft((current) => ({ ...current, reset_policy: event.target.value }))} disabled={saving}>
+                <AppSelect className="select select-bordered" value={draft.reset_policy} onChange={(event) => setDraft((current) => ({ ...current, reset_policy: event.target.value }))} disabled={saving}>
                   {RESET_OPTIONS.map((item) => (
                     <option key={item.value} value={item.value}>{item.label}</option>
                   ))}
-                </select>
+                </AppSelect>
                 <span className="label label-text-alt opacity-50">Choose how often the sequence counter starts again.</span>
               </label>
               <label className="form-control">
                 <span className="label-text text-sm">Assign on</span>
-                <select className="select select-bordered" value={draft.assign_on} onChange={(event) => setDraft((current) => ({ ...current, assign_on: event.target.value, trigger_status_values: ["confirm", "issue"].includes(event.target.value) ? current.trigger_status_values : [] }))} disabled={saving}>
+                <AppSelect className="select select-bordered" value={draft.assign_on} onChange={(event) => setDraft((current) => ({ ...current, assign_on: event.target.value, trigger_status_values: ["confirm", "issue"].includes(event.target.value) ? current.trigger_status_values : [] }))} disabled={saving}>
                   {ASSIGN_OPTIONS.map((item) => (
                     <option key={item.value} value={item.value}>{item.label}</option>
                   ))}
-                </select>
+                </AppSelect>
                 <span className="label label-text-alt opacity-50">Choose when the number should be assigned during the record lifecycle.</span>
               </label>
               {draft.scope_type === "entity" ? (
                 <label className="form-control">
                   <span className="label-text text-sm">Scope field</span>
-                  <select
+                  <AppSelect
                     className="select select-bordered"
                     value={draft.scope_field_id}
                     onChange={(event) => setDraft((current) => ({ ...current, scope_field_id: event.target.value }))}
@@ -314,7 +315,7 @@ export default function SettingsDocumentNumberingDetailPage() {
                         {field.label}
                       </option>
                     ))}
-                  </select>
+                  </AppSelect>
                   <span className="label label-text-alt opacity-50">Required for entity scope. Records with different values in this field get separate counters.</span>
                 </label>
               ) : null}

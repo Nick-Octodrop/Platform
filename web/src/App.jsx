@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { Suspense, lazy, useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { supabase } from "./supabase";
 import ProtectedRoute from "./auth/ProtectedRoute.jsx";
@@ -19,57 +19,68 @@ import {
 } from "./theme/theme.js";
 import { apiFetch, getActiveWorkspaceId, getUiPrefs, setActiveWorkspaceId } from "./api.js";
 import LoginPage from "./pages/LoginPage.jsx";
-import AppsPage from "./pages/AppsPage.jsx";
-import ModuleDetailPage from "./pages/ModuleDetailPage.jsx";
 import HomePage from "./pages/HomePage.jsx";
-import Studio2Page from "./pages/Studio2Page.jsx";
-import AuditPage from "./pages/AuditPage.jsx";
-import SettingsPage from "./pages/SettingsPage.jsx";
-import SettingsSettingsPage from "./pages/SettingsSettingsPage.jsx";
-import SettingsPasswordPage from "./pages/SettingsPasswordPage.jsx";
-import SettingsUsersPage from "./pages/SettingsUsersPage.jsx";
-import SettingsAccessPoliciesPage from "./pages/SettingsAccessPoliciesPage.jsx";
-import SettingsAccessPolicyDetailPage from "./pages/SettingsAccessPolicyDetailPage.jsx";
-import SettingsWorkspacesPage from "./pages/SettingsWorkspacesPage.jsx";
-import SettingsSecretsPage from "./pages/SettingsSecretsPage.jsx";
-import SettingsDocumentNumberingPage from "./pages/SettingsDocumentNumberingPage.jsx";
-import SettingsDocumentNumberingDetailPage from "./pages/SettingsDocumentNumberingDetailPage.jsx";
-import SettingsApiCredentialsPage from "./pages/SettingsApiCredentialsPage.jsx";
-import SettingsApiCredentialDetailPage from "./pages/SettingsApiCredentialDetailPage.jsx";
-import SettingsWebhookSubscriptionsPage from "./pages/SettingsWebhookSubscriptionsPage.jsx";
-import SettingsWebhookSubscriptionDetailPage from "./pages/SettingsWebhookSubscriptionDetailPage.jsx";
-import DiagnosticsPage from "./pages/DiagnosticsPage.jsx";
-import DiagnosticsModulePage from "./pages/DiagnosticsModulePage.jsx";
-import DataExplorerPage from "./pages/DataExplorerPage.jsx";
-import OpsPage from "./pages/OpsPage.jsx";
-import OpsJobPage from "./pages/OpsJobPage.jsx";
-import NotificationsPage from "./pages/NotificationsPage.jsx";
-import IntegrationsPage from "./pages/IntegrationsPage.jsx";
-import IntegrationConnectionPage from "./pages/IntegrationConnectionPage.jsx";
-import EmailHomePage from "./pages/EmailHomePage.jsx";
-import EmailConnectionsPage from "./pages/EmailConnectionsPage.jsx";
-import EmailConnectionDetailPage from "./pages/EmailConnectionDetailPage.jsx";
-import EmailTemplatesPage from "./pages/EmailTemplatesPage.jsx";
-import EmailOutboxPage from "./pages/EmailOutboxPage.jsx";
-import EmailOutboxItemPage from "./pages/EmailOutboxItemPage.jsx";
-import EmailTemplateStudioPage from "./pages/email/EmailTemplateStudioPage.jsx";
-import DocumentsHomePage from "./pages/DocumentsHomePage.jsx";
-import DocumentsPage from "./pages/DocumentsPage.jsx";
-import DocumentTemplateStudioPage from "./pages/documents/DocumentTemplateStudioPage.jsx";
-import AutomationsPage from "./pages/AutomationsPage.jsx";
-import AutomationEditorPage from "./pages/AutomationEditorPage.jsx";
-import AutomationRunsPage from "./pages/AutomationRunsPage.jsx";
-import AutomationRunDetailPage from "./pages/AutomationRunDetailPage.jsx";
-import EntityCreatePage from "./pages/EntityCreatePage.jsx";
-import EntityRecordPage from "./pages/EntityRecordPage.jsx";
 import AppShell from "./apps/AppShell.jsx";
 import AuthSetPasswordPage from "./pages/AuthSetPasswordPage.jsx";
-import DesktopOnlyGate from "./components/DesktopOnlyGate.jsx";
-import OctoAiSessionsPage from "./pages/OctoAiSessionsPage.jsx";
-import OctoAiSessionDetailPage from "./pages/OctoAiSessionDetailPage.jsx";
-import OctoAiWorkspacePage from "./pages/OctoAiWorkspacePage.jsx";
-import ExternalApiDocsPage, { ExternalApiDocsRedirectPage } from "./pages/ExternalApiDocsPage.jsx";
-import SecurityCenterPage from "./pages/SecurityCenterPage.jsx";
+import LoadingSpinner from "./components/LoadingSpinner.jsx";
+
+const AppsPage = lazy(() => import("./pages/AppsPage.jsx"));
+const ModuleDetailPage = lazy(() => import("./pages/ModuleDetailPage.jsx"));
+const Studio2Page = lazy(() => import("./pages/Studio2Page.jsx"));
+const StudioModulePreviewFramePage = lazy(() => import("./pages/studio/StudioModulePreviewFramePage.jsx"));
+const AuditPage = lazy(() => import("./pages/AuditPage.jsx"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage.jsx"));
+const SettingsSettingsPage = lazy(() => import("./pages/SettingsSettingsPage.jsx"));
+const SettingsPasswordPage = lazy(() => import("./pages/SettingsPasswordPage.jsx"));
+const SettingsUsersPage = lazy(() => import("./pages/SettingsUsersPage.jsx"));
+const SettingsAccessPoliciesPage = lazy(() => import("./pages/SettingsAccessPoliciesPage.jsx"));
+const SettingsAccessPolicyDetailPage = lazy(() => import("./pages/SettingsAccessPolicyDetailPage.jsx"));
+const SettingsWorkspacesPage = lazy(() => import("./pages/SettingsWorkspacesPage.jsx"));
+const SettingsSecretsPage = lazy(() => import("./pages/SettingsSecretsPage.jsx"));
+const SettingsDocumentNumberingPage = lazy(() => import("./pages/SettingsDocumentNumberingPage.jsx"));
+const SettingsDocumentNumberingDetailPage = lazy(() => import("./pages/SettingsDocumentNumberingDetailPage.jsx"));
+const SettingsApiCredentialsPage = lazy(() => import("./pages/SettingsApiCredentialsPage.jsx"));
+const SettingsApiCredentialDetailPage = lazy(() => import("./pages/SettingsApiCredentialDetailPage.jsx"));
+const SettingsWebhookSubscriptionsPage = lazy(() => import("./pages/SettingsWebhookSubscriptionsPage.jsx"));
+const SettingsWebhookSubscriptionDetailPage = lazy(() => import("./pages/SettingsWebhookSubscriptionDetailPage.jsx"));
+const DiagnosticsPage = lazy(() => import("./pages/DiagnosticsPage.jsx"));
+const DiagnosticsModulePage = lazy(() => import("./pages/DiagnosticsModulePage.jsx"));
+const DataExplorerPage = lazy(() => import("./pages/DataExplorerPage.jsx"));
+const OpsPage = lazy(() => import("./pages/OpsPage.jsx"));
+const OpsJobPage = lazy(() => import("./pages/OpsJobPage.jsx"));
+const NotificationsPage = lazy(() => import("./pages/NotificationsPage.jsx"));
+const IntegrationsPage = lazy(() => import("./pages/IntegrationsPage.jsx"));
+const IntegrationConnectionPage = lazy(() => import("./pages/IntegrationConnectionPage.jsx"));
+const EmailHomePage = lazy(() => import("./pages/EmailHomePage.jsx"));
+const EmailConnectionsPage = lazy(() => import("./pages/EmailConnectionsPage.jsx"));
+const EmailConnectionDetailPage = lazy(() => import("./pages/EmailConnectionDetailPage.jsx"));
+const EmailTemplatesPage = lazy(() => import("./pages/EmailTemplatesPage.jsx"));
+const EmailOutboxPage = lazy(() => import("./pages/EmailOutboxPage.jsx"));
+const EmailOutboxItemPage = lazy(() => import("./pages/EmailOutboxItemPage.jsx"));
+const EmailTemplateStudioPage = lazy(() => import("./pages/email/EmailTemplateStudioPage.jsx"));
+const DocumentsHomePage = lazy(() => import("./pages/DocumentsHomePage.jsx"));
+const DocumentsPage = lazy(() => import("./pages/DocumentsPage.jsx"));
+const DocumentTemplateStudioPage = lazy(() => import("./pages/documents/DocumentTemplateStudioPage.jsx"));
+const AutomationsPage = lazy(() => import("./pages/AutomationsPage.jsx"));
+const AutomationEditorPage = lazy(() => import("./pages/AutomationEditorPage.jsx"));
+const AutomationRunsPage = lazy(() => import("./pages/AutomationRunsPage.jsx"));
+const AutomationRunDetailPage = lazy(() => import("./pages/AutomationRunDetailPage.jsx"));
+const EntityCreatePage = lazy(() => import("./pages/EntityCreatePage.jsx"));
+const EntityRecordPage = lazy(() => import("./pages/EntityRecordPage.jsx"));
+const OctoAiSessionsPage = lazy(() => import("./pages/OctoAiSessionsPage.jsx"));
+const OctoAiSessionDetailPage = lazy(() => import("./pages/OctoAiSessionDetailPage.jsx"));
+const OctoAiWorkspacePage = lazy(() => import("./pages/OctoAiWorkspacePage.jsx"));
+const SecurityCenterPage = lazy(() => import("./pages/SecurityCenterPage.jsx"));
+const ExternalApiDocsPage = lazy(() => import("./pages/ExternalApiDocsPage.jsx").then((m) => ({ default: m.default })));
+const ExternalApiDocsRedirectPage = lazy(() => import("./pages/ExternalApiDocsPage.jsx").then((m) => ({ default: m.ExternalApiDocsRedirectPage })));
+
+function RouteLoadingScreen() {
+  return (
+    <div className="flex h-full min-h-0 w-full bg-base-200">
+      <LoadingSpinner className="flex-1 min-h-0 w-full" />
+    </div>
+  );
+}
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -321,6 +332,11 @@ export default function App() {
   }
 
   const user = session?.user || null;
+  const lazyPage = (node) => (
+    <Suspense fallback={<RouteLoadingScreen />}>
+      {node}
+    </Suspense>
+  );
 
   return (
     <ToastProvider>
@@ -337,30 +353,30 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/auth/set-password" element={<AuthSetPasswordPage user={user} />} />
-          <Route path="/ext" element={<ExternalApiDocsPage />} />
+          <Route path="/ext" element={lazyPage(<ExternalApiDocsPage />)} />
           <Route
             path="/ext/v1/docs"
-            element={<ExternalApiDocsRedirectPage path="/ext/v1/docs" label="Swagger UI" />}
+            element={lazyPage(<ExternalApiDocsRedirectPage path="/ext/v1/docs" label="Swagger UI" />)}
           />
           <Route
             path="/ext/v1/docs/oauth2-redirect"
-            element={<ExternalApiDocsRedirectPage path="/ext/v1/docs/oauth2-redirect" label="Swagger OAuth Redirect" />}
+            element={lazyPage(<ExternalApiDocsRedirectPage path="/ext/v1/docs/oauth2-redirect" label="Swagger OAuth Redirect" />)}
           />
           <Route
             path="/ext/v1/redoc"
-            element={<ExternalApiDocsRedirectPage path="/ext/v1/redoc" label="ReDoc" />}
+            element={lazyPage(<ExternalApiDocsRedirectPage path="/ext/v1/redoc" label="ReDoc" />)}
           />
           <Route
             path="/ext/v1/openapi.json"
-            element={<ExternalApiDocsRedirectPage path="/ext/v1/openapi.json" label="OpenAPI JSON" />}
+            element={lazyPage(<ExternalApiDocsRedirectPage path="/ext/v1/openapi.json" label="OpenAPI JSON" />)}
           />
           <Route
             path="/ext/v1/guide.md"
-            element={<ExternalApiDocsRedirectPage path="/ext/v1/guide.md" label="External API Guide" />}
+            element={lazyPage(<ExternalApiDocsRedirectPage path="/ext/v1/guide.md" label="External API Guide" />)}
           />
           <Route
             path="/ext/v1/events.md"
-            element={<ExternalApiDocsRedirectPage path="/ext/v1/events.md" label="External Event Catalog" />}
+            element={lazyPage(<ExternalApiDocsRedirectPage path="/ext/v1/events.md" label="External Event Catalog" />)}
           />
           <Route
             path="/*"
@@ -374,16 +390,16 @@ export default function App() {
           >
             <Route index element={<Navigate to="/home" replace />} />
             <Route path="home" element={<HomePage user={user} />} />
-            <Route path="apps" element={<AppsPage user={user} />} />
+            <Route path="apps" element={lazyPage(<AppsPage user={user} />)} />
             <Route path="apps/:moduleId" element={<AppShell />} />
             <Route path="apps/:moduleId/page/:pageId" element={<AppShell />} />
             <Route path="apps/:moduleId/view/:viewId" element={<AppShell />} />
-            <Route path="apps/:moduleId/details" element={<ModuleDetailPage user={user} />} />
+            <Route path="apps/:moduleId/details" element={lazyPage(<ModuleDetailPage user={user} />)} />
             <Route
               path="studio"
               element={(
                 <CapabilityRoute capability="modules.manage">
-                  <Studio2Page user={user} />
+                  {lazyPage(<Studio2Page user={user} />)}
                 </CapabilityRoute>
               )}
             />
@@ -391,31 +407,39 @@ export default function App() {
               path="studio/:moduleId"
               element={(
                 <CapabilityRoute capability="modules.manage">
-                  <Studio2Page user={user} />
+                  {lazyPage(<Studio2Page user={user} />)}
+                </CapabilityRoute>
+              )}
+            />
+            <Route
+              path="studio/preview/:moduleId"
+              element={(
+                <CapabilityRoute capability="modules.manage">
+                  {lazyPage(<StudioModulePreviewFramePage />)}
                 </CapabilityRoute>
               )}
             />
             <Route path="studio2" element={<Navigate to="/studio" replace />} />
             <Route path="studio2/:moduleId" element={<Navigate to="/studio" replace />} />
-            <Route path="audit" element={<AuditPage />} />
+            <Route path="audit" element={lazyPage(<AuditPage />)} />
             <Route path="security" element={<Navigate to="/settings/security" replace />} />
-            <Route path="settings" element={<SettingsPage />} />
+            <Route path="settings" element={lazyPage(<SettingsPage />)} />
             <Route
               path="settings/security"
               element={(
                 <SuperadminRoute>
-                  <SecurityCenterPage />
+                  {lazyPage(<SecurityCenterPage />)}
                 </SuperadminRoute>
               )}
             />
-            <Route path="settings/settings" element={<SettingsSettingsPage user={user} onSignOut={handleSignOut} />} />
+            <Route path="settings/settings" element={lazyPage(<SettingsSettingsPage user={user} onSignOut={handleSignOut} />)} />
             <Route path="settings/preferences" element={<Navigate to="/settings/settings" replace />} />
-            <Route path="settings/password" element={<SettingsPasswordPage user={user} />} />
+            <Route path="settings/password" element={lazyPage(<SettingsPasswordPage user={user} />)} />
             <Route
               path="settings/users"
               element={(
                 <CapabilityRoute capability="workspace.manage_members">
-                  <SettingsUsersPage />
+                  {lazyPage(<SettingsUsersPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -423,7 +447,7 @@ export default function App() {
               path="settings/access-policies"
               element={(
                 <CapabilityRoute capability="workspace.manage_members">
-                  <SettingsAccessPoliciesPage />
+                  {lazyPage(<SettingsAccessPoliciesPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -431,7 +455,7 @@ export default function App() {
               path="settings/access-policies/:profileId"
               element={(
                 <CapabilityRoute capability="workspace.manage_members">
-                  <SettingsAccessPolicyDetailPage />
+                  {lazyPage(<SettingsAccessPolicyDetailPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -439,7 +463,7 @@ export default function App() {
               path="settings/workspaces"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
-                  <SettingsWorkspacesPage />
+                  {lazyPage(<SettingsWorkspacesPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -447,7 +471,7 @@ export default function App() {
               path="settings/document-numbering"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
-                  <SettingsDocumentNumberingPage />
+                  {lazyPage(<SettingsDocumentNumberingPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -455,7 +479,7 @@ export default function App() {
               path="settings/document-numbering/new"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
-                  <SettingsDocumentNumberingDetailPage />
+                  {lazyPage(<SettingsDocumentNumberingDetailPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -463,7 +487,7 @@ export default function App() {
               path="settings/document-numbering/:sequenceId"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
-                  <SettingsDocumentNumberingDetailPage />
+                  {lazyPage(<SettingsDocumentNumberingDetailPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -471,7 +495,7 @@ export default function App() {
               path="settings/api-credentials"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
-                  <SettingsApiCredentialsPage />
+                  {lazyPage(<SettingsApiCredentialsPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -479,7 +503,7 @@ export default function App() {
               path="settings/api-credentials/:credentialId"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
-                  <SettingsApiCredentialDetailPage />
+                  {lazyPage(<SettingsApiCredentialDetailPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -487,7 +511,7 @@ export default function App() {
               path="settings/webhook-subscriptions"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
-                  <SettingsWebhookSubscriptionsPage />
+                  {lazyPage(<SettingsWebhookSubscriptionsPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -495,7 +519,7 @@ export default function App() {
               path="settings/webhook-subscriptions/:subscriptionId"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
-                  <SettingsWebhookSubscriptionDetailPage />
+                  {lazyPage(<SettingsWebhookSubscriptionDetailPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -503,7 +527,7 @@ export default function App() {
               path="settings/secrets"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
-                  <SettingsSecretsPage />
+                  {lazyPage(<SettingsSecretsPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -511,7 +535,7 @@ export default function App() {
               path="settings/diagnostics"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
-                  <DiagnosticsPage />
+                  {lazyPage(<DiagnosticsPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -519,7 +543,7 @@ export default function App() {
               path="settings/diagnostics/:moduleId"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
-                  <DiagnosticsModulePage />
+                  {lazyPage(<DiagnosticsModulePage />)}
                 </CapabilityRoute>
               )}
             />
@@ -527,7 +551,7 @@ export default function App() {
               path="settings/email"
               element={(
                 <CapabilityRoute capability="templates.manage">
-                  <EmailHomePage />
+                  {lazyPage(<EmailHomePage />)}
                 </CapabilityRoute>
               )}
             />
@@ -535,7 +559,7 @@ export default function App() {
               path="settings/email/connections"
               element={(
                 <CapabilityRoute capability="templates.manage">
-                  <EmailConnectionsPage />
+                  {lazyPage(<EmailConnectionsPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -543,7 +567,7 @@ export default function App() {
               path="settings/email/connections/:connectionId"
               element={(
                 <CapabilityRoute capability="templates.manage">
-                  <EmailConnectionDetailPage />
+                  {lazyPage(<EmailConnectionDetailPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -551,7 +575,7 @@ export default function App() {
               path="settings/email-templates"
               element={(
                 <CapabilityRoute capability="templates.manage">
-                  <EmailTemplatesPage />
+                  {lazyPage(<EmailTemplatesPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -559,7 +583,7 @@ export default function App() {
               path="settings/email-outbox"
               element={(
                 <CapabilityRoute capability="templates.manage">
-                  <EmailOutboxPage />
+                  {lazyPage(<EmailOutboxPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -567,7 +591,7 @@ export default function App() {
               path="settings/email-outbox/:outboxId"
               element={(
                 <CapabilityRoute capability="templates.manage">
-                  <EmailOutboxItemPage />
+                  {lazyPage(<EmailOutboxItemPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -575,7 +599,7 @@ export default function App() {
               path="settings/documents"
               element={(
                 <CapabilityRoute capability="templates.manage">
-                  <DocumentsHomePage />
+                  {lazyPage(<DocumentsHomePage />)}
                 </CapabilityRoute>
               )}
             />
@@ -583,7 +607,7 @@ export default function App() {
               path="settings/documents/templates"
               element={(
                 <CapabilityRoute capability="templates.manage">
-                  <DocumentsPage />
+                  {lazyPage(<DocumentsPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -591,7 +615,7 @@ export default function App() {
               path="email/templates/:id"
               element={(
                 <CapabilityRoute capability="templates.manage">
-                  <EmailTemplateStudioPage user={user} />
+                  {lazyPage(<EmailTemplateStudioPage user={user} />)}
                 </CapabilityRoute>
               )}
             />
@@ -599,16 +623,16 @@ export default function App() {
               path="documents/templates/:id"
               element={(
                 <CapabilityRoute capability="templates.manage">
-                  <DocumentTemplateStudioPage user={user} />
+                  {lazyPage(<DocumentTemplateStudioPage user={user} />)}
                 </CapabilityRoute>
               )}
             />
-            <Route path="notifications" element={<NotificationsPage />} />
+            <Route path="notifications" element={lazyPage(<NotificationsPage />)} />
             <Route
               path="integrations"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
-                  <IntegrationsPage />
+                  {lazyPage(<IntegrationsPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -616,7 +640,7 @@ export default function App() {
               path="integrations/connections/:connectionId"
               element={(
                 <CapabilityRoute capability="workspace.manage_settings">
-                  <IntegrationConnectionPage />
+                  {lazyPage(<IntegrationConnectionPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -624,7 +648,7 @@ export default function App() {
               path="automations"
               element={(
                 <CapabilityRoute capability="automations.manage">
-                  <AutomationsPage />
+                  {lazyPage(<AutomationsPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -632,7 +656,7 @@ export default function App() {
               path="automations/:automationId"
               element={(
                 <CapabilityRoute capability="automations.manage">
-                  <AutomationEditorPage user={user} />
+                  {lazyPage(<AutomationEditorPage user={user} />)}
                 </CapabilityRoute>
               )}
             />
@@ -640,7 +664,7 @@ export default function App() {
               path="automations/:automationId/runs"
               element={(
                 <CapabilityRoute capability="automations.manage">
-                  <AutomationRunsPage />
+                  {lazyPage(<AutomationRunsPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -648,7 +672,7 @@ export default function App() {
               path="automation-runs/:runId"
               element={(
                 <CapabilityRoute capability="automations.manage">
-                  <AutomationRunDetailPage />
+                  {lazyPage(<AutomationRunDetailPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -656,7 +680,7 @@ export default function App() {
               path="ops"
               element={(
                 <CapabilityRoute capability="automations.manage">
-                  <OpsPage />
+                  {lazyPage(<OpsPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -664,7 +688,7 @@ export default function App() {
               path="ops/jobs/:jobId"
               element={(
                 <CapabilityRoute capability="automations.manage">
-                  <OpsJobPage />
+                  {lazyPage(<OpsJobPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -672,7 +696,7 @@ export default function App() {
               path="octo-ai"
               element={(
                 <SuperadminRoute>
-                  <OctoAiSessionsPage />
+                  {lazyPage(<OctoAiSessionsPage />)}
                 </SuperadminRoute>
               )}
             />
@@ -680,7 +704,7 @@ export default function App() {
               path="octo-ai/sessions/:sessionId"
               element={(
                 <SuperadminRoute>
-                  <OctoAiSessionDetailPage />
+                  {lazyPage(<OctoAiSessionDetailPage />)}
                 </SuperadminRoute>
               )}
             />
@@ -688,7 +712,7 @@ export default function App() {
               path="octo-ai/sandboxes/:sessionId"
               element={(
                 <SuperadminRoute>
-                  <OctoAiWorkspacePage />
+                  {lazyPage(<OctoAiWorkspacePage />)}
                 </SuperadminRoute>
               )}
             />
@@ -696,7 +720,7 @@ export default function App() {
               path="data"
               element={(
                 <CapabilityRoute capability="records.read">
-                  <DataExplorerPage />
+                  {lazyPage(<DataExplorerPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -704,7 +728,7 @@ export default function App() {
               path="data/:entity"
               element={(
                 <CapabilityRoute capability="records.read">
-                  <DataExplorerPage />
+                  {lazyPage(<DataExplorerPage />)}
                 </CapabilityRoute>
               )}
             />
@@ -712,7 +736,7 @@ export default function App() {
               path="data/:entity/new"
               element={(
                 <CapabilityRoute capability="records.write">
-                  <EntityCreatePage />
+                  {lazyPage(<EntityCreatePage />)}
                 </CapabilityRoute>
               )}
             />
@@ -720,7 +744,7 @@ export default function App() {
               path="data/:entity/:id"
               element={(
                 <CapabilityRoute capability="records.read">
-                  <EntityRecordPage />
+                  {lazyPage(<EntityRecordPage />)}
                 </CapabilityRoute>
               )}
             />

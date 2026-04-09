@@ -9,54 +9,34 @@ import { getDefaultOpenRoute, loadEntityIndex } from "../data/entityIndex.js";
 import { apiFetch, invalidateModulesCache, setModuleIcon, setModuleOrder } from "../api.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { MoreVertical, Package } from "lucide-react";
-import { LUCIDE_ICON_LIST, normalizeLucideKey, resolveLucideIcon } from "../state/lucideIconCatalog.js";
+import { loadLucideIconList } from "../state/lucideIconCatalog.js";
 import {
   HERO_ICON_FAMILIES,
-  HERO_ICON_LIST_BY_FAMILY,
   heroKey,
   normalizeHeroFamily,
-  normalizeHeroKey,
-  resolveHeroIcon,
+  loadHeroIconList,
 } from "../state/heroIconCatalog.js";
 import { useAccessContext } from "../access.js";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import { appendOctoAiFrameParams } from "../apps/appShellUtils.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
+import AppModuleIcon from "../components/AppModuleIcon.jsx";
 
 // Kept intentionally minimal: App Manager cards shouldn't surface extra status/meta beyond actions + app version.
 
 function AppIcon({ app }) {
   const iconUrl = app.icon_url;
-  const lucideKey = normalizeLucideKey(iconUrl);
-  const LucideIcon = lucideKey ? resolveLucideIcon(lucideKey) : null;
-  const heroParsed = normalizeHeroKey(iconUrl);
-  const HeroIcon = heroParsed ? resolveHeroIcon(iconUrl) : null;
-  const isImageUrl =
-    typeof iconUrl === "string" &&
-    !LucideIcon &&
-    !HeroIcon &&
-    !iconUrl.includes("lucide:") &&
-    !iconUrl.includes("hero:") &&
-    (iconUrl.startsWith("data:") || iconUrl.startsWith("http"));
-  if (LucideIcon) {
-    return (
-      <div className="text-primary">
-        <LucideIcon size={44} strokeWidth={1.31} />
-      </div>
-    );
-  }
-  if (HeroIcon) {
-    return (
-      <div className="text-primary">
-        <HeroIcon className="w-11 h-11" />
-      </div>
-    );
-  }
-  if (isImageUrl) {
-    return <img src={iconUrl} alt={app.name} className="w-11 h-11 object-contain" />;
-  }
-  return <div className="text-primary">{app.icon}</div>;
+  return (
+    <AppModuleIcon
+      iconUrl={iconUrl}
+      size={44}
+      strokeWidth={1.31}
+      iconClassName="text-primary"
+      imageClassName="w-11 h-11 object-contain"
+      fallback={<div className="text-primary">{app.icon}</div>}
+    />
+  );
 }
 
 const SETTINGS_CARD_CLASS = "border rounded-box p-4 bg-base-100 shadow-sm flex flex-col min-h-[140px]";
@@ -78,6 +58,9 @@ export default function AppsPage({ user }) {
   const [iconQuery, setIconQuery] = useState("");
   const [iconLibrary, setIconLibrary] = useState("lucide");
   const [heroFamily, setHeroFamily] = useState("24/outline");
+  const [lucideIconList, setLucideIconList] = useState([]);
+  const [heroIconLists, setHeroIconLists] = useState({});
+  const [iconCatalogLoading, setIconCatalogLoading] = useState(false);
   const [marketplaceApps, setMarketplaceApps] = useState([]);
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
   const [marketplaceError, setMarketplaceError] = useState("");
@@ -276,18 +259,49 @@ export default function AppsPage({ user }) {
     });
   }, [activeFilter, items, query]);
 
+  useEffect(() => {
+    let active = true;
+    async function loadCatalog() {
+      if (!iconPickerOpen) return;
+      setIconCatalogLoading(true);
+      try {
+        if (iconLibrary === "lucide") {
+          const list = await loadLucideIconList();
+          if (active) setLucideIconList(Array.isArray(list) ? list : []);
+        } else {
+          const normalizedFamily = normalizeHeroFamily(heroFamily);
+          if (!heroIconLists[normalizedFamily]) {
+            const list = await loadHeroIconList(normalizedFamily);
+            if (active) {
+              setHeroIconLists((prev) => ({
+                ...prev,
+                [normalizedFamily]: Array.isArray(list) ? list : [],
+              }));
+            }
+          }
+        }
+      } finally {
+        if (active) setIconCatalogLoading(false);
+      }
+    }
+    loadCatalog();
+    return () => {
+      active = false;
+    };
+  }, [heroFamily, heroIconLists, iconLibrary, iconPickerOpen]);
+
   const filteredLucideIcons = useMemo(() => {
     const q = iconQuery.trim().toLowerCase();
-    if (!q) return LUCIDE_ICON_LIST;
-    return LUCIDE_ICON_LIST.filter((icon) => icon.name.toLowerCase().includes(q));
-  }, [iconQuery]);
+    if (!q) return lucideIconList;
+    return lucideIconList.filter((icon) => icon.name.toLowerCase().includes(q));
+  }, [iconQuery, lucideIconList]);
 
   const filteredHeroIcons = useMemo(() => {
     const q = iconQuery.trim().toLowerCase();
-    const source = HERO_ICON_LIST_BY_FAMILY[normalizeHeroFamily(heroFamily)] || [];
+    const source = heroIconLists[normalizeHeroFamily(heroFamily)] || [];
     if (!q) return source;
     return source.filter((icon) => icon.name.toLowerCase().includes(q));
-  }, [heroFamily, iconQuery]);
+  }, [heroFamily, heroIconLists, iconQuery]);
 
   return (
     <div className="min-h-full md:h-full md:min-h-0 md:flex md:flex-col md:overflow-hidden">
@@ -586,10 +600,13 @@ export default function AppsPage({ user }) {
                 ))}
               </div>
             )}
+            {iconCatalogLoading ? (
+              <div className="py-10 flex items-center justify-center">
+                <LoadingSpinner />
+              </div>
+            ) : null}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-3 max-h-[60vh] overflow-auto">
-              {iconLibrary === "lucide" && filteredLucideIcons.map(({ name }) => {
-                const Icon = resolveLucideIcon(name);
-                if (!Icon) return null;
+              {!iconCatalogLoading && iconLibrary === "lucide" && filteredLucideIcons.map(({ name }) => {
                 return (
                   <button
                     key={`lucide:${name}`}
@@ -607,13 +624,11 @@ export default function AppsPage({ user }) {
                       }
                     }}
                   >
-                    <Icon size={28} strokeWidth={1.31} />
+                    <AppModuleIcon iconUrl={`lucide:${name}`} size={28} strokeWidth={1.31} fallback={null} />
                   </button>
                 );
               })}
-              {iconLibrary === "hero" && filteredHeroIcons.map(({ name }) => {
-                const Icon = resolveHeroIcon(name, heroFamily);
-                if (!Icon) return null;
+              {!iconCatalogLoading && iconLibrary === "hero" && filteredHeroIcons.map(({ name }) => {
                 return (
                   <button
                     key={heroKey(heroFamily, name)}
@@ -631,7 +646,7 @@ export default function AppsPage({ user }) {
                       }
                     }}
                   >
-                    <Icon className="w-7 h-7" />
+                    <AppModuleIcon iconUrl={heroKey(heroFamily, name)} size={28} fallback={null} />
                   </button>
                 );
               })}

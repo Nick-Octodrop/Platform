@@ -60,6 +60,69 @@ function IconCalendar() {
   return <CalendarDays className="h-4 w-4" />;
 }
 
+function ViewModesLoadingState({ kind = "list" }) {
+  if (kind === "kanban") {
+    return (
+      <div className="h-full min-h-[40vh] rounded-box bg-base-100 p-4">
+        <div className="grid h-full min-h-[32vh] grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, colIdx) => (
+            <div key={colIdx} className="flex min-h-0 flex-col rounded-box border border-base-300 bg-base-200/45 p-3">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="h-5 w-24 animate-pulse rounded bg-base-200/90" />
+                <div className="h-4 w-8 animate-pulse rounded bg-base-200/70" />
+              </div>
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((__, cardIdx) => (
+                  <div key={cardIdx} className="rounded-box border border-base-300 bg-base-100 p-3 shadow-sm">
+                    <div className="h-5 w-2/3 animate-pulse rounded bg-base-200/80" />
+                    <div className="mt-2 h-4 w-1/2 animate-pulse rounded bg-base-200/65" />
+                    <div className="mt-4 flex gap-2">
+                      <div className="h-5 w-14 animate-pulse rounded-full bg-base-200/80" />
+                      <div className="h-5 w-16 animate-pulse rounded-full bg-base-200/70" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (kind === "calendar") {
+    return (
+      <div className="h-full min-h-[40vh] rounded-box bg-base-100 p-4">
+        <div className="h-full rounded-box border border-base-300 bg-base-100 p-4">
+          <div className="mb-4 flex gap-2">
+            {Array.from({ length: 7 }).map((_, idx) => (
+              <div key={idx} className="h-8 flex-1 animate-pulse rounded bg-base-200/75" />
+            ))}
+          </div>
+          <div className="grid h-[calc(100%-3rem)] grid-cols-7 gap-2">
+            {Array.from({ length: 21 }).map((_, idx) => (
+              <div key={idx} className="rounded-lg bg-base-200/40" />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="h-full min-h-[40vh] rounded-box bg-base-100 p-4">
+      <div className="overflow-hidden rounded-box border border-base-300 bg-base-100">
+        {Array.from({ length: 7 }).map((_, idx) => (
+          <div key={idx} className="flex items-center gap-4 border-b border-base-200 px-4 py-3 last:border-b-0">
+            <div className="h-4 w-4 animate-pulse rounded bg-base-200/75" />
+            <div className="h-4 w-40 animate-pulse rounded bg-base-200/80" />
+            <div className="h-4 flex-1 animate-pulse rounded bg-base-200/60" />
+            <div className="h-4 w-16 animate-pulse rounded bg-base-200/70" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function IconSearch() {
   return <Search className="h-4 w-4" />;
 }
@@ -1576,6 +1639,7 @@ export default function ViewModesBlock({
   canWriteRecords = true,
   recordContext = null,
   forceListOnly = false,
+  onPageSectionLoadingChange = null,
 }) {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const compact = block?.compact === true;
@@ -1781,6 +1845,10 @@ export default function ViewModesBlock({
   const showListMode = activeMode === "list";
   const showKanbanMode = activeMode === "kanban";
   const showCalendarMode = activeMode === "calendar";
+  const sectionKey = useMemo(
+    () => `view_modes:${entityFullId || "entity"}:${activeView?.id || activeMode || "view"}`,
+    [entityFullId, activeView?.id, activeMode]
+  );
   const listPageSize = Number.isFinite(Number(block?.page_size)) && Number(block?.page_size) > 0
     ? Number(block?.page_size)
     : Number.isFinite(Number(listView?.page_size)) && Number(listView?.page_size) > 0
@@ -2050,6 +2118,22 @@ export default function ViewModesBlock({
       cancelled = true;
     };
   }, [activeView, entityFullId, searchText, searchFields, domain, effectiveGroupByParam, previewMode, entityDef, refreshTick, externalRefreshTick, bootstrap, bootstrapVersion, bootstrapLoading, block, recordScope, waitingForInitialParams]);
+
+  useEffect(() => {
+    const sectionBusy =
+      (showListMode || showKanbanMode || showCalendarMode) &&
+      (recordsLoading || waitingForInitialParams);
+    onPageSectionLoadingChange?.(sectionKey, sectionBusy);
+    return () => onPageSectionLoadingChange?.(sectionKey, false);
+  }, [
+    onPageSectionLoadingChange,
+    sectionKey,
+    showListMode,
+    showKanbanMode,
+    showCalendarMode,
+    recordsLoading,
+    waitingForInitialParams,
+  ]);
 
   useEffect(() => {
     if (previewMode) return undefined;
@@ -2532,7 +2616,7 @@ export default function ViewModesBlock({
   const showGroupBy = !compact && !forceListOnly && (activeMode === "kanban" || activeMode === "graph" || activeMode === "pivot") && filterableFields.length > 0;
   const showGraphMeasure = activeMode === "graph" && measureOptions.length > 0;
   const showPivotMeasure = activeMode === "pivot" && measureOptions.length > 0;
-  const showRecordViewLoading = (showListMode || showKanbanMode || showCalendarMode) && recordsLoading;
+  const hideRecordViewsWhileLoading = (showListMode || showKanbanMode || showCalendarMode) && recordsLoading;
   const showMobileToolbarActions = isMobile && (
     showFilters
     || showSavedViews
@@ -3391,91 +3475,93 @@ export default function ViewModesBlock({
       )}
 
       <div className={`flex-1 min-h-0 relative z-0 ${activeMode === "calendar" ? "overflow-hidden" : "overflow-auto"}`}>
-        {showRecordViewLoading ? (
-          <LoadingSpinner className="h-full min-h-[40vh] rounded-box bg-base-100" />
-        ) : null}
-
-        {!showRecordViewLoading && activeView && activeViewKind === "list" && showListMode && (
+        {activeView && activeViewKind === "list" && showListMode && (
           <div className="h-full min-h-0">
-            <ListViewRenderer
-              view={activeView}
-              fieldIndex={fieldIndex}
-              records={records}
-              enableSelection={!compact}
-              header={activeView.header}
-              hideHeader={true}
-              searchQuery={searchText}
-              searchFields={searchFields}
-              filters={manifestFilters}
-              activeFilter={activeFilter && activeFilter.source === "manifest" ? activeFilter : null}
-              clientFilters={clientFilters}
-              page={listPage}
-              pageSize={listPageSize}
-              onPageChange={setListPage}
-              onTotalItemsChange={setListTotalItems}
-              showPaginationControls={false}
-              selectedIds={selectedIds}
-              onToggleSelect={(recordId, checked) => {
-                setSelectedIds((prev) => {
-                  const next = new Set(prev);
-                  if (checked) next.add(recordId);
-                  else next.delete(recordId);
-                  return Array.from(next);
-                });
-              }}
-              onToggleAll={(checked, ids) => {
-                if (!checked) {
-                  setSelectedIds([]);
-                  return;
-                }
-                const allIds = Array.isArray(ids) ? ids : records.map((r) => r.record_id || r.record?.id).filter(Boolean);
-                setSelectedIds(allIds);
-              }}
-              onSelectRow={(row) => {
-                if (!openRecordTarget) return;
-                const recordId = row.record_id || row.record?.id;
-                if (!recordId) return;
-                const target = openRecordTarget.startsWith("page:") || openRecordTarget.startsWith("view:") ? openRecordTarget : `page:${openRecordTarget}`;
-                onNavigate?.(target, { recordId, recordParamName: openRecordParam, preserveParams: true });
-              }}
-            />
+            <div className={hideRecordViewsWhileLoading ? "h-full min-h-0 opacity-0 pointer-events-none" : "h-full min-h-0"}>
+              <ListViewRenderer
+                view={activeView}
+                fieldIndex={fieldIndex}
+                records={records}
+                enableSelection={!compact}
+                header={activeView.header}
+                hideHeader={true}
+                searchQuery={searchText}
+                searchFields={searchFields}
+                filters={manifestFilters}
+                activeFilter={activeFilter && activeFilter.source === "manifest" ? activeFilter : null}
+                clientFilters={clientFilters}
+                page={listPage}
+                pageSize={listPageSize}
+                onPageChange={setListPage}
+                onTotalItemsChange={setListTotalItems}
+                showPaginationControls={false}
+                selectedIds={selectedIds}
+                onToggleSelect={(recordId, checked) => {
+                  setSelectedIds((prev) => {
+                    const next = new Set(prev);
+                    if (checked) next.add(recordId);
+                    else next.delete(recordId);
+                    return Array.from(next);
+                  });
+                }}
+                onToggleAll={(checked, ids) => {
+                  if (!checked) {
+                    setSelectedIds([]);
+                    return;
+                  }
+                  const allIds = Array.isArray(ids) ? ids : records.map((r) => r.record_id || r.record?.id).filter(Boolean);
+                  setSelectedIds(allIds);
+                }}
+                onSelectRow={(row) => {
+                  if (!openRecordTarget) return;
+                  const recordId = row.record_id || row.record?.id;
+                  if (!recordId) return;
+                  const target = openRecordTarget.startsWith("page:") || openRecordTarget.startsWith("view:") ? openRecordTarget : `page:${openRecordTarget}`;
+                  onNavigate?.(target, { recordId, recordParamName: openRecordParam, preserveParams: true });
+                }}
+              />
+            </div>
           </div>
         )}
 
-        {!showRecordViewLoading && activeView && activeViewKind === "kanban" && showKanbanMode && (
+        {activeView && activeViewKind === "kanban" && showKanbanMode && (
           <div className="h-full min-h-0">
-            <KanbanView
-              view={activeView}
-              entityDef={entityDef}
-              records={records}
-              groupBy={effectiveGroupByParam}
-              canDragCards={kanbanCanDrag}
-              onMoveCard={handleKanbanMove}
-              onSelectRow={(row) => {
-                if (!openRecordTarget) return;
-                const recordId = row.record_id || row.record?.id;
-                if (!recordId) return;
-                const target = openRecordTarget.startsWith("page:") || openRecordTarget.startsWith("view:") ? openRecordTarget : `page:${openRecordTarget}`;
-                onNavigate?.(target, { recordId, recordParamName: openRecordParam, preserveParams: true });
-              }}
-            />
+            <div className={hideRecordViewsWhileLoading ? "h-full min-h-0 opacity-0 pointer-events-none" : "h-full min-h-0"}>
+              <KanbanView
+                view={activeView}
+                entityDef={entityDef}
+                records={records}
+                groupBy={effectiveGroupByParam}
+                canDragCards={kanbanCanDrag}
+                onMoveCard={handleKanbanMove}
+                onSelectRow={(row) => {
+                  if (!openRecordTarget) return;
+                  const recordId = row.record_id || row.record?.id;
+                  if (!recordId) return;
+                  const target = openRecordTarget.startsWith("page:") || openRecordTarget.startsWith("view:") ? openRecordTarget : `page:${openRecordTarget}`;
+                  onNavigate?.(target, { recordId, recordParamName: openRecordParam, preserveParams: true });
+                }}
+              />
+            </div>
           </div>
         )}
 
-        {!showRecordViewLoading && activeView && activeViewKind === "calendar" && showCalendarMode && (
+        {activeView && activeViewKind === "calendar" && showCalendarMode && (
           <div className="h-full min-h-0 overflow-hidden">
-            <CalendarView
-              view={activeView}
-              records={records}
-              entityDef={entityDef}
-              onSelectRow={(row) => {
-                if (!openRecordTarget) return;
-                const recordId = row.record_id || row.record?.id;
-                if (!recordId) return;
-                const target = openRecordTarget.startsWith("page:") || openRecordTarget.startsWith("view:") ? openRecordTarget : `page:${openRecordTarget}`;
-                onNavigate?.(target, { recordId, recordParamName: openRecordParam, preserveParams: true });
-              }}
-            />
+            <div className={hideRecordViewsWhileLoading ? "h-full min-h-0 opacity-0 pointer-events-none" : "h-full min-h-0 overflow-hidden"}>
+              <CalendarView
+                view={activeView}
+                records={records}
+                entityDef={entityDef}
+                onSelectRow={(row) => {
+                  if (!openRecordTarget) return;
+                  const recordId = row.record_id || row.record?.id;
+                  if (!recordId) return;
+                  const target = openRecordTarget.startsWith("page:") || openRecordTarget.startsWith("view:") ? openRecordTarget : `page:${openRecordTarget}`;
+                  onNavigate?.(target, { recordId, recordParamName: openRecordParam, preserveParams: true });
+                }}
+              />
+            </div>
           </div>
         )}
 

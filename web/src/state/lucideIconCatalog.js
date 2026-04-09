@@ -1,4 +1,4 @@
-import { icons } from "lucide-react";
+let lucideCatalogPromise = null;
 
 function toKebab(name) {
   return name
@@ -14,27 +14,6 @@ function toPascal(name) {
     .replace(/\s+/g, "");
 }
 
-function normalizeIcon(Icon) {
-  if (typeof Icon === "function") return Icon;
-  if (Icon && typeof Icon === "object") return Icon;
-  if (Icon && typeof Icon.default === "function") return Icon.default;
-  return null;
-}
-
-export const LUCIDE_ICON_MAP = Object.entries(icons).reduce((acc, [name, Icon]) => {
-  const normalized = normalizeIcon(Icon);
-  if (!normalized) return acc;
-  acc[name] = normalized;
-  acc[toKebab(name)] = normalized;
-  acc[toPascal(name)] = normalized;
-  acc[name.toLowerCase()] = normalized;
-  acc[toKebab(name).toLowerCase()] = normalized;
-  acc[toPascal(name).toLowerCase()] = normalized;
-  return acc;
-}, {});
-
-export const LUCIDE_ICON_LIST = Object.keys(icons).map((name) => ({ name }));
-
 export function normalizeLucideKey(raw) {
   if (!raw || typeof raw !== "string") return null;
   const trimmed = raw.trim();
@@ -43,18 +22,46 @@ export function normalizeLucideKey(raw) {
   return trimmed.slice(idx + 7).trim();
 }
 
-export function resolveLucideIcon(name) {
+async function loadLucideCatalog() {
+  if (!lucideCatalogPromise) {
+    lucideCatalogPromise = import("lucide-react/dynamicIconImports").then((mod) => {
+      const importers = mod?.default || mod || {};
+      const iconMap = Object.entries(importers).reduce((acc, [name, loader]) => {
+        if (typeof loader !== "function") return acc;
+        acc[name] = loader;
+        acc[toKebab(name)] = loader;
+        acc[toPascal(name)] = loader;
+        acc[name.toLowerCase()] = loader;
+        acc[toKebab(name).toLowerCase()] = loader;
+        acc[toPascal(name).toLowerCase()] = loader;
+        return acc;
+      }, {});
+      const iconList = Object.keys(importers).map((name) => ({ name }));
+      return { importers, iconMap, iconList };
+    });
+  }
+  return lucideCatalogPromise;
+}
+
+export async function loadLucideIconList() {
+  const catalog = await loadLucideCatalog();
+  return catalog.iconList;
+}
+
+export async function resolveLucideIcon(name) {
   const normalized = normalizeLucideKey(name);
   if (!normalized) return null;
-  const direct = normalizeIcon(icons[normalized]) || normalizeIcon(icons[normalized.toLowerCase()]);
-  if (direct) return direct;
+  const catalog = await loadLucideCatalog();
   const kebab = toKebab(normalized);
   const pascal = toPascal(normalized);
-  return LUCIDE_ICON_MAP[normalized]
-    || LUCIDE_ICON_MAP[kebab]
-    || LUCIDE_ICON_MAP[pascal]
-    || LUCIDE_ICON_MAP[normalized.toLowerCase()]
-    || LUCIDE_ICON_MAP[kebab.toLowerCase()]
-    || LUCIDE_ICON_MAP[pascal.toLowerCase()]
-    || null;
+  const loader =
+    catalog.iconMap[normalized]
+    || catalog.iconMap[kebab]
+    || catalog.iconMap[pascal]
+    || catalog.iconMap[normalized.toLowerCase()]
+    || catalog.iconMap[kebab.toLowerCase()]
+    || catalog.iconMap[pascal.toLowerCase()];
+  if (typeof loader !== "function") return null;
+  const mod = await loader();
+  return mod?.default || null;
 }

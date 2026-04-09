@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ArrowDown, ArrowUp, GripVertical, Trash2 } from "lucide-react";
 import { apiFetch } from "../api";
 import TemplateStudioShell from "./templates/TemplateStudioShell.jsx";
+import AppSelect from "../components/AppSelect.jsx";
 import ResponsiveDrawer from "../ui/ResponsiveDrawer.jsx";
 import CodeTextarea from "../components/CodeTextarea.jsx";
 import ValidationPanel from "../components/ValidationPanel.jsx";
@@ -16,6 +17,7 @@ import useMediaQuery from "../hooks/useMediaQuery.js";
 import useWorkspaceProviderStatus from "../hooks/useWorkspaceProviderStatus.js";
 import ProviderSecretModal from "../components/ProviderSecretModal.jsx";
 import ProviderUnavailableState from "../components/ProviderUnavailableState.jsx";
+import LoadingSpinner from "../components/LoadingSpinner.jsx";
 
 function AutomationLookupValueInput({ fieldDef, value, onChange, placeholder = "" }) {
   const [options, setOptions] = useState([]);
@@ -1315,37 +1317,37 @@ export default function AutomationEditorPage({ user }) {
 
     if (fieldType === "enum" && !dynamicText) {
       return (
-        <select className="select select-bordered" value={rawValue} onChange={(e) => onChange(e.target.value)}>
+        <AppSelect className="select select-bordered" value={rawValue} onChange={(e) => onChange(e.target.value)}>
           <option value="">Select value…</option>
           {enumOptions.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
           ))}
-        </select>
+        </AppSelect>
       );
     }
 
     if ((fieldType === "bool" || fieldType === "boolean") && !dynamicText) {
       return (
-        <select className="select select-bordered" value={rawValue} onChange={(e) => onChange(e.target.value)}>
+        <AppSelect className="select select-bordered" value={rawValue} onChange={(e) => onChange(e.target.value)}>
           <option value="">Select value…</option>
           <option value="true">True</option>
           <option value="false">False</option>
-        </select>
+        </AppSelect>
       );
     }
 
     if (fieldType === "user" && !dynamicText) {
       return (
-        <select className="select select-bordered" value={rawValue} onChange={(e) => onChange(e.target.value)}>
+        <AppSelect className="select select-bordered" value={rawValue} onChange={(e) => onChange(e.target.value)}>
           <option value="">Select user…</option>
           {memberOptions.map((member) => (
             <option key={member.user_id} value={member.user_id}>
               {member.name || member.email || member.user_email || member.user_id}
             </option>
           ))}
-        </select>
+        </AppSelect>
       );
     }
 
@@ -1611,14 +1613,18 @@ export default function AutomationEditorPage({ user }) {
           </div>
         </>
       ) : (
-        <ProviderUnavailableState
-          title="OpenAI not connected"
-          description="Connect an OpenAI key for this workspace to use Automation AI."
-          actionLabel="Connect OpenAI"
-          canManageSettings={canManageSettings}
-          loading={providerStatusLoading}
-          onAction={() => setOpenAiModalOpen(true)}
-        />
+        providerStatusLoading ? (
+          <LoadingSpinner className="min-h-0 h-full" />
+        ) : (
+          <ProviderUnavailableState
+            title="OpenAI not connected"
+            description="Connect an OpenAI key for this workspace to use Automation AI."
+            actionLabel="Connect OpenAI"
+            canManageSettings={canManageSettings}
+            loading={providerStatusLoading}
+            onAction={() => setOpenAiModalOpen(true)}
+          />
+        )
       )}
     </div>
   ), [automationAiEnabled, bubbleBase, canManageSettings, chatInput, chatLoading, chatMessages, providerStatusLoading, userLabel]);
@@ -2117,7 +2123,7 @@ export default function AutomationEditorPage({ user }) {
           <div className={`mt-3 ${wideGridClass}`}>
             <label className="form-control md:col-span-4">
               <span className="label-text">Kind</span>
-              <select
+              <AppSelect
                 className="select select-bordered"
                 value={step.kind || "action"}
                 onChange={(e) => updateStep(index, { kind: e.target.value })}
@@ -2126,13 +2132,13 @@ export default function AutomationEditorPage({ user }) {
                 <option value="foreach">Repeat action</option>
                 <option value="condition">Condition</option>
                 <option value="delay">Delay</option>
-              </select>
+              </AppSelect>
             </label>
 
             {isActionLike && (
               <label className="form-control md:col-span-8">
                 <span className="label-text">Action</span>
-                <select
+                <AppSelect
                   className="select select-bordered"
                   value={actionValue}
                   onChange={(e) => {
@@ -2173,7 +2179,7 @@ export default function AutomationEditorPage({ user }) {
                       ))}
                     </optgroup>
                   ))}
-                </select>
+                </AppSelect>
               </label>
             )}
           </div>
@@ -2235,7 +2241,7 @@ export default function AutomationEditorPage({ user }) {
                     <div className="mt-3 space-y-3">
                       <label className="form-control">
                         <span className="label-text">Recipient</span>
-                        <select
+                        <AppSelect
                           className="select select-bordered"
                           value=""
                           onChange={(e) => {
@@ -2252,7 +2258,7 @@ export default function AutomationEditorPage({ user }) {
                               {member.name || member.email || member.user_email || member.user_id}
                             </option>
                           ))}
-                        </select>
+                        </AppSelect>
                         <span className="label-text-alt mt-1 block opacity-50">Add one or more workspace users to notify.</span>
                       </label>
 
@@ -2313,12 +2319,12 @@ export default function AutomationEditorPage({ user }) {
 
                       <label className="form-control">
                         <span className="label-text">Severity</span>
-                        <select className="select select-bordered" value={step.inputs?.severity || "info"} onChange={(e) => updateStepInput(index, "severity", e.target.value)}>
+                        <AppSelect className="select select-bordered" value={step.inputs?.severity || "info"} onChange={(e) => updateStepInput(index, "severity", e.target.value)}>
                           <option value="info">Info</option>
                           <option value="success">Success</option>
                           <option value="warning">Warning</option>
                           <option value="danger">Danger</option>
-                        </select>
+                        </AppSelect>
                         <span className="label-text-alt mt-1 block opacity-50">Optional. This changes the visual style only. Default is Info.</span>
                       </label>
                     </div>
@@ -2330,7 +2336,7 @@ export default function AutomationEditorPage({ user }) {
                     <div className="mt-3 space-y-3">
                       <label className="form-control">
                         <span className="label-text">Link target</span>
-                        <select
+                        <AppSelect
                           className="select select-bordered"
                           value={linkMode}
                           onChange={(e) => {
@@ -2374,7 +2380,7 @@ export default function AutomationEditorPage({ user }) {
                           <option value="trigger_record">Current trigger record</option>
                           <option value="record">Specific record</option>
                           <option value="custom">Custom URL</option>
-                        </select>
+                        </AppSelect>
                         <span className="label-text-alt mt-1 block opacity-50">
                           {linkMode === "trigger_record"
                             ? "Optional. Opens the record from the trigger event."
@@ -2390,7 +2396,7 @@ export default function AutomationEditorPage({ user }) {
                         <div className="space-y-3">
                           <label className="form-control">
                             <span className="label-text">Record entity</span>
-                            <select
+                            <AppSelect
                               className="select select-bordered"
                               value={linkConfig.entityId || ""}
                               onChange={(e) => updateNotificationLink(index, { link_entity_id: e.target.value })}
@@ -2401,7 +2407,7 @@ export default function AutomationEditorPage({ user }) {
                                   {ent.label || ent.id}
                                 </option>
                               ))}
-                            </select>
+                            </AppSelect>
                             <span className="label-text-alt mt-1 block opacity-50">Choose the entity that should open from the notification.</span>
                           </label>
 
@@ -2500,7 +2506,7 @@ export default function AutomationEditorPage({ user }) {
                       <div className="grid gap-3 md:grid-cols-2">
                         <label className="form-control">
                           <span className="label-text">Add internal recipient</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value=""
                             onChange={(e) => {
@@ -2519,13 +2525,13 @@ export default function AutomationEditorPage({ user }) {
                                 </option>
                               );
                             })}
-                          </select>
+                          </AppSelect>
                         </label>
 
                         {emailFields.length > 0 && (
                           <label className="form-control">
                             <span className="label-text">Add record email field</span>
-                            <select
+                            <AppSelect
                               className="select select-bordered"
                               value=""
                               onChange={(e) => {
@@ -2542,7 +2548,7 @@ export default function AutomationEditorPage({ user }) {
                                   {field.label || field.id}
                                 </option>
                               ))}
-                            </select>
+                            </AppSelect>
                           </label>
                         )}
                       </div>
@@ -2551,7 +2557,7 @@ export default function AutomationEditorPage({ user }) {
                         {lookupFields.length > 0 && (
                           <label className="form-control">
                             <span className="label-text">Add lookup recipient field</span>
-                            <select
+                            <AppSelect
                               className="select select-bordered"
                               value=""
                               onChange={(e) => {
@@ -2568,14 +2574,14 @@ export default function AutomationEditorPage({ user }) {
                                   {field.label || field.id}
                                 </option>
                               ))}
-                            </select>
+                            </AppSelect>
                           </label>
                         )}
 
                         {selectedLookupIds.length > 0 && targetEmailFields.length > 0 && (
                           <label className="form-control">
                             <span className="label-text">Target email field</span>
-                            <select
+                            <AppSelect
                               className="select select-bordered"
                               value={step.inputs?.to_lookup_email_field || ""}
                               onChange={(e) => updateStepInput(index, "to_lookup_email_field", e.target.value)}
@@ -2586,7 +2592,7 @@ export default function AutomationEditorPage({ user }) {
                                   {field.label || field.id}
                                 </option>
                               ))}
-                            </select>
+                            </AppSelect>
                             <span className="label-text-alt mt-1 block opacity-50">Only needed if the related record has more than one email field.</span>
                           </label>
                         )}
@@ -2675,7 +2681,7 @@ export default function AutomationEditorPage({ user }) {
                       <div className="grid gap-3 md:grid-cols-2">
                         <label className="form-control">
                           <span className="label-text">Connection</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.connection_id || ""}
                             onChange={(e) => updateStepInput(index, "connection_id", e.target.value)}
@@ -2686,12 +2692,12 @@ export default function AutomationEditorPage({ user }) {
                                 {conn.name || conn.id}
                               </option>
                             ))}
-                          </select>
+                          </AppSelect>
                           <span className="label-text-alt mt-1 block opacity-50">Optional. Leave blank to use the workspace default.</span>
                         </label>
                         <label className="form-control">
                           <span className="label-text">Template</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.template_id || ""}
                             onChange={(e) => updateStepInput(index, "template_id", e.target.value)}
@@ -2702,7 +2708,7 @@ export default function AutomationEditorPage({ user }) {
                                 {tpl.name || tpl.id}
                               </option>
                             ))}
-                          </select>
+                          </AppSelect>
                           <span className="label-text-alt mt-1 block opacity-50">Optional. Leave blank to write the subject and body here instead.</span>
                         </label>
                       </div>
@@ -2710,7 +2716,7 @@ export default function AutomationEditorPage({ user }) {
                       <div className="grid gap-3 md:grid-cols-2">
                         <label className="form-control">
                           <span className="label-text">Entity for merge fields</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.entity_id || ""}
                             onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
@@ -2721,7 +2727,7 @@ export default function AutomationEditorPage({ user }) {
                                 {ent.label || ent.id}
                               </option>
                             ))}
-                          </select>
+                          </AppSelect>
                           <span className="label-text-alt mt-1 block opacity-50">Optional. Pick the entity whose fields should be available in this email.</span>
                         </label>
                         <label className="form-control">
@@ -2801,7 +2807,7 @@ export default function AutomationEditorPage({ user }) {
                           </label>
                           <label className="form-control">
                             <span className="label-text">Attachment entity</span>
-                            <select
+                            <AppSelect
                               className="select select-bordered"
                               value={step.inputs?.attachment_entity_id || ""}
                               onChange={(e) => updateStepInput(index, "attachment_entity_id", e.target.value)}
@@ -2812,7 +2818,7 @@ export default function AutomationEditorPage({ user }) {
                                   {ent.label || ent.id}
                                 </option>
                               ))}
-                            </select>
+                            </AppSelect>
                             <span className="label-text-alt mt-1 block opacity-50">Optional. Leave blank to reuse the email merge entity above.</span>
                           </label>
                           <label className="form-control">
@@ -2828,7 +2834,7 @@ export default function AutomationEditorPage({ user }) {
                           </label>
                           <label className="form-control">
                             <span className="label-text">Attachment field</span>
-                            <select
+                            <AppSelect
                               className="select select-bordered"
                               value={step.inputs?.attachment_field_id || ""}
                               onChange={(e) => updateStepInput(index, "attachment_field_id", e.target.value)}
@@ -2839,7 +2845,7 @@ export default function AutomationEditorPage({ user }) {
                                   {field.label || field.id}
                                 </option>
                               ))}
-                            </select>
+                            </AppSelect>
                             <span className="label-text-alt mt-1 block opacity-50">Optional extra source if files already live in an attachments field on the record.</span>
                           </label>
                         </div>
@@ -2859,7 +2865,7 @@ export default function AutomationEditorPage({ user }) {
             <div className={`mt-3 ${standardGridClass}`}>
               <label className="form-control">
                 <span className="label-text">Template</span>
-                <select
+                <AppSelect
                   className="select select-bordered"
                   value={step.inputs?.template_id || ""}
                   onChange={(e) => updateStepInput(index, "template_id", e.target.value)}
@@ -2870,7 +2876,7 @@ export default function AutomationEditorPage({ user }) {
                       {tpl.name || tpl.id}
                     </option>
                   ))}
-                </select>
+                </AppSelect>
               </label>
               <label className="form-control">
                 <span className="label-text">Purpose</span>
@@ -2879,7 +2885,7 @@ export default function AutomationEditorPage({ user }) {
               </label>
               <label className="form-control">
                 <span className="label-text">Entity</span>
-                <select
+                <AppSelect
                   className="select select-bordered"
                   value={step.inputs?.entity_id || ""}
                   onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
@@ -2891,7 +2897,7 @@ export default function AutomationEditorPage({ user }) {
                       {ent.label || ent.id}
                     </option>
                   ))}
-                </select>
+                </AppSelect>
               </label>
               <label className="form-control">
                 <span className="label-text">Record</span>
@@ -2914,7 +2920,7 @@ export default function AutomationEditorPage({ user }) {
                   <div className={`${standardGridClass} mt-3`}>
                     <label className="form-control">
                       <span className="label-text">Connection</span>
-                      <select
+                      <AppSelect
                         className="select select-bordered"
                         value={step.inputs?.connection_id || ""}
                         onChange={(e) => updateStepInput(index, "connection_id", e.target.value)}
@@ -2925,11 +2931,11 @@ export default function AutomationEditorPage({ user }) {
                             {conn.name || conn.id}
                           </option>
                         ))}
-                      </select>
+                      </AppSelect>
                     </label>
                     <label className="form-control">
                       <span className="label-text">Method</span>
-                      <select
+                      <AppSelect
                         className="select select-bordered"
                         value={step.inputs?.method || "GET"}
                         onChange={(e) => updateStepInput(index, "method", e.target.value)}
@@ -2939,7 +2945,7 @@ export default function AutomationEditorPage({ user }) {
                             {method}
                           </option>
                         ))}
-                      </select>
+                      </AppSelect>
                     </label>
                     <label className="form-control">
                       <span className="label-text">Path</span>
@@ -3154,7 +3160,7 @@ export default function AutomationEditorPage({ user }) {
                   <div className={`${standardGridClass} mt-3`}>
                     <label className="form-control">
                       <span className="label-text">Connection</span>
-                      <select
+                      <AppSelect
                         className="select select-bordered"
                         value={step.inputs?.connection_id || ""}
                         onChange={(e) => updateStepInput(index, "connection_id", e.target.value)}
@@ -3165,7 +3171,7 @@ export default function AutomationEditorPage({ user }) {
                             {conn.name || conn.id}
                           </option>
                         ))}
-                      </select>
+                      </AppSelect>
                     </label>
                     <label className="form-control">
                       <span className="label-text">Checkpoint scope</span>
@@ -3209,7 +3215,7 @@ export default function AutomationEditorPage({ user }) {
                   <div className={`${standardGridClass} mt-3`}>
                       <label className="form-control">
                         <span className="label-text">Method</span>
-                        <select
+                        <AppSelect
                           className="select select-bordered"
                           value={step.inputs?.method || "GET"}
                           onChange={(e) => updateStepInput(index, "method", e.target.value)}
@@ -3219,7 +3225,7 @@ export default function AutomationEditorPage({ user }) {
                               {method}
                             </option>
                           ))}
-                        </select>
+                        </AppSelect>
                       </label>
                       <label className="form-control">
                         <span className="label-text">Path</span>
@@ -3441,7 +3447,7 @@ export default function AutomationEditorPage({ user }) {
             <div className={`mt-3 ${standardGridClass}`}>
               <label className="form-control">
                 <span className="label-text">Entity</span>
-                <select
+                <AppSelect
                   className="select select-bordered"
                   value={step.inputs?.entity_id || ""}
                   onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
@@ -3452,7 +3458,7 @@ export default function AutomationEditorPage({ user }) {
                       {ent.label || ent.id}
                     </option>
                   ))}
-                </select>
+                </AppSelect>
               </label>
               <label className="form-control">
                 <span className="label-text">Record</span>
@@ -3483,12 +3489,12 @@ export default function AutomationEditorPage({ user }) {
                   <div className={`${standardGridClass} mt-3`}>
                     <label className="form-control">
                       <span className="label-text">Entity</span>
-                      <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                      <AppSelect className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
                         <option value="">Select entity…</option>
                         {entityOptions.map((ent) => (
                           <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
                         ))}
-                      </select>
+                      </AppSelect>
                     </label>
                     <label className="form-control">
                       <span className="label-text">Store output as</span>
@@ -3612,12 +3618,12 @@ export default function AutomationEditorPage({ user }) {
                   <div className={`${standardGridClass} mt-3`}>
                     <label className="form-control">
                       <span className="label-text">Entity</span>
-                      <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                      <AppSelect className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
                         <option value="">Use trigger entity</option>
                         {entityOptions.map((ent) => (
                           <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
                         ))}
-                      </select>
+                      </AppSelect>
                     </label>
                     <label className="form-control">
                       <span className="label-text">Record</span>
@@ -3745,12 +3751,12 @@ export default function AutomationEditorPage({ user }) {
                   <div className={`${standardGridClass} mt-3`}>
                     <label className="form-control">
                       <span className="label-text">Entity</span>
-                      <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                      <AppSelect className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
                         <option value="">Use trigger entity</option>
                         {entityOptions.map((ent) => (
                           <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
                         ))}
-                      </select>
+                      </AppSelect>
                     </label>
                     <label className="form-control">
                       <span className="label-text">Search text</span>
@@ -3817,7 +3823,7 @@ export default function AutomationEditorPage({ user }) {
                               </label>
                               <label className="form-control">
                                 <span className="label-text">Operator</span>
-                                <select
+                                <AppSelect
                                   className="select select-bordered"
                                   value={row.op || "eq"}
                                   onChange={(e) => {
@@ -3836,7 +3842,7 @@ export default function AutomationEditorPage({ user }) {
                                   <option value="not_in">not in list</option>
                                   <option value="exists">exists</option>
                                   <option value="not_exists">not exists</option>
-                                </select>
+                                </AppSelect>
                               </label>
                               <label className="form-control">
                                 <span className="label-text">Value</span>
@@ -3915,12 +3921,12 @@ export default function AutomationEditorPage({ user }) {
             <div className={`mt-3 ${standardGridClass}`}>
               <label className="form-control">
                 <span className="label-text">Entity</span>
-                <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                <AppSelect className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
                   <option value="">Use trigger entity</option>
                   {entityOptions.map((ent) => (
                     <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
                   ))}
-                </select>
+                </AppSelect>
               </label>
               <label className="form-control">
                 <span className="label-text">Record</span>
@@ -3928,11 +3934,11 @@ export default function AutomationEditorPage({ user }) {
               </label>
               <label className="form-control">
                 <span className="label-text">Entry type</span>
-                <select className="select select-bordered" value={step.inputs?.entry_type || "note"} onChange={(e) => updateStepInput(index, "entry_type", e.target.value)}>
+                <AppSelect className="select select-bordered" value={step.inputs?.entry_type || "note"} onChange={(e) => updateStepInput(index, "entry_type", e.target.value)}>
                   <option value="note">Note</option>
                   <option value="comment">Comment</option>
                   <option value="system">System</option>
-                </select>
+                </AppSelect>
               </label>
               <label className="form-control">
                 <span className="label-text">Store output as</span>
@@ -3953,7 +3959,7 @@ export default function AutomationEditorPage({ user }) {
             <div className={`mt-3 ${wideGridClass}`}>
             <label className="form-control md:col-span-4">
               <span className="label-text">Delay mode</span>
-              <select
+              <AppSelect
                 className="select select-bordered"
                 value={step.target_time ? "until_time" : "relative"}
                 onChange={(e) => {
@@ -3966,7 +3972,7 @@ export default function AutomationEditorPage({ user }) {
               >
                 <option value="relative">Wait relative time</option>
                 <option value="until_time">Wait until datetime</option>
-              </select>
+              </AppSelect>
             </label>
             {!step.target_time ? (
               <>
@@ -3986,7 +3992,7 @@ export default function AutomationEditorPage({ user }) {
                 </label>
                 <label className="form-control md:col-span-4">
                   <span className="label-text">Unit</span>
-                  <select
+                  <AppSelect
                     className="select select-bordered"
                     value={step.delay_unit || "seconds"}
                     onChange={(e) => {
@@ -3999,7 +4005,7 @@ export default function AutomationEditorPage({ user }) {
                     <option value="minutes">Minutes</option>
                     <option value="hours">Hours</option>
                     <option value="days">Days</option>
-                  </select>
+                  </AppSelect>
                 </label>
               </>
             ) : (
@@ -4085,7 +4091,7 @@ export default function AutomationEditorPage({ user }) {
               <div className={`mt-3 ${wideGridClass}`}>
               <label className="form-control md:col-span-4">
                 <span className="label-text">Entity context</span>
-                <select
+                <AppSelect
                   className="select select-bordered"
                   value={selectedEntityId}
                   onChange={(e) => {
@@ -4099,11 +4105,11 @@ export default function AutomationEditorPage({ user }) {
                       {ent.label || ent.id}
                     </option>
                   ))}
-                </select>
+                </AppSelect>
               </label>
               <label className="form-control md:col-span-4">
                 <span className="label-text">Check</span>
-                <select
+                <AppSelect
                   className="select select-bordered"
                   value={leftVar}
                   onChange={(e) => updateStep(index, { expr: { ...expr, left: { var: e.target.value } } })}
@@ -4125,11 +4131,11 @@ export default function AutomationEditorPage({ user }) {
                       ))}
                     </optgroup>
                   )}
-                </select>
+                </AppSelect>
               </label>
               <label className="form-control md:col-span-4">
                 <span className="label-text">Compare using</span>
-                <select
+                <AppSelect
                   className="select select-bordered"
                   value={op}
                   onChange={(e) => updateStep(index, { expr: { ...expr, op: e.target.value } })}
@@ -4145,14 +4151,14 @@ export default function AutomationEditorPage({ user }) {
                   <option value="not_in">is not in list</option>
                   <option value="exists">exists</option>
                   <option value="not_exists">not exists</option>
-                </select>
+                </AppSelect>
               </label>
               <label className="form-control md:col-span-12">
                 <span className="label-text">Against</span>
                 {isExistsOp ? (
                   <input className="input input-bordered" value="No value needed for this operator" disabled />
                 ) : hasEnumOptions && !isInListOp ? (
-                  <select
+                  <AppSelect
                     className="select select-bordered"
                     value={String(rightVal ?? "")}
                     onChange={(e) => updateConditionValue(e.target.value)}
@@ -4168,16 +4174,16 @@ export default function AutomationEditorPage({ user }) {
                         </option>
                       );
                     })}
-                  </select>
+                  </AppSelect>
                 ) : fieldType === "boolean" ? (
-                  <select
+                  <AppSelect
                     className="select select-bordered"
                     value={String(Boolean(rightVal))}
                     onChange={(e) => updateConditionValue(e.target.value)}
                   >
                     <option value="true">True</option>
                     <option value="false">False</option>
-                  </select>
+                  </AppSelect>
                 ) : (
                   <input
                     className="input input-bordered"
@@ -4262,7 +4268,7 @@ export default function AutomationEditorPage({ user }) {
                   </div>
                   <label className="form-control">
                     <span className="label-text">Connection</span>
-                    <select
+                    <AppSelect
                       className="select select-bordered"
                       value={webhookTriggerConnectionId}
                       onChange={(e) => upsertTriggerFilter("connection_id", e.target.value)}
@@ -4273,7 +4279,7 @@ export default function AutomationEditorPage({ user }) {
                           {conn.name || conn.id}
                         </option>
                       ))}
-                    </select>
+                    </AppSelect>
                     <span className="label label-text-alt opacity-50">Optional. Leave empty to react to any configured integration connection.</span>
                   </label>
                   <label className="form-control">
@@ -4313,7 +4319,7 @@ export default function AutomationEditorPage({ user }) {
               ) : (
                 <div className="form-control">
                   <span className="label-text">Trigger event</span>
-                  <select
+                  <AppSelect
                     className="select select-bordered"
                     value={(trigger?.event_types || [])[0] || ""}
                     onChange={(e) => updateTriggerEvent(e.target.value)}
@@ -4332,7 +4338,7 @@ export default function AutomationEditorPage({ user }) {
                           })}
                       </optgroup>
                     ))}
-                  </select>
+                  </AppSelect>
                 </div>
               )}
 
@@ -4392,7 +4398,7 @@ export default function AutomationEditorPage({ user }) {
                         </label>
                         <label className="form-control md:col-span-3">
                           <span className="label-text">Operator</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value={op}
                             onChange={(e) => updateTriggerFilter(idx, { op: e.target.value })}
@@ -4411,7 +4417,7 @@ export default function AutomationEditorPage({ user }) {
                             <option value="changed">changed</option>
                             <option value="changed_from">changed from</option>
                             <option value="changed_to">changed to</option>
-                          </select>
+                          </AppSelect>
                         </label>
                         <label className="form-control md:col-span-3">
                           <span className="label-text">Value</span>
@@ -4605,7 +4611,7 @@ export default function AutomationEditorPage({ user }) {
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                   <label className="form-control md:col-span-4">
                     <span className="label-text">Kind</span>
-                    <select
+                    <AppSelect
                       className="select select-bordered"
                       value={step.kind || "action"}
                       onChange={(e) => updateStep(index, { kind: e.target.value })}
@@ -4614,13 +4620,13 @@ export default function AutomationEditorPage({ user }) {
                       <option value="foreach">Repeat action</option>
                       <option value="condition">Condition</option>
                       <option value="delay">Delay</option>
-                    </select>
+                    </AppSelect>
                   </label>
 
                   {isActionLike && (
                     <label className="form-control md:col-span-8">
                       <span className="label-text">Action</span>
-                      <select
+                      <AppSelect
                         className="select select-bordered"
                         value={actionValue}
                         onChange={(e) => {
@@ -4652,7 +4658,7 @@ export default function AutomationEditorPage({ user }) {
                             ))}
                           </optgroup>
                         ))}
-                      </select>
+                      </AppSelect>
                     </label>
                   )}
                 </div>
@@ -4702,7 +4708,7 @@ export default function AutomationEditorPage({ user }) {
                           return (
                             <label className="form-control">
                               <span className="label-text">Add recipient user</span>
-                              <select
+                              <AppSelect
                                 className="select select-bordered"
                                 value=""
                                 onChange={(e) => {
@@ -4719,7 +4725,7 @@ export default function AutomationEditorPage({ user }) {
                                     {member.name || member.email || member.user_email || member.user_id}
                                   </option>
                                 ))}
-                              </select>
+                              </AppSelect>
                               <span className="label label-text-alt opacity-50">You can add multiple recipients.</span>
                             </label>
                           );
@@ -4767,12 +4773,12 @@ export default function AutomationEditorPage({ user }) {
                         </div>
                         <label className="form-control">
                           <span className="label-text">Severity</span>
-                          <select className="select select-bordered" value={step.inputs?.severity || "info"} onChange={(e) => updateStepInput(index, "severity", e.target.value)}>
+                          <AppSelect className="select select-bordered" value={step.inputs?.severity || "info"} onChange={(e) => updateStepInput(index, "severity", e.target.value)}>
                             <option value="info">Info</option>
                             <option value="success">Success</option>
                             <option value="warning">Warning</option>
                             <option value="danger">Danger</option>
-                          </select>
+                          </AppSelect>
                         </label>
                         <label className="form-control md:col-span-2">
                           <span className="label-text">Title</span>
@@ -4835,7 +4841,7 @@ export default function AutomationEditorPage({ user }) {
                             <>
                         <label className="form-control md:col-span-6">
                           <span className="label-text">Connection (optional)</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.connection_id || ""}
                             onChange={(e) => updateStepInput(index, "connection_id", e.target.value)}
@@ -4846,11 +4852,11 @@ export default function AutomationEditorPage({ user }) {
                                 {conn.name || conn.id}
                               </option>
                             ))}
-                          </select>
+                          </AppSelect>
                         </label>
                         <label className="form-control md:col-span-6">
                           <span className="label-text">Template (optional)</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.template_id || ""}
                             onChange={(e) => updateStepInput(index, "template_id", e.target.value)}
@@ -4861,11 +4867,11 @@ export default function AutomationEditorPage({ user }) {
                                 {tpl.name || tpl.id}
                               </option>
                             ))}
-                          </select>
+                          </AppSelect>
                         </label>
                         <label className="form-control md:col-span-6">
                           <span className="label-text">Entity (optional)</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.entity_id || ""}
                             onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
@@ -4876,7 +4882,7 @@ export default function AutomationEditorPage({ user }) {
                                 {ent.label || ent.id}
                               </option>
                             ))}
-                          </select>
+                          </AppSelect>
                         </label>
                         <label className="form-control md:col-span-6">
                           <span className="label-text">Record (optional)</span>
@@ -4895,7 +4901,7 @@ export default function AutomationEditorPage({ user }) {
                         </label>
                         <label className="form-control md:col-span-4">
                           <span className="label-text">Attachment entity (optional)</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.attachment_entity_id || ""}
                             onChange={(e) => updateStepInput(index, "attachment_entity_id", e.target.value)}
@@ -4906,7 +4912,7 @@ export default function AutomationEditorPage({ user }) {
                                 {ent.label || ent.id}
                               </option>
                             ))}
-                          </select>
+                          </AppSelect>
                         </label>
                         <label className="form-control md:col-span-4">
                           <span className="label-text">Attachment record (optional)</span>
@@ -4920,7 +4926,7 @@ export default function AutomationEditorPage({ user }) {
                         </label>
                         <label className="form-control md:col-span-12">
                           <span className="label-text">Attachment field (optional)</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.attachment_field_id || ""}
                             onChange={(e) => updateStepInput(index, "attachment_field_id", e.target.value)}
@@ -4931,7 +4937,7 @@ export default function AutomationEditorPage({ user }) {
                                 {field.label || field.id}
                               </option>
                             ))}
-                          </select>
+                          </AppSelect>
                           <span className="label label-text-alt opacity-50">Optional extra source if files already live in an attachments field on the record.</span>
                         </label>
                         <label className="form-control md:col-span-12">
@@ -4941,7 +4947,7 @@ export default function AutomationEditorPage({ user }) {
                         </label>
                         <label className="form-control md:col-span-6">
                           <span className="label-text">Add internal recipient</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value=""
                             onChange={(e) => {
@@ -4960,11 +4966,11 @@ export default function AutomationEditorPage({ user }) {
                               </option>
                               );
                             })}
-                          </select>
+                          </AppSelect>
                         </label>
                         <label className="form-control md:col-span-6">
                           <span className="label-text">Add record email field</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value=""
                             onChange={(e) => {
@@ -4981,11 +4987,11 @@ export default function AutomationEditorPage({ user }) {
                                 {field.label || field.id}
                               </option>
                             ))}
-                          </select>
+                          </AppSelect>
                         </label>
                         <label className="form-control md:col-span-6">
                           <span className="label-text">Add lookup recipient field</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value=""
                             onChange={(e) => {
@@ -5002,11 +5008,11 @@ export default function AutomationEditorPage({ user }) {
                                 {field.label || field.id}
                               </option>
                             ))}
-                          </select>
+                          </AppSelect>
                         </label>
                         <label className="form-control md:col-span-6">
                           <span className="label-text">Target email field</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.to_lookup_email_field || ""}
                             onChange={(e) => updateStepInput(index, "to_lookup_email_field", e.target.value)}
@@ -5017,7 +5023,7 @@ export default function AutomationEditorPage({ user }) {
                                 {field.label || field.id}
                               </option>
                             ))}
-                          </select>
+                          </AppSelect>
                         </label>
                         <div className="md:col-span-12">
                           <span className="label-text">Selected recipient sources</span>
@@ -5106,7 +5112,7 @@ export default function AutomationEditorPage({ user }) {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <label className="form-control">
                           <span className="label-text">Template</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.template_id || ""}
                             onChange={(e) => updateStepInput(index, "template_id", e.target.value)}
@@ -5117,7 +5123,7 @@ export default function AutomationEditorPage({ user }) {
                                 {tpl.name || tpl.id}
                               </option>
                             ))}
-                          </select>
+                          </AppSelect>
                         </label>
                         <label className="form-control">
                           <span className="label-text">Purpose</span>
@@ -5125,7 +5131,7 @@ export default function AutomationEditorPage({ user }) {
                         </label>
                         <label className="form-control">
                           <span className="label-text">Entity</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.entity_id || ""}
                             onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
@@ -5137,7 +5143,7 @@ export default function AutomationEditorPage({ user }) {
                                 {ent.label || ent.id}
                               </option>
                             ))}
-                          </select>
+                          </AppSelect>
                         </label>
                         <label className="form-control">
                           <span className="label-text">Record</span>
@@ -5151,7 +5157,7 @@ export default function AutomationEditorPage({ user }) {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <label className="form-control">
                           <span className="label-text">Entity</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.entity_id || ""}
                             onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
@@ -5162,7 +5168,7 @@ export default function AutomationEditorPage({ user }) {
                                 {ent.label || ent.id}
                               </option>
                             ))}
-                          </select>
+                          </AppSelect>
                         </label>
                         <label className="form-control">
                           <span className="label-text">Record</span>
@@ -5181,12 +5187,12 @@ export default function AutomationEditorPage({ user }) {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label className="form-control">
                       <span className="label-text">Entity</span>
-                      <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                      <AppSelect className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
                         <option value="">Select entity…</option>
                         {entityOptions.map((ent) => (
                           <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
                         ))}
-                      </select>
+                      </AppSelect>
                     </label>
                     <label className="form-control">
                       <span className="label-text">Store output as</span>
@@ -5207,12 +5213,12 @@ export default function AutomationEditorPage({ user }) {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label className="form-control">
                       <span className="label-text">Entity</span>
-                      <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                      <AppSelect className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
                         <option value="">Use trigger entity</option>
                         {entityOptions.map((ent) => (
                           <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
                         ))}
-                      </select>
+                      </AppSelect>
                     </label>
                     <label className="form-control">
                       <span className="label-text">Record</span>
@@ -5237,12 +5243,12 @@ export default function AutomationEditorPage({ user }) {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label className="form-control">
                       <span className="label-text">Entity</span>
-                      <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                      <AppSelect className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
                         <option value="">Use trigger entity</option>
                         {entityOptions.map((ent) => (
                           <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
                         ))}
-                      </select>
+                      </AppSelect>
                     </label>
                     <label className="form-control">
                       <span className="label-text">Search text</span>
@@ -5275,12 +5281,12 @@ export default function AutomationEditorPage({ user }) {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label className="form-control">
                       <span className="label-text">Entity</span>
-                      <select className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
+                      <AppSelect className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
                         <option value="">Use trigger entity</option>
                         {entityOptions.map((ent) => (
                           <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
                         ))}
-                      </select>
+                      </AppSelect>
                     </label>
                     <label className="form-control">
                       <span className="label-text">Record</span>
@@ -5305,7 +5311,7 @@ export default function AutomationEditorPage({ user }) {
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                     <label className="form-control md:col-span-4">
                       <span className="label-text">Delay mode</span>
-                      <select
+                      <AppSelect
                         className="select select-bordered"
                         value={step.target_time ? "until_time" : "relative"}
                         onChange={(e) => {
@@ -5318,7 +5324,7 @@ export default function AutomationEditorPage({ user }) {
                       >
                         <option value="relative">Wait relative time</option>
                         <option value="until_time">Wait until datetime</option>
-                      </select>
+                      </AppSelect>
                     </label>
                     {!step.target_time ? (
                       <>
@@ -5338,7 +5344,7 @@ export default function AutomationEditorPage({ user }) {
                         </label>
                         <label className="form-control md:col-span-4">
                           <span className="label-text">Unit</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value={step.delay_unit || "seconds"}
                             onChange={(e) => {
@@ -5351,7 +5357,7 @@ export default function AutomationEditorPage({ user }) {
                             <option value="minutes">Minutes</option>
                             <option value="hours">Hours</option>
                             <option value="days">Days</option>
-                          </select>
+                          </AppSelect>
                         </label>
                       </>
                     ) : (
@@ -5420,7 +5426,7 @@ export default function AutomationEditorPage({ user }) {
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                       <label className="form-control md:col-span-4">
                         <span className="label-text">Entity context</span>
-                        <select
+                        <AppSelect
                           className="select select-bordered"
                           value={selectedEntityId}
                           onChange={(e) => {
@@ -5434,7 +5440,7 @@ export default function AutomationEditorPage({ user }) {
                               {ent.label || ent.id}
                             </option>
                           ))}
-                        </select>
+                        </AppSelect>
                       </label>
                       <label className="form-control md:col-span-4">
                         <span className="label-text">Field</span>
@@ -5460,7 +5466,7 @@ export default function AutomationEditorPage({ user }) {
                       </label>
                       <label className="form-control md:col-span-4">
                         <span className="label-text">Operator</span>
-                        <select
+                        <AppSelect
                           className="select select-bordered"
                           value={op}
                           onChange={(e) => updateStep(index, { expr: { ...expr, op: e.target.value } })}
@@ -5476,7 +5482,7 @@ export default function AutomationEditorPage({ user }) {
                           <option value="not_in">is not in list</option>
                           <option value="exists">exists</option>
                           <option value="not_exists">not exists</option>
-                        </select>
+                        </AppSelect>
                       </label>
                       <label className="form-control md:col-span-12">
                         <span className="label-text">Value</span>
@@ -5636,11 +5642,11 @@ export default function AutomationEditorPage({ user }) {
         </div>
         <label className="form-control">
           <span className="label-text">Trigger type</span>
-          <select className="select select-bordered" value={triggerMode} onChange={(e) => setTriggerMode(e.target.value)}>
+          <AppSelect className="select select-bordered" value={triggerMode} onChange={(e) => setTriggerMode(e.target.value)}>
             <option value="event">When an event happens</option>
             <option value="webhook">When a webhook is received</option>
             <option value="schedule">Run on a schedule</option>
-          </select>
+          </AppSelect>
         </label>
 
         {triggerMode === "schedule" ? (
@@ -5664,14 +5670,14 @@ export default function AutomationEditorPage({ user }) {
               </div>
               <label className="form-control">
                 <span className="label-text">Connection</span>
-                <select className="select select-bordered" value={webhookTriggerConnectionId} onChange={(e) => upsertTriggerFilter("connection_id", e.target.value)}>
+                <AppSelect className="select select-bordered" value={webhookTriggerConnectionId} onChange={(e) => upsertTriggerFilter("connection_id", e.target.value)}>
                   <option value="">Any connection</option>
                   {webhookConnectionOptions.map((conn) => (
                     <option key={conn.id} value={conn.id}>
                       {conn.name || conn.id}
                     </option>
                   ))}
-                </select>
+                </AppSelect>
                 <span className="label label-text-alt opacity-50">Optional. Leave empty to react to any configured integration connection.</span>
               </label>
               <label className="form-control">
@@ -5709,7 +5715,7 @@ export default function AutomationEditorPage({ user }) {
         ) : (
           <label className="form-control">
             <span className="label-text">Trigger event</span>
-            <select className="select select-bordered" value={(trigger?.event_types || [])[0] || ""} onChange={(e) => updateTriggerEvent(e.target.value)}>
+            <AppSelect className="select select-bordered" value={(trigger?.event_types || [])[0] || ""} onChange={(e) => updateTriggerEvent(e.target.value)}>
               <option value="">Select event…</option>
               {triggerOptions.map((group) => (
                 <optgroup key={group.label} label={group.label}>
@@ -5722,7 +5728,7 @@ export default function AutomationEditorPage({ user }) {
                     })}
                 </optgroup>
               ))}
-            </select>
+            </AppSelect>
           </label>
         )}
       </div>
@@ -5775,7 +5781,7 @@ export default function AutomationEditorPage({ user }) {
                           </label>
                           <label className="form-control md:col-span-3">
                             <span className="label-text">Operator</span>
-                            <select className="select select-bordered" value={op} onChange={(e) => updateTriggerFilter(idx, { op: e.target.value })}>
+                            <AppSelect className="select select-bordered" value={op} onChange={(e) => updateTriggerFilter(idx, { op: e.target.value })}>
                               <option value="eq">equals</option>
                               <option value="neq">not equals</option>
                               <option value="gt">greater than</option>
@@ -5790,7 +5796,7 @@ export default function AutomationEditorPage({ user }) {
                               <option value="changed">changed</option>
                               <option value="changed_from">changed from</option>
                               <option value="changed_to">changed to</option>
-                            </select>
+                            </AppSelect>
                           </label>
                           <label className="form-control md:col-span-4">
                             <span className="label-text">Value</span>
@@ -6175,14 +6181,14 @@ export default function AutomationEditorPage({ user }) {
               {webhookTestError ? <div className="alert alert-error text-sm">{webhookTestError}</div> : null}
               <label className="form-control">
                 <span className="label-text">Connection</span>
-                <select className="select select-bordered" value={webhookTestConnectionId} onChange={(e) => setWebhookTestConnectionId(e.target.value)}>
+                <AppSelect className="select select-bordered" value={webhookTestConnectionId} onChange={(e) => setWebhookTestConnectionId(e.target.value)}>
                   <option value="">Any connection</option>
                   {webhookConnectionOptions.map((conn) => (
                     <option key={conn.id} value={conn.id}>
                       {conn.name || conn.id}
                     </option>
                   ))}
-                </select>
+                </AppSelect>
               </label>
               <label className="form-control">
                 <span className="label-text">Event key</span>

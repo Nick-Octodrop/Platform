@@ -36,6 +36,18 @@ const RECORD_MUTATION_EVENT = "octo:records-mutated";
 
 const REQUEST_POLICIES = [
   { pattern: /^\/modules$/, methods: ["GET"], ttl: 30000 },
+  { pattern: /^\/access\/members$/, methods: ["GET"], ttl: 10000 },
+  { pattern: /^\/access\/profiles(?:\/[^/]+)?$/, methods: ["GET"], ttl: 15000 },
+  { pattern: /^\/settings\/provider-status(?:\?.*)?$/, methods: ["GET"], ttl: 10000 },
+  { pattern: /^\/prefs\/ui$/, methods: ["GET"], ttl: 10000 },
+  { pattern: /^\/templates\/meta$/, methods: ["GET"], ttl: 30000 },
+  { pattern: /^\/system\/interfaces\/sources(?:\?.*)?$/, methods: ["GET"], ttl: 30000 },
+  { pattern: /^\/system\/calendar\/sources$/, methods: ["GET"], ttl: 30000 },
+  { pattern: /^\/system\/documents\/sources$/, methods: ["GET"], ttl: 30000 },
+  { pattern: /^\/system\/dashboard\/sources$/, methods: ["GET"], ttl: 30000 },
+  { pattern: /^\/settings\/api-credentials(?:\/[^/]+)?$/, methods: ["GET"], ttl: 15000 },
+  { pattern: /^\/email\/templates(?:\/[^/]+)?$/, methods: ["GET"], ttl: 15000 },
+  { pattern: /^\/email\/outbox(?:\/[^/]+)?$/, methods: ["GET"], ttl: 15000 },
   { pattern: /^\/studio2\/modules$/, methods: ["GET"], ttl: 30000 },
   { pattern: /^\/studio2\/modules\/[^/]+\/draft$/, methods: ["GET"], ttl: 30000 },
   { pattern: /^\/studio2\/modules\/[^/]+\/history$/, methods: ["GET"], ttl: 30000 },
@@ -317,11 +329,35 @@ export async function apiFetch(path, options = {}) {
             const recId = parts.length > 2 ? parts[2] : null;
             invalidateRecordCache(entityId, recId);
           }
-          if (path.startsWith("/actions/")) {
-            // Actions can mutate arbitrary records, so clear record/list bootstrap caches broadly.
-            invalidateRequestPrefix("/records/");
-            invalidateRequestPrefix("/page/bootstrap");
-          }
+        if (path.startsWith("/access/members")) {
+          invalidateRequestPrefix("/access/members");
+        }
+        if (path.startsWith("/access/profiles")) {
+          invalidateRequestPrefix("/access/profiles");
+        }
+        if (path.startsWith("/settings/secrets") || path.startsWith("/settings/provider-status")) {
+          invalidateRequestPrefix("/settings/provider-status");
+        }
+        if (path.startsWith("/prefs/ui")) {
+          invalidateRequestPrefix("/prefs/ui");
+        }
+        if (path.startsWith("/settings/api-credentials")) {
+          invalidateRequestPrefix("/settings/api-credentials");
+        }
+        if (path.startsWith("/email/templates")) {
+          invalidateRequestPrefix("/email/templates");
+        }
+        if (path.startsWith("/email/outbox")) {
+          invalidateRequestPrefix("/email/outbox");
+        }
+        if (path.startsWith("/actions/")) {
+          // Actions can mutate arbitrary records, so clear record/list bootstrap caches broadly.
+          invalidateRequestPrefix("/records/");
+          invalidateRequestPrefix("/page/bootstrap");
+          invalidateRequestPrefix("/system/dashboard/query");
+          invalidateRequestPrefix("/system/calendar/events");
+          invalidateRequestPrefix("/system/documents/items");
+        }
           if (path.startsWith("/modules") || path.startsWith("/studio2/")) {
             modulesCache = null;
             modulesCacheTs = 0;

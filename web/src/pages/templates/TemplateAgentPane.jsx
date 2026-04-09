@@ -4,6 +4,7 @@ import { useAccessContext } from "../../access.js";
 import useWorkspaceProviderStatus from "../../hooks/useWorkspaceProviderStatus.js";
 import ProviderSecretModal from "../../components/ProviderSecretModal.jsx";
 import ProviderUnavailableState from "../../components/ProviderUnavailableState.jsx";
+import LoadingSpinner from "../../components/LoadingSpinner.jsx";
 
 export default function TemplateAgentPane({ disabled, initialMessage }) {
   const { hasCapability } = useAccessContext();
@@ -14,6 +15,24 @@ export default function TemplateAgentPane({ disabled, initialMessage }) {
   const bubbleBase = "chat-bubble text-sm leading-5 max-w-[85%]";
   const openAiConnected = Boolean(providers?.openai?.connected);
   const canManageSettings = hasCapability("workspace.manage_settings");
+
+  if (loading) {
+    return (
+      <>
+        <LoadingSpinner className="min-h-0 h-full" />
+        <ProviderSecretModal
+          open={modalOpen}
+          providerKey="openai"
+          canManageSettings={canManageSettings}
+          onClose={() => setModalOpen(false)}
+          onSaved={async () => {
+            setModalOpen(false);
+            await reload();
+          }}
+        />
+      </>
+    );
+  }
 
   if (!openAiConnected) {
     return (

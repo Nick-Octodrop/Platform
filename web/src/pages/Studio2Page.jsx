@@ -32,10 +32,13 @@ import AgentChatInput from "../ui/AgentChatInput.jsx";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 import { useAccessContext } from "../access.js";
 import { formatDateTime, formatTime } from "../utils/dateTime.js";
+import { DESKTOP_PAGE_SHELL } from "../ui/pageShell.js";
 import { MoreHorizontal } from "lucide-react";
 import useWorkspaceProviderStatus from "../hooks/useWorkspaceProviderStatus.js";
 import ProviderSecretModal from "../components/ProviderSecretModal.jsx";
 import ProviderUnavailableState from "../components/ProviderUnavailableState.jsx";
+import LoadingSpinner from "../components/LoadingSpinner.jsx";
+import { writeStudioPreviewManifest } from "./studio/studioPreviewStore.js";
 
 function nowIso() {
   return new Date().toISOString();
@@ -674,6 +677,7 @@ export default function Studio2Page({ user }) {
   const [lastValidationSummary, setLastValidationSummary] = useState(null);
   const streamCancelRef = useRef(null);
   const [rightTab, setRightTab] = useState("preview");
+  const previewFrameRef = useRef(null);
   const [fixModalOpen, setFixModalOpen] = useState(false);
   const [fixCandidate, setFixCandidate] = useState(null);
   const [fixSummary, setFixSummary] = useState(null);
@@ -2157,18 +2161,43 @@ function buildPreviewManifest() {
     return draftManifest?.module?.name || moduleById.get(routeModuleId)?.name || routeModuleId;
   }, [routeModuleId, draftManifest, moduleById]);
 
+  useEffect(() => {
+    if (!routeModuleId) return;
+    writeStudioPreviewManifest(routeModuleId, previewOverride || null);
+    try {
+      previewFrameRef.current?.contentWindow?.postMessage(
+        {
+          type: "octo:studio-preview-manifest",
+          moduleId: routeModuleId,
+          manifest: previewOverride || null,
+        },
+        window.location.origin,
+      );
+    } catch {
+      // ignore iframe sync failures
+    }
+  }, [routeModuleId, previewOverride]);
+
   const previewTab = (
     <div className="h-full min-h-0 flex flex-col">
-      <div className="flex items-center justify-end" />
-      <div className="mt-3 flex-1 min-h-0 overflow-hidden">
+      <div className="mt-3 flex-1 min-h-0 overflow-hidden md:mt-0">
         {!previewOverride && (
           <div className="text-sm opacity-60">
             {draftError ? "Preview unavailable: draft JSON is invalid." : "Preview unavailable: missing app/pages configuration."}
           </div>
         )}
         {previewOverride && (
-          <div className="border border-base-200 rounded-box h-full min-h-0 overflow-hidden">
-            <AppShell manifestOverride={previewOverride} moduleIdOverride={routeModuleId} previewMode previewAllowNav />
+          <div className={`h-full min-h-0 overflow-hidden ${isMobile ? "bg-base-100" : DESKTOP_PAGE_SHELL}`}>
+            <div className={`h-full min-h-0 overflow-hidden ${isMobile ? "" : "md:p-0"}`}>
+              <div className="h-full min-h-0 overflow-hidden bg-base-200">
+                <iframe
+                  ref={previewFrameRef}
+                  title="Studio module preview"
+                  src={`/studio/preview/${routeModuleId}?octo_ai_frame=1`}
+                  className="block h-full w-full border-0 bg-transparent"
+                />
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -2309,6 +2338,13 @@ function buildPreviewManifest() {
   const userLabel = user?.email || "User";
 
   const renderLeftPane = useMemo(() => () => {
+    if (providerStatusLoading) {
+      return (
+        <div ref={leftPaneRef} className="h-full min-h-0 flex flex-col overflow-hidden">
+          <LoadingSpinner className="min-h-0 h-full" />
+        </div>
+      );
+    }
     if (!studioAiEnabled) {
       return (
         <div ref={leftPaneRef} className="h-full min-h-0 flex flex-col overflow-hidden">

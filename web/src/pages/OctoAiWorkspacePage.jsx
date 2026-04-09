@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import Tabs from "../components/Tabs.jsx";
+import AppSelect from "../components/AppSelect.jsx";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 import {
   answerOctoAiQuestion,
@@ -24,6 +25,7 @@ import { useAccessContext } from "../access.js";
 import useWorkspaceProviderStatus from "../hooks/useWorkspaceProviderStatus.js";
 import ProviderSecretModal from "../components/ProviderSecretModal.jsx";
 import ProviderUnavailableState from "../components/ProviderUnavailableState.jsx";
+import LoadingSpinner from "../components/LoadingSpinner.jsx";
 
 function JsonBlock({ value }) {
   return (
@@ -1020,11 +1022,11 @@ export default function OctoAiWorkspacePage() {
                   value={fieldSpecLabel}
                   onChange={(e) => setFieldSpecLabel(e.target.value)}
                 />
-                <select className="select select-bordered select-sm w-full" value={fieldSpecType} onChange={(e) => setFieldSpecType(e.target.value)}>
+                <AppSelect className="select select-bordered select-sm w-full" value={fieldSpecType} onChange={(e) => setFieldSpecType(e.target.value)}>
                   {(activeQuestionMeta?.options?.field_types || []).map((kind) => (
                     <option key={kind} value={kind}>{kind}</option>
                   ))}
-                </select>
+                </AppSelect>
               </div>
             ) : null}
             <AgentChatInput
@@ -1038,6 +1040,8 @@ export default function OctoAiWorkspacePage() {
             />
           </div>
         </>
+      ) : providerStatusLoading ? (
+        <LoadingSpinner className="min-h-0 h-full" />
       ) : (
         <ProviderUnavailableState
           title="OpenAI not connected"

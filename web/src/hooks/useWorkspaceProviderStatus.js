@@ -2,12 +2,19 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getProviderStatus } from "../api.js";
 
 export default function useWorkspaceProviderStatus(providerKeys = []) {
-  const stableKeys = useMemo(
-    () => Array.from(new Set((Array.isArray(providerKeys) ? providerKeys : []).filter(Boolean))).sort(),
-    [providerKeys]
+  const providerKeySignature = JSON.stringify(
+    Array.from(new Set((Array.isArray(providerKeys) ? providerKeys : []).filter(Boolean))).sort()
   );
+  const stableKeys = useMemo(() => {
+    try {
+      const parsed = JSON.parse(providerKeySignature);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, [providerKeySignature]);
   const [providers, setProviders] = useState({});
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(stableKeys.length > 0);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -26,7 +33,7 @@ export default function useWorkspaceProviderStatus(providerKeys = []) {
     } finally {
       setLoading(false);
     }
-  }, [stableKeys]);
+  }, [providerKeySignature]);
 
   useEffect(() => {
     load();

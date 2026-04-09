@@ -7,6 +7,7 @@ import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
+import AppSelect from "../components/AppSelect.jsx";
 
 export default function EmailConnectionsPage() {
   const navigate = useNavigate();
@@ -277,14 +278,14 @@ export default function EmailConnectionsPage() {
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
               <label className="form-control">
                 <span className="label-text text-sm">Connection Type</span>
-                <select
+                <AppSelect
                   className="select select-bordered select-sm"
                   value={createForm.type}
                   onChange={(e) => setCreateForm((prev) => ({ ...prev, type: e.target.value }))}
                   disabled={creating}
                 >
                   <option value="smtp">SMTP</option>
-                </select>
+                </AppSelect>
               </label>
               <label className="form-control">
                 <span className="label-text text-sm">Name</span>

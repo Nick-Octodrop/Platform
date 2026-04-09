@@ -90,5 +90,18 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes("node_modules")) return undefined;
+            if (id.includes("react-router-dom")) return "vendor-router";
+            if (id.includes("@supabase/supabase-js")) return "vendor-supabase";
+            if (id.includes("react-resizable-panels") || id.includes("react-window")) return "vendor-ui";
+            return undefined;
+          },
+        },
+      },
+    },
   };
 });

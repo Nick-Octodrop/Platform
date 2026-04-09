@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../api";
+import AppSelect from "../components/AppSelect.jsx";
 import { useModuleStore } from "../state/moduleStore.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import PaginationControls from "../components/PaginationControls.jsx";
@@ -52,12 +53,12 @@ export default function AuditPage() {
         <div className="text-sm opacity-70">System and module activity</div>
       </div>
       <div className="flex flex-wrap gap-3 items-center">
-        <select className="select select-bordered" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}>
+        <AppSelect className="select select-bordered" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}>
           <option value="">All modules</option>
           {modules.map((m) => (
             <option key={m.module_id} value={m.module_id}>{m.module_id}</option>
           ))}
-        </select>
+        </AppSelect>
       </div>
       <div className="card bg-base-100 shadow">
         <div className="card-body">

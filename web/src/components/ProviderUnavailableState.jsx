@@ -10,20 +10,25 @@ export default function ProviderUnavailableState({
 }) {
   return (
     <div className="h-full min-h-0 flex flex-col overflow-hidden">
-      <div className="alert alert-info text-sm flex items-start justify-between gap-3">
-        <div>
-          <div className="font-medium">{title}</div>
-          <div className="mt-1 opacity-80">{description}</div>
+      <div className="rounded-2xl border border-base-300 bg-base-200/70 px-4 py-3 text-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="font-medium text-base-content">{title}</div>
+            <div className="mt-1 text-base-content/70">{description}</div>
+          </div>
+          {canManageSettings && onAction ? (
+            <button type="button" className="btn btn-sm btn-primary shrink-0" onClick={onAction}>
+              {actionLabel}
+            </button>
+          ) : null}
         </div>
-        {canManageSettings && onAction ? (
-          <button type="button" className="btn btn-sm btn-primary shrink-0" disabled={loading} onClick={onAction}>
-            {actionLabel}
-          </button>
+        {loading ? (
+          <div className="mt-2 text-xs text-base-content/60">Checking workspace provider status…</div>
+        ) : null}
+        {!canManageSettings ? (
+          <div className="mt-3 text-xs text-base-content/60">Ask a workspace admin to connect this provider in Settings.</div>
         ) : null}
       </div>
-      {!canManageSettings ? (
-        <div className="mt-3 text-xs opacity-60">Ask a workspace admin to connect this provider in Settings.</div>
-      ) : null}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { apiFetch, compileManifest, deleteRecord, getActiveWorkspaceId, getManifest, getPageBootstrap, runManifestAction, subscribeRecordMutations } from "../api";
@@ -334,12 +334,16 @@ export default function AppShell({
   const [bootstrap, setBootstrap] = useState(null);
   const [bootstrapVersion, setBootstrapVersion] = useState(0);
   const [workspaceKey, setWorkspaceKey] = useState(() => getActiveWorkspaceId());
+  const pageSectionLoadingKeysRef = useRef(new Set());
+  const [pageSectionLoadingCount, setPageSectionLoadingCount] = useState(0);
+  const [awaitingPageReady, setAwaitingPageReady] = useState(true);
   const realtimeDebounceRef = useRef(null);
   const mutationDebounceRef = useRef(null);
   const [errorFlash, setErrorFlash] = useState(null);
   const [errorFlashUntil, setErrorFlashUntil] = useState(0);
   const errorFlashTimerRef = useRef(null);
   const [globalActionState, setGlobalActionState] = useState({ status: "idle", label: null, kind: null });
+  const previewRouteTarget = previewMode ? (searchParams.get("preview_target") || null) : null;
 
   const recordId = (previewMode ? previewSearchParams : searchParams).get("record");
   const { hasCapability, isSuperadmin } = useAccessContext();
@@ -351,6 +355,32 @@ export default function AppShell({
       navigate("/home", { replace: true });
     }
   }, [isSuperadmin, moduleId, navigate]);
+
+  useLayoutEffect(() => {
+    if (manifestOverride) return;
+    setLoading(true);
+    setBootstrapLoading(Boolean(pageId || viewId));
+    pageSectionLoadingKeysRef.current = new Set();
+    setPageSectionLoadingCount(0);
+    setAwaitingPageReady(true);
+    setManifest(null);
+    setCompiled(null);
+    setBootstrap(null);
+    setBootstrapVersion((v) => v + 1);
+    setError(null);
+    setSelectedIds([]);
+    setRecordDraft({});
+  }, [moduleId, pageId, viewId, recordId, workspaceKey, manifestOverride]);
+
+  const setPageSectionLoading = useCallback((key, isLoading) => {
+    const safeKey = String(key || "").trim();
+    if (!safeKey) return;
+    const next = new Set(pageSectionLoadingKeysRef.current);
+    if (isLoading) next.add(safeKey);
+    else next.delete(safeKey);
+    pageSectionLoadingKeysRef.current = next;
+    setPageSectionLoadingCount(next.size);
+  }, []);
 
   useEffect(() => {
     if (typeof performance !== "undefined" && performance.mark) {
@@ -507,7 +537,7 @@ export default function AppShell({
   const defaultTarget = appDef?.home || null;
   const routeResolved = resolveRouteTarget({ pageId, viewId });
   const resolved = previewMode
-    ? resolveAppTarget(previewTarget || defaultTarget, null)
+    ? resolveAppTarget(previewRouteTarget || previewTarget || defaultTarget, null)
     : (routeResolved.parsed ? routeResolved : resolveAppTarget(defaultTarget, null));
   const activeTarget = resolved.target;
   let active = resolved.parsed;
@@ -701,8 +731,16 @@ export default function AppShell({
 
   useEffect(() => {
     if (previewMode) {
-      if (!previewTarget && defaultTarget) {
-        setPreviewTarget(defaultTarget);
+      if (!previewAllowNav) return;
+      const nextTarget = previewRouteTarget || defaultTarget || null;
+      if (!previewRouteTarget && defaultTarget) {
+        const params = new URLSearchParams(searchParams.toString());
+        params.set("preview_target", defaultTarget);
+        setSearchParams(params, { replace: true });
+        return;
+      }
+      if (nextTarget && nextTarget !== previewTarget) {
+        setPreviewTarget(nextTarget);
       }
       return;
     }
@@ -711,7 +749,25 @@ export default function AppShell({
     const route = buildTargetRoute(moduleId, defaultTarget);
     if (!route) return;
     navigate(route, { replace: true });
-  }, [moduleId, pageId, viewId, defaultTarget, navigate, previewMode, previewTarget]);
+  }, [moduleId, pageId, viewId, defaultTarget, navigate, previewAllowNav, previewMode, previewRouteTarget, previewTarget, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (!previewMode) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("preview_target");
+    params.delete("octo_ai_frame");
+    params.delete("octo_ai_embed");
+    params.delete("octo_ai_embed_nav");
+    params.delete("octo_ai_sandbox");
+    params.delete("octo_ai_live");
+    params.delete("octo_ai_session");
+    params.delete("octo_ai_workspace");
+    const nextString = params.toString();
+    const currentString = previewSearchParams.toString();
+    if (nextString !== currentString) {
+      setPreviewSearchParams(params);
+    }
+  }, [previewMode, previewSearchParams, searchParams]);
 
   useEffect(() => {
     if (!supabase || !realtimeEnabled) return;
@@ -772,19 +828,19 @@ export default function AppShell({
     }
     if (previewMode) {
       if (!previewAllowNav) return;
+      const params = new URLSearchParams(searchParams.toString());
+      if (typeof next === "string" && next) {
+        params.set("preview_target", next);
+      }
       setPreviewTarget(next);
       if (opts.recordId) {
-        const params = new URLSearchParams(previewSearchParams.toString());
         const recordParam = opts.recordParamName || "record";
         params.set(recordParam, opts.recordId);
-        setPreviewSearchParams(params);
-      }
-      if (!opts.recordId) {
-        const params = new URLSearchParams(previewSearchParams.toString());
+      } else {
         const recordParam = opts.recordParamName || "record";
         params.delete(recordParam);
-        setPreviewSearchParams(params);
       }
+      setSearchParams(params);
       return;
     }
     const route = buildTargetRoute(moduleId, next, { preserveFrameParams: false });
@@ -1224,6 +1280,7 @@ export default function AppShell({
         moduleId={moduleId}
         renderAnyView={renderView}
         onActionStateChange={setGlobalActionState}
+        onPageSectionLoadingChange={setPageSectionLoading}
       />
     );
   }
@@ -1234,11 +1291,39 @@ export default function AppShell({
   // Avoid flashing fallback errors before the first manifest/bootstrap response arrives.
   const awaitingInitialLoad = Boolean(moduleId) && !manifest && !error;
 
+  useEffect(() => {
+    if (loading || awaitingInitialLoad || !awaitingPageReady) return undefined;
+    let timer = null;
+    const settlePageReady = () => {
+      if (!loading && !awaitingInitialLoad && pageSectionLoadingKeysRef.current.size === 0) {
+        setAwaitingPageReady(false);
+      }
+    };
+    if (typeof window !== "undefined") {
+      // Give child sections a moment to register their own loading state before
+      // the shell drops the page-level spinner. This avoids the empty-shell flash
+      // followed by a second wave of section loaders.
+      timer = window.setTimeout(settlePageReady, 120);
+    } else {
+      settlePageReady();
+    }
+    return () => {
+      if (timer != null && typeof window !== "undefined") {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [loading, awaitingInitialLoad, awaitingPageReady, pageSectionLoadingCount]);
+
+  const showInitialPageOverlay =
+    !loading &&
+    !awaitingInitialLoad &&
+    awaitingPageReady;
+
   if (loading || awaitingInitialLoad) {
     return (
-      <div className="flex flex-col gap-3">
+      <div className="flex h-full min-h-0 w-full flex-col bg-base-200">
         {errorBanner && <div className="alert alert-error">{errorBanner}</div>}
-        <LoadingSpinner className="min-h-[40vh]" />
+        <LoadingSpinner className="flex-1 min-h-0 w-full" />
       </div>
     );
   }
@@ -1261,6 +1346,7 @@ export default function AppShell({
         })
         .filter((item) => item?.label && item?.to)
     : [];
+  const showInlinePreviewNav = !(previewMode && previewAllowNav && searchParams.get("octo_ai_frame") === "1");
 
   const createManifest = createModal?.manifest || manifest;
   const createCompiled = createModal?.compiled || compiled;
@@ -1339,87 +1425,96 @@ export default function AppShell({
 
   return (
     <div className={mobilePageLayout ? "relative flex h-full min-h-full flex-col overflow-hidden" : "relative flex flex-col h-full min-h-0 overflow-hidden"}>
-      {errorBanner && <div className="alert alert-error mb-3">{errorBanner}</div>}
-      {previewMode && previewAllowNav && previewNavItems.length > 0 && (
-        <div className="mb-3">
-          <div className="tabs tabs-bordered">
-            {previewNavItems.map((item) => {
-              const isActive = active?.type === "page" && active?.id && item.to === `page:${active.id}`;
-              return (
-                <button
-                  key={item.to}
-                  className={`tab ${isActive ? "tab-active" : ""}`}
-                  onClick={() => setTarget(item.to)}
-                >
-                  {item.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-      {active.type === "page" && activePage?.header?.variant !== "none" && (
-        <div className={`card bg-base-100 shadow mb-4 ${isMobile ? "rounded-none" : ""}`}>
-          <div className="card-body">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div>
-                <h2 className="text-xl sm:text-2xl font-semibold">{activePage?.title || manifest?.module?.name || moduleId}</h2>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {(activePage?.header?.actions || []).map(renderAction)}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div
-        className={
-          mobilePageLayout
-            ? "flex-1 h-full min-h-0 flex flex-col overflow-y-auto overflow-x-hidden"
-            : "flex-1 min-h-0 overflow-hidden flex flex-col"
-        }
-      >
-        {active.type === "page" && activePage && (
-          <div
-            className={
-              mobilePageLayout
-                ? `flex-1 h-full min-h-0 overflow-visible`
-                : "flex-1 min-h-0 overflow-hidden"
-            }
-          >
-            <ContentBlocksRenderer
-              blocks={activePage.content || []}
-              renderView={renderView}
-              recordId={recordId}
-              searchParams={searchParams}
-              setSearchParams={setSearchParams}
-              manifest={manifest}
-              moduleId={moduleId}
-              actionsMap={actionsMap}
-              onNavigate={setTarget}
-              onRunAction={runAction}
-              onConfirm={confirmDialog}
-              onPrompt={promptDialog}
-              onLookupCreate={openCreateModal}
-              externalRefreshTick={viewModesRefreshTick}
-              previewMode={previewMode}
-              canWriteRecords={canWriteRecords}
-              bootstrap={bootstrap}
-              bootstrapVersion={bootstrapVersion}
-              bootstrapLoading={bootstrapLoading}
-            />
-          </div>
-        )}
-
-        {active.type === "view" && (
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <div className={`card bg-base-100 shadow h-full min-h-0 ${isMobile ? "rounded-none" : ""}`}>
-              <div className={`card-body h-full min-h-0 ${isMobile ? "p-4" : "p-3 sm:p-4"}`}>{renderView(activeViewId)}</div>
+      <div className={`flex flex-1 min-h-0 flex-col ${showInitialPageOverlay ? "opacity-0 pointer-events-none" : ""}`}>
+        {errorBanner && <div className="alert alert-error mb-3">{errorBanner}</div>}
+        {previewMode && previewAllowNav && showInlinePreviewNav && previewNavItems.length > 0 && (
+          <div className="mb-3">
+            <div className="tabs tabs-bordered">
+              {previewNavItems.map((item) => {
+                const isActive = active?.type === "page" && active?.id && item.to === `page:${active.id}`;
+                return (
+                  <button
+                    key={item.to}
+                    className={`tab ${isActive ? "tab-active" : ""}`}
+                    onClick={() => setTarget(item.to)}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
+        {active.type === "page" && activePage?.header?.variant !== "none" && (
+          <div className={`card bg-base-100 shadow mb-4 ${isMobile ? "rounded-none" : ""}`}>
+            <div className="card-body">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-semibold">{activePage?.title || manifest?.module?.name || moduleId}</h2>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(activePage?.header?.actions || []).map(renderAction)}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div
+          className={
+            mobilePageLayout
+              ? "flex-1 h-full min-h-0 flex flex-col overflow-y-auto overflow-x-hidden"
+              : "flex-1 min-h-0 overflow-hidden flex flex-col"
+          }
+        >
+          {active.type === "page" && activePage && (
+            <div
+              className={
+                mobilePageLayout
+                  ? `flex-1 h-full min-h-0 overflow-visible`
+                  : "flex-1 min-h-0 overflow-hidden"
+              }
+            >
+              <ContentBlocksRenderer
+                blocks={activePage.content || []}
+                renderView={renderView}
+                recordId={recordId}
+                searchParams={searchParams}
+                setSearchParams={setSearchParams}
+                manifest={manifest}
+                moduleId={moduleId}
+                actionsMap={actionsMap}
+                onNavigate={setTarget}
+                onRunAction={runAction}
+                onConfirm={confirmDialog}
+                onPrompt={promptDialog}
+                onLookupCreate={openCreateModal}
+                externalRefreshTick={viewModesRefreshTick}
+                previewMode={previewMode}
+                canWriteRecords={canWriteRecords}
+                bootstrap={bootstrap}
+                bootstrapVersion={bootstrapVersion}
+                bootstrapLoading={bootstrapLoading}
+                onPageSectionLoadingChange={setPageSectionLoading}
+              />
+            </div>
+          )}
+
+          {active.type === "view" && (
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <div className={`card bg-base-100 shadow h-full min-h-0 ${isMobile ? "rounded-none" : ""}`}>
+                <div className={`card-body h-full min-h-0 ${isMobile ? "p-4" : "p-3 sm:p-4"}`}>{renderView(activeViewId)}</div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
+
+      {showInitialPageOverlay ? (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-base-200">
+          <LoadingSpinner className="min-h-0" />
+        </div>
+      ) : null}
 
       {modal &&
         typeof document !== "undefined" &&
@@ -1514,16 +1609,11 @@ export default function AppShell({
           document.body
         )}
 
-      {globalActionState.status === "running" &&
-        typeof document !== "undefined" &&
-        createPortal(
-          <div className="fixed inset-0 z-[260] flex items-center justify-center bg-base-100/55 backdrop-blur-[2px]">
-            <div className="rounded-full bg-base-100/95 p-5 shadow-xl">
-              <LoadingSpinner className="min-h-0" />
-            </div>
-          </div>,
-          document.body
-        )}
+      {globalActionState.status === "running" ? (
+        <div className="absolute inset-0 z-[260] flex items-center justify-center bg-base-100/60">
+          <LoadingSpinner className="min-h-0" />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1559,6 +1649,7 @@ function AppView({
   previewStore = null,
   renderAnyView = null,
   onActionStateChange = null,
+  onPageSectionLoadingChange = null,
 }) {
   const { pushToast } = useToast();
   const [records, setRecords] = useState([]);
@@ -2846,12 +2937,9 @@ function AppView({
     return (
       <>
       <div className="h-full min-h-0 flex flex-col overflow-hidden">
-        {state.status === "running" && (
-          <div className="shrink-0 text-xs opacity-60">Loading record…</div>
-        )}
         <div className="flex-1 min-h-0 overflow-hidden">
           {showFormSkeleton ? (
-            <LoadingSpinner className="min-h-[30vh]" />
+            <LoadingSpinner className="h-full min-h-0 w-full" />
           ) : (
             <FormViewRenderer
               view={view}
@@ -2905,6 +2993,7 @@ function AppView({
                   bootstrapVersion={bootstrapVersion}
                   bootstrapLoading={bootstrapLoading}
                   recordContext={nestedRecordContext}
+                  onPageSectionLoadingChange={onPageSectionLoadingChange}
                 />
               )}
             />

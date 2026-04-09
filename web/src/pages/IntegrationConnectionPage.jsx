@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowRight, CheckCircle2, Circle, KeyRound, Plus, ShieldCheck, TestTube2 } from "lucide-react";
 import { apiFetch } from "../api.js";
+import AppSelect from "../components/AppSelect.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
 
@@ -771,7 +772,7 @@ export default function IntegrationConnectionPage() {
       return (
         <label key={fieldId} className="form-control">
           <span className="label-text text-sm">{label}</span>
-          <select className="select select-bordered" value={config?.[fieldId] || defaultValue} onChange={(e) => updateConfigField(fieldId, e.target.value)} disabled={saving}>
+          <AppSelect className="select select-bordered" value={config?.[fieldId] || defaultValue} onChange={(e) => updateConfigField(fieldId, e.target.value)} disabled={saving}>
             {options.map((option) => {
               const normalized = typeof option === "string" ? { value: option, label: option } : option;
               return (
@@ -780,7 +781,7 @@ export default function IntegrationConnectionPage() {
                 </option>
               );
             })}
-          </select>
+          </AppSelect>
           {help ? <span className="label-text-alt opacity-70 mt-1">{help}</span> : null}
         </label>
       );
@@ -861,13 +862,13 @@ export default function IntegrationConnectionPage() {
           <div className="space-y-3">
             <label className="form-control">
               <span className="label-text text-sm">Method</span>
-              <select className="select select-bordered" value={syncRequest.method || "GET"} onChange={(e) => updateSyncRequestField("method", e.target.value)}>
+              <AppSelect className="select select-bordered" value={syncRequest.method || "GET"} onChange={(e) => updateSyncRequestField("method", e.target.value)}>
                 {["GET", "POST", "PUT", "PATCH", "DELETE"].map((method) => (
                   <option key={method} value={method}>
                     {method}
                   </option>
                 ))}
-              </select>
+              </AppSelect>
             </label>
             <label className="form-control">
               <span className="label-text text-sm">Path</span>
@@ -1038,7 +1039,7 @@ export default function IntegrationConnectionPage() {
 
                         <label className="form-control mt-3">
                           <span className="label-text text-sm">Select stored secret</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value={secretRefs?.[secretKey] || ""}
                             onChange={(e) => updateSecretRef(secretKey, e.target.value)}
@@ -1053,7 +1054,7 @@ export default function IntegrationConnectionPage() {
                                   : ""}
                               </option>
                             ))}
-                          </select>
+                          </AppSelect>
                           <span className="label-text-alt opacity-70 mt-1">
                             Matching provider and secret-key pairs are shown first so setup stays predictable.
                           </span>
@@ -1085,13 +1086,13 @@ export default function IntegrationConnectionPage() {
               <div className="space-y-3">
                 <label className="form-control">
                   <span className="label-text text-sm">Method</span>
-                  <select className="select select-bordered" value={requestForm.method} onChange={(e) => setRequestForm((prev) => ({ ...prev, method: e.target.value }))}>
+                  <AppSelect className="select select-bordered" value={requestForm.method} onChange={(e) => setRequestForm((prev) => ({ ...prev, method: e.target.value }))}>
                     {["GET", "POST", "PUT", "PATCH", "DELETE"].map((method) => (
                       <option key={method} value={method}>
                         {method}
                       </option>
                     ))}
-                  </select>
+                  </AppSelect>
                 </label>
                 <label className="form-control">
                   <span className="label-text text-sm">Path</span>
@@ -1155,10 +1156,10 @@ export default function IntegrationConnectionPage() {
               <div className="space-y-3">
                 <label className="form-control">
                   <span className="label-text text-sm">Direction</span>
-                  <select className="select select-bordered" value={newWebhook.direction} onChange={(e) => setNewWebhook((prev) => ({ ...prev, direction: e.target.value }))}>
+                  <AppSelect className="select select-bordered" value={newWebhook.direction} onChange={(e) => setNewWebhook((prev) => ({ ...prev, direction: e.target.value }))}>
                     <option value="inbound">Inbound</option>
                     <option value="outbound">Outbound</option>
-                  </select>
+                  </AppSelect>
                 </label>
                 <label className="form-control">
                   <span className="label-text text-sm">Event key</span>
@@ -1170,14 +1171,14 @@ export default function IntegrationConnectionPage() {
                 </label>
                 <label className="form-control">
                   <span className="label-text text-sm">Signing secret</span>
-                  <select className="select select-bordered" value={newWebhook.signing_secret_id} onChange={(e) => setNewWebhook((prev) => ({ ...prev, signing_secret_id: e.target.value }))}>
+                  <AppSelect className="select select-bordered" value={newWebhook.signing_secret_id} onChange={(e) => setNewWebhook((prev) => ({ ...prev, signing_secret_id: e.target.value }))}>
                     <option value="">No signing secret</option>
                     {(secrets || []).map((secret) => (
                       <option key={secret.id} value={secret.id}>
                         {secret.name || secret.id}
                       </option>
                     ))}
-                  </select>
+                  </AppSelect>
                 </label>
                 <JsonField label="Webhook config" value={newWebhook.config_json_text} onChange={(text) => setNewWebhook((prev) => ({ ...prev, config_json_text: text }))} minHeight="8rem" />
                 <div>
@@ -1233,10 +1234,10 @@ export default function IntegrationConnectionPage() {
                 </label>
                 <label className="form-control">
                   <span className="label-text text-sm">Record mode</span>
-                  <select className="select select-bordered" value={newMapping.record_mode} onChange={(e) => setNewMapping((prev) => ({ ...prev, record_mode: e.target.value }))}>
+                  <AppSelect className="select select-bordered" value={newMapping.record_mode} onChange={(e) => setNewMapping((prev) => ({ ...prev, record_mode: e.target.value }))}>
                     <option value="upsert">Upsert existing or create new</option>
                     <option value="create">Always create a new record</option>
-                  </select>
+                  </AppSelect>
                 </label>
                 {newMapping.record_mode === "upsert" ? (
                   <label className="form-control">
@@ -1261,7 +1262,7 @@ export default function IntegrationConnectionPage() {
                         </label>
                         <label className="form-control">
                           <span className="label-text text-sm">Value source</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value={row.value_type}
                             onChange={(e) => updateFieldMappingRow(index, { value_type: e.target.value })}
@@ -1269,7 +1270,7 @@ export default function IntegrationConnectionPage() {
                             <option value="path">Source path</option>
                             <option value="constant">Constant value</option>
                             <option value="ref">System reference</option>
-                          </select>
+                          </AppSelect>
                         </label>
                         <label className="form-control">
                           <span className="label-text text-sm">{row.value_type === "constant" ? "Constant value" : row.value_type === "ref" ? "Reference" : "Source path"}</span>
@@ -1282,7 +1283,7 @@ export default function IntegrationConnectionPage() {
                         </label>
                         <label className="form-control">
                           <span className="label-text text-sm">Transform</span>
-                          <select
+                          <AppSelect
                             className="select select-bordered"
                             value={row.transform || ""}
                             onChange={(e) => updateFieldMappingRow(index, { transform: e.target.value })}
@@ -1296,7 +1297,7 @@ export default function IntegrationConnectionPage() {
                             <option value="integer">Convert to integer</option>
                             <option value="boolean">Convert to boolean</option>
                             <option value="null_if_empty">Null if empty</option>
-                          </select>
+                          </AppSelect>
                         </label>
                         <div className="flex justify-end">
                           <button className="btn btn-ghost btn-sm text-error" type="button" onClick={() => removeFieldMappingRow(index)} disabled={(newMapping.field_mappings || []).length <= 1}>
@@ -1434,10 +1435,10 @@ export default function IntegrationConnectionPage() {
 
                 <label className="form-control">
                   <span className="label-text text-sm">Status</span>
-                  <select className="select select-bordered" value={status} onChange={(e) => setStatus(e.target.value)} disabled={saving}>
+                  <AppSelect className="select select-bordered" value={status} onChange={(e) => setStatus(e.target.value)} disabled={saving}>
                     <option value="active">Active</option>
                     <option value="disabled">Disabled</option>
-                  </select>
+                  </AppSelect>
                 </label>
 
                 {groupedSetupFields
@@ -1624,7 +1625,7 @@ export default function IntegrationConnectionPage() {
 
             <label className="form-control">
               <span className="label-text text-sm">Status</span>
-              <select
+              <AppSelect
                 className="select select-bordered"
                 value={createSecretForm.status}
                 onChange={(e) => setCreateSecretForm((prev) => ({ ...prev, status: e.target.value }))}
@@ -1632,7 +1633,7 @@ export default function IntegrationConnectionPage() {
               >
                 <option value="active">Active</option>
                 <option value="disabled">Disabled</option>
-              </select>
+              </AppSelect>
             </label>
 
             <label className="form-control">

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import os
 import re
@@ -628,6 +629,7 @@ _cache = {
     "manifest": {},  # key -> {value, ts}
     "studio_modules": {"value": None, "ts": 0.0},
     "registry_list": {"value": None, "ts": 0.0},
+    "entity_registry": {},
     "studio2_registry": {},
     "studio2_registry_summary": {},
 }
@@ -1190,10 +1192,52 @@ def _record_write_allowed_for_actor(actor: dict | None, module_id: str | None, e
     return _record_scope_access_level_for_actor(actor, module_id, entity_id, record) == "write"
 
 
+def _entity_allowed_field_ids_for_actor(actor: dict | None, module_id: str | None, entity_def: dict | None) -> set[str] | None:
+    if not isinstance(entity_def, dict):
+        return None
+    cache_holder = actor if isinstance(actor, dict) else None
+    entity_id = entity_def.get("id")
+    cache_key = None
+    if isinstance(entity_id, str) and entity_id:
+        cache_key = f"{module_id or ''}:{entity_id}"
+    if cache_holder is not None and isinstance(cache_key, str):
+        cached = cache_holder.setdefault("_allowed_field_ids", {}).get(cache_key)
+        if isinstance(cached, set) or cached is None:
+            return cached
+    allowed_fields: set[str] = set()
+    hidden_present = False
+    for field in entity_def.get("fields") or []:
+        field_id = field.get("id") if isinstance(field, dict) else None
+        if not isinstance(field_id, str) or not field_id:
+            continue
+        if _field_access_level_for_actor(actor, module_id, entity_id, field_id) == "hidden":
+            hidden_present = True
+            continue
+        allowed_fields.add(field_id)
+    result = allowed_fields if hidden_present else None
+    if cache_holder is not None and isinstance(cache_key, str):
+        cache_holder.setdefault("_allowed_field_ids", {})[cache_key] = result
+    return result
+
+
+def _mask_record_with_allowed_fields(record: dict | None, allowed_fields: set[str] | None) -> dict | None:
+    if not isinstance(record, dict) or allowed_fields is None:
+        return record
+    masked = {}
+    for key, value in record.items():
+        if key == "id" or key in allowed_fields:
+            masked[key] = value
+    return masked
+
+
 def _filter_record_items_for_actor(actor: dict | None, module_id: str | None, entity_def: dict | None, items: list[dict] | None) -> list[dict]:
     if not isinstance(entity_def, dict) or not isinstance(items, list):
         return []
     entity_id = entity_def.get("id")
+    requires_scope_filter = _actor_has_entity_scope_rules(actor, entity_id)
+    allowed_fields = _entity_allowed_field_ids_for_actor(actor, module_id, entity_def)
+    if not requires_scope_filter and allowed_fields is None:
+        return items
     filtered: list[dict] = []
     for item in items:
         if not isinstance(item, dict):
@@ -1201,12 +1245,12 @@ def _filter_record_items_for_actor(actor: dict | None, module_id: str | None, en
         record = item.get("record")
         if not isinstance(record, dict):
             continue
-        if not _record_visible_for_actor(actor, module_id, entity_id, record):
+        if requires_scope_filter and not _record_visible_for_actor(actor, module_id, entity_id, record):
             continue
         filtered.append(
             {
                 "record_id": item.get("record_id"),
-                "record": _mask_record_for_actor(actor, module_id, entity_def, record),
+                "record": _mask_record_with_allowed_fields(record, allowed_fields),
             }
         )
     return filtered
@@ -1249,20 +1293,7 @@ def _action_visible_for_actor(actor: dict | None, module_id: str | None, action_
 def _mask_record_for_actor(actor: dict | None, module_id: str | None, entity_def: dict | None, record: dict | None) -> dict | None:
     if not isinstance(record, dict) or not isinstance(entity_def, dict):
         return record
-    entity_id = entity_def.get("id")
-    allowed_fields: set[str] = set()
-    for field in entity_def.get("fields") or []:
-        field_id = field.get("id") if isinstance(field, dict) else None
-        if not isinstance(field_id, str) or not field_id:
-            continue
-        if _field_access_level_for_actor(actor, module_id, entity_id, field_id) == "hidden":
-            continue
-        allowed_fields.add(field_id)
-    masked = {}
-    for key, value in record.items():
-        if key == "id" or key in allowed_fields:
-            masked[key] = value
-    return masked
+    return _mask_record_with_allowed_fields(record, _entity_allowed_field_ids_for_actor(actor, module_id, entity_def))
 
 
 def _entity_access_denied_response(actor: dict | None, module_id: str | None, entity_id: str | None, *, write: bool = False) -> JSONResponse | None:
@@ -1490,9 +1521,15 @@ def _document_numbering_assignment_errors(
     return errors
 
 
-def _filter_manifest_for_actor(manifest: dict, module_id: str, actor: dict | None) -> dict | None:
+def _filter_manifest_for_actor(manifest: dict, module_id: str, actor: dict | None, manifest_hash: str | None = None) -> dict | None:
     if not _module_visible_for_actor(actor, module_id):
         return None
+    cache_key = None
+    if isinstance(manifest_hash, str) and manifest_hash:
+        cache_key = f"filtered:{get_org_id()}:{module_id}:{manifest_hash}:{_access_policy_hash(actor)}"
+        cached = _cache_get("manifest", cache_key)
+        if isinstance(cached, dict):
+            return copy.deepcopy(cached)
     out = copy.deepcopy(manifest if isinstance(manifest, dict) else {})
     entities = out.get("entities") if isinstance(out.get("entities"), list) else []
     visible_entities: set[str] = set()
@@ -1734,6 +1771,8 @@ def _filter_manifest_for_actor(manifest: dict, module_id: str, actor: dict | Non
                 header.pop("tabs", None)
 
     out["pages"] = _filter_node(out.get("pages") or [])
+    if isinstance(cache_key, str):
+        _cache_set("manifest", copy.deepcopy(out), cache_key)
     return out
 
 
@@ -2996,6 +3035,55 @@ def _get_installed_manifest(request: Request, module_id: str) -> tuple[dict | No
     return module, manifest
 
 
+def _entity_registry_fingerprint(modules: list[dict]) -> str:
+    parts: list[str] = []
+    for module in modules or []:
+        if not isinstance(module, dict):
+            continue
+        parts.append(
+            "|".join(
+                [
+                    str(module.get("module_id") or ""),
+                    str(module.get("current_hash") or ""),
+                    "1" if module.get("enabled") else "0",
+                ]
+            )
+        )
+    return str(abs(hash("||".join(parts))))
+
+
+def _get_entity_registry_index(request: Request) -> dict[str, tuple[str, dict, dict]]:
+    cache_key = "entity_registry:index"
+    cached_req = _req_cache_get(request, cache_key)
+    if isinstance(cached_req, dict):
+        return cached_req
+    modules = _get_registry_list(request)
+    fingerprint = f"{get_org_id()}:{_entity_registry_fingerprint(modules)}"
+    cached = _cache_get("entity_registry", fingerprint)
+    if isinstance(cached, dict):
+        _req_cache_set(request, cache_key, cached)
+        return cached
+    index: dict[str, tuple[str, dict, dict]] = {}
+    for module in modules:
+        if not isinstance(module, dict) or not module.get("enabled"):
+            continue
+        module_id = module.get("module_id")
+        manifest_hash = module.get("current_hash")
+        if not isinstance(module_id, str) or not module_id or not isinstance(manifest_hash, str) or not manifest_hash:
+            continue
+        try:
+            manifest = _get_snapshot(request, module_id, manifest_hash)
+        except Exception:
+            continue
+        for ent in _entities_from_manifest(manifest):
+            ent_id = _normalize_entity_id(ent.get("id")) if isinstance(ent, dict) else None
+            if isinstance(ent_id, str) and ent_id and ent_id not in index:
+                index[ent_id] = (module_id, ent, manifest)
+    _cache_set("entity_registry", index, fingerprint)
+    _req_cache_set(request, cache_key, index)
+    return index
+
+
 def _resolve_action(manifest: dict, action_id: str) -> dict | None:
     actions = manifest.get("actions") if isinstance(manifest, dict) else None
     if not isinstance(actions, list):
@@ -3008,31 +3096,13 @@ def _resolve_action(manifest: dict, action_id: str) -> dict | None:
 
 def _find_entity_def(request: Request, entity_id: str) -> tuple[str, dict, dict] | None:
     entity_id = _normalize_entity_id(entity_id)
-    entry = _entity_def_cache.get(entity_id)
+    cache_id = f"{get_org_id()}:{entity_id}"
+    entry = _entity_def_cache.get(cache_id)
     now = time.time()
     if entry and now - entry["ts"] < _CACHE_TTL_S:
         return entry["value"]
-    modules = _get_registry_list(request)
-    result = None
-    for module in modules:
-        if not module.get("enabled"):
-            continue
-        module_id = module.get("module_id")
-        manifest_hash = module.get("current_hash")
-        if not module_id or not manifest_hash:
-            continue
-        try:
-            manifest = _get_snapshot(request, module_id, manifest_hash)
-        except Exception:
-            continue
-        for ent in _entities_from_manifest(manifest):
-            ent_id = ent.get("id")
-            if ent_id and _match_entity_id(entity_id, ent_id):
-                result = (module_id, ent, manifest)
-                break
-        if result:
-            break
-    _entity_def_cache[entity_id] = {"value": result, "ts": now}
+    result = _get_entity_registry_index(request).get(entity_id)
+    _entity_def_cache[cache_id] = {"value": result, "ts": now}
     return result
 
 
@@ -3276,6 +3346,554 @@ def _records_list_page_all(
     return out
 
 
+_SAFE_SQL_FIELD_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+_SAFE_NUMERIC_TEXT_RE = r"^-?(?:\d+)(?:\.\d+)?$"
+
+
+def _is_safe_sql_field_id(value: str | None) -> bool:
+    return isinstance(value, str) and bool(_SAFE_SQL_FIELD_RE.fullmatch(value))
+
+
+def _actor_has_entity_scope_rules(actor: dict | None, entity_id: str | None) -> bool:
+    normalized_entity = _normalize_entity_id(entity_id)
+    policy = _access_policy_for_actor(actor)
+    entity_scope_rules = policy.get("entity_scope_rules", {}) if isinstance(policy, dict) else {}
+    if not isinstance(entity_scope_rules, dict):
+        return False
+    if isinstance(normalized_entity, str) and entity_scope_rules.get(normalized_entity):
+        return True
+    return bool(entity_scope_rules.get("*"))
+
+
+def _records_sql_fast_path_allowed(
+    actor: dict | None,
+    entity_id: str | None,
+    domain: Any = None,
+    *,
+    allow_simple_domain: bool = False,
+) -> bool:
+    if domain and not allow_simple_domain:
+        return False
+    return not _actor_has_entity_scope_rules(actor, entity_id)
+
+
+def _build_records_generic_sql_where(
+    *,
+    entity_id: str,
+    q: str | None = None,
+    search_fields: list[str] | None = None,
+) -> tuple[str, list[Any]]:
+    q_lower = str(q).strip().lower() if isinstance(q, str) else None
+    params: list[Any] = [get_org_id(), entity_id]
+    where = "where tenant_id=%s and entity_id=%s"
+    if q_lower:
+        safe_search_fields = [field_id for field_id in (search_fields or []) if _is_safe_sql_field_id(field_id)]
+        if safe_search_fields:
+            clauses = []
+            for field_id in safe_search_fields:
+                clauses.append("lower(data ->> %s) like %s")
+                params.extend([field_id, f"{q_lower}%"])
+            where += " and (" + " or ".join(clauses) + ")"
+        else:
+            where += " and (data::text ilike %s)"
+            params.append(f"%{q_lower}%")
+    return where, params
+
+
+def _encode_resp_cursor(updated_at: Any, record_id: str) -> str | None:
+    if not updated_at or not record_id:
+        return None
+    if hasattr(updated_at, "strftime"):
+        ts = updated_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+    else:
+        ts = str(updated_at)
+    raw = f"{ts}|{record_id}"
+    return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("utf-8")
+
+
+def _decode_resp_cursor(cursor: str | None) -> tuple[str, str] | None:
+    if not cursor or not isinstance(cursor, str):
+        return None
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode("utf-8")).decode("utf-8")
+        if "|" not in raw:
+            return None
+        ts, record_id = raw.split("|", 1)
+        if not ts or not record_id:
+            return None
+        return ts, record_id
+    except Exception:
+        return None
+
+
+def _domain_scalar_to_sql_text(value: Any) -> str | None:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, str):
+        return value
+    return None
+
+
+def _build_simple_domain_sql_clause(domain: Any) -> tuple[str, list[Any]] | None:
+    if not isinstance(domain, dict):
+        return None
+    op = str(domain.get("op") or "").strip().lower()
+    if op == "and":
+        conditions = domain.get("conditions")
+        if not isinstance(conditions, list) or not conditions:
+            return None
+        parts: list[str] = []
+        params: list[Any] = []
+        for condition in conditions:
+            built = _build_simple_domain_sql_clause(condition)
+            if built is None:
+                return None
+            sql, sql_params = built
+            parts.append(f"({sql})")
+            params.extend(sql_params)
+        return " and ".join(parts), params
+    if op == "or":
+        conditions = domain.get("conditions")
+        if not isinstance(conditions, list) or not conditions:
+            return None
+        parts = []
+        params: list[Any] = []
+        for condition in conditions:
+            built = _build_simple_domain_sql_clause(condition)
+            if built is None:
+                return None
+            sql, sql_params = built
+            parts.append(f"({sql})")
+            params.extend(sql_params)
+        return " or ".join(parts), params
+    if op == "not":
+        condition = domain.get("condition")
+        built = _build_simple_domain_sql_clause(condition)
+        if built is None:
+            return None
+        sql, sql_params = built
+        return f"not ({sql})", sql_params
+    field_id = domain.get("field")
+    if not _is_safe_sql_field_id(field_id):
+        return None
+    if op == "exists":
+        return "data ? %s", [field_id]
+    raw_value = domain.get("value")
+    if op in {"eq", "lt", "lte", "gt", "gte"}:
+        scalar = _domain_scalar_to_sql_text(raw_value)
+        if scalar is None:
+            return None
+        if op == "eq":
+            return "data @> jsonb_build_object(%s, (%s)::jsonb)", [field_id, json.dumps(raw_value)]
+        comparator = {"lt": "<", "lte": "<=", "gt": ">", "gte": ">="}[op]
+        return f"coalesce(data ->> %s, '') {comparator} %s", [field_id, scalar]
+    if op == "in":
+        if not isinstance(raw_value, list) or not raw_value:
+            return None
+        clauses = []
+        params: list[Any] = []
+        for item in raw_value:
+            scalar = _domain_scalar_to_sql_text(item)
+            if scalar is None:
+                return None
+            clauses.append("data @> jsonb_build_object(%s, (%s)::jsonb)")
+            params.extend([field_id, json.dumps(item)])
+        return "(" + " or ".join(clauses) + ")", params
+    return None
+
+
+def _records_list_page_with_simple_domain(
+    *,
+    entity_id: str,
+    domain: dict,
+    limit: int,
+    cursor: str | None = None,
+    q: str | None = None,
+    search_fields: list[str] | None = None,
+    fields: list[str] | None = None,
+) -> tuple[list[dict], str | None] | None:
+    built_domain = _build_simple_domain_sql_clause(domain)
+    if built_domain is None:
+        return None
+    where, params = _build_records_generic_sql_where(entity_id=entity_id, q=q, search_fields=search_fields)
+    domain_sql, domain_params = built_domain
+    where += f" and ({domain_sql})"
+    params.extend(domain_params)
+    decoded = _decode_resp_cursor(cursor)
+    if decoded:
+        cursor_ts, cursor_id = decoded
+        where += " and (updated_at, id) < (%s, %s)"
+        params.extend([cursor_ts, cursor_id])
+    safe_fields = [field_id for field_id in (fields or []) if _is_safe_sql_field_id(field_id)]
+    select_params: list[Any] = []
+    if safe_fields:
+        parts = []
+        for field_id in safe_fields:
+            parts.append("%s, data -> %s")
+            select_params.extend([field_id, field_id])
+        data_expr = f"jsonb_build_object({', '.join(parts)}) as data"
+    else:
+        data_expr = "data"
+    query_params = select_params + params + [limit + 1]
+    with get_conn() as conn:
+        rows = fetch_all(
+            conn,
+            f"""
+            select id, {data_expr}, updated_at
+            from records_generic
+            {where}
+            order by updated_at desc, id desc
+            limit %s
+            """,
+            query_params,
+            query_name="records_generic.list_page_simple_domain",
+        )
+    next_cursor = None
+    if len(rows) > limit:
+        tail = rows[limit - 1]
+        next_cursor = _encode_resp_cursor(tail.get("updated_at"), str(tail.get("id")))
+        rows = rows[:limit]
+    items: list[dict] = []
+    for row in rows:
+        record = copy.deepcopy(row.get("data") or {})
+        record_id = str(row.get("id"))
+        if isinstance(record, dict):
+            record["id"] = record_id
+        items.append({"record_id": record_id, "record": record})
+    return items, next_cursor
+
+
+def _aggregate_records_sql_fast(
+    *,
+    entity_id: str,
+    group_by: str,
+    measure: str,
+    limit: int,
+    q: str | None = None,
+    search_fields: list[str] | None = None,
+) -> list[dict] | None:
+    if not _is_safe_sql_field_id(group_by):
+        return None
+    measure_field = None
+    measure_is_sum = False
+    if isinstance(measure, str) and measure.startswith("sum:"):
+        measure_field = measure.split(":", 1)[1]
+        measure_is_sum = True
+        if not _is_safe_sql_field_id(measure_field):
+            return None
+    where, params = _build_records_generic_sql_where(entity_id=entity_id, q=q, search_fields=search_fields)
+    query_params: list[Any] = list(params)
+    query_params.append(limit)
+    query_params.append(group_by)
+    if measure_is_sum and measure_field:
+        value_sql = (
+            "coalesce(sum(case "
+            "when nullif(trim(coalesce(base.data ->> %s, '')), '') is null then 0 "
+            f"when trim(base.data ->> %s) ~ '{_SAFE_NUMERIC_TEXT_RE}' then (base.data ->> %s)::double precision "
+            "else 0 end), 0)"
+        )
+        query_params.extend([measure_field, measure_field, measure_field])
+    else:
+        value_sql = "count(*)"
+    with get_conn() as conn:
+        rows = fetch_all(
+            conn,
+            f"""
+            with base as (
+                select id, data, updated_at
+                from records_generic
+                {where}
+                order by updated_at desc, id desc
+                limit %s
+            )
+            select coalesce(base.data ->> %s, '') as key, {value_sql} as value
+            from base
+            group by 1
+            order by 1
+            """,
+            query_params,
+            query_name="records_generic.aggregate_fast",
+        )
+    out: list[dict] = []
+    for row in rows:
+        value = row.get("value")
+        if measure_is_sum:
+            try:
+                value = float(value or 0)
+            except Exception:
+                value = 0.0
+        else:
+            try:
+                value = int(value or 0)
+            except Exception:
+                value = 0
+        out.append({"key": row.get("key") or "", "value": value})
+    return out
+
+
+def _pivot_records_sql_fast(
+    *,
+    entity_id: str,
+    row_group_by: str,
+    col_group_by: str | None,
+    measure: str,
+    limit: int,
+    q: str | None = None,
+    search_fields: list[str] | None = None,
+) -> dict | None:
+    if not _is_safe_sql_field_id(row_group_by):
+        return None
+    if isinstance(col_group_by, str) and col_group_by and not _is_safe_sql_field_id(col_group_by):
+        return None
+    measure_field = None
+    measure_is_sum = False
+    if isinstance(measure, str) and measure.startswith("sum:"):
+        measure_field = measure.split(":", 1)[1]
+        measure_is_sum = True
+        if not _is_safe_sql_field_id(measure_field):
+            return None
+    where, params = _build_records_generic_sql_where(entity_id=entity_id, q=q, search_fields=search_fields)
+    query_params: list[Any] = list(params)
+    query_params.append(limit)
+    query_params.append(row_group_by)
+    if isinstance(col_group_by, str) and col_group_by:
+        col_key_sql = "coalesce(base.data ->> %s, '')"
+        query_params.append(col_group_by)
+    else:
+        col_key_sql = "''"
+    if measure_is_sum and measure_field:
+        value_sql = (
+            "coalesce(sum(case "
+            "when nullif(trim(coalesce(base.data ->> %s, '')), '') is null then 0 "
+            f"when trim(base.data ->> %s) ~ '{_SAFE_NUMERIC_TEXT_RE}' then (base.data ->> %s)::double precision "
+            "else 0 end), 0)"
+        )
+        query_params.extend([measure_field, measure_field, measure_field])
+    else:
+        value_sql = "count(*)::double precision"
+    with get_conn() as conn:
+        rows = fetch_all(
+            conn,
+            f"""
+            with base as (
+                select id, data, updated_at
+                from records_generic
+                {where}
+                order by updated_at desc, id desc
+                limit %s
+            )
+            select
+                coalesce(base.data ->> %s, '') as row_key,
+                {col_key_sql} as col_key,
+                {value_sql} as value
+            from base
+            group by 1, 2
+            order by 1, 2
+            """,
+            query_params,
+            query_name="records_generic.pivot_fast",
+        )
+    row_keys: list[str] = []
+    col_keys: list[str] = []
+    matrix: dict[str, dict[str, float]] = {}
+    row_totals: dict[str, float] = {}
+    col_totals: dict[str, float] = {}
+    grand_total = 0.0
+    for row in rows:
+        row_key = row.get("row_key") or ""
+        col_key = row.get("col_key") or ""
+        try:
+            value = float(row.get("value") or 0)
+        except Exception:
+            value = 0.0
+        if row_key not in matrix:
+            matrix[row_key] = {}
+            row_keys.append(row_key)
+        if col_key not in col_totals:
+            col_totals[col_key] = 0.0
+            col_keys.append(col_key)
+        matrix[row_key][col_key] = value
+        row_totals[row_key] = row_totals.get(row_key, 0.0) + value
+        col_totals[col_key] = col_totals.get(col_key, 0.0) + value
+        grand_total += value
+    return {
+        "rows": [{"key": key, "label": key} for key in row_keys],
+        "cols": [{"key": key, "label": key} for key in col_keys] if col_keys else [{"key": "", "label": ""}],
+        "matrix": matrix,
+        "row_totals": row_totals,
+        "col_totals": col_totals,
+        "grand_total": grand_total,
+    }
+
+
+def _dashboard_query_sql_fast(
+    *,
+    entity_id: str,
+    source: dict,
+    group_by: str | None,
+    measure: str,
+    date_field: str | None,
+    start: str | None,
+    end: str | None,
+    limit: int,
+    q: str | None = None,
+    source_filter: dict | None = None,
+) -> dict | None:
+    if isinstance(group_by, str) and group_by and not _is_safe_sql_field_id(group_by):
+        return None
+    effective_measure = measure if isinstance(measure, str) and measure else "count"
+    measure_kind = "count"
+    measure_field = None
+    if effective_measure.startswith("sum:"):
+        measure_kind = "sum"
+        measure_field = effective_measure.split(":", 1)[1]
+    elif effective_measure.startswith("count_distinct:"):
+        measure_kind = "count_distinct"
+        measure_field = effective_measure.split(":", 1)[1]
+    if measure_field and not _is_safe_sql_field_id(measure_field):
+        return None
+    if isinstance(date_field, str) and date_field and not _is_safe_sql_field_id(date_field):
+        return None
+    built_filter = _build_simple_domain_sql_clause(source_filter) if isinstance(source_filter, dict) else ("true", [])
+    if built_filter is None:
+        return None
+    filter_sql, filter_params = built_filter
+    where, params = _build_records_generic_sql_where(entity_id=entity_id, q=q, search_fields=None)
+    query_params: list[Any] = list(params)
+    query_params.append(limit)
+    outer_conditions = [filter_sql]
+    outer_params: list[Any] = list(filter_params)
+    if isinstance(date_field, str) and date_field:
+        if isinstance(start, str) and start.strip():
+            outer_conditions.append("coalesce(base.data ->> %s, '') >= %s")
+            outer_params.extend([date_field, start.strip()])
+        if isinstance(end, str) and end.strip():
+            outer_conditions.append("coalesce(base.data ->> %s, '') <= %s")
+            outer_params.extend([date_field, end.strip()])
+    outer_where = " and ".join([f"({part})" for part in outer_conditions if isinstance(part, str) and part.strip()]) or "true"
+    if not isinstance(group_by, str) or not group_by:
+        if measure_kind == "sum" and measure_field:
+            select_sql = (
+                "coalesce(sum(case "
+                "when nullif(trim(coalesce(base.data ->> %s, '')), '') is null then 0 "
+                f"when trim(base.data ->> %s) ~ '{_SAFE_NUMERIC_TEXT_RE}' then (base.data ->> %s)::double precision "
+                "else 0 end), 0) as value"
+            )
+            query_params.extend(outer_params + [measure_field, measure_field, measure_field])
+        elif measure_kind == "count_distinct" and measure_field:
+            select_sql = "count(distinct nullif(trim(coalesce(base.data ->> %s, '')), '')) as value"
+            query_params.extend(outer_params + [measure_field])
+        else:
+            select_sql = "count(*)::bigint as value"
+            query_params.extend(outer_params)
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                f"""
+                with base as (
+                    select id, data, updated_at
+                    from records_generic
+                    {where}
+                    order by updated_at desc, id desc
+                    limit %s
+                )
+                select {select_sql}, count(*)::bigint as filtered_count
+                from base
+                where {outer_where}
+                """,
+                query_params,
+                query_name="records_generic.dashboard_fast_total",
+            )
+        value = row.get("value") if isinstance(row, dict) else 0
+        count = row.get("filtered_count") if isinstance(row, dict) else 0
+        try:
+            value = float(value or 0) if measure_kind == "sum" else int(value or 0)
+        except Exception:
+            value = 0.0 if measure_kind == "sum" else 0
+        try:
+            count = int(count or 0)
+        except Exception:
+            count = 0
+        return {"source": source, "measure": effective_measure if measure_kind != "count" else "count", "value": value, "count": count}
+    group_key_sql = "coalesce(base.data ->> %s, '') as key"
+    query_params.append(group_by)
+    if measure_kind == "sum" and measure_field:
+        value_sql = (
+            "coalesce(sum(case "
+            "when nullif(trim(coalesce(base.data ->> %s, '')), '') is null then 0 "
+            f"when trim(base.data ->> %s) ~ '{_SAFE_NUMERIC_TEXT_RE}' then (base.data ->> %s)::double precision "
+            "else 0 end), 0) as value"
+        )
+        query_params.extend(outer_params + [measure_field, measure_field, measure_field])
+    elif measure_kind == "count_distinct" and measure_field:
+        value_sql = "count(distinct nullif(trim(coalesce(base.data ->> %s, '')), ''))::double precision as value"
+        query_params.extend(outer_params + [measure_field])
+    else:
+        value_sql = "count(*)::double precision as value"
+        query_params.extend(outer_params)
+    with get_conn() as conn:
+        rows = fetch_all(
+            conn,
+            f"""
+            with base as (
+                select id, data, updated_at
+                from records_generic
+                {where}
+                order by updated_at desc, id desc
+                limit %s
+            )
+            select {group_key_sql}, {value_sql}
+            from base
+            where {outer_where}
+            group by 1
+            order by value desc
+            """,
+            query_params,
+            query_name="records_generic.dashboard_fast_grouped",
+        )
+        count_row = fetch_one(
+            conn,
+            f"""
+            with base as (
+                select id, data, updated_at
+                from records_generic
+                {where}
+                order by updated_at desc, id desc
+                limit %s
+            )
+            select count(*)::bigint as filtered_count
+            from base
+            where {outer_where}
+            """,
+            params + [limit] + outer_params,
+            query_name="records_generic.dashboard_fast_grouped_count",
+        )
+    output = []
+    for row in rows:
+        try:
+            value = float(row.get("value") or 0)
+        except Exception:
+            value = 0.0
+        output.append({"key": row.get("key") or "", "value": value})
+    try:
+        filtered_count = int((count_row or {}).get("filtered_count") or 0)
+    except Exception:
+        filtered_count = 0
+    return {
+        "source": source,
+        "group_by": group_by,
+        "measure": effective_measure,
+        "groups": output,
+        "count": filtered_count,
+    }
+
+
 def _record_value(record: dict, field_id: str | None):
     if not isinstance(record, dict) or not isinstance(field_id, str) or not field_id:
         return None
@@ -3379,6 +3997,7 @@ def _cache_invalidate(bucket: str, key: str | None = None):
         _cache[bucket].pop(key, None)
     if bucket in {"manifest", "modules", "registry_list"}:
         _entity_def_cache.clear()
+        _cache["entity_registry"].clear()
         _cache["studio2_registry"].clear()
         _cache["studio2_registry_summary"].clear()
 
@@ -3406,6 +4025,15 @@ def _resp_cache_invalidate_entity(entity_id: str) -> None:
     _resp_cache_invalidate_prefix(prefix)
     prefix = f"lookup:{get_org_id()}:{entity_id}:"
     _resp_cache_invalidate_prefix(prefix)
+    prefix = f"aggregate:{get_org_id()}:{entity_id}:"
+    _resp_cache_invalidate_prefix(prefix)
+    prefix = f"pivot:{get_org_id()}:{entity_id}:"
+    _resp_cache_invalidate_prefix(prefix)
+    prefix = f"dashboard_query:{get_org_id()}:"
+    marker = f":{entity_id}:"
+    for key in list(_response_cache.keys()):
+        if key.startswith(prefix) and marker in key:
+            _response_cache.pop(key, None)
 
 
 def _resp_cache_invalidate_record(entity_id: str, record_id: str) -> None:
@@ -3432,6 +4060,10 @@ def _invalidate_module_runtime_caches(module_id: str, *, include_studio_modules:
     _compiled_cache_invalidate(module_id)
     _resp_cache_invalidate_module_bootstrap(module_id)
     _resp_cache_invalidate_prefix("automations_meta:")
+    _resp_cache_invalidate_prefix("interface_sources:")
+    _resp_cache_invalidate_prefix("calendar_sources:")
+    _resp_cache_invalidate_prefix("document_sources:")
+    _resp_cache_invalidate_prefix("dashboard_sources:")
 
 
 def _domain_hash(domain: dict | None) -> str:
@@ -3451,6 +4083,15 @@ def _context_hash(ctx: dict | None) -> str:
         payload = json.dumps(ctx, sort_keys=True)
     except Exception:
         payload = str(ctx)
+    return str(abs(hash(payload)))
+
+
+def _access_policy_hash(actor: dict | None) -> str:
+    policy = _access_policy_for_actor(actor)
+    try:
+        payload = json.dumps(policy or {}, sort_keys=True)
+    except Exception:
+        payload = str(policy)
     return str(abs(hash(payload)))
 
 
@@ -9850,7 +10491,7 @@ async def get_module_manifest(module_id: str, request: Request) -> dict:
     cache_key = f"{get_org_id()}:{module_id}:{manifest_hash}"
     cached = _cache_get("manifest", cache_key)
     if cached is not None:
-        filtered_cached = _filter_manifest_for_actor(cached, module_id, actor)
+        filtered_cached = _filter_manifest_for_actor(cached, module_id, actor, manifest_hash)
         if filtered_cached is None:
             return _error_response("FORBIDDEN", "Module access denied", "module_id", status=403)
         return _ok_response({"module_id": module_id, "manifest_hash": manifest_hash, "manifest": filtered_cached})
@@ -9858,7 +10499,7 @@ async def get_module_manifest(module_id: str, request: Request) -> dict:
         manifest = _get_snapshot(request, module_id, manifest_hash)
     except Exception:
         return _error_response("MODULE_NOT_FOUND", "Module manifest not found", "module_id", status=404)
-    filtered_manifest = _filter_manifest_for_actor(manifest, module_id, actor)
+    filtered_manifest = _filter_manifest_for_actor(manifest, module_id, actor, manifest_hash)
     if filtered_manifest is None:
         return _error_response("FORBIDDEN", "Module access denied", "module_id", status=403)
     _get_compiled_manifest(module_id, manifest_hash, manifest)
@@ -9905,7 +10546,7 @@ async def page_bootstrap(
     if cached is not None:
         logger.info("cache_hit=page_bootstrap key=%s", cache_key)
         return cached
-    filtered_manifest = _filter_manifest_for_actor(manifest, module_id, actor)
+    filtered_manifest = _filter_manifest_for_actor(manifest, module_id, actor, manifest_hash)
     if filtered_manifest is None:
         return _error_response("FORBIDDEN", "Module access denied", "module_id", status=403)
     compiled = _compile_manifest(filtered_manifest)
@@ -9994,16 +10635,30 @@ async def page_bootstrap(
             except Exception:
                 parsed_domain = None
         actor_ctx = _actor_domain_context(actor)
-        items, next_cursor = generic_records.list_page(
-            view_entity,
-            limit=limit,
-            cursor=cursor,
-            q=q,
-            search_fields=fields_list,
-            fields=None if parsed_domain else field_ids,
-        )
-        if parsed_domain:
-            items = _filter_records_by_domain(items, parsed_domain, {}, actor_ctx)
+        fast_page = None
+        if parsed_domain and _records_sql_fast_path_allowed(actor, view_entity, parsed_domain, allow_simple_domain=True):
+            fast_page = _records_list_page_with_simple_domain(
+                entity_id=view_entity,
+                domain=parsed_domain,
+                limit=limit,
+                cursor=cursor,
+                q=q,
+                search_fields=fields_list,
+                fields=field_ids,
+            )
+        if fast_page is not None:
+            items, next_cursor = fast_page
+        else:
+            items, next_cursor = generic_records.list_page(
+                view_entity,
+                limit=limit,
+                cursor=cursor,
+                q=q,
+                search_fields=fields_list,
+                fields=None if parsed_domain else field_ids,
+            )
+            if parsed_domain:
+                items = _filter_records_by_domain(items, parsed_domain, {}, actor_ctx)
         entity_found = _find_entity_def(request, view_entity)
         filtered_items = _filter_record_items_for_actor(actor, module_id, entity_found[1] if entity_found else None, items)
         payload["list"] = {
@@ -31436,7 +32091,6 @@ async def aggregate_records(
     domain: str | None = None,
     limit: int = 2000,
 ) -> dict:
-    actor_ctx = _actor_domain_context(getattr(request.state, "actor", None))
     entity_id = _normalize_entity_id(entity_id)
     found = _find_entity_def(request, entity_id)
     if not found:
@@ -31447,6 +32101,7 @@ async def aggregate_records(
     denied = _entity_access_denied_response(actor, found[0], entity_id, write=False)
     if denied:
         return denied
+    actor_ctx = _actor_domain_context(actor)
     if not isinstance(group_by, str) or not group_by:
         return _error_response("AGGREGATE_INVALID", "group_by is required", "group_by", status=400)
     fields_list = [f.strip() for f in search_fields.split(",")] if isinstance(search_fields, str) and search_fields.strip() else None
@@ -31459,34 +32114,56 @@ async def aggregate_records(
     limit_cap = limit if isinstance(limit, int) and limit > 0 else 2000
     if limit_cap > 5000:
         limit_cap = 5000
-    items = generic_records.list(entity_id, limit=limit_cap, q=q, search_fields=fields_list)
-    if parsed_domain:
-        items = _filter_records_by_domain(items, parsed_domain, {}, actor_ctx)
-    items = _filter_record_items_for_actor(actor, found[0], found[1], items)
-    if isinstance(limit_cap, int) and limit_cap > 0:
-        items = items[:limit_cap]
+    cache_key = (
+        f"aggregate:{get_org_id()}:{entity_id}:{group_by}:{measure or 'count'}:{limit_cap}:"
+        f"{search_fields or ''}:{q or ''}:{_domain_hash(parsed_domain)}:{_context_hash(actor_ctx)}"
+    )
+    cached = _resp_cache_get(cache_key)
+    if cached is not None:
+        logger.info("cache_hit=aggregate key=%s", cache_key)
+        return cached
     if not isinstance(measure, str) or not measure:
         measure = "count"
-    measure_field = None
-    if measure.startswith("sum:"):
-        measure_field = measure.split(":", 1)[1]
-    groups = {}
-    for item in items:
-        record = item.get("record") or {}
-        key = record.get(group_by)
-        if key is None:
-            key = ""
-        if measure_field:
-            try:
-                val = record.get(measure_field) or 0
-                val = float(val)
-            except Exception:
-                val = 0
-            groups[key] = groups.get(key, 0) + val
-        else:
-            groups[key] = groups.get(key, 0) + 1
-    results = [{"key": k, "value": v} for k, v in groups.items()]
-    return _ok_response({"groups": results, "group_by": group_by, "measure": measure})
+    results = None
+    if _records_sql_fast_path_allowed(actor, entity_id, parsed_domain):
+        results = _aggregate_records_sql_fast(
+            entity_id=entity_id,
+            group_by=group_by,
+            measure=measure,
+            limit=limit_cap,
+            q=q,
+            search_fields=fields_list,
+        )
+    if results is None:
+        items = generic_records.list(entity_id, limit=limit_cap, q=q, search_fields=fields_list)
+        if parsed_domain:
+            items = _filter_records_by_domain(items, parsed_domain, {}, actor_ctx)
+        items = _filter_record_items_for_actor(actor, found[0], found[1], items)
+        if isinstance(limit_cap, int) and limit_cap > 0:
+            items = items[:limit_cap]
+        measure_field = None
+        if measure.startswith("sum:"):
+            measure_field = measure.split(":", 1)[1]
+        groups = {}
+        for item in items:
+            record = item.get("record") or {}
+            key = record.get(group_by)
+            if key is None:
+                key = ""
+            if measure_field:
+                try:
+                    val = record.get(measure_field) or 0
+                    val = float(val)
+                except Exception:
+                    val = 0
+                groups[key] = groups.get(key, 0) + val
+            else:
+                groups[key] = groups.get(key, 0) + 1
+        results = [{"key": k, "value": v} for k, v in groups.items()]
+    response = _ok_response({"groups": results, "group_by": group_by, "measure": measure})
+    _resp_cache_set(cache_key, response)
+    logger.info("cache_miss=aggregate key=%s", cache_key)
+    return response
 
 
 @app.get("/records/{entity_id}/pivot")
@@ -31501,7 +32178,6 @@ async def pivot_records(
     domain: str | None = None,
     limit: int = 2000,
 ) -> dict:
-    actor_ctx = _actor_domain_context(getattr(request.state, "actor", None))
     entity_id = _normalize_entity_id(entity_id)
     found = _find_entity_def(request, entity_id)
     if not found:
@@ -31512,6 +32188,7 @@ async def pivot_records(
     denied = _entity_access_denied_response(actor, found[0], entity_id, write=False)
     if denied:
         return denied
+    actor_ctx = _actor_domain_context(actor)
     if not isinstance(row_group_by, str) or not row_group_by:
         return _error_response("PIVOT_INVALID", "row_group_by is required", "row_group_by", status=400)
     fields_list = [f.strip() for f in search_fields.split(",")] if isinstance(search_fields, str) and search_fields.strip() else None
@@ -31524,61 +32201,88 @@ async def pivot_records(
     limit_cap = limit if isinstance(limit, int) and limit > 0 else 2000
     if limit_cap > 5000:
         limit_cap = 5000
-    items = generic_records.list(entity_id, limit=limit_cap, q=q, search_fields=fields_list)
-    if parsed_domain:
-        items = _filter_records_by_domain(items, parsed_domain, {}, actor_ctx)
-    items = _filter_record_items_for_actor(actor, found[0], found[1], items)
-    if isinstance(limit_cap, int) and limit_cap > 0:
-        items = items[:limit_cap]
+    cache_key = (
+        f"pivot:{get_org_id()}:{entity_id}:{row_group_by}:{col_group_by or ''}:{measure or 'count'}:{limit_cap}:"
+        f"{search_fields or ''}:{q or ''}:{_domain_hash(parsed_domain)}:{_context_hash(actor_ctx)}"
+    )
+    cached = _resp_cache_get(cache_key)
+    if cached is not None:
+        logger.info("cache_hit=pivot key=%s", cache_key)
+        return cached
     if not isinstance(measure, str) or not measure:
         measure = "count"
-    measure_field = None
-    if measure.startswith("sum:"):
-        measure_field = measure.split(":", 1)[1]
+    sql_result = None
+    if _records_sql_fast_path_allowed(actor, entity_id, parsed_domain):
+        sql_result = _pivot_records_sql_fast(
+            entity_id=entity_id,
+            row_group_by=row_group_by,
+            col_group_by=col_group_by,
+            measure=measure,
+            limit=limit_cap,
+            q=q,
+            search_fields=fields_list,
+        )
+    if sql_result is not None:
+        rows = sql_result["rows"]
+        cols = sql_result["cols"]
+        matrix = sql_result["matrix"]
+        row_totals = sql_result["row_totals"]
+        col_totals = sql_result["col_totals"]
+        grand_total = sql_result["grand_total"]
+    else:
+        items = generic_records.list(entity_id, limit=limit_cap, q=q, search_fields=fields_list)
+        if parsed_domain:
+            items = _filter_records_by_domain(items, parsed_domain, {}, actor_ctx)
+        items = _filter_record_items_for_actor(actor, found[0], found[1], items)
+        if isinstance(limit_cap, int) and limit_cap > 0:
+            items = items[:limit_cap]
+        measure_field = None
+        if measure.startswith("sum:"):
+            measure_field = measure.split(":", 1)[1]
 
-    row_keys: list[str] = []
-    col_keys: list[str] = []
-    matrix: dict[str, dict[str, float]] = {}
-    row_totals: dict[str, float] = {}
-    col_totals: dict[str, float] = {}
-    grand_total = 0.0
+        row_keys: list[str] = []
+        col_keys: list[str] = []
+        matrix: dict[str, dict[str, float]] = {}
+        row_totals: dict[str, float] = {}
+        col_totals: dict[str, float] = {}
+        grand_total = 0.0
 
-    for item in items:
-        record = item.get("record") or {}
-        row_key = record.get(row_group_by)
-        if row_key is None:
-            row_key = ""
-        col_key = ""
-        if isinstance(col_group_by, str) and col_group_by:
-            col_key = record.get(col_group_by)
-            if col_key is None:
-                col_key = ""
-        if row_key not in matrix:
-            matrix[row_key] = {}
-            row_keys.append(row_key)
-        if col_key not in matrix[row_key]:
-            matrix[row_key][col_key] = 0.0
-        if col_key not in col_totals:
-            col_totals[col_key] = 0.0
-            if col_key not in col_keys:
-                col_keys.append(col_key)
-        if measure_field:
-            try:
-                val = record.get(measure_field) or 0
-                val = float(val)
-            except Exception:
-                val = 0.0
-        else:
-            val = 1.0
-        matrix[row_key][col_key] += val
-        row_totals[row_key] = row_totals.get(row_key, 0.0) + val
-        col_totals[col_key] = col_totals.get(col_key, 0.0) + val
-        grand_total += val
+        for item in items:
+            record = item.get("record") or {}
+            row_key = record.get(row_group_by)
+            if row_key is None:
+                row_key = ""
+            col_key = ""
+            if isinstance(col_group_by, str) and col_group_by:
+                col_key = record.get(col_group_by)
+                if col_key is None:
+                    col_key = ""
+            if row_key not in matrix:
+                matrix[row_key] = {}
+                row_keys.append(row_key)
+            if col_key not in matrix[row_key]:
+                matrix[row_key][col_key] = 0.0
+            if col_key not in col_totals:
+                col_totals[col_key] = 0.0
+                if col_key not in col_keys:
+                    col_keys.append(col_key)
+            if measure_field:
+                try:
+                    val = record.get(measure_field) or 0
+                    val = float(val)
+                except Exception:
+                    val = 0.0
+            else:
+                val = 1.0
+            matrix[row_key][col_key] += val
+            row_totals[row_key] = row_totals.get(row_key, 0.0) + val
+            col_totals[col_key] = col_totals.get(col_key, 0.0) + val
+            grand_total += val
 
-    rows = [{"key": k, "label": k} for k in row_keys]
-    cols = [{"key": k, "label": k} for k in col_keys] if col_keys else [{"key": "", "label": ""}]
+        rows = [{"key": k, "label": k} for k in row_keys]
+        cols = [{"key": k, "label": k} for k in col_keys] if col_keys else [{"key": "", "label": ""}]
 
-    return _ok_response(
+    response = _ok_response(
         {
             "rows": rows,
             "cols": cols,
@@ -31591,6 +32295,9 @@ async def pivot_records(
             "measure": measure,
         }
     )
+    _resp_cache_set(cache_key, response)
+    logger.info("cache_miss=pivot key=%s", cache_key)
+    return response
 
 
 @app.get("/system/interfaces/sources")
@@ -31604,9 +32311,18 @@ async def system_interface_sources(request: Request, kind: str | None = None) ->
     allowed_kinds = {"schedulable", "documentable", "dashboardable"}
     if kind is not None and kind not in allowed_kinds:
         return _error_response("INTERFACE_INVALID", "kind must be schedulable|documentable|dashboardable", "kind", status=400)
+    actor_ctx = _actor_domain_context(actor)
+    cache_key = f"interface_sources:{get_org_id()}:{kind or 'all'}:{_context_hash(actor_ctx)}"
+    cached = _resp_cache_get(cache_key)
+    if cached is not None:
+        logger.info("cache_hit=interface_sources key=%s", cache_key)
+        return cached
     kinds = [kind] if isinstance(kind, str) else sorted(allowed_kinds)
     data = {k: _collect_interface_sources(request, k, actor) for k in kinds}
-    return _ok_response({"sources": data})
+    response = _ok_response({"sources": data})
+    _resp_cache_set(cache_key, response)
+    logger.info("cache_miss=interface_sources key=%s", cache_key)
+    return response
 
 
 @app.get("/system/calendar/sources")
@@ -31617,8 +32333,17 @@ async def system_calendar_sources(request: Request) -> dict:
     denied = _require_capability(actor, "records.read", "Read access required")
     if denied:
         return denied
+    actor_ctx = _actor_domain_context(actor)
+    cache_key = f"calendar_sources:{get_org_id()}:{_context_hash(actor_ctx)}"
+    cached = _resp_cache_get(cache_key)
+    if cached is not None:
+        logger.info("cache_hit=calendar_sources key=%s", cache_key)
+        return cached
     sources = _collect_interface_sources(request, "schedulable", actor)
-    return _ok_response({"sources": sources})
+    response = _ok_response({"sources": sources})
+    _resp_cache_set(cache_key, response)
+    logger.info("cache_miss=calendar_sources key=%s", cache_key)
+    return response
 
 
 @app.get("/system/calendar/events")
@@ -31724,8 +32449,17 @@ async def system_documents_sources(request: Request) -> dict:
     denied = _require_capability(actor, "records.read", "Read access required")
     if denied:
         return denied
+    actor_ctx = _actor_domain_context(actor)
+    cache_key = f"document_sources:{get_org_id()}:{_context_hash(actor_ctx)}"
+    cached = _resp_cache_get(cache_key)
+    if cached is not None:
+        logger.info("cache_hit=document_sources key=%s", cache_key)
+        return cached
     sources = _collect_interface_sources(request, "documentable", actor)
-    return _ok_response({"sources": sources})
+    response = _ok_response({"sources": sources})
+    _resp_cache_set(cache_key, response)
+    logger.info("cache_miss=document_sources key=%s", cache_key)
+    return response
 
 
 @app.get("/system/documents/items")
@@ -31829,8 +32563,17 @@ async def system_dashboard_sources(request: Request) -> dict:
     denied = _require_capability(actor, "records.read", "Read access required")
     if denied:
         return denied
+    actor_ctx = _actor_domain_context(actor)
+    cache_key = f"dashboard_sources:{get_org_id()}:{_context_hash(actor_ctx)}"
+    cached = _resp_cache_get(cache_key)
+    if cached is not None:
+        logger.info("cache_hit=dashboard_sources key=%s", cache_key)
+        return cached
     sources = _collect_interface_sources(request, "dashboardable", actor)
-    return _ok_response({"sources": sources})
+    response = _ok_response({"sources": sources})
+    _resp_cache_set(cache_key, response)
+    logger.info("cache_miss=dashboard_sources key=%s", cache_key)
+    return response
 
 
 @app.post("/system/dashboard/query")
@@ -31874,6 +32617,34 @@ async def system_dashboard_query(request: Request) -> dict:
     if isinstance(date_field_effective, str):
         fields.append(date_field_effective)
     fields = list(dict.fromkeys([f for f in fields if isinstance(f, str) and f]))
+    cache_key = (
+        f"dashboard_query:{get_org_id()}:{entity_id}:{source_key or ''}:{group_by or ''}:{measure or 'count'}:"
+        f"{date_field_effective or ''}:{start or ''}:{end or ''}:{limit_cap}:{q or ''}:"
+        f"{_domain_hash(source_filter if isinstance(source_filter, dict) else None)}:{_context_hash(actor_ctx)}"
+    )
+    cached = _resp_cache_get(cache_key)
+    if cached is not None:
+        logger.info("cache_hit=dashboard_query key=%s", cache_key)
+        return cached
+    sql_result = None
+    if _records_sql_fast_path_allowed(actor, entity_id, source_filter, allow_simple_domain=True):
+        sql_result = _dashboard_query_sql_fast(
+            entity_id=entity_id,
+            source=source,
+            group_by=group_by if isinstance(group_by, str) and group_by else None,
+            measure=measure if isinstance(measure, str) and measure else "count",
+            date_field=date_field_effective if isinstance(date_field_effective, str) and date_field_effective else None,
+            start=start if isinstance(start, str) and start else None,
+            end=end if isinstance(end, str) and end else None,
+            limit=limit_cap,
+            q=q if isinstance(q, str) and q else None,
+            source_filter=source_filter if isinstance(source_filter, dict) else None,
+        )
+    if sql_result is not None:
+        response = _ok_response(sql_result)
+        _resp_cache_set(cache_key, response)
+        logger.info("cache_miss=dashboard_query key=%s", cache_key)
+        return response
     items = _records_list_page_all(entity_id, fields=fields or None, q=q, cap=limit_cap)
     items = _filter_record_items_for_actor(actor, module_id if isinstance(module_id, str) else found[0], found[1], items)
     start_dt = _to_datetime(start) if isinstance(start, str) and start else None
@@ -31916,7 +32687,7 @@ async def system_dashboard_query(request: Request) -> dict:
                     total += float(record.get(measure_field) or 0)
                 except Exception:
                     continue
-            return _ok_response(
+            response = _ok_response(
                 {
                     "source": source,
                     "measure": effective_measure,
@@ -31924,13 +32695,16 @@ async def system_dashboard_query(request: Request) -> dict:
                     "count": len(filtered),
                 }
             )
+            _resp_cache_set(cache_key, response)
+            logger.info("cache_miss=dashboard_query key=%s", cache_key)
+            return response
         if measure_kind == "count_distinct" and measure_field:
             unique_values = {
                 str((item.get("record") or {}).get(measure_field)).strip()
                 for item in filtered
                 if (item.get("record") or {}).get(measure_field) not in (None, "")
             }
-            return _ok_response(
+            response = _ok_response(
                 {
                     "source": source,
                     "measure": effective_measure,
@@ -31938,13 +32712,19 @@ async def system_dashboard_query(request: Request) -> dict:
                     "count": len(filtered),
                 }
             )
-        return _ok_response(
+            _resp_cache_set(cache_key, response)
+            logger.info("cache_miss=dashboard_query key=%s", cache_key)
+            return response
+        response = _ok_response(
             {
                 "source": source,
                 "measure": "count",
                 "value": len(filtered),
             }
         )
+        _resp_cache_set(cache_key, response)
+        logger.info("cache_miss=dashboard_query key=%s", cache_key)
+        return response
     groups: dict[str, float] = {}
     distinct_groups: dict[str, set[str]] = {}
     for item in filtered:
@@ -31967,7 +32747,7 @@ async def system_dashboard_query(request: Request) -> dict:
         groups = {key: float(len(values)) for key, values in distinct_groups.items()}
     output = [{"key": key, "value": value} for key, value in groups.items()]
     output.sort(key=lambda row: row.get("value", 0), reverse=True)
-    return _ok_response(
+    response = _ok_response(
         {
             "source": source,
             "group_by": group_by,
@@ -31976,6 +32756,9 @@ async def system_dashboard_query(request: Request) -> dict:
             "count": len(filtered),
         }
     )
+    _resp_cache_set(cache_key, response)
+    logger.info("cache_miss=dashboard_query key=%s", cache_key)
+    return response
 
 
 @app.get("/records/{entity_id}")
@@ -32025,7 +32808,20 @@ async def list_generic_records(
         return cached
     field_ids = [f.strip() for f in fields.split(",") if f.strip()] if isinstance(fields, str) and fields.strip() else None
     use_cursor = isinstance(cursor, str) and cursor.strip()
-    if use_cursor or offset_val == 0:
+    fast_page = None
+    if (use_cursor or offset_val == 0) and parsed_domain and _records_sql_fast_path_allowed(actor, entity_id, parsed_domain, allow_simple_domain=True):
+        fast_page = _records_list_page_with_simple_domain(
+            entity_id=entity_id,
+            domain=parsed_domain,
+            limit=limit_cap,
+            cursor=cursor,
+            q=q,
+            search_fields=fields_list,
+            fields=field_ids,
+        )
+    if fast_page is not None:
+        items, next_cursor = fast_page
+    elif use_cursor or offset_val == 0:
         items, next_cursor = generic_records.list_page(
             entity_id,
             limit=limit_cap,
@@ -32037,7 +32833,7 @@ async def list_generic_records(
     else:
         items = generic_records.list(entity_id, limit=limit_cap, offset=offset_val, q=q, search_fields=fields_list)
         next_cursor = None
-    if parsed_domain:
+    if parsed_domain and fast_page is None:
         items = _filter_records_by_domain(items, parsed_domain, {}, actor_ctx)
     if isinstance(limit_cap, int) and limit_cap > 0:
         items = items[:limit_cap]

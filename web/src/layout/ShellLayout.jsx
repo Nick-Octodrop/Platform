@@ -40,8 +40,13 @@ export default function ShellLayout({ user, onSignOut, children }) {
   }, [isFrameMode, isNestedFrame]);
 
   const isHome = location.pathname === "/";
+  const hideTopNav = isEmbedMode;
   const baseMainClass = isEmbedMode || isHome
     ? "flex-1 min-h-0 overflow-hidden p-0"
+    : isFrameMode && isMobile
+      ? "flex-1 min-h-0 overflow-y-auto p-0"
+    : isFrameMode
+      ? "flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 lg:p-6"
     : isMobile && isAppRoute
         ? "flex-1 min-h-0 overflow-y-auto p-0"
       : isMobile && isSettingsRoute
@@ -57,7 +62,7 @@ export default function ShellLayout({ user, onSignOut, children }) {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      {isEmbedMode ? null : <TopNav user={user} onSignOut={onSignOut} />}
+      {hideTopNav ? null : <TopNav user={user} onSignOut={onSignOut} frameMode={isFrameMode} />}
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <main className={`${mainClass} ${isEmbedMode ? "h-full w-full" : ""}`}>{children || <Outlet />}</main>
       </div>

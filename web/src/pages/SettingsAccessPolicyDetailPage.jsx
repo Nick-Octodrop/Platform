@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { apiFetch } from "../api.js";
+import AppSelect from "../components/AppSelect.jsx";
 import { useToast } from "../components/Toast.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 
@@ -201,7 +202,7 @@ export default function SettingsAccessPolicyDetailPage() {
             <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
               <label className="form-control md:col-span-3">
                 <span className="label-text text-sm">Resource type</span>
-                <select
+                <AppSelect
                   className="select select-bordered select-sm"
                   value={ruleDraft.resource_type}
                   disabled={saving}
@@ -214,7 +215,7 @@ export default function SettingsAccessPolicyDetailPage() {
                   {RESOURCE_TYPES.map((item) => (
                     <option key={item.value} value={item.value}>{item.label}</option>
                   ))}
-                </select>
+                </AppSelect>
                 <span className="label label-text-alt opacity-50">Choose what kind of thing this rule controls.</span>
               </label>
               <label className="form-control md:col-span-4">
@@ -226,11 +227,11 @@ export default function SettingsAccessPolicyDetailPage() {
               </label>
               <label className="form-control md:col-span-3">
                 <span className="label-text text-sm">Access</span>
-                <select className="select select-bordered select-sm" value={ruleDraft.access_level} disabled={saving} onChange={(e) => setRuleDraft((prev) => ({ ...prev, access_level: e.target.value }))}>
+                <AppSelect className="select select-bordered select-sm" value={ruleDraft.access_level} disabled={saving} onChange={(e) => setRuleDraft((prev) => ({ ...prev, access_level: e.target.value }))}>
                   {levelOptions.map((item) => (
                     <option key={item.value} value={item.value}>{item.label}</option>
                   ))}
-                </select>
+                </AppSelect>
                 <span className="label label-text-alt opacity-50">Choose the access level this rule should enforce.</span>
               </label>
               <label className="form-control md:col-span-2">
