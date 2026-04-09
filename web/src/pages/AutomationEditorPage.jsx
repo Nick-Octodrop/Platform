@@ -13,6 +13,9 @@ import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
 import { useAccessContext } from "../access.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
+import useWorkspaceProviderStatus from "../hooks/useWorkspaceProviderStatus.js";
+import ProviderSecretModal from "../components/ProviderSecretModal.jsx";
+import ProviderUnavailableState from "../components/ProviderUnavailableState.jsx";
 
 function AutomationLookupValueInput({ fieldDef, value, onChange, placeholder = "" }) {
   const [options, setOptions] = useState([]);
@@ -284,9 +287,12 @@ function AutomationUsersValueInput({ members = [], value, onChange, placeholder 
 export default function AutomationEditorPage({ user }) {
   const { automationId } = useParams();
   const navigate = useNavigate();
-  const { isSuperadmin } = useAccessContext();
+  const { hasCapability } = useAccessContext();
   const { pushToast } = useToast();
   const isMobile = useMediaQuery("(max-width: 768px)");
+  const { providers: aiProviders, loading: providerStatusLoading, reload: reloadProviderStatus } = useWorkspaceProviderStatus(["openai"]);
+  const automationAiEnabled = Boolean(aiProviders?.openai?.connected);
+  const canManageSettings = hasCapability("workspace.manage_settings");
   const lastFocusedFieldRef = useRef(null);
 
   const [item, setItem] = useState(null);
@@ -316,6 +322,7 @@ export default function AutomationEditorPage({ user }) {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  const [openAiModalOpen, setOpenAiModalOpen] = useState(false);
   const [runs, setRuns] = useState([]);
   const [runsLoading, setRunsLoading] = useState(false);
   const [runsError, setRunsError] = useState("");
@@ -1559,7 +1566,7 @@ export default function AutomationEditorPage({ user }) {
 
   const renderLeftPane = useCallback(() => (
     <div className="h-full min-h-0 flex flex-col overflow-hidden">
-      {isSuperadmin ? (
+      {automationAiEnabled ? (
         <>
           <div className="flex-1 min-h-0 overflow-auto space-y-4">
             {chatMessages.length === 0 && (
@@ -1604,10 +1611,17 @@ export default function AutomationEditorPage({ user }) {
           </div>
         </>
       ) : (
-        <div className="alert alert-info text-sm">Automation AI is currently disabled for non-superadmins.</div>
+        <ProviderUnavailableState
+          title="OpenAI not connected"
+          description="Connect an OpenAI key for this workspace to use Automation AI."
+          actionLabel="Connect OpenAI"
+          canManageSettings={canManageSettings}
+          loading={providerStatusLoading}
+          onAction={() => setOpenAiModalOpen(true)}
+        />
       )}
     </div>
-  ), [bubbleBase, chatInput, chatLoading, chatMessages, isSuperadmin, userLabel]);
+  ), [automationAiEnabled, bubbleBase, canManageSettings, chatInput, chatLoading, chatMessages, providerStatusLoading, userLabel]);
 
   const renderValidationPanel = useCallback(() => (
     <ValidationPanel
@@ -1616,10 +1630,10 @@ export default function AutomationEditorPage({ user }) {
       warnings={[]}
       idleMessage="Validation runs automatically while you edit."
       showSuccess={true}
-      showFix={isSuperadmin}
+      showFix={automationAiEnabled}
       fixDisabled
     />
-  ), [isSuperadmin, validationPanelErrors]);
+  ), [automationAiEnabled, validationPanelErrors]);
 
   const validateRecord = useCallback(async () => ({
     compiled_ok: validationPanelErrors.length === 0,
@@ -6219,6 +6233,16 @@ export default function AutomationEditorPage({ user }) {
           <div className="modal-backdrop" onClick={() => setWebhookTestOpen(false)} />
         </div>
       )}
+      <ProviderSecretModal
+        open={openAiModalOpen}
+        providerKey="openai"
+        canManageSettings={canManageSettings}
+        onClose={() => setOpenAiModalOpen(false)}
+        onSaved={async () => {
+          setOpenAiModalOpen(false);
+          await reloadProviderStatus();
+        }}
+      />
     </div>
   );
 }

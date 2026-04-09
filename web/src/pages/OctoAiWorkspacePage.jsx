@@ -20,6 +20,10 @@ import {
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import { DESKTOP_PANEL_SHELL } from "../ui/pageShell.js";
 import AgentChatInput from "../ui/AgentChatInput.jsx";
+import { useAccessContext } from "../access.js";
+import useWorkspaceProviderStatus from "../hooks/useWorkspaceProviderStatus.js";
+import ProviderSecretModal from "../components/ProviderSecretModal.jsx";
+import ProviderUnavailableState from "../components/ProviderUnavailableState.jsx";
 
 function JsonBlock({ value }) {
   return (
@@ -331,6 +335,8 @@ export default function OctoAiWorkspacePage() {
   const navigate = useNavigate();
   const { sessionId } = useParams();
   const isMobile = useMediaQuery("(max-width: 768px)");
+  const { hasCapability } = useAccessContext();
+  const { providers: aiProviders, loading: providerStatusLoading, reload: reloadProviderStatus } = useWorkspaceProviderStatus(["openai"]);
   const chatScrollRef = useRef(null);
   const chatBottomRef = useRef(null);
   const composerRef = useRef(null);
@@ -353,7 +359,10 @@ export default function OctoAiWorkspacePage() {
   const [selectedRevisionId, setSelectedRevisionId] = useState("");
   const [pendingChatMessage, setPendingChatMessage] = useState(null);
   const [pendingAssistantState, setPendingAssistantState] = useState("");
+  const [openAiModalOpen, setOpenAiModalOpen] = useState(false);
   const [data, setData] = useState({ session: null, messages: [], plans: [], patchsets: [], releases: [], validation_runs: [], sandboxes: [], event_logs: [] });
+  const openAiConnected = Boolean(aiProviders?.openai?.connected);
+  const canManageSettings = hasCapability("workspace.manage_settings");
 
   const latestPlan = useMemo(() => (Array.isArray(data.plans) && data.plans.length > 0 ? data.plans[0] : null), [data.plans]);
   const latestPatchset = useMemo(() => (Array.isArray(data.patchsets) && data.patchsets.length > 0 ? data.patchsets[0] : null), [data.patchsets]);
@@ -555,6 +564,14 @@ export default function OctoAiWorkspacePage() {
   async function sendMessage() {
     const text = message.trim();
     if (!text || streaming || busy) return;
+    if (!openAiConnected) {
+      if (canManageSettings) {
+        setOpenAiModalOpen(true);
+      } else {
+        setError("OpenAI is not connected for this workspace.");
+      }
+      return;
+    }
     const bypassPendingQuestion = hasPendingQuestion && chatTextLooksLikeNewRequest(text);
     if (hasPendingQuestion && !bypassPendingQuestion) {
       const hints = activeQuestionMeta?.kind === "field_spec"
@@ -577,7 +594,15 @@ export default function OctoAiWorkspacePage() {
       setMessage("");
       await refreshSession({ showLoading: false });
     } catch (err) {
+      if (err?.code === "OPENAI_NOT_CONFIGURED" || (err?.message || "").includes("OpenAI")) {
+        if (canManageSettings) {
+          setOpenAiModalOpen(true);
+        } else {
+          setError("OpenAI is not connected for this workspace.");
+        }
+      } else {
       setError(err?.message || "Failed to send AI message");
+      }
     } finally {
       setPendingChatMessage(null);
       setPendingAssistantState("");
@@ -947,69 +972,82 @@ export default function OctoAiWorkspacePage() {
 
   const chatPane = (
     <div className="flex h-full min-h-0 flex-col space-y-3">
-      <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-auto space-y-2">
-        {renderedMessages.length > 0 ? (
-          renderedMessages.map((msg) => (
-            <div key={msg.id} className={`chat ${messageRoleClass(msg)}`}>
-              <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{messageRoleLabel(msg)}</div>
-              <div className={`${messageBubbleClass(msg)} whitespace-pre-wrap`}>
-                {msg.pending ? (
-                  <div className="flex items-center gap-2">
-                    <span className="loading loading-spinner loading-sm" aria-hidden="true" />
-                    <span>{msg.body}</span>
+      {openAiConnected ? (
+        <>
+          <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-auto space-y-2">
+            {renderedMessages.length > 0 ? (
+              renderedMessages.map((msg) => (
+                <div key={msg.id} className={`chat ${messageRoleClass(msg)}`}>
+                  <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{messageRoleLabel(msg)}</div>
+                  <div className={`${messageBubbleClass(msg)} whitespace-pre-wrap`}>
+                    {msg.pending ? (
+                      <div className="flex items-center gap-2">
+                        <span className="loading loading-spinner loading-sm" aria-hidden="true" />
+                        <span>{msg.body}</span>
+                      </div>
+                    ) : (
+                      chatMessageText(msg)
+                    )}
                   </div>
-                ) : (
-                  chatMessageText(msg)
-                )}
+                </div>
+              ))
+            ) : (
+              <div className="chat chat-start">
+                <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">assistant</div>
+                <div className={`${messageBubbleClass({ role: "assistant" })} whitespace-pre-wrap`}>
+                  Describe the change you want to make. I will plan it first, then show the right workflow actions when there is something real to act on.
+                </div>
               </div>
-            </div>
-          ))
-        ) : (
-          <div className="chat chat-start">
-            <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">assistant</div>
-            <div className={`${messageBubbleClass({ role: "assistant" })} whitespace-pre-wrap`}>
-              Describe the change you want to make. I will plan it first, then show the right workflow actions when there is something real to act on.
-            </div>
+            )}
+            <div ref={chatBottomRef} />
           </div>
-        )}
-        <div ref={chatBottomRef} />
-      </div>
-      <div className="border-t border-base-200 pt-3 space-y-2">
-        {hasPendingQuestion && activeQuestion ? (
-          <div className="rounded-lg border border-base-300 bg-base-50 px-3 py-2 text-sm">
-            <div className="text-xs font-medium uppercase tracking-wide opacity-60">Needs input</div>
-            <div className="mt-1 whitespace-pre-wrap">{activeQuestion}</div>
-          </div>
-        ) : null}
-        {actionStripActions.length > 0 ? (
-          <ActionStrip actions={actionStripActions} busy={busy || streaming || applyingRevision || publishingRevision || restoringRevision} />
-        ) : null}
-        {activeQuestionMeta?.kind === "field_spec" ? (
-          <div className="space-y-2">
-            <input
-              type="text"
-              className="input input-bordered input-sm w-full"
-              placeholder="Field label"
-              value={fieldSpecLabel}
-              onChange={(e) => setFieldSpecLabel(e.target.value)}
+          <div className="border-t border-base-200 pt-3 space-y-2">
+            {hasPendingQuestion && activeQuestion ? (
+              <div className="rounded-lg border border-base-300 bg-base-50 px-3 py-2 text-sm">
+                <div className="text-xs font-medium uppercase tracking-wide opacity-60">Needs input</div>
+                <div className="mt-1 whitespace-pre-wrap">{activeQuestion}</div>
+              </div>
+            ) : null}
+            {actionStripActions.length > 0 ? (
+              <ActionStrip actions={actionStripActions} busy={busy || streaming || applyingRevision || publishingRevision || restoringRevision} />
+            ) : null}
+            {activeQuestionMeta?.kind === "field_spec" ? (
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  className="input input-bordered input-sm w-full"
+                  placeholder="Field label"
+                  value={fieldSpecLabel}
+                  onChange={(e) => setFieldSpecLabel(e.target.value)}
+                />
+                <select className="select select-bordered select-sm w-full" value={fieldSpecType} onChange={(e) => setFieldSpecType(e.target.value)}>
+                  {(activeQuestionMeta?.options?.field_types || []).map((kind) => (
+                    <option key={kind} value={kind}>{kind}</option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+            <AgentChatInput
+              ref={composerRef}
+              value={message}
+              onChange={setMessage}
+              onSend={sendMessage}
+              placeholder={hasPendingQuestion ? (questionNeedsTypedReply(activeQuestionMeta) ? "Type the missing detail or correction here..." : "Reply with clarification or extra instructions...") : composerPlaceholder}
+              disabled={streaming || busy || applyingRevision || publishingRevision || restoringRevision}
+              minRows={4}
             />
-            <select className="select select-bordered select-sm w-full" value={fieldSpecType} onChange={(e) => setFieldSpecType(e.target.value)}>
-              {(activeQuestionMeta?.options?.field_types || []).map((kind) => (
-                <option key={kind} value={kind}>{kind}</option>
-              ))}
-            </select>
           </div>
-        ) : null}
-        <AgentChatInput
-          ref={composerRef}
-          value={message}
-          onChange={setMessage}
-          onSend={sendMessage}
-          placeholder={hasPendingQuestion ? (questionNeedsTypedReply(activeQuestionMeta) ? "Type the missing detail or correction here..." : "Reply with clarification or extra instructions...") : composerPlaceholder}
-          disabled={streaming || busy || applyingRevision || publishingRevision || restoringRevision}
-          minRows={4}
+        </>
+      ) : (
+        <ProviderUnavailableState
+          title="OpenAI not connected"
+          description="Connect an OpenAI key for this workspace to use Octo AI."
+          actionLabel="Connect OpenAI"
+          canManageSettings={canManageSettings}
+          loading={providerStatusLoading}
+          onAction={() => setOpenAiModalOpen(true)}
         />
-      </div>
+      )}
     </div>
   );
 
@@ -1218,6 +1256,16 @@ export default function OctoAiWorkspacePage() {
         )}
       </div>
       <DetailsDrawer open={detailsOpen} onClose={() => setDetailsOpen(false)} activeTab={detailsTab} onTabChange={setDetailsTab} sections={detailsPayload} />
+      <ProviderSecretModal
+        open={openAiModalOpen}
+        providerKey="openai"
+        canManageSettings={canManageSettings}
+        onClose={() => setOpenAiModalOpen(false)}
+        onSaved={async () => {
+          setOpenAiModalOpen(false);
+          await reloadProviderStatus();
+        }}
+      />
     </div>
   );
 }

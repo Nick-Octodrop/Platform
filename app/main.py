@@ -6,6 +6,7 @@ import hashlib
 import os
 import re
 import sys
+import urllib.parse
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -170,7 +171,7 @@ from app.integrations_runtime import (
 from app.webhook_signing import verify_webhook_signature as verify_signed_webhook_payload
 from app.integration_mapping_runtime import preview_integration_mapping
 from app.template_render import collect_undeclared_vars, validate_templates
-from app.secrets import create_secret, encrypt_secret, resolve_secret, rotate_secret, SecretStoreError
+from app.secrets import create_secret, encrypt_secret, get_secret, resolve_secret, rotate_secret, SecretStoreError
 from app.attachments import store_bytes, resolve_path, read_bytes, public_url, branding_bucket, using_supabase_storage, delete_storage
 from app.doc_render import render_html, render_pdf, normalize_margins
 from app.automations import match_event
@@ -548,12 +549,13 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 USE_DB = os.getenv("USE_DB", "").strip() == "1"
 _USE_AI_RAW = os.getenv("USE_AI", "").strip().lower()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
-USE_AI = _USE_AI_RAW in ("1", "true", "yes") or (_USE_AI_RAW == "" and bool(OPENAI_API_KEY))
+USE_AI = _USE_AI_RAW in ("1", "true", "yes") or _USE_AI_RAW == ""
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "").strip() or "https://api.openai.com"
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "").strip() or "gpt-4o-mini"
 STUDIO2_PLANNER_MODEL = os.getenv("STUDIO2_PLANNER_MODEL", "").strip() or OPENAI_MODEL
 STUDIO2_BUILDER_MODEL = os.getenv("STUDIO2_BUILDER_MODEL", "").strip() or OPENAI_MODEL
 STUDIO2_MODULE_DESIGN_MODEL = os.getenv("STUDIO2_MODULE_DESIGN_MODEL", "").strip() or STUDIO2_PLANNER_MODEL
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "").strip()
 OPENAI_TIMEOUT = float(os.getenv("OPENAI_TIMEOUT", "120"))
 STUDIO2_AGENT_DEBUG = os.getenv("STUDIO2_AGENT_DEBUG", "").strip().lower() in ("1", "true", "yes")
 STUDIO2_AGENT_LOG_PAYLOAD = os.getenv("STUDIO2_AGENT_LOG_PAYLOAD", "").strip().lower() in ("1", "true", "yes")
@@ -10294,9 +10296,6 @@ async def studio2_agent_chat(request: Request) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
-    denied = _require_superadmin(actor, "Studio AI is available to superadmins only")
-    if denied:
-        return denied
     body = await _safe_json(request)
     include_progress = bool(body.get("include_progress")) if isinstance(body, dict) else False
     if not isinstance(body, dict):
@@ -10309,9 +10308,6 @@ async def studio2_agent_chat_stream(request: Request) -> StreamingResponse:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
-    denied = _require_superadmin(actor, "Studio AI is available to superadmins only")
-    if denied:
-        return denied
     body = await _safe_json(request)
     if not isinstance(body, dict):
         body = {}
@@ -11375,15 +11371,77 @@ def _infer_pattern_key(message: str, module_id: str | None = None) -> str | None
     return None
 
 
+def _active_secret_ref_for_provider(provider_key: str, secret_key: str = "api_key") -> str | None:
+    if not secret_store or not hasattr(secret_store, "list"):
+        return None
+    provider = str(provider_key or "").strip().lower()
+    slot = str(secret_key or "api_key").strip().lower()
+    if not provider:
+        return None
+    try:
+        items = secret_store.list(limit=500)
+    except Exception:
+        return None
+    fallback = None
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("status") or "active").strip().lower() != "active":
+            continue
+        if str(item.get("provider_key") or "").strip().lower() != provider:
+            continue
+        item_secret_key = str(item.get("secret_key") or "").strip().lower()
+        secret_id = item.get("id")
+        if not secret_id:
+            continue
+        if item_secret_key == slot:
+            return str(secret_id)
+        if not item_secret_key and fallback is None:
+            fallback = str(secret_id)
+    return fallback
+
+
+def _resolve_provider_secret_value(provider_key: str, secret_key: str = "api_key", env_key: str | None = None) -> str | None:
+    secret_ref = _active_secret_ref_for_provider(provider_key, secret_key=secret_key)
+    if secret_ref:
+        try:
+            value = get_secret(secret_ref, org_id=get_org_id())
+        except Exception:
+            value = None
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    if env_key:
+        fallback = os.getenv(env_key, "").strip()
+        if fallback:
+            return fallback
+    return None
+
+
+def _provider_status_payload(actor: dict | None, provider_key: str, *, secret_key: str = "api_key", env_key: str | None = None) -> dict:
+    connected = bool(_resolve_provider_secret_value(provider_key, secret_key=secret_key, env_key=env_key))
+    can_manage = False
+    if isinstance(actor, dict):
+        try:
+            can_manage = bool(_actor_has_capability(actor, "workspace.manage_settings"))
+        except Exception:
+            can_manage = False
+    return {
+        "provider_key": provider_key,
+        "secret_key": secret_key,
+        "connected": connected,
+        "can_manage_settings": can_manage,
+    }
+
+
 def _openai_configured() -> bool:
-    return bool(OPENAI_API_KEY)
+    return bool(_resolve_provider_secret_value("openai", env_key="OPENAI_API_KEY"))
 
 
 def _openai_not_configured() -> JSONResponse:
     body = {
         "ok": False,
-        "error": {"code": "OPENAI_NOT_CONFIGURED", "message": "OpenAI API key is not configured"},
-        "errors": [{"code": "OPENAI_NOT_CONFIGURED", "message": "OpenAI API key is not configured", "path": None, "detail": None}],
+        "error": {"code": "OPENAI_NOT_CONFIGURED", "message": "OpenAI API key is not configured for this workspace"},
+        "errors": [{"code": "OPENAI_NOT_CONFIGURED", "message": "OpenAI API key is not configured for this workspace", "path": None, "detail": None}],
         "warnings": [],
     }
     return JSONResponse(jsonable_encoder(body), status_code=501)
@@ -11402,6 +11460,9 @@ def _openai_chat_completion(
     temperature: float = 0.2,
     response_format: dict | None = None,
 ) -> dict:
+    api_key = _resolve_provider_secret_value("openai", env_key="OPENAI_API_KEY")
+    if not api_key:
+        raise SecretStoreError("OpenAI API key is not configured for this workspace")
     payload = {
         "model": model or OPENAI_MODEL,
         "messages": messages,
@@ -11414,7 +11475,7 @@ def _openai_chat_completion(
         _openai_url("/chat/completions"),
         data=data,
         headers={
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         },
         method="POST",
@@ -15110,9 +15171,6 @@ async def studio2_agent_plan(request: Request) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
-    denied = _require_superadmin(actor, "Studio AI is available to superadmins only")
-    if denied:
-        return denied
     if not _openai_configured():
         return _openai_not_configured()
     body = await _safe_json(request)
@@ -15162,18 +15220,15 @@ async def studio2_agent_status() -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
-    if actor.get("platform_role") != "superadmin":
-        return _ok_response({"data": {"configured": False, "disabled": True}})
-    if not _openai_configured():
-        return _ok_response({"data": {"configured": False}})
+    configured = _openai_configured()
     return _ok_response(
         {
             "data": {
-                "configured": True,
-                "model": OPENAI_MODEL,
-                "planner_model": STUDIO2_PLANNER_MODEL,
-                "builder_model": STUDIO2_BUILDER_MODEL,
-                "base_url": OPENAI_BASE_URL,
+                "configured": configured,
+                "model": OPENAI_MODEL if configured else None,
+                "planner_model": STUDIO2_PLANNER_MODEL if configured else None,
+                "builder_model": STUDIO2_BUILDER_MODEL if configured else None,
+                "base_url": OPENAI_BASE_URL if configured else None,
             }
         }
     )
@@ -34383,6 +34438,155 @@ async def list_settings_secrets(request: Request, limit: int = 200, include_syst
         system_names = {"postmark_api_token"}
         items = [s for s in (items or []) if str(s.get("name") or "").strip().lower() not in system_names]
     return _ok_response({"secrets": items})
+
+
+def _google_places_request(path: str, params: dict[str, Any]) -> dict:
+    api_key = _resolve_provider_secret_value("google_maps", env_key="GOOGLE_MAPS_API_KEY")
+    if not api_key:
+        raise SecretStoreError("Google Maps API key is not configured for this workspace")
+    query = {k: v for k, v in (params or {}).items() if v is not None and v != ""}
+    query["key"] = api_key
+    url = f"https://maps.googleapis.com/maps/api/place/{path}?{urllib.parse.urlencode(query)}"
+    req = urllib.request.Request(url, method="GET")
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        raw = resp.read().decode("utf-8")
+        payload = json.loads(raw)
+    status = str(payload.get("status") or "UNKNOWN_ERROR")
+    if status not in {"OK", "ZERO_RESULTS"}:
+        raise RuntimeError(payload.get("error_message") or status)
+    return payload
+
+
+def _google_address_from_components(components: Any, formatted_address: str | None = None, place_id: str | None = None) -> dict:
+    by_type: dict[str, dict] = {}
+    for component in components or []:
+        if not isinstance(component, dict):
+            continue
+        for type_name in component.get("types") or []:
+            if isinstance(type_name, str) and type_name not in by_type:
+                by_type[type_name] = component
+
+    def long_name(type_name: str) -> str:
+        value = by_type.get(type_name, {}).get("long_name")
+        return value.strip() if isinstance(value, str) else ""
+
+    def short_name(type_name: str) -> str:
+        value = by_type.get(type_name, {}).get("short_name")
+        return value.strip() if isinstance(value, str) else ""
+
+    street_number = short_name("street_number")
+    route = long_name("route") or long_name("premise")
+    line_1 = " ".join(part for part in [street_number, route] if part).strip()
+    line_2 = long_name("subpremise") or long_name("floor") or long_name("room")
+    city = long_name("locality") or long_name("postal_town") or long_name("sublocality_level_1") or long_name("administrative_area_level_2")
+    region = long_name("administrative_area_level_1")
+    postcode = " ".join(part for part in [short_name("postal_code"), short_name("postal_code_suffix")] if part).strip()
+    country = long_name("country")
+    return {
+        "line_1": line_1 or (formatted_address or ""),
+        "line_2": line_2 or "",
+        "city": city or "",
+        "region": region or "",
+        "postcode": postcode or "",
+        "country": country or "",
+        "formatted_address": formatted_address or "",
+        "place_id": place_id or "",
+    }
+
+
+@app.get("/settings/provider-status")
+async def get_settings_provider_status(request: Request, providers: str = "openai,google_maps") -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    requested = [
+        str(item or "").strip().lower()
+        for item in str(providers or "").split(",")
+        if str(item or "").strip()
+    ]
+    if not requested:
+        requested = ["openai", "google_maps"]
+    response: dict[str, dict] = {}
+    for provider_key in requested:
+        if provider_key == "openai":
+            response[provider_key] = _provider_status_payload(actor, provider_key, env_key="OPENAI_API_KEY")
+        elif provider_key in {"google_maps", "google_places"}:
+            response["google_maps"] = _provider_status_payload(actor, "google_maps", env_key="GOOGLE_MAPS_API_KEY")
+        else:
+            response[provider_key] = _provider_status_payload(actor, provider_key)
+    return _ok_response({"providers": response})
+
+
+@app.get("/tools/google-places/autocomplete")
+async def google_places_autocomplete(request: Request, input: str, session_token: str | None = None) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    text = str(input or "").strip()
+    if len(text) < 2:
+        return _ok_response({"suggestions": []})
+    try:
+        payload = _google_places_request(
+            "autocomplete/json",
+            {
+                "input": text,
+                "types": "address",
+                "sessiontoken": session_token,
+            },
+        )
+    except SecretStoreError:
+        return _error_response("MAPS_NOT_CONFIGURED", "Google Maps API key is not configured for this workspace", status=501)
+    except Exception as exc:
+        return _error_response("MAPS_LOOKUP_FAILED", "Google Places lookup failed", detail={"error": str(exc)}, status=502)
+    suggestions = []
+    for item in payload.get("predictions") or []:
+        if not isinstance(item, dict):
+            continue
+        formatting = item.get("structured_formatting") if isinstance(item.get("structured_formatting"), dict) else {}
+        suggestions.append(
+            {
+                "place_id": item.get("place_id"),
+                "description": item.get("description") or "",
+                "main_text": formatting.get("main_text") or item.get("description") or "",
+                "secondary_text": formatting.get("secondary_text") or "",
+            }
+        )
+    return _ok_response({"suggestions": suggestions})
+
+
+@app.get("/tools/google-places/details")
+async def google_places_details(request: Request, place_id: str, session_token: str | None = None) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    candidate = str(place_id or "").strip()
+    if not candidate:
+        return _error_response("PLACE_ID_REQUIRED", "place_id is required", "place_id", status=400)
+    try:
+        payload = _google_places_request(
+            "details/json",
+            {
+                "place_id": candidate,
+                "fields": "address_component,formatted_address,geometry",
+                "sessiontoken": session_token,
+            },
+        )
+    except SecretStoreError:
+        return _error_response("MAPS_NOT_CONFIGURED", "Google Maps API key is not configured for this workspace", status=501)
+    except Exception as exc:
+        return _error_response("MAPS_LOOKUP_FAILED", "Google Place details lookup failed", detail={"error": str(exc)}, status=502)
+    result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+    address = _google_address_from_components(
+        result.get("address_components"),
+        formatted_address=result.get("formatted_address"),
+        place_id=result.get("place_id") or candidate,
+    )
+    geometry = result.get("geometry") if isinstance(result.get("geometry"), dict) else {}
+    location = geometry.get("location") if isinstance(geometry.get("location"), dict) else {}
+    if location:
+        address["latitude"] = location.get("lat")
+        address["longitude"] = location.get("lng")
+    return _ok_response({"address": address})
 
 
 @app.post("/settings/secrets")

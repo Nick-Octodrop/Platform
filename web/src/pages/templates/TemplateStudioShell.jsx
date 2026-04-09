@@ -5,8 +5,8 @@ import ValidationPanel from "../../components/ValidationPanel.jsx";
 import TemplateAgentPane from "./TemplateAgentPane.jsx";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM } from "../../components/buttonStyles.js";
 import { apiFetch } from "../../api.js";
-import { useAccessContext } from "../../access.js";
 import useMediaQuery from "../../hooks/useMediaQuery.js";
+import useWorkspaceProviderStatus from "../../hooks/useWorkspaceProviderStatus.js";
 import ResponsiveDrawer from "../../ui/ResponsiveDrawer.jsx";
 
 const DEFAULT_SAMPLE = { entity_id: "", record_id: "" };
@@ -32,8 +32,9 @@ export default function TemplateStudioShell({
   desktopContentClass = "",
   desktopFrameClass = "",
 }) {
-  const { isSuperadmin } = useAccessContext();
   const isMobile = useMediaQuery("(max-width: 768px)");
+  const { providers: aiProviders } = useWorkspaceProviderStatus(["openai"]);
+  const openAiConnected = Boolean(aiProviders?.openai?.connected);
   const [record, setRecord] = useState(null);
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -311,7 +312,7 @@ export default function TemplateStudioShell({
       warnings={mergedWarnings}
       idleMessage="Validation runs automatically while you edit."
       showSuccess={true}
-      showFix={showFixWithAi && isSuperadmin}
+      showFix={showFixWithAi && openAiConnected}
       fixDisabled
     />
   );

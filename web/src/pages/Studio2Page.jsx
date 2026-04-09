@@ -33,6 +33,9 @@ import useMediaQuery from "../hooks/useMediaQuery.js";
 import { useAccessContext } from "../access.js";
 import { formatDateTime, formatTime } from "../utils/dateTime.js";
 import { MoreHorizontal } from "lucide-react";
+import useWorkspaceProviderStatus from "../hooks/useWorkspaceProviderStatus.js";
+import ProviderSecretModal from "../components/ProviderSecretModal.jsx";
+import ProviderUnavailableState from "../components/ProviderUnavailableState.jsx";
 
 function nowIso() {
   return new Date().toISOString();
@@ -627,8 +630,10 @@ export default function Studio2Page({ user }) {
   const { pushToast } = useToast();
   const navigate = useNavigate();
   const { moduleId: routeModuleId } = useParams();
-  const { isSuperadmin } = useAccessContext();
-  const studioAiEnabled = isSuperadmin;
+  const { isSuperadmin, hasCapability } = useAccessContext();
+  const { providers: aiProviders, loading: providerStatusLoading, reload: reloadProviderStatus } = useWorkspaceProviderStatus(["openai"]);
+  const studioAiEnabled = Boolean(aiProviders?.openai?.connected);
+  const canManageSettings = hasCapability("workspace.manage_settings");
 
   const rootRef = useRef(null);
   const leftPaneRef = useRef(null);
@@ -662,6 +667,7 @@ export default function Studio2Page({ user }) {
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState([]);
   const [chatLoading, setChatLoading] = useState(false);
+  const [openAiModalOpen, setOpenAiModalOpen] = useState(false);
   const [progressEvents, setProgressEvents] = useState([]);
   const [stopReason, setStopReason] = useState(null);
   const [streamDone, setStreamDone] = useState(false);
@@ -1544,10 +1550,11 @@ function buildPreviewManifest() {
       }
     } catch (err) {
       if (err.code === "OPENAI_NOT_CONFIGURED" || (err.message || "").includes("OpenAI")) {
-        setChatMessages((prev) => [
-          ...prev,
-          { role: "assistant", text: "Studio agent wiring coming soon.", ts: nowIso() },
-        ]);
+        if (canManageSettings) {
+          setOpenAiModalOpen(true);
+        } else {
+          pushToast("error", "OpenAI is not connected for this workspace.");
+        }
       } else {
         pushToast("error", err.message || "Agent chat failed");
       }
@@ -1736,10 +1743,11 @@ function buildPreviewManifest() {
         applyAgentPayload(payload);
       } catch (fallbackErr) {
         if (fallbackErr.code === "OPENAI_NOT_CONFIGURED" || (fallbackErr.message || "").includes("OpenAI")) {
-          setChatMessages((prev) => [
-            ...prev,
-            { role: "assistant", text: "Studio agent wiring coming soon.", ts: nowIso() },
-          ]);
+          if (canManageSettings) {
+            setOpenAiModalOpen(true);
+          } else {
+            pushToast("error", "OpenAI is not connected for this workspace.");
+          }
         } else {
           pushToast("error", fallbackErr.message || "Agent chat failed");
         }
@@ -2304,7 +2312,14 @@ function buildPreviewManifest() {
     if (!studioAiEnabled) {
       return (
         <div ref={leftPaneRef} className="h-full min-h-0 flex flex-col overflow-hidden">
-          <div className="alert alert-info text-sm">Studio AI is currently disabled for non-superadmins.</div>
+          <ProviderUnavailableState
+            title="OpenAI not connected"
+            description="Connect an OpenAI key for this workspace to use Studio AI."
+            actionLabel="Connect OpenAI"
+            canManageSettings={canManageSettings}
+            loading={providerStatusLoading}
+            onAction={() => setOpenAiModalOpen(true)}
+          />
         </div>
       );
     }
@@ -2392,6 +2407,8 @@ function buildPreviewManifest() {
     routeModuleId,
     stopReason,
     streamDone,
+    canManageSettings,
+    providerStatusLoading,
     studioAiEnabled,
     userLabel,
   ]);
@@ -2433,7 +2450,7 @@ function buildPreviewManifest() {
         )}
       </div>
       {!studioAiEnabled && (
-        <div className="text-xs opacity-60 mt-2">Studio AI actions are disabled for non-superadmins.</div>
+        <div className="text-xs opacity-60 mt-2">Connect OpenAI for this workspace to enable AI actions.</div>
       )}
       {draftError && (
         <div className="alert alert-error text-xs mt-2">
@@ -3092,6 +3109,16 @@ function buildPreviewManifest() {
           </div>
         </div>
       )}
+      <ProviderSecretModal
+        open={openAiModalOpen}
+        providerKey="openai"
+        canManageSettings={canManageSettings}
+        onClose={() => setOpenAiModalOpen(false)}
+        onSaved={async () => {
+          setOpenAiModalOpen(false);
+          await reloadProviderStatus();
+        }}
+      />
       {publishModal}
       {deleteModal}
       {deleteBlockedModal}

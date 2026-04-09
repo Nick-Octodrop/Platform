@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { MoreHorizontal, Trash2 } from "lucide-react";
 import { renderField, setFieldValue, getFieldValue } from "./field_renderers.jsx";
-import { apiFetch, createRecord, deleteRecord, updateRecord } from "../api.js";
+import { apiFetch, createRecord, deleteRecord, googlePlaceDetails, googlePlacesAutocomplete, updateRecord } from "../api.js";
 import { evalCondition } from "../utils/conditions.js";
 import { applyComputedFields } from "../utils/computedFields.js";
 import Tabs from "../components/Tabs.jsx";
@@ -10,6 +10,216 @@ import DaisyTooltip from "../components/DaisyTooltip.jsx";
 import ActivityPanel from "./ActivityPanel.jsx";
 import AttachmentField from "./AttachmentField.jsx";
 import useMediaQuery from "../hooks/useMediaQuery.js";
+import { useAccessContext } from "../access.js";
+import useWorkspaceProviderStatus from "../hooks/useWorkspaceProviderStatus.js";
+import ProviderSecretModal from "../components/ProviderSecretModal.jsx";
+
+function resolveAddressAutocompleteMapping(fieldId) {
+  if (typeof fieldId !== "string") return null;
+  if (fieldId.endsWith(".address_line_1")) {
+    const base = fieldId.slice(0, -".address_line_1".length);
+    return {
+      line1Field: fieldId,
+      line2Field: `${base}.address_line_2`,
+      cityField: `${base}.city`,
+      regionField: `${base}.region`,
+      postcodeField: `${base}.postcode`,
+      countryField: `${base}.country`,
+    };
+  }
+  if (fieldId.endsWith(".billing_street")) {
+    const base = fieldId.slice(0, -".billing_street".length);
+    return {
+      line1Field: fieldId,
+      line2Field: `${base}.billing_street2`,
+      cityField: `${base}.billing_city`,
+      regionField: `${base}.billing_state`,
+      postcodeField: `${base}.billing_postcode`,
+      countryField: `${base}.billing_country`,
+    };
+  }
+  if (fieldId.endsWith(".shipping_street")) {
+    const base = fieldId.slice(0, -".shipping_street".length);
+    return {
+      line1Field: fieldId,
+      line2Field: `${base}.shipping_street2`,
+      cityField: `${base}.shipping_city`,
+      regionField: `${base}.shipping_state`,
+      postcodeField: `${base}.shipping_postcode`,
+      countryField: `${base}.shipping_country`,
+    };
+  }
+  return null;
+}
+
+function applyAddressMapping(record, mapping, address) {
+  let next = setFieldValue(record || {}, mapping.line1Field, address?.line_1 || "");
+  if (mapping.line2Field) next = setFieldValue(next, mapping.line2Field, address?.line_2 || "");
+  if (mapping.cityField) next = setFieldValue(next, mapping.cityField, address?.city || "");
+  if (mapping.regionField) next = setFieldValue(next, mapping.regionField, address?.region || "");
+  if (mapping.postcodeField) next = setFieldValue(next, mapping.postcodeField, address?.postcode || "");
+  if (mapping.countryField) next = setFieldValue(next, mapping.countryField, address?.country || "");
+  return next;
+}
+
+function AddressAutocompleteField({ field, value, onChange, onRecordChange, readonly, record, previewMode = false }) {
+  const { hasCapability } = useAccessContext();
+  const { providers, loading: providerStatusLoading, reload: reloadProviderStatus } = useWorkspaceProviderStatus(["google_maps"]);
+  const containerRef = useRef(null);
+  const sessionTokenRef = useRef(`gmaps-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const [search, setSearch] = useState(value || "");
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const [mapsModalOpen, setMapsModalOpen] = useState(false);
+  const mapping = useMemo(() => resolveAddressAutocompleteMapping(field?.id), [field?.id]);
+  const mapsConnected = Boolean(providers?.google_maps?.connected);
+  const canManageSettings = hasCapability("workspace.manage_settings");
+  const disabled = readonly || field?.readonly || previewMode;
+
+  useEffect(() => {
+    setSearch(value || "");
+  }, [value]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function handlePointerDown(event) {
+      if (!containerRef.current?.contains(event.target)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!open || disabled || !mapsConnected) {
+      setSuggestions([]);
+      setLoading(false);
+      return undefined;
+    }
+    const query = String(search || "").trim();
+    if (query.length < 3) {
+      setSuggestions([]);
+      setLoading(false);
+      return undefined;
+    }
+    const timer = window.setTimeout(async () => {
+      setLoading(true);
+      try {
+        const res = await googlePlacesAutocomplete(query, sessionTokenRef.current);
+        if (!cancelled) {
+          setSuggestions(Array.isArray(res?.suggestions) ? res.suggestions : []);
+        }
+      } catch {
+        if (!cancelled) setSuggestions([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }, 220);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [disabled, mapsConnected, open, search]);
+
+  async function handleSelectSuggestion(suggestion) {
+    if (!mapping || disabled) return;
+    setLoading(true);
+    try {
+      const res = await googlePlaceDetails(suggestion.place_id, sessionTokenRef.current);
+      const address = res?.address || {};
+      const nextRecord = applyAddressMapping(record || {}, mapping, address);
+      onRecordChange?.(nextRecord);
+      setSearch(address?.line_1 || suggestion?.main_text || suggestion?.description || "");
+      setOpen(false);
+      sessionTokenRef.current = `gmaps-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    } catch {
+      onChange(suggestion?.description || search);
+      setOpen(false);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <>
+      <div ref={containerRef} className="relative">
+        <input
+          className="input input-bordered w-full"
+          disabled={disabled}
+          value={search}
+          onFocus={() => setOpen(true)}
+          onChange={(e) => {
+            const next = e.target.value;
+            setSearch(next);
+            onChange(next);
+            if (!open) setOpen(true);
+          }}
+        />
+        {open && !disabled ? (
+          <div className="absolute z-30 mt-1 w-full rounded-box border border-base-300 bg-base-100 shadow">
+            {mapsConnected ? (
+              <ul className="menu menu-compact menu-vertical w-full max-h-72 overflow-y-auto">
+                {loading ? <li className="menu-title"><span>Searching addresses…</span></li> : null}
+                {!loading && String(search || "").trim().length < 3 ? (
+                  <li className="menu-title"><span>Type at least 3 characters</span></li>
+                ) : null}
+                {!loading && String(search || "").trim().length >= 3 && suggestions.length === 0 ? (
+                  <li className="menu-title"><span>No address matches</span></li>
+                ) : null}
+                {suggestions.map((item) => (
+                  <li key={item.place_id}>
+                    <button type="button" className="text-left" onClick={() => handleSelectSuggestion(item)}>
+                      <div className="flex flex-col items-start">
+                        <span>{item.main_text || item.description}</span>
+                        {item.secondary_text ? <span className="text-xs opacity-60">{item.secondary_text}</span> : null}
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="p-2">
+                {canManageSettings ? (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline w-full justify-start"
+                    disabled={providerStatusLoading}
+                    onClick={() => setMapsModalOpen(true)}
+                  >
+                    Create Google Maps key
+                  </button>
+                ) : null}
+                <div className="px-1 pt-2 text-xs opacity-60">
+                  {canManageSettings
+                    ? "Connect Google Maps to enable address autocomplete."
+                    : "Ask a workspace admin to connect Google Maps for address autocomplete."}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </div>
+      <ProviderSecretModal
+        open={mapsModalOpen}
+        providerKey="google_maps"
+        canManageSettings={canManageSettings}
+        onClose={() => setMapsModalOpen(false)}
+        onSaved={async () => {
+          setMapsModalOpen(false);
+          await reloadProviderStatus();
+          setOpen(true);
+        }}
+      />
+    </>
+  );
+}
 
 export default function FormViewRenderer({
   view,
@@ -693,6 +903,16 @@ export default function FormViewRenderer({
                               readonly={readonly || isDisabled}
                               members={workspaceMembers}
                               loadingMembers={workspaceMembersLoading}
+                            />
+                          ) : field.type === "string" && resolveAddressAutocompleteMapping(fieldId) ? (
+                            <AddressAutocompleteField
+                              field={field}
+                              value={value}
+                              onChange={(val) => applyRecordChange(setFieldValue(computedRecord, fieldId, val))}
+                              onRecordChange={applyRecordChange}
+                              readonly={readonly || isDisabled}
+                              record={computedRecord}
+                              previewMode={previewMode}
                             />
                           ) : (
                             renderField(

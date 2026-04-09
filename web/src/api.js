@@ -382,6 +382,32 @@ export async function runManifestAction(moduleId, actionId, context = {}, option
   });
 }
 
+export async function getProviderStatus(providers = []) {
+  const values = Array.isArray(providers) ? providers.filter(Boolean) : [];
+  const query = new URLSearchParams();
+  if (values.length) query.set("providers", values.join(","));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return apiFetch(`/settings/provider-status${suffix}`);
+}
+
+export async function createWorkspaceSecret(payload = {}) {
+  return apiFetch("/settings/secrets", { method: "POST", body: payload });
+}
+
+export async function googlePlacesAutocomplete(input, sessionToken = null) {
+  const query = new URLSearchParams();
+  query.set("input", input || "");
+  if (sessionToken) query.set("session_token", sessionToken);
+  return apiFetch(`/tools/google-places/autocomplete?${query.toString()}`);
+}
+
+export async function googlePlaceDetails(placeId, sessionToken = null) {
+  const query = new URLSearchParams();
+  query.set("place_id", placeId || "");
+  if (sessionToken) query.set("session_token", sessionToken);
+  return apiFetch(`/tools/google-places/details?${query.toString()}`);
+}
+
 export function getActiveWorkspaceId() {
   try {
     const search = new URLSearchParams(window.location.search || "");
