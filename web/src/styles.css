@@ -38,7 +38,8 @@ body {
   .select,
   .textarea,
   .file-input {
-    font-size: 0.95rem !important;
+    font-size: 16px !important;
+    line-height: 1.25rem;
   }
 }
 
@@ -99,10 +100,9 @@ body {
   .file-input:focus-within {
     outline: none !important;
     outline-offset: 0 !important;
-    border-color: oklch(var(--p) / 0.18) !important;
-    background-color: oklch(var(--p) / 0.04) !important;
+    border-color: oklch(var(--p) / 0.42) !important;
     box-shadow:
-      inset 0 0 0 1px oklch(var(--p) / 0.16) !important;
+      inset 0 0 0 1px oklch(var(--p) / 0.42) !important;
     caret-color: oklch(var(--p)) !important;
   }
 
@@ -363,10 +363,9 @@ body {
   outline-width: 0 !important;
   outline-color: transparent !important;
   outline-offset: 0 !important;
-  border-color: oklch(var(--p) / 0.18) !important;
-  background-color: oklch(var(--p) / 0.04) !important;
+  border-color: oklch(var(--p) / 0.42) !important;
   box-shadow:
-    inset 0 0 0 1px oklch(var(--p) / 0.16) !important;
+    inset 0 0 0 1px oklch(var(--p) / 0.42) !important;
   caret-color: oklch(var(--p)) !important;
 }
 
