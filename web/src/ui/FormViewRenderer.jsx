@@ -451,18 +451,28 @@ export default function FormViewRenderer({
                   <ul className="absolute right-0 top-full mt-2 menu p-2 shadow bg-base-100 rounded-box w-56 z-[220] border border-base-300">
                     {mobileHeaderActions.map((item) => {
                       const disabled = !item.enabled || previewMode || readonly;
+                      const reason = readonly
+                        ? "Read-only access."
+                        : item.reason || (!item.enabled ? actionDisabledReason(item.action) : null);
+                      const button = (
+                        <button
+                          onClick={() => {
+                            if (disabled) return;
+                            onActionClick?.(item.action);
+                            setMobileActionsOpen(false);
+                          }}
+                          disabled={disabled}
+                        >
+                          {item.label}
+                        </button>
+                      );
                       return (
                         <li key={item.label}>
-                          <button
-                            onClick={() => {
-                              if (disabled) return;
-                              onActionClick?.(item.action);
-                              setMobileActionsOpen(false);
-                            }}
-                            disabled={disabled}
-                          >
-                            {item.label}
-                          </button>
+                          {reason ? (
+                            <DaisyTooltip label={reason} placement="left">
+                              <span className="block">{button}</span>
+                            </DaisyTooltip>
+                          ) : button}
                         </li>
                       );
                     })}
@@ -477,7 +487,7 @@ export default function FormViewRenderer({
               const reason = readonly
                 ? "Read-only access."
                 : !item.enabled
-                  ? actionDisabledReason(item.action)
+                  ? (item.reason || actionDisabledReason(item.action))
                   : null;
               const button = (
                 <button
@@ -496,7 +506,7 @@ export default function FormViewRenderer({
               if (!reason) return button;
               return (
                 <DaisyTooltip key={item.label} label={reason} placement="bottom">
-                  {button}
+                  <span className="inline-flex">{button}</span>
                 </DaisyTooltip>
               );
             })}
@@ -510,16 +520,32 @@ export default function FormViewRenderer({
                 <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[220]">
                   {secondaryActions.map((item) => (
                     <li key={item.label}>
-                      <button
-                        onClick={() => {
-                          if (previewMode || readonly || !item.enabled) return;
-                          onActionClick?.(item.action);
-                        }}
-                        disabled={!item.enabled || previewMode || readonly}
-                      >
-                        {actionBusy && actionBusyLabel === item.label ? <span className="loading loading-spinner loading-xs" /> : null}
-                        {item.label}
-                      </button>
+                      {(() => {
+                        const disabled = !item.enabled || previewMode || readonly;
+                        const reason = readonly
+                          ? "Read-only access."
+                          : !item.enabled
+                            ? (item.reason || actionDisabledReason(item.action))
+                            : null;
+                        const button = (
+                          <button
+                            onClick={() => {
+                              if (disabled) return;
+                              onActionClick?.(item.action);
+                            }}
+                            disabled={disabled}
+                          >
+                            {actionBusy && actionBusyLabel === item.label ? <span className="loading loading-spinner loading-xs" /> : null}
+                            {item.label}
+                          </button>
+                        );
+                        if (!reason) return button;
+                        return (
+                          <DaisyTooltip label={reason} placement="left">
+                            <span className="block">{button}</span>
+                          </DaisyTooltip>
+                        );
+                      })()}
                     </li>
                   ))}
                 </ul>

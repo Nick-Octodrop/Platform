@@ -1762,6 +1762,7 @@ def generated_demo_specs(count: int) -> list[dict[str, Any]]:
                     "biz_document.name": f"{company_name} demo document",
                     "biz_document.document_type": document_types[(index - 1) % len(document_types)],
                     "biz_document.status": "archived" if index % 17 == 0 else "signed" if index % 8 == 0 else "sent" if index % 3 == 0 else "approved",
+                    "biz_document.archive_reason": "Superseded by newer revision." if index % 17 == 0 else "",
                     "biz_document.related_contact_id": {"$ref": contact_alias},
                     "biz_document.sales_entity": "NLight BV",
                     "biz_document.document_date": f"2026-04-{due_day:02d}",

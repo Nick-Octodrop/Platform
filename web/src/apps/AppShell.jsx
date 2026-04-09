@@ -9,6 +9,7 @@ import ContentBlocksRenderer from "../ui/ContentBlocksRenderer.jsx";
 import { getFieldValue, renderField, setFieldValue } from "../ui/field_renderers.jsx";
 import { useToast } from "../components/Toast.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
+import DaisyTooltip from "../components/DaisyTooltip.jsx";
 import { PRIMARY_BUTTON, PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_BUTTON_XS } from "../components/buttonStyles.js";
 import { buildRouteWithQuery, buildTargetRoute, resolveAppTarget, resolveRouteTarget } from "./appShellUtils.js";
 import { evalCondition } from "../utils/conditions.js";
@@ -178,6 +179,42 @@ function resolveActionLabel(action, manifest, views) {
     return "Open";
   }
   return "Action";
+}
+
+function collectConditionMissingFields(condition, record, missing) {
+  if (!condition || typeof condition !== "object") return;
+  const op = condition.op;
+  if (op === "exists") {
+    const fieldId = condition.field;
+    if (typeof fieldId === "string") {
+      const value = getFieldValue(record || {}, fieldId);
+      if (value === "" || value === null || value === undefined) {
+        missing.add(fieldId);
+      }
+    }
+    return;
+  }
+  if ((op === "and" || op === "or") && Array.isArray(condition.conditions)) {
+    condition.conditions.forEach((child) => collectConditionMissingFields(child, record, missing));
+    return;
+  }
+  if (op === "not" && condition.condition) {
+    collectConditionMissingFields(condition.condition, record, missing);
+  }
+}
+
+function explainActionDisabled(action, record, fieldIndex, { missingRecord = false, missingSelection = false } = {}) {
+  if (missingRecord) return "Save this record first.";
+  if (missingSelection) return "Select one or more records.";
+  const cond = action?.enabled_when;
+  if (!cond) return null;
+  const enabled = evalCondition(cond, { record: record || {} });
+  if (enabled) return null;
+  const missing = new Set();
+  collectConditionMissingFields(cond, record || {}, missing);
+  if (missing.size === 0) return "Requirements not met.";
+  const labels = Array.from(missing).map((fieldId) => fieldIndex?.[fieldId]?.label || fieldId);
+  return `Missing: ${labels.join(", ")}`;
 }
 
 function isWriteActionKind(kind) {
@@ -2484,8 +2521,10 @@ function AppView({
         const visible = resolved.visible_when ? evalCondition(resolved.visible_when, { record: contextRecord || {} }) : true;
         if (!visible) continue;
         let enabled = resolved.enabled_when ? evalCondition(resolved.enabled_when, { record: contextRecord || {} }) : true;
-        if (resolved.kind === "bulk_update" && (!selectedIds || selectedIds.length === 0)) enabled = false;
-        items.push({ action: resolved, label, enabled });
+        const missingSelection = resolved.kind === "bulk_update" && (!selectedIds || selectedIds.length === 0);
+        if (missingSelection) enabled = false;
+        const reason = enabled ? null : explainActionDisabled(resolved, contextRecord || {}, fieldIndex, { missingSelection });
+        items.push({ action: resolved, label, enabled, reason });
       }
       return items;
     }
@@ -2564,15 +2603,30 @@ function AppView({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-[10rem]">
               {primaryActions.map((item) => (
-                <button
-                  key={`${item.action?.id || item.label}`}
-                  className={PRIMARY_BUTTON_SM}
-                  onClick={() => handleHeaderAction(item.action)}
-                  disabled={!item.enabled}
-                >
-                  {actionRunning && actionState.label === item.label ? <span className="loading loading-spinner loading-xs" /> : null}
-                  {item.label}
-                </button>
+                item.reason ? (
+                  <DaisyTooltip key={`${item.action?.id || item.label}`} label={item.reason} placement="bottom">
+                    <span className="inline-flex">
+                      <button
+                        className={PRIMARY_BUTTON_SM}
+                        onClick={() => handleHeaderAction(item.action)}
+                        disabled={!item.enabled}
+                      >
+                        {actionRunning && actionState.label === item.label ? <span className="loading loading-spinner loading-xs" /> : null}
+                        {item.label}
+                      </button>
+                    </span>
+                  </DaisyTooltip>
+                ) : (
+                  <button
+                    key={`${item.action?.id || item.label}`}
+                    className={PRIMARY_BUTTON_SM}
+                    onClick={() => handleHeaderAction(item.action)}
+                    disabled={!item.enabled}
+                  >
+                    {actionRunning && actionState.label === item.label ? <span className="loading loading-spinner loading-xs" /> : null}
+                    {item.label}
+                  </button>
+                )
               ))}
               <div className="text-lg font-semibold">{entityLabel}</div>
             </div>
@@ -2618,9 +2672,19 @@ function AppView({
                     <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-50">
                       {bulkActions.map((item) => (
                         <li key={`${item.action?.id || item.label}`}>
-                          <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled}>
-                            {item.label}
-                          </button>
+                          {item.reason ? (
+                            <DaisyTooltip label={item.reason} placement="left">
+                              <span className="block">
+                                <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled}>
+                                  {item.label}
+                                </button>
+                              </span>
+                            </DaisyTooltip>
+                          ) : (
+                            <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled}>
+                              {item.label}
+                            </button>
+                          )}
                         </li>
                       ))}
                     </ul>
@@ -2641,9 +2705,19 @@ function AppView({
                   <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-50">
                     {bulkActions.map((item) => (
                       <li key={`${item.action?.id || item.label}`}>
-                        <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled}>
-                          {item.label}
-                        </button>
+                        {item.reason ? (
+                          <DaisyTooltip label={item.reason} placement="left">
+                            <span className="block">
+                              <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled}>
+                                {item.label}
+                              </button>
+                            </span>
+                          </DaisyTooltip>
+                        ) : (
+                          <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled}>
+                            {item.label}
+                          </button>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -2655,9 +2729,19 @@ function AppView({
                   <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-48 z-50">
                     {secondaryActions.map((item) => (
                       <li key={`${item.action?.id || item.label}`}>
-                        <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled}>
-                          {item.label}
-                        </button>
+                        {item.reason ? (
+                          <DaisyTooltip label={item.reason} placement="left">
+                            <span className="block">
+                              <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled}>
+                                {item.label}
+                              </button>
+                            </span>
+                          </DaisyTooltip>
+                        ) : (
+                          <button onClick={() => handleHeaderAction(item.action)} disabled={!item.enabled}>
+                            {item.label}
+                          </button>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -2717,8 +2801,10 @@ function AppView({
         const visible = resolved.visible_when ? evalCondition(resolved.visible_when, { record: contextRecord || {} }) : true;
         if (!visible) continue;
         let enabled = resolved.enabled_when ? evalCondition(resolved.enabled_when, { record: contextRecord || {} }) : true;
-        if ((resolved.kind === "update_record" || resolved.kind === "transform_record") && !effectiveRecordId) enabled = false;
-        items.push({ action: resolved, label, enabled });
+        const missingRecord = (resolved.kind === "update_record" || resolved.kind === "transform_record") && !effectiveRecordId;
+        if (missingRecord) enabled = false;
+        const reason = enabled ? null : explainActionDisabled(resolved, contextRecord || {}, fieldIndex, { missingRecord });
+        items.push({ action: resolved, label, enabled, reason });
       }
       return items;
     }
