@@ -11,6 +11,10 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: "prompt",
         injectRegister: null,
+        devOptions: {
+          enabled: true,
+          suppressWarnings: true,
+        },
         includeAssets: ["icons/icon.svg", "icons/maskable-icon.svg"],
         manifest: {
           id: "/",
