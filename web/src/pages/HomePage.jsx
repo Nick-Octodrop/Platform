@@ -9,25 +9,19 @@ import { LayoutGrid, Package, Settings as SettingsIcon, Sparkles } from "lucide-
 import { useAccessContext } from "../access.js";
 import { appendOctoAiFrameParams, deriveAppHomeRoute } from "../apps/appShellUtils.js";
 import AppModuleIcon from "../components/AppModuleIcon.jsx";
-import { getUiPrefs, setModuleOrder, setUiPrefs } from "../api.js";
+import { getUiPrefs, peekUiPrefsCache, setUiPrefs } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 
-function moveIdBefore(ids, sourceId, targetId) {
+function swapIds(ids, sourceId, targetId) {
   if (!sourceId || !targetId || sourceId === targetId) return ids;
-  const next = ids.filter((id) => id !== sourceId);
-  const targetIndex = next.indexOf(targetId);
-  if (targetIndex === -1) return ids;
-  next.splice(targetIndex, 0, sourceId);
+  const sourceIndex = ids.indexOf(sourceId);
+  const targetIndex = ids.indexOf(targetId);
+  if (sourceIndex === -1 || targetIndex === -1) return ids;
+  const next = [...ids];
+  const temp = next[sourceIndex];
+  next[sourceIndex] = next[targetIndex];
+  next[targetIndex] = temp;
   return next;
-}
-
-function arraysEqual(left, right) {
-  if (left === right) return true;
-  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
-  for (let i = 0; i < left.length; i += 1) {
-    if (left[i] !== right[i]) return false;
-  }
-  return true;
 }
 
 function applyOrderedIds(items, orderIds) {
@@ -46,9 +40,11 @@ function AppTile({
   draggable = false,
   onDragStart,
   onDragEnd,
+  onDragEnter,
   onDragOver,
   onDrop,
   isDragging = false,
+  isDropTarget = false,
 }) {
   const disabled = module && !module.enabled;
   const icon = app.icon;
@@ -59,11 +55,14 @@ function AppTile({
       draggable={draggable}
       onDragStart={draggable ? onDragStart : undefined}
       onDragEnd={draggable ? onDragEnd : undefined}
+      onDragEnter={draggable ? onDragEnter : undefined}
       onDragOver={draggable ? onDragOver : undefined}
       onDrop={draggable ? onDrop : undefined}
     >
       <button
-        className="bg-base-100 border border-base-200 rounded-2xl shadow hover:shadow-md transition w-24 h-24 sm:w-24 sm:h-24 md:w-28 md:h-28 flex items-center justify-center"
+        className={`bg-base-100 border rounded-2xl shadow hover:shadow-md transition w-24 h-24 sm:w-24 sm:h-24 md:w-28 md:h-28 flex items-center justify-center ${
+          isDropTarget ? "border-primary shadow-md" : "border-base-200"
+        }`}
         onClick={() => onOpen(app)}
         type="button"
       >
@@ -82,21 +81,28 @@ function AppTile({
 }
 
 export default function HomePage({ user }) {
-  const { modules, loading, actions } = useModuleStore();
+  const { modules, loading } = useModuleStore();
   const navigate = useNavigate();
   const location = useLocation();
+  const initialPrefs = peekUiPrefsCache();
+  const initialHomeOrder = Array.isArray(initialPrefs?.workspace?.layout_prefs?.home_app_order)
+    ? initialPrefs.workspace.layout_prefs.home_app_order.filter((id) => typeof id === "string" && id.trim())
+    : [];
   const [iconVersion, setIconVersion] = useState(0);
   const [openingAppId, setOpeningAppId] = useState("");
   const [draggingAppId, setDraggingAppId] = useState("");
-  const [savedHomeOrderIds, setSavedHomeOrderIds] = useState([]);
-  const [homeOrderIds, setHomeOrderIds] = useState([]);
+  const [dropTargetId, setDropTargetId] = useState("");
+  const [savedHomeOrderIds, setSavedHomeOrderIds] = useState(initialHomeOrder);
+  const [homeOrderIds, setHomeOrderIds] = useState(initialHomeOrder);
+  const [layoutLoading, setLayoutLoading] = useState(() => Boolean(user) && initialHomeOrder.length === 0);
   const [reorderBusy, setReorderBusy] = useState(false);
   const dragDropCommittedRef = useRef(false);
+  const dragStartOrderIdsRef = useRef([]);
   const { isSuperadmin, hasCapability } = useAccessContext();
   const { pushToast } = useToast();
   const canSeeOctoAi = Boolean(isSuperadmin);
   const canReorderApps = hasCapability("modules.manage");
-  const homeLoading = loading;
+  const homeLoading = loading || layoutLoading;
   const transitioningToApp = Boolean(openingAppId);
 
   useEffect(() => {
@@ -132,7 +138,21 @@ export default function HomePage({ user }) {
   useEffect(() => {
     let active = true;
     async function loadWorkspaceHomeOrder() {
-      if (!user) return;
+      if (!user) {
+        setLayoutLoading(false);
+        return;
+      }
+      const cachedPrefs = peekUiPrefsCache();
+      const cachedOrder = Array.isArray(cachedPrefs?.workspace?.layout_prefs?.home_app_order)
+        ? cachedPrefs.workspace.layout_prefs.home_app_order.filter((id) => typeof id === "string" && id.trim())
+        : null;
+      if (cachedOrder) {
+        setSavedHomeOrderIds(cachedOrder);
+        setHomeOrderIds(cachedOrder);
+        setLayoutLoading(false);
+      } else {
+        setLayoutLoading(true);
+      }
       try {
         const prefs = await getUiPrefs();
         if (!active) return;
@@ -144,6 +164,8 @@ export default function HomePage({ user }) {
         if (!active) return;
         setSavedHomeOrderIds([]);
         setHomeOrderIds([]);
+      } finally {
+        if (active) setLayoutLoading(false);
       }
     }
     loadWorkspaceHomeOrder();
@@ -167,86 +189,97 @@ export default function HomePage({ user }) {
     navigate(appendOctoAiFrameParams(targetRoute, location.search));
   }
 
-  const allApps = useMemo(() => applyOrderedIds(allBaseApps, homeOrderIds), [allBaseApps, homeOrderIds]);
-
   const baseOrderedIds = useMemo(() => {
     return applyOrderedIds(allBaseApps, savedHomeOrderIds).map((app) => app.id);
   }, [allBaseApps, savedHomeOrderIds]);
 
+  const previewOrderIds = useMemo(() => {
+    const source = homeOrderIds.length ? homeOrderIds : baseOrderedIds;
+    if (!draggingAppId || !dropTargetId || draggingAppId === dropTargetId) return source;
+    return swapIds(source, draggingAppId, dropTargetId);
+  }, [baseOrderedIds, draggingAppId, dropTargetId, homeOrderIds]);
+
+  const allApps = useMemo(() => applyOrderedIds(allBaseApps, previewOrderIds), [allBaseApps, previewOrderIds]);
+
   async function persistHomeOrder(nextOrderIds) {
     setReorderBusy(true);
-    setHomeOrderIds(nextOrderIds);
+    const normalizedNextOrder = applyOrderedIds(allBaseApps, nextOrderIds).map((app) => app.id);
+    setHomeOrderIds(normalizedNextOrder);
     try {
-      const moduleIdSet = new Set(modules.map((module) => module.module_id));
-      const currentInstalledOrderIds = installedApps.map((app) => app.id);
-      const nextInstalledOrderIds = nextOrderIds.filter((id) => moduleIdSet.has(id));
-      const installedOrderChanged = !arraysEqual(currentInstalledOrderIds, nextInstalledOrderIds);
-
-      if (installedOrderChanged) {
-        await Promise.all(nextInstalledOrderIds.map((id, index) => setModuleOrder(id, index + 1)));
-      }
-
       await setUiPrefs({
         workspace: {
           layout_prefs: {
-            home_app_order: nextOrderIds,
+            home_app_order: normalizedNextOrder,
           },
         },
       });
-      const prefs = await getUiPrefs();
-      const persistedOrder = prefs?.workspace?.layout_prefs?.home_app_order;
-      const normalizedPersistedOrder = Array.isArray(persistedOrder)
-        ? persistedOrder.filter((id) => typeof id === "string" && id.trim())
-        : nextOrderIds;
-      const mergedPersistedOrder = applyOrderedIds(allBaseApps, normalizedPersistedOrder).map((app) => app.id);
-      setSavedHomeOrderIds(mergedPersistedOrder);
-      setHomeOrderIds(mergedPersistedOrder);
-      if (installedOrderChanged) {
-        await actions.refresh({ force: true });
-      }
+      setSavedHomeOrderIds(normalizedNextOrder);
+      setHomeOrderIds(normalizedNextOrder);
     } catch (err) {
       setHomeOrderIds(baseOrderedIds);
       pushToast("error", err?.message || "Failed to save app order");
     } finally {
       setReorderBusy(false);
       setDraggingAppId("");
+      setDropTargetId("");
     }
   }
 
-  function handleTileDragStart(appId) {
+  function handleTileDragStart(event, appId) {
     if (!canReorderApps || reorderBusy) return;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", appId);
+    dragStartOrderIdsRef.current = homeOrderIds.length ? homeOrderIds : baseOrderedIds;
     dragDropCommittedRef.current = false;
     setDraggingAppId(appId);
+    setDropTargetId(appId);
+  }
+
+  function handleTileDragEnter(targetId) {
+    if (!canReorderApps || reorderBusy || !draggingAppId || draggingAppId === targetId) return;
+    setDropTargetId(targetId);
   }
 
   function handleTileDragOver(event, targetId) {
     if (!canReorderApps || reorderBusy || !draggingAppId || draggingAppId === targetId) return;
     event.preventDefault();
-    setHomeOrderIds((current) => {
-      const source = current.length ? current : baseOrderedIds;
-      return moveIdBefore(source, draggingAppId, targetId);
-    });
+    event.dataTransfer.dropEffect = "move";
+    if (dropTargetId !== targetId) {
+      setDropTargetId(targetId);
+    }
   }
 
   async function handleTileDrop(event, targetId) {
     event.preventDefault();
     if (!canReorderApps || reorderBusy || !draggingAppId || draggingAppId === targetId) {
       setDraggingAppId("");
+      setDropTargetId("");
       return;
     }
     dragDropCommittedRef.current = true;
-    const source = homeOrderIds.length ? homeOrderIds : baseOrderedIds;
-    const nextOrderIds = moveIdBefore(source, draggingAppId, targetId);
+    const source = dragStartOrderIdsRef.current.length ? dragStartOrderIdsRef.current : homeOrderIds.length ? homeOrderIds : baseOrderedIds;
+    const nextOrderIds = swapIds(source, draggingAppId, dropTargetId || targetId);
     await persistHomeOrder(nextOrderIds);
   }
 
   function handleTileDragEnd() {
     if (reorderBusy) return;
-    setDraggingAppId("");
     if (dragDropCommittedRef.current) {
       dragDropCommittedRef.current = false;
+      dragStartOrderIdsRef.current = [];
+      setDraggingAppId("");
+      setDropTargetId("");
       return;
     }
+    if (draggingAppId && dropTargetId && draggingAppId !== dropTargetId) {
+      dragDropCommittedRef.current = true;
+      const source = dragStartOrderIdsRef.current.length ? dragStartOrderIdsRef.current : baseOrderedIds;
+      void persistHomeOrder(swapIds(source, draggingAppId, dropTargetId));
+      return;
+    }
+    dragStartOrderIdsRef.current = [];
+    setDraggingAppId("");
+    setDropTargetId("");
     setHomeOrderIds(baseOrderedIds);
   }
 
@@ -273,8 +306,10 @@ export default function HomePage({ user }) {
                     onOpen={handleOpen}
                     draggable={canReorderApps}
                     isDragging={draggingAppId === app.id}
-                    onDragStart={() => handleTileDragStart(app.id)}
+                    isDropTarget={Boolean(draggingAppId) && dropTargetId === app.id && draggingAppId !== app.id}
+                    onDragStart={(event) => handleTileDragStart(event, app.id)}
                     onDragEnd={handleTileDragEnd}
+                    onDragEnter={() => handleTileDragEnter(app.id)}
                     onDragOver={(event) => handleTileDragOver(event, app.id)}
                     onDrop={(event) => handleTileDrop(event, app.id)}
                   />

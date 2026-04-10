@@ -14,8 +14,10 @@ ALLOWED_OPS = {
     "lt",
     "lte",
     "in",
+    "not_in",
     "contains",
     "exists",
+    "not_exists",
     "and",
     "or",
     "not",
@@ -39,6 +41,12 @@ def _get_by_path(data: dict, path: str) -> Any:
 def _resolve_ref(ref: str, context: dict) -> Any:
     if not isinstance(ref, str):
         return None
+    # Automation expressions commonly use plain context paths like
+    # `trigger.record.fields.status` rather than `$record.foo`.
+    if not ref.startswith("$"):
+        direct = _get_by_path(context, ref)
+        if direct is not None:
+            return direct
     if ref == "$today":
         return datetime.now().date().isoformat()
     if ref == "$now":
@@ -68,8 +76,15 @@ def _resolve_ref(ref: str, context: dict) -> Any:
 
 
 def _resolve_operand(operand: Any, context: dict) -> Any:
-    if isinstance(operand, dict) and "ref" in operand:
-        return _resolve_ref(operand.get("ref"), context)
+    if isinstance(operand, dict):
+        if "ref" in operand:
+            return _resolve_ref(operand.get("ref"), context)
+        # Automation editor uses `{ var: "trigger.record_id" }` and
+        # `{ literal: ... }` rather than manifest `{ ref: ... }`.
+        if "var" in operand:
+            return _resolve_ref(operand.get("var"), context)
+        if "literal" in operand:
+            return operand.get("literal")
     return operand
 
 
@@ -81,13 +96,17 @@ def eval_condition(condition: dict | None, context: dict) -> bool:
         return False
 
     if op == "and":
-        items = condition.get("conditions") or []
+        items = condition.get("conditions")
+        if not isinstance(items, list):
+            items = condition.get("children") or []
         return all(eval_condition(c, context) for c in items)
     if op == "or":
-        items = condition.get("conditions") or []
+        items = condition.get("conditions")
+        if not isinstance(items, list):
+            items = condition.get("children") or []
         return any(eval_condition(c, context) for c in items)
     if op == "not":
-        return not eval_condition(condition.get("condition"), context)
+        return not eval_condition(condition.get("condition") or condition.get("child"), context)
 
     if "left" in condition or "right" in condition:
         left = _resolve_operand(condition.get("left"), context)
@@ -99,6 +118,8 @@ def eval_condition(condition: dict | None, context: dict) -> bool:
 
     if op == "exists":
         return left is not None and left != ""
+    if op == "not_exists":
+        return left is None or left == ""
     if op == "eq":
         return left == right
     if op == "neq":
@@ -113,6 +134,8 @@ def eval_condition(condition: dict | None, context: dict) -> bool:
         return left is not None and right is not None and left <= right
     if op == "in":
         return isinstance(right, list) and left in right
+    if op == "not_in":
+        return isinstance(right, list) and left not in right
     if op == "contains":
         if isinstance(left, list):
             return right in left

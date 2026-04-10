@@ -413,11 +413,27 @@ def _lookup_path(ctx: dict, path: str) -> object:
     return current
 
 
+def _resolve_raw_template_ref(value: str, ctx: dict) -> object:
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    if not (stripped.startswith("{{") and stripped.endswith("}}")):
+        return None
+    inner = stripped[2:-2].strip()
+    if not inner or any(token in inner for token in ("|", "(", ")", "[", "]", "{", "}", "+", "-", "*", "/", "~", ",")):
+        return None
+    return _lookup_path(ctx, inner)
+
+
 def _resolve_value(value: object, ctx: dict) -> object:
     if isinstance(value, dict) and set(value.keys()) == {"var"}:
         var_name = value.get("var")
         if isinstance(var_name, str):
             return _lookup_path(ctx, var_name)
+    if isinstance(value, str):
+        raw_ref = _resolve_raw_template_ref(value, ctx)
+        if raw_ref is not None:
+            return raw_ref
     if isinstance(value, list):
         return [_resolve_value(item, ctx) for item in value]
     if isinstance(value, dict):
@@ -1536,7 +1552,7 @@ def _execute_step_runtime(
         if not allow_delay:
             raise RuntimeError("Delay steps are not supported inside nested branches yet")
         seconds = step.get("seconds")
-        until = step.get("until")
+        until = step.get("until") or step.get("target_time")
         delay_seconds = None
         if isinstance(seconds, (int, float)):
             delay_seconds = max(0, int(seconds))

@@ -37944,8 +37944,8 @@ def _validate_automation_payload(data: dict, for_update: bool = False) -> list[d
                         if isinstance(else_steps, list):
                             _validate_steps_list(else_steps, f"{step_path}.else_steps", allow_delay=False)
                     if kind == "delay":
-                        if "seconds" not in step and "until" not in step:
-                            errors.append(_issue("AUTOMATION_STEP_INVALID", "seconds or until required", step_path))
+                        if "seconds" not in step and "until" not in step and "target_time" not in step:
+                            errors.append(_issue("AUTOMATION_STEP_INVALID", "seconds, until, or target_time required", step_path))
                     if kind == "foreach":
                         if "over" not in step:
                             errors.append(_issue("AUTOMATION_STEP_INVALID", "over is required", f"{step_path}.over"))

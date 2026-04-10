@@ -552,6 +552,17 @@ export function peekModulesCache() {
   return null;
 }
 
+export function peekUiPrefsCache() {
+  if (isOctoAiSandboxActive()) return null;
+  const now = Date.now();
+  const key = requestKey("GET", "/prefs/ui", "", null);
+  const ts = requestCacheTs.get(key) || 0;
+  if (requestCache.has(key) && now - ts < 10000) {
+    return requestCache.get(key);
+  }
+  return null;
+}
+
 export async function getUiPrefs() {
   return apiFetch("/prefs/ui");
 }

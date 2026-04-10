@@ -1412,6 +1412,38 @@ export default function AutomationEditorPage({ user }) {
     );
   }
 
+  function buildConditionFieldOptions(selectedEntityFields, commonOptions, fieldPathPrefix = "trigger.record.fields.") {
+    const entityFields = Array.isArray(selectedEntityFields) ? selectedEntityFields : [];
+    const recordFieldOptions = entityFields.map((field) => ({
+      value: `${fieldPathPrefix}${field.id}`,
+      label: field.label || field.id,
+      type: field.type,
+      options: field.options || [],
+      entity: field.entity,
+      display_field: field.display_field,
+      id: field.id,
+    }));
+    return [...(Array.isArray(commonOptions) ? commonOptions : []), ...recordFieldOptions];
+  }
+
+  function coerceConditionLiteralValue(raw, { fieldDef, op, isNumericOp }) {
+    const fieldType = String(fieldDef?.type || "string").toLowerCase();
+    if (op === "in" || op === "not_in") {
+      return String(raw || "")
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .map(parseEditableValue);
+    }
+    if (fieldType === "number" || isNumericOp) {
+      return raw === "" ? "" : Number(raw);
+    }
+    if (fieldType === "boolean" || fieldType === "bool") {
+      return raw === "true";
+    }
+    return raw;
+  }
+
   const memberOptions = useMemo(() => {
     if (!Array.isArray(meta.members)) return [];
     return meta.members
@@ -4034,13 +4066,6 @@ export default function AutomationEditorPage({ user }) {
           const leftVar = expr?.left?.var || "";
           const op = expr?.op || "eq";
           const rightVal = expr?.right?.literal ?? "";
-          const fieldPathPrefix = "trigger.record.fields.";
-          const fieldPathOptions = selectedEntityFields.map((field) => ({
-            value: `${fieldPathPrefix}${field.id}`,
-            label: field.label || field.id,
-            type: field.type,
-            options: field.options || [],
-          }));
           const commonOptions = triggerMode === "webhook"
             ? [
                 { value: "trigger.event", label: "Trigger event", type: "string", options: [] },
@@ -4057,30 +4082,23 @@ export default function AutomationEditorPage({ user }) {
                 { value: "trigger.event", label: "Trigger event", type: "string", options: [] },
                 { value: "trigger.entity_id", label: "Trigger entity", type: "string", options: [] },
                 { value: "trigger.record_id", label: "Trigger record", type: "string", options: [] },
-                { value: "trigger.user_id", label: "Trigger user", type: "string", options: [] },
+                { value: "trigger.user_id", label: "Trigger user", type: "user", options: [] },
               ];
-          const availableFieldPaths = [...commonOptions, ...fieldPathOptions];
+          const availableFieldPaths = buildConditionFieldOptions(selectedEntityFields, commonOptions);
+          const fieldPathOptions = availableFieldPaths.filter((item) => !commonOptions.some((opt) => opt.value === item.value));
           const selectedFieldDef = availableFieldPaths.find((item) => item.value === leftVar) || null;
           const isExistsOp = op === "exists" || op === "not_exists";
           const isInListOp = op === "in" || op === "not_in";
           const isNumericOp = ["gt", "gte", "lt", "lte"].includes(op);
-          const enumOptions = Array.isArray(selectedFieldDef?.options) ? selectedFieldDef.options : [];
-          const hasEnumOptions = enumOptions.length > 0;
-          const fieldType = selectedFieldDef?.type || "string";
+          const fieldType = String(selectedFieldDef?.type || "string").toLowerCase();
           const stopOnFalse = Boolean(step.stop_on_false);
 
           function updateConditionValue(raw) {
-            let nextValue = raw;
-            if (isInListOp) {
-              nextValue = String(raw || "")
-                .split(",")
-                .map((part) => part.trim())
-                .filter(Boolean);
-            } else if (fieldType === "number" || isNumericOp) {
-              nextValue = raw === "" ? "" : Number(raw);
-            } else if (fieldType === "boolean") {
-              nextValue = raw === "true";
-            }
+            const nextValue = coerceConditionLiteralValue(raw, {
+              fieldDef: selectedFieldDef,
+              op,
+              isNumericOp,
+            });
             updateStep(index, { expr: { ...expr, right: { literal: nextValue } } });
           }
 
@@ -4157,41 +4175,13 @@ export default function AutomationEditorPage({ user }) {
                 <span className="label-text">Against</span>
                 {isExistsOp ? (
                   <input className="input input-bordered" value="No value needed for this operator" disabled />
-                ) : hasEnumOptions && !isInListOp ? (
-                  <AppSelect
-                    className="select select-bordered"
-                    value={String(rightVal ?? "")}
-                    onChange={(e) => updateConditionValue(e.target.value)}
-                  >
-                    <option value="">Select value…</option>
-                    {enumOptions.map((opt) => {
-                      const value = typeof opt === "string" ? opt : opt?.value;
-                      const label = typeof opt === "string" ? opt : opt?.label || opt?.value;
-                      if (!value) return null;
-                      return (
-                        <option key={value} value={value}>
-                          {label}
-                        </option>
-                      );
-                    })}
-                  </AppSelect>
-                ) : fieldType === "boolean" ? (
-                  <AppSelect
-                    className="select select-bordered"
-                    value={String(Boolean(rightVal))}
-                    onChange={(e) => updateConditionValue(e.target.value)}
-                  >
-                    <option value="true">True</option>
-                    <option value="false">False</option>
-                  </AppSelect>
                 ) : (
-                  <input
-                    className="input input-bordered"
-                    type={isNumericOp || fieldType === "number" ? "number" : "text"}
-                    value={Array.isArray(rightVal) ? rightVal.join(", ") : rightVal}
-                    onChange={(e) => updateConditionValue(e.target.value)}
-                    placeholder={isInListOp ? "value1, value2, value3" : ""}
-                  />
+                  renderTypedValueEditor({
+                    fieldDef: selectedFieldDef,
+                    value: Array.isArray(rightVal) ? rightVal.join(", ") : String(rightVal ?? ""),
+                    onChange: updateConditionValue,
+                    placeholder: isInListOp ? "value1, value2, value3" : "",
+                  })
                 )}
                 <span className="label label-text-alt opacity-50">
                   {isInListOp ? "Use comma-separated values." : "Condition runs against trigger data."}
@@ -5385,40 +5375,26 @@ export default function AutomationEditorPage({ user }) {
                   const leftVar = expr?.left?.var || "";
                   const op = expr?.op || "eq";
                   const rightVal = expr?.right?.literal ?? "";
-                  const fieldPathPrefix = "trigger.record.fields.";
-                  const fieldPathOptions = selectedEntityFields.map((field) => ({
-                    value: `${fieldPathPrefix}${field.id}`,
-                    label: field.label || field.id,
-                    type: field.type,
-                    options: field.options || [],
-                  }));
                   const commonOptions = [
                     { value: "trigger.event", label: "Trigger event", type: "string", options: [] },
                     { value: "trigger.entity_id", label: "Trigger entity", type: "string", options: [] },
                     { value: "trigger.record_id", label: "Trigger record", type: "string", options: [] },
+                    { value: "trigger.user_id", label: "Trigger user", type: "user", options: [] },
                   ];
-                  const availableFieldPaths = [...commonOptions, ...fieldPathOptions];
+                  const availableFieldPaths = buildConditionFieldOptions(selectedEntityFields, commonOptions);
                   const selectedFieldDef = availableFieldPaths.find((item) => item.value === leftVar) || null;
                   const isExistsOp = op === "exists" || op === "not_exists";
                   const isInListOp = op === "in" || op === "not_in";
                   const isNumericOp = ["gt", "gte", "lt", "lte"].includes(op);
-                  const enumOptions = Array.isArray(selectedFieldDef?.options) ? selectedFieldDef.options : [];
-                  const hasEnumOptions = enumOptions.length > 0;
-                  const fieldType = selectedFieldDef?.type || "string";
+                  const fieldType = String(selectedFieldDef?.type || "string").toLowerCase();
                   const stopOnFalse = Boolean(step.stop_on_false);
 
                   function updateConditionValue(raw) {
-                    let nextValue = raw;
-                    if (isInListOp) {
-                      nextValue = String(raw || "")
-                        .split(",")
-                        .map((part) => part.trim())
-                        .filter(Boolean);
-                    } else if (fieldType === "number" || isNumericOp) {
-                      nextValue = raw === "" ? "" : Number(raw);
-                    } else if (fieldType === "boolean") {
-                      nextValue = raw === "true";
-                    }
+                    const nextValue = coerceConditionLiteralValue(raw, {
+                      fieldDef: selectedFieldDef,
+                      op,
+                      isNumericOp,
+                    });
                     updateStep(index, { expr: { ...expr, right: { literal: nextValue } } });
                   }
 
@@ -5490,8 +5466,8 @@ export default function AutomationEditorPage({ user }) {
                           <input className="input input-bordered" value="No value needed for this operator" disabled />
                         ) : !isInListOp ? (
                           renderTypedValueEditor({
-                            fieldDef: selectedFieldDef || { type: fieldType, options: enumOptions },
-                            value: Array.isArray(rightVal) ? rightVal.join(", ") : rightVal,
+                            fieldDef: selectedFieldDef,
+                            value: Array.isArray(rightVal) ? rightVal.join(", ") : String(rightVal ?? ""),
                             onChange: updateConditionValue,
                             placeholder: triggerMode === "webhook" ? "ops@example.com" : "",
                           })
@@ -5499,7 +5475,7 @@ export default function AutomationEditorPage({ user }) {
                           <input
                             className="input input-bordered"
                             type={isNumericOp || fieldType === "number" ? "number" : "text"}
-                            value={Array.isArray(rightVal) ? rightVal.join(", ") : rightVal}
+                            value={Array.isArray(rightVal) ? rightVal.join(", ") : String(rightVal ?? "")}
                             onChange={(e) => updateConditionValue(e.target.value)}
                             placeholder={isInListOp ? "value1, value2, value3" : ""}
                           />
