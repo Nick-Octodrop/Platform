@@ -262,14 +262,25 @@ export default function App() {
         setUpdatePromptVisible(true);
       }
     }
+    if (window.__octoWebUpdateReady && getPwaSurfaceState().isStandalone) {
+      setUpdatePromptVisible(true);
+    }
     window.addEventListener("octo:web-pwa-update-ready", handleUpdateReady);
     return () => window.removeEventListener("octo:web-pwa-update-ready", handleUpdateReady);
   }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
-    const dismissalKey = "octo:pwa-install-dismissed-v1";
-    const hasDismissed = window.localStorage.getItem(dismissalKey) === "1";
+    const dismissalKey = "octo:pwa-install-dismissed-at-v1";
+    const dismissalCooldownMs = 7 * 24 * 60 * 60 * 1000;
+
+    function hasDismissedRecently() {
+      const raw = window.localStorage.getItem(dismissalKey);
+      if (!raw) return false;
+      const dismissedAt = Number(raw);
+      if (!Number.isFinite(dismissedAt)) return false;
+      return Date.now() - dismissedAt < dismissalCooldownMs;
+    }
 
     function refreshInstallAvailability() {
       const { isStandalone, isMobileBrowser, isIos, isSafari } = getPwaSurfaceState();
@@ -279,12 +290,12 @@ export default function App() {
       }
       if (installPromptEvent) {
         setInstallMode("browser");
-        setInstallPromptVisible(!hasDismissed);
+        setInstallPromptVisible(!hasDismissedRecently());
         return;
       }
       if (isIos && isSafari) {
         setInstallMode("ios");
-        setInstallPromptVisible(!hasDismissed);
+        setInstallPromptVisible(!hasDismissedRecently());
         return;
       }
       setInstallMode("browser");
@@ -301,7 +312,7 @@ export default function App() {
       }
       setInstallPromptEvent(event);
       setInstallMode("browser");
-      if (!hasDismissed) {
+      if (!hasDismissedRecently()) {
         setInstallPromptVisible(true);
       }
     }
@@ -315,9 +326,13 @@ export default function App() {
     refreshInstallAvailability();
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
     window.addEventListener("appinstalled", handleAppInstalled);
+    window.addEventListener("focus", refreshInstallAvailability);
+    document.addEventListener("visibilitychange", refreshInstallAvailability);
     return () => {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
       window.removeEventListener("appinstalled", handleAppInstalled);
+      window.removeEventListener("focus", refreshInstallAvailability);
+      document.removeEventListener("visibilitychange", refreshInstallAvailability);
     };
   }, [installPromptEvent]);
 
@@ -349,7 +364,7 @@ export default function App() {
 
   function handleDismissInstallPrompt() {
     if (typeof window !== "undefined") {
-      window.localStorage.setItem("octo:pwa-install-dismissed-v1", "1");
+      window.localStorage.setItem("octo:pwa-install-dismissed-at-v1", String(Date.now()));
     }
     setInstallPromptVisible(false);
   }

@@ -1,0 +1,163 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "contacts",
+    "key": "contacts",
+    "name": "Contacts",
+    "version": "1.0.0",
+    "description": "Directory of customers, suppliers, and partners.",
+    "category": "CRM",
+    "icon_key": "lucide:Users"
+  },
+  "app": {
+    "home": "page:contact.list_page",
+    "defaults": {
+      "entity_home_page": "page:contact.list_page",
+      "entity_form_page": "page:contact.form_page",
+      "entities": {
+        "entity.contact": {
+          "entity_home_page": "page:contact.list_page",
+          "entity_form_page": "page:contact.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "CRM",
+        "items": [
+          { "label": "Contacts", "to": "page:contact.list_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.contact",
+      "label": "Contact",
+      "display_field": "contact.name",
+      "fields": [
+        { "id": "contact.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "contact.name", "type": "string", "label": "Name", "required": true },
+        {
+          "id": "contact.type",
+          "type": "enum",
+          "label": "Type",
+          "options": [
+            { "value": "customer", "label": "Customer" },
+            { "value": "supplier", "label": "Supplier" },
+            { "value": "partner", "label": "Partner" }
+          ]
+        },
+        { "id": "contact.owner_id", "type": "user", "label": "Owner" },
+        { "id": "contact.email", "type": "string", "label": "Email" },
+        { "id": "contact.phone", "type": "string", "label": "Phone" },
+        { "id": "contact.country", "type": "string", "label": "Country" },
+        { "id": "contact.billing_street", "type": "string", "label": "Billing Street" },
+        { "id": "contact.billing_city", "type": "string", "label": "Billing City" },
+        { "id": "contact.billing_state", "type": "string", "label": "Billing State" },
+        { "id": "contact.billing_postcode", "type": "string", "label": "Billing Postcode" },
+        { "id": "contact.billing_country", "type": "string", "label": "Billing Country" },
+        { "id": "contact.notes", "type": "text", "label": "Notes" },
+        { "id": "contact.is_active", "type": "bool", "label": "Active", "default": true }
+      ]
+    }
+  ],
+  "actions": [
+    { "id": "action.contact_new", "kind": "open_form", "label": "New Contact", "target": "contact.form" },
+    {
+      "id": "action.contact_deactivate",
+      "kind": "update_record",
+      "entity_id": "entity.contact",
+      "label": "Deactivate",
+      "patch": { "contact.is_active": false },
+      "visible_when": { "op": "eq", "field": "contact.is_active", "value": true }
+    }
+  ],
+  "views": [
+    {
+      "id": "contact.list",
+      "kind": "list",
+      "entity": "entity.contact",
+      "columns": [
+        { "field_id": "contact.name" },
+        { "field_id": "contact.type" },
+        { "field_id": "contact.owner_id" },
+        { "field_id": "contact.email" },
+        { "field_id": "contact.is_active" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.contact_new" }],
+        "open_record_target": "page:contact.form_page",
+        "search": {
+          "enabled": true,
+          "fields": ["contact.name", "contact.email", "contact.phone", "contact.country"]
+        }
+      }
+    },
+    {
+      "id": "contact.form",
+      "kind": "form",
+      "entity": "entity.contact",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Contact",
+          "layout": "columns",
+          "columns": 2,
+          "fields": ["contact.name", "contact.type", "contact.owner_id", "contact.email", "contact.phone", "contact.country", "contact.is_active"]
+        },
+        {
+          "id": "addresses",
+          "title": "Addresses",
+          "layout": "columns",
+          "columns": 2,
+          "fields": ["contact.billing_street", "contact.billing_city", "contact.billing_state", "contact.billing_postcode", "contact.billing_country"]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": ["contact.notes"]
+        }
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": ["contact.name", "contact.type", "contact.owner_id", "contact.email", "contact.phone", "contact.country", "contact.is_active"]
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "contact.list_page",
+      "title": "Contacts",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            { "kind": "view", "target": "view:contact.list" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "contact.form_page",
+      "title": "Contact",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            { "kind": "view", "target": "view:contact.form" }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,268 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "work_orders",
+    "key": "work_orders",
+    "name": "Work Orders",
+    "version": "1.0.0",
+    "description": "Operational work order management with scheduling and execution tracking.",
+    "category": "Operations",
+    "icon_key": "lucide:BriefcaseBusiness"
+  },
+  "app": {
+    "home": "page:work_order.list_page",
+    "defaults": {
+      "entity_home_page": "page:work_order.list_page",
+      "entity_form_page": "page:work_order.form_page",
+      "entities": {
+        "entity.work_order": {
+          "entity_home_page": "page:work_order.list_page",
+          "entity_form_page": "page:work_order.form_page"
+        },
+        "entity.work_order_line": {
+          "entity_home_page": "page:work_order_line.list_page",
+          "entity_form_page": "page:work_order_line.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Operations",
+        "items": [
+          { "label": "Work Orders", "to": "page:work_order.list_page" },
+          { "label": "Open Work Orders", "to": "page:work_order.open_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.work_order",
+      "label": "Work Order",
+      "display_field": "work_order.number",
+      "fields": [
+        { "id": "work_order.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "work_order.number", "type": "string", "label": "Work Order Number", "required": true },
+        { "id": "work_order.title", "type": "string", "label": "Title", "required": true },
+        { "id": "work_order.contact_id", "type": "lookup", "label": "Contact", "entity": "entity.contact", "display_field": "contact.name", "required": true },
+        {
+          "id": "work_order.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "new",
+          "options": [
+            { "value": "new", "label": "New" },
+            { "value": "planned", "label": "Planned" },
+            { "value": "in_progress", "label": "In Progress" },
+            { "value": "completed", "label": "Completed" },
+            { "value": "cancelled", "label": "Cancelled" }
+          ]
+        },
+        { "id": "work_order.priority", "type": "enum", "label": "Priority", "options": [{ "value": "low", "label": "Low" }, { "value": "normal", "label": "Normal" }, { "value": "high", "label": "High" }] },
+        { "id": "work_order.owner_id", "type": "user", "label": "Owner" },
+        { "id": "work_order.assignee_id", "type": "user", "label": "Assignee" },
+        { "id": "work_order.participant_ids", "type": "users", "label": "Participants" },
+        { "id": "work_order.start_date", "type": "date", "label": "Start Date" },
+        { "id": "work_order.due_date", "type": "date", "label": "Due Date" },
+        { "id": "work_order.scheduled_start", "type": "datetime", "label": "Scheduled Start" },
+        { "id": "work_order.scheduled_end", "type": "datetime", "label": "Scheduled End" },
+        { "id": "work_order.location", "type": "string", "label": "Location" },
+        { "id": "work_order.description", "type": "text", "label": "Description" },
+        { "id": "work_order.attachments", "type": "attachments", "label": "Attachments" }
+      ]
+    },
+    {
+      "id": "entity.work_order_line",
+      "label": "Work Order Line",
+      "display_field": "work_order_line.description",
+      "fields": [
+        { "id": "work_order_line.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "work_order_line.work_order_id", "type": "lookup", "label": "Work Order", "entity": "entity.work_order", "display_field": "work_order.number", "required": true },
+        { "id": "work_order_line.description", "type": "string", "label": "Description", "required": true },
+        { "id": "work_order_line.qty", "type": "number", "label": "Qty", "default": 1 },
+        { "id": "work_order_line.status", "type": "enum", "label": "Status", "options": [{ "value": "open", "label": "Open" }, { "value": "done", "label": "Done" }] }
+      ]
+    }
+  ],
+  "workflows": [
+    {
+      "id": "workflow.work_order",
+      "entity": "entity.work_order",
+      "status_field": "work_order.status",
+      "states": [
+        { "id": "new", "label": "New", "order": 1 },
+        { "id": "planned", "label": "Planned", "order": 2 },
+        { "id": "in_progress", "label": "In Progress", "order": 3 },
+        { "id": "completed", "label": "Completed", "order": 4 },
+        { "id": "cancelled", "label": "Cancelled", "order": 5 }
+      ],
+      "transitions": [
+        { "from": "new", "to": "planned", "label": "Plan" },
+        { "from": "planned", "to": "in_progress", "label": "Start" },
+        { "from": "in_progress", "to": "completed", "label": "Complete" }
+      ]
+    }
+  ],
+  "actions": [
+    { "id": "action.work_order_new", "kind": "open_form", "label": "New Work Order", "target": "work_order.form" }
+  ],
+  "views": [
+    {
+      "id": "work_order.list",
+      "kind": "list",
+      "entity": "entity.work_order",
+      "columns": [
+        { "field_id": "work_order.number" },
+        { "field_id": "work_order.title" },
+        { "field_id": "work_order.status" },
+        { "field_id": "work_order.assignee_id" },
+        { "field_id": "work_order.due_date" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.work_order_new" }],
+        "open_record_target": "page:work_order.form_page",
+        "search": {
+          "enabled": true,
+          "fields": ["work_order.number", "work_order.title", "work_order.location"]
+        }
+      }
+    },
+    {
+      "id": "work_order.form",
+      "kind": "form",
+      "entity": "entity.work_order",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Work Order",
+          "layout": "columns",
+          "columns": 2,
+          "fields": ["work_order.number", "work_order.title", "work_order.contact_id", "work_order.status", "work_order.priority", "work_order.owner_id", "work_order.assignee_id", "work_order.participant_ids"]
+        },
+        {
+          "id": "schedule",
+          "title": "Schedule",
+          "layout": "columns",
+          "columns": 2,
+          "fields": ["work_order.start_date", "work_order.due_date", "work_order.scheduled_start", "work_order.scheduled_end", "work_order.location"]
+        },
+        {
+          "id": "details",
+          "title": "Details",
+          "fields": ["work_order.description", "work_order.attachments"]
+        }
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": ["work_order.number", "work_order.title", "work_order.status", "work_order.priority", "work_order.owner_id", "work_order.assignee_id", "work_order.start_date", "work_order.due_date", "work_order.scheduled_start", "work_order.scheduled_end", "work_order.location"]
+      }
+    },
+    {
+      "id": "work_order.kanban",
+      "kind": "kanban",
+      "entity": "entity.work_order",
+      "card": {
+        "title_field": "work_order.number",
+        "subtitle_fields": ["work_order.title", "work_order.assignee_id"],
+        "badge_fields": ["work_order.status", "work_order.priority"]
+      }
+    },
+    {
+      "id": "work_order_line.list_inline",
+      "kind": "list",
+      "entity": "entity.work_order_line",
+      "columns": [
+        { "field_id": "work_order_line.description" },
+        { "field_id": "work_order_line.qty" },
+        { "field_id": "work_order_line.status" }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "id": "work_order.list_page",
+      "title": "Work Orders",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            { "kind": "view_modes",
+              "entity_id": "entity.work_order",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:work_order.list" },
+                { "mode": "kanban", "target": "view:work_order.kanban", "default_group_by": "work_order.status" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "work_order.open_page",
+      "title": "Open Work Orders",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.work_order",
+              "default_mode": "kanban",
+              "record_domain": { "op": "neq", "field": "work_order.status", "value": "completed" },
+              "modes": [
+                { "mode": "list", "target": "view:work_order.list" },
+                { "mode": "kanban", "target": "view:work_order.kanban", "default_group_by": "work_order.status" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "work_order.form_page",
+      "title": "Work Order",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            { "kind": "view", "target": "view:work_order.form" }
+          ]
+        },
+        {
+          "kind": "container",
+          "variant": "card",
+          "title": "Line Items",
+          "content": [
+            {
+              "kind": "related_list",
+              "entity_id": "entity.work_order_line",
+              "target": "view:work_order_line.list_inline",
+              "record_domain": {
+                "op": "eq",
+                "field": "work_order_line.work_order_id",
+                "value": { "ref": "$record.id" }
+              },
+              "create_defaults": {
+                "work_order_line.work_order_id": { "ref": "$record.id" },
+                "work_order_line.qty": 1
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

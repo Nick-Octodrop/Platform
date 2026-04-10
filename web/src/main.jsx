@@ -9,6 +9,14 @@ import { applyBrandColors, applyTheme, getBrandColors, getInitialTheme } from ".
 applyTheme(getInitialTheme());
 applyBrandColors(getBrandColors());
 
+if (typeof document !== "undefined" && typeof navigator !== "undefined") {
+  const ua = navigator.userAgent || "";
+  const isIosTouch = /iPad|iPhone|iPod/.test(ua);
+  if (isIosTouch) {
+    document.documentElement.classList.add("octo-ios-touch");
+  }
+}
+
 function isStandaloneDisplay() {
   if (typeof window === "undefined") return false;
   const displayStandalone = window.matchMedia?.("(display-mode: standalone)")?.matches;
@@ -23,6 +31,7 @@ const updateSW = registerSW({
       updateSW(false);
       return;
     }
+    window.__octoWebUpdateReady = true;
     window.__octoWebApplyUpdate = updateSW;
     window.dispatchEvent(new CustomEvent("octo:web-pwa-update-ready"));
   },

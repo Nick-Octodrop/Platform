@@ -29,20 +29,6 @@ body {
   font-size: 1rem;
 }
 
-/* Prevent iOS Safari focus zoom on touch devices. */
-@media (hover: none) and (pointer: coarse) {
-  input,
-  select,
-  textarea,
-  .input,
-  .select,
-  .textarea,
-  .file-input {
-    font-size: 16px !important;
-    line-height: 1.25rem;
-  }
-}
-
 @layer components {
   .form-control .label-text,
   .fieldset .fieldset-legend {
@@ -375,8 +361,8 @@ body {
   box-shadow: none !important;
 }
 
-/* Final mobile control size override: prevent iOS/PWA zoom on focus. */
-@media (max-width: 768px), (hover: none) and (pointer: coarse), (-webkit-touch-callout: none) {
+/* Prevent iOS Safari/PWA focus zoom without inflating all mobile controls. */
+html.octo-ios-touch
   :is(
     .input,
     .input-bordered,
@@ -390,7 +376,26 @@ body {
     select,
     textarea
   ) {
-    font-size: 16px !important;
-    line-height: 1.25rem !important;
+  font-size: 16px !important;
+  line-height: 1.25rem !important;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  html:not(.octo-ios-touch)
+    :is(
+      .input,
+      .input-bordered,
+      .select,
+      .select-bordered,
+      .textarea,
+      .textarea-bordered,
+      .file-input,
+      .file-input-bordered,
+      input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+      select,
+      textarea
+    ) {
+    font-size: var(--octo-field-font-size) !important;
+    line-height: var(--octo-field-line-height) !important;
   }
 }
