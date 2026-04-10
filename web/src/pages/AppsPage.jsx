@@ -5,7 +5,6 @@ import { useModuleStore } from "../state/moduleStore.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { getAppDisplayName } from "../state/appCatalog.js";
 import { recordRecentApp } from "../state/appUsage.js";
-import { getDefaultOpenRoute, loadEntityIndex } from "../data/entityIndex.js";
 import { apiFetch, invalidateModulesCache, setModuleIcon, setModuleOrder } from "../api.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { MoreVertical, Package } from "lucide-react";
@@ -18,10 +17,11 @@ import {
 } from "../state/heroIconCatalog.js";
 import { useAccessContext } from "../access.js";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
-import { appendOctoAiFrameParams } from "../apps/appShellUtils.js";
+import { appendOctoAiFrameParams, deriveAppHomeRoute } from "../apps/appShellUtils.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 import AppModuleIcon from "../components/AppModuleIcon.jsx";
+import { getManifest } from "../api.js";
 
 // Kept intentionally minimal: App Manager cards shouldn't surface extra status/meta beyond actions + app version.
 
@@ -48,7 +48,6 @@ export default function AppsPage({ user }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("all"); // all | installed | marketplace
-  const [entityIndex, setEntityIndex] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleteMode, setDeleteMode] = useState("keep_records"); // keep_records | delete_records
@@ -75,15 +74,6 @@ export default function AppsPage({ user }) {
     for (const m of modules) map.set(m.module_id, m);
     return map;
   }, [modules]);
-
-  useEffect(() => {
-    async function buildIndex() {
-      if (!user) return;
-      const index = await loadEntityIndex(modules);
-      setEntityIndex(index);
-    }
-    buildIndex();
-  }, [modules, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -126,10 +116,15 @@ export default function AppsPage({ user }) {
     }
   }
 
-  function handleOpen(moduleId) {
+  async function handleOpen(moduleId) {
     recordRecentApp(moduleId);
-    const route = getDefaultOpenRoute(moduleId, entityIndex);
-    navigate(appendOctoAiFrameParams(route));
+    try {
+      const manifestRes = await getManifest(moduleId);
+      const targetRoute = deriveAppHomeRoute(moduleId, manifestRes?.manifest) || `/apps/${moduleId}`;
+      navigate(appendOctoAiFrameParams(targetRoute));
+    } catch {
+      navigate(appendOctoAiFrameParams(`/apps/${moduleId}`));
+    }
   }
 
   function handleDetails(moduleId) {

@@ -4,12 +4,12 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useModuleStore } from "../state/moduleStore.jsx";
 import { getAppDisplayName } from "../state/appCatalog.js";
 import { getAppIcon, subscribeAppIcons } from "../state/appIcons.js";
-import { getDefaultOpenRoute, loadEntityIndex } from "../data/entityIndex.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { LayoutGrid, Package, Settings as SettingsIcon, Sparkles } from "lucide-react";
 import { useAccessContext } from "../access.js";
-import { appendOctoAiFrameParams } from "../apps/appShellUtils.js";
+import { appendOctoAiFrameParams, deriveAppHomeRoute } from "../apps/appShellUtils.js";
 import AppModuleIcon from "../components/AppModuleIcon.jsx";
+import { getManifest } from "../api.js";
 
 function AppTile({ app, module, onOpen }) {
   const disabled = module && !module.enabled;
@@ -40,22 +40,12 @@ export default function HomePage({ user }) {
   const { modules, loading } = useModuleStore();
   const navigate = useNavigate();
   const location = useLocation();
-  const [entityIndex, setEntityIndex] = useState(null);
   const [iconVersion, setIconVersion] = useState(0);
   const [openingAppId, setOpeningAppId] = useState("");
-  const { loading: accessLoading, hasCapability, isSuperadmin } = useAccessContext();
-  const canSeeOctoAi = !accessLoading && isSuperadmin;
-  const homeLoading = loading || accessLoading;
+  const { isSuperadmin } = useAccessContext();
+  const canSeeOctoAi = Boolean(isSuperadmin);
+  const homeLoading = loading;
   const transitioningToApp = Boolean(openingAppId);
-
-  useEffect(() => {
-    async function buildIndex() {
-      if (!user) return;
-      const index = await loadEntityIndex(modules);
-      setEntityIndex(index);
-    }
-    buildIndex();
-  }, [modules, user]);
 
   useEffect(() => {
     return subscribeAppIcons(() => setIconVersion((v) => v + 1));
@@ -80,14 +70,19 @@ export default function HomePage({ user }) {
       }));
   }, [iconVersion, isSuperadmin, modules, user]);
 
-  function handleOpen(app) {
+  async function handleOpen(app) {
     setOpeningAppId(app.id || "app");
     if (app.system) {
       navigate(appendOctoAiFrameParams(app.route));
       return;
     }
-    const route = getDefaultOpenRoute(app.id, entityIndex);
-    navigate(appendOctoAiFrameParams(route));
+    try {
+      const manifestRes = await getManifest(app.id);
+      const targetRoute = deriveAppHomeRoute(app.id, manifestRes?.manifest, { searchLike: location.search }) || `/apps/${app.id}`;
+      navigate(appendOctoAiFrameParams(targetRoute, location.search));
+    } catch {
+      navigate(appendOctoAiFrameParams(`/apps/${app.id}`, location.search));
+    }
   }
 
   const allApps = useMemo(() => {

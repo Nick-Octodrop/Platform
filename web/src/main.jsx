@@ -8,9 +8,21 @@ import { applyBrandColors, applyTheme, getBrandColors, getInitialTheme } from ".
 
 applyTheme(getInitialTheme());
 applyBrandColors(getBrandColors());
+
+function isStandaloneDisplay() {
+  if (typeof window === "undefined") return false;
+  const displayStandalone = window.matchMedia?.("(display-mode: standalone)")?.matches;
+  const navigatorStandalone = typeof window.navigator?.standalone === "boolean" && window.navigator.standalone;
+  return Boolean(displayStandalone || navigatorStandalone);
+}
+
 const updateSW = registerSW({
   immediate: true,
   onNeedRefresh() {
+    if (!isStandaloneDisplay()) {
+      updateSW(false);
+      return;
+    }
     window.__octoWebApplyUpdate = updateSW;
     window.dispatchEvent(new CustomEvent("octo:web-pwa-update-ready"));
   },

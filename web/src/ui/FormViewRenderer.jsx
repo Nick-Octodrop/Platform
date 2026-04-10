@@ -1812,7 +1812,7 @@ function WorkspaceUserField({ field, value, onChange, readonly, members, loading
     <div ref={containerRef} className="relative">
       <div className="relative">
         <input
-          className="input input-bordered w-full pr-10"
+          className="input input-bordered w-full pr-12"
           value={displayValue}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search workspace user..."
@@ -1822,10 +1822,12 @@ function WorkspaceUserField({ field, value, onChange, readonly, members, loading
             setSearch("");
           }}
         />
-        {Boolean(selectedId) && !readonly && !field.readonly && (
+        <div className="pointer-events-none absolute inset-y-0 right-0 flex w-12 items-center justify-center">
           <button
             type="button"
-            className="btn btn-ghost btn-xs btn-circle absolute right-2 top-1/2 z-10 h-7 min-h-7 w-7 min-w-7 -translate-y-1/2 bg-transparent p-0 text-base-content/75 hover:bg-transparent hover:text-base-content"
+            className={`pointer-events-auto btn btn-ghost btn-xs absolute right-3 top-1/2 h-5 min-h-5 w-5 min-w-5 -translate-y-1/2 rounded-full bg-transparent p-0 text-base-content/70 hover:bg-transparent hover:text-base-content ${
+              Boolean(selectedId) && !readonly && !field.readonly ? "visible" : "invisible"
+            }`}
             onClick={() => {
               setSearch("");
               setOpened(false);
@@ -1833,10 +1835,11 @@ function WorkspaceUserField({ field, value, onChange, readonly, members, loading
             }}
             aria-label="Clear selection"
             title="Clear"
+            tabIndex={Boolean(selectedId) && !readonly && !field.readonly ? 0 : -1}
           >
             <span className="text-sm font-medium leading-none">×</span>
           </button>
-        )}
+        </div>
       </div>
       {opened && !isMobile && (
         <div className="absolute z-30 mt-1 w-full rounded-box border border-base-400 bg-base-100 shadow">
@@ -2252,7 +2255,7 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
     <div ref={containerRef} className="relative">
       <div className="relative">
         <input
-          className="input input-bordered w-full pr-10"
+          className="input input-bordered w-full pr-12"
           value={inputValue}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={placeholder}
@@ -2262,10 +2265,12 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
             setSearch("");
           }}
         />
-        {Boolean(value) && !readonly && !field.readonly && (
+        <div className="pointer-events-none absolute inset-y-0 right-0 flex w-12 items-center justify-center">
           <button
             type="button"
-            className="btn btn-ghost btn-xs btn-circle absolute right-2 top-1/2 z-10 h-7 min-h-7 w-7 min-w-7 -translate-y-1/2 bg-transparent p-0 text-base-content/75 hover:bg-transparent hover:text-base-content"
+            className={`pointer-events-auto btn btn-ghost btn-xs absolute right-3 top-1/2 h-5 min-h-5 w-5 min-w-5 -translate-y-1/2 rounded-full bg-transparent p-0 text-base-content/70 hover:bg-transparent hover:text-base-content ${
+              Boolean(value) && !readonly && !field.readonly ? "visible" : "invisible"
+            }`}
             onClick={() => {
               setSearch("");
               setSelectedLabel("");
@@ -2273,10 +2278,11 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
             }}
             aria-label="Clear selection"
             title="Clear"
+            tabIndex={Boolean(value) && !readonly && !field.readonly ? 0 : -1}
           >
             <span className="text-sm font-medium leading-none">×</span>
           </button>
-        )}
+        </div>
       </div>
       {showOptions && !isMobile && (
         <div className="absolute z-30 mt-1 flex max-h-[18rem] w-full flex-col overflow-hidden rounded-box border border-base-400 bg-base-100 shadow">

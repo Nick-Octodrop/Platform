@@ -80,6 +80,70 @@ export function resolveAppTarget(appHome, targetParam) {
   return { target, parsed, error: null };
 }
 
+function findPageById(manifest, pageId) {
+  const pages = Array.isArray(manifest?.pages) ? manifest.pages : [];
+  return pages.find((page) => page?.id === pageId) || null;
+}
+
+function findFirstViewModesBlock(blocks) {
+  if (!Array.isArray(blocks)) return null;
+  for (const block of blocks) {
+    if (!block || typeof block !== "object") continue;
+    if (block.kind === "view_modes") return block;
+    if (Array.isArray(block.content)) {
+      const nested = findFirstViewModesBlock(block.content);
+      if (nested) return nested;
+    }
+    if (Array.isArray(block.tabs)) {
+      for (const tab of block.tabs) {
+        const nested = findFirstViewModesBlock(tab?.content);
+        if (nested) return nested;
+      }
+    }
+  }
+  return null;
+}
+
+function defaultParamsForPage(manifest, pageId) {
+  const page = findPageById(manifest, pageId);
+  const block = findFirstViewModesBlock(page?.content);
+  if (!block) return new URLSearchParams();
+  const params = new URLSearchParams();
+  const modes = Array.isArray(block.modes) ? block.modes : [];
+  const defaultMode = block.default_mode || modes[0]?.mode || "";
+  if (defaultMode) params.set("mode", defaultMode);
+  if (typeof block.default_filter_id === "string" && block.default_filter_id) {
+    params.set("filter", block.default_filter_id);
+  }
+  const activeMode = modes.find((mode) => mode?.mode === defaultMode) || null;
+  const groupBy =
+    (typeof activeMode?.default_group_by === "string" && activeMode.default_group_by) ||
+    (typeof block.default_group_by === "string" && block.default_group_by) ||
+    "";
+  if (groupBy) params.set("group_by", groupBy);
+  return params;
+}
+
+export function deriveAppHomeRoute(moduleId, manifest, options = {}) {
+  if (!moduleId || !manifest || typeof manifest !== "object") return null;
+  const homeTarget = options.target || manifest?.app?.home || null;
+  if (!homeTarget) return null;
+  const parsed = parseTarget(homeTarget);
+  if (!parsed) return null;
+  const route = buildTargetRoute(moduleId, homeTarget, {
+    preserveFrameParams: options.preserveFrameParams !== false,
+    searchLike: options.searchLike,
+  });
+  if (!route) return null;
+  if (parsed.type !== "page") return route;
+  const params = defaultParamsForPage(manifest, parsed.id);
+  if ([...params.keys()].length === 0) return route;
+  return buildRouteWithQuery(route, params, {
+    preserveFrameParams: options.preserveFrameParams !== false,
+    searchLike: options.searchLike,
+  });
+}
+
 export function buildTargetRoute(moduleId, target, options = {}) {
   const parsed = parseTarget(target);
   if (!parsed) return null;

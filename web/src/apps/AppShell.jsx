@@ -11,7 +11,7 @@ import { useToast } from "../components/Toast.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
 import { PRIMARY_BUTTON, PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_BUTTON_XS } from "../components/buttonStyles.js";
-import { buildRouteWithQuery, buildTargetRoute, resolveAppTarget, resolveRouteTarget } from "./appShellUtils.js";
+import { buildRouteWithQuery, buildTargetRoute, deriveAppHomeRoute, resolveAppTarget, resolveRouteTarget } from "./appShellUtils.js";
 import { evalCondition } from "../utils/conditions.js";
 import { applyComputedFields } from "../utils/computedFields.js";
 import { useAccessContext } from "../access.js";
@@ -372,7 +372,7 @@ export default function AppShell({
     setRecordDraft({});
   }, [moduleId, pageId, viewId, recordId, workspaceKey, manifestOverride]);
 
-  const setPageSectionLoading = useCallback((key, isLoading) => {
+  const handlePageSectionLoadingChange = useCallback((key, isLoading) => {
     const safeKey = String(key || "").trim();
     if (!safeKey) return;
     const next = new Set(pageSectionLoadingKeysRef.current);
@@ -746,10 +746,15 @@ export default function AppShell({
     }
     if (!moduleId || pageId || viewId) return;
     if (!defaultTarget) return;
-    const route = buildTargetRoute(moduleId, defaultTarget);
+    const route =
+      deriveAppHomeRoute(moduleId, manifest, {
+        target: defaultTarget,
+        preserveFrameParams: true,
+        searchLike: searchParams,
+      }) || buildTargetRoute(moduleId, defaultTarget);
     if (!route) return;
     navigate(route, { replace: true });
-  }, [moduleId, pageId, viewId, defaultTarget, navigate, previewAllowNav, previewMode, previewRouteTarget, previewTarget, searchParams, setSearchParams]);
+  }, [moduleId, pageId, viewId, defaultTarget, manifest, navigate, previewAllowNav, previewMode, previewRouteTarget, previewTarget, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (!previewMode) return;
@@ -1280,7 +1285,7 @@ export default function AppShell({
         moduleId={moduleId}
         renderAnyView={renderView}
         onActionStateChange={setGlobalActionState}
-        onPageSectionLoadingChange={setPageSectionLoading}
+        onPageSectionLoadingChange={handlePageSectionLoadingChange}
       />
     );
   }
@@ -1495,7 +1500,7 @@ export default function AppShell({
                 bootstrap={bootstrap}
                 bootstrapVersion={bootstrapVersion}
                 bootstrapLoading={bootstrapLoading}
-                onPageSectionLoadingChange={setPageSectionLoading}
+                onPageSectionLoadingChange={handlePageSectionLoadingChange}
               />
             </div>
           )}

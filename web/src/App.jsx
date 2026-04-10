@@ -82,6 +82,23 @@ function RouteLoadingScreen() {
   );
 }
 
+function getPwaSurfaceState() {
+  if (typeof window === "undefined") {
+    return { isStandalone: false, isMobileBrowser: false, isIos: false, isSafari: false };
+  }
+  const displayStandalone = window.matchMedia?.("(display-mode: standalone)")?.matches;
+  const navigatorStandalone = typeof window.navigator?.standalone === "boolean" && window.navigator.standalone;
+  const isStandalone = Boolean(displayStandalone || navigatorStandalone);
+  const ua = window.navigator?.userAgent || "";
+  const isIos = /iPad|iPhone|iPod/.test(ua);
+  const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
+  const isMobileBrowser = Boolean(
+    !isStandalone &&
+      (window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches || /Android|iPhone|iPad|iPod/i.test(ua))
+  );
+  return { isStandalone, isMobileBrowser, isIos, isSafari };
+}
+
 export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -236,7 +253,9 @@ export default function App() {
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     function handleUpdateReady() {
-      setUpdatePromptVisible(true);
+      if (getPwaSurfaceState().isStandalone) {
+        setUpdatePromptVisible(true);
+      }
     }
     window.addEventListener("octo:web-pwa-update-ready", handleUpdateReady);
     return () => window.removeEventListener("octo:web-pwa-update-ready", handleUpdateReady);
@@ -245,18 +264,11 @@ export default function App() {
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const dismissalKey = "octo:pwa-install-dismissed-v1";
-    const isStandalone = () => {
-      const displayStandalone = window.matchMedia?.("(display-mode: standalone)")?.matches;
-      const navigatorStandalone = typeof window.navigator?.standalone === "boolean" && window.navigator.standalone;
-      return Boolean(displayStandalone || navigatorStandalone);
-    };
-    const ua = window.navigator?.userAgent || "";
-    const isIos = /iPad|iPhone|iPod/.test(ua);
-    const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
     const hasDismissed = window.localStorage.getItem(dismissalKey) === "1";
 
     function refreshInstallAvailability() {
-      if (isStandalone()) {
+      const { isStandalone, isMobileBrowser, isIos, isSafari } = getPwaSurfaceState();
+      if (isStandalone || !isMobileBrowser) {
         setInstallPromptVisible(false);
         return;
       }
@@ -276,9 +288,15 @@ export default function App() {
 
     function handleBeforeInstallPrompt(event) {
       event.preventDefault();
+      const { isStandalone, isMobileBrowser } = getPwaSurfaceState();
+      if (isStandalone || !isMobileBrowser) {
+        setInstallPromptEvent(null);
+        setInstallPromptVisible(false);
+        return;
+      }
       setInstallPromptEvent(event);
       setInstallMode("browser");
-      if (!isStandalone() && !hasDismissed) {
+      if (!hasDismissed) {
         setInstallPromptVisible(true);
       }
     }
