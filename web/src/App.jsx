@@ -8,6 +8,7 @@ import ShellLayout from "./layout/ShellLayout.jsx";
 import { ModuleStoreProvider } from "./state/moduleStore.jsx";
 import { ToastProvider } from "./components/Toast.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
+import { AccessContextProvider, getAccessContext } from "./access.js";
 import {
   applyBrandColors,
   applyUiDensity,
@@ -103,6 +104,7 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [workspaceKey, setWorkspaceKey] = useState(() => getActiveWorkspaceId());
+  const [accessContextSeed, setAccessContextSeed] = useState(null);
   const [updatePromptVisible, setUpdatePromptVisible] = useState(false);
   const [installPromptVisible, setInstallPromptVisible] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState(null);
@@ -228,18 +230,21 @@ export default function App() {
 
   useEffect(() => {
     let alive = true;
-    if (!session?.user || workspaceKey) return undefined;
+    if (!session?.user) return undefined;
     (async () => {
       try {
-        const res = await apiFetch("/access/context", { cacheTtl: 10000, cacheKey: "access_context_seed" });
-        if (!alive || getActiveWorkspaceId()) return;
-        const defaultWorkspaceId =
-          res?.actor?.workspace_id ||
-          res?.workspaces?.[0]?.workspace_id ||
-          res?.workspaces?.[0]?.id ||
-          "";
-        if (defaultWorkspaceId) {
-          setActiveWorkspaceId(defaultWorkspaceId);
+        const res = await getAccessContext();
+        if (!alive) return;
+        setAccessContextSeed(res || null);
+        if (!getActiveWorkspaceId()) {
+          const defaultWorkspaceId =
+            res?.actor?.workspace_id ||
+            res?.workspaces?.[0]?.workspace_id ||
+            res?.workspaces?.[0]?.id ||
+            "";
+          if (defaultWorkspaceId) {
+            setActiveWorkspaceId(defaultWorkspaceId);
+          }
         }
       } catch {
         // ignore; workspace can still be selected manually
@@ -400,9 +405,11 @@ export default function App() {
             path="/*"
             element={
               <ProtectedRoute user={user} loading={loading}>
-                <ModuleStoreProvider user={user}>
-                  <ShellLayout user={user} onSignOut={handleSignOut} />
-                </ModuleStoreProvider>
+                <AccessContextProvider seedContext={accessContextSeed}>
+                  <ModuleStoreProvider user={user}>
+                    <ShellLayout user={user} onSignOut={handleSignOut} />
+                  </ModuleStoreProvider>
+                </AccessContextProvider>
               </ProtectedRoute>
             }
           >

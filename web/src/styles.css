@@ -374,3 +374,23 @@ body {
   outline: none !important;
   box-shadow: none !important;
 }
+
+/* Final mobile control size override: prevent iOS/PWA zoom on focus. */
+@media (max-width: 768px), (hover: none) and (pointer: coarse), (-webkit-touch-callout: none) {
+  :is(
+    .input,
+    .input-bordered,
+    .select,
+    .select-bordered,
+    .textarea,
+    .textarea-bordered,
+    .file-input,
+    .file-input-bordered,
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+    select,
+    textarea
+  ) {
+    font-size: 16px !important;
+    line-height: 1.25rem !important;
+  }
+}

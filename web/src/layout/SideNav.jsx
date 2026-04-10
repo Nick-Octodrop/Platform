@@ -3,27 +3,20 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useModuleStore } from "../state/moduleStore.jsx";
 import { getAppDisplayName } from "../state/appCatalog.js";
 import { getPinnedApps, getRecentApps, recordRecentApp, subscribeAppUsage } from "../state/appUsage.js";
-import { getManifest } from "../api";
-import { appendOctoAiFrameParams, buildTargetRoute } from "../apps/appShellUtils.js";
+import { appendOctoAiFrameParams } from "../apps/appShellUtils.js";
 import { useAccessContext } from "../access.js";
 
 const navLinkClass = ({ isActive }) =>
   `btn btn-ghost justify-start w-full ${isActive ? "bg-base-200" : ""}`;
 
-function AppShortcut({ id, label }) {
+function AppShortcut({ id, label, homeRoute }) {
   const navigate = useNavigate();
 
-  async function openModule(event) {
+  function openModule(event) {
     event.preventDefault();
     recordRecentApp(id);
-    try {
-      const res = await getManifest(id);
-      const homeTarget = res?.manifest?.app?.home || null;
-      const route = buildTargetRoute(id, homeTarget) || `/apps/${id}`;
-      navigate(route);
-    } catch {
-      navigate(appendOctoAiFrameParams(`/apps/${id}`));
-    }
+    const route = (typeof homeRoute === "string" && homeRoute) || `/apps/${id}`;
+    navigate(appendOctoAiFrameParams(route));
   }
 
   return (
@@ -91,7 +84,7 @@ export default function SideNav() {
           {orderedApps.map((id) => {
             const moduleRecord = enabledById[id];
             const label = getAppDisplayName(id, moduleRecord);
-            return <AppShortcut key={id} id={id} label={label} />;
+            return <AppShortcut key={id} id={id} label={label} homeRoute={moduleRecord?.home_route} />;
           })}
         </div>
       </div>

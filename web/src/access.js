@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { apiFetch } from "./api";
+import { createContext, createElement, useContext, useEffect, useMemo, useState } from "react";
+import { apiFetch, getActiveWorkspaceId } from "./api";
 
 const CAPABILITIES_BY_ROLE = {
   admin: new Set([
@@ -27,6 +27,8 @@ function capabilityKey(capability) {
   return capability.replaceAll(".", "_");
 }
 
+const AccessContextState = createContext(null);
+
 export function hasCapability(accessContext, capability) {
   if (!capability) return true;
   const permissions = accessContext?.permissions;
@@ -37,18 +39,54 @@ export function hasCapability(accessContext, capability) {
   return actorHasCapability(accessContext?.actor, capability);
 }
 
-export function useAccessContext() {
+export async function getAccessContext() {
+  return apiFetch("/access/context", { cacheTtl: 10000, cacheKey: "access_context" });
+}
+
+function buildAccessValue(context, loading, error) {
+  const actor = context?.actor || null;
+  const permissions = context?.permissions || {};
+  return {
+    loading,
+    error,
+    context,
+    actor,
+    permissions,
+    hasCapability: (capability) => hasCapability(context, capability),
+    isSuperadmin: actor?.platform_role === "superadmin",
+  };
+}
+
+export function AccessContextProvider({ children, seedContext = null }) {
   const [context, setContext] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [workspaceKey, setWorkspaceKey] = useState(() => getActiveWorkspaceId());
+
+  useEffect(() => {
+    if (seedContext) {
+      setContext(seedContext);
+      setLoading(false);
+      setError("");
+    }
+  }, [seedContext]);
+
+  useEffect(() => {
+    function handleWorkspaceChanged() {
+      setWorkspaceKey(getActiveWorkspaceId());
+    }
+    if (typeof window === "undefined") return undefined;
+    window.addEventListener("octo:workspace-changed", handleWorkspaceChanged);
+    return () => window.removeEventListener("octo:workspace-changed", handleWorkspaceChanged);
+  }, []);
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      setLoading(true);
+      setLoading((prev) => (context ? prev : true));
       setError("");
       try {
-        const res = await apiFetch("/access/context", { cacheTtl: 10000, cacheKey: "access_context" });
+        const res = await getAccessContext();
         if (!alive) return;
         setContext(res || null);
       } catch (err) {
@@ -61,21 +99,15 @@ export function useAccessContext() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [workspaceKey]);
 
-  const actor = context?.actor || null;
-  const permissions = context?.permissions || {};
+  const value = useMemo(() => buildAccessValue(context, loading, error), [context, loading, error]);
 
-  return useMemo(
-    () => ({
-      loading,
-      error,
-      context,
-      actor,
-      permissions,
-      hasCapability: (capability) => hasCapability(context, capability),
-      isSuperadmin: actor?.platform_role === "superadmin",
-    }),
-    [loading, error, context, actor, permissions]
-  );
+  return createElement(AccessContextState.Provider, { value }, children);
+}
+
+export function useAccessContext() {
+  const ctx = useContext(AccessContextState);
+  if (ctx) return ctx;
+  return buildAccessValue(null, true, "");
 }

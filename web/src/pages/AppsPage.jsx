@@ -21,7 +21,6 @@ import { appendOctoAiFrameParams, deriveAppHomeRoute } from "../apps/appShellUti
 import useMediaQuery from "../hooks/useMediaQuery.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 import AppModuleIcon from "../components/AppModuleIcon.jsx";
-import { getManifest } from "../api.js";
 
 // Kept intentionally minimal: App Manager cards shouldn't surface extra status/meta beyond actions + app version.
 
@@ -118,13 +117,12 @@ export default function AppsPage({ user }) {
 
   async function handleOpen(moduleId) {
     recordRecentApp(moduleId);
-    try {
-      const manifestRes = await getManifest(moduleId);
-      const targetRoute = deriveAppHomeRoute(moduleId, manifestRes?.manifest) || `/apps/${moduleId}`;
-      navigate(appendOctoAiFrameParams(targetRoute));
-    } catch {
-      navigate(appendOctoAiFrameParams(`/apps/${moduleId}`));
-    }
+    const moduleRecord = moduleById.get(moduleId);
+    const targetRoute =
+      (typeof moduleRecord?.home_route === "string" && moduleRecord.home_route) ||
+      deriveAppHomeRoute(moduleId, null) ||
+      `/apps/${moduleId}`;
+    navigate(appendOctoAiFrameParams(targetRoute));
   }
 
   function handleDetails(moduleId) {

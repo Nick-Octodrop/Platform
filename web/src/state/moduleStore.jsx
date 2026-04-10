@@ -39,7 +39,7 @@ export function ModuleStoreProvider({ user, children }) {
   );
 
   useEffect(() => {
-    refresh({ force: true });
+    refresh();
   }, [user, refresh, workspaceKey]);
 
   useEffect(() => {

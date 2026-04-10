@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { API_URL, apiFetch, getActiveWorkspaceId, getUiPrefs, setActiveWorkspaceId, setUiPrefs } from "../api";
+import { useAccessContext } from "../access.js";
 import { useToast } from "../components/Toast.jsx";
 import PaginationControls from "../components/PaginationControls.jsx";
 import { applyBrandColors, DEFAULT_BRAND_COLORS, setBrandColors } from "../theme/theme.js";
@@ -29,7 +30,6 @@ export default function SettingsWorkspacesPage() {
   const initialTab = normalizeTabId(searchParams.get("tab"));
   const [activeTab, setActiveTab] = useState(initialTab);
 
-  const [context, setContext] = useState(null);
   const [workspaces, setWorkspaces] = useState([]);
   const [workspacesPage, setWorkspacesPage] = useState(0);
   const [workspacePrefs, setWorkspacePrefs] = useState({ logo_url: "", colors: { ...DEFAULT_BRAND_COLORS } });
@@ -43,14 +43,14 @@ export default function SettingsWorkspacesPage() {
   const [deleteBusyId, setDeleteBusyId] = useState("");
   const logoFileRef = useRef(null);
   const { pushToast } = useToast();
+  const { context, loading: accessLoading } = useAccessContext();
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const [res, prefsRes] = await Promise.all([apiFetch("/access/context"), getUiPrefs()]);
-      setContext(res || null);
-      setWorkspaces(res?.workspaces || []);
+      const prefsRes = await getUiPrefs();
+      setWorkspaces(context?.workspaces || []);
       setWorkspacePrefs({
         logo_url: prefsRes?.workspace?.logo_url || "",
         colors: {
@@ -59,8 +59,8 @@ export default function SettingsWorkspacesPage() {
           accent: prefsRes?.workspace?.colors?.accent || DEFAULT_BRAND_COLORS.accent,
         },
       });
-      if (!activeWorkspaceId && res?.actor?.workspace_id) {
-        setActive(res.actor.workspace_id);
+      if (!activeWorkspaceId && context?.actor?.workspace_id) {
+        setActive(context.actor.workspace_id);
       }
     } catch (err) {
       setError(err?.message || "Failed to load workspaces");
@@ -70,8 +70,9 @@ export default function SettingsWorkspacesPage() {
   }
 
   useEffect(() => {
+    if (accessLoading || !context) return;
     load();
-  }, []);
+  }, [accessLoading, context]);
 
   useEffect(() => {
     setActiveTab(normalizeTabId(searchParams.get("tab")));

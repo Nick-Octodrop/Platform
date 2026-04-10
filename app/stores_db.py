@@ -9,10 +9,12 @@ import uuid
 import logging
 import os
 import psycopg2
+import urllib.parse
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from octo.manifest_hash import manifest_hash
+from app.module_dependencies import module_key_from_manifest, module_version_from_manifest
 
 logger = logging.getLogger("octo.chatter")
 
@@ -187,6 +189,8 @@ def _module_from_row(row: dict) -> dict:
     return {
         "module_id": row["module_id"],
         "name": row.get("name"),
+        "description": row.get("description"),
+        "category": row.get("category"),
         "enabled": row.get("enabled"),
         "current_hash": row.get("current_hash"),
         "installed_at": _to_iso(row.get("installed_at")),
@@ -198,7 +202,10 @@ def _module_from_row(row: dict) -> dict:
         "archived": row.get("archived"),
         "icon_key": row.get("icon_key"),
         "display_order": row.get("display_order"),
-        "manifest_version": row.get("manifest_version"),
+        "module_version": row.get("module_version"),
+        "module_key": row.get("module_key"),
+        "home_route": row.get("home_route"),
+        "manifest_version": row.get("manifest_version") or row.get("module_version"),
     }
 
 
@@ -208,6 +215,123 @@ def _module_name_from_manifest(manifest: dict) -> str | None:
         return None
     name = module.get("name")
     return name if isinstance(name, str) and name.strip() else None
+
+
+def _manifest_parse_target(target: str | None) -> tuple[str | None, str | None]:
+    if not isinstance(target, str) or not target:
+        return None, None
+    if target.startswith("page:"):
+        return "page", target.split("page:", 1)[1]
+    if target.startswith("view:"):
+        return "view", target.split("view:", 1)[1]
+    return None, None
+
+
+def _manifest_find_page_by_id(manifest: dict, page_id: str | None) -> dict | None:
+    if not isinstance(page_id, str) or not page_id:
+        return None
+    pages = manifest.get("pages") if isinstance(manifest, dict) else None
+    if not isinstance(pages, list):
+        return None
+    return next((page for page in pages if isinstance(page, dict) and page.get("id") == page_id), None)
+
+
+def _manifest_find_first_view_modes_block(blocks: list | None) -> dict | None:
+    if not isinstance(blocks, list):
+        return None
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        if block.get("kind") == "view_modes":
+            return block
+        nested = block.get("content")
+        found = _manifest_find_first_view_modes_block(nested if isinstance(nested, list) else None)
+        if found:
+            return found
+        items = block.get("items")
+        if isinstance(items, list):
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                found = _manifest_find_first_view_modes_block(item.get("content") if isinstance(item.get("content"), list) else None)
+                if found:
+                    return found
+        tabs = block.get("tabs")
+        if isinstance(tabs, list):
+            for tab in tabs:
+                if not isinstance(tab, dict):
+                    continue
+                found = _manifest_find_first_view_modes_block(tab.get("content") if isinstance(tab.get("content"), list) else None)
+                if found:
+                    return found
+    return None
+
+
+def _manifest_default_query_for_page(manifest: dict, page_id: str | None) -> str:
+    page = _manifest_find_page_by_id(manifest, page_id)
+    block = _manifest_find_first_view_modes_block(page.get("content") if isinstance(page, dict) else None)
+    if not isinstance(block, dict):
+        return ""
+    params: dict[str, str] = {}
+    modes = block.get("modes") if isinstance(block.get("modes"), list) else []
+    default_mode = block.get("default_mode") if isinstance(block.get("default_mode"), str) and block.get("default_mode") else None
+    if not default_mode and modes and isinstance(modes[0], dict):
+        default_mode = modes[0].get("mode") if isinstance(modes[0].get("mode"), str) else None
+    if isinstance(default_mode, str) and default_mode:
+        params["mode"] = default_mode
+    default_filter_id = block.get("default_filter_id")
+    if isinstance(default_filter_id, str) and default_filter_id:
+        params["filter"] = default_filter_id
+    active_mode = next((mode for mode in modes if isinstance(mode, dict) and mode.get("mode") == default_mode), None)
+    group_by = None
+    if isinstance(active_mode, dict):
+        active_group = active_mode.get("default_group_by")
+        if isinstance(active_group, str) and active_group:
+            group_by = active_group
+    if not group_by:
+        block_group = block.get("default_group_by")
+        if isinstance(block_group, str) and block_group:
+            group_by = block_group
+    if isinstance(group_by, str) and group_by:
+        params["group_by"] = group_by
+    return urllib.parse.urlencode(params)
+
+
+def _module_home_route_from_manifest(module_id: str, manifest: dict) -> str | None:
+    if not isinstance(module_id, str) or not module_id or not isinstance(manifest, dict):
+        return None
+    app_def = manifest.get("app") if isinstance(manifest.get("app"), dict) else {}
+    target_kind, target_id = _manifest_parse_target(app_def.get("home"))
+    if target_kind == "page" and isinstance(target_id, str) and target_id:
+        route = f"/apps/{module_id}/page/{target_id}"
+        query = _manifest_default_query_for_page(manifest, target_id)
+        return f"{route}?{query}" if query else route
+    if target_kind == "view" and isinstance(target_id, str) and target_id:
+        return f"/apps/{module_id}/view/{target_id}"
+    return f"/apps/{module_id}"
+
+
+def _module_registry_meta_from_manifest(module_id: str, manifest: dict) -> dict[str, str | None]:
+    module_def = manifest.get("module") if isinstance(manifest, dict) and isinstance(manifest.get("module"), dict) else {}
+    description = module_def.get("description") if isinstance(module_def.get("description"), str) and module_def.get("description").strip() else None
+    category = module_def.get("category") if isinstance(module_def.get("category"), str) and module_def.get("category").strip() else None
+    version = module_version_from_manifest(manifest)
+    module_key = module_key_from_manifest(manifest) or module_id
+    home_route = _module_home_route_from_manifest(module_id, manifest)
+    icon_key = module_def.get("icon_key") or module_def.get("icon")
+    if isinstance(icon_key, str):
+        icon_key = icon_key.strip() or None
+    else:
+        icon_key = None
+    return {
+        "name": _module_name_from_manifest(manifest),
+        "description": description,
+        "category": category,
+        "module_version": version if isinstance(version, str) and version.strip() else None,
+        "module_key": module_key.strip() if isinstance(module_key, str) and module_key.strip() else None,
+        "home_route": home_route.strip() if isinstance(home_route, str) and home_route.strip() else None,
+        "icon_key": icon_key,
+    }
 
 
 def _get_module_version_by_id(conn, module_id: str, version_id: str) -> dict | None:
@@ -527,14 +651,12 @@ class DbModuleRegistry:
             row = fetch_one(
                 conn,
                 """
-                select m.module_id, m.name, m.enabled, m.current_hash, m.installed_at, m.updated_at, m.tags,
-                       m.status, m.active_version, m.last_error, m.archived, m.display_order,
-                       coalesce(m.icon_key, mi.icon_key) as icon_key,
-                       ms.manifest->>'manifest_version' as manifest_version
+                select m.module_id, m.name, m.description, m.category, m.enabled, m.current_hash,
+                       m.installed_at, m.updated_at, m.tags, m.status, m.active_version, m.last_error,
+                       m.archived, m.display_order, coalesce(m.icon_key, mi.icon_key) as icon_key,
+                       m.module_version, m.module_key, m.home_route
                 from modules_installed m
                 left join module_icons mi on mi.module_id = m.module_id
-                left join manifest_snapshots ms
-                  on ms.org_id = m.org_id and ms.module_id = m.module_id and ms.manifest_hash = m.current_hash
                 where m.org_id=%s and m.module_id=%s
                 """,
                 [get_org_id(), module_id],
@@ -547,14 +669,12 @@ class DbModuleRegistry:
             row = fetch_one(
                 conn,
                 """
-                select m.module_id, m.name, m.enabled, m.current_hash, m.installed_at, m.updated_at, m.tags,
-                       m.status, m.active_version, m.last_error, m.archived, m.display_order,
-                       coalesce(m.icon_key, mi.icon_key) as icon_key,
-                       ms.manifest->>'manifest_version' as manifest_version
+                select m.module_id, m.name, m.description, m.category, m.enabled, m.current_hash,
+                       m.installed_at, m.updated_at, m.tags, m.status, m.active_version, m.last_error,
+                       m.archived, m.display_order, coalesce(m.icon_key, mi.icon_key) as icon_key,
+                       m.module_version, m.module_key, m.home_route
                 from modules_installed m
                 left join module_icons mi on mi.module_id = m.module_id
-                left join manifest_snapshots ms
-                  on ms.org_id = m.org_id and ms.module_id = m.module_id and ms.manifest_hash = m.current_hash
                 where m.org_id=%s and m.module_id=%s and m.archived=false
                 """,
                 [get_org_id(), module_id],
@@ -567,14 +687,12 @@ class DbModuleRegistry:
             rows = fetch_all(
                 conn,
                 """
-                select m.module_id, m.name, m.enabled, m.current_hash, m.installed_at, m.updated_at, m.tags,
-                       m.status, m.active_version, m.last_error, m.archived, m.display_order,
-                       coalesce(m.icon_key, mi.icon_key) as icon_key,
-                       ms.manifest->>'manifest_version' as manifest_version
+                select m.module_id, m.name, m.description, m.category, m.enabled, m.current_hash,
+                       m.installed_at, m.updated_at, m.tags, m.status, m.active_version, m.last_error,
+                       m.archived, m.display_order, coalesce(m.icon_key, mi.icon_key) as icon_key,
+                       m.module_version, m.module_key, m.home_route
                 from modules_installed m
                 left join module_icons mi on mi.module_id = m.module_id
-                left join manifest_snapshots ms
-                  on ms.org_id = m.org_id and ms.module_id = m.module_id and ms.manifest_hash = m.current_hash
                 where m.org_id=%s and m.archived=false
                 order by m.display_order nulls last, m.module_id
                 """,
@@ -662,15 +780,38 @@ class DbModuleRegistry:
             return {"ok": False, "errors": [{"code": "MODULE_NO_MANIFEST_HEAD", "message": "module has no manifest head", "path": "module_id", "detail": None}], "warnings": [], "module": None, "audit_id": None}
 
         manifest = self._store.get_snapshot(module_id, head)
-        module_name = name or _module_name_from_manifest(manifest)
+        module_meta = _module_registry_meta_from_manifest(module_id, manifest if isinstance(manifest, dict) else {})
+        module_name = name or module_meta.get("name")
         with get_conn() as conn:
             execute(
                 conn,
                 """
-                insert into modules_installed (org_id, module_id, enabled, current_hash, name, installed_at, updated_at, tags, status, active_version, last_error, archived)
-                values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                insert into modules_installed (
+                  org_id, module_id, enabled, current_hash, name, description, category, module_version,
+                  module_key, home_route, icon_key, installed_at, updated_at, tags, status, active_version, last_error, archived
+                )
+                values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
-                [get_org_id(), module_id, False, head, module_name, _now(), _now(), None, "installed", None, None, False],
+                [
+                    get_org_id(),
+                    module_id,
+                    False,
+                    head,
+                    module_name,
+                    module_meta.get("description"),
+                    module_meta.get("category"),
+                    module_meta.get("module_version"),
+                    module_meta.get("module_key"),
+                    module_meta.get("home_route"),
+                    module_meta.get("icon_key"),
+                    _now(),
+                    _now(),
+                    None,
+                    "installed",
+                    None,
+                    None,
+                    False,
+                ],
                 query_name="modules_installed.register",
             )
             audit_id = str(uuid.uuid4())
@@ -796,16 +937,39 @@ class DbModuleRegistry:
 
                 to_hash = store_result.get("to_hash")
                 manifest = self._store.get_snapshot(module_id, to_hash)
-                module_name = _module_name_from_manifest(manifest) if isinstance(manifest, dict) else None
+                module_meta = _module_registry_meta_from_manifest(module_id, manifest if isinstance(manifest, dict) else {})
+                module_name = module_meta.get("name")
                 version = _insert_module_version(conn, module_id, to_hash, manifest, approved.get("approved_by"), patch.get("reason"))
                 if existing is None:
                     execute(
                         conn,
                         """
-                        insert into modules_installed (org_id, module_id, enabled, current_hash, name, installed_at, updated_at, tags, status, active_version, last_error, archived)
-                        values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        insert into modules_installed (
+                          org_id, module_id, enabled, current_hash, name, description, category, module_version,
+                          module_key, home_route, icon_key, installed_at, updated_at, tags, status, active_version, last_error, archived
+                        )
+                        values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                         """,
-                        [get_org_id(), module_id, True, to_hash, module_name, _now(), _now(), None, "installed", version.get("version_id"), None, False],
+                        [
+                            get_org_id(),
+                            module_id,
+                            True,
+                            to_hash,
+                            module_name,
+                            module_meta.get("description"),
+                            module_meta.get("category"),
+                            module_meta.get("module_version"),
+                            module_meta.get("module_key"),
+                            module_meta.get("home_route"),
+                            module_meta.get("icon_key"),
+                            _now(),
+                            _now(),
+                            None,
+                            "installed",
+                            version.get("version_id"),
+                            None,
+                            False,
+                        ],
                         query_name="modules_installed.insert",
                     )
                 else:
@@ -813,10 +977,37 @@ class DbModuleRegistry:
                         conn,
                         """
                         update modules_installed
-                        set current_hash=%s, updated_at=%s, status=%s, active_version=%s, last_error=%s, name=coalesce(%s, name), archived=false
+                        set current_hash=%s,
+                            updated_at=%s,
+                            status=%s,
+                            active_version=%s,
+                            last_error=%s,
+                            name=coalesce(%s, name),
+                            description=coalesce(%s, description),
+                            category=coalesce(%s, category),
+                            module_version=coalesce(%s, module_version),
+                            module_key=coalesce(%s, module_key),
+                            home_route=coalesce(%s, home_route),
+                            icon_key=coalesce(%s, icon_key),
+                            archived=false
                         where org_id=%s and module_id=%s
                         """,
-                        [to_hash, _now(), "installed", version.get("version_id"), None, module_name, get_org_id(), module_id],
+                        [
+                            to_hash,
+                            _now(),
+                            "installed",
+                            version.get("version_id"),
+                            None,
+                            module_name,
+                            module_meta.get("description"),
+                            module_meta.get("category"),
+                            module_meta.get("module_version"),
+                            module_meta.get("module_key"),
+                            module_meta.get("home_route"),
+                            module_meta.get("icon_key"),
+                            get_org_id(),
+                            module_id,
+                        ],
                         query_name="modules_installed.update_hash",
                     )
                     if action == "install":
@@ -906,6 +1097,7 @@ class DbModuleRegistry:
             manifest = self._store.get_snapshot(module_id, to_hash)
         except Exception:
             return {"ok": False, "errors": [{"code": "ROLLBACK_UNKNOWN_HASH", "message": "hash not found", "path": "to_hash", "detail": None}], "warnings": [], "module": None, "audit_id": None}
+        module_meta = _module_registry_meta_from_manifest(module_id, manifest if isinstance(manifest, dict) else {})
 
         from_hash = record.get("current_hash")
         if from_hash == to_hash:
@@ -921,10 +1113,36 @@ class DbModuleRegistry:
                 conn,
                 """
                 update modules_installed
-                set current_hash=%s, updated_at=%s, status=%s, active_version=%s, last_error=%s
+                set current_hash=%s,
+                    updated_at=%s,
+                    status=%s,
+                    active_version=%s,
+                    last_error=%s,
+                    name=coalesce(%s, name),
+                    description=coalesce(%s, description),
+                    category=coalesce(%s, category),
+                    module_version=coalesce(%s, module_version),
+                    module_key=coalesce(%s, module_key),
+                    home_route=coalesce(%s, home_route),
+                    icon_key=coalesce(%s, icon_key)
                 where org_id=%s and module_id=%s
                 """,
-                [to_hash, _now(), "installed", target_version.get("version_id"), None, get_org_id(), module_id],
+                [
+                    to_hash,
+                    _now(),
+                    "installed",
+                    target_version.get("version_id"),
+                    None,
+                    module_meta.get("name"),
+                    module_meta.get("description"),
+                    module_meta.get("category"),
+                    module_meta.get("module_version"),
+                    module_meta.get("module_key"),
+                    module_meta.get("home_route"),
+                    module_meta.get("icon_key"),
+                    get_org_id(),
+                    module_id,
+                ],
                 query_name="modules_installed.rollback",
             )
             audit_id = str(uuid.uuid4())
@@ -1198,6 +1416,47 @@ class DbDraftStore:
 
 
 class DbGenericRecordStore:
+    def get_many(
+        self,
+        entity_id: str,
+        record_ids: list[str],
+        tenant_id: str | None = None,
+        fields: list[str] | None = None,
+    ) -> list[dict]:
+        tenant_id = tenant_id or get_org_id()
+        normalized_ids = [str(record_id).strip() for record_id in (record_ids or []) if isinstance(record_id, str) and str(record_id).strip()]
+        if not normalized_ids:
+            return []
+        safe_fields = [f for f in (fields or []) if _is_safe_field_id(f)]
+        select_params: list = []
+        if safe_fields:
+            parts = []
+            for field_id in safe_fields:
+                parts.append("%s, data -> %s")
+                select_params.extend([field_id, field_id])
+            data_expr = f"jsonb_build_object({', '.join(parts)}) as data"
+        else:
+            data_expr = "data"
+        with get_conn() as conn:
+            rows = fetch_all(
+                conn,
+                f"""
+                select id, {data_expr}
+                from records_generic
+                where tenant_id=%s and entity_id=%s and id = any(%s)
+                """,
+                select_params + [tenant_id, entity_id, normalized_ids],
+                query_name="records_generic.get_many",
+            )
+        items: list[dict] = []
+        for row in rows:
+            record = _deepcopy(row.get("data") or {})
+            record_id = str(row.get("id"))
+            if isinstance(record, dict):
+                record["id"] = record_id
+            items.append({"record_id": record_id, "record": record})
+        return items
+
     def list_page(
         self,
         entity_id: str,

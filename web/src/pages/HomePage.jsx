@@ -9,7 +9,6 @@ import { LayoutGrid, Package, Settings as SettingsIcon, Sparkles } from "lucide-
 import { useAccessContext } from "../access.js";
 import { appendOctoAiFrameParams, deriveAppHomeRoute } from "../apps/appShellUtils.js";
 import AppModuleIcon from "../components/AppModuleIcon.jsx";
-import { getManifest } from "../api.js";
 
 function AppTile({ app, module, onOpen }) {
   const disabled = module && !module.enabled;
@@ -76,13 +75,11 @@ export default function HomePage({ user }) {
       navigate(appendOctoAiFrameParams(app.route));
       return;
     }
-    try {
-      const manifestRes = await getManifest(app.id);
-      const targetRoute = deriveAppHomeRoute(app.id, manifestRes?.manifest, { searchLike: location.search }) || `/apps/${app.id}`;
-      navigate(appendOctoAiFrameParams(targetRoute, location.search));
-    } catch {
-      navigate(appendOctoAiFrameParams(`/apps/${app.id}`, location.search));
-    }
+    const targetRoute =
+      (typeof app?.module?.home_route === "string" && app.module.home_route) ||
+      deriveAppHomeRoute(app.id, null, { searchLike: location.search }) ||
+      `/apps/${app.id}`;
+    navigate(appendOctoAiFrameParams(targetRoute, location.search));
   }
 
   const allApps = useMemo(() => {

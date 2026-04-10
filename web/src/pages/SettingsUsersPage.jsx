@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../api";
+import { useAccessContext } from "../access.js";
 import { useToast } from "../components/Toast.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import PaginationControls from "../components/PaginationControls.jsx";
@@ -28,7 +29,6 @@ function SettingsSection({ title, description, children }) {
 
 export default function SettingsUsersPage() {
   const { pushToast } = useToast();
-  const [context, setContext] = useState(null);
   const [members, setMembers] = useState([]);
   const [accessProfiles, setAccessProfiles] = useState([]);
   const [page, setPage] = useState(0);
@@ -45,18 +45,17 @@ export default function SettingsUsersPage() {
   const [selectedProfileIds, setSelectedProfileIds] = useState([]);
   const [platformInviteEmail, setPlatformInviteEmail] = useState("");
   const [platformInviteRole, setPlatformInviteRole] = useState("standard");
+  const { context, loading: accessLoading } = useAccessContext();
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const ctxRes = await apiFetch("/access/context");
-      const actorCtx = ctxRes?.actor || {};
+      const actorCtx = context?.actor || {};
       const nextCanManage = actorCtx?.workspace_role === "admin" || actorCtx?.platform_role === "superadmin";
       const requests = [apiFetch("/access/members")];
       if (nextCanManage) requests.push(apiFetch("/access/profiles"));
       const [membersRes, profilesRes] = await Promise.all(requests);
-      setContext(ctxRes || null);
       setMembers(membersRes?.members || []);
       setAccessProfiles(profilesRes?.profiles || []);
     } catch (err) {
@@ -67,8 +66,9 @@ export default function SettingsUsersPage() {
   }
 
   useEffect(() => {
+    if (accessLoading || !context) return;
     load();
-  }, []);
+  }, [accessLoading, context]);
 
   const actor = context?.actor || {};
   const canManage = actor?.workspace_role === "admin" || actor?.platform_role === "superadmin";

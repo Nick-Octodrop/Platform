@@ -461,6 +461,21 @@ function hasRecordRef(condition) {
   return false;
 }
 
+async function resolveLookupLabelsBatch(targetEntityId, ids, labelField) {
+  const normalizedIds = Array.from(
+    new Set((ids || []).map((recordId) => String(recordId || "").trim()).filter(Boolean)),
+  );
+  if (!normalizedIds.length) return {};
+  const response = await apiFetch(`/lookup/${encodeURIComponent(targetEntityId)}/labels`, {
+    method: "POST",
+    body: {
+      ids: normalizedIds,
+      label_field: labelField || undefined,
+    },
+  });
+  return response?.labels && typeof response.labels === "object" ? response.labels : {};
+}
+
 function buildDomain(activeFilter, clientFilters, recordDomain) {
   const conditions = [];
   if (recordDomain) conditions.push(recordDomain);
@@ -523,19 +538,30 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
     }
     if (!pending.length) return undefined;
     (async () => {
-      const resolved = await Promise.all(
-        pending.map(async ({ cacheKey, targetEntityId, recordId, labelField }) => {
-          try {
-            const res = await apiFetch(`/records/${encodeURIComponent(targetEntityId)}/${encodeURIComponent(recordId)}`);
-            const rec = res?.record || {};
-            const label = (labelField && rec?.[labelField]) || rec?.display_name || rec?.full_name || rec?.name || recordId;
-            return [cacheKey, String(label)];
-          } catch {
-            return [cacheKey, recordId];
+      const grouped = new Map();
+      for (const item of pending) {
+        const groupKey = `${item.targetEntityId}::${item.labelField || ""}`;
+        if (!grouped.has(groupKey)) grouped.set(groupKey, { targetEntityId: item.targetEntityId, labelField: item.labelField, items: [] });
+        grouped.get(groupKey).items.push(item);
+      }
+      const resolvedEntries = [];
+      for (const group of grouped.values()) {
+        try {
+          const labels = await resolveLookupLabelsBatch(
+            group.targetEntityId,
+            group.items.map((item) => item.recordId),
+            group.labelField,
+          );
+          for (const item of group.items) {
+            resolvedEntries.push([item.cacheKey, String(labels[item.recordId] || item.recordId)]);
           }
-        }),
-      );
-      if (!cancelled) setLookupLabels((prev) => ({ ...prev, ...Object.fromEntries(resolved) }));
+        } catch {
+          for (const item of group.items) {
+            resolvedEntries.push([item.cacheKey, item.recordId]);
+          }
+        }
+      }
+      if (!cancelled) setLookupLabels((prev) => ({ ...prev, ...Object.fromEntries(resolvedEntries) }));
     })();
     return () => {
       cancelled = true;
@@ -1014,19 +1040,26 @@ function CalendarView({ view, records, onSelectRow, entityDef }) {
     }
     if (!pending.length) return undefined;
     (async () => {
-      const resolved = await Promise.all(
-        pending.map(async ({ cacheKey, targetEntityId, recordId, labelField }) => {
-          try {
-            const res = await apiFetch(`/records/${encodeURIComponent(targetEntityId)}/${encodeURIComponent(recordId)}`);
-            const rec = res?.record || {};
-            const label = (labelField && rec?.[labelField]) || rec?.display_name || rec?.full_name || rec?.name || recordId;
-            return [cacheKey, String(label)];
-          } catch {
-            return [cacheKey, recordId];
-          }
-        }),
-      );
-      if (!cancelled) setLookupLabels((prev) => ({ ...prev, ...Object.fromEntries(resolved) }));
+      try {
+        const labels = await resolveLookupLabelsBatch(
+          targetEntityId,
+          pending.map((item) => item.recordId),
+          labelField,
+        );
+        if (!cancelled) {
+          setLookupLabels((prev) => ({
+            ...prev,
+            ...Object.fromEntries(pending.map((item) => [item.cacheKey, String(labels[item.recordId] || item.recordId)])),
+          }));
+        }
+      } catch {
+        if (!cancelled) {
+          setLookupLabels((prev) => ({
+            ...prev,
+            ...Object.fromEntries(pending.map((item) => [item.cacheKey, item.recordId])),
+          }));
+        }
+      }
     })();
     return () => {
       cancelled = true;

@@ -15,7 +15,7 @@ from types import SimpleNamespace
 from pathlib import Path
 from typing import Any, Callable, Dict
 
-from fastapi import FastAPI, Request, UploadFile, File, Form
+from fastapi import FastAPI, Request, Response, UploadFile, File, Form
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -629,6 +629,7 @@ _cache = {
     "manifest": {},  # key -> {value, ts}
     "studio_modules": {"value": None, "ts": 0.0},
     "registry_list": {"value": None, "ts": 0.0},
+    "registry_list_meta": {},
     "entity_registry": {},
     "studio2_registry": {},
     "studio2_registry_summary": {},
@@ -679,6 +680,29 @@ def _error_response(
 def _ok_response(payload: dict, warnings: list | None = None, status: int = 200, headers: dict | None = None) -> JSONResponse:
     body = {"ok": True, **payload, "errors": [], "warnings": warnings or []}
     return JSONResponse(jsonable_encoder(body), status_code=status, headers=headers)
+
+
+def _perf_now() -> float:
+    return time.perf_counter()
+
+
+def _perf_ms(start: float) -> float:
+    return max(0.0, (time.perf_counter() - start) * 1000.0)
+
+
+def _server_timing_header(metrics: list[tuple[str, float]]) -> dict[str, str]:
+    parts: list[str] = []
+    for name, duration_ms in metrics:
+        if not isinstance(name, str) or not name:
+            continue
+        try:
+            duration = float(duration_ms)
+        except Exception:
+            continue
+        parts.append(f"{name};dur={duration:.1f}")
+    if not parts:
+        return {}
+    return {"Server-Timing": ", ".join(parts)}
 
 
 def _ext_api_pagination_meta(*, limit: int, offset: int = 0, next_cursor: str | None = None) -> dict:
@@ -1529,7 +1553,20 @@ def _filter_manifest_for_actor(manifest: dict, module_id: str, actor: dict | Non
         cache_key = f"filtered:{get_org_id()}:{module_id}:{manifest_hash}:{_access_policy_hash(actor)}"
         cached = _cache_get("manifest", cache_key)
         if isinstance(cached, dict):
-            return copy.deepcopy(cached)
+            return cached
+    policy = _access_policy_for_actor(actor)
+    if _has_capability(actor, "records.write") and isinstance(policy, dict):
+        unrestricted = True
+        for key in ("module_access", "entity_access", "entity_scope_rules", "field_access", "action_access"):
+            value = policy.get(key)
+            if isinstance(value, dict) and value:
+                unrestricted = False
+                break
+        if unrestricted:
+            out = manifest if isinstance(manifest, dict) else {}
+            if isinstance(cache_key, str):
+                _cache_set("manifest", out, cache_key)
+            return out
     out = copy.deepcopy(manifest if isinstance(manifest, dict) else {})
     entities = out.get("entities") if isinstance(out.get("entities"), list) else []
     visible_entities: set[str] = set()
@@ -2335,6 +2372,18 @@ def _get_module(request: Request, module_id: str):
     cached = _req_cache_get(request, cache_key)
     if cached is not None:
         return cached
+    modules_cached = _cache_get("modules")
+    if isinstance(modules_cached, list):
+        for item in modules_cached:
+            if item.get("module_id") == module_id:
+                _req_cache_set(request, cache_key, item)
+                return item
+    registry_meta_cached = _req_cache_get(request, "registry:list:meta")
+    if isinstance(registry_meta_cached, list):
+        for item in registry_meta_cached:
+            if item.get("module_id") == module_id:
+                _req_cache_set(request, cache_key, item)
+                return item
     registry_cached = _cache_get("registry_list")
     if isinstance(registry_cached, list):
         for item in registry_cached:
@@ -3033,6 +3082,236 @@ def _get_installed_manifest(request: Request, module_id: str) -> tuple[dict | No
         return module, None
     _cache_set("manifest", manifest, cache_key)
     return module, manifest
+
+
+def _manifest_parse_target(target: str | None) -> tuple[str | None, str | None]:
+    if not isinstance(target, str) or not target:
+        return None, None
+    if target.startswith("page:"):
+        return "page", target.split("page:", 1)[1]
+    if target.startswith("view:"):
+        return "view", target.split("view:", 1)[1]
+    return None, None
+
+
+def _manifest_find_page_by_id(manifest: dict, page_id: str | None) -> dict | None:
+    if not isinstance(page_id, str) or not page_id:
+        return None
+    pages = manifest.get("pages") if isinstance(manifest, dict) else None
+    if not isinstance(pages, list):
+        return None
+    return next((page for page in pages if isinstance(page, dict) and page.get("id") == page_id), None)
+
+
+def _manifest_find_first_view_modes_block(blocks: list | None) -> dict | None:
+    if not isinstance(blocks, list):
+        return None
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        if block.get("kind") == "view_modes":
+            return block
+        nested = block.get("content")
+        found = _manifest_find_first_view_modes_block(nested if isinstance(nested, list) else None)
+        if found:
+            return found
+        items = block.get("items")
+        if isinstance(items, list):
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                found = _manifest_find_first_view_modes_block(item.get("content") if isinstance(item.get("content"), list) else None)
+                if found:
+                    return found
+        tabs = block.get("tabs")
+        if isinstance(tabs, list):
+            for tab in tabs:
+                if not isinstance(tab, dict):
+                    continue
+                found = _manifest_find_first_view_modes_block(tab.get("content") if isinstance(tab.get("content"), list) else None)
+                if found:
+                    return found
+    return None
+
+
+def _manifest_default_query_for_page(manifest: dict, page_id: str | None) -> str:
+    page = _manifest_find_page_by_id(manifest, page_id)
+    block = _manifest_find_first_view_modes_block(page.get("content") if isinstance(page, dict) else None)
+    if not isinstance(block, dict):
+        return ""
+    params: dict[str, str] = {}
+    modes = block.get("modes") if isinstance(block.get("modes"), list) else []
+    default_mode = block.get("default_mode") if isinstance(block.get("default_mode"), str) and block.get("default_mode") else None
+    if not default_mode and modes and isinstance(modes[0], dict):
+        default_mode = modes[0].get("mode") if isinstance(modes[0].get("mode"), str) else None
+    if isinstance(default_mode, str) and default_mode:
+        params["mode"] = default_mode
+    default_filter_id = block.get("default_filter_id")
+    if isinstance(default_filter_id, str) and default_filter_id:
+        params["filter"] = default_filter_id
+    active_mode = next((mode for mode in modes if isinstance(mode, dict) and mode.get("mode") == default_mode), None)
+    group_by = None
+    if isinstance(active_mode, dict):
+        active_group = active_mode.get("default_group_by")
+        if isinstance(active_group, str) and active_group:
+            group_by = active_group
+    if not group_by:
+        block_group = block.get("default_group_by")
+        if isinstance(block_group, str) and block_group:
+            group_by = block_group
+    if isinstance(group_by, str) and group_by:
+        params["group_by"] = group_by
+    return urllib.parse.urlencode(params)
+
+
+def _module_home_route_from_manifest(module_id: str, manifest: dict) -> str:
+    if not isinstance(module_id, str) or not module_id or not isinstance(manifest, dict):
+        return ""
+    app_def = manifest.get("app") if isinstance(manifest.get("app"), dict) else {}
+    target_kind, target_id = _manifest_parse_target(app_def.get("home"))
+    if target_kind == "page" and isinstance(target_id, str) and target_id:
+        route = f"/apps/{module_id}/page/{target_id}"
+        query = _manifest_default_query_for_page(manifest, target_id)
+        return f"{route}?{query}" if query else route
+    if target_kind == "view" and isinstance(target_id, str) and target_id:
+        return f"/apps/{module_id}/view/{target_id}"
+    return f"/apps/{module_id}"
+
+
+def _module_registry_meta_from_manifest(module_id: str, manifest: dict) -> dict[str, str | None]:
+    module_def = manifest.get("module") if isinstance(manifest.get("module"), dict) else {}
+    description = module_def.get("description") if isinstance(module_def.get("description"), str) and module_def.get("description").strip() else None
+    category = module_def.get("category") if isinstance(module_def.get("category"), str) and module_def.get("category").strip() else None
+    version = module_version_from_manifest(manifest)
+    module_key = module_key_from_manifest(manifest) or module_id
+    home_route = _module_home_route_from_manifest(module_id, manifest)
+    icon_key = module_def.get("icon_key") or module_def.get("icon")
+    if isinstance(icon_key, str):
+        icon_key = icon_key.strip() or None
+    else:
+        icon_key = None
+    return {
+        "name": _module_name_from_manifest(manifest),
+        "description": description,
+        "category": category,
+        "module_version": version if isinstance(version, str) and version.strip() else None,
+        "module_key": module_key.strip() if isinstance(module_key, str) and module_key.strip() else None,
+        "home_route": home_route.strip() if isinstance(home_route, str) and home_route.strip() else None,
+        "icon_key": icon_key,
+    }
+
+
+def _registry_meta_fingerprint(modules: list[dict]) -> str:
+    parts: list[str] = []
+    for module in modules or []:
+        if not isinstance(module, dict):
+            continue
+        parts.append(
+            "|".join(
+                [
+                    str(module.get("module_id") or ""),
+                    str(module.get("current_hash") or ""),
+                    "1" if module.get("enabled") else "0",
+                    str(module.get("name") or ""),
+                    str(module.get("description") or ""),
+                    str(module.get("category") or ""),
+                    str(module.get("module_version") or ""),
+                    str(module.get("icon_key") or ""),
+                    str(module.get("module_key") or ""),
+                    str(module.get("home_route") or ""),
+                ]
+            )
+        )
+    return str(abs(hash("||".join(parts))))
+
+
+def _persist_registry_module_meta(module_id: str, metadata: dict[str, str | None]) -> None:
+    if not USE_DB:
+        return
+    if not isinstance(module_id, str) or not module_id or not isinstance(metadata, dict):
+        return
+    try:
+        with get_conn() as conn:
+            execute(
+                conn,
+                """
+                update modules_installed
+                set name=coalesce(%s, name),
+                    description=coalesce(%s, description),
+                    category=coalesce(%s, category),
+                    module_version=coalesce(%s, module_version),
+                    module_key=coalesce(%s, module_key),
+                    home_route=coalesce(%s, home_route),
+                    icon_key=coalesce(%s, icon_key),
+                    updated_at=%s
+                where org_id=%s and module_id=%s
+                """,
+                [
+                    metadata.get("name"),
+                    metadata.get("description"),
+                    metadata.get("category"),
+                    metadata.get("module_version"),
+                    metadata.get("module_key"),
+                    metadata.get("home_route"),
+                    metadata.get("icon_key"),
+                    _now(),
+                    get_org_id(),
+                    module_id,
+                ],
+                query_name="modules_installed.backfill_meta",
+            )
+    except Exception:
+        logger.warning("modules_meta_backfill_failed module_id=%s", module_id, exc_info=True)
+
+
+def _get_registry_list_with_meta(request: Request) -> list[dict]:
+    cache_key = "registry:list:meta"
+    cached_req = _req_cache_get(request, cache_key)
+    if isinstance(cached_req, list):
+        return cached_req
+    modules = _get_registry_list(request)
+    fingerprint = f"{get_org_id()}:{_registry_meta_fingerprint(modules)}"
+    cached = _cache_get("registry_list_meta", fingerprint)
+    if isinstance(cached, list):
+        _req_cache_set(request, cache_key, cached)
+        return cached
+    enriched = copy.deepcopy(modules)
+    for mod in enriched:
+        if not isinstance(mod, dict):
+            continue
+        need_meta = not (
+            (isinstance(mod.get("name"), str) and mod.get("name").strip())
+            and (isinstance(mod.get("description"), str) and mod.get("description").strip())
+            and (isinstance(mod.get("category"), str) and mod.get("category").strip())
+            and (isinstance(mod.get("module_version"), str) and mod.get("module_version").strip())
+            and (isinstance(mod.get("module_key"), str) and mod.get("module_key").strip())
+            and (isinstance(mod.get("home_route"), str) and mod.get("home_route").strip())
+        )
+        if not need_meta:
+            continue
+        module_id = mod.get("module_id")
+        manifest_hash = mod.get("current_hash")
+        if not module_id or not manifest_hash:
+            continue
+        try:
+            manifest = _get_snapshot(request, module_id, manifest_hash)
+        except Exception:
+            continue
+        meta = _module_registry_meta_from_manifest(module_id, manifest)
+        changed = False
+        for key in ("name", "description", "category", "module_version", "icon_key", "module_key", "home_route"):
+            current = mod.get(key)
+            if isinstance(current, str) and current.strip():
+                continue
+            next_value = meta.get(key)
+            if isinstance(next_value, str) and next_value.strip():
+                mod[key] = next_value.strip()
+                changed = True
+        if changed:
+            _persist_registry_module_meta(module_id, mod)
+    _cache_set("registry_list_meta", enriched, fingerprint)
+    _req_cache_set(request, cache_key, enriched)
+    return enriched
 
 
 def _entity_registry_fingerprint(modules: list[dict]) -> str:
@@ -3938,6 +4217,17 @@ def _get_compiled_manifest(module_id: str, manifest_hash: str, manifest: dict) -
     return compiled
 
 
+def _get_compiled_manifest_variant(module_id: str, manifest_hash: str, manifest: dict, variant_key: str) -> dict:
+    cache_key = f"{get_org_id()}:{module_id}:{manifest_hash}:{variant_key}"
+    entry = _compiled_cache.get(cache_key)
+    now = time.time()
+    if entry and now - entry["ts"] < _CACHE_TTL_S:
+        return entry["value"]
+    compiled = _compile_manifest(manifest)
+    _compiled_cache[cache_key] = {"value": compiled, "ts": now}
+    return compiled
+
+
 def _cache_get(bucket: str, key: str | None = None):
     now = time.time()
     if key is None:
@@ -4000,6 +4290,7 @@ def _cache_invalidate(bucket: str, key: str | None = None):
         _cache["entity_registry"].clear()
         _cache["studio2_registry"].clear()
         _cache["studio2_registry_summary"].clear()
+        _cache["registry_list_meta"].clear()
 
 
 def _resp_cache_get(key: str):
@@ -4110,7 +4401,7 @@ def _compiled_cache_invalidate(module_id: str | None = None):
     if module_id is None:
         _compiled_cache.clear()
         return
-    prefix = f"{module_id}:"
+    prefix = f"{get_org_id()}:{module_id}:"
     for key in list(_compiled_cache.keys()):
         if key.startswith(prefix):
             _compiled_cache.pop(key, None)
@@ -9674,16 +9965,39 @@ def _apply_module_change_db(module_id: str, manifest: dict, actor: dict | None, 
             warnings.append({"code": "MODULE_ALREADY_INSTALLED", "message": "Module already installed", "path": "module_id", "detail": None})
             return {"ok": True, "errors": [], "warnings": warnings, "module": existing, "audit_id": None}
         new_hash = store.init_module(module_id, manifest, actor=actor, reason=reason)
-        module_name = _module_name_from_manifest(manifest)
+        module_meta = _module_registry_meta_from_manifest(module_id, manifest)
+        module_name = module_meta.get("name")
         with get_conn() as conn:
             version = _insert_module_version(conn, module_id, new_hash, manifest, actor, notes=reason)
             execute(
                 conn,
                 """
-                insert into modules_installed (org_id, module_id, enabled, current_hash, name, installed_at, updated_at, tags, status, active_version, last_error, archived)
-                values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                insert into modules_installed (
+                  org_id, module_id, enabled, current_hash, name, description, category, module_version,
+                  module_key, home_route, icon_key, installed_at, updated_at, tags, status, active_version, last_error, archived
+                )
+                values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
-                [get_org_id(), module_id, True, new_hash, module_name, _now(), _now(), None, "installed", version.get("version_id"), None, False],
+                [
+                    get_org_id(),
+                    module_id,
+                    True,
+                    new_hash,
+                    module_name,
+                    module_meta.get("description"),
+                    module_meta.get("category"),
+                    module_meta.get("module_version"),
+                    module_meta.get("module_key"),
+                    module_meta.get("home_route"),
+                    module_meta.get("icon_key"),
+                    _now(),
+                    _now(),
+                    None,
+                    "installed",
+                    version.get("version_id"),
+                    None,
+                    False,
+                ],
                 query_name="modules_installed.insert_install",
             )
             audit_id = str(uuid.uuid4())
@@ -9960,61 +10274,30 @@ def _delete_module_memory(module_id: str, actor: dict | None, reason: str, force
 
 
 @app.get("/modules")
-async def list_modules(request: Request) -> dict:
+async def list_modules(request: Request, response: Response) -> dict:
+    started = _perf_now()
+    phase = _perf_now()
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    auth_ms = _perf_ms(phase)
+    phase = _perf_now()
     cached = _cache_get("modules")
     modules = copy.deepcopy(cached) if cached is not None else None
     if modules is None:
-        modules = _get_registry_list(request)
-        for mod in modules:
-            # Fill missing display metadata from the current manifest snapshot.
-            # modules_installed stores the operational state; the manifest is the source of truth for app meta.
-            need_meta = not (
-                (isinstance(mod.get("name"), str) and mod.get("name").strip())
-                and (isinstance(mod.get("description"), str) and mod.get("description").strip())
-                and (isinstance(mod.get("category"), str) and mod.get("category").strip())
-                and (isinstance(mod.get("module_version"), str) and mod.get("module_version").strip())
-            )
-            if not need_meta:
-                continue
-            module_id = mod.get("module_id")
-            manifest_hash = mod.get("current_hash")
-            if not module_id or not manifest_hash:
-                continue
-            try:
-                manifest = _get_snapshot(request, module_id, manifest_hash)
-            except Exception:
-                continue
-            module_def = manifest.get("module") if isinstance(manifest, dict) else None
-            module_def = module_def if isinstance(module_def, dict) else {}
-            if not (isinstance(mod.get("name"), str) and mod.get("name").strip()):
-                name = _module_name_from_manifest(manifest) or module_def.get("name")
-                if isinstance(name, str) and name.strip():
-                    mod["name"] = name.strip()
-            if not (isinstance(mod.get("description"), str) and mod.get("description").strip()):
-                desc = module_def.get("description")
-                if isinstance(desc, str) and desc.strip():
-                    mod["description"] = desc.strip()
-            if not (isinstance(mod.get("category"), str) and mod.get("category").strip()):
-                cat = module_def.get("category")
-                if isinstance(cat, str) and cat.strip():
-                    mod["category"] = cat.strip()
-            if not (isinstance(mod.get("module_version"), str) and mod.get("module_version").strip()):
-                ver = module_def.get("version")
-                if isinstance(ver, str) and ver.strip():
-                    mod["module_version"] = ver.strip()
-            if not (isinstance(mod.get("icon_key"), str) and mod.get("icon_key").strip()):
-                icon_key = module_def.get("icon_key") or module_def.get("icon")
-                if isinstance(icon_key, str) and icon_key.strip():
-                    mod["icon_key"] = icon_key.strip()
-            if not (isinstance(mod.get("module_key"), str) and mod.get("module_key").strip()):
-                stable_key = module_def.get("key") if isinstance(module_def.get("key"), str) else module_def.get("id")
-                if isinstance(stable_key, str) and stable_key.strip():
-                    mod["module_key"] = stable_key.strip()
+        modules = _get_registry_list_with_meta(request)
         _cache_set("modules", copy.deepcopy(modules))
+    load_ms = _perf_ms(phase)
+    phase = _perf_now()
     visible_modules = [mod for mod in modules if _module_visible_for_actor(actor, mod.get("module_id"))]
+    response.headers["Server-Timing"] = _server_timing_header(
+        [
+            ("auth", auth_ms),
+            ("load", load_ms),
+            ("filter", _perf_ms(phase)),
+            ("total", _perf_ms(started)),
+        ]
+    ).get("Server-Timing", "")
     return {"modules": visible_modules}
 
 
@@ -10477,9 +10760,13 @@ async def set_module_order(module_id: str, request: Request) -> dict:
 
 @app.get("/modules/{module_id}/manifest")
 async def get_module_manifest(module_id: str, request: Request) -> dict:
+    started = _perf_now()
+    phase = _perf_now()
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    auth_ms = _perf_ms(phase)
+    phase = _perf_now()
     if not _module_visible_for_actor(actor, module_id):
         return _error_response("FORBIDDEN", "Module access denied", "module_id", status=403)
     module = _get_module(request, module_id)
@@ -10490,21 +10777,51 @@ async def get_module_manifest(module_id: str, request: Request) -> dict:
     manifest_hash = module.get("current_hash")
     cache_key = f"{get_org_id()}:{module_id}:{manifest_hash}"
     cached = _cache_get("manifest", cache_key)
+    module_ms = _perf_ms(phase)
+    phase = _perf_now()
     if cached is not None:
         filtered_cached = _filter_manifest_for_actor(cached, module_id, actor, manifest_hash)
         if filtered_cached is None:
             return _error_response("FORBIDDEN", "Module access denied", "module_id", status=403)
-        return _ok_response({"module_id": module_id, "manifest_hash": manifest_hash, "manifest": filtered_cached})
+        return _ok_response(
+            {"module_id": module_id, "manifest_hash": manifest_hash, "manifest": filtered_cached},
+            headers=_server_timing_header(
+                [
+                    ("auth", auth_ms),
+                    ("module", module_ms),
+                    ("cache", _perf_ms(phase)),
+                    ("total", _perf_ms(started)),
+                ]
+            ),
+        )
     try:
         manifest = _get_snapshot(request, module_id, manifest_hash)
     except Exception:
         return _error_response("MODULE_NOT_FOUND", "Module manifest not found", "module_id", status=404)
+    snapshot_ms = _perf_ms(phase)
+    phase = _perf_now()
     filtered_manifest = _filter_manifest_for_actor(manifest, module_id, actor, manifest_hash)
     if filtered_manifest is None:
         return _error_response("FORBIDDEN", "Module access denied", "module_id", status=403)
+    filter_ms = _perf_ms(phase)
+    phase = _perf_now()
     _get_compiled_manifest(module_id, manifest_hash, manifest)
+    _get_compiled_manifest_variant(module_id, manifest_hash, filtered_manifest, f"filtered:{_access_policy_hash(actor)}")
+    compile_ms = _perf_ms(phase)
     _cache_set("manifest", manifest, cache_key)
-    return _ok_response({"module_id": module_id, "manifest_hash": manifest_hash, "manifest": filtered_manifest})
+    return _ok_response(
+        {"module_id": module_id, "manifest_hash": manifest_hash, "manifest": filtered_manifest},
+        headers=_server_timing_header(
+            [
+                ("auth", auth_ms),
+                ("module", module_ms),
+                ("snapshot", snapshot_ms),
+                ("filter", filter_ms),
+                ("compile", compile_ms),
+                ("total", _perf_ms(started)),
+            ]
+        ),
+    )
 
 
 @app.get("/page/bootstrap")
@@ -10520,9 +10837,13 @@ async def page_bootstrap(
     search_fields: str | None = None,
     domain: str | None = None,
 ) -> dict:
+    started = _perf_now()
+    phase = _perf_now()
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    auth_ms = _perf_ms(phase)
+    phase = _perf_now()
     if not module_id:
         return _error_response("MODULE_REQUIRED", "module_id is required", "module_id", status=400)
     module, manifest = _get_installed_manifest(request, module_id)
@@ -10533,6 +10854,7 @@ async def page_bootstrap(
     manifest_hash = module.get("current_hash")
     if not isinstance(manifest_hash, str):
         return _error_response("MODULE_INVALID", "Module manifest hash missing", "module_id", status=400)
+    manifest_ms = _perf_ms(phase)
     org_id = get_org_id()
     actor_user_id = actor.get("user_id") or ""
     actor_workspace_role = actor.get("workspace_role") or actor.get("role") or ""
@@ -10546,10 +10868,18 @@ async def page_bootstrap(
     if cached is not None:
         logger.info("cache_hit=page_bootstrap key=%s", cache_key)
         return cached
+    phase = _perf_now()
     filtered_manifest = _filter_manifest_for_actor(manifest, module_id, actor, manifest_hash)
     if filtered_manifest is None:
         return _error_response("FORBIDDEN", "Module access denied", "module_id", status=403)
-    compiled = _compile_manifest(filtered_manifest)
+    compiled = _get_compiled_manifest_variant(
+        module_id,
+        manifest_hash,
+        filtered_manifest,
+        f"filtered:{_access_policy_hash(actor)}",
+    )
+    compile_ms = _perf_ms(phase)
+    phase = _perf_now()
     view_obj, page_obj = _resolve_bootstrap_view(filtered_manifest, page_id, view_id)
     if not view_obj:
         fallback_view = _fallback_view_id_from_page_id(filtered_manifest, page_id) if not view_id else None
@@ -10683,7 +11013,19 @@ async def page_bootstrap(
             "record": _mask_record_for_actor(actor, module_id, found_form_entity[1] if found_form_entity else None, record.get("record") if record else None),
         }
 
-    response = _ok_response(payload)
+    data_ms = _perf_ms(phase)
+    response = _ok_response(
+        payload,
+        headers=_server_timing_header(
+            [
+                ("auth", auth_ms),
+                ("manifest", manifest_ms),
+                ("compile", compile_ms),
+                ("data", data_ms),
+                ("total", _perf_ms(started)),
+            ]
+        ),
+    )
     _resp_cache_set(cache_key, response)
     logger.info("cache_miss=page_bootstrap key=%s", cache_key)
     return response
@@ -10696,7 +11038,8 @@ def _upgrade_module_db(module_id: str, manifest: dict, actor: dict | None, reaso
     if existing is None:
         return {"ok": False, "errors": [{"code": "MODULE_NOT_FOUND", "message": "module not found", "path": "module_id", "detail": None}], "warnings": [], "module": None, "audit_id": None}
     new_hash = store.init_module(module_id, manifest, actor=actor, reason=reason)
-    module_name = _module_name_from_manifest(manifest)
+    module_meta = _module_registry_meta_from_manifest(module_id, manifest)
+    module_name = module_meta.get("name")
     warnings = []
     if existing.get("current_hash") == new_hash:
         warnings.append({"code": "MODULE_ALREADY_UP_TO_DATE", "message": "Module already up to date", "path": "module_id", "detail": None})
@@ -10707,22 +11050,38 @@ def _upgrade_module_db(module_id: str, manifest: dict, actor: dict | None, reaso
                 conn,
                 """
                 update modules_installed
-                set current_hash=%s, updated_at=%s, status=%s, active_version=%s, last_error=%s
+                set current_hash=%s,
+                    updated_at=%s,
+                    status=%s,
+                    active_version=%s,
+                    last_error=%s,
+                    name=coalesce(%s, name),
+                    description=coalesce(%s, description),
+                    category=coalesce(%s, category),
+                    module_version=coalesce(%s, module_version),
+                    module_key=coalesce(%s, module_key),
+                    home_route=coalesce(%s, home_route),
+                    icon_key=coalesce(%s, icon_key)
                 where org_id=%s and module_id=%s
                 """,
-                [new_hash, _now(), "installed", version.get("version_id"), None, get_org_id(), module_id],
+                [
+                    new_hash,
+                    _now(),
+                    "installed",
+                    version.get("version_id"),
+                    None,
+                    module_name,
+                    module_meta.get("description"),
+                    module_meta.get("category"),
+                    module_meta.get("module_version"),
+                    module_meta.get("module_key"),
+                    module_meta.get("home_route"),
+                    module_meta.get("icon_key"),
+                    get_org_id(),
+                    module_id,
+                ],
                 query_name="modules_installed.update_hash_upgrade",
             )
-            if module_name:
-                execute(
-                    conn,
-                    """
-                    update modules_installed set name=%s, updated_at=%s
-                    where org_id=%s and module_id=%s
-                    """,
-                    [module_name, _now(), get_org_id(), module_id],
-                    query_name="modules_installed.update_name_upgrade",
-                )
             audit_id = str(uuid.uuid4())
             audit = {
                 "audit_id": audit_id,
@@ -29208,8 +29567,9 @@ def _ai_clone_workspace_structure_to_sandbox(source_workspace_id: str, sandbox_w
         module_rows = fetch_all(
             conn,
             """
-            select module_id, enabled, current_hash, name, installed_at, updated_at, tags,
-                   status, active_version, last_error, archived, display_order, icon_key
+            select module_id, enabled, current_hash, name, description, category, module_version,
+                   module_key, home_route, installed_at, updated_at, tags, status, active_version,
+                   last_error, archived, display_order, icon_key
             from modules_installed
             where org_id=%s
             """,
@@ -29310,14 +29670,20 @@ def _ai_clone_workspace_structure_to_sandbox(source_workspace_id: str, sandbox_w
                     conn,
                     """
                     insert into modules_installed (
-                      org_id, module_id, enabled, current_hash, name, installed_at, updated_at, tags,
-                      status, active_version, last_error, archived, display_order, icon_key
+                      org_id, module_id, enabled, current_hash, name, description, category, module_version,
+                      module_key, home_route, installed_at, updated_at, tags, status, active_version,
+                      last_error, archived, display_order, icon_key
                     )
-                    values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     on conflict (org_id, module_id) do update
                     set enabled=excluded.enabled,
                         current_hash=excluded.current_hash,
                         name=excluded.name,
+                        description=excluded.description,
+                        category=excluded.category,
+                        module_version=excluded.module_version,
+                        module_key=excluded.module_key,
+                        home_route=excluded.home_route,
                         updated_at=excluded.updated_at,
                         tags=excluded.tags,
                         status=excluded.status,
@@ -29333,6 +29699,11 @@ def _ai_clone_workspace_structure_to_sandbox(source_workspace_id: str, sandbox_w
                         bool(row.get("enabled")),
                         row.get("current_hash"),
                         row.get("name"),
+                        row.get("description"),
+                        row.get("category"),
+                        row.get("module_version"),
+                        row.get("module_key"),
+                        row.get("home_route"),
                         row.get("installed_at") or _now(),
                         row.get("updated_at") or _now(),
                         json.dumps(_ai_json_clone_payload(row.get("tags")), default=str) if row.get("tags") is not None else None,
@@ -32080,6 +32451,50 @@ async def lookup_options(request: Request, entity_id: str) -> dict:
     return response
 
 
+@app.post("/lookup/{entity_id}/labels")
+async def lookup_labels(request: Request, entity_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    entity_id = _normalize_entity_id(entity_id)
+    found = _find_entity_def(request, entity_id)
+    if not found:
+        return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "entity_id", status=404)
+    denied = _entity_access_denied_response(actor, found[0], entity_id, write=False)
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    ids = body.get("ids") if isinstance(body, dict) else None
+    label_field = body.get("label_field") if isinstance(body, dict) else None
+    if not isinstance(ids, list):
+        return _error_response("IDS_REQUIRED", "ids must be an array", "ids", status=400)
+    normalized_ids = list(dict.fromkeys([str(item).strip() for item in ids if isinstance(item, str) and str(item).strip()]))
+    if not normalized_ids:
+        return _ok_response({"labels": {}})
+    if not isinstance(label_field, str) or not label_field:
+        label_field = found[1].get("display_field") if isinstance(found[1], dict) else None
+    field_ids = [label_field] if isinstance(label_field, str) and label_field else None
+    items = generic_records.get_many(entity_id, normalized_ids, fields=field_ids)
+    visible_items = _filter_record_items_for_actor(actor, found[0], found[1], items)
+    labels: dict[str, str] = {}
+    for item in visible_items:
+        record = item.get("record") or {}
+        record_id = str(item.get("record_id") or record.get("id") or "").strip()
+        if not record_id:
+            continue
+        label = (
+            (label_field and isinstance(record, dict) and record.get(label_field))
+            or (record.get("display_name") if isinstance(record, dict) else None)
+            or (record.get("full_name") if isinstance(record, dict) else None)
+            or (record.get("name") if isinstance(record, dict) else None)
+            or record_id
+        )
+        labels[record_id] = str(label)
+    for record_id in normalized_ids:
+        labels.setdefault(record_id, record_id)
+    return _ok_response({"labels": labels})
+
+
 @app.get("/records/{entity_id}/aggregate")
 async def aggregate_records(
     request: Request,
@@ -32628,18 +33043,22 @@ async def system_dashboard_query(request: Request) -> dict:
         return cached
     sql_result = None
     if _records_sql_fast_path_allowed(actor, entity_id, source_filter, allow_simple_domain=True):
-        sql_result = _dashboard_query_sql_fast(
-            entity_id=entity_id,
-            source=source,
-            group_by=group_by if isinstance(group_by, str) and group_by else None,
-            measure=measure if isinstance(measure, str) and measure else "count",
-            date_field=date_field_effective if isinstance(date_field_effective, str) and date_field_effective else None,
-            start=start if isinstance(start, str) and start else None,
-            end=end if isinstance(end, str) and end else None,
-            limit=limit_cap,
-            q=q if isinstance(q, str) and q else None,
-            source_filter=source_filter if isinstance(source_filter, dict) else None,
-        )
+        try:
+            sql_result = _dashboard_query_sql_fast(
+                entity_id=entity_id,
+                source=source,
+                group_by=group_by if isinstance(group_by, str) and group_by else None,
+                measure=measure if isinstance(measure, str) and measure else "count",
+                date_field=date_field_effective if isinstance(date_field_effective, str) and date_field_effective else None,
+                start=start if isinstance(start, str) and start else None,
+                end=end if isinstance(end, str) and end else None,
+                limit=limit_cap,
+                q=q if isinstance(q, str) and q else None,
+                source_filter=source_filter if isinstance(source_filter, dict) else None,
+            )
+        except Exception:
+            logger.exception("dashboard_query_fast_failed entity=%s source_key=%s", entity_id, source_key)
+            sql_result = None
     if sql_result is not None:
         response = _ok_response(sql_result)
         _resp_cache_set(cache_key, response)

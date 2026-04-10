@@ -36,6 +36,7 @@ const RECORD_MUTATION_EVENT = "octo:records-mutated";
 
 const REQUEST_POLICIES = [
   { pattern: /^\/modules$/, methods: ["GET"], ttl: 30000 },
+  { pattern: /^\/access\/context$/, methods: ["GET"], ttl: 10000 },
   { pattern: /^\/access\/members$/, methods: ["GET"], ttl: 10000 },
   { pattern: /^\/access\/profiles(?:\/[^/]+)?$/, methods: ["GET"], ttl: 15000 },
   { pattern: /^\/settings\/provider-status(?:\?.*)?$/, methods: ["GET"], ttl: 10000 },
@@ -331,9 +332,14 @@ export async function apiFetch(path, options = {}) {
           }
         if (path.startsWith("/access/members")) {
           invalidateRequestPrefix("/access/members");
+          invalidateRequestPrefix("/access/context");
         }
         if (path.startsWith("/access/profiles")) {
           invalidateRequestPrefix("/access/profiles");
+          invalidateRequestPrefix("/access/context");
+        }
+        if (path.startsWith("/access/workspaces")) {
+          invalidateRequestPrefix("/access/context");
         }
         if (path.startsWith("/settings/secrets") || path.startsWith("/settings/provider-status")) {
           invalidateRequestPrefix("/settings/provider-status");
@@ -658,7 +664,22 @@ export async function getPageBootstrap({
   if (q) params.set("q", q);
   if (searchFields) params.set("search_fields", searchFields);
   if (domain) params.set("domain", domain);
-  return apiFetch(`/page/bootstrap?${params.toString()}`, { cacheTtl: isOctoAiSandboxActive() ? 0 : undefined });
+  const res = await apiFetch(`/page/bootstrap?${params.toString()}`, { cacheTtl: isOctoAiSandboxActive() ? 0 : undefined });
+  const manifestHash = res?.manifest_hash;
+  const manifest = res?.manifest;
+  if (moduleId && manifestHash && manifest && typeof manifest === "object") {
+    const scopedModuleId = workspaceScopedKey(moduleId);
+    const compiled = res?.compiled || compiledByHash.get(manifestHash) || compileManifest(manifest);
+    if (!compiledByHash.has(manifestHash)) {
+      compiledByHash.set(manifestHash, compiled);
+    }
+    const manifestResult = { module_id: moduleId, manifest_hash: manifestHash, manifest, compiled };
+    manifestByHash.set(manifestHash, manifestResult);
+    manifestHashByModule.set(scopedModuleId, manifestHash);
+    manifestCache.set(scopedModuleId, manifestResult);
+    manifestCacheTs.set(scopedModuleId, Date.now());
+  }
+  return res;
 }
 
 export function invalidateManifestCache(moduleId) {
