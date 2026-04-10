@@ -1,6 +1,7 @@
-import React, { createContext, useCallback, useContext, useMemo, useState, useEffect } from "react";
+import React, { createContext, useCallback, useContext, useMemo, useRef, useState, useEffect } from "react";
 import {
   getModules,
+  peekModulesCache,
   invalidateModulesCache,
   enableModule,
   disableModule,
@@ -11,10 +12,21 @@ import {
 const ModuleStoreContext = createContext(null);
 
 export function ModuleStoreProvider({ user, children }) {
-  const [modules, setModules] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [modules, setModules] = useState(() => {
+    const cached = peekModulesCache();
+    return Array.isArray(cached?.modules) ? cached.modules : [];
+  });
+  const [loading, setLoading] = useState(() => {
+    const cached = peekModulesCache();
+    return Boolean(user) && !Array.isArray(cached?.modules);
+  });
   const [error, setError] = useState(null);
   const [workspaceKey, setWorkspaceKey] = useState(() => getActiveWorkspaceId());
+  const modulesRef = useRef(modules);
+
+  useEffect(() => {
+    modulesRef.current = modules;
+  }, [modules]);
 
   const refresh = useCallback(
     async (opts = {}) => {
@@ -23,7 +35,8 @@ export function ModuleStoreProvider({ user, children }) {
         setError(null);
         return;
       }
-      setLoading(true);
+      const shouldShowLoading = !Array.isArray(modulesRef.current) || modulesRef.current.length === 0;
+      if (shouldShowLoading) setLoading(true);
       try {
         if (opts.force) invalidateModulesCache();
         const res = await getModules();

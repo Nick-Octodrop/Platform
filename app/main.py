@@ -29719,7 +29719,7 @@ def _ai_clone_workspace_structure_to_sandbox(source_workspace_id: str, sandbox_w
         workspace_prefs = fetch_one(
             conn,
             """
-            select theme, colors, logo_url, ui_density
+            select theme, colors, logo_url, ui_density, layout_prefs
             from workspace_ui_prefs
             where org_id=%s
             """,
@@ -29730,13 +29730,14 @@ def _ai_clone_workspace_structure_to_sandbox(source_workspace_id: str, sandbox_w
             execute(
                 conn,
                 """
-                insert into workspace_ui_prefs (org_id, theme, colors, logo_url, ui_density, updated_at)
-                values (%s,%s,%s,%s,%s,%s)
+                insert into workspace_ui_prefs (org_id, theme, colors, logo_url, ui_density, layout_prefs, updated_at)
+                values (%s,%s,%s,%s,%s,%s,%s)
                 on conflict (org_id) do update
                 set theme=excluded.theme,
                     colors=excluded.colors,
                     logo_url=excluded.logo_url,
                     ui_density=excluded.ui_density,
+                    layout_prefs=excluded.layout_prefs,
                     updated_at=excluded.updated_at
                 """,
                 [
@@ -29745,6 +29746,7 @@ def _ai_clone_workspace_structure_to_sandbox(source_workspace_id: str, sandbox_w
                     json.dumps(_ai_json_clone_payload(workspace_prefs.get("colors")), default=str) if workspace_prefs.get("colors") is not None else None,
                     workspace_prefs.get("logo_url"),
                     workspace_prefs.get("ui_density"),
+                    json.dumps(_ai_json_clone_payload(workspace_prefs.get("layout_prefs")), default=str) if workspace_prefs.get("layout_prefs") is not None else None,
                     _now(),
                 ],
                 query_name="octo_ai.sandbox.prefs_clone",
@@ -33532,7 +33534,7 @@ async def get_ui_prefs(request: Request) -> dict:
     with get_conn() as conn:
         workspace = fetch_one(
             conn,
-            "select org_id, theme, colors, logo_url, ui_density from workspace_ui_prefs where org_id=%s",
+            "select org_id, theme, colors, logo_url, ui_density, layout_prefs from workspace_ui_prefs where org_id=%s",
             [org_id],
             query_name="workspace_ui_prefs.get",
         )
@@ -33840,7 +33842,7 @@ async def set_ui_prefs(request: Request) -> dict:
         if workspace_data is not None:
             current = fetch_one(
                 conn,
-                "select theme, colors, logo_url, ui_density from workspace_ui_prefs where org_id=%s",
+                "select theme, colors, logo_url, ui_density, layout_prefs from workspace_ui_prefs where org_id=%s",
                 [org_id],
                 query_name="workspace_ui_prefs.current",
             ) or {}
@@ -33848,15 +33850,24 @@ async def set_ui_prefs(request: Request) -> dict:
             colors = workspace_data.get("colors") if "colors" in workspace_data else current.get("colors")
             logo_url = workspace_data.get("logo_url") if "logo_url" in workspace_data else current.get("logo_url")
             ui_density = workspace_data.get("ui_density") if "ui_density" in workspace_data else current.get("ui_density")
+            layout_prefs = workspace_data.get("layout_prefs") if "layout_prefs" in workspace_data else current.get("layout_prefs")
             execute(
                 conn,
                 """
-                insert into workspace_ui_prefs (org_id, theme, colors, logo_url, ui_density, updated_at)
-                values (%s, %s, %s, %s, %s, %s)
+                insert into workspace_ui_prefs (org_id, theme, colors, logo_url, ui_density, layout_prefs, updated_at)
+                values (%s, %s, %s, %s, %s, %s, %s)
                 on conflict (org_id)
-                do update set theme=excluded.theme, colors=excluded.colors, logo_url=excluded.logo_url, ui_density=excluded.ui_density, updated_at=excluded.updated_at
+                do update set theme=excluded.theme, colors=excluded.colors, logo_url=excluded.logo_url, ui_density=excluded.ui_density, layout_prefs=excluded.layout_prefs, updated_at=excluded.updated_at
                 """,
-                [org_id, theme, json.dumps(colors) if colors is not None else None, logo_url, ui_density, _now()],
+                [
+                    org_id,
+                    theme,
+                    json.dumps(colors) if colors is not None else None,
+                    logo_url,
+                    ui_density,
+                    json.dumps(layout_prefs) if layout_prefs is not None else None,
+                    _now(),
+                ],
                 query_name="workspace_ui_prefs.upsert",
             )
         if user_data is not None and user_id:
@@ -38922,19 +38933,26 @@ async def upload_workspace_logo(request: Request, file: UploadFile = File(...)) 
     with get_conn() as conn:
         current = fetch_one(
             conn,
-            "select theme, colors from workspace_ui_prefs where org_id=%s",
+            "select theme, colors, layout_prefs from workspace_ui_prefs where org_id=%s",
             [org_id],
             query_name="workspace_ui_prefs.current_for_logo",
         ) or {}
         execute(
             conn,
             """
-            insert into workspace_ui_prefs (org_id, theme, colors, logo_url, updated_at)
-            values (%s, %s, %s, %s, %s)
+            insert into workspace_ui_prefs (org_id, theme, colors, logo_url, layout_prefs, updated_at)
+            values (%s, %s, %s, %s, %s, %s)
             on conflict (org_id)
-            do update set theme=excluded.theme, colors=excluded.colors, logo_url=excluded.logo_url, updated_at=excluded.updated_at
+            do update set theme=excluded.theme, colors=excluded.colors, logo_url=excluded.logo_url, layout_prefs=excluded.layout_prefs, updated_at=excluded.updated_at
             """,
-            [org_id, current.get("theme"), json.dumps(current.get("colors")) if current.get("colors") is not None else None, logo_url, _now()],
+            [
+                org_id,
+                current.get("theme"),
+                json.dumps(current.get("colors")) if current.get("colors") is not None else None,
+                logo_url,
+                json.dumps(current.get("layout_prefs")) if current.get("layout_prefs") is not None else None,
+                _now(),
+            ],
             query_name="workspace_ui_prefs.upsert_logo",
         )
     return _ok_response({"logo_url": logo_url})

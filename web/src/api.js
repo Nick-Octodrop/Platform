@@ -542,6 +542,16 @@ export function invalidateModulesCache() {
   invalidateRequestPrefix("/modules");
 }
 
+export function peekModulesCache() {
+  if (isOctoAiSandboxActive()) return null;
+  const now = Date.now();
+  const workspaceKey = workspaceScopedKey("modules");
+  if (modulesCache && modulesCache.workspaceKey === workspaceKey && now - modulesCacheTs < MODULES_TTL_MS) {
+    return modulesCache;
+  }
+  return null;
+}
+
 export async function getUiPrefs() {
   return apiFetch("/prefs/ui");
 }

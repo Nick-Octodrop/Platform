@@ -1065,6 +1065,7 @@ function InlineLineItemsTable({
   const [deletingRowId, setDeletingRowId] = useState("");
   const [addLookupResetKey, setAddLookupResetKey] = useState(0);
   const [creatingCustomLine, setCreatingCustomLine] = useState(false);
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const lookupCacheRef = useRef({});
   const uomColumn = columns.find((col) => typeof col?.field_id === "string" && col.field_id.endsWith(".uom"));
   const quantityColumn = columns.find((col) => typeof col?.field_id === "string" && col.field_id.endsWith(".quantity"));
@@ -1417,6 +1418,7 @@ function InlineLineItemsTable({
   const actionColumnWeight = readonly ? 0 : 72;
   const totalColumnWeight = columns.reduce((total, col) => total + columnWeight(col), actionColumnWeight) || 1;
   const actionColumnStyle = { width: `${(actionColumnWeight / totalColumnWeight) * 100}%` };
+  const mobileTableMinWidth = Math.max(totalColumnWeight, 720);
 
   function columnStyle(col) {
     return { width: `${(columnWeight(col) / totalColumnWeight) * 100}%` };
@@ -1432,8 +1434,11 @@ function InlineLineItemsTable({
 
   return (
     <div className="h-full min-h-[520px] rounded-box border border-base-300 bg-base-100 flex flex-col overflow-hidden">
-      <div className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden">
-        <table className="table table-sm table-fixed w-full [&_td]:px-2 [&_th]:px-2">
+      <div className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-auto">
+        <table
+          className={`table table-sm [&_td]:px-2 [&_th]:px-2 ${isMobile ? "w-max min-w-full table-auto" : "table-fixed w-full"}`}
+          style={isMobile ? { minWidth: `${mobileTableMinWidth}px` } : undefined}
+        >
           <colgroup>
             {columns.map((col, index) => (
               <col key={`col-${col.field_id || col.label || index}`} style={columnStyle(col)} />
