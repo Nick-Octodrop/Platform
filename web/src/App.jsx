@@ -100,11 +100,6 @@ function getPwaSurfaceState() {
   return { isStandalone, isMobileBrowser, isIos, isSafari };
 }
 
-function shouldShowPwaUpdatePrompt() {
-  const { isStandalone, isMobileBrowser } = getPwaSurfaceState();
-  return isStandalone || isMobileBrowser;
-}
-
 export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -265,7 +260,7 @@ export default function App() {
     let alive = true;
 
     async function refreshUpdateAvailability() {
-      if (!shouldShowPwaUpdatePrompt() || !("serviceWorker" in navigator)) return;
+      if (!("serviceWorker" in navigator)) return;
       try {
         const registration = await navigator.serviceWorker.getRegistration();
         if (!alive || !registration) return;
@@ -286,11 +281,9 @@ export default function App() {
     }
 
     function handleUpdateReady() {
-      if (shouldShowPwaUpdatePrompt()) {
-        setUpdatePromptVisible(true);
-      }
+      setUpdatePromptVisible(true);
     }
-    if (window.__octoWebUpdateReady && shouldShowPwaUpdatePrompt()) {
+    if (window.__octoWebUpdateReady) {
       setUpdatePromptVisible(true);
     }
     refreshUpdateAvailability();

@@ -24,22 +24,9 @@ function isStandaloneDisplay() {
   return Boolean(displayStandalone || navigatorStandalone);
 }
 
-function isMobileSurface() {
-  if (typeof window === "undefined") return false;
-  const ua = window.navigator?.userAgent || "";
-  return Boolean(
-    window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches ||
-      /Android|iPhone|iPad|iPod/i.test(ua)
-  );
-}
-
 const updateSW = registerSW({
   immediate: true,
   onNeedRefresh() {
-    if (!isStandaloneDisplay() && !isMobileSurface()) {
-      updateSW(false);
-      return;
-    }
     window.__octoWebUpdateReady = true;
     window.__octoWebApplyUpdate = updateSW;
     window.dispatchEvent(new CustomEvent("octo:web-pwa-update-ready"));
