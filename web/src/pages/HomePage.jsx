@@ -5,7 +5,7 @@ import { useModuleStore } from "../state/moduleStore.jsx";
 import { getAppDisplayName } from "../state/appCatalog.js";
 import { getAppIcon, subscribeAppIcons } from "../state/appIcons.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
-import { LayoutGrid, Package, Settings as SettingsIcon, Sparkles } from "lucide-react";
+import { Package } from "lucide-react";
 import { useAccessContext } from "../access.js";
 import { appendOctoAiFrameParams, deriveAppHomeRoute } from "../apps/appShellUtils.js";
 import AppModuleIcon from "../components/AppModuleIcon.jsx";
@@ -110,10 +110,12 @@ export default function HomePage({ user }) {
   }, []);
 
   const systemApps = [
-    { id: "apps", name: "App Manager", route: "/apps", system: true, icon: <LayoutGrid size={56} strokeWidth={1.31} className="text-primary" /> },
-    ...(canSeeOctoAi ? [{ id: "octo_ai", name: "Octo AI", route: "/octo-ai", system: true, icon: <Sparkles size={56} strokeWidth={1.31} className="text-primary" /> }] : []),
-    { id: "settings", name: "Settings", route: "/settings", system: true, icon: <SettingsIcon size={56} strokeWidth={1.31} className="text-primary" /> },
-  ].map((app) => ({ ...app, icon_url: getAppIcon(app.id) }));
+    { id: "apps", name: "App Manager", route: "/apps", system: true, icon_url: getAppIcon("apps") || "lucide:layout-grid" },
+    ...(canSeeOctoAi
+      ? [{ id: "octo_ai", name: "Octo AI", route: "/octo-ai", system: true, icon_url: getAppIcon("octo_ai") || "lucide:sparkles" }]
+      : []),
+    { id: "settings", name: "Settings", route: "/settings", system: true, icon_url: getAppIcon("settings") || "lucide:settings" },
+  ];
 
   const installedApps = useMemo(() => {
     return modules
@@ -130,8 +132,8 @@ export default function HomePage({ user }) {
         name: getAppDisplayName(m.module_id, m),
         module: m,
         system: false,
-        icon: <Package size={56} strokeWidth={1.31} className="text-primary" />,
-        icon_url: m.icon_key || null,
+        icon: <Package size={44} strokeWidth={1.4} className="text-primary" />,
+        icon_url: m.icon_key || "lucide:package",
       }));
   }, [iconVersion, isSuperadmin, modules, user]);
 

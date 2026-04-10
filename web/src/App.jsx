@@ -257,6 +257,29 @@ export default function App() {
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
+    let alive = true;
+
+    async function refreshUpdateAvailability() {
+      if (!getPwaSurfaceState().isStandalone || !("serviceWorker" in navigator)) return;
+      try {
+        const registration = await navigator.serviceWorker.getRegistration();
+        if (!alive || !registration) return;
+        if (registration.waiting) {
+          window.__octoWebUpdateReady = true;
+          setUpdatePromptVisible(true);
+          return;
+        }
+        await registration.update();
+        if (!alive) return;
+        if (registration.waiting) {
+          window.__octoWebUpdateReady = true;
+          setUpdatePromptVisible(true);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     function handleUpdateReady() {
       if (getPwaSurfaceState().isStandalone) {
         setUpdatePromptVisible(true);
@@ -265,8 +288,16 @@ export default function App() {
     if (window.__octoWebUpdateReady && getPwaSurfaceState().isStandalone) {
       setUpdatePromptVisible(true);
     }
+    refreshUpdateAvailability();
     window.addEventListener("octo:web-pwa-update-ready", handleUpdateReady);
-    return () => window.removeEventListener("octo:web-pwa-update-ready", handleUpdateReady);
+    window.addEventListener("focus", refreshUpdateAvailability);
+    document.addEventListener("visibilitychange", refreshUpdateAvailability);
+    return () => {
+      alive = false;
+      window.removeEventListener("octo:web-pwa-update-ready", handleUpdateReady);
+      window.removeEventListener("focus", refreshUpdateAvailability);
+      document.removeEventListener("visibilitychange", refreshUpdateAvailability);
+    };
   }, []);
 
   useEffect(() => {

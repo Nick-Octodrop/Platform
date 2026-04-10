@@ -33,7 +33,7 @@ function AppIcon({ app }) {
       strokeWidth={1.31}
       iconClassName="text-primary"
       imageClassName="w-11 h-11 object-contain"
-      fallback={<div className="text-primary">{app.icon}</div>}
+      fallback={<div className="flex items-center justify-center text-primary">{app.icon}</div>}
     />
   );
 }
@@ -347,8 +347,8 @@ export default function AppsPage({ user }) {
                     const app = {
                       id: item.id,
                       name: item.title,
-                      icon: <Package size={64} strokeWidth={1.31} className="text-primary" />,
-                      icon_url: item.icon_url || null,
+                      icon: <Package size={44} strokeWidth={1.31} className="text-primary" />,
+                      icon_url: item.icon_url || "lucide:package",
                     };
                     const sourceId = item.source_module_id || item.id;
                     return (
@@ -408,7 +408,7 @@ export default function AppsPage({ user }) {
                     name: item.title,
                     module: moduleRecord,
                     icon: item.icon,
-                    icon_url: item.icon_url,
+                    icon_url: item.icon_url || "lucide:package",
                   };
                   return (
                     <div
