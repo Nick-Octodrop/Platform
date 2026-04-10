@@ -62,6 +62,7 @@ export default function AppsPage({ user }) {
   const [marketplaceApps, setMarketplaceApps] = useState([]);
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
   const [marketplaceError, setMarketplaceError] = useState("");
+  const [initialMarketplaceSettled, setInitialMarketplaceSettled] = useState(false);
   const [marketplaceCloneBusy, setMarketplaceCloneBusy] = useState("");
   const [openMenuId, setOpenMenuId] = useState("");
   const { hasCapability, isSuperadmin } = useAccessContext();
@@ -77,6 +78,7 @@ export default function AppsPage({ user }) {
   useEffect(() => {
     if (!user) return;
     let alive = true;
+    setInitialMarketplaceSettled(false);
     refreshMarketplace(() => alive);
     return () => {
       alive = false;
@@ -96,7 +98,10 @@ export default function AppsPage({ user }) {
       if (!isAlive()) return;
       setMarketplaceError(err?.message || "Failed to load marketplace");
     } finally {
-      if (isAlive()) setMarketplaceLoading(false);
+      if (isAlive()) {
+        setMarketplaceLoading(false);
+        setInitialMarketplaceSettled(true);
+      }
     }
   }
 
@@ -252,6 +257,12 @@ export default function AppsPage({ user }) {
     });
   }, [activeFilter, items, query]);
 
+  const needsInstalled = activeFilter !== "marketplace";
+  const needsMarketplace = activeFilter !== "installed";
+  const showInitialLoading =
+    (needsInstalled && loading && modules.length === 0) ||
+    (needsMarketplace && !initialMarketplaceSettled);
+
   useEffect(() => {
     let active = true;
     async function loadCatalog() {
@@ -320,15 +331,15 @@ export default function AppsPage({ user }) {
             />
           </div>
           <div className="mt-4 md:flex-1 md:min-h-0 md:overflow-y-auto md:overflow-x-hidden">
-            {(loading || marketplaceLoading) && <LoadingSpinner />}
+            {showInitialLoading && <LoadingSpinner />}
             {error && <div className="alert alert-error mb-4">{error}</div>}
             {marketplaceError && <div className="alert alert-error mb-4">{marketplaceError}</div>}
 
-            {!loading && !marketplaceLoading && filteredItems.length === 0 ? (
+            {!showInitialLoading && filteredItems.length === 0 ? (
               <div className="text-sm opacity-60">No apps match your search.</div>
             ) : null}
 
-            {!loading && !marketplaceLoading && filteredItems.length > 0 ? (
+            {!showInitialLoading && filteredItems.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {filteredItems.map((item) => {
                   if (item.kind === "marketplace") {
