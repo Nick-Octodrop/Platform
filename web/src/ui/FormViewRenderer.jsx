@@ -1602,7 +1602,7 @@ function InlineLineItemsTable({
                       <td key={`${row.record_id}-${fieldId}`} style={columnStyle(col)}>
                         <div className="relative">
                           {prefix ? (
-                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs opacity-60 pointer-events-none">
+                            <span className="absolute left-2 top-1/2 z-10 -translate-y-1/2 text-xs text-base-content/60 pointer-events-none">
                               {prefix}
                             </span>
                           ) : null}
@@ -1630,7 +1630,7 @@ function InlineLineItemsTable({
                             onBlur={(e) => patchRow(row.record_id, fieldId, e.target.value, col.type)}
                           />
                           {suffix ? (
-                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs opacity-60 pointer-events-none">
+                            <span className="absolute right-2 top-1/2 z-10 -translate-y-1/2 text-xs text-base-content/60 pointer-events-none">
                               {suffix}
                             </span>
                           ) : null}

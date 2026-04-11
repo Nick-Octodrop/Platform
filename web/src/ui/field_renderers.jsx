@@ -214,7 +214,7 @@ export function renderField(field, value, onChange, readonly, record = null) {
         return (
           <div className="relative">
             {prefix ? (
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm opacity-60 pointer-events-none">
+              <span className="absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm text-base-content/60 pointer-events-none">
                 {prefix}
               </span>
             ) : null}
@@ -224,6 +224,7 @@ export function renderField(field, value, onChange, readonly, record = null) {
               inputMode="decimal"
               className={`${common.className} ${align} [appearance:textfield]`.trim()}
               style={{
+                ...FIELD_TEXT_STYLE,
                 appearance: "textfield",
                 MozAppearance: "textfield",
                 paddingLeft: leftPad,
@@ -241,7 +242,7 @@ export function renderField(field, value, onChange, readonly, record = null) {
               }}
             />
             {suffix ? (
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm opacity-60 pointer-events-none">
+              <span className="absolute right-3 top-1/2 z-10 -translate-y-1/2 text-sm text-base-content/60 pointer-events-none">
                 {suffix}
               </span>
             ) : null}
