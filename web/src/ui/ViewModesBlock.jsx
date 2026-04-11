@@ -28,6 +28,7 @@ import ListViewRenderer from "./ListViewRenderer.jsx";
 import PaginationControls from "../components/PaginationControls.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { evalCondition } from "../utils/conditions.js";
+import { formatFieldValue } from "../utils/fieldFormatting.js";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_BUTTON_XS, SOFT_ICON_SM } from "../components/buttonStyles.js";
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
 import useMediaQuery from "../hooks/useMediaQuery.js";
@@ -643,7 +644,7 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
     if (kind === "metric") return "text-[12px] font-semibold leading-5 text-base-content/80 tabular-nums";
     return `${KANBAN_BADGE_BASE} border-base-300 bg-base-100 text-base-content/68`;
   };
-  const formatCardValue = (fieldId, rawValue) => {
+  const formatCardValue = (fieldId, rawValue, record = {}) => {
     if (rawValue === null || rawValue === undefined || rawValue === "") return "";
     const fieldDef = fieldMap[fieldId] || null;
     const isUuidLike = typeof rawValue === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawValue.trim());
@@ -675,6 +676,9 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
           ? parsed.toLocaleDateString()
           : parsed.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
       }
+    }
+    if (fieldDef?.type === "number") {
+      return formatFieldValue(fieldDef, rawValue, record);
     }
     if (Array.isArray(rawValue)) return rawValue.map((item) => String(item ?? "")).filter(Boolean).join(", ");
     if (isUuidLike) return "";
@@ -756,12 +760,12 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
                   ) : (grouped[groupKey] || []).map((row) => {
                     const record = row.record || {};
                     const rowId = row.record_id || record.id;
-                    const cardTitle = formatCardValue(titleField, record[titleField]) || String(rowId || "Record");
+                    const cardTitle = formatCardValue(titleField, record[titleField], record) || String(rowId || "Record");
                     const subtitleValues = subtitleFields
-                      .map((fieldId) => ({ fieldId, value: formatCardValue(fieldId, record[fieldId]) }))
+                      .map((fieldId) => ({ fieldId, value: formatCardValue(fieldId, record[fieldId], record) }))
                       .filter((item) => item.value);
                     const badgeValues = badgeFields
-                      .map((fieldId) => ({ fieldId, raw: record[fieldId], value: formatCardValue(fieldId, record[fieldId]) }))
+                      .map((fieldId) => ({ fieldId, raw: record[fieldId], value: formatCardValue(fieldId, record[fieldId], record) }))
                       .filter((item) => item.value);
                     return (
                       <div
@@ -1090,7 +1094,7 @@ function CalendarView({ view, records, onSelectRow, entityDef }) {
       cancelled = true;
     };
   }, [fieldMap, titleField]);
-  const formatCalendarValue = (fieldId, rawValue) => {
+  const formatCalendarValue = (fieldId, rawValue, record = {}) => {
     if (rawValue === null || rawValue === undefined || rawValue === "") return "";
     const fieldDef = fieldMap[fieldId] || null;
     if (fieldDef?.type === "enum") {
@@ -1114,6 +1118,9 @@ function CalendarView({ view, records, onSelectRow, entityDef }) {
           : parsed.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
       }
     }
+    if (fieldDef?.type === "number") {
+      return formatFieldValue(fieldDef, rawValue, record);
+    }
     return String(rawValue);
   };
   const allowedScales = new Set(["day", "week", "month", "year"]);
@@ -1136,7 +1143,7 @@ function CalendarView({ view, records, onSelectRow, entityDef }) {
       const startDay = atMidnight(start);
       const endDay = atMidnight(end);
       const rawTitle = rec?.[titleField];
-      const eventTitle = formatCalendarValue(titleField, rawTitle) || String(row?.record_id || "Record");
+      const eventTitle = formatCalendarValue(titleField, rawTitle, rec) || String(row?.record_id || "Record");
       const allDay = Boolean(allDayField && rec?.[allDayField]);
 
       const walker = new Date(startDay);
@@ -1185,7 +1192,7 @@ function CalendarView({ view, records, onSelectRow, entityDef }) {
       const startDay = atMidnight(start);
       const endDay = atMidnight(end);
       const rawTitle = rec?.[titleField];
-      const eventTitle = formatCalendarValue(titleField, rawTitle) || String(row?.record_id || "Record");
+      const eventTitle = formatCalendarValue(titleField, rawTitle, rec) || String(row?.record_id || "Record");
       const explicitAllDay = Boolean(allDayField && rec?.[allDayField]);
       const treatAsTimed = !explicitAllDay && (hasTimeComponent(start) || hasTimeComponent(end));
 
@@ -1734,12 +1741,8 @@ export default function ViewModesBlock({
     .filter((m) => m.mode && m.targetId && m.view);
 
   const modeButtons = useMemo(() => {
-    if (forceListOnly) return resolvedModes.filter((m) => m.mode === "list");
-    const list = [...resolvedModes];
-    if (!list.find((m) => m.mode === "pivot")) {
-      list.push({ mode: "pivot", disabled: true });
-    }
-    return list;
+    if (forceListOnly) return resolvedModes.filter((m) => m.mode === "list" && !m.disabled);
+    return resolvedModes.filter((m) => !m.disabled);
   }, [resolvedModes, forceListOnly]);
 
   const defaultMode = forceListOnly ? "list" : (block?.default_mode || resolvedModes[0]?.mode || "list");

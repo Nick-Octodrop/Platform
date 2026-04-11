@@ -787,6 +787,8 @@ function StatCardsBlock({ block, moduleId, recordContext, onNavigate, onPageSect
           ? "grid-cols-1 sm:grid-cols-2"
           : "grid-cols-1";
 
+  if (isMobile) return null;
+
   return (
     <div className="space-y-3">
       {block?.title ? <div className="text-sm font-semibold">{block.title}</div> : null}

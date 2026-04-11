@@ -53,6 +53,9 @@ Think through platform-aware field modeling:
 - use structured address fields where location/autocomplete matters
 - model money with amount + currency context where needed
 - model measurable quantities with quantity + unit context where needed
+- mark money fields with runtime currency formatting where users should see symbol-aware amounts
+- mark money cards/summaries with currency formatting where totals are user-facing
+- decide where UOM must stay visible next to quantity rather than only existing as hidden metadata
 - identify which lookups should be filtered by customer/supplier/parent/state
 - identify which fields should clear or revalidate when a parent field changes
 - identify which source selections should prefill downstream fields
@@ -88,12 +91,15 @@ Operational records should usually have:
 - meaningful header actions
 - activity enabled
 - line items/related lists separated into tabs
+- true line-item records authored through the inline `line_editor` pattern when the parent record is the main working surface
 
 Also review:
 - what helper text would reduce mistakes?
 - does this record need named attachment flows?
 - should key actions/events be tracked in activity?
 - should this record use settings-driven numbering?
+- are money values rendered with currency formatting rather than plain numbers?
+- are quantity and UOM visible together on operational list/form surfaces?
 - should this record have dashboard/status cards, and if so only on home/dashboard surfaces?
 - is the UI becoming cluttered?
 

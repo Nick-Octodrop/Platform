@@ -1,0 +1,413 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "te_catalog",
+    "key": "te_catalog",
+    "name": "Catalog",
+    "version": "1.0.0",
+    "description": "Product master records for the True Essentials catalog.",
+    "category": "True Essentials",
+    "icon_key": "lucide:Package2"
+  },
+  "app": {
+    "home": "page:te_product.home_page",
+    "defaults": {
+      "entity_home_page": "page:te_product.list_page",
+      "entity_form_page": "page:te_product.form_page",
+      "entities": {
+        "entity.te_product": {
+          "entity_home_page": "page:te_product.list_page",
+          "entity_form_page": "page:te_product.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Catalog",
+        "mode": "inline",
+        "items": [
+          { "label": "Home", "to": "page:te_product.home_page" },
+          { "label": "Products", "to": "page:te_product.list_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.te_product",
+      "label": "Product",
+      "display_field": "te_product.title",
+      "fields": [
+        { "id": "te_product.id", "type": "uuid", "label": "ID", "readonly": true },
+        {
+          "id": "te_product.sku",
+          "type": "string",
+          "label": "SKU",
+          "required": true,
+          "help_text": "Use a stable internal SKU. Do not expose UUIDs as business-facing identifiers."
+        },
+        { "id": "te_product.title", "type": "string", "label": "Product Name", "required": true },
+        { "id": "te_product.variant_name", "type": "string", "label": "Variant" },
+        {
+          "id": "te_product.uom_category",
+          "type": "enum",
+          "label": "UOM Category",
+          "default": "unit",
+          "options": [
+            { "value": "unit", "label": "Unit" },
+            { "value": "pack", "label": "Pack" }
+          ]
+        },
+        {
+          "id": "te_product.uom",
+          "type": "enum",
+          "label": "Base UOM",
+          "default": "EA",
+          "options": [
+            { "value": "EA", "label": "Each" },
+            { "value": "PACK", "label": "Pack" },
+            { "value": "CASE", "label": "Case" }
+          ],
+          "help_text": "Use an explicit unit of measure so pricing, purchasing, and future stock logic stay consistent."
+        },
+        {
+          "id": "te_product.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "draft",
+          "options": [
+            { "value": "draft", "label": "Draft" },
+            { "value": "active", "label": "Active" },
+            { "value": "discontinued", "label": "Discontinued" },
+            { "value": "archived", "label": "Archived" }
+          ],
+          "ui": { "widget": "steps" }
+        },
+        {
+          "id": "te_product.sales_currency",
+          "type": "enum",
+          "label": "Retail Currency",
+          "default": "NZD",
+          "options": [
+            { "value": "NZD", "label": "NZD" }
+          ],
+          "help_text": "True Essentials sells in NZD."
+        },
+        {
+          "id": "te_product.retail_price",
+          "type": "number",
+          "label": "Retail Price",
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "te_product.sales_currency", "precision": 2 }
+        },
+        {
+          "id": "te_product.standard_cost_nzd",
+          "type": "number",
+          "label": "Standard Cost (NZD)",
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "te_product.sales_currency", "precision": 2 },
+          "help_text": "Use an internal NZD cost reference for margin and replenishment decisions."
+        },
+        { "id": "te_product.shopify_handle", "type": "string", "label": "Shopify Handle" },
+        { "id": "te_product.shopify_product_url", "type": "string", "label": "Shopify URL" },
+        {
+          "id": "te_product.attachments",
+          "type": "attachments",
+          "label": "Images / Product Files",
+          "help_text": "Use this for product images, packaging references, and supplier-backed product files."
+        },
+        { "id": "te_product.notes", "type": "text", "label": "Internal Notes" }
+      ]
+    }
+  ],
+  "interfaces": {
+    "dashboardable": [
+      {
+        "entity_id": "entity.te_product",
+        "enabled": true,
+        "scope": "module_and_global",
+        "measures": [
+          "count"
+        ],
+        "group_bys": [
+          "te_product.status",
+          "te_product.uom_category",
+          "te_product.sales_currency"
+        ]
+      }
+    ]
+  },
+  "workflows": [
+    {
+      "id": "workflow.te_product",
+      "entity": "entity.te_product",
+      "status_field": "te_product.status",
+      "states": [
+        { "id": "draft", "label": "Draft", "order": 1 },
+        { "id": "active", "label": "Active", "order": 2 },
+        { "id": "discontinued", "label": "Discontinued", "order": 3 },
+        { "id": "archived", "label": "Archived", "order": 4 }
+      ],
+      "transitions": [
+        { "from": "draft", "to": "active", "label": "Activate" },
+        { "from": "active", "to": "discontinued", "label": "Discontinue" },
+        { "from": "discontinued", "to": "active", "label": "Reactivate" },
+        { "from": "active", "to": "archived", "label": "Archive" },
+        { "from": "discontinued", "to": "archived", "label": "Archive" }
+      ]
+    }
+  ],
+  "actions": [
+    { "id": "action.te_product_new", "kind": "open_form", "label": "New Product", "target": "te_product.form" },
+    {
+      "id": "action.te_product_activate",
+      "kind": "update_record",
+      "entity_id": "entity.te_product",
+      "label": "Activate",
+      "patch": { "te_product.status": "active" },
+      "visible_when": {
+        "op": "in",
+        "field": "te_product.status",
+        "value": ["draft", "discontinued"]
+      }
+    },
+    {
+      "id": "action.te_product_discontinue",
+      "kind": "update_record",
+      "entity_id": "entity.te_product",
+      "label": "Discontinue",
+      "patch": { "te_product.status": "discontinued" },
+      "visible_when": { "op": "eq", "field": "te_product.status", "value": "active" }
+    },
+    {
+      "id": "action.te_product_archive",
+      "kind": "update_record",
+      "entity_id": "entity.te_product",
+      "label": "Archive",
+      "patch": { "te_product.status": "archived" },
+      "visible_when": { "op": "not", "condition": { "op": "eq", "field": "te_product.status", "value": "archived" } }
+    }
+  ],
+  "views": [
+    {
+      "id": "te_product.list",
+      "kind": "list",
+      "entity": "entity.te_product",
+      "columns": [
+        { "field_id": "te_product.sku" },
+        { "field_id": "te_product.title" },
+        { "field_id": "te_product.uom" },
+        { "field_id": "te_product.status" },
+        { "field_id": "te_product.retail_price" },
+        { "field_id": "te_product.standard_cost_nzd" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.te_product_new" }],
+        "open_record_target": "page:te_product.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search products...",
+          "fields": ["te_product.sku", "te_product.title", "te_product.variant_name", "te_product.shopify_handle"]
+        },
+        "filters": [
+          { "id": "active", "label": "Active", "domain": { "op": "eq", "field": "te_product.status", "value": "active" } },
+          { "id": "draft", "label": "Draft", "domain": { "op": "eq", "field": "te_product.status", "value": "draft" } },
+          { "id": "discontinued", "label": "Discontinued", "domain": { "op": "eq", "field": "te_product.status", "value": "discontinued" } },
+          { "id": "archived", "label": "Archived", "domain": { "op": "eq", "field": "te_product.status", "value": "archived" } }
+        ]
+      }
+    },
+    {
+      "id": "te_product.form",
+      "kind": "form",
+      "entity": "entity.te_product",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "General",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_product.sku",
+            "te_product.status",
+            "te_product.title",
+            "te_product.variant_name"
+          ]
+        },
+        {
+          "id": "pricing",
+          "title": "Pricing",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_product.sales_currency",
+            "te_product.uom",
+            "te_product.retail_price",
+            "te_product.standard_cost_nzd",
+            "te_product.uom_category"
+          ]
+        },
+        {
+          "id": "commerce",
+          "title": "Commerce",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_product.shopify_handle",
+            "te_product.shopify_product_url"
+          ]
+        },
+        { "id": "notes", "title": "Notes", "fields": ["te_product.notes", "te_product.attachments"] }
+      ],
+      "header": {
+        "statusbar": { "field_id": "te_product.status" },
+        "auto_state_actions": false,
+        "primary_actions": [
+          { "action_id": "action.te_product_activate" }
+        ],
+        "secondary_actions": [
+          { "action_id": "action.te_product_discontinue" },
+          { "action_id": "action.te_product_archive" }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "summary",
+          "tabs": [
+            { "id": "summary", "label": "Summary", "sections": ["summary"] },
+            { "id": "pricing", "label": "Pricing", "sections": ["pricing"] },
+            { "id": "commerce", "label": "Shopify", "sections": ["commerce"] },
+            { "id": "notes", "label": "Notes", "sections": ["notes"] }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "te_product.sku",
+          "te_product.title",
+          "te_product.uom",
+          "te_product.status",
+          "te_product.retail_price",
+          "te_product.standard_cost_nzd"
+        ]
+      }
+    },
+    {
+      "id": "te_product.kanban",
+      "kind": "kanban",
+      "entity": "entity.te_product",
+      "card": {
+        "title_field": "te_product.sku",
+        "subtitle_fields": [
+          "te_product.title"
+        ],
+        "badge_fields": [
+          "te_product.status",
+          "te_product.retail_price"
+        ]
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "te_product.home_page",
+      "title": "Catalog",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "kind": "navigate", "label": "New Product", "target": "page:te_product.form_page" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "stat_cards",
+          "columns": 4,
+          "cards": [
+            { "id": "active_products", "label": "Active Products", "entity_id": "entity.te_product", "measure": "count", "domain": { "op": "eq", "field": "te_product.status", "value": "active" }, "format": "number" },
+            { "id": "draft_products", "label": "Draft Products", "entity_id": "entity.te_product", "measure": "count", "domain": { "op": "eq", "field": "te_product.status", "value": "draft" }, "format": "number" },
+            { "id": "discontinued_products", "label": "Discontinued", "entity_id": "entity.te_product", "measure": "count", "domain": { "op": "eq", "field": "te_product.status", "value": "discontinued" }, "format": "number" },
+            { "id": "archived_products", "label": "Archived", "entity_id": "entity.te_product", "measure": "count", "domain": { "op": "eq", "field": "te_product.status", "value": "archived" }, "format": "number" }
+          ]
+        },
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_product",
+              "default_mode": "kanban",
+              "default_filter_id": "active",
+              "modes": [
+                { "mode": "list", "target": "view:te_product.list" },
+                { "mode": "kanban", "target": "view:te_product.kanban", "default_group_by": "te_product.status" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_product.list_page",
+      "title": "Products",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_product",
+              "default_mode": "kanban",
+              "default_filter_id": "active",
+              "modes": [
+                { "mode": "list", "target": "view:te_product.list" },
+                { "mode": "kanban", "target": "view:te_product.kanban", "default_group_by": "te_product.status" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_product.form_page",
+      "title": "Product",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.te_product",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    { "kind": "container", "variant": "card", "content": [{ "kind": "view", "target": "view:te_product.form" }] }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    { "kind": "container", "variant": "card", "content": [{ "kind": "chatter", "entity_id": "entity.te_product", "record_ref": "$record.id" }] }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

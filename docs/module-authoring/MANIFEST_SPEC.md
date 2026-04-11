@@ -189,14 +189,93 @@ Currency / UOM awareness:
 - if a record includes monetary values, define currency handling intentionally
 - if a record includes measurable quantities, define UOM-related fields intentionally
 - avoid plain number fields when the business meaning requires amount + currency or quantity + unit context
+- where the runtime should display symbol-aware money values, use field formatting explicitly rather than relying on raw numbers
+- where summary cards or dashboard cards show money, use currency formatting there too so totals do not render as contextless numbers
 
 Good:
 - `invoice.total_amount` + `invoice.currency`
 - `line.quantity` + `line.uom`
+- `invoice.total_amount` with `format.kind: "currency"` and `currency_field`
+- stat cards using `format: "currency"` for money measures
 
 Bad:
 - `invoice.total` as an unqualified number
 - `quantity` with no unit where unit context matters
+- money values displayed as bare decimals with no currency context
+
+Canonical field formatting pattern for money:
+
+```json
+{
+  "id": "purchase_order.total_amount",
+  "type": "number",
+  "label": "Total",
+  "format": {
+    "kind": "currency",
+    "currency_field": "purchase_order.currency",
+    "precision": 2
+  }
+}
+```
+
+Canonical field formatting pattern for quantity/UOM:
+
+```json
+{
+  "id": "purchase_order_line.quantity",
+  "type": "number",
+  "label": "Quantity",
+  "format": {
+    "kind": "measurement",
+    "unit_field": "purchase_order_line.order_uom",
+    "precision": 0
+  }
+}
+```
+
+Canonical field formatting pattern for duration/percent:
+
+```json
+{
+  "id": "supplier.default_lead_time_days",
+  "type": "number",
+  "label": "Lead Time (Days)",
+  "format": {
+    "kind": "duration",
+    "unit": "days",
+    "precision": 0
+  }
+}
+```
+
+```json
+{
+  "id": "line.discount_pct",
+  "type": "number",
+  "label": "Discount %",
+  "format": {
+    "kind": "percent",
+    "precision": 2
+  }
+}
+```
+
+Canonical stat card pattern for money:
+
+```json
+{
+  "id": "open_value",
+  "label": "Open Value",
+  "entity_id": "entity.purchase_order",
+  "measure": "sum:purchase_order.total_amount",
+  "format": "currency"
+}
+```
+
+Practical rule:
+- if the user should see `$`, `NZ$`, or other currency-aware presentation, author the manifest to use the runtime currency formatter
+- do not leave money as a plain number and expect the UI to infer symbol behavior
+- pair quantity fields with visible UOM fields in lists/forms where quantity is operationally important
 
 ## 5. Views
 
@@ -373,6 +452,51 @@ When authoring form-based records:
 - put embedded related lists in their own tab
 - use activity for operational records
 - use explicit status/workflow actions where the record is process-driven
+
+True line items:
+- if the child records are operational line items for the parent record, prefer `section.line_editor` backed by a real line entity
+- do not default to a generic `related_list` when the user needs inline add/edit/remove row behavior
+- keep the line entity as a proper entity for validation, activity, standalone pages, and downstream workflows, but use the inline line editor on the parent form where that is the primary UX
+- use `item_lookup_field`, `item_lookup_entity`, `item_field_map`, `parent_field_map`, `defaults`, and `columns` intentionally
+- if item choices depend on parent context, author an `item_lookup_domain` so the inline adder can filter choices correctly
+
+Secondary child records:
+- child master-data such as contacts, addresses, or subordinate reference records should usually remain normal child entities surfaced with `related_list`
+- do not turn those records into fake line items just because they appear on a parent tab
+- when a child list is embedded on the parent record, author a dedicated inline list view that removes redundant parent columns and keeps the scan pattern tight
+
+Canonical pattern:
+
+```json
+{
+  "id": "line_items",
+  "title": "Line Items",
+  "line_editor": {
+    "entity_id": "entity.purchase_order_line",
+    "parent_field": "purchase_order_line.purchase_order_id",
+    "item_lookup_field": "purchase_order_line.product_id",
+    "item_lookup_entity": "entity.product",
+    "item_lookup_display_field": "product.name",
+    "item_lookup_domain": {
+      "op": "eq",
+      "field": "product.is_active",
+      "value": true
+    },
+    "item_field_map": {
+      "purchase_order_line.description": "product.description",
+      "purchase_order_line.uom": "product.uom"
+    },
+    "parent_field_map": {
+      "purchase_order_line.currency_snapshot": "purchase_order.currency"
+    },
+    "defaults": {
+      "purchase_order_line.quantity": 1
+    },
+    "description_field": "purchase_order_line.description",
+    "columns": []
+  }
+}
+```
 
 If a record type normally produces documents, emails, or downstream records:
 - include those actions explicitly where they fit the workflow

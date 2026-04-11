@@ -32,6 +32,10 @@ Mark each item `yes` or `no`.
 - field types support conditions and expressions correctly.
 - currency is modeled intentionally where money exists.
 - quantity/UOM is modeled intentionally where measurable units exist.
+- money fields use runtime currency formatting where users should see symbol-aware amounts.
+- quantity, duration, and percent fields use runtime formatting where affixes improve comprehension.
+- money summary cards use currency formatting instead of plain number rendering.
+- quantity fields and their UOM are visible together where quantity meaning matters operationally.
 - addresses are structured where location/autocomplete matters.
 - enums, lookups, users, dates, and numbers are typed to support dynamic controls.
 - context-sensitive lookups are filtered where the business logic requires it.
@@ -60,6 +64,9 @@ Mark each item `yes` or `no`.
 - required-by-state behavior is intentional where lifecycle matters.
 - smart buttons / related counters are used intentionally where they improve navigation.
 - related lists and line items are placed in tabs, not mixed into the main form body.
+- true operational line items use the inline `line_editor` pattern rather than a generic related list.
+- child contacts/addresses/other subordinate master-data are not incorrectly modeled as line items.
+- embedded child lists use an inline-focused view that hides redundant parent columns where appropriate.
 - view modes included are appropriate to the data shape.
 - list/search/filter/group-by behavior is useful.
 - dashboard/status cards are used only where justified and not sprayed across normal pages.

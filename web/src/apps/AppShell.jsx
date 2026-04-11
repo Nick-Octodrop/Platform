@@ -1387,6 +1387,15 @@ export default function AppShell({
       if (payload && typeof payload === "object" && createFieldIndex) {
         payload = { ...payload };
         for (const [fieldId, field] of Object.entries(createFieldIndex)) {
+          if (field?.type === "number" && typeof payload[fieldId] === "string") {
+            const normalized = payload[fieldId].replace(/,/g, "").trim();
+            if (normalized === "" || normalized === "-" || normalized === "." || normalized === "-.") {
+              payload[fieldId] = null;
+            } else {
+              const parsed = Number(normalized);
+              if (Number.isFinite(parsed)) payload[fieldId] = parsed;
+            }
+          }
           if (field?.type === "tags" && typeof payload[fieldId] === "string") {
             payload[fieldId] = payload[fieldId]
               .split(",")
@@ -2304,6 +2313,15 @@ function AppView({
       if (payload && typeof payload === "object") {
         payload = { ...payload };
         for (const [fieldId, field] of Object.entries(fieldIndex || {})) {
+          if (field?.type === "number" && typeof payload[fieldId] === "string") {
+            const normalized = payload[fieldId].replace(/,/g, "").trim();
+            if (normalized === "" || normalized === "-" || normalized === "." || normalized === "-.") {
+              payload[fieldId] = null;
+            } else {
+              const parsed = Number(normalized);
+              if (Number.isFinite(parsed)) payload[fieldId] = parsed;
+            }
+          }
           if (field?.type === "tags" && typeof payload[fieldId] === "string") {
             payload[fieldId] = payload[fieldId]
               .split(",")

@@ -1,0 +1,303 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "te_sourcing",
+    "key": "te_sourcing",
+    "name": "Sourcing",
+    "version": "1.0.0",
+    "description": "Supplier-linked product pricing and sourcing data for True Essentials.",
+    "category": "True Essentials",
+    "icon_key": "lucide:Handshake"
+  },
+  "depends_on": {
+    "required": [
+      { "module": "te_catalog", "version": ">=1.0.0" },
+      { "module": "te_suppliers", "version": ">=1.0.0" }
+    ]
+  },
+  "app": {
+    "home": "page:te_supplier_product.home_page",
+    "defaults": {
+      "entity_home_page": "page:te_supplier_product.list_page",
+      "entity_form_page": "page:te_supplier_product.form_page",
+      "entities": {
+        "entity.te_supplier_product": {
+          "entity_home_page": "page:te_supplier_product.list_page",
+          "entity_form_page": "page:te_supplier_product.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Sourcing",
+        "mode": "inline",
+        "items": [
+          { "label": "Home", "to": "page:te_supplier_product.home_page" },
+          { "label": "Supplier Offers", "to": "page:te_supplier_product.list_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.te_supplier_product",
+      "label": "Supplier Offer",
+      "display_field": "te_supplier_product.supplier_item_name",
+      "fields": [
+        { "id": "te_supplier_product.id", "type": "uuid", "label": "ID", "readonly": true },
+        {
+          "id": "te_supplier_product.product_id",
+          "type": "lookup",
+          "label": "Product",
+          "entity": "entity.te_product",
+          "display_field": "te_product.title",
+          "required": true,
+          "domain": { "op": "eq", "field": "te_product.status", "value": "active" },
+          "help_text": "Use active catalog products so sourcing offers stay aligned to sellable SKUs."
+        },
+        {
+          "id": "te_supplier_product.supplier_id",
+          "type": "lookup",
+          "label": "Supplier",
+          "entity": "entity.te_supplier",
+          "display_field": "te_supplier.name",
+          "required": true,
+          "domain": { "op": "eq", "field": "te_supplier.status", "value": "active" }
+        },
+        { "id": "te_supplier_product.supplier_sku", "type": "string", "label": "Supplier SKU" },
+        { "id": "te_supplier_product.supplier_item_name", "type": "string", "label": "Supplier Item Name", "required": true },
+        { "id": "te_supplier_product.supplier_product_url", "type": "string", "label": "Supplier Item URL" },
+        {
+          "id": "te_supplier_product.currency",
+          "type": "enum",
+          "label": "Cost Currency",
+          "default": "USD",
+          "options": [
+            { "value": "NZD", "label": "NZD" },
+            { "value": "USD", "label": "USD" }
+          ]
+        },
+        {
+          "id": "te_supplier_product.unit_cost",
+          "type": "number",
+          "label": "Unit Cost",
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "te_supplier_product.currency", "precision": 2 }
+        },
+        {
+          "id": "te_supplier_product.min_order_qty",
+          "type": "number",
+          "label": "Minimum Order Qty",
+          "default": 1,
+          "format": { "kind": "measurement", "unit_field": "te_supplier_product.order_uom", "precision": 0 }
+        },
+        {
+          "id": "te_supplier_product.order_uom",
+          "type": "enum",
+          "label": "Order UOM",
+          "default": "EA",
+          "options": [
+            { "value": "EA", "label": "Each" },
+            { "value": "PACK", "label": "Pack" },
+            { "value": "CASE", "label": "Case" }
+          ]
+        },
+        {
+          "id": "te_supplier_product.lead_time_days",
+          "type": "number",
+          "label": "Lead Time (Days)",
+          "format": { "kind": "duration", "unit": "days", "precision": 0 }
+        },
+        { "id": "te_supplier_product.is_preferred", "type": "bool", "label": "Preferred Offer", "default": false },
+        { "id": "te_supplier_product.is_active", "type": "bool", "label": "Active", "default": true },
+        {
+          "id": "te_supplier_product.attachments",
+          "type": "attachments",
+          "label": "Supplier Quote / Files",
+          "help_text": "Use this for supplier quote sheets, screenshots, or supporting files tied to this offer."
+        },
+        { "id": "te_supplier_product.notes", "type": "text", "label": "Supplier Notes" }
+      ]
+    }
+  ],
+  "interfaces": {
+    "dashboardable": [
+      {
+        "entity_id": "entity.te_supplier_product",
+        "enabled": true,
+        "scope": "module_and_global",
+        "measures": [
+          "count"
+        ],
+        "group_bys": [
+          "te_supplier_product.is_active",
+          "te_supplier_product.is_preferred",
+          "te_supplier_product.currency",
+          "te_supplier_product.order_uom"
+        ]
+      }
+    ]
+  },
+  "actions": [
+    { "id": "action.te_supplier_product_new", "kind": "open_form", "label": "New Supplier Offer", "target": "te_supplier_product.form" }
+  ],
+  "views": [
+    {
+      "id": "te_supplier_product.list",
+      "kind": "list",
+      "entity": "entity.te_supplier_product",
+      "columns": [
+        { "field_id": "te_supplier_product.product_id" },
+        { "field_id": "te_supplier_product.supplier_id" },
+        { "field_id": "te_supplier_product.supplier_sku" },
+        { "field_id": "te_supplier_product.currency" },
+        { "field_id": "te_supplier_product.unit_cost" },
+        { "field_id": "te_supplier_product.order_uom" },
+        { "field_id": "te_supplier_product.is_preferred" },
+        { "field_id": "te_supplier_product.is_active" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.te_supplier_product_new" }],
+        "open_record_target": "page:te_supplier_product.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search supplier offers...",
+          "fields": ["te_supplier_product.supplier_item_name", "te_supplier_product.supplier_sku", "te_supplier_product.notes"]
+        },
+        "filters": [
+          { "id": "active", "label": "Active", "domain": { "op": "eq", "field": "te_supplier_product.is_active", "value": true } },
+          { "id": "preferred", "label": "Preferred", "domain": { "op": "eq", "field": "te_supplier_product.is_preferred", "value": true } },
+          { "id": "usd", "label": "USD Offers", "domain": { "op": "eq", "field": "te_supplier_product.currency", "value": "USD" } }
+        ]
+      }
+    },
+    {
+      "id": "te_supplier_product.form",
+      "kind": "form",
+      "entity": "entity.te_supplier_product",
+      "sections": [
+        {
+          "id": "offer_summary",
+          "title": "Supplier Offer",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_supplier_product.product_id",
+            "te_supplier_product.supplier_id",
+            "te_supplier_product.supplier_sku",
+            "te_supplier_product.supplier_item_name",
+            "te_supplier_product.supplier_product_url",
+            "te_supplier_product.currency",
+            "te_supplier_product.unit_cost",
+            "te_supplier_product.min_order_qty",
+            "te_supplier_product.order_uom",
+            "te_supplier_product.lead_time_days",
+            "te_supplier_product.is_preferred",
+            "te_supplier_product.is_active"
+          ]
+        },
+        { "id": "offer_notes", "title": "Notes", "fields": ["te_supplier_product.notes", "te_supplier_product.attachments"] }
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "te_supplier_product.product_id",
+          "te_supplier_product.supplier_id",
+          "te_supplier_product.currency",
+          "te_supplier_product.unit_cost",
+          "te_supplier_product.lead_time_days",
+          "te_supplier_product.is_preferred",
+          "te_supplier_product.is_active"
+        ]
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "te_supplier_product.home_page",
+      "title": "Sourcing",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "action_id": "action.te_supplier_product_new" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "stat_cards",
+          "columns": 4,
+          "cards": [
+            { "id": "active_offers", "label": "Active Offers", "entity_id": "entity.te_supplier_product", "measure": "count", "domain": { "op": "eq", "field": "te_supplier_product.is_active", "value": true }, "format": "number" },
+            { "id": "preferred_offers", "label": "Preferred Offers", "entity_id": "entity.te_supplier_product", "measure": "count", "domain": { "op": "eq", "field": "te_supplier_product.is_preferred", "value": true }, "format": "number" },
+            { "id": "usd_offers", "label": "USD Offers", "entity_id": "entity.te_supplier_product", "measure": "count", "domain": { "op": "eq", "field": "te_supplier_product.currency", "value": "USD" }, "format": "number" },
+            { "id": "inactive_offers", "label": "Inactive Offers", "entity_id": "entity.te_supplier_product", "measure": "count", "domain": { "op": "eq", "field": "te_supplier_product.is_active", "value": false }, "format": "number" }
+          ]
+        },
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_supplier_product",
+              "default_mode": "list",
+              "default_filter_id": "active",
+              "modes": [
+                { "mode": "list", "target": "view:te_supplier_product.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_supplier_product.list_page",
+      "title": "Supplier Offers",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_supplier_product",
+              "default_mode": "list",
+              "default_filter_id": "active",
+              "modes": [
+                { "mode": "list", "target": "view:te_supplier_product.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_supplier_product.form_page",
+      "title": "Supplier Offer",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.te_supplier_product",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                { "kind": "view", "target": "view:te_supplier_product.form" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

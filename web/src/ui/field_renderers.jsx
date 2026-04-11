@@ -71,6 +71,23 @@ function normalizeEnumOptions(options) {
   }).filter(Boolean);
 }
 
+function parseNumberEditorValue(rawValue) {
+  if (rawValue === "") return { kind: "empty", value: "" };
+  const normalized = String(rawValue ?? "").replace(/,/g, "").trim();
+  if (!/^-?\d*(\.\d*)?$/.test(normalized)) return { kind: "invalid", value: rawValue };
+  if (
+    normalized === "-" ||
+    normalized === "." ||
+    normalized === "-." ||
+    /^-?\d+\.$/.test(normalized)
+  ) {
+    return { kind: "transient", value: normalized };
+  }
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) return { kind: "transient", value: normalized };
+  return { kind: "number", value: parsed };
+}
+
 export function renderField(field, value, onChange, readonly, record = null) {
   const common = {
     className: "input input-bordered w-full",
@@ -214,15 +231,13 @@ export function renderField(field, value, onChange, readonly, record = null) {
               }}
               value={value ?? ""}
               onChange={(e) => {
-                const next = e.target.value;
-                if (next === "") {
+                const parsed = parseNumberEditorValue(e.target.value);
+                if (parsed.kind === "invalid") return;
+                if (parsed.kind === "empty") {
                   onChange("");
                   return;
                 }
-                const normalized = next.replace(/,/g, "").trim();
-                if (!/^-?\d*(\.\d*)?$/.test(normalized)) return;
-                const parsed = Number(normalized);
-                onChange(Number.isNaN(parsed) ? "" : parsed);
+                onChange(parsed.value);
               }}
             />
             {suffix ? (

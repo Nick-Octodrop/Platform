@@ -66,6 +66,8 @@ Where relevant, also specify:
 - currency needs
 - quantity / UOM needs
 - structured address needs
+- which money fields must display with currency formatting/symbol-aware rendering
+- which lists/cards/summaries must show UOM or currency context explicitly
 
 ## 5. Views
 
@@ -170,6 +172,8 @@ Also state:
 List:
 - parent/child relationships
 - related lists needed on forms
+- which child surfaces are true line items and should use the inline `line_editor` pattern
+- which child surfaces are subordinate master-data and should stay normal child entities shown through `related_list`
 - smart buttons / related counters that should appear
 - field mappings or transformations between records
 - which lookups should be filtered by customer/supplier/parent/state
@@ -218,6 +222,27 @@ State if the entity should participate in:
 - scheduling/calendar
 - documents
 - dashboards
+
+## 14. Display and Formatting Expectations
+
+Where relevant, specify:
+- which fields are money fields
+- which currency field drives each money field
+- which fields/cards must render with currency formatting
+- which quantity fields require visible UOM beside them
+- which home/dashboard cards should show formatted monetary totals rather than plain numbers
+
+Example:
+
+```text
+Money fields:
+- purchase_order.total_amount uses purchase_order.currency
+- finance_entry.amount_nzd uses finance_entry.reporting_currency
+
+Visible quantity/UOM pairs:
+- purchase_order_line.quantity + purchase_order_line.order_uom
+- supplier_offer.min_order_qty + supplier_offer.order_uom
+```
 
 If yes, specify which entity and which fields drive it.
 

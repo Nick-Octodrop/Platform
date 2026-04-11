@@ -1,0 +1,548 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "te_suppliers",
+    "key": "te_suppliers",
+    "name": "Suppliers",
+    "version": "1.0.0",
+    "description": "Supplier master records and contacts for True Essentials.",
+    "category": "True Essentials",
+    "icon_key": "lucide:Truck"
+  },
+  "app": {
+    "home": "page:te_supplier.home_page",
+    "defaults": {
+      "entity_home_page": "page:te_supplier.list_page",
+      "entity_form_page": "page:te_supplier.form_page",
+      "entities": {
+        "entity.te_supplier": {
+          "entity_home_page": "page:te_supplier.list_page",
+          "entity_form_page": "page:te_supplier.form_page"
+        },
+        "entity.te_supplier_contact": {
+          "entity_home_page": "page:te_supplier_contact.list_page",
+          "entity_form_page": "page:te_supplier_contact.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Suppliers",
+        "mode": "inline",
+        "items": [
+          { "label": "Home", "to": "page:te_supplier.home_page" },
+          { "label": "Suppliers", "to": "page:te_supplier.list_page" },
+          { "label": "Contacts", "to": "page:te_supplier_contact.list_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.te_supplier",
+      "label": "Supplier",
+      "display_field": "te_supplier.name",
+      "fields": [
+        { "id": "te_supplier.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "te_supplier.supplier_code", "type": "string", "label": "Supplier Code" },
+        { "id": "te_supplier.name", "type": "string", "label": "Supplier Name", "required": true },
+        {
+          "id": "te_supplier.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "active",
+          "options": [
+            { "value": "active", "label": "Active" },
+            { "value": "on_hold", "label": "On Hold" },
+            { "value": "inactive", "label": "Inactive" }
+          ],
+          "ui": { "widget": "steps" }
+        },
+        {
+          "id": "te_supplier.default_currency",
+          "type": "enum",
+          "label": "Default Currency",
+          "default": "USD",
+          "options": [
+            { "value": "NZD", "label": "NZD" },
+            { "value": "USD", "label": "USD" }
+          ]
+        },
+        {
+          "id": "te_supplier.default_lead_time_days",
+          "type": "number",
+          "label": "Lead Time (Days)",
+          "format": { "kind": "duration", "unit": "days", "precision": 0 }
+        },
+        { "id": "te_supplier.payment_terms", "type": "string", "label": "Payment Terms" },
+        { "id": "te_supplier.account_email", "type": "string", "label": "Account Email" },
+        {
+          "id": "te_supplier.primary_contact_id",
+          "type": "lookup",
+          "label": "Primary Contact",
+          "entity": "entity.te_supplier_contact",
+          "display_field": "te_supplier_contact.full_name",
+          "domain": {
+            "op": "and",
+            "conditions": [
+              { "op": "eq", "field": "te_supplier_contact.supplier_id", "value": { "ref": "$record.id" } },
+              { "op": "eq", "field": "te_supplier_contact.is_active", "value": true }
+            ]
+          },
+          "help_text": "Use this as the default person for purchase orders, follow-ups, and supplier communication."
+        },
+        { "id": "te_supplier.phone", "type": "string", "label": "Phone" },
+        { "id": "te_supplier.website", "type": "string", "label": "Website" },
+        {
+          "id": "te_supplier.address_line_1",
+          "type": "string",
+          "label": "Address Line 1",
+          "help_text": "Use structured address fields so supplier records stay usable for shipping, maps, and future integrations."
+        },
+        { "id": "te_supplier.address_line_2", "type": "string", "label": "Address Line 2" },
+        { "id": "te_supplier.city", "type": "string", "label": "City" },
+        { "id": "te_supplier.state", "type": "string", "label": "Region / State" },
+        { "id": "te_supplier.postcode", "type": "string", "label": "Postcode" },
+        { "id": "te_supplier.country", "type": "string", "label": "Country" },
+        { "id": "te_supplier.attachments", "type": "attachments", "label": "Supplier Files / Statements" },
+        { "id": "te_supplier.notes", "type": "text", "label": "Supplier Notes" }
+      ]
+    },
+    {
+      "id": "entity.te_supplier_contact",
+      "label": "Supplier Contact",
+      "display_field": "te_supplier_contact.full_name",
+      "fields": [
+        { "id": "te_supplier_contact.id", "type": "uuid", "label": "ID", "readonly": true },
+        {
+          "id": "te_supplier_contact.supplier_id",
+          "type": "lookup",
+          "label": "Supplier",
+          "entity": "entity.te_supplier",
+          "display_field": "te_supplier.name",
+          "required": true
+        },
+        { "id": "te_supplier_contact.full_name", "type": "string", "label": "Full Name", "required": true },
+        { "id": "te_supplier_contact.role", "type": "string", "label": "Role" },
+        { "id": "te_supplier_contact.email", "type": "string", "label": "Email" },
+        { "id": "te_supplier_contact.phone", "type": "string", "label": "Phone" },
+        { "id": "te_supplier_contact.is_primary", "type": "bool", "label": "Primary Contact", "default": false },
+        { "id": "te_supplier_contact.is_active", "type": "bool", "label": "Active", "default": true },
+        { "id": "te_supplier_contact.notes", "type": "text", "label": "Notes" }
+      ]
+    }
+  ],
+  "interfaces": {
+    "dashboardable": [
+      {
+        "entity_id": "entity.te_supplier",
+        "enabled": true,
+        "scope": "module_and_global",
+        "measures": [
+          "count"
+        ],
+        "group_bys": [
+          "te_supplier.status",
+          "te_supplier.default_currency"
+        ]
+      },
+      {
+        "entity_id": "entity.te_supplier_contact",
+        "enabled": true,
+        "scope": "module_and_global",
+        "measures": [
+          "count"
+        ],
+        "group_bys": [
+          "te_supplier_contact.is_primary",
+          "te_supplier_contact.is_active"
+        ]
+      }
+    ]
+  },
+  "workflows": [
+    {
+      "id": "workflow.te_supplier",
+      "entity": "entity.te_supplier",
+      "status_field": "te_supplier.status",
+      "states": [
+        { "id": "active", "label": "Active", "order": 1 },
+        { "id": "on_hold", "label": "On Hold", "order": 2 },
+        { "id": "inactive", "label": "Inactive", "order": 3 }
+      ],
+      "transitions": [
+        { "from": "active", "to": "on_hold", "label": "Put On Hold" },
+        { "from": "on_hold", "to": "active", "label": "Reactivate" },
+        { "from": "inactive", "to": "active", "label": "Reactivate" },
+        { "from": "active", "to": "inactive", "label": "Deactivate" },
+        { "from": "on_hold", "to": "inactive", "label": "Deactivate" }
+      ]
+    }
+  ],
+  "actions": [
+    { "id": "action.te_supplier_new", "kind": "open_form", "label": "New Supplier", "target": "te_supplier.form" },
+    { "id": "action.te_supplier_contact_new", "kind": "open_form", "label": "New Contact", "target": "te_supplier_contact.form" },
+    {
+      "id": "action.te_supplier_activate",
+      "kind": "update_record",
+      "entity_id": "entity.te_supplier",
+      "label": "Activate",
+      "patch": { "te_supplier.status": "active" },
+      "visible_when": { "op": "in", "field": "te_supplier.status", "value": ["on_hold", "inactive"] }
+    },
+    {
+      "id": "action.te_supplier_hold",
+      "kind": "update_record",
+      "entity_id": "entity.te_supplier",
+      "label": "Put On Hold",
+      "patch": { "te_supplier.status": "on_hold" },
+      "visible_when": { "op": "eq", "field": "te_supplier.status", "value": "active" }
+    },
+    {
+      "id": "action.te_supplier_deactivate",
+      "kind": "update_record",
+      "entity_id": "entity.te_supplier",
+      "label": "Deactivate",
+      "patch": { "te_supplier.status": "inactive" },
+      "visible_when": { "op": "not", "condition": { "op": "eq", "field": "te_supplier.status", "value": "inactive" } }
+    }
+  ],
+  "views": [
+    {
+      "id": "te_supplier.list",
+      "kind": "list",
+      "entity": "entity.te_supplier",
+      "columns": [
+        { "field_id": "te_supplier.supplier_code" },
+        { "field_id": "te_supplier.name" },
+        { "field_id": "te_supplier.status" },
+        { "field_id": "te_supplier.default_currency" },
+        { "field_id": "te_supplier.default_lead_time_days" },
+        { "field_id": "te_supplier.account_email" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.te_supplier_new" }],
+        "open_record_target": "page:te_supplier.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search suppliers...",
+          "fields": ["te_supplier.supplier_code", "te_supplier.name", "te_supplier.account_email", "te_supplier.website"]
+        },
+        "filters": [
+          { "id": "active", "label": "Active", "domain": { "op": "eq", "field": "te_supplier.status", "value": "active" } },
+          { "id": "on_hold", "label": "On Hold", "domain": { "op": "eq", "field": "te_supplier.status", "value": "on_hold" } },
+          { "id": "inactive", "label": "Inactive", "domain": { "op": "eq", "field": "te_supplier.status", "value": "inactive" } },
+          { "id": "usd", "label": "USD Suppliers", "domain": { "op": "eq", "field": "te_supplier.default_currency", "value": "USD" } }
+        ]
+      }
+    },
+    {
+      "id": "te_supplier.form",
+      "kind": "form",
+      "entity": "entity.te_supplier",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Supplier",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_supplier.supplier_code",
+            "te_supplier.status",
+            "te_supplier.name",
+            "te_supplier.default_currency",
+            "te_supplier.default_lead_time_days",
+            "te_supplier.payment_terms",
+            "te_supplier.account_email",
+            "te_supplier.primary_contact_id",
+            "te_supplier.phone",
+            "te_supplier.website"
+          ]
+        },
+        {
+          "id": "address",
+          "title": "Address",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_supplier.address_line_1",
+            "te_supplier.address_line_2",
+            "te_supplier.city",
+            "te_supplier.state",
+            "te_supplier.postcode",
+            "te_supplier.country"
+          ]
+        },
+        { "id": "notes", "title": "Notes", "fields": ["te_supplier.notes", "te_supplier.attachments"] }
+      ],
+      "header": {
+        "statusbar": { "field_id": "te_supplier.status" },
+        "auto_state_actions": false,
+        "primary_actions": [
+          { "action_id": "action.te_supplier_activate" }
+        ],
+        "secondary_actions": [
+          { "action_id": "action.te_supplier_hold" },
+          { "action_id": "action.te_supplier_deactivate" }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "summary",
+          "tabs": [
+            { "id": "summary", "label": "Summary", "sections": ["summary", "address"] },
+            {
+              "id": "contacts",
+              "label": "Contacts",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "entity_id": "entity.te_supplier_contact",
+                  "target": "view:te_supplier_contact.list",
+                  "record_domain": { "op": "eq", "field": "te_supplier_contact.supplier_id", "value": { "ref": "$record.id" } },
+                  "create_modal": true,
+                  "create_defaults": {
+                    "te_supplier_contact.supplier_id": { "ref": "$record.id" },
+                    "te_supplier_contact.is_active": true
+                  }
+                }
+              ]
+            },
+            { "id": "notes", "label": "Notes", "sections": ["notes"] }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "te_supplier.name",
+          "te_supplier.status",
+          "te_supplier.default_currency",
+          "te_supplier.default_lead_time_days",
+          "te_supplier.account_email",
+          "te_supplier.primary_contact_id",
+          "te_supplier.payment_terms"
+        ]
+      }
+    },
+    {
+      "id": "te_supplier.kanban",
+      "kind": "kanban",
+      "entity": "entity.te_supplier",
+      "card": {
+        "title_field": "te_supplier.name",
+        "subtitle_fields": [
+          "te_supplier.account_email",
+          "te_supplier.default_currency"
+        ],
+        "badge_fields": [
+          "te_supplier.status",
+          "te_supplier.default_lead_time_days"
+        ]
+      }
+    },
+    {
+      "id": "te_supplier_contact.list",
+      "kind": "list",
+      "entity": "entity.te_supplier_contact",
+      "columns": [
+        { "field_id": "te_supplier_contact.full_name" },
+        { "field_id": "te_supplier_contact.role" },
+        { "field_id": "te_supplier_contact.email" },
+        { "field_id": "te_supplier_contact.phone" },
+        { "field_id": "te_supplier_contact.supplier_id" },
+        { "field_id": "te_supplier_contact.is_primary" },
+        { "field_id": "te_supplier_contact.is_active" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.te_supplier_contact_new" }],
+        "open_record_target": "page:te_supplier_contact.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search contacts...",
+          "fields": ["te_supplier_contact.full_name", "te_supplier_contact.email", "te_supplier_contact.role"]
+        },
+        "filters": [
+          { "id": "active", "label": "Active", "domain": { "op": "eq", "field": "te_supplier_contact.is_active", "value": true } },
+          { "id": "primary", "label": "Primary Contacts", "domain": { "op": "eq", "field": "te_supplier_contact.is_primary", "value": true } }
+        ]
+      }
+    },
+    {
+      "id": "te_supplier_contact.form",
+      "kind": "form",
+      "entity": "entity.te_supplier_contact",
+      "sections": [
+        {
+          "id": "contact_summary",
+          "title": "Supplier Contact",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_supplier_contact.supplier_id",
+            "te_supplier_contact.role",
+            "te_supplier_contact.full_name",
+            "te_supplier_contact.email",
+            "te_supplier_contact.phone",
+            "te_supplier_contact.is_primary",
+            "te_supplier_contact.is_active"
+          ]
+        },
+        { "id": "contact_notes", "title": "Notes", "fields": ["te_supplier_contact.notes"] }
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "te_supplier.home_page",
+      "title": "Suppliers",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "kind": "navigate", "label": "New Supplier", "target": "page:te_supplier.form_page" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "stat_cards",
+          "columns": 4,
+          "cards": [
+            { "id": "active_suppliers", "label": "Active Suppliers", "entity_id": "entity.te_supplier", "measure": "count", "domain": { "op": "eq", "field": "te_supplier.status", "value": "active" }, "format": "number" },
+            { "id": "on_hold_suppliers", "label": "On Hold", "entity_id": "entity.te_supplier", "measure": "count", "domain": { "op": "eq", "field": "te_supplier.status", "value": "on_hold" }, "format": "number" },
+            { "id": "usd_suppliers", "label": "USD Suppliers", "entity_id": "entity.te_supplier", "measure": "count", "domain": { "op": "eq", "field": "te_supplier.default_currency", "value": "USD" }, "format": "number" },
+            { "id": "primary_contacts", "label": "Primary Contacts", "entity_id": "entity.te_supplier_contact", "measure": "count", "domain": { "op": "eq", "field": "te_supplier_contact.is_primary", "value": true }, "format": "number" }
+          ]
+        },
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_supplier",
+              "default_mode": "kanban",
+              "default_filter_id": "active",
+              "modes": [
+                { "mode": "list", "target": "view:te_supplier.list" },
+                { "mode": "kanban", "target": "view:te_supplier.kanban", "default_group_by": "te_supplier.status" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_supplier.list_page",
+      "title": "Suppliers",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_supplier",
+              "default_mode": "kanban",
+              "default_filter_id": "active",
+              "modes": [
+                { "mode": "list", "target": "view:te_supplier.list" },
+                { "mode": "kanban", "target": "view:te_supplier.kanban", "default_group_by": "te_supplier.status" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_supplier_contact.list_page",
+      "title": "Supplier Contacts",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_supplier_contact",
+              "default_mode": "list",
+              "default_filter_id": "active",
+              "modes": [
+                { "mode": "list", "target": "view:te_supplier_contact.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_supplier.form_page",
+      "title": "Supplier",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.te_supplier",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    { "kind": "container", "variant": "card", "content": [{ "kind": "view", "target": "view:te_supplier.form" }] }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    { "kind": "container", "variant": "card", "content": [{ "kind": "chatter", "entity_id": "entity.te_supplier", "record_ref": "$record.id" }] }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_supplier_contact.form_page",
+      "title": "Supplier Contact",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.te_supplier_contact",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                { "kind": "view", "target": "view:te_supplier_contact.form" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

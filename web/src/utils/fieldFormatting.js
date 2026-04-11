@@ -35,7 +35,7 @@ function getCurrencySymbol(currency) {
     const formatter = new Intl.NumberFormat(undefined, {
       style: "currency",
       currency,
-      currencyDisplay: "narrowSymbol",
+      currencyDisplay: "symbol",
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     });
@@ -93,6 +93,7 @@ export function formatFieldValue(field, value, record = null) {
       return new Intl.NumberFormat(undefined, {
         style: "currency",
         currency: format.currency,
+        currencyDisplay: "symbol",
         minimumFractionDigits: format.precision,
         maximumFractionDigits: format.precision,
       }).format(numeric);

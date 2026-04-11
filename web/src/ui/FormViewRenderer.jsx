@@ -4,6 +4,7 @@ import { renderField, setFieldValue, getFieldValue } from "./field_renderers.jsx
 import { apiFetch, createRecord, deleteRecord, googlePlaceDetails, googlePlacesAutocomplete, updateRecord } from "../api.js";
 import { evalCondition } from "../utils/conditions.js";
 import { applyComputedFields } from "../utils/computedFields.js";
+import { formatFieldValue, getFieldInputAffixes } from "../utils/fieldFormatting.js";
 import Tabs from "../components/Tabs.jsx";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_ICON_SM } from "../components/buttonStyles.js";
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
@@ -1042,6 +1043,7 @@ function InlineLineItemsTable({
   const itemField = config?.item_lookup_field || null;
   const itemEntityId = config?.item_lookup_entity || null;
   const itemDisplayField = config?.item_lookup_display_field || null;
+  const itemLookupDomain = config?.item_lookup_domain || null;
   const descriptionField = config?.description_field || null;
   const itemFieldMap = config?.item_field_map && typeof config.item_field_map === "object" ? config.item_field_map : {};
   const parentFieldMap = config?.parent_field_map && typeof config.parent_field_map === "object" ? config.parent_field_map : {};
@@ -1079,9 +1081,10 @@ function InlineLineItemsTable({
       label: "Add item",
       entity: itemEntityId,
       display_field: itemDisplayField,
+      domain: itemLookupDomain,
       placeholder: "Add line item...",
     }),
-    [itemDisplayField, itemEntityId, itemField]
+    [itemDisplayField, itemEntityId, itemField, itemLookupDomain]
   );
 
   async function addParentActivity(message) {
@@ -1424,10 +1427,18 @@ function InlineLineItemsTable({
     return { width: `${(columnWeight(col) / totalColumnWeight) * 100}%` };
   }
 
-  function readOnlyCell(raw, col) {
+  function readOnlyCell(raw, col, rowRecord = null) {
+    const pseudoField =
+      col?.type === "number"
+        ? {
+            type: "number",
+            format: col?.format || (col?.currency_field ? { kind: "currency", currency_field: col.currency_field, precision: col.precision ?? 2 } : null),
+          }
+        : null;
+    const display = pseudoField ? formatFieldValue(pseudoField, raw, rowRecord) : String(raw ?? "");
     return (
       <div className={`min-h-8 flex items-center gap-2 ${col?.align === "right" ? "justify-end text-right" : ""}`}>
-        <span className={col?.type === "number" ? "tabular-nums" : ""}>{String(raw ?? "")}</span>
+        <span className={col?.type === "number" ? "tabular-nums" : ""}>{display}</span>
       </div>
     );
   }
@@ -1549,7 +1560,7 @@ function InlineLineItemsTable({
                     );
                   }
                   if (readonly || col.readonly) {
-                    return <td key={`${row.record_id}-${fieldId}`} style={columnStyle(col)}>{readOnlyCell(raw, col)}</td>;
+                    return <td key={`${row.record_id}-${fieldId}`} style={columnStyle(col)}>{readOnlyCell(raw, col, row.record)}</td>;
                   }
                   if (col.type === "enum" && Array.isArray(col.options)) {
                     return (
@@ -1576,6 +1587,54 @@ function InlineLineItemsTable({
                             </option>
                           ))}
                         </select>
+                      </td>
+                    );
+                  }
+                  if (col.type === "number") {
+                    const pseudoField = {
+                      type: "number",
+                      format: col?.format || (col?.currency_field ? { kind: "currency", currency_field: col.currency_field, precision: col.precision ?? 2 } : null),
+                    };
+                    const { prefix, suffix, align } = getFieldInputAffixes(pseudoField, row.record);
+                    const leftPad = prefix ? `${Math.max(3.2, prefix.length * 0.6 + 1.4)}rem` : undefined;
+                    const rightPad = suffix ? `${Math.max(3.2, suffix.length * 0.6 + 1.4)}rem` : undefined;
+                    return (
+                      <td key={`${row.record_id}-${fieldId}`} style={columnStyle(col)}>
+                        <div className="relative">
+                          {prefix ? (
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs opacity-60 pointer-events-none">
+                              {prefix}
+                            </span>
+                          ) : null}
+                          <input
+                            className={`input input-bordered input-xs w-full min-w-0 ${align || ""} tabular-nums [appearance:textfield]`.trim()}
+                            type="text"
+                            inputMode="decimal"
+                            style={{
+                              appearance: "textfield",
+                              MozAppearance: "textfield",
+                              paddingLeft: leftPad,
+                              paddingRight: rightPad,
+                            }}
+                            value={raw ?? ""}
+                            onChange={(e) => {
+                              const next = e.target.value;
+                              setRows((prev) =>
+                                prev.map((r) =>
+                                  r.record_id === row.record_id
+                                    ? { ...r, record: { ...r.record, [fieldId]: next } }
+                                    : r
+                                )
+                              );
+                            }}
+                            onBlur={(e) => patchRow(row.record_id, fieldId, e.target.value, col.type)}
+                          />
+                          {suffix ? (
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs opacity-60 pointer-events-none">
+                              {suffix}
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                     );
                   }
@@ -1630,7 +1689,7 @@ function InlineLineItemsTable({
                       await addRowFromOption({ value: nextItemId, label: nextLabel || nextItemId });
                     }}
                     readonly={readonly}
-                    record={null}
+                    record={parentRecord}
                     previewMode={previewMode}
                     canCreate={canCreateLookup}
                     onCreate={onLookupCreate}

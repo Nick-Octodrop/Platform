@@ -49,6 +49,7 @@ Current useful field metadata:
 - `options`
 - `entity`
 - `display_field`
+- `format`
 - `ui.widget` where supported
 
 Field type behavior:
@@ -60,6 +61,15 @@ Field type behavior:
 - `attachments`: attachment panel/uploader
 - `date`: date control
 - `datetime`: datetime control
+
+Display formatting behavior:
+- numeric money fields should use `format.kind: "currency"` with a real `currency_field`
+- quantity fields that need visible unit context in forms/lists should use `format.kind: "measurement"` with `unit` or `unit_field`
+- time-quantity fields like lead times should use `format.kind: "duration"` with `unit`
+- percentage inputs should use `format.kind: "percent"` so the `%` affix is rendered by the runtime
+- money summary/stat cards should use `format: "currency"`
+- do not rely on users inferring currency from nearby labels when the runtime can render the amount properly
+- if a quantity matters operationally, show its UOM in the same list/form surface rather than leaving quantity context implicit
 
 ## 4. Address Autocomplete
 
@@ -136,17 +146,24 @@ Rules:
 - embedded related lists inside a form must be in their own tab
 - the main form body should be reserved for the record itself, not related tables/lists
 - if a record has multiple logical surfaces, prefer tabs over one giant long form
+- if the child rows are true operational line items, use the form `line_editor` pattern instead of embedding a generic related list
+- generic related lists are for secondary child records; inline line editors are for rows users are expected to add/edit/remove directly as part of the parent workflow
+- child people/master-data records such as contacts, addresses, or approvers should normally stay as real child entities surfaced through `related_list`, not be forced into a line-editor pattern
+- when embedding a child record list on its parent form, prefer a dedicated inline list view that hides redundant parent columns and shows the fields users actually scan there
 
 Good:
 - Summary tab for core fields
 - Line Items tab
 - Documents tab
 - Activity on the side or in the record activity area
+- purchase order lines authored as a real line entity but edited inline through `section.line_editor`
 
 Bad:
 - line items mixed into the main summary section
 - child lists inserted between core record fields
 - one giant form with no structural separation
+- purchase order/invoice/order lines shown as a generic related-list table when the platform supports inline line editing
+- supplier/customer contact subrecords authored as fake line items just to keep them inside the parent form
 
 ### Business section grouping
 
@@ -162,6 +179,26 @@ Common section patterns:
 - Internal Notes
 
 Do not create random sections like `Left Column` or `Extra Details`.
+
+### Money and quantity presentation
+
+If users read a number as money or quantity, the UI should make that obvious immediately.
+
+Rules:
+- money fields should render with currency-aware formatting, not bare decimals
+- if the record carries multiple currencies, the relevant currency field should drive display formatting
+- dashboard/home cards that summarise money should use currency formatting too
+- quantity fields should be paired with visible UOM fields wherever quantities drive decisions
+- do not hide the UOM on line-item style records where the unit changes purchasing, pricing, fulfilment, or reporting meaning
+
+Good:
+- `Unit Cost` rendered from a numeric field with currency formatting
+- `Open Value` stat card rendered as currency
+- line items showing `Quantity`, `Order UOM`, and `Unit Cost` together
+
+Bad:
+- `1250.00` shown with no currency context
+- quantity shown in a list while the unit is only buried in the form
 
 ### Status and workflow UX
 

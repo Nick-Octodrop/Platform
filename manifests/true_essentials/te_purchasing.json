@@ -1,0 +1,830 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "te_purchasing",
+    "key": "te_purchasing",
+    "name": "Purchasing",
+    "version": "1.0.0",
+    "description": "Operational purchase ordering for True Essentials.",
+    "category": "True Essentials",
+    "icon_key": "lucide:ShoppingCart"
+  },
+  "depends_on": {
+    "required": [
+      { "module": "te_sourcing", "version": ">=1.0.0" },
+      { "module": "te_suppliers", "version": ">=1.0.0" },
+      { "module": "te_catalog", "version": ">=1.0.0" }
+    ]
+  },
+  "app": {
+    "home": "page:te_purchase_order.home_page",
+    "defaults": {
+      "entity_home_page": "page:te_purchase_order.list_page",
+      "entity_form_page": "page:te_purchase_order.form_page",
+      "entities": {
+        "entity.te_purchase_order": {
+          "entity_home_page": "page:te_purchase_order.list_page",
+          "entity_form_page": "page:te_purchase_order.form_page"
+        },
+        "entity.te_purchase_order_line": {
+          "entity_home_page": "page:te_purchase_order_line.list_page",
+          "entity_form_page": "page:te_purchase_order_line.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Purchasing",
+        "mode": "inline",
+        "items": [
+          { "label": "Home", "to": "page:te_purchase_order.home_page" },
+          { "label": "Purchase Orders", "to": "page:te_purchase_order.list_page" },
+          { "label": "Open Orders", "to": "page:te_purchase_order.open_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.te_purchase_order",
+      "label": "Purchase Order",
+      "display_field": "te_purchase_order.po_number",
+      "fields": [
+        { "id": "te_purchase_order.id", "type": "uuid", "label": "ID", "readonly": true },
+        {
+          "id": "te_purchase_order.po_number",
+          "type": "string",
+          "label": "Purchase Order Number",
+          "readonly": true,
+          "help_text": "Use settings-driven numbering for formal purchase orders. Do not hardcode numbering formats into module logic."
+        },
+        {
+          "id": "te_purchase_order.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "draft",
+          "options": [
+            { "value": "draft", "label": "Draft" },
+            { "value": "placed", "label": "Placed" },
+            { "value": "received", "label": "Received" },
+            { "value": "cancelled", "label": "Cancelled" }
+          ],
+          "ui": { "widget": "steps" }
+        },
+        {
+          "id": "te_purchase_order.supplier_id",
+          "type": "lookup",
+          "label": "Supplier",
+          "entity": "entity.te_supplier",
+          "display_field": "te_supplier.name",
+          "required": true,
+          "domain": { "op": "eq", "field": "te_supplier.status", "value": "active" },
+          "help_text": "Changing supplier changes which supplier-linked items are valid on the Line Items tab. Review line items after supplier changes."
+        },
+        {
+          "id": "te_purchase_order.supplier_contact_id",
+          "type": "lookup",
+          "label": "Supplier Contact",
+          "entity": "entity.te_supplier_contact",
+          "display_field": "te_supplier_contact.full_name",
+          "domain": {
+            "op": "and",
+            "conditions": [
+              { "op": "eq", "field": "te_supplier_contact.supplier_id", "value": { "ref": "$record.te_purchase_order.supplier_id" } },
+              { "op": "eq", "field": "te_supplier_contact.is_active", "value": true }
+            ]
+          },
+          "help_text": "This list is filtered to contacts for the selected supplier."
+        },
+        { "id": "te_purchase_order.order_date", "type": "date", "label": "Order Date", "required": true },
+        { "id": "te_purchase_order.expected_date", "type": "date", "label": "Expected Date" },
+        { "id": "te_purchase_order.received_date", "type": "date", "label": "Received Date", "required_when": { "op": "eq", "field": "te_purchase_order.status", "value": "received" } },
+        {
+          "id": "te_purchase_order.currency",
+          "type": "enum",
+          "label": "Currency",
+          "default": "USD",
+          "options": [
+            { "value": "NZD", "label": "NZD" },
+            { "value": "USD", "label": "USD" }
+          ]
+        },
+        { "id": "te_purchase_order.supplier_reference", "type": "string", "label": "Supplier Reference" },
+        {
+          "id": "te_purchase_order.po_total",
+          "type": "number",
+          "label": "PO Total",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "te_purchase_order.currency", "precision": 2 },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.te_purchase_order_line",
+              "field": "te_purchase_order_line.line_total",
+              "where": {
+                "op": "eq",
+                "field": "te_purchase_order_line.purchase_order_id",
+                "value": { "ref": "$parent.id" }
+              }
+            }
+          }
+        },
+        {
+          "id": "te_purchase_order.freight_estimate",
+          "type": "number",
+          "label": "Freight Estimate",
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "te_purchase_order.currency", "precision": 2 }
+        },
+        {
+          "id": "te_purchase_order.landed_total",
+          "type": "number",
+          "label": "Estimated Landed Total",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "te_purchase_order.currency", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "add",
+                  "args": [
+                    { "ref": "$current.te_purchase_order.po_total" },
+                    { "ref": "$current.te_purchase_order.freight_estimate" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        { "id": "te_purchase_order.supplier_documents", "type": "attachments", "label": "Supplier Documents / Proformas" },
+        {
+          "id": "te_purchase_order.cancellation_reason",
+          "type": "text",
+          "label": "Cancellation Reason",
+          "required_when": { "op": "eq", "field": "te_purchase_order.status", "value": "cancelled" },
+          "help_text": "Capture why the order was cancelled so the activity trail is useful later."
+        },
+        { "id": "te_purchase_order.notes", "type": "text", "label": "Internal Notes" }
+      ]
+    },
+    {
+      "id": "entity.te_purchase_order_line",
+      "label": "Purchase Order Line",
+      "display_field": "te_purchase_order_line.description",
+      "fields": [
+        { "id": "te_purchase_order_line.id", "type": "uuid", "label": "ID", "readonly": true },
+        {
+          "id": "te_purchase_order_line.purchase_order_id",
+          "type": "lookup",
+          "label": "Purchase Order",
+          "entity": "entity.te_purchase_order",
+          "display_field": "te_purchase_order.po_number",
+          "required": true
+        },
+        {
+          "id": "te_purchase_order_line.supplier_id_snapshot",
+          "type": "lookup",
+          "label": "Supplier Snapshot",
+          "entity": "entity.te_supplier",
+          "display_field": "te_supplier.name"
+        },
+        {
+          "id": "te_purchase_order_line.currency_snapshot",
+          "type": "enum",
+          "label": "Currency Snapshot",
+          "default": "USD",
+          "options": [
+            { "value": "NZD", "label": "NZD" },
+            { "value": "USD", "label": "USD" }
+          ]
+        },
+        {
+          "id": "te_purchase_order_line.supplier_product_id",
+          "type": "lookup",
+          "label": "Supplier Product",
+          "entity": "entity.te_supplier_product",
+          "display_field": "te_supplier_product.supplier_item_name",
+          "required": true,
+          "domain": {
+            "op": "and",
+            "conditions": [
+              { "op": "eq", "field": "te_supplier_product.supplier_id", "value": { "ref": "$record.te_purchase_order_line.supplier_id_snapshot" } },
+              { "op": "eq", "field": "te_supplier_product.is_active", "value": true }
+            ]
+          },
+          "help_text": "Only active supplier-linked products for the selected supplier are available here."
+        },
+        { "id": "te_purchase_order_line.description", "type": "string", "label": "Description", "required": true },
+        {
+          "id": "te_purchase_order_line.order_uom",
+          "type": "enum",
+          "label": "Order UOM",
+          "default": "EA",
+          "options": [
+            { "value": "EA", "label": "Each" },
+            { "value": "PACK", "label": "Pack" },
+            { "value": "CASE", "label": "Case" }
+          ]
+        },
+        {
+          "id": "te_purchase_order_line.quantity",
+          "type": "number",
+          "label": "Quantity",
+          "default": 1,
+          "format": { "kind": "measurement", "unit_field": "te_purchase_order_line.order_uom", "precision": 0 }
+        },
+        {
+          "id": "te_purchase_order_line.unit_cost",
+          "type": "number",
+          "label": "Unit Cost",
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "te_purchase_order_line.currency_snapshot", "precision": 2 }
+        },
+        {
+          "id": "te_purchase_order_line.line_total",
+          "type": "number",
+          "label": "Line Total",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "te_purchase_order_line.currency_snapshot", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    { "ref": "$current.te_purchase_order_line.quantity" },
+                    { "ref": "$current.te_purchase_order_line.unit_cost" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        { "id": "te_purchase_order_line.notes", "type": "text", "label": "Line Notes" }
+      ]
+    }
+  ],
+  "interfaces": {
+    "dashboardable": [
+      {
+        "entity_id": "entity.te_purchase_order",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "te_purchase_order.order_date",
+        "measures": [
+          "count",
+          "sum:te_purchase_order.po_total"
+        ],
+        "group_bys": [
+          "te_purchase_order.status",
+          "te_purchase_order.currency",
+          "te_purchase_order.supplier_id"
+        ]
+      },
+      {
+        "entity_id": "entity.te_purchase_order_line",
+        "enabled": true,
+        "scope": "module_and_global",
+        "measures": [
+          "count",
+          "sum:te_purchase_order_line.line_total"
+        ],
+        "group_bys": [
+          "te_purchase_order_line.order_uom",
+          "te_purchase_order_line.currency_snapshot"
+        ]
+      }
+    ]
+  },
+  "workflows": [
+    {
+      "id": "workflow.te_purchase_order",
+      "entity": "entity.te_purchase_order",
+      "status_field": "te_purchase_order.status",
+      "states": [
+        { "id": "draft", "label": "Draft", "order": 1, "required_fields": ["te_purchase_order.supplier_id", "te_purchase_order.currency"] },
+        { "id": "placed", "label": "Placed", "order": 2, "required_fields": ["te_purchase_order.supplier_id", "te_purchase_order.order_date"] },
+        { "id": "received", "label": "Received", "order": 3, "required_fields": ["te_purchase_order.received_date"] },
+        { "id": "cancelled", "label": "Cancelled", "order": 4, "required_fields": ["te_purchase_order.cancellation_reason"] }
+      ],
+      "transitions": [
+        { "from": "draft", "to": "placed", "label": "Place Order" },
+        { "from": "placed", "to": "received", "label": "Mark Received" },
+        { "from": "draft", "to": "cancelled", "label": "Cancel" },
+        { "from": "placed", "to": "cancelled", "label": "Cancel" }
+      ]
+    }
+  ],
+  "actions": [
+    { "id": "action.te_purchase_order_new", "kind": "open_form", "label": "New Purchase Order", "target": "te_purchase_order.form" },
+    {
+      "id": "action.te_purchase_order_place",
+      "kind": "update_record",
+      "entity_id": "entity.te_purchase_order",
+      "label": "Place Order",
+      "patch": { "te_purchase_order.status": "placed" },
+      "confirm": {
+        "title": "Place purchase order?",
+        "body": "Use this when the supplier-facing order is ready to send."
+      },
+      "visible_when": { "op": "eq", "field": "te_purchase_order.status", "value": "draft" },
+      "enabled_when": {
+        "op": "and",
+        "conditions": [
+          { "op": "exists", "field": "te_purchase_order.supplier_id" },
+          { "op": "gt", "field": "te_purchase_order.po_total", "value": 0 }
+        ]
+      }
+    },
+    {
+      "id": "action.te_purchase_order_receive",
+      "kind": "update_record",
+      "entity_id": "entity.te_purchase_order",
+      "label": "Mark Received",
+      "patch": { "te_purchase_order.status": "received" },
+      "visible_when": { "op": "eq", "field": "te_purchase_order.status", "value": "placed" },
+      "enabled_when": { "op": "exists", "field": "te_purchase_order.received_date" }
+    },
+    {
+      "id": "action.te_purchase_order_open_cancel_modal",
+      "kind": "update_record",
+      "entity_id": "entity.te_purchase_order",
+      "label": "Cancel Order",
+      "modal_id": "modal.te_purchase_order_cancel",
+      "visible_when": {
+        "op": "in",
+        "field": "te_purchase_order.status",
+        "value": ["draft", "placed"]
+      }
+    }
+  ],
+  "views": [
+    {
+      "id": "te_purchase_order.list",
+      "kind": "list",
+      "entity": "entity.te_purchase_order",
+      "columns": [
+        { "field_id": "te_purchase_order.po_number" },
+        { "field_id": "te_purchase_order.order_date" },
+        { "field_id": "te_purchase_order.supplier_id" },
+        { "field_id": "te_purchase_order.currency" },
+        { "field_id": "te_purchase_order.po_total" },
+        { "field_id": "te_purchase_order.status" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.te_purchase_order_new" }],
+        "open_record_target": "page:te_purchase_order.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search purchase orders...",
+          "fields": ["te_purchase_order.po_number", "te_purchase_order.supplier_reference"]
+        },
+        "filters": [
+          {
+            "id": "open",
+            "label": "Open Orders",
+            "domain": {
+              "op": "in",
+              "field": "te_purchase_order.status",
+              "value": ["draft", "placed"]
+            }
+          },
+          { "id": "draft", "label": "Draft", "domain": { "op": "eq", "field": "te_purchase_order.status", "value": "draft" } },
+          { "id": "placed", "label": "Placed", "domain": { "op": "eq", "field": "te_purchase_order.status", "value": "placed" } },
+          { "id": "received", "label": "Received", "domain": { "op": "eq", "field": "te_purchase_order.status", "value": "received" } },
+          { "id": "cancelled", "label": "Cancelled", "domain": { "op": "eq", "field": "te_purchase_order.status", "value": "cancelled" } }
+        ]
+      }
+    },
+    {
+      "id": "te_purchase_order.form",
+      "kind": "form",
+      "entity": "entity.te_purchase_order",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Purchase Order",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_purchase_order.po_number",
+            "te_purchase_order.status",
+            "te_purchase_order.supplier_id",
+            "te_purchase_order.supplier_contact_id",
+            "te_purchase_order.order_date",
+            "te_purchase_order.expected_date",
+            "te_purchase_order.received_date",
+            "te_purchase_order.currency",
+            "te_purchase_order.supplier_reference"
+          ]
+        },
+        {
+          "id": "financials",
+          "title": "Costs",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_purchase_order.po_total",
+            "te_purchase_order.freight_estimate",
+            "te_purchase_order.landed_total"
+          ]
+        },
+        {
+          "id": "line_items",
+          "title": "Line Items",
+          "line_editor": {
+            "entity_id": "entity.te_purchase_order_line",
+            "parent_field": "te_purchase_order_line.purchase_order_id",
+            "item_lookup_field": "te_purchase_order_line.supplier_product_id",
+            "item_lookup_entity": "entity.te_supplier_product",
+            "item_lookup_display_field": "te_supplier_product.supplier_item_name",
+            "item_lookup_domain": {
+              "op": "and",
+              "conditions": [
+                { "op": "eq", "field": "te_supplier_product.supplier_id", "value": { "ref": "$record.te_purchase_order.supplier_id" } },
+                { "op": "eq", "field": "te_supplier_product.is_active", "value": true }
+              ]
+            },
+            "item_field_map": {
+              "te_purchase_order_line.description": "te_supplier_product.supplier_item_name",
+              "te_purchase_order_line.order_uom": "te_supplier_product.order_uom",
+              "te_purchase_order_line.unit_cost": "te_supplier_product.unit_cost"
+            },
+            "parent_field_map": {
+              "te_purchase_order_line.supplier_id_snapshot": "te_purchase_order.supplier_id",
+              "te_purchase_order_line.currency_snapshot": "te_purchase_order.currency"
+            },
+            "defaults": {
+              "te_purchase_order_line.order_uom": "EA",
+              "te_purchase_order_line.quantity": 1,
+              "te_purchase_order_line.unit_cost": 0
+            },
+            "custom_line_defaults": {
+              "te_purchase_order_line.order_uom": "EA",
+              "te_purchase_order_line.quantity": 1,
+              "te_purchase_order_line.unit_cost": 0
+            },
+            "description_field": "te_purchase_order_line.description",
+            "columns": [
+              { "field_id": "te_purchase_order_line.supplier_product_id", "label": "Supplier Item", "readonly": true, "width": 220 },
+              { "field_id": "te_purchase_order_line.description", "label": "Description", "width": 320 },
+              {
+                "field_id": "te_purchase_order_line.order_uom",
+                "label": "Order UOM",
+                "type": "enum",
+                "width": 110,
+                "options": [
+                  { "value": "EA", "label": "Each" },
+                  { "value": "PACK", "label": "Pack" },
+                  { "value": "CASE", "label": "Case" }
+                ]
+              },
+              { "field_id": "te_purchase_order_line.quantity", "label": "Qty", "type": "number", "width": 120, "align": "right", "format": { "kind": "measurement", "unit_field": "te_purchase_order_line.order_uom", "precision": 0 } },
+              { "field_id": "te_purchase_order_line.unit_cost", "label": "Unit Cost", "type": "number", "width": 150, "align": "right", "currency_field": "te_purchase_order_line.currency_snapshot" },
+              { "field_id": "te_purchase_order_line.line_total", "label": "Line Total", "type": "number", "readonly": true, "width": 150, "align": "right", "currency_field": "te_purchase_order_line.currency_snapshot" }
+            ]
+          }
+        },
+        {
+          "id": "notes",
+          "title": "Notes and Documents",
+          "fields": [
+            "te_purchase_order.notes",
+            "te_purchase_order.supplier_documents",
+            "te_purchase_order.cancellation_reason"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": { "field_id": "te_purchase_order.status" },
+        "auto_state_actions": false,
+        "primary_actions": [
+          { "action_id": "action.te_purchase_order_place" },
+          { "action_id": "action.te_purchase_order_receive" }
+        ],
+        "secondary_actions": [
+          { "action_id": "action.te_purchase_order_open_cancel_modal" }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "summary",
+          "tabs": [
+            { "id": "summary", "label": "Summary", "sections": ["summary"] },
+            { "id": "line_items", "label": "Line Items", "sections": ["line_items"] },
+            { "id": "financials", "label": "Financials", "sections": ["financials"] },
+            { "id": "notes", "label": "Notes & Documents", "sections": ["notes"] }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "te_purchase_order.po_number",
+          "te_purchase_order.status",
+          "te_purchase_order.supplier_id",
+          "te_purchase_order.supplier_contact_id",
+          "te_purchase_order.order_date",
+          "te_purchase_order.expected_date",
+          "te_purchase_order.received_date",
+          "te_purchase_order.po_total",
+          "te_purchase_order.freight_estimate",
+          "te_purchase_order.landed_total",
+          "te_purchase_order.cancellation_reason"
+        ]
+      }
+    },
+    {
+      "id": "te_purchase_order.kanban",
+      "kind": "kanban",
+      "entity": "entity.te_purchase_order",
+      "card": {
+        "title_field": "te_purchase_order.po_number",
+        "subtitle_fields": ["te_purchase_order.supplier_id", "te_purchase_order.expected_date"],
+        "badge_fields": ["te_purchase_order.status", "te_purchase_order.po_total"]
+      }
+    },
+    {
+      "id": "te_purchase_order.calendar",
+      "kind": "calendar",
+      "entity": "entity.te_purchase_order",
+      "calendar": {
+        "title_field": "te_purchase_order.po_number",
+        "date_start": "te_purchase_order.expected_date",
+        "date_end": "te_purchase_order.expected_date",
+        "color_field": "te_purchase_order.status",
+        "default_scale": "month"
+      }
+    },
+    {
+      "id": "te_purchase_order.graph",
+      "kind": "graph",
+      "entity": "entity.te_purchase_order",
+      "default": {
+        "type": "bar",
+        "group_by": "te_purchase_order.status",
+        "measure": "sum:te_purchase_order.po_total"
+      }
+    },
+    {
+      "id": "te_purchase_order_line.list",
+      "kind": "list",
+      "entity": "entity.te_purchase_order_line",
+      "columns": [
+        { "field_id": "te_purchase_order_line.supplier_product_id" },
+        { "field_id": "te_purchase_order_line.description" },
+        { "field_id": "te_purchase_order_line.order_uom" },
+        { "field_id": "te_purchase_order_line.quantity" },
+        { "field_id": "te_purchase_order_line.unit_cost" },
+        { "field_id": "te_purchase_order_line.line_total" },
+        { "field_id": "te_purchase_order_line.purchase_order_id" }
+      ],
+      "header": {
+        "open_record_target": "page:te_purchase_order_line.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search purchase order lines...",
+          "fields": ["te_purchase_order_line.description", "te_purchase_order_line.notes"]
+        }
+      }
+    },
+    {
+      "id": "te_purchase_order_line.form",
+      "kind": "form",
+      "entity": "entity.te_purchase_order_line",
+      "sections": [
+        {
+          "id": "line_summary",
+          "title": "Purchase Order Line",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_purchase_order_line.purchase_order_id",
+            "te_purchase_order_line.supplier_id_snapshot",
+            "te_purchase_order_line.supplier_product_id",
+            "te_purchase_order_line.currency_snapshot",
+            "te_purchase_order_line.description",
+            "te_purchase_order_line.order_uom",
+            "te_purchase_order_line.quantity",
+            "te_purchase_order_line.unit_cost",
+            "te_purchase_order_line.line_total"
+          ]
+        },
+        { "id": "line_notes", "title": "Notes", "fields": ["te_purchase_order_line.notes"] }
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true
+      }
+    }
+  ],
+  "modals": [
+    {
+      "id": "modal.te_purchase_order_cancel",
+      "title": "Cancel Purchase Order",
+      "description": "Capture why this supplier order is being cancelled.",
+      "entity_id": "entity.te_purchase_order",
+      "fields": [
+        "te_purchase_order.cancellation_reason"
+      ],
+      "actions": [
+        {
+          "kind": "update_record",
+          "entity_id": "entity.te_purchase_order",
+          "label": "Cancel Purchase Order",
+          "patch": {
+            "te_purchase_order.status": "cancelled",
+            "te_purchase_order.cancellation_reason": { "ref": "$record.te_purchase_order.cancellation_reason" }
+          }
+        },
+        {
+          "kind": "close_modal",
+          "label": "Close",
+          "variant": "ghost"
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "id": "te_purchase_order.home_page",
+      "title": "Purchasing",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "kind": "navigate", "label": "New Purchase Order", "target": "page:te_purchase_order.form_page" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "stat_cards",
+          "columns": 4,
+          "cards": [
+            { "id": "draft_orders", "label": "Draft Orders", "entity_id": "entity.te_purchase_order", "measure": "count", "domain": { "op": "eq", "field": "te_purchase_order.status", "value": "draft" }, "format": "number" },
+            { "id": "placed_orders", "label": "Placed Orders", "entity_id": "entity.te_purchase_order", "measure": "count", "domain": { "op": "eq", "field": "te_purchase_order.status", "value": "placed" }, "format": "number" },
+            { "id": "received_orders", "label": "Received", "entity_id": "entity.te_purchase_order", "measure": "count", "domain": { "op": "eq", "field": "te_purchase_order.status", "value": "received" }, "format": "number" },
+            { "id": "open_value", "label": "Open Value", "entity_id": "entity.te_purchase_order", "measure": "sum:te_purchase_order.po_total", "domain": { "op": "eq", "field": "te_purchase_order.status", "value": "placed" }, "format": "currency" }
+          ]
+        },
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_purchase_order",
+              "default_mode": "kanban",
+              "default_filter_id": "open",
+              "modes": [
+                { "mode": "list", "target": "view:te_purchase_order.list" },
+                { "mode": "kanban", "target": "view:te_purchase_order.kanban", "default_group_by": "te_purchase_order.status" },
+                { "mode": "calendar", "target": "view:te_purchase_order.calendar" },
+                { "mode": "graph", "target": "view:te_purchase_order.graph" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_purchase_order.list_page",
+      "title": "Purchase Orders",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_purchase_order",
+              "default_mode": "kanban",
+              "default_filter_id": "open",
+              "modes": [
+                { "mode": "list", "target": "view:te_purchase_order.list" },
+                { "mode": "kanban", "target": "view:te_purchase_order.kanban", "default_group_by": "te_purchase_order.status" },
+                { "mode": "calendar", "target": "view:te_purchase_order.calendar" },
+                { "mode": "graph", "target": "view:te_purchase_order.graph" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_purchase_order.open_page",
+      "title": "Open Purchase Orders",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_purchase_order",
+              "default_mode": "kanban",
+              "default_filter_id": "open",
+              "modes": [
+                { "mode": "list", "target": "view:te_purchase_order.list" },
+                { "mode": "kanban", "target": "view:te_purchase_order.kanban", "default_group_by": "te_purchase_order.status" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_purchase_order.form_page",
+      "title": "Purchase Order",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.te_purchase_order",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    { "kind": "container", "variant": "card", "content": [{ "kind": "view", "target": "view:te_purchase_order.form" }] }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    { "kind": "container", "variant": "card", "content": [{ "kind": "chatter", "entity_id": "entity.te_purchase_order", "record_ref": "$record.id" }] }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_purchase_order_line.list_page",
+      "title": "Purchase Order Lines",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_purchase_order_line",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:te_purchase_order_line.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_purchase_order_line.form_page",
+      "title": "Purchase Order Line",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.te_purchase_order_line",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                { "kind": "view", "target": "view:te_purchase_order_line.form" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
