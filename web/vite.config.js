@@ -5,7 +5,11 @@ import { VitePWA } from "vite-plugin-pwa";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const proxyTarget = (env.VITE_API_URL || "http://localhost:8000").trim();
+  const buildId = String(Date.now());
   return {
+    define: {
+      __OCTO_BUILD_ID__: JSON.stringify(buildId),
+    },
     plugins: [
       react(),
       VitePWA({

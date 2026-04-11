@@ -100,6 +100,10 @@ function getPwaSurfaceState() {
   return { isStandalone, isMobileBrowser, isIos, isSafari };
 }
 
+const OCTO_BUILD_ID = typeof __OCTO_BUILD_ID__ !== "undefined" ? __OCTO_BUILD_ID__ : "";
+const BUILD_LAST_SEEN_KEY = "octo:web-build-last-seen-v1";
+const BUILD_ACK_KEY = "octo:web-build-ack-v1";
+
 export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -299,6 +303,26 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined" || !OCTO_BUILD_ID) return;
+    const lastSeen = window.localStorage.getItem(BUILD_LAST_SEEN_KEY);
+    const acknowledged = window.localStorage.getItem(BUILD_ACK_KEY);
+
+    if (!lastSeen) {
+      window.localStorage.setItem(BUILD_LAST_SEEN_KEY, OCTO_BUILD_ID);
+      window.localStorage.setItem(BUILD_ACK_KEY, OCTO_BUILD_ID);
+      return;
+    }
+
+    if (lastSeen !== OCTO_BUILD_ID) {
+      window.localStorage.setItem(BUILD_LAST_SEEN_KEY, OCTO_BUILD_ID);
+    }
+
+    if (acknowledged !== OCTO_BUILD_ID) {
+      setUpdatePromptVisible(true);
+    }
+  }, []);
+
+  useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const dismissalKey = "octo:pwa-install-dismissed-at-v1";
     const dismissalCooldownMs = 7 * 24 * 60 * 60 * 1000;
@@ -370,6 +394,10 @@ export default function App() {
   }
 
   async function handleApplyUpdate() {
+    if (typeof window !== "undefined" && OCTO_BUILD_ID) {
+      window.localStorage.setItem(BUILD_ACK_KEY, OCTO_BUILD_ID);
+      window.localStorage.setItem(BUILD_LAST_SEEN_KEY, OCTO_BUILD_ID);
+    }
     const applyUpdate = typeof window !== "undefined" ? window.__octoWebApplyUpdate : null;
     if (typeof applyUpdate === "function") {
       await applyUpdate(true);
