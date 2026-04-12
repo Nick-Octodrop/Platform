@@ -124,6 +124,12 @@ Notes:
 - **Missing env vars**: backend requires `SUPABASE_URL`; frontend requires `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
  - **USE_DB enabled but no DB URL**: set `SUPABASE_DB_URL` (or `DATABASE_URL`) before starting the backend.
 
+## PWA Install And Update
+- Chromium desktop/mobile: use the in-app `Install Octodrop` prompt or the browser's `Install app` action.
+- iPhone/iPad Safari: use `Share` -> `Add to Home Screen`.
+- Installed PWAs now auto-update. When a new service worker is available, standalone installs claim the new version and reload into the fresh bundle automatically.
+- If you are testing after a frontend deploy and still see an old UI, close all Octodrop app windows/tabs once, then reopen the installed app so the new service worker can take control cleanly.
+
 ## Persistence mode (optional)
 To persist data across restarts, enable DB mode and run migrations.
 

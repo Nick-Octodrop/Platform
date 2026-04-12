@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       VitePWA({
-        registerType: "prompt",
+        registerType: "autoUpdate",
         injectRegister: null,
         devOptions: {
           enabled: true,
@@ -84,6 +84,9 @@ export default defineConfig(({ mode }) => {
         workbox: {
           globPatterns: ["**/*.{js,css,html,svg,png,ico}"],
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+          cleanupOutdatedCaches: true,
+          clientsClaim: true,
+          skipWaiting: true,
         }
       }),
     ],

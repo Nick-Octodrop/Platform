@@ -24,12 +24,63 @@ function isStandaloneDisplay() {
   return Boolean(displayStandalone || navigatorStandalone);
 }
 
+function dispatchPwaUpdateReady() {
+  if (typeof window === "undefined") return;
+  window.__octoWebUpdateReady = true;
+  window.dispatchEvent(new CustomEvent("octo:web-pwa-update-ready"));
+}
+
+function installServiceWorkerUpdatePolling(registration) {
+  if (!registration || typeof window === "undefined" || typeof document === "undefined") return;
+
+  const checkForUpdate = () => {
+    registration.update().catch(() => {
+      // ignore transient SW update failures
+    });
+  };
+
+  window.__octoWebSwRegistration = registration;
+  window.addEventListener("focus", checkForUpdate);
+  window.addEventListener("online", checkForUpdate);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      checkForUpdate();
+    }
+  });
+  window.setInterval(checkForUpdate, 60 * 1000);
+}
+
+let hasReloadedForNewController = false;
+if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (hasReloadedForNewController) return;
+    hasReloadedForNewController = true;
+    window.location.reload();
+  });
+}
+
 const updateSW = registerSW({
   immediate: true,
-  onNeedRefresh() {
-    window.__octoWebUpdateReady = true;
+  onRegisteredSW(_swUrl, registration) {
     window.__octoWebApplyUpdate = updateSW;
-    window.dispatchEvent(new CustomEvent("octo:web-pwa-update-ready"));
+    installServiceWorkerUpdatePolling(registration);
+    if (registration?.waiting) {
+      dispatchPwaUpdateReady();
+      if (isStandaloneDisplay()) {
+        updateSW(true).catch(() => {
+          // keep manual update fallback in the shell if auto-apply fails
+        });
+      }
+    }
+  },
+  onNeedRefresh() {
+    window.__octoWebApplyUpdate = updateSW;
+    dispatchPwaUpdateReady();
+    if (isStandaloneDisplay()) {
+      updateSW(true).catch(() => {
+        // keep manual update fallback in the shell if auto-apply fails
+      });
+    }
   },
 });
 const root = createRoot(document.getElementById("root"));
