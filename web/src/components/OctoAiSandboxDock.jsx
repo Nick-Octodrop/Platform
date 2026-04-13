@@ -110,6 +110,49 @@ function AssistantNarrative({ text }) {
   );
 }
 
+function patchsetActivityTimestamp(patchset) {
+  if (!patchset || typeof patchset !== "object") return 0;
+  const candidates = [
+    patchset.applied_at,
+    patchset.validated_at,
+    patchset.updated_at,
+    patchset.created_at,
+  ];
+  for (const value of candidates) {
+    if (typeof value !== "string" || !value) continue;
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function patchsetStatusRank(patchset) {
+  const status = typeof patchset?.status === "string" ? patchset.status : "";
+  if (status === "applied") return 5;
+  if (status === "approved") return 4;
+  if (status === "validated") return 3;
+  if (status === "invalid") return 2;
+  if (status === "draft") return 1;
+  return 0;
+}
+
+function comparePatchsetsNewestFirst(left, right) {
+  const timestampDelta = patchsetActivityTimestamp(right) - patchsetActivityTimestamp(left);
+  if (timestampDelta !== 0) return timestampDelta;
+  const rankDelta = patchsetStatusRank(right) - patchsetStatusRank(left);
+  if (rankDelta !== 0) return rankDelta;
+  const leftId = typeof left?.id === "string" ? left.id : "";
+  const rightId = typeof right?.id === "string" ? right.id : "";
+  return rightId.localeCompare(leftId);
+}
+
+function latestPatchsetFromList(patchsets, planId = "") {
+  if (!Array.isArray(patchsets) || patchsets.length === 0) return null;
+  const scoped = planId ? patchsets.filter((item) => item?.plan_id === planId) : patchsets;
+  const candidates = scoped.length > 0 ? scoped : patchsets;
+  return [...candidates].sort(comparePatchsetsNewestFirst)[0] || null;
+}
+
 function InfoList({ title, items, emptyText }) {
   return (
     <div className="rounded-box border border-base-200 bg-base-100 p-3">
@@ -243,7 +286,7 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
   const isEmbedMode = useMemo(() => new URLSearchParams(location.search).get("octo_ai_embed") === "1", [location.search]);
 
   const latestPlan = useMemo(() => (Array.isArray(data.plans) && data.plans.length > 0 ? data.plans[0] : null), [data.plans]);
-  const latestPatchset = useMemo(() => (Array.isArray(data.patchsets) && data.patchsets.length > 0 ? data.patchsets[0] : null), [data.patchsets]);
+  const latestPatchset = useMemo(() => latestPatchsetFromList(data.patchsets, latestPlan?.id || ""), [data.patchsets, latestPlan?.id]);
   const activeQuestionMeta = useMemo(() => {
     const direct = latestPlan?.required_question_meta;
     if (direct && typeof direct === "object") return direct;
@@ -433,9 +476,7 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
   }
 
   function latestPatchsetForPlan(payload, planId) {
-    if (!Array.isArray(payload?.patchsets) || payload.patchsets.length === 0) return null;
-    if (!planId) return payload.patchsets[0];
-    return payload.patchsets.find((item) => item?.plan_id === planId) || null;
+    return latestPatchsetFromList(payload?.patchsets, planId);
   }
 
   function refreshSandboxWorkspace() {

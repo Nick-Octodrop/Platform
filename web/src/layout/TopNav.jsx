@@ -13,6 +13,30 @@ function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text);
 }
 
+function readCachedModuleName(moduleId) {
+  if (typeof window === "undefined" || !moduleId) return "";
+  try {
+    const raw = window.localStorage.getItem("octo:module-name-cache");
+    const parsed = raw ? JSON.parse(raw) : {};
+    const text = String(parsed?.[moduleId] || "").trim();
+    return text;
+  } catch {
+    return "";
+  }
+}
+
+function writeCachedModuleName(moduleId, moduleName) {
+  if (typeof window === "undefined" || !moduleId || !moduleName) return;
+  try {
+    const raw = window.localStorage.getItem("octo:module-name-cache");
+    const parsed = raw ? JSON.parse(raw) : {};
+    parsed[moduleId] = moduleName;
+    window.localStorage.setItem("octo:module-name-cache", JSON.stringify(parsed));
+  } catch {
+    // ignore storage failures
+  }
+}
+
 function findFirstViewTarget(blocks) {
   const items = Array.isArray(blocks) ? blocks : [];
   for (const block of items) {
@@ -365,7 +389,8 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     };
   }, [isStudioRoute]);
 
-  const appName = manifest?.module?.name || moduleId;
+  const cachedModuleName = useMemo(() => readCachedModuleName(moduleId), [moduleId]);
+  const appName = manifest?.module?.name || cachedModuleName || "App";
   const navGroups = Array.isArray(manifest?.app?.nav) ? manifest.app.nav : [];
   const appHomeTarget = manifest?.app?.home || null;
   const appHomeRoute = appHomeTarget ? buildTargetRoute(moduleId, appHomeTarget) : null;
@@ -428,6 +453,12 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
       mounted = false;
     };
   }, [isAppRoute, isRecordPage, recordEntityId, recordIdParam, recordTitleField, recordViewTitleField, recordEntityDef, currentPageDef?.title]);
+
+  useEffect(() => {
+    const moduleName = String(manifest?.module?.name || "").trim();
+    if (!moduleId || !moduleName) return;
+    writeCachedModuleName(moduleId, moduleName);
+  }, [moduleId, manifest?.module?.name]);
 
   useEffect(() => {
     let mounted = true;
@@ -735,7 +766,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
   );
   const mobileAppBreadcrumb = useMemo(() => {
     if (!isAppRoute) return "";
-    const appLabel = String(appName || moduleId || "App").trim();
+    const appLabel = String(appName || "App").trim();
     const leafLabel = String(
       isRecordPage
         ? (recordCrumbLabel || currentPageDef?.title || "Record")
@@ -743,10 +774,10 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ).trim();
     if (!leafLabel || leafLabel === appLabel) return appLabel;
     return `${appLabel} / ${leafLabel}`;
-  }, [appName, currentPageDef?.title, isAppRoute, isRecordPage, moduleId, recordCrumbLabel]);
+  }, [appName, currentPageDef?.title, isAppRoute, isRecordPage, recordCrumbLabel]);
   const mobileTitle = useMemo(() => {
     if (isAppRoute) {
-      return mobileAppBreadcrumb || appName || moduleId || "App";
+      return mobileAppBreadcrumb || appName || "App";
     }
     if (isStudioRoute) return isStudioEditor ? studioModuleName : "Studio";
     if (isSettingsRoute) return settingsLeafLabel || "Settings";
@@ -876,7 +907,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
         <ul>
           <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
           <li>
-            <CrumbLink to={appHomeRoute || appendOctoAiFrameParams(currentRoute)}>{appName || moduleId}</CrumbLink>
+            <CrumbLink to={appHomeRoute || appendOctoAiFrameParams(currentRoute)}>{appName || "App"}</CrumbLink>
           </li>
           {isRecordPage && !isMobile && <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{recordCrumbLabel || currentPageDef?.title || "Record"}</CrumbLink></li>}
         </ul>
@@ -1198,7 +1229,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
                 >
                   All Apps
                 </Link>
-                <div className="min-w-0 text-sm font-semibold truncate">{appName || moduleId}</div>
+                <div className="min-w-0 text-sm font-semibold truncate">{appName || "App"}</div>
               </div>
               <button
                 type="button"

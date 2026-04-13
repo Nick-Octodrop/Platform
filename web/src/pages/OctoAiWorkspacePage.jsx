@@ -110,6 +110,49 @@ function summarizePatchsetRevision(patchset) {
   return labels.slice(0, 2).join(" • ") || `${ops.length} change${ops.length === 1 ? "" : "s"}`;
 }
 
+function patchsetActivityTimestamp(patchset) {
+  if (!patchset || typeof patchset !== "object") return 0;
+  const candidates = [
+    patchset.applied_at,
+    patchset.validated_at,
+    patchset.updated_at,
+    patchset.created_at,
+  ];
+  for (const value of candidates) {
+    if (typeof value !== "string" || !value) continue;
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function patchsetStatusRank(patchset) {
+  const status = typeof patchset?.status === "string" ? patchset.status : "";
+  if (status === "applied") return 5;
+  if (status === "approved") return 4;
+  if (status === "validated") return 3;
+  if (status === "invalid") return 2;
+  if (status === "draft") return 1;
+  return 0;
+}
+
+function comparePatchsetsNewestFirst(left, right) {
+  const timestampDelta = patchsetActivityTimestamp(right) - patchsetActivityTimestamp(left);
+  if (timestampDelta !== 0) return timestampDelta;
+  const rankDelta = patchsetStatusRank(right) - patchsetStatusRank(left);
+  if (rankDelta !== 0) return rankDelta;
+  const leftId = typeof left?.id === "string" ? left.id : "";
+  const rightId = typeof right?.id === "string" ? right.id : "";
+  return rightId.localeCompare(leftId);
+}
+
+function latestPatchsetFromList(patchsets, planId = "") {
+  if (!Array.isArray(patchsets) || patchsets.length === 0) return null;
+  const scoped = planId ? patchsets.filter((item) => item?.plan_id === planId) : patchsets;
+  const candidates = scoped.length > 0 ? scoped : patchsets;
+  return [...candidates].sort(comparePatchsetsNewestFirst)[0] || null;
+}
+
 function DetailsDrawer({ open, onClose, activeTab, onTabChange, sections }) {
   if (!open) return null;
   const tabs = [
@@ -367,7 +410,7 @@ export default function OctoAiWorkspacePage() {
   const canManageSettings = hasCapability("workspace.manage_settings");
 
   const latestPlan = useMemo(() => (Array.isArray(data.plans) && data.plans.length > 0 ? data.plans[0] : null), [data.plans]);
-  const latestPatchset = useMemo(() => (Array.isArray(data.patchsets) && data.patchsets.length > 0 ? data.patchsets[0] : null), [data.patchsets]);
+  const latestPatchset = useMemo(() => latestPatchsetFromList(data.patchsets, latestPlan?.id || ""), [data.patchsets, latestPlan?.id]);
   const latestRelease = useMemo(() => (Array.isArray(data.releases) && data.releases.length > 0 ? data.releases[0] : null), [data.releases]);
   const latestPromotedRelease = useMemo(() => (Array.isArray(data.releases) ? data.releases.find((item) => item?.status === "promoted") || null : null), [data.releases]);
   const appliedRevisions = useMemo(
@@ -652,13 +695,20 @@ export default function OctoAiWorkspacePage() {
     }
     await generateOctoAiPatchset(sessionId, {});
     const generated = await getOctoAiSession(sessionId);
-    const patchset = Array.isArray(generated?.patchsets) && generated.patchsets.length > 0 ? generated.patchsets[0] : null;
+    const patchset = latestPatchsetFromList(generated?.patchsets, latestPlan?.id || "");
     if (!patchset?.id) {
       throw new Error("No patchset was generated for this request.");
     }
     await validateOctoAiPatchset(patchset.id);
-    await refreshSession({ showLoading: false });
-    return patchset.id;
+    const refreshed = await refreshSession({ showLoading: false });
+    const validatedPatchset = latestPatchsetFromList(refreshed?.patchsets, patchset.plan_id || latestPlan?.id || "");
+    if (!validatedPatchset?.id) {
+      throw new Error("No validated revision was available after validation.");
+    }
+    if (!["validated", "approved", "applied"].includes(String(validatedPatchset.status || ""))) {
+      throw new Error(`Patchset must be validated before apply: ${String(validatedPatchset.status || "unknown")}`);
+    }
+    return validatedPatchset.id;
   }
 
   async function prepareLatestRevision() {
@@ -710,7 +760,10 @@ export default function OctoAiWorkspacePage() {
     setError("");
     setPreviewNotice("Applying revision to sandbox...");
     try {
-      await applyOctoAiPatchset(latestPatchset.id, true);
+      const patchsetId = ["validated", "approved", "applied"].includes(String(latestPatchset.status || ""))
+        ? latestPatchset.id
+        : await ensureValidatedRevision();
+      await applyOctoAiPatchset(patchsetId, true);
       await refreshSession({ showLoading: false });
       setPreviewNonce((value) => value + 1);
       setPreviewNotice("Sandbox updated");

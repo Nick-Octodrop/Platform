@@ -22032,6 +22032,9 @@ def _ai_multi_clause_plan(
     carry_tab = answer_hints.get("tab_target") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("tab_target"), str) else None
     carry_tab_section_id = answer_hints.get("planned_section_id") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("planned_section_id"), str) else None
     carry_view_id = answer_hints.get("planned_view_id") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("planned_view_id"), str) else None
+    carry_field_label = answer_hints.get("field_label") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("field_label"), str) else None
+    carry_field_id = answer_hints.get("field_id") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("field_id"), str) else None
+    carry_planner_intent = answer_hints.get("planner_intent") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("planner_intent"), str) else None
     any_actionable = False
     any_noop = False
 
@@ -22054,6 +22057,12 @@ def _ai_multi_clause_plan(
             clause_hints["planned_section_id"] = carry_tab_section_id
         if isinstance(carry_view_id, str) and carry_view_id and not clause_hints.get("planned_view_id"):
             clause_hints["planned_view_id"] = carry_view_id
+        if isinstance(carry_field_label, str) and carry_field_label and not clause_hints.get("field_label"):
+            clause_hints["field_label"] = carry_field_label
+        if isinstance(carry_field_id, str) and carry_field_id and not clause_hints.get("field_id"):
+            clause_hints["field_id"] = carry_field_id
+        if isinstance(carry_planner_intent, str) and carry_planner_intent and not clause_hints.get("planner_intent"):
+            clause_hints["planner_intent"] = carry_planner_intent
 
         scoped_module_ids = [carry_module] if isinstance(carry_module, str) and carry_module else module_ids
         clause_plan = None
@@ -22113,6 +22122,12 @@ def _ai_multi_clause_plan(
         aggregate["affected_modules"].extend(clause_affected)
         if len(clause_affected) == 1:
             carry_module = clause_affected[0]
+        if isinstance(clause_state.get("field_label"), str) and clause_state.get("field_label").strip():
+            carry_field_label = clause_state.get("field_label").strip()
+        if isinstance(clause_state.get("field_id"), str) and clause_state.get("field_id").strip():
+            carry_field_id = clause_state.get("field_id").strip()
+        if isinstance(clause_state.get("intent"), str) and clause_state.get("intent").strip():
+            carry_planner_intent = clause_state.get("intent").strip()
         if clause_state.get("intent") in {"add_form_tab", "tab_already_exists_noop"} and isinstance(clause_state.get("tab_label"), str):
             carry_tab = clause_state.get("tab_label")
             carry_view_id = clause_state.get("view_id") if isinstance(clause_state.get("view_id"), str) else carry_view_id
@@ -22154,6 +22169,12 @@ def _ai_multi_clause_plan(
         aggregate["planner_state"]["planned_section_id"] = carry_tab_section_id
     if isinstance(carry_view_id, str) and carry_view_id:
         aggregate["planner_state"]["planned_view_id"] = carry_view_id
+    if isinstance(carry_field_label, str) and carry_field_label:
+        aggregate["planner_state"]["field_label"] = carry_field_label
+    if isinstance(carry_field_id, str) and carry_field_id:
+        aggregate["planner_state"]["field_id"] = carry_field_id
+    if isinstance(carry_planner_intent, str) and carry_planner_intent:
+        aggregate["planner_state"]["planner_intent"] = carry_planner_intent
     return aggregate
 
 
@@ -23451,8 +23472,12 @@ def _ai_slot_based_plan(
     possible_new_field_on_tab = False
     if re.search(r"\bput\b", lower) and "tab" in lower:
         prospective_label = _ai_extract_field_label(combined, answer_hints=answer_hints)
+        hint_intent = answer_hints.get("planner_intent") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("planner_intent"), str) else None
+        hinted_field_label = answer_hints.get("field_label") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("field_label"), str) else None
         if isinstance(prospective_label, str) and prospective_label.strip():
             possible_new_field_on_tab = not isinstance(_ai_resolve_field_reference(manifest, target_entity, prospective_label), dict)
+        elif isinstance(hint_intent, str) and hint_intent == "add_field" and isinstance(hinted_field_label, str) and hinted_field_label.strip():
+            possible_new_field_on_tab = True
         if not possible_new_field_on_tab and isinstance(answer_hints, dict):
             planned_section_id = answer_hints.get("planned_section_id") if isinstance(answer_hints.get("planned_section_id"), str) else None
             if isinstance(planned_section_id, str) and planned_section_id and isinstance(prospective_label, str) and prospective_label.strip():
@@ -23475,6 +23500,11 @@ def _ai_slot_based_plan(
                 field_ref = None
         if not field_ref and isinstance(answer_hints, dict) and isinstance(answer_hints.get("field_id"), str):
             field_ref = answer_hints.get("field_id").strip()
+        if not field_ref and isinstance(answer_hints, dict) and isinstance(answer_hints.get("field_label"), str):
+            planner_intent = answer_hints.get("planner_intent") if isinstance(answer_hints.get("planner_intent"), str) else ""
+            hinted_label = answer_hints.get("field_label").strip()
+            if hinted_label and planner_intent in {"add_field", "move_form_field", "move_form_field_to_tab"}:
+                field_ref = hinted_label
         hint_tab_target = answer_hints.get("tab_target") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("tab_target"), str) else None
         planned_section_id = answer_hints.get("planned_section_id") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("planned_section_id"), str) else None
         requested_tab_label = hint_tab_target or _ai_extract_requested_tab_label(combined)
