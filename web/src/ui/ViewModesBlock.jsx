@@ -228,6 +228,12 @@ function isUuidLike(value) {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
 }
 
+function safeOpaqueLabel(value, fallback = "") {
+  const text = String(value || "").trim();
+  if (!text) return fallback;
+  return isUuidLike(text) ? fallback : text;
+}
+
 function formatGroupedFieldValue(fieldDef, rawValue, lookupLabels = {}, memberLabels = {}) {
   if (rawValue === null || rawValue === undefined || rawValue === "") return "";
   if (!fieldDef) return isUuidLike(rawValue) ? "" : String(rawValue);
@@ -554,11 +560,11 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
             group.labelField,
           );
           for (const item of group.items) {
-            resolvedEntries.push([item.cacheKey, String(labels[item.recordId] || item.recordId)]);
+            resolvedEntries.push([item.cacheKey, safeOpaqueLabel(labels[item.recordId], safeOpaqueLabel(item.recordId, ""))]);
           }
         } catch {
           for (const item of group.items) {
-            resolvedEntries.push([item.cacheKey, item.recordId]);
+            resolvedEntries.push([item.cacheKey, safeOpaqueLabel(item.recordId, "")]);
           }
         }
       }
@@ -760,7 +766,7 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
                   ) : (grouped[groupKey] || []).map((row) => {
                     const record = row.record || {};
                     const rowId = row.record_id || record.id;
-                    const cardTitle = formatCardValue(titleField, record[titleField], record) || String(rowId || "Record");
+                    const cardTitle = formatCardValue(titleField, record[titleField], record) || safeOpaqueLabel(rowId, emptyEntityLabel);
                     const subtitleValues = subtitleFields
                       .map((fieldId) => ({ fieldId, value: formatCardValue(fieldId, record[fieldId], record) }))
                       .filter((item) => item.value);
@@ -1053,7 +1059,9 @@ function CalendarView({ view, records, onSelectRow, entityDef }) {
         if (!cancelled) {
           setLookupLabels((prev) => ({
             ...prev,
-            ...Object.fromEntries(pending.map((item) => [item.cacheKey, String(labels[item.recordId] || item.recordId)])),
+            ...Object.fromEntries(
+              pending.map((item) => [item.cacheKey, safeOpaqueLabel(labels[item.recordId], safeOpaqueLabel(item.recordId, ""))]),
+            ),
           }));
         }
       } catch {
@@ -1143,7 +1151,7 @@ function CalendarView({ view, records, onSelectRow, entityDef }) {
       const startDay = atMidnight(start);
       const endDay = atMidnight(end);
       const rawTitle = rec?.[titleField];
-      const eventTitle = formatCalendarValue(titleField, rawTitle, rec) || String(row?.record_id || "Record");
+      const eventTitle = formatCalendarValue(titleField, rawTitle, rec) || safeOpaqueLabel(row?.record_id, "Record");
       const allDay = Boolean(allDayField && rec?.[allDayField]);
 
       const walker = new Date(startDay);
@@ -1192,7 +1200,7 @@ function CalendarView({ view, records, onSelectRow, entityDef }) {
       const startDay = atMidnight(start);
       const endDay = atMidnight(end);
       const rawTitle = rec?.[titleField];
-      const eventTitle = formatCalendarValue(titleField, rawTitle, rec) || String(row?.record_id || "Record");
+      const eventTitle = formatCalendarValue(titleField, rawTitle, rec) || safeOpaqueLabel(row?.record_id, "Record");
       const explicitAllDay = Boolean(allDayField && rec?.[allDayField]);
       const treatAsTimed = !explicitAllDay && (hasTimeComponent(start) || hasTimeComponent(end));
 
@@ -1336,7 +1344,7 @@ function CalendarView({ view, records, onSelectRow, entityDef }) {
         : cursorMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
   const describeEvent = (event) => {
     const rec = event?.row?.record || {};
-    const title = event?.title || String(rec?.[titleField] || event?.row?.record_id || "Record");
+    const title = event?.title || safeOpaqueLabel(rec?.[titleField], safeOpaqueLabel(event?.row?.record_id, "Record"));
     const status = statusField && rec?.[statusField]
       ? `Status: ${String(rec[statusField]).replace(/_/g, " ")}`
       : "";
@@ -2775,10 +2783,15 @@ export default function ViewModesBlock({
         try {
           const res = await apiFetch(`/records/${encodeURIComponent(targetEntityId)}/${encodeURIComponent(recordId)}`);
           const rec = res?.record || {};
-          const label = (labelField && rec?.[labelField]) || rec?.display_name || rec?.full_name || rec?.name || recordId;
+          const label =
+            (labelField && rec?.[labelField]) ||
+            rec?.display_name ||
+            rec?.full_name ||
+            rec?.name ||
+            safeOpaqueLabel(recordId, "");
           return [cacheKey, String(label)];
         } catch {
-          return [cacheKey, recordId];
+          return [cacheKey, safeOpaqueLabel(recordId, "")];
         }
       }),
     );

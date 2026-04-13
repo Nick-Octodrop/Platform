@@ -19,6 +19,12 @@ function isUuidLike(value) {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
 }
 
+function safeOpaqueLabel(value, fallback = "") {
+  const text = String(value || "").trim();
+  if (!text) return fallback;
+  return isUuidLike(text) ? fallback : text;
+}
+
 function resolveAddressAutocompleteMapping(fieldId) {
   if (typeof fieldId !== "string") return null;
   if (fieldId.endsWith(".address_line_1")) {
@@ -479,7 +485,10 @@ export default function FormViewRenderer({
 
   const resolvedTitleField = header?.title_field || displayField || null;
   const resolvedTitleValue = resolvedTitleField ? getFieldValue(computedRecord, resolvedTitleField) : null;
-  const titleText = (resolvedTitleValue && String(resolvedTitleValue).trim()) || "New";
+  const rawTitleText = String(resolvedTitleValue || "").trim();
+  const sanitizedTitleText =
+    rawTitleText && rawTitleText !== String(effectiveRecordId || "").trim() ? safeOpaqueLabel(rawTitleText, "") : "";
+  const titleText = sanitizedTitleText || (isNewRecord ? "New" : entityLabel || "Record");
 
   useEffect(() => {
     if (!applyDefaults || defaultsApplied || readonly) return;
@@ -2216,7 +2225,12 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
         const opts = records.map((item) => {
           const record = item.record || {};
           const recordId = item.record_id || record.id;
-          const label = (labelField && record[labelField]) || recordId || "—";
+          const label =
+            (labelField && record[labelField]) ||
+            record.display_name ||
+            record.full_name ||
+            record.name ||
+            safeOpaqueLabel(recordId, "Record");
           return { value: recordId, label };
         });
         if (!cancelled) {
