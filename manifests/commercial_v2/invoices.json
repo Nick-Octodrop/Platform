@@ -5,7 +5,7 @@
     "key": "biz_invoices",
     "name": "Invoices",
     "version": "1.0.0",
-    "description": "NLight deposit, progress, final, and credit-note customer invoicing.",
+    "description": "Deposit, progress, final, and credit-note customer invoicing.",
     "category": "Commercial",
     "icon_key": "lucide:Receipt"
   },

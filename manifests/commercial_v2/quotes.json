@@ -5,7 +5,7 @@
     "key": "biz_quotes",
     "name": "Quotes",
     "version": "1.0.0",
-    "description": "NLight quote workflow from pricing and customer approval through order conversion.",
+    "description": "Quote workflow from pricing and customer approval through order conversion.",
     "category": "Commercial",
     "icon_key": "lucide:FileCheck2"
   },

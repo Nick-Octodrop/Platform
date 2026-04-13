@@ -5,7 +5,7 @@
     "key": "biz_calendar",
     "name": "Calendar",
     "version": "1.0.0",
-    "description": "Team calendar for NLight sales follow-ups, site visits, order handoffs, procurement calls, and finance milestones.",
+    "description": "Team calendar for sales follow-ups, site visits, order handoffs, procurement calls, and finance milestones.",
     "category": "Operations",
     "icon_key": "lucide:CalendarDays"
   },

@@ -15,6 +15,10 @@ import { useAccessContext } from "../access.js";
 import useWorkspaceProviderStatus from "../hooks/useWorkspaceProviderStatus.js";
 import ProviderSecretModal from "../components/ProviderSecretModal.jsx";
 
+function isUuidLike(value) {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
+}
+
 function resolveAddressAutocompleteMapping(fieldId) {
   if (typeof fieldId !== "string") return null;
   if (fieldId.endsWith(".address_line_1")) {
@@ -2248,7 +2252,7 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
       setSelectedLabel(match.label || "");
       return;
     }
-    if (!selectedLabel) {
+    if (!selectedLabel && !isUuidLike(value)) {
       setSelectedLabel(value);
     }
   }, [value, options, selectedLabel]);
@@ -2263,13 +2267,13 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
       try {
         const res = await apiFetch(`/records/${entityId}/${value}`);
         const record = res?.record || res;
-        const label = (labelField && record && record[labelField]) || value;
+        const label = (labelField && record && record[labelField]) || (isUuidLike(value) ? "" : value);
         if (!cancelled) {
           setSelectedLabel(label);
         }
       } catch {
         if (!cancelled) {
-          setSelectedLabel(value);
+          setSelectedLabel(isUuidLike(value) ? "" : value);
         }
       }
     }

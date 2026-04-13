@@ -5,7 +5,7 @@
     "key": "biz_crm",
     "name": "CRM",
     "version": "1.0.0",
-    "description": "NLight sales workspace replacing Pipedrive, with quote and order handoff built in.",
+    "description": "Sales workspace replacing CRM handoff gaps, with quote and order handoff built in.",
     "category": "Commercial",
     "icon_key": "lucide:Handshake"
   },

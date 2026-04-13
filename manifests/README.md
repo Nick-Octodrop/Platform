@@ -2,7 +2,7 @@
 
 Current manifest structure:
 
-- `manifests/luke_nl/`
+- `manifests/commercial_v2/`
 - `manifests/paul_construction/`
 - `manifests/octodrop/billing/`
 - `manifests/octodrop/work_management/`

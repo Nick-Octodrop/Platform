@@ -5,7 +5,7 @@
     "key": "biz_orders",
     "name": "Orders",
     "version": "1.0.0",
-    "description": "Accepted NLight customer orders after quote approval, with procurement and invoice links.",
+    "description": "Accepted customer orders after quote approval, with procurement and invoice links.",
     "category": "Commercial",
     "icon_key": "lucide:ClipboardList"
   },

@@ -29,7 +29,6 @@ DEFAULT_MANIFEST_FILES = [
 ]
 
 SETTINGS_MANIFEST_FILES = [
-    "settings.json",
 ]
 
 
@@ -227,12 +226,11 @@ def delete_record(base_url: str, token: str | None, workspace_id: str | None, en
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Delete Luke commercial_v2 workspace data so it can be reseeded.")
+    parser = argparse.ArgumentParser(description="Delete commercial_v2 workspace data so it can be reseeded.")
     parser.add_argument("--base-url", default=os.getenv("OCTO_BASE_URL", "http://localhost:8000"), help="API base URL")
     parser.add_argument("--token", default=os.getenv("OCTO_API_TOKEN", "").strip(), help="Bearer token")
     parser.add_argument("--workspace-id", default=os.getenv("OCTO_WORKSPACE_ID", "").strip(), help="Workspace ID")
     parser.add_argument("--max-per-entity", type=int, default=50000, help="Safety cap per entity")
-    parser.add_argument("--include-settings", action="store_true", help="Also delete settings/config entities from settings.json")
     parser.add_argument("--dry-run", action="store_true", help="Print counts only, do not delete")
     parser.add_argument("--continue-on-error", action="store_true", help="Continue when one delete fails")
     args = parser.parse_args()
@@ -251,8 +249,6 @@ def main() -> int:
 
     folder = Path(__file__).resolve().parent
     manifest_files = list(DEFAULT_MANIFEST_FILES)
-    if args.include_settings:
-        manifest_files.extend(SETTINGS_MANIFEST_FILES)
 
     entity_ids, deps = read_manifest_entities(folder, manifest_files)
     order = entity_delete_order(entity_ids, deps)

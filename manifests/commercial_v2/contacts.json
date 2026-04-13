@@ -5,7 +5,7 @@
     "key": "biz_contacts",
     "name": "Contacts",
     "version": "1.0.0",
-    "description": "NLight and EcoTech customers, suppliers, and factory partners for the commercial workflow.",
+    "description": "Customers, suppliers, and factory partners for the commercial workflow.",
     "category": "Commercial",
     "icon_key": "lucide:Users"
   },

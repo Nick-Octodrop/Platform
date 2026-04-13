@@ -456,7 +456,7 @@ def desired_profiles() -> dict[str, dict[str, Any]]:
     return {
         "directors": {
             "name": "Directors",
-            "description": "Full commercial, financial, supplier, and settings access.",
+            "description": "Full commercial, financial, and supplier access.",
             "rules": directors_rules,
             "members": ["luke", "matthew"],
         },

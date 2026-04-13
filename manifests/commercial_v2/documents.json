@@ -5,7 +5,7 @@
     "key": "biz_documents",
     "name": "Documents",
     "version": "1.0.0",
-    "description": "Document control for NLight commercial records, including quote PDFs, order packs, supplier documents, invoice files, and signed customer documents.",
+    "description": "Document control for commercial records, including quote PDFs, order packs, supplier documents, invoice files, and signed customer documents.",
     "category": "Commercial",
     "icon_key": "lucide:FolderOpen"
   },

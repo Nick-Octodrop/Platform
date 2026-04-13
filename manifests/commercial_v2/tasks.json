@@ -5,7 +5,7 @@
     "key": "biz_tasks",
     "name": "Tasks",
     "version": "1.0.0",
-    "description": "Assigned work for NLight sales, operations, procurement, finance, and customer handoff follow-ups.",
+    "description": "Assigned work for sales, operations, procurement, finance, and customer handoff follow-ups.",
     "category": "Operations",
     "icon_key": "lucide:ListTodo"
   },

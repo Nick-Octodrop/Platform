@@ -123,7 +123,7 @@ def desired_definitions() -> list[dict[str, Any]]:
             "is_active": True,
             "lock_after_assignment": True,
             "allow_admin_override": False,
-            "notes": "Commercial V2 numbering for quotes.",
+            "notes": "Commercial numbering for quotes.",
             "sort_order": 100,
         },
         {
@@ -141,7 +141,7 @@ def desired_definitions() -> list[dict[str, Any]]:
             "is_active": True,
             "lock_after_assignment": True,
             "allow_admin_override": False,
-            "notes": "Commercial V2 numbering for confirmed orders.",
+            "notes": "Commercial numbering for confirmed orders.",
             "sort_order": 110,
         },
         {
@@ -159,7 +159,7 @@ def desired_definitions() -> list[dict[str, Any]]:
             "is_active": True,
             "lock_after_assignment": True,
             "allow_admin_override": False,
-            "notes": "Commercial V2 numbering for purchase orders.",
+            "notes": "Commercial numbering for purchase orders.",
             "sort_order": 120,
         },
         {
@@ -177,7 +177,7 @@ def desired_definitions() -> list[dict[str, Any]]:
             "is_active": True,
             "lock_after_assignment": True,
             "allow_admin_override": False,
-            "notes": "Commercial V2 numbering for customer invoices.",
+            "notes": "Commercial numbering for customer invoices.",
             "sort_order": 130,
         },
     ]

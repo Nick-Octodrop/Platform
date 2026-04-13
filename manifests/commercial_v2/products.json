@@ -5,7 +5,7 @@
     "key": "biz_products",
     "name": "Products",
     "version": "1.0.0",
-    "description": "NLight product catalogue items for quoting and supplier purchasing.",
+    "description": "Product catalogue items for quoting and supplier purchasing.",
     "category": "Commercial",
     "icon_key": "lucide:Package2"
   },

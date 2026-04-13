@@ -554,6 +554,29 @@ SEED_SPECS = [
         }
     },
     {
+        "alias": "quote.d",
+        "entity_id": "entity.biz_quote",
+        "match": {"biz_quote.customer_reference": "GG-UPGRADE-2026-02"},
+        "record": {
+            "biz_quote.status": "accepted",
+            "biz_quote.quote_date": "2026-04-02",
+            "biz_quote.expiry_date": "2026-04-20",
+            "biz_quote.sales_entity": "NLight BV",
+            "biz_quote.customer_id": {"$ref": "contact.greengrow"},
+            "biz_quote.customer_contact_name": "Eva van Dijk",
+            "biz_quote.customer_reference": "GG-UPGRADE-2026-02",
+            "biz_quote.currency": "EUR",
+            "biz_quote.sales_owner": "Account Team",
+            "biz_quote.payment_terms": "30% deposit, balance before shipment",
+            "biz_quote.incoterm": "DAP",
+            "biz_quote.shipping_terms": "Pending delivery planning",
+            "biz_quote.follow_up_date": "2026-04-14",
+            "biz_quote.validity_notes": "Accepted verbally, order conversion pending technical confirmation.",
+            "biz_quote.internal_notes": "Deliberately left accepted with no order for dashboard and workflow demo.",
+            "biz_quote.customer_notes": "Control upgrade package held pending site-program confirmation."
+        }
+    },
+    {
         "alias": "quote_line.a.1",
         "entity_id": "entity.biz_quote_line",
         "match": {"biz_quote_line.description": "NL-LED-720W", "biz_quote_line.quote_id": {"$ref": "quote.a"}},
@@ -677,6 +700,25 @@ SEED_SPECS = [
             "biz_quote_line.uom": "EA",
             "biz_quote_line.quantity": 8,
             "biz_quote_line.unit_price": 165,
+            "biz_quote_line.default_buy_price_snapshot": 96,
+            "biz_quote_line.buy_currency_snapshot": "USD"
+        }
+    },
+    {
+        "alias": "quote_line.d.1",
+        "entity_id": "entity.biz_quote_line",
+        "match": {"biz_quote_line.description": "NL-CONTROL-UNIT", "biz_quote_line.quote_id": {"$ref": "quote.d"}},
+        "record": {
+            "biz_quote_line.quote_id": {"$ref": "quote.d"},
+            "biz_quote_line.line_type": "catalogue",
+            "biz_quote_line.product_id": {"$ref": "product.control"},
+            "biz_quote_line.description": "NL-CONTROL-UNIT",
+            "biz_quote_line.sales_entity_snapshot": "NLight BV",
+            "biz_quote_line.currency_snapshot": "EUR",
+            "biz_quote_line.uom": "EA",
+            "biz_quote_line.quantity": 12,
+            "biz_quote_line.unit_price": 165,
+            "biz_quote_line.line_discount_percent": 5,
             "biz_quote_line.default_buy_price_snapshot": 96,
             "biz_quote_line.buy_currency_snapshot": "USD"
         }
@@ -810,7 +852,7 @@ SEED_SPECS = [
         "entity_id": "entity.biz_purchase_order",
         "match": {"biz_purchase_order.supplier_reference": "SZ-LUM-1001"},
         "record": {
-            "biz_purchase_order.status": "sent_to_supplier",
+            "biz_purchase_order.status": "in_production",
             "biz_purchase_order.supplier_id": {"$ref": "contact.shenzhen"},
             "biz_purchase_order.purchasing_entity": "EcoTech FZCO",
             "biz_purchase_order.source_customer_order_id": {"$ref": "order.a"},
@@ -829,7 +871,7 @@ SEED_SPECS = [
         "entity_id": "entity.biz_purchase_order",
         "match": {"biz_purchase_order.supplier_reference": "GZ-LED-1003"},
         "record": {
-            "biz_purchase_order.status": "confirmed",
+            "biz_purchase_order.status": "shipped",
             "biz_purchase_order.supplier_id": {"$ref": "contact.guangzhou"},
             "biz_purchase_order.purchasing_entity": "EcoTech FZCO",
             "biz_purchase_order.source_customer_order_id": {"$ref": "order.c"},
@@ -912,7 +954,7 @@ SEED_SPECS = [
         "entity_id": "entity.biz_invoice",
         "match": {"biz_invoice.customer_reference": "GG-POC-2026-01", "biz_invoice.invoice_type": "deposit"},
         "record": {
-            "biz_invoice.status": "issued",
+            "biz_invoice.status": "paid",
             "biz_invoice.invoice_type": "deposit",
             "biz_invoice.customer_id": {"$ref": "contact.greengrow"},
             "biz_invoice.source_order_id": {"$ref": "order.a"},
@@ -924,7 +966,7 @@ SEED_SPECS = [
             "biz_invoice.notes": "Deposit invoice for scenario A.",
             "biz_invoice.source_order_total_snapshot": 66730,
             "biz_invoice.deposit_percent_snapshot": 30,
-            "biz_invoice.amount_paid": 0
+            "biz_invoice.amount_paid": 20019
         }
     },
     {
@@ -1834,7 +1876,7 @@ def patch_order_links(
     dry_run: bool,
 ) -> None:
     links = [
-        ("order.a", {"biz_order.primary_purchase_order_id": "po.a", "biz_order.deposit_invoice_id": "invoice.a.deposit"}),
+        ("order.a", {"biz_order.primary_purchase_order_id": "po.a", "biz_order.deposit_invoice_id": "invoice.a.deposit", "biz_order.status": "in_production"}),
         ("order.c", {"biz_order.primary_purchase_order_id": "po.c", "biz_order.final_invoice_id": "invoice.c.final", "biz_order.status": "shipped"}),
     ]
     for order_alias, field_aliases in links:

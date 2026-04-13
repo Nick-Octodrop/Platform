@@ -5,7 +5,7 @@
     "key": "biz_purchase_orders",
     "name": "Purchase Orders",
     "version": "1.0.0",
-    "description": "EcoTech supplier purchasing linked back to NLight customer orders.",
+    "description": "Supplier purchasing linked back to customer orders.",
     "category": "Commercial",
     "icon_key": "lucide:Truck"
   },
