@@ -4,8 +4,8 @@ import { MoreHorizontal } from "lucide-react";
 import { apiFetch } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
-import { formatDateTime } from "../utils/dateTime.js";
 import { isExternalNotificationTarget, resolveNotificationTarget } from "../utils/notificationTargets.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 function mergeNotifications(prev, incoming) {
   const merged = [...(Array.isArray(incoming) ? incoming : []), ...(Array.isArray(prev) ? prev : [])];
@@ -21,6 +21,7 @@ function mergeNotifications(prev, incoming) {
 export default function NotificationsPage() {
   const { pushToast } = useToast();
   const navigate = useNavigate();
+  const { t, formatDateTime } = useI18n();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -38,7 +39,7 @@ export default function NotificationsPage() {
       setItems(rows);
       latestSeenAtRef.current = rows[0]?.created_at || latestSeenAtRef.current;
     } catch (err) {
-      if (!quiet) pushToast("error", err.message || "Failed to load notifications");
+      if (!quiet) pushToast("error", err.message || t("common.notifications.load_failed"));
     } finally {
       if (!quiet) setLoading(false);
     }
@@ -70,7 +71,7 @@ export default function NotificationsPage() {
         setItems((prev) => prev.filter((item) => item?.id !== id));
       }
     } catch (err) {
-      pushToast("error", err.message || "Failed to mark read");
+      pushToast("error", err.message || t("common.notifications.mark_read_failed"));
     }
   }
 
@@ -80,7 +81,7 @@ export default function NotificationsPage() {
       if (activeTab === "unread") setItems([]);
       else setItems((prev) => prev.map((item) => ({ ...item, read_at: new Date().toISOString() })));
     } catch (err) {
-      pushToast("error", err.message || "Failed to mark all seen");
+      pushToast("error", err.message || t("common.notifications.mark_all_failed"));
     }
   }
 
@@ -91,9 +92,9 @@ export default function NotificationsPage() {
       setItems([]);
       latestSeenAtRef.current = null;
       setShowClearModal(false);
-      pushToast("success", "Notifications cleared");
+      pushToast("success", t("common.notifications.cleared"));
     } catch (err) {
-      pushToast("error", err.message || "Failed to clear notifications");
+      pushToast("error", err.message || t("common.notifications.clear_failed"));
     } finally {
       setClearing(false);
     }
@@ -133,7 +134,7 @@ export default function NotificationsPage() {
       }
       navigate(target);
     } catch (err) {
-      pushToast("error", err?.message || "Failed to open notification");
+      pushToast("error", err?.message || t("common.notifications.open_failed"));
     }
   }
 
@@ -141,27 +142,27 @@ export default function NotificationsPage() {
     <div className="card bg-base-100 shadow">
       <div className="card-body gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="card-title">Notifications</h2>
+          <h2 className="card-title">{t("navigation.notifications")}</h2>
           <div className="flex items-center gap-2">
-            <button className="btn btn-sm" onClick={() => load()} disabled={loading}>Refresh</button>
+            <button className="btn btn-sm" onClick={() => load()} disabled={loading}>{t("common.refresh")}</button>
             <div className="dropdown dropdown-end">
               <button
                 type="button"
                 tabIndex={0}
                 className={SOFT_BUTTON_SM}
-                aria-label="Notification actions"
+                aria-label={t("common.notifications.actions")}
               >
                 <MoreHorizontal className="h-4 w-4" />
               </button>
               <ul tabIndex={0} className="dropdown-content menu z-[60] mt-2 w-48 rounded-box border border-base-300 bg-base-100 p-2 shadow">
                 <li>
                   <button type="button" onClick={markAll} disabled={loading || items.length === 0}>
-                    Mark all seen
+                    {t("common.notifications.mark_all")}
                   </button>
                 </li>
                 <li>
                   <button type="button" className="text-error" onClick={() => setShowClearModal(true)} disabled={loading || items.length === 0}>
-                    Clear all
+                    {t("common.notifications.clear_all")}
                   </button>
                 </li>
               </ul>
@@ -174,25 +175,25 @@ export default function NotificationsPage() {
             className={`btn btn-sm ${activeTab === "unread" ? "btn-primary" : "btn-ghost"}`}
             onClick={() => setActiveTab("unread")}
           >
-            Unread {activeTab === "unread" ? `(${unreadCount})` : ""}
+            {t("common.notifications.unread")} {activeTab === "unread" ? `(${unreadCount})` : ""}
           </button>
           <button
             className={`btn btn-sm ${activeTab === "all" ? "btn-primary" : "btn-ghost"}`}
             onClick={() => setActiveTab("all")}
           >
-            All
+            {t("common.all")}
           </button>
           <input
             className="input input-bordered input-sm ml-auto w-full md:w-72"
-            placeholder="Search notifications..."
+            placeholder={t("common.notifications.search_placeholder")}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
         </div>
 
         <div className="space-y-2">
-          {loading && <div className="text-sm opacity-60">Loading notifications...</div>}
-          {!loading && filtered.length === 0 && <div className="text-sm opacity-60">No notifications</div>}
+          {loading && <div className="text-sm opacity-60">{t("common.notifications.loading")}</div>}
+          {!loading && filtered.length === 0 && <div className="text-sm opacity-60">{t("common.notifications.empty")}</div>}
           {filtered.map((n) => (
             <div key={n.id} className={`p-3 rounded-md border border-base-200 ${n.read_at ? "opacity-70" : "bg-base-200/30"}`}>
               <div className="flex items-start justify-between gap-2">
@@ -204,17 +205,17 @@ export default function NotificationsPage() {
                 <div className="flex items-center gap-2">
                   {!n.read_at && (
                     <button className="btn btn-xs" onClick={() => markRead(n.id)}>
-                      Mark seen
+                      {t("common.notifications.mark_seen")}
                     </button>
                   )}
                   {(n.link_to || n.source_event) && (
                     isExternalNotificationTarget(n.link_to, n.source_event) ? (
                       <button type="button" className="btn btn-xs btn-ghost" onClick={() => openNotification(n)}>
-                        Open
+                        {t("common.open")}
                       </button>
                     ) : (
                       <button type="button" className="btn btn-xs btn-ghost" onClick={() => openNotification(n)}>
-                        Open
+                        {t("common.open")}
                       </button>
                     )
                   )}
@@ -227,16 +228,16 @@ export default function NotificationsPage() {
       {showClearModal ? (
         <div className="fixed inset-0 z-[210] flex items-center justify-center bg-base-content/40 px-4">
           <div className="w-full max-w-md rounded-box border border-base-300 bg-base-100 p-5 shadow-2xl">
-            <h3 className="text-lg font-semibold">Clear notifications</h3>
+            <h3 className="text-lg font-semibold">{t("common.notifications.clear_title")}</h3>
             <p className="mt-2 text-sm text-base-content/70">
-              Remove all notifications from this list. This cannot be undone.
+              {t("common.notifications.clear_body")}
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <button type="button" className="btn btn-ghost" onClick={() => setShowClearModal(false)} disabled={clearing}>
-                Cancel
+                {t("common.cancel")}
               </button>
               <button type="button" className="btn btn-error" onClick={clearAll} disabled={clearing}>
-                {clearing ? "Clearing..." : "Clear all"}
+                {clearing ? t("common.notifications.clearing") : t("common.notifications.clear_all")}
               </button>
             </div>
           </div>

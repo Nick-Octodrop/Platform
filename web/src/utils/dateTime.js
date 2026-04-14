@@ -1,3 +1,5 @@
+import { formatDateRuntime, formatDateTimeRuntime, formatTimeRuntime } from "../i18n/runtime.js";
+
 const ISO_DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_DATE_TIME_RE = /^\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}/;
 
@@ -11,26 +13,19 @@ function parseDateValue(value) {
 export function formatDate(value, fallback = "") {
   const date = parseDateValue(value);
   if (!date) return fallback || (value == null ? "" : String(value));
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "long",
-  }).format(date);
+  return formatDateRuntime(value, { dateStyle: "long" });
 }
 
 export function formatDateTime(value, fallback = "") {
   const date = parseDateValue(value);
   if (!date) return fallback || (value == null ? "" : String(value));
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
+  return formatDateTimeRuntime(value, { dateStyle: "medium", timeStyle: "short" });
 }
 
 export function formatTime(value, fallback = "") {
   const date = parseDateValue(value);
   if (!date) return fallback || (value == null ? "" : String(value));
-  return new Intl.DateTimeFormat(undefined, {
-    timeStyle: "short",
-  }).format(date);
+  return formatTimeRuntime(value, { timeStyle: "short" });
 }
 
 export function formatDateLike(value, { fieldType, fieldId } = {}) {

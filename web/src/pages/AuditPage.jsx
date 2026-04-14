@@ -4,10 +4,13 @@ import AppSelect from "../components/AppSelect.jsx";
 import { useModuleStore } from "../state/moduleStore.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import PaginationControls from "../components/PaginationControls.jsx";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
+import { formatDateTime } from "../utils/dateTime.js";
 
 const FETCH_LIMIT = 500;
 
 export default function AuditPage() {
+  const { t } = useI18n();
   const { modules } = useModuleStore();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -27,7 +30,7 @@ export default function AuditPage() {
         setEvents(res.data?.events || []);
         setError(null);
       } catch (err) {
-        setError(err.message || "Failed to load audit");
+        setError(err.message || t("settings.audit.load_failed"));
       } finally {
         setLoading(false);
       }
@@ -49,12 +52,12 @@ export default function AuditPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-semibold">Audit</h1>
-        <div className="text-sm opacity-70">System and module activity</div>
+        <h1 className="text-2xl font-semibold">{t("navigation.audit")}</h1>
+        <div className="text-sm opacity-70">{t("settings.audit.subtitle")}</div>
       </div>
       <div className="flex flex-wrap gap-3 items-center">
         <AppSelect className="select select-bordered" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}>
-          <option value="">All modules</option>
+          <option value="">{t("settings.audit.all_modules")}</option>
           {modules.map((m) => (
             <option key={m.module_id} value={m.module_id}>{m.module_id}</option>
           ))}
@@ -62,7 +65,7 @@ export default function AuditPage() {
       </div>
       <div className="card bg-base-100 shadow">
         <div className="card-body">
-          <h2 className="card-title">Activity</h2>
+          <h2 className="card-title">{t("common.activity")}</h2>
           {error && <div className="alert alert-error mb-4">{error}</div>}
           {loading && <LoadingSpinner className="min-h-[16vh]" />}
           <div className="flex items-center justify-end mb-2">
@@ -77,34 +80,34 @@ export default function AuditPage() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Timestamp</th>
-                  <th>Type</th>
-                  <th>Target</th>
-                  <th>Action</th>
-                  <th>Status</th>
-                  <th>Detail</th>
+                  <th>{t("settings.audit.timestamp")}</th>
+                  <th>{t("common.type")}</th>
+                  <th>{t("settings.audit.target")}</th>
+                  <th>{t("common.action")}</th>
+                  <th>{t("common.status")}</th>
+                  <th>{t("settings.audit.detail")}</th>
                 </tr>
               </thead>
               <tbody>
                 {events.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={6} className="opacity-70">No audit events.</td>
+                    <td colSpan={6} className="opacity-70">{t("settings.audit.empty")}</td>
                   </tr>
                 )}
                 {pagedEvents.map((e) => (
                   <tr key={e.id}>
-                    <td>{e.ts || "—"}</td>
+                    <td>{formatDateTime(e.ts) || "—"}</td>
                     <td>{e.type || "—"}</td>
                     <td>{e.module_id || "—"}</td>
                     <td>{(e.detail?.action || "").toString() || "—"}</td>
-                    <td>{e.status || "—"}</td>
+                    <td>{e.status ? t(`common.${e.status}`, {}, { defaultValue: e.status }) : "—"}</td>
                     <td><span className="text-xs opacity-70">{JSON.stringify(e.detail || {})}</span></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <div className="text-sm opacity-70 mt-2">Audit feed will populate as system activity grows.</div>
+          <div className="text-sm opacity-70 mt-2">{t("settings.audit.footer")}</div>
         </div>
       </div>
     </div>

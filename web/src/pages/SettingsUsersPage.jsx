@@ -2,20 +2,10 @@ import React, { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../api";
 import { useAccessContext } from "../access.js";
 import { useToast } from "../components/Toast.jsx";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import PaginationControls from "../components/PaginationControls.jsx";
 import AppSelect from "../components/AppSelect.jsx";
-
-const ROLE_OPTIONS = [
-  { value: "admin", label: "Admin" },
-  { value: "member", label: "User" },
-  { value: "readonly", label: "Read only" },
-  { value: "portal", label: "Portal" },
-];
-const PLATFORM_ROLE_OPTIONS = [
-  { value: "standard", label: "Standard" },
-  { value: "superadmin", label: "Superadmin" },
-];
 
 function SettingsSection({ title, description, children }) {
   return (
@@ -28,6 +18,7 @@ function SettingsSection({ title, description, children }) {
 }
 
 export default function SettingsUsersPage() {
+  const { t } = useI18n();
   const { pushToast } = useToast();
   const [members, setMembers] = useState([]);
   const [accessProfiles, setAccessProfiles] = useState([]);
@@ -47,6 +38,24 @@ export default function SettingsUsersPage() {
   const [platformInviteRole, setPlatformInviteRole] = useState("standard");
   const { context, loading: accessLoading } = useAccessContext();
 
+  const roleOptions = useMemo(
+    () => [
+      { value: "admin", label: t("settings.users.roles.admin") },
+      { value: "member", label: t("settings.users.roles.member") },
+      { value: "readonly", label: t("settings.users.roles.readonly") },
+      { value: "portal", label: t("settings.users.roles.portal") },
+    ],
+    [t],
+  );
+
+  const platformRoleOptions = useMemo(
+    () => [
+      { value: "standard", label: t("settings.users.platform_roles.standard") },
+      { value: "superadmin", label: t("settings.users.platform_roles.superadmin") },
+    ],
+    [t],
+  );
+
   async function load() {
     setLoading(true);
     setError("");
@@ -59,7 +68,7 @@ export default function SettingsUsersPage() {
       setMembers(membersRes?.members || []);
       setAccessProfiles(profilesRes?.profiles || []);
     } catch (err) {
-      setError(err?.message || "Failed to load users");
+      setError(err?.message || t("settings.users.load_failed"));
     } finally {
       setLoading(false);
     }
@@ -87,9 +96,9 @@ export default function SettingsUsersPage() {
   }, [members, page]);
 
   const roleLabel = useMemo(() => {
-    const map = new Map(ROLE_OPTIONS.map((r) => [r.value, r.label]));
-    return (role) => map.get(role) || role || "member";
-  }, []);
+    const map = new Map(roleOptions.map((r) => [r.value, r.label]));
+    return (role) => map.get(role) || role || t("settings.users.roles.member");
+  }, [roleOptions, t]);
 
   function openProfileModal(member) {
     setPendingProfileEdit(member);
@@ -111,10 +120,10 @@ export default function SettingsUsersPage() {
         body: { profile_ids: selectedProfileIds },
       });
       await load();
-      pushToast("success", "Access profiles updated.");
+      pushToast("success", t("settings.users.access_profiles_updated"));
       closeProfileModal();
     } catch (err) {
-      setError(err?.message || "Failed to update access profiles");
+      setError(err?.message || t("settings.users.access_profiles_update_failed"));
     } finally {
       setSaving(false);
     }
@@ -134,10 +143,10 @@ export default function SettingsUsersPage() {
         },
       });
       setMembers(res?.members || []);
-      pushToast("success", `Invitation sent to ${inviteEmail.trim()}`);
+      pushToast("success", t("settings.users.invitation_sent", { email: inviteEmail.trim() }));
       setInviteEmail("");
     } catch (err) {
-      setError(err?.message || "Failed to invite user");
+      setError(err?.message || t("settings.users.invite_failed"));
     } finally {
       setSaving(false);
     }
@@ -146,7 +155,7 @@ export default function SettingsUsersPage() {
   async function updateRole(userId, role) {
     const current = members.find((m) => m.user_id === userId);
     if (current && current.role === "admin" && role !== "admin" && adminCount <= 1) {
-      setError("At least one admin user is required in every workspace.");
+      setError(t("settings.users.admin_required"));
       return;
     }
     setSaving(true);
@@ -157,9 +166,9 @@ export default function SettingsUsersPage() {
         body: { role },
       });
       setMembers(res?.members || []);
-      pushToast("success", "Role updated.");
+      pushToast("success", t("settings.users.role_updated"));
     } catch (err) {
-      setError(err?.message || "Failed to update role");
+      setError(err?.message || t("settings.users.role_update_failed"));
     } finally {
       setSaving(false);
     }
@@ -167,7 +176,7 @@ export default function SettingsUsersPage() {
 
   function openRemoveModal(member) {
     if ((member?.role || "") === "admin" && adminCount <= 1) {
-      setError("At least one admin user is required in every workspace.");
+      setError(t("settings.users.admin_required"));
       return;
     }
     setPendingRemove(member);
@@ -187,10 +196,10 @@ export default function SettingsUsersPage() {
       const query = deleteAuthUser ? "?delete_auth_user=1" : "";
       const res = await apiFetch(`/access/members/${member.user_id}${query}`, { method: "DELETE" });
       setMembers(res?.members || []);
-      pushToast("success", deleteAuthUser ? "User removed and auth account deleted." : "User removed from workspace.");
+      pushToast("success", deleteAuthUser ? t("settings.users.user_removed_with_auth") : t("settings.users.user_removed"));
       closeRemoveModal();
     } catch (err) {
-      setError(err?.message || "Failed to remove user");
+      setError(err?.message || t("settings.users.remove_failed"));
     } finally {
       setSaving(false);
     }
@@ -216,10 +225,10 @@ export default function SettingsUsersPage() {
         body: { email: nextEmail.trim().toLowerCase() },
       });
       setMembers(res?.members || []);
-      pushToast("success", "User email updated.");
+      pushToast("success", t("settings.users.email_updated"));
       closeEmailModal();
     } catch (err) {
-      setError(err?.message || "Failed to update user email");
+      setError(err?.message || t("settings.users.email_update_failed"));
     } finally {
       setSaving(false);
     }
@@ -239,12 +248,15 @@ export default function SettingsUsersPage() {
       });
       pushToast(
         "success",
-        `Platform invite sent to ${platformInviteEmail.trim()} (${res?.email_flow || "invite"} flow). No workspace assigned until first login.`,
+        t("settings.users.platform_invite_sent", {
+          email: platformInviteEmail.trim(),
+          flow: res?.email_flow || "invite",
+        }),
       );
       setPlatformInviteEmail("");
       setPlatformInviteRole("standard");
     } catch (err) {
-      setError(err?.message || "Failed to send platform invite");
+      setError(err?.message || t("settings.users.platform_invite_failed"));
     } finally {
       setSaving(false);
     }
@@ -264,11 +276,11 @@ export default function SettingsUsersPage() {
         {error && <div className="alert alert-error text-sm">{error}</div>}
 
         <div className="space-y-4">
-          <SettingsSection title="Invite user" description="Add someone to this workspace.">
+          <SettingsSection title={t("settings.users.invite_title")} description={t("settings.users.invite_description")}>
             {canManage ? (
               <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                 <label className="form-control md:col-span-6">
-                  <span className="label-text text-sm">Email</span>
+                  <span className="label-text text-sm">{t("settings.email")}</span>
                   <input
                     className="input input-bordered input-sm"
                     type="email"
@@ -279,14 +291,14 @@ export default function SettingsUsersPage() {
                   />
                 </label>
                 <label className="form-control md:col-span-3">
-                  <span className="label-text text-sm">Role</span>
+                  <span className="label-text text-sm">{t("settings.role")}</span>
                   <AppSelect
                     className="select select-bordered select-sm"
                     value={inviteRole}
                     disabled={saving}
                     onChange={(e) => setInviteRole(e.target.value)}
                   >
-                    {ROLE_OPTIONS.map((role) => (
+                    {roleOptions.map((role) => (
                       <option key={role.value} value={role.value}>
                         {role.label}
                       </option>
@@ -300,23 +312,23 @@ export default function SettingsUsersPage() {
                     onClick={inviteMember}
                     type="button"
                   >
-                    Invite user
+                    {t("settings.users.invite_action")}
                   </button>
                 </div>
               </div>
             ) : (
-              <div className="text-sm opacity-70">Admin role is required to invite and manage users.</div>
+              <div className="text-sm opacity-70">{t("settings.users.admin_required_manage")}</div>
             )}
           </SettingsSection>
 
           {actor.platform_role === "superadmin" ? (
             <SettingsSection
-              title="Platform invite"
-              description="Invite a user without assigning them to the current workspace (workspace created on first login)."
+              title={t("settings.users.platform_invite_title")}
+              description={t("settings.users.platform_invite_description")}
             >
               <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                 <label className="form-control md:col-span-6">
-                  <span className="label-text text-sm">Email</span>
+                  <span className="label-text text-sm">{t("settings.email")}</span>
                   <input
                     className="input input-bordered input-sm"
                     type="email"
@@ -327,14 +339,14 @@ export default function SettingsUsersPage() {
                   />
                 </label>
                 <label className="form-control md:col-span-3">
-                  <span className="label-text text-sm">Platform role</span>
+                  <span className="label-text text-sm">{t("settings.users.platform_role")}</span>
                   <AppSelect
                     className="select select-bordered select-sm"
                     value={platformInviteRole}
                     disabled={saving}
                     onChange={(e) => setPlatformInviteRole(e.target.value)}
                   >
-                    {PLATFORM_ROLE_OPTIONS.map((role) => (
+                    {platformRoleOptions.map((role) => (
                       <option key={role.value} value={role.value}>
                         {role.label}
                       </option>
@@ -348,18 +360,18 @@ export default function SettingsUsersPage() {
                     onClick={invitePlatformUser}
                     type="button"
                   >
-                    Invite platform user
+                    {t("settings.users.invite_platform_action")}
                   </button>
                 </div>
               </div>
             </SettingsSection>
           ) : null}
 
-          <SettingsSection title="Workspace users" description="Everyone who can access this workspace.">
+          <SettingsSection title={t("settings.users.workspace_users_title")} description={t("settings.users.workspace_users_description")}>
             {loading ? (
-              <div className="text-sm opacity-60">Loading users…</div>
+              <div className="text-sm opacity-60">{t("settings.users.loading_users")}</div>
             ) : members.length === 0 ? (
-              <div className="text-sm opacity-60">No users in this workspace yet.</div>
+              <div className="text-sm opacity-60">{t("settings.users.no_users")}</div>
             ) : (
               <div className="space-y-2">
                 <div className="flex items-center justify-end">
@@ -375,11 +387,11 @@ export default function SettingsUsersPage() {
                   <table className="table table-sm table-fixed w-full">
                   <thead>
                     <tr>
-                      <th className="w-48">User</th>
-                      <th className="w-64">Email</th>
-                      <th className="w-44">Role</th>
-                      <th className="w-72">Access profiles</th>
-                      <th className="w-56">Actions</th>
+                      <th className="w-48">{t("settings.users.user")}</th>
+                      <th className="w-64">{t("settings.email")}</th>
+                      <th className="w-44">{t("settings.role")}</th>
+                      <th className="w-72">{t("settings.users.access_profiles")}</th>
+                      <th className="w-56">{t("settings.actions")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -402,11 +414,11 @@ export default function SettingsUsersPage() {
                             value={member.role || "member"}
                             disabled={saving || ((member.role || "") === "admin" && adminCount <= 1)}
                             title={((member.role || "") === "admin" && adminCount <= 1)
-                              ? "At least one admin is required in every workspace."
+                              ? t("settings.users.admin_required_title")
                               : ""}
                             onChange={(e) => updateRole(member.user_id, e.target.value)}
                           >
-                            {ROLE_OPTIONS.map((role) => (
+                            {roleOptions.map((role) => (
                               <option key={role.value} value={role.value}>
                                 {role.label}
                                 </option>
@@ -438,7 +450,7 @@ export default function SettingsUsersPage() {
                                 onClick={() => openProfileModal(member)}
                                 type="button"
                               >
-                                Access
+                                {t("settings.users.access")}
                               </button>
                               <button
                                 className="btn btn-ghost btn-xs"
@@ -446,18 +458,18 @@ export default function SettingsUsersPage() {
                                 onClick={() => openEmailModal(member)}
                                 type="button"
                               >
-                                Change email
+                                {t("settings.users.change_email")}
                               </button>
                               <button
                                 className="btn btn-ghost btn-xs text-error"
                                 disabled={saving || ((member.role || "") === "admin" && adminCount <= 1)}
                                 title={((member.role || "") === "admin" && adminCount <= 1)
-                                  ? "At least one admin is required in every workspace."
+                                  ? t("settings.users.admin_required_title")
                                   : ""}
                                 onClick={() => openRemoveModal(member)}
                                 type="button"
                               >
-                                Remove
+                                {t("settings.users.remove")}
                               </button>
                             </div>
                           ) : (
@@ -478,9 +490,11 @@ export default function SettingsUsersPage() {
       {pendingRemove ? (
         <div className="modal modal-open">
           <div className="modal-box">
-            <h3 className="font-bold text-lg">Remove user</h3>
+            <h3 className="font-bold text-lg">{t("settings.users.remove_user_title")}</h3>
             <p className="text-sm opacity-70 mt-2">
-              Remove <span className="font-medium">{pendingRemove.email || pendingRemove.name || pendingRemove.user_id}</span> from this workspace.
+              {t("settings.users.remove_user_body", {
+                user: pendingRemove.email || pendingRemove.name || pendingRemove.user_id,
+              })}
             </p>
             <label className="label cursor-pointer justify-start gap-3 mt-3">
               <input
@@ -491,16 +505,16 @@ export default function SettingsUsersPage() {
                 onChange={(e) => setDeleteAuthUser(e.target.checked)}
               />
               <span className="label-text">
-                Also delete this user from Supabase Auth (global account delete)
+                {t("settings.users.delete_auth_user")}
               </span>
             </label>
             {!canDeleteAuth ? (
-              <p className="text-xs opacity-70 mt-1">Superadmin required for global auth deletion.</p>
+              <p className="text-xs opacity-70 mt-1">{t("settings.users.superadmin_required")}</p>
             ) : null}
             <div className="modal-action">
-              <button className="btn btn-sm" onClick={closeRemoveModal} disabled={saving} type="button">Cancel</button>
+              <button className="btn btn-sm" onClick={closeRemoveModal} disabled={saving} type="button">{t("common.cancel")}</button>
               <button className="btn btn-error btn-sm" onClick={() => removeMember(pendingRemove)} disabled={saving} type="button">
-                {saving ? "Removing..." : "Remove user"}
+                {saving ? t("settings.users.removing") : t("settings.users.remove_user_action")}
               </button>
             </div>
           </div>
@@ -511,10 +525,10 @@ export default function SettingsUsersPage() {
       {pendingEmailEdit ? (
         <div className="modal modal-open">
           <div className="modal-box">
-            <h3 className="font-bold text-lg">Change user email</h3>
-            <p className="text-sm opacity-70 mt-2">Update login email for this user.</p>
+            <h3 className="font-bold text-lg">{t("settings.users.change_email_title")}</h3>
+            <p className="text-sm opacity-70 mt-2">{t("settings.users.change_email_description")}</p>
             <label className="form-control mt-3">
-              <span className="label-text">New email</span>
+              <span className="label-text">{t("settings.users.new_email")}</span>
               <input
                 className="input input-bordered input-sm"
                 type="email"
@@ -524,14 +538,14 @@ export default function SettingsUsersPage() {
               />
             </label>
             <div className="modal-action">
-              <button className="btn btn-sm" onClick={closeEmailModal} disabled={saving} type="button">Cancel</button>
+              <button className="btn btn-sm" onClick={closeEmailModal} disabled={saving} type="button">{t("common.cancel")}</button>
               <button
                 className="btn btn-primary btn-sm"
                 onClick={() => updateMemberEmail(pendingEmailEdit)}
                 disabled={saving || !nextEmail.trim()}
                 type="button"
               >
-                {saving ? "Updating..." : "Update email"}
+                {saving ? t("settings.users.updating") : t("settings.users.update_email")}
               </button>
             </div>
           </div>
@@ -542,9 +556,11 @@ export default function SettingsUsersPage() {
       {pendingProfileEdit ? (
         <div className="modal modal-open">
           <div className="modal-box">
-            <h3 className="font-bold text-lg">Access profiles</h3>
+            <h3 className="font-bold text-lg">{t("settings.users.access_profiles")}</h3>
             <p className="text-sm opacity-70 mt-2">
-              Assign access profiles to <span className="font-medium">{pendingProfileEdit.email || pendingProfileEdit.name || pendingProfileEdit.user_id}</span>.
+              {t("settings.users.assign_access_profiles", {
+                user: pendingProfileEdit.email || pendingProfileEdit.name || pendingProfileEdit.user_id,
+              })}
             </p>
             <div className="mt-4 space-y-3 max-h-80 overflow-y-auto">
               {accessProfiles.length ? (
@@ -574,13 +590,13 @@ export default function SettingsUsersPage() {
                   );
                 })
               ) : (
-                <div className="text-sm opacity-70">No access profiles yet. Create them in Settings → Access Policies.</div>
+                <div className="text-sm opacity-70">{t("settings.users.no_access_profiles")}</div>
               )}
             </div>
             <div className="modal-action">
-              <button className="btn btn-sm" onClick={closeProfileModal} disabled={saving} type="button">Cancel</button>
+              <button className="btn btn-sm" onClick={closeProfileModal} disabled={saving} type="button">{t("common.cancel")}</button>
               <button className="btn btn-primary btn-sm" onClick={() => updateProfiles(pendingProfileEdit)} disabled={saving} type="button">
-                {saving ? "Saving..." : "Save access"}
+                {saving ? t("common.saving") : t("settings.users.save_access")}
               </button>
             </div>
           </div>

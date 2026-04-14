@@ -1,0 +1,458 @@
+{
+  "module": {
+    "name": "Bestellingen",
+    "description": "Geaccepteerde klantorders na goedkeuring van de offerte, met inkoop- en factuurlinks."
+  },
+  "navigation": {
+    "biz_order_list_page": "Bestellingen",
+    "biz_order_in_production_page": "In productie",
+    "biz_order_ready_to_invoice_page": "Klaar om te factureren",
+    "biz_order_on_hold_page": "In de wacht",
+    "biz_order_completed_page": "Voltooid"
+  },
+  "entities": {
+    "biz_order": {
+      "label": "Bestel",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "order_number": {
+          "label": "Bestelnummer"
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "draft": "Diepgang",
+            "confirmed": "Bevestigd",
+            "on_hold": "In de wacht",
+            "in_production": "In productie",
+            "shipped": "Verzonden",
+            "completed": "Voltooid",
+            "cancelled": "Geannuleerd"
+          }
+        },
+        "customer_id": {
+          "label": "Klant"
+        },
+        "source_quote_id": {
+          "label": "Bron Citaat"
+        },
+        "source_quote_number": {
+          "label": "Bron Citaat"
+        },
+        "sales_entity": {
+          "label": "Verkoopentiteit",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "order_date": {
+          "label": "Besteldatum"
+        },
+        "currency": {
+          "label": "Valuta",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "customer_reference": {
+          "label": "Klantreferentie"
+        },
+        "delivery_terms": {
+          "label": "Leveringsvoorwaarden"
+        },
+        "shipping_destination": {
+          "label": "Verzendbestemming"
+        },
+        "requested_delivery_date": {
+          "label": "Gevraagde leverdatum"
+        },
+        "notes": {
+          "label": "Opmerkingen"
+        },
+        "hold_reason": {
+          "label": "Reden in de wacht"
+        },
+        "cancellation_reason": {
+          "label": "Reden van annulering"
+        },
+        "status_before_hold": {
+          "label": "Vorige status"
+        },
+        "primary_purchase_order_id": {
+          "label": "Primaire inkooporder"
+        },
+        "preferred_supplier_id": {
+          "label": "Voorkeursleverancier"
+        },
+        "deposit_percent": {
+          "label": "Storting %"
+        },
+        "deposit_invoice_id": {
+          "label": "Aanbetalingsfactuur"
+        },
+        "final_invoice_id": {
+          "label": "Laatste factuur"
+        },
+        "order_total": {
+          "label": "Bestel totaal"
+        },
+        "invoiced_total": {
+          "label": "Gefactureerd totaal"
+        },
+        "balance_to_invoice": {
+          "label": "Saldo naar factuur"
+        },
+        "estimated_buy_total": {
+          "label": "Geschat aankooptotaal"
+        },
+        "estimated_margin_amount": {
+          "label": "Geschat margebedrag"
+        },
+        "estimated_margin_percent": {
+          "label": "Geschatte marge%"
+        }
+      }
+    },
+    "biz_order_line": {
+      "label": "Bestelregel",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "customer_order_id": {
+          "label": "Bestel"
+        },
+        "product_id": {
+          "label": "Product"
+        },
+        "description": {
+          "label": "Beschrijving"
+        },
+        "sales_entity_snapshot": {
+          "label": "Momentopname van de verkoopentiteit",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "currency_snapshot": {
+          "label": "Valutamomentopname",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "uom": {
+          "label": "UOM",
+          "options": {
+            "ea": "Elk",
+            "set": "Instellen",
+            "kit": "Kit",
+            "lot": "Veel",
+            "pallet": "Pallet",
+            "container": "Houder",
+            "m": "Meter"
+          }
+        },
+        "quantity": {
+          "label": "Aantal"
+        },
+        "unit_price": {
+          "label": "Eenheidsprijs"
+        },
+        "line_total": {
+          "label": "Lijntotaal"
+        },
+        "unit_cost_snapshot": {
+          "label": "Momentopname van eenheidskosten"
+        },
+        "buy_total": {
+          "label": "Koop Totaal"
+        },
+        "source_quote_line_ref": {
+          "label": "Bron Citaatregel Ref"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_customer_order_new": {
+      "label": "Nieuwe bestelling"
+    },
+    "action_customer_order_confirm": {
+      "label": "Bevestig bestelling",
+      "confirm": {
+        "title": "Bestelling bevestigen?"
+      }
+    },
+    "action_customer_order_open_hold_modal": {
+      "label": "In de wacht zetten"
+    },
+    "action_customer_order_resume": {
+      "label": "Hervat de bestelling"
+    },
+    "action_customer_order_mark_in_production": {
+      "label": "Markeer in productie"
+    },
+    "action_customer_order_mark_shipped": {
+      "label": "Markeer verzonden"
+    },
+    "action_customer_order_mark_completed": {
+      "label": "Markeer voltooid"
+    },
+    "action_customer_order_open_cancel_modal": {
+      "label": "Bestelling annuleren"
+    },
+    "action_customer_order_create_purchase_order": {
+      "label": "Inkooporder verhogen",
+      "confirm": {
+        "title": "Inkooporder verhogen?"
+      }
+    },
+    "action_customer_order_create_deposit_invoice": {
+      "label": "Aanbetalingsfactuur verhogen",
+      "confirm": {
+        "title": "Aanbetalingsfactuur verhogen?"
+      }
+    },
+    "action_customer_order_create_final_invoice": {
+      "label": "Verhoog de eindfactuur",
+      "confirm": {
+        "title": "Eindfactuur verhogen?"
+      }
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Bestellingen zoeken..."
+      },
+      "filters": {
+        "active": {
+          "label": "Actieve bestellingen"
+        },
+        "draft": {
+          "label": "Conceptbestellingen"
+        },
+        "confirmed": {
+          "label": "Bevestigde bestellingen"
+        },
+        "in_production": {
+          "label": "In productie"
+        },
+        "on_hold": {
+          "label": "In de wacht"
+        },
+        "shipped": {
+          "label": "Verzonden bestellingen"
+        },
+        "completed": {
+          "label": "Voltooide bestellingen"
+        },
+        "ready_to_invoice": {
+          "label": "Klaar om te factureren"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Bestel"
+        },
+        "commercials": {
+          "title": "Reclames"
+        },
+        "related": {
+          "title": "Gerelateerde gegevens"
+        },
+        "profitability": {
+          "title": "Winstgevendheid"
+        },
+        "notes": {
+          "title": "Opmerkingen"
+        },
+        "lines": {
+          "title": "Orderregels"
+        },
+        "main": {
+          "title": "Bestelregel"
+        }
+      }
+    }
+  },
+  "modals": {
+    "customer_order_hold": {
+      "title": "Bestelling in de wacht zetten",
+      "description": "Leg vast waarom de uitvoering wordt gepauzeerd.",
+      "actions": {
+        "update_record": {
+          "label": "In de wacht zetten"
+        },
+        "close_modal": {
+          "label": "Sluiten"
+        }
+      }
+    },
+    "customer_order_cancel": {
+      "title": "Bestelling annuleren",
+      "description": "Leg vast waarom deze bestelling wordt geannuleerd.",
+      "actions": {
+        "update_record": {
+          "label": "Bestelling annuleren"
+        },
+        "close_modal": {
+          "label": "Sluiten"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Bestellingen",
+      "header": {
+        "actions": {
+          "navigate": {
+            "label": "Nieuwe bestelling"
+          }
+        }
+      },
+      "blocks": {
+        "1": {
+          "cards": {
+            "customer_orders_confirmed_count": {
+              "label": "Bevestigd",
+              "subtitle": "Klaar voor vervulling"
+            },
+            "customer_orders_in_production_count": {
+              "label": "In productie",
+              "subtitle": "Samen met leveranciers voorbereid zijn"
+            },
+            "customer_orders_ready_to_invoice_count": {
+              "label": "Klaar om te factureren",
+              "subtitle": "Verzonden of voltooid zonder eindfactuur"
+            },
+            "customer_orders_completed_count": {
+              "label": "Voltooid",
+              "subtitle": "Gesloten bestellingen"
+            }
+          }
+        }
+      }
+    },
+    "in_production_page": {
+      "title": "Bestellingen in productie"
+    },
+    "ready_to_invoice_page": {
+      "title": "Bestellingen klaar om te factureren"
+    },
+    "on_hold_page": {
+      "title": "Bestellingen in de wacht"
+    },
+    "completed_page": {
+      "title": "Voltooide bestellingen"
+    },
+    "form_page": {
+      "title": "Bestel"
+    }
+  },
+  "workflows": {
+    "customer_order_status_workflow": {
+      "states": {
+        "draft": {
+          "label": "Diepgang"
+        },
+        "confirmed": {
+          "label": "Bevestigd"
+        },
+        "on_hold": {
+          "label": "In de wacht"
+        },
+        "in_production": {
+          "label": "In productie"
+        },
+        "shipped": {
+          "label": "Verzonden"
+        },
+        "completed": {
+          "label": "Voltooid"
+        },
+        "cancelled": {
+          "label": "Geannuleerd"
+        }
+      },
+      "transitions": {
+        "draft_confirmed": {
+          "label": "Bevestig bestelling"
+        },
+        "confirmed_on_hold": {
+          "label": "In de wacht zetten"
+        },
+        "confirmed_in_production": {
+          "label": "Start productie"
+        },
+        "in_production_on_hold": {
+          "label": "In de wacht zetten"
+        },
+        "in_production_shipped": {
+          "label": "Markeer verzonden"
+        },
+        "shipped_on_hold": {
+          "label": "In de wacht zetten"
+        },
+        "shipped_completed": {
+          "label": "Voltooi de bestelling"
+        },
+        "on_hold_confirmed": {
+          "label": "Hervatten naar Bevestigd"
+        },
+        "on_hold_in_production": {
+          "label": "Ga verder met productie"
+        },
+        "on_hold_shipped": {
+          "label": "Hervatten naar Verzonden"
+        },
+        "draft_cancelled": {
+          "label": "Bestelling annuleren"
+        },
+        "confirmed_cancelled": {
+          "label": "Bestelling annuleren"
+        },
+        "in_production_cancelled": {
+          "label": "Bestelling annuleren"
+        },
+        "on_hold_cancelled": {
+          "label": "Bestelling annuleren"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "order_created": "Bestelling aangemaakt",
+    "order_updated": "Bestelling bijgewerkt",
+    "order_line_created": "Orderregel aangemaakt",
+    "order_line_updated": "Orderregel bijgewerkt",
+    "order_status_changed": "Bestelstatus gewijzigd",
+    "new_order_clicked": "Nieuwe bestelling geklikt",
+    "confirm_order_clicked": "Bestelling bevestigen heeft geklikt",
+    "put_on_hold_clicked": "In de wacht zetten heeft geklikt",
+    "resume_order_clicked": "Bestelling hervatten heeft geklikt",
+    "mark_in_production_clicked": "Mark In Production klikte",
+    "mark_shipped_clicked": "Markeren als verzonden heeft geklikt",
+    "mark_completed_clicked": "Markeren als voltooid heeft geklikt",
+    "cancel_order_clicked": "Bestelling annuleren heeft geklikt",
+    "raise_purchase_order_clicked": "Inkooporder verhogen heeft geklikt",
+    "raise_deposit_invoice_clicked": "Aanbetalingsfactuur verhogen heeft geklikt",
+    "raise_final_invoice_clicked": "Klik op Eindfactuur verhogen"
+  },
+  "dashboard": {
+    "orders_by_status": "Bestellingen op status"
+  }
+}

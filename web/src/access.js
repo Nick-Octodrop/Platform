@@ -1,5 +1,6 @@
 import { createContext, createElement, useContext, useEffect, useMemo, useState } from "react";
 import { apiFetch, getActiveWorkspaceId } from "./api";
+import { translateRuntime } from "./i18n/runtime.js";
 
 const CAPABILITIES_BY_ROLE = {
   admin: new Set([
@@ -91,7 +92,7 @@ export function AccessContextProvider({ children, seedContext = null }) {
         setContext(res || null);
       } catch (err) {
         if (!alive) return;
-        setError(err?.message || "Failed to load access context");
+        setError(err?.message || translateRuntime("common.errors.access_context_load_failed"));
       } finally {
         if (alive) setLoading(false);
       }

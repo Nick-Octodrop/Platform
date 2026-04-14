@@ -2,19 +2,21 @@ import React, { useCallback, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { apiFetch } from "../../api.js";
 import TemplateStudioShell from "../templates/TemplateStudioShell.jsx";
-import { documentTemplateProfile } from "../templates/templateProfiles.jsx";
+import { getDocumentTemplateProfile } from "../templates/templateProfiles.jsx";
 import useMediaQuery from "../../hooks/useMediaQuery.js";
+import { useI18n } from "../../i18n/LocalizationProvider.jsx";
 
 export default function DocumentTemplateStudioPage({ user }) {
   const { id } = useParams();
   const isMobile = useMediaQuery("(max-width: 768px)");
-  const [pageTitle, setPageTitle] = useState("Document Template");
-  const profile = useMemo(() => documentTemplateProfile, []);
+  const { t } = useI18n();
+  const [pageTitle, setPageTitle] = useState("");
+  const profile = useMemo(() => getDocumentTemplateProfile(t), [t]);
 
   const loadRecord = useCallback(async (recordId) => {
     const res = await apiFetch(`/documents/templates/${recordId}`);
     const template = res?.template || null;
-    setPageTitle(template?.name || "Document Template");
+    setPageTitle(template?.name || "");
     return template;
   }, []);
 
@@ -24,7 +26,7 @@ export default function DocumentTemplateStudioPage({ user }) {
       body: patch,
     });
     const template = res?.template || null;
-    setPageTitle(template?.name || "Document Template");
+    setPageTitle(template?.name || "");
     return template;
   }, []);
 
@@ -39,7 +41,7 @@ export default function DocumentTemplateStudioPage({ user }) {
   return (
     <div className={isMobile ? "min-h-full bg-base-100 flex flex-col" : "h-full min-h-0 flex flex-col overflow-hidden"}>
       <TemplateStudioShell
-        title={pageTitle}
+        title={pageTitle || t("settings.document_template")}
         recordId={id}
         user={user}
         profile={profile}

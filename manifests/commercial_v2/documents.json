@@ -7,15 +7,32 @@
     "version": "1.0.0",
     "description": "Document control for commercial records, including quote PDFs, order packs, supplier documents, invoice files, and signed customer documents.",
     "category": "Commercial",
-    "icon_key": "lucide:FolderOpen"
+    "icon_key": "lucide:FolderOpen",
+    "name_key": "documents.module.name",
+    "description_key": "documents.module.description"
   },
   "depends_on": {
     "required": [
-      { "module": "biz_contacts", "version": ">=1.0.0" },
-      { "module": "biz_quotes", "version": ">=1.0.0" },
-      { "module": "biz_orders", "version": ">=1.0.0" },
-      { "module": "biz_purchase_orders", "version": ">=1.0.0" },
-      { "module": "biz_invoices", "version": ">=1.0.0" }
+      {
+        "module": "biz_contacts",
+        "version": ">=1.0.0"
+      },
+      {
+        "module": "biz_quotes",
+        "version": ">=1.0.0"
+      },
+      {
+        "module": "biz_orders",
+        "version": ">=1.0.0"
+      },
+      {
+        "module": "biz_purchase_orders",
+        "version": ">=1.0.0"
+      },
+      {
+        "module": "biz_invoices",
+        "version": ">=1.0.0"
+      }
     ]
   },
   "app": {
@@ -35,11 +52,31 @@
         "group": "Commercial",
         "mode": "inline",
         "items": [
-          { "label": "Documents", "to": "page:biz_document.list_page" },
-          { "label": "Quote Docs", "to": "page:biz_document.quote_docs_page" },
-          { "label": "Invoice Docs", "to": "page:biz_document.invoice_docs_page" },
-          { "label": "Supplier Docs", "to": "page:biz_document.supplier_docs_page" },
-          { "label": "Archived", "to": "page:biz_document.archived_page" }
+          {
+            "label": "Documents",
+            "to": "page:biz_document.list_page",
+            "menu_label_key": "documents.navigation.biz_document_list_page"
+          },
+          {
+            "label": "Quote Docs",
+            "to": "page:biz_document.quote_docs_page",
+            "menu_label_key": "documents.navigation.biz_document_quote_docs_page"
+          },
+          {
+            "label": "Invoice Docs",
+            "to": "page:biz_document.invoice_docs_page",
+            "menu_label_key": "documents.navigation.biz_document_invoice_docs_page"
+          },
+          {
+            "label": "Supplier Docs",
+            "to": "page:biz_document.supplier_docs_page",
+            "menu_label_key": "documents.navigation.biz_document_supplier_docs_page"
+          },
+          {
+            "label": "Archived",
+            "to": "page:biz_document.archived_page",
+            "menu_label_key": "documents.navigation.biz_document_archived_page"
+          }
         ]
       }
     ]
@@ -50,8 +87,20 @@
       "label": "Document",
       "display_field": "biz_document.name",
       "fields": [
-        { "id": "biz_document.id", "type": "uuid", "label": "ID", "readonly": true },
-        { "id": "biz_document.name", "type": "string", "label": "Document Name", "required": true },
+        {
+          "id": "biz_document.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true,
+          "label_key": "documents.entities.biz_document.fields.id.label"
+        },
+        {
+          "id": "biz_document.name",
+          "type": "string",
+          "label": "Document Name",
+          "required": true,
+          "label_key": "documents.entities.biz_document.fields.name.label"
+        },
         {
           "id": "biz_document.document_type",
           "type": "enum",
@@ -59,17 +108,68 @@
           "required": true,
           "default": "other",
           "options": [
-            { "value": "quote_pdf", "label": "Quote PDF" },
-            { "value": "order_confirmation", "label": "Order Confirmation" },
-            { "value": "purchase_order_pdf", "label": "Purchase Order PDF" },
-            { "value": "invoice_pdf", "label": "Invoice PDF" },
-            { "value": "supplier_document", "label": "Supplier Document" },
-            { "value": "shipping_document", "label": "Shipping Document" },
-            { "value": "compliance_document", "label": "Compliance Document" },
-            { "value": "signed_customer_document", "label": "Signed Customer Document" },
-            { "value": "xero_export", "label": "Xero Export" },
-            { "value": "other", "label": "Other" }
-          ]
+            {
+              "value": "quote_pdf",
+              "label": "Quote PDF",
+              "status_label_key": "documents.entities.biz_document.fields.document_type.options.quote_pdf",
+              "label_key": "documents.entities.biz_document.fields.document_type.options.quote_pdf"
+            },
+            {
+              "value": "order_confirmation",
+              "label": "Order Confirmation",
+              "status_label_key": "documents.entities.biz_document.fields.document_type.options.order_confirmation",
+              "label_key": "documents.entities.biz_document.fields.document_type.options.order_confirmation"
+            },
+            {
+              "value": "purchase_order_pdf",
+              "label": "Purchase Order PDF",
+              "status_label_key": "documents.entities.biz_document.fields.document_type.options.purchase_order_pdf",
+              "label_key": "documents.entities.biz_document.fields.document_type.options.purchase_order_pdf"
+            },
+            {
+              "value": "invoice_pdf",
+              "label": "Invoice PDF",
+              "status_label_key": "documents.entities.biz_document.fields.document_type.options.invoice_pdf",
+              "label_key": "documents.entities.biz_document.fields.document_type.options.invoice_pdf"
+            },
+            {
+              "value": "supplier_document",
+              "label": "Supplier Document",
+              "status_label_key": "documents.entities.biz_document.fields.document_type.options.supplier_document",
+              "label_key": "documents.entities.biz_document.fields.document_type.options.supplier_document"
+            },
+            {
+              "value": "shipping_document",
+              "label": "Shipping Document",
+              "status_label_key": "documents.entities.biz_document.fields.document_type.options.shipping_document",
+              "label_key": "documents.entities.biz_document.fields.document_type.options.shipping_document"
+            },
+            {
+              "value": "compliance_document",
+              "label": "Compliance Document",
+              "status_label_key": "documents.entities.biz_document.fields.document_type.options.compliance_document",
+              "label_key": "documents.entities.biz_document.fields.document_type.options.compliance_document"
+            },
+            {
+              "value": "signed_customer_document",
+              "label": "Signed Customer Document",
+              "status_label_key": "documents.entities.biz_document.fields.document_type.options.signed_customer_document",
+              "label_key": "documents.entities.biz_document.fields.document_type.options.signed_customer_document"
+            },
+            {
+              "value": "xero_export",
+              "label": "Xero Export",
+              "status_label_key": "documents.entities.biz_document.fields.document_type.options.xero_export",
+              "label_key": "documents.entities.biz_document.fields.document_type.options.xero_export"
+            },
+            {
+              "value": "other",
+              "label": "Other",
+              "status_label_key": "documents.entities.biz_document.fields.document_type.options.other",
+              "label_key": "documents.entities.biz_document.fields.document_type.options.other"
+            }
+          ],
+          "label_key": "documents.entities.biz_document.fields.document_type.label"
         },
         {
           "id": "biz_document.status",
@@ -77,49 +177,82 @@
           "label": "Status",
           "required": true,
           "default": "draft",
-          "ui": { "widget": "steps" },
+          "ui": {
+            "widget": "steps"
+          },
           "options": [
-            { "value": "draft", "label": "Draft" },
-            { "value": "approved", "label": "Approved" },
-            { "value": "sent", "label": "Sent" },
-            { "value": "signed", "label": "Signed" },
-            { "value": "archived", "label": "Archived" }
-          ]
+            {
+              "value": "draft",
+              "label": "Draft",
+              "status_label_key": "documents.entities.biz_document.fields.status.options.draft",
+              "label_key": "documents.entities.biz_document.fields.status.options.draft"
+            },
+            {
+              "value": "approved",
+              "label": "Approved",
+              "status_label_key": "documents.entities.biz_document.fields.status.options.approved",
+              "label_key": "documents.entities.biz_document.fields.status.options.approved"
+            },
+            {
+              "value": "sent",
+              "label": "Sent",
+              "status_label_key": "documents.entities.biz_document.fields.status.options.sent",
+              "label_key": "documents.entities.biz_document.fields.status.options.sent"
+            },
+            {
+              "value": "signed",
+              "label": "Signed",
+              "status_label_key": "documents.entities.biz_document.fields.status.options.signed",
+              "label_key": "documents.entities.biz_document.fields.status.options.signed"
+            },
+            {
+              "value": "archived",
+              "label": "Archived",
+              "status_label_key": "documents.entities.biz_document.fields.status.options.archived",
+              "label_key": "documents.entities.biz_document.fields.status.options.archived"
+            }
+          ],
+          "label_key": "documents.entities.biz_document.fields.status.label"
         },
         {
           "id": "biz_document.related_contact_id",
           "type": "lookup",
           "label": "Contact",
           "entity": "entity.biz_contact",
-          "display_field": "biz_contact.name"
+          "display_field": "biz_contact.name",
+          "label_key": "documents.entities.biz_document.fields.related_contact_id.label"
         },
         {
           "id": "biz_document.related_quote_id",
           "type": "lookup",
           "label": "Quote",
           "entity": "entity.biz_quote",
-          "display_field": "biz_quote.quote_number"
+          "display_field": "biz_quote.quote_number",
+          "label_key": "documents.entities.biz_document.fields.related_quote_id.label"
         },
         {
           "id": "biz_document.related_order_id",
           "type": "lookup",
           "label": "Order",
           "entity": "entity.biz_order",
-          "display_field": "biz_order.order_number"
+          "display_field": "biz_order.order_number",
+          "label_key": "documents.entities.biz_document.fields.related_order_id.label"
         },
         {
           "id": "biz_document.related_purchase_order_id",
           "type": "lookup",
           "label": "Purchase Order",
           "entity": "entity.biz_purchase_order",
-          "display_field": "biz_purchase_order.po_number"
+          "display_field": "biz_purchase_order.po_number",
+          "label_key": "documents.entities.biz_document.fields.related_purchase_order_id.label"
         },
         {
           "id": "biz_document.related_invoice_id",
           "type": "lookup",
           "label": "Invoice",
           "entity": "entity.biz_invoice",
-          "display_field": "biz_invoice.invoice_number"
+          "display_field": "biz_invoice.invoice_number",
+          "label_key": "documents.entities.biz_document.fields.related_invoice_id.label"
         },
         {
           "id": "biz_document.sales_entity",
@@ -127,70 +260,176 @@
           "label": "Entity",
           "default": "NLight BV",
           "options": [
-            { "value": "NLight BV", "label": "NLight BV" },
-            { "value": "EcoTech FZCO", "label": "EcoTech FZCO" }
-          ]
+            {
+              "value": "NLight BV",
+              "label": "NLight BV",
+              "status_label_key": "documents.entities.biz_document.fields.sales_entity.options.nlight_bv",
+              "label_key": "documents.entities.biz_document.fields.sales_entity.options.nlight_bv"
+            },
+            {
+              "value": "EcoTech FZCO",
+              "label": "EcoTech FZCO",
+              "status_label_key": "documents.entities.biz_document.fields.sales_entity.options.ecotech_fzco",
+              "label_key": "documents.entities.biz_document.fields.sales_entity.options.ecotech_fzco"
+            }
+          ],
+          "label_key": "documents.entities.biz_document.fields.sales_entity.label"
         },
-        { "id": "biz_document.owner_user_id", "type": "user", "label": "Owner" },
-        { "id": "biz_document.document_date", "type": "date", "label": "Document Date" },
-        { "id": "biz_document.expiry_date", "type": "date", "label": "Expiry Date" },
+        {
+          "id": "biz_document.owner_user_id",
+          "type": "user",
+          "label": "Owner",
+          "label_key": "documents.entities.biz_document.fields.owner_user_id.label"
+        },
+        {
+          "id": "biz_document.document_date",
+          "type": "date",
+          "label": "Document Date",
+          "label_key": "documents.entities.biz_document.fields.document_date.label"
+        },
+        {
+          "id": "biz_document.expiry_date",
+          "type": "date",
+          "label": "Expiry Date",
+          "label_key": "documents.entities.biz_document.fields.expiry_date.label"
+        },
         {
           "id": "biz_document.external_system",
           "type": "enum",
           "label": "External System",
           "default": "none",
           "options": [
-            { "value": "none", "label": "None" },
-            { "value": "pipedrive", "label": "Pipedrive" },
-            { "value": "xero", "label": "Xero" },
-            { "value": "clickup", "label": "ClickUp" },
-            { "value": "email", "label": "Email" }
-          ]
+            {
+              "value": "none",
+              "label": "None",
+              "status_label_key": "documents.entities.biz_document.fields.external_system.options.none",
+              "label_key": "documents.entities.biz_document.fields.external_system.options.none"
+            },
+            {
+              "value": "pipedrive",
+              "label": "Pipedrive",
+              "status_label_key": "documents.entities.biz_document.fields.external_system.options.pipedrive",
+              "label_key": "documents.entities.biz_document.fields.external_system.options.pipedrive"
+            },
+            {
+              "value": "xero",
+              "label": "Xero",
+              "status_label_key": "documents.entities.biz_document.fields.external_system.options.xero",
+              "label_key": "documents.entities.biz_document.fields.external_system.options.xero"
+            },
+            {
+              "value": "clickup",
+              "label": "ClickUp",
+              "status_label_key": "documents.entities.biz_document.fields.external_system.options.clickup",
+              "label_key": "documents.entities.biz_document.fields.external_system.options.clickup"
+            },
+            {
+              "value": "email",
+              "label": "Email",
+              "status_label_key": "documents.entities.biz_document.fields.external_system.options.email",
+              "label_key": "documents.entities.biz_document.fields.external_system.options.email"
+            }
+          ],
+          "label_key": "documents.entities.biz_document.fields.external_system.label"
         },
-        { "id": "biz_document.external_reference", "type": "string", "label": "External Reference" },
-        { "id": "biz_document.attachments", "type": "attachments", "label": "Files" },
+        {
+          "id": "biz_document.external_reference",
+          "type": "string",
+          "label": "External Reference",
+          "label_key": "documents.entities.biz_document.fields.external_reference.label"
+        },
+        {
+          "id": "biz_document.attachments",
+          "type": "attachments",
+          "label": "Files",
+          "label_key": "documents.entities.biz_document.fields.attachments.label"
+        },
         {
           "id": "biz_document.archive_reason",
           "type": "text",
           "label": "Archive Reason",
-          "required_when": { "op": "eq", "field": "biz_document.status", "value": "archived" }
+          "required_when": {
+            "op": "eq",
+            "field": "biz_document.status",
+            "value": "archived"
+          },
+          "label_key": "documents.entities.biz_document.fields.archive_reason.label"
         },
-        { "id": "biz_document.notes", "type": "text", "label": "Notes" }
-      ]
+        {
+          "id": "biz_document.notes",
+          "type": "text",
+          "label": "Notes",
+          "label_key": "documents.entities.biz_document.fields.notes.label"
+        }
+      ],
+      "label_key": "documents.entities.biz_document.label"
     }
   ],
   "actions": [
-    { "id": "action.document_new", "kind": "open_form", "label": "New Document", "target": "biz_document.form" },
+    {
+      "id": "action.document_new",
+      "kind": "open_form",
+      "label": "New Document",
+      "target": "biz_document.form",
+      "action_label_key": "documents.actions.action_document_new.label"
+    },
     {
       "id": "action.document_approve",
       "kind": "update_record",
       "entity_id": "entity.biz_document",
       "label": "Approve",
-      "patch": { "biz_document.status": "approved" },
-      "visible_when": { "op": "eq", "field": "biz_document.status", "value": "draft" },
+      "patch": {
+        "biz_document.status": "approved"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_document.status",
+        "value": "draft"
+      },
       "enabled_when": {
         "op": "and",
         "conditions": [
-          { "op": "exists", "field": "biz_document.name" },
-          { "op": "exists", "field": "biz_document.document_type" }
+          {
+            "op": "exists",
+            "field": "biz_document.name"
+          },
+          {
+            "op": "exists",
+            "field": "biz_document.document_type"
+          }
         ]
-      }
+      },
+      "action_label_key": "documents.actions.action_document_approve.label"
     },
     {
       "id": "action.document_mark_sent",
       "kind": "update_record",
       "entity_id": "entity.biz_document",
       "label": "Mark Sent",
-      "patch": { "biz_document.status": "sent" },
-      "visible_when": { "op": "eq", "field": "biz_document.status", "value": "approved" }
+      "patch": {
+        "biz_document.status": "sent"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_document.status",
+        "value": "approved"
+      },
+      "action_label_key": "documents.actions.action_document_mark_sent.label"
     },
     {
       "id": "action.document_mark_signed",
       "kind": "update_record",
       "entity_id": "entity.biz_document",
       "label": "Mark Signed",
-      "patch": { "biz_document.status": "signed" },
-      "visible_when": { "op": "eq", "field": "biz_document.status", "value": "sent" }
+      "patch": {
+        "biz_document.status": "signed"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_document.status",
+        "value": "sent"
+      },
+      "action_label_key": "documents.actions.action_document_mark_signed.label"
     },
     {
       "id": "action.document_open_archive_modal",
@@ -201,8 +440,14 @@
       "visible_when": {
         "op": "in",
         "field": "biz_document.status",
-        "value": ["draft", "approved", "sent", "signed"]
-      }
+        "value": [
+          "draft",
+          "approved",
+          "sent",
+          "signed"
+        ]
+      },
+      "action_label_key": "documents.actions.action_document_open_archive_modal.label"
     }
   ],
   "views": [
@@ -211,17 +456,37 @@
       "kind": "list",
       "entity": "entity.biz_document",
       "columns": [
-        { "field_id": "biz_document.name" },
-        { "field_id": "biz_document.document_type" },
-        { "field_id": "biz_document.status" },
-        { "field_id": "biz_document.related_contact_id" },
-        { "field_id": "biz_document.related_order_id" },
-        { "field_id": "biz_document.sales_entity" },
-        { "field_id": "biz_document.document_date" },
-        { "field_id": "biz_document.external_system" }
+        {
+          "field_id": "biz_document.name"
+        },
+        {
+          "field_id": "biz_document.document_type"
+        },
+        {
+          "field_id": "biz_document.status"
+        },
+        {
+          "field_id": "biz_document.related_contact_id"
+        },
+        {
+          "field_id": "biz_document.related_order_id"
+        },
+        {
+          "field_id": "biz_document.sales_entity"
+        },
+        {
+          "field_id": "biz_document.document_date"
+        },
+        {
+          "field_id": "biz_document.external_system"
+        }
       ],
       "header": {
-        "primary_actions": [{ "action_id": "action.document_new" }],
+        "primary_actions": [
+          {
+            "action_id": "action.document_new"
+          }
+        ],
         "open_record_target": "page:biz_document.form_page",
         "search": {
           "enabled": true,
@@ -230,7 +495,8 @@
             "biz_document.name",
             "biz_document.external_reference",
             "biz_document.notes"
-          ]
+          ],
+          "placeholder_key": "documents.views.list.search.placeholder"
         },
         "filters": [
           {
@@ -239,20 +505,97 @@
             "domain": {
               "op": "in",
               "field": "biz_document.status",
-              "value": ["draft", "approved", "sent", "signed"]
-            }
+              "value": [
+                "draft",
+                "approved",
+                "sent",
+                "signed"
+              ]
+            },
+            "label_key": "documents.views.list.filters.active.label"
           },
-          { "id": "draft", "label": "Draft", "domain": { "op": "eq", "field": "biz_document.status", "value": "draft" } },
-          { "id": "approved", "label": "Approved", "domain": { "op": "eq", "field": "biz_document.status", "value": "approved" } },
-          { "id": "sent", "label": "Sent", "domain": { "op": "eq", "field": "biz_document.status", "value": "sent" } },
-          { "id": "signed", "label": "Signed", "domain": { "op": "eq", "field": "biz_document.status", "value": "signed" } },
-          { "id": "archived", "label": "Archived", "domain": { "op": "eq", "field": "biz_document.status", "value": "archived" } },
-          { "id": "quote_docs", "label": "Quote PDFs", "domain": { "op": "eq", "field": "biz_document.document_type", "value": "quote_pdf" } },
-          { "id": "invoice_docs", "label": "Invoice PDFs", "domain": { "op": "eq", "field": "biz_document.document_type", "value": "invoice_pdf" } },
+          {
+            "id": "draft",
+            "label": "Draft",
+            "domain": {
+              "op": "eq",
+              "field": "biz_document.status",
+              "value": "draft"
+            },
+            "label_key": "documents.views.list.filters.draft.label"
+          },
+          {
+            "id": "approved",
+            "label": "Approved",
+            "domain": {
+              "op": "eq",
+              "field": "biz_document.status",
+              "value": "approved"
+            },
+            "label_key": "documents.views.list.filters.approved.label"
+          },
+          {
+            "id": "sent",
+            "label": "Sent",
+            "domain": {
+              "op": "eq",
+              "field": "biz_document.status",
+              "value": "sent"
+            },
+            "label_key": "documents.views.list.filters.sent.label"
+          },
+          {
+            "id": "signed",
+            "label": "Signed",
+            "domain": {
+              "op": "eq",
+              "field": "biz_document.status",
+              "value": "signed"
+            },
+            "label_key": "documents.views.list.filters.signed.label"
+          },
+          {
+            "id": "archived",
+            "label": "Archived",
+            "domain": {
+              "op": "eq",
+              "field": "biz_document.status",
+              "value": "archived"
+            },
+            "label_key": "documents.views.list.filters.archived.label"
+          },
+          {
+            "id": "quote_docs",
+            "label": "Quote PDFs",
+            "domain": {
+              "op": "eq",
+              "field": "biz_document.document_type",
+              "value": "quote_pdf"
+            },
+            "label_key": "documents.views.list.filters.quote_docs.label"
+          },
+          {
+            "id": "invoice_docs",
+            "label": "Invoice PDFs",
+            "domain": {
+              "op": "eq",
+              "field": "biz_document.document_type",
+              "value": "invoice_pdf"
+            },
+            "label_key": "documents.views.list.filters.invoice_docs.label"
+          },
           {
             "id": "supplier_docs",
             "label": "Supplier Documents",
-            "domain": { "op": "in", "field": "biz_document.document_type", "value": ["purchase_order_pdf", "supplier_document"] }
+            "domain": {
+              "op": "in",
+              "field": "biz_document.document_type",
+              "value": [
+                "purchase_order_pdf",
+                "supplier_document"
+              ]
+            },
+            "label_key": "documents.views.list.filters.supplier_docs.label"
           }
         ]
       }
@@ -276,7 +619,8 @@
             "biz_document.owner_user_id",
             "biz_document.document_date",
             "biz_document.expiry_date"
-          ]
+          ],
+          "section_title_key": "documents.views.form.sections.summary.title"
         },
         {
           "id": "links",
@@ -288,7 +632,8 @@
             "biz_document.related_order_id",
             "biz_document.related_purchase_order_id",
             "biz_document.related_invoice_id"
-          ]
+          ],
+          "section_title_key": "documents.views.form.sections.links.title"
         },
         {
           "id": "external",
@@ -298,14 +643,16 @@
           "fields": [
             "biz_document.external_system",
             "biz_document.external_reference"
-          ]
+          ],
+          "section_title_key": "documents.views.form.sections.external.title"
         },
         {
           "id": "files",
           "title": "Files",
           "fields": [
             "biz_document.attachments"
-          ]
+          ],
+          "section_title_key": "documents.views.form.sections.files.title"
         },
         {
           "id": "notes",
@@ -313,29 +660,75 @@
           "fields": [
             "biz_document.archive_reason",
             "biz_document.notes"
-          ]
+          ],
+          "section_title_key": "documents.views.form.sections.notes.title"
         }
       ],
       "header": {
-        "statusbar": { "field_id": "biz_document.status" },
+        "statusbar": {
+          "field_id": "biz_document.status"
+        },
         "auto_state_actions": false,
         "primary_actions": [
-          { "action_id": "action.document_approve" },
-          { "action_id": "action.document_mark_sent" },
-          { "action_id": "action.document_mark_signed" }
+          {
+            "action_id": "action.document_approve"
+          },
+          {
+            "action_id": "action.document_mark_sent"
+          },
+          {
+            "action_id": "action.document_mark_signed"
+          }
         ],
         "secondary_actions": [
-          { "action_id": "action.document_open_archive_modal" }
+          {
+            "action_id": "action.document_open_archive_modal"
+          }
         ],
         "tabs": {
           "style": "lifted",
           "default_tab": "summary",
           "tabs": [
-            { "id": "summary", "label": "Summary", "sections": ["summary"] },
-            { "id": "links", "label": "Linked Records", "sections": ["links"] },
-            { "id": "files", "label": "Files", "sections": ["files"] },
-            { "id": "external", "label": "External", "sections": ["external"] },
-            { "id": "notes", "label": "Notes", "sections": ["notes"] }
+            {
+              "id": "summary",
+              "label": "Summary",
+              "tab_label_key": "common.summary",
+              "sections": [
+                "summary"
+              ]
+            },
+            {
+              "id": "links",
+              "label": "Linked Records",
+              "tab_label_key": "common.related_records",
+              "sections": [
+                "links"
+              ]
+            },
+            {
+              "id": "files",
+              "label": "Files",
+              "tab_label_key": "common.files",
+              "sections": [
+                "files"
+              ]
+            },
+            {
+              "id": "external",
+              "label": "External",
+              "tab_label_key": "common.external",
+              "sections": [
+                "external"
+              ]
+            },
+            {
+              "id": "notes",
+              "label": "Notes",
+              "tab_label_key": "common.notes",
+              "sections": [
+                "notes"
+              ]
+            }
           ]
         }
       },
@@ -396,7 +789,9 @@
       "id": "biz_document.list_page",
       "title": "Documents",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none"
+      },
       "content": [
         {
           "kind": "container",
@@ -408,15 +803,30 @@
               "default_mode": "list",
               "default_filter_id": "active",
               "modes": [
-                { "mode": "list", "target": "view:biz_document.list" },
-                { "mode": "kanban", "target": "view:biz_document.kanban", "default_group_by": "biz_document.status" },
-                { "mode": "graph", "target": "view:biz_document.graph" },
-                { "mode": "pivot", "target": "view:biz_document.list", "default_group_by": "biz_document.document_type" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_document.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:biz_document.kanban",
+                  "default_group_by": "biz_document.status"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:biz_document.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:biz_document.list",
+                  "default_group_by": "biz_document.document_type"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "documents.pages.list_page.title"
     },
     {
       "id": "biz_document.quote_docs_page",
@@ -425,7 +835,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.document_new" }
+          {
+            "action_id": "action.document_new"
+          }
         ]
       },
       "content": [
@@ -439,12 +851,16 @@
               "default_mode": "list",
               "default_filter_id": "quote_docs",
               "modes": [
-                { "mode": "list", "target": "view:biz_document.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_document.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "documents.pages.quote_docs_page.title"
     },
     {
       "id": "biz_document.invoice_docs_page",
@@ -453,7 +869,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.document_new" }
+          {
+            "action_id": "action.document_new"
+          }
         ]
       },
       "content": [
@@ -467,12 +885,16 @@
               "default_mode": "list",
               "default_filter_id": "invoice_docs",
               "modes": [
-                { "mode": "list", "target": "view:biz_document.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_document.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "documents.pages.invoice_docs_page.title"
     },
     {
       "id": "biz_document.supplier_docs_page",
@@ -481,7 +903,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.document_new" }
+          {
+            "action_id": "action.document_new"
+          }
         ]
       },
       "content": [
@@ -495,12 +919,16 @@
               "default_mode": "list",
               "default_filter_id": "supplier_docs",
               "modes": [
-                { "mode": "list", "target": "view:biz_document.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_document.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "documents.pages.supplier_docs_page.title"
     },
     {
       "id": "biz_document.archived_page",
@@ -509,7 +937,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.document_new" }
+          {
+            "action_id": "action.document_new"
+          }
         ]
       },
       "content": [
@@ -523,18 +953,24 @@
               "default_mode": "list",
               "default_filter_id": "archived",
               "modes": [
-                { "mode": "list", "target": "view:biz_document.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_document.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "documents.pages.archived_page.title"
     },
     {
       "id": "biz_document.form_page",
       "title": "Document",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none"
+      },
       "content": [
         {
           "kind": "record",
@@ -553,7 +989,10 @@
                       "kind": "container",
                       "variant": "card",
                       "content": [
-                        { "kind": "view", "target": "view:biz_document.form" }
+                        {
+                          "kind": "view",
+                          "target": "view:biz_document.form"
+                        }
                       ]
                     }
                   ]
@@ -565,7 +1004,11 @@
                       "kind": "container",
                       "variant": "card",
                       "content": [
-                        { "kind": "chatter", "entity_id": "entity.biz_document", "record_ref": "$record.id" }
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.biz_document",
+                          "record_ref": "$record.id"
+                        }
                       ]
                     }
                   ]
@@ -574,7 +1017,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "documents.pages.form_page.title"
     }
   ],
   "interfaces": {
@@ -611,16 +1055,22 @@
           "label": "Archive Document",
           "patch": {
             "biz_document.status": "archived",
-            "biz_document.archive_reason": { "ref": "$record.biz_document.archive_reason" }
+            "biz_document.archive_reason": {
+              "ref": "$record.biz_document.archive_reason"
+            }
           },
-          "close_on_success": true
+          "close_on_success": true,
+          "action_label_key": "documents.modals.document_archive.actions.update_record.label"
         },
         {
           "kind": "close_modal",
           "label": "Keep Open",
-          "variant": "ghost"
+          "variant": "ghost",
+          "action_label_key": "documents.modals.document_archive.actions.close_modal.label"
         }
-      ]
+      ],
+      "title_key": "documents.modals.document_archive.title",
+      "description_key": "documents.modals.document_archive.description"
     }
   ],
   "workflows": [
@@ -629,36 +1079,165 @@
       "entity": "entity.biz_document",
       "status_field": "biz_document.status",
       "states": [
-        { "id": "draft", "label": "Draft", "required_fields": ["biz_document.name", "biz_document.document_type"] },
-        { "id": "approved", "label": "Approved", "required_fields": ["biz_document.name", "biz_document.document_type"] },
-        { "id": "sent", "label": "Sent" },
-        { "id": "signed", "label": "Signed" },
-        { "id": "archived", "label": "Archived" }
+        {
+          "id": "draft",
+          "label": "Draft",
+          "required_fields": [
+            "biz_document.name",
+            "biz_document.document_type"
+          ],
+          "status_label_key": "documents.workflows.document_status_workflow.states.draft.label",
+          "label_key": "documents.workflows.document_status_workflow.states.draft.label"
+        },
+        {
+          "id": "approved",
+          "label": "Approved",
+          "required_fields": [
+            "biz_document.name",
+            "biz_document.document_type"
+          ],
+          "status_label_key": "documents.workflows.document_status_workflow.states.approved.label",
+          "label_key": "documents.workflows.document_status_workflow.states.approved.label"
+        },
+        {
+          "id": "sent",
+          "label": "Sent",
+          "status_label_key": "documents.workflows.document_status_workflow.states.sent.label",
+          "label_key": "documents.workflows.document_status_workflow.states.sent.label"
+        },
+        {
+          "id": "signed",
+          "label": "Signed",
+          "status_label_key": "documents.workflows.document_status_workflow.states.signed.label",
+          "label_key": "documents.workflows.document_status_workflow.states.signed.label"
+        },
+        {
+          "id": "archived",
+          "label": "Archived",
+          "status_label_key": "documents.workflows.document_status_workflow.states.archived.label",
+          "label_key": "documents.workflows.document_status_workflow.states.archived.label"
+        }
       ],
       "transitions": [
-        { "from": "draft", "to": "approved", "label": "Approve" },
-        { "from": "approved", "to": "sent", "label": "Mark Sent" },
-        { "from": "sent", "to": "signed", "label": "Mark Signed" },
-        { "from": "draft", "to": "archived", "label": "Archive" },
-        { "from": "approved", "to": "archived", "label": "Archive" },
-        { "from": "sent", "to": "archived", "label": "Archive" },
-        { "from": "signed", "to": "archived", "label": "Archive" }
+        {
+          "from": "draft",
+          "to": "approved",
+          "label": "Approve",
+          "action_label_key": "documents.workflows.document_status_workflow.transitions.draft_approved.label",
+          "label_key": "documents.workflows.document_status_workflow.transitions.draft_approved.label"
+        },
+        {
+          "from": "approved",
+          "to": "sent",
+          "label": "Mark Sent",
+          "action_label_key": "documents.workflows.document_status_workflow.transitions.approved_sent.label",
+          "label_key": "documents.workflows.document_status_workflow.transitions.approved_sent.label"
+        },
+        {
+          "from": "sent",
+          "to": "signed",
+          "label": "Mark Signed",
+          "action_label_key": "documents.workflows.document_status_workflow.transitions.sent_signed.label",
+          "label_key": "documents.workflows.document_status_workflow.transitions.sent_signed.label"
+        },
+        {
+          "from": "draft",
+          "to": "archived",
+          "label": "Archive",
+          "action_label_key": "documents.workflows.document_status_workflow.transitions.draft_archived.label",
+          "label_key": "documents.workflows.document_status_workflow.transitions.draft_archived.label"
+        },
+        {
+          "from": "approved",
+          "to": "archived",
+          "label": "Archive",
+          "action_label_key": "documents.workflows.document_status_workflow.transitions.approved_archived.label",
+          "label_key": "documents.workflows.document_status_workflow.transitions.approved_archived.label"
+        },
+        {
+          "from": "sent",
+          "to": "archived",
+          "label": "Archive",
+          "action_label_key": "documents.workflows.document_status_workflow.transitions.sent_archived.label",
+          "label_key": "documents.workflows.document_status_workflow.transitions.sent_archived.label"
+        },
+        {
+          "from": "signed",
+          "to": "archived",
+          "label": "Archive",
+          "action_label_key": "documents.workflows.document_status_workflow.transitions.signed_archived.label",
+          "label_key": "documents.workflows.document_status_workflow.transitions.signed_archived.label"
+        }
       ],
       "required_fields_by_state": {
-        "approved": ["biz_document.name", "biz_document.document_type"],
-        "archived": ["biz_document.archive_reason"]
+        "approved": [
+          "biz_document.name",
+          "biz_document.document_type"
+        ],
+        "archived": [
+          "biz_document.archive_reason"
+        ]
       }
     }
   ],
   "triggers": [
-    { "id": "biz_documents.record.biz_document.created", "label": "Document created", "event": "record.created", "entity_id": "entity.biz_document" },
-    { "id": "biz_documents.record.biz_document.updated", "label": "Document updated", "event": "record.updated", "entity_id": "entity.biz_document" },
-    { "id": "biz_documents.workflow.biz_document.status_changed", "label": "Document status changed", "event": "workflow.status_changed", "entity_id": "entity.biz_document", "status_field": "biz_document.status" },
-    { "id": "biz_documents.action.document_new.clicked", "label": "New Document clicked", "event": "action.clicked", "action_id": "action.document_new" },
-    { "id": "biz_documents.action.document_approve.clicked", "label": "Approve clicked", "event": "action.clicked", "action_id": "action.document_approve" },
-    { "id": "biz_documents.action.document_mark_sent.clicked", "label": "Mark Sent clicked", "event": "action.clicked", "action_id": "action.document_mark_sent" },
-    { "id": "biz_documents.action.document_mark_signed.clicked", "label": "Mark Signed clicked", "event": "action.clicked", "action_id": "action.document_mark_signed" },
-    { "id": "biz_documents.action.document_open_archive_modal.clicked", "label": "Archive clicked", "event": "action.clicked", "action_id": "action.document_open_archive_modal" }
+    {
+      "id": "biz_documents.record.biz_document.created",
+      "label": "Document created",
+      "label_key": "documents.triggers.document_created",
+      "event": "record.created",
+      "entity_id": "entity.biz_document"
+    },
+    {
+      "id": "biz_documents.record.biz_document.updated",
+      "label": "Document updated",
+      "label_key": "documents.triggers.document_updated",
+      "event": "record.updated",
+      "entity_id": "entity.biz_document"
+    },
+    {
+      "id": "biz_documents.workflow.biz_document.status_changed",
+      "label": "Document status changed",
+      "label_key": "documents.triggers.document_status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.biz_document",
+      "status_field": "biz_document.status"
+    },
+    {
+      "id": "biz_documents.action.document_new.clicked",
+      "label": "New Document clicked",
+      "label_key": "documents.triggers.new_document_clicked",
+      "event": "action.clicked",
+      "action_id": "action.document_new"
+    },
+    {
+      "id": "biz_documents.action.document_approve.clicked",
+      "label": "Approve clicked",
+      "label_key": "documents.triggers.approve_clicked",
+      "event": "action.clicked",
+      "action_id": "action.document_approve"
+    },
+    {
+      "id": "biz_documents.action.document_mark_sent.clicked",
+      "label": "Mark Sent clicked",
+      "label_key": "documents.triggers.mark_sent_clicked",
+      "event": "action.clicked",
+      "action_id": "action.document_mark_sent"
+    },
+    {
+      "id": "biz_documents.action.document_mark_signed.clicked",
+      "label": "Mark Signed clicked",
+      "label_key": "documents.triggers.mark_signed_clicked",
+      "event": "action.clicked",
+      "action_id": "action.document_mark_signed"
+    },
+    {
+      "id": "biz_documents.action.document_open_archive_modal.clicked",
+      "label": "Archive clicked",
+      "label_key": "documents.triggers.archive_clicked",
+      "event": "action.clicked",
+      "action_id": "action.document_open_archive_modal"
+    }
   ],
   "transformations": []
 }

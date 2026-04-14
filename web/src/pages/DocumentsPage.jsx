@@ -8,10 +8,12 @@ import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import { buildSavedViewDomain } from "../utils/savedViews.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 export default function DocumentsPage() {
   const { pushToast } = useToast();
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -29,7 +31,7 @@ export default function DocumentsPage() {
       const res = await apiFetch("/documents/templates");
       setItems(res.templates || []);
     } catch (err) {
-      pushToast("error", err.message || "Failed to load templates");
+      pushToast("error", err.message || t("settings.documents_templates_page.load_failed"));
     } finally {
       setLoading(false);
     }
@@ -38,7 +40,7 @@ export default function DocumentsPage() {
   async function createTemplate() {
     try {
       const payload = {
-        name: "Untitled Document",
+        name: t("settings.documents_templates_page.untitled_template"),
         html: "<p>Hello</p>",
         format: "html",
       };
@@ -48,7 +50,7 @@ export default function DocumentsPage() {
         navigate(`/documents/templates/${res.template.id}`);
       }
     } catch (err) {
-      pushToast("error", err.message || "Failed to create template");
+      pushToast("error", err.message || t("settings.documents_templates_page.create_failed"));
     }
   }
 
@@ -59,12 +61,12 @@ export default function DocumentsPage() {
       await Promise.all(selectedIds.map((id) => apiFetch(`/documents/templates/${id}`, { method: "DELETE" })));
       setSelectedIds([]);
       setShowDeleteModal(false);
-      pushToast("success", selectedIds.length === 1 ? "Template deleted." : "Templates deleted.");
+      pushToast("success", selectedIds.length === 1 ? t("settings.documents_templates_page.deleted_one") : t("settings.documents_templates_page.deleted_many"));
       await load();
     } catch (err) {
-      const detail = err?.message || "Failed to delete templates";
+      const detail = err?.message || t("settings.documents_templates_page.delete_failed");
       if (err?.status === 404 || err?.status === 405) {
-        pushToast("error", `${detail}. If this endpoint was just added, restart the API server.`);
+        pushToast("error", `${detail}. ${t("settings.documents_templates_page.restart_api_hint")}`);
       } else {
         pushToast("error", detail);
       }
@@ -74,23 +76,23 @@ export default function DocumentsPage() {
   }
 
   const templateRows = useMemo(() => {
-    return items.map((t) => ({
-      id: t.id,
-      name: t.name || t.id,
-      description: t.description || "",
-      status: t.is_active === false ? "Inactive" : "Active",
-      updated_at: t.updated_at || t.created_at || "—",
+    return items.map((template) => ({
+      id: template.id,
+      name: template.name || template.id,
+      description: template.description || "",
+      status: template.is_active === false ? t("common.inactive") : t("common.active"),
+      updated_at: template.updated_at || template.created_at || "—",
     }));
-  }, [items]);
+  }, [items, t]);
 
   const listFieldIndex = useMemo(
     () => ({
-      "doc.name": { id: "doc.name", label: "Name" },
-      "doc.description": { id: "doc.description", label: "Description" },
-      "doc.status": { id: "doc.status", label: "Status" },
-      "doc.updated_at": { id: "doc.updated_at", label: "Updated" },
+      "doc.name": { id: "doc.name", label: t("common.name") },
+      "doc.description": { id: "doc.description", label: t("common.description") },
+      "doc.status": { id: "doc.status", label: t("common.status") },
+      "doc.updated_at": { id: "doc.updated_at", label: t("common.updated") },
     }),
-    []
+    [t]
   );
 
   const listView = useMemo(
@@ -121,11 +123,11 @@ export default function DocumentsPage() {
 
   const listFilters = useMemo(
     () => [
-      { id: "all", label: "All", domain: null },
-      { id: "active", label: "Active", domain: { op: "eq", field: "doc.status", value: "Active" } },
-      { id: "inactive", label: "Inactive", domain: { op: "eq", field: "doc.status", value: "Inactive" } },
+      { id: "all", label: t("common.all"), domain: null },
+      { id: "active", label: t("common.active"), domain: { op: "eq", field: "doc.status", value: t("common.active") } },
+      { id: "inactive", label: t("common.inactive"), domain: { op: "eq", field: "doc.status", value: t("common.inactive") } },
     ],
-    []
+    [t]
   );
 
   const activeListFilter = useMemo(
@@ -139,12 +141,12 @@ export default function DocumentsPage() {
 
   const filterableFields = useMemo(
     () => [
-      { id: "doc.name", label: "Name" },
-      { id: "doc.description", label: "Description" },
-      { id: "doc.status", label: "Status" },
-      { id: "doc.updated_at", label: "Updated" },
+      { id: "doc.name", label: t("common.name") },
+      { id: "doc.description", label: t("common.description") },
+      { id: "doc.status", label: t("common.status") },
+      { id: "doc.updated_at", label: t("common.updated") },
     ],
-    []
+    [t]
   );
 
   useEffect(() => {
@@ -157,12 +159,12 @@ export default function DocumentsPage() {
         <div className={DESKTOP_PAGE_SHELL_BODY}>
           <div className="space-y-4 md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {loading ? (
-              <div className="text-sm opacity-70">Loading…</div>
+              <div className="text-sm opacity-70">{t("common.loading")}</div>
             ) : (
               <div className="flex flex-col gap-4 min-w-0">
                 <SystemListToolbar
-                  title="Document Templates"
-                  createTooltip="New Template"
+                  title={t("settings.index.blocks.documents_templates.title")}
+                  createTooltip={t("settings.documents_templates_page.new_template")}
                   onCreate={createTemplate}
                   searchValue={search}
                   onSearchChange={(v) => {
@@ -207,12 +209,12 @@ export default function DocumentsPage() {
                   rightActions={
                     selectedIds.length > 0 ? (
                       <div className="dropdown dropdown-end">
-                        <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                        <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label={t("settings.selection_actions")}>
                           <MoreHorizontal className="h-4 w-4" />
                         </button>
                         <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
                           <li className="menu-title">
-                            <span>Selection</span>
+                            <span>{t("settings.selection")}</span>
                           </li>
                           {selectedIds.length === 1 ? (
                             <li>
@@ -220,7 +222,7 @@ export default function DocumentsPage() {
                                 type="button"
                                 onClick={() => navigate(`/documents/templates/${selectedIds[0]}`)}
                               >
-                                Open template
+                                {t("settings.documents_templates_page.open_template")}
                               </button>
                             </li>
                           ) : null}
@@ -231,7 +233,7 @@ export default function DocumentsPage() {
                               onClick={() => setShowDeleteModal(true)}
                               disabled={selectionActionBusy === "delete"}
                             >
-                              {selectedIds.length === 1 ? "Delete" : "Delete selected"}
+                              {selectedIds.length === 1 ? t("common.delete") : t("settings.documents_templates_page.delete_selected", { count: selectedIds.length })}
                             </button>
                           </li>
                         </ul>
@@ -282,10 +284,10 @@ export default function DocumentsPage() {
         <div className="modal modal-open">
           <div className="modal-box">
             <h3 className="font-semibold text-lg">
-              {selectedIds.length === 1 ? "Delete template?" : `Delete ${selectedIds.length} templates?`}
+              {selectedIds.length === 1 ? t("settings.documents_templates_page.delete_title_one") : t("settings.documents_templates_page.delete_title_many", { count: selectedIds.length })}
             </h3>
             <p className="py-3 text-sm opacity-70">
-              This will permanently remove the selected document {selectedIds.length === 1 ? "template" : "templates"}.
+              {selectedIds.length === 1 ? t("settings.documents_templates_page.delete_body_one") : t("settings.documents_templates_page.delete_body_many")}
             </p>
             <div className="modal-action">
               <button
@@ -294,7 +296,7 @@ export default function DocumentsPage() {
                 onClick={() => setShowDeleteModal(false)}
                 disabled={selectionActionBusy === "delete"}
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 type="button"
@@ -302,14 +304,16 @@ export default function DocumentsPage() {
                 onClick={deleteSelectedTemplates}
                 disabled={selectionActionBusy === "delete"}
               >
-                {selectionActionBusy === "delete" ? "Deleting..." : (selectedIds.length === 1 ? "Delete" : "Delete selected")}
+                {selectionActionBusy === "delete"
+                  ? t("common.deleting")
+                  : (selectedIds.length === 1 ? t("common.delete") : t("settings.documents_templates_page.delete_selected", { count: selectedIds.length }))}
               </button>
             </div>
           </div>
           <button
             type="button"
             className="modal-backdrop"
-            aria-label="Close"
+            aria-label={t("common.close")}
             onClick={() => {
               if (selectionActionBusy !== "delete") setShowDeleteModal(false);
             }}

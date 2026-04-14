@@ -6,6 +6,8 @@ import { useToast } from "../components/Toast.jsx";
 import { getInitialTheme, setTheme } from "../theme/theme.js";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import { supabase } from "../supabase";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
+import AppSelect from "../components/AppSelect.jsx";
 
 const TAB_IDS = ["appearance", "profile"];
 
@@ -30,6 +32,7 @@ function Section({ title, description, children }) {
 }
 
 export default function SettingsSettingsPage({ user, onSignOut }) {
+  const { t, reload: reloadI18n, availableLocales, availableTimezones, userPrefs, workspacePrefs, workspaceKey } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = normalizeTabId(searchParams.get("tab"));
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -45,6 +48,9 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
   const [profileLastName, setProfileLastName] = useState("");
   const [profilePhone, setProfilePhone] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
+  const [userLocale, setUserLocale] = useState("");
+  const [userTimezone, setUserTimezone] = useState("");
+  const [regionalSaving, setRegionalSaving] = useState(false);
 
   useEffect(() => {
     // Initialize profile fields from auth metadata.
@@ -95,6 +101,8 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
           setProfileLastName(prefLast);
           setProfilePhone(prefPhone);
         }
+        setUserLocale(String(res?.user?.locale || "").trim());
+        setUserTimezone(String(res?.user?.timezone || "").trim());
       } catch {
         // fall back to local values
       }
@@ -102,7 +110,7 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [workspaceKey]);
 
   useEffect(() => {
     const normalized = normalizeTheme(theme);
@@ -132,7 +140,7 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
   async function handleClearCaches() {
     clearCaches();
     await actions.refresh({ force: true });
-    pushToast("success", "Caches cleared");
+    pushToast("success", t("settings.preferences.caches_cleared"));
   }
 
   async function handleSaveProfile(event) {
@@ -163,20 +171,40 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
           phone,
         },
       });
-      pushToast("success", "Profile updated");
+      pushToast("success", t("settings.profile_updated"));
     } catch (err) {
-      pushToast("error", err?.message || "Failed to update profile");
+      pushToast("error", err?.message || t("settings.profile_update_failed"));
     } finally {
       setProfileSaving(false);
     }
   }
 
+  async function handleSaveRegional(event) {
+    event?.preventDefault?.();
+    if (regionalSaving) return;
+    setRegionalSaving(true);
+    try {
+      await setUiPrefs({
+        user: {
+          locale: userLocale || null,
+          timezone: userTimezone || null,
+        },
+      });
+      await reloadI18n();
+      pushToast("success", t("settings.profile_language_saved"));
+    } catch (err) {
+      pushToast("error", err?.message || t("settings.profile_language_save_failed"));
+    } finally {
+      setRegionalSaving(false);
+    }
+  }
+
   const tabs = useMemo(
     () => [
-      { id: "profile", label: "Profile" },
-      { id: "appearance", label: "Appearance" },
+      { id: "profile", label: t("settings.profile_tab") },
+      { id: "appearance", label: t("settings.appearance_tab") },
     ],
-    []
+    [t]
   );
 
   return (
@@ -188,10 +216,10 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
     >
       {activeTab === "appearance" && (
         <div className="space-y-4">
-          <Section title="Theme" description="Light / dark mode.">
+          <Section title={t("settings.theme_title")} description={t("settings.theme_description")}>
             <label className="label cursor-pointer gap-3 justify-start">
               <span className="label-text text-sm">
-                {theme === "dark" ? "Dark" : "Light"}
+                {theme === "dark" ? t("settings.theme_dark") : t("settings.theme_light")}
               </span>
               <input
                 type="checkbox"
@@ -201,55 +229,119 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
               />
             </label>
           </Section>
+
+          <Section title={t("settings.language_title")} description={t("settings.language_description")}>
+            <form className="space-y-4" onSubmit={handleSaveRegional}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <div className="text-sm opacity-70">{t("settings.language_label")}</div>
+                  <AppSelect
+                    className="select select-bordered select-sm w-full mt-1"
+                    value={userLocale}
+                    onChange={(event) => setUserLocale(event.target.value)}
+                    disabled={regionalSaving}
+                    aria-label={t("settings.language_label")}
+                  >
+                    <option value="">{t("settings.use_workspace_language")}</option>
+                    {availableLocales.map((locale) => (
+                      <option key={locale.code} value={locale.code}>
+                        {locale.label}
+                      </option>
+                    ))}
+                  </AppSelect>
+                </div>
+                <div>
+                  <div className="text-sm opacity-70">{t("settings.timezone_label")}</div>
+                  <AppSelect
+                    className="select select-bordered select-sm w-full mt-1"
+                    value={userTimezone}
+                    onChange={(event) => setUserTimezone(event.target.value)}
+                    disabled={regionalSaving}
+                    aria-label={t("settings.timezone_label")}
+                  >
+                    <option value="">{t("settings.use_workspace_timezone")}</option>
+                    {availableTimezones.map((timezone) => (
+                      <option key={timezone} value={timezone}>
+                        {timezone}
+                      </option>
+                    ))}
+                  </AppSelect>
+                </div>
+              </div>
+              <div className="text-sm opacity-70">
+                {t("settings.personal_override_hint", {
+                  locale: workspacePrefs?.default_locale || "en-NZ",
+                  timezone: workspacePrefs?.default_timezone || "UTC",
+                })}
+              </div>
+              <div className="text-sm opacity-70">
+                {t("settings.current_workspace_defaults", {
+                  locale: workspacePrefs?.default_locale || "en-NZ",
+                  timezone: workspacePrefs?.default_timezone || "UTC",
+                })}
+              </div>
+              <div className="text-sm opacity-70">
+                {t("settings.current_user_overrides", {
+                  locale: userPrefs?.locale || t("settings.none"),
+                  timezone: userPrefs?.timezone || t("settings.none"),
+                })}
+              </div>
+              <div>
+                <button className="btn btn-primary btn-sm" type="submit" disabled={regionalSaving}>
+                  {regionalSaving ? t("common.saving") : t("common.save")}
+                </button>
+              </div>
+            </form>
+          </Section>
         </div>
       )}
 
       {activeTab === "profile" && (
         <div className="space-y-4">
-          <Section title="Profile" description="Basic account and contact details.">
+          <Section title={t("settings.profile_title")} description={t("settings.profile_description")}>
             <form className="space-y-4" onSubmit={handleSaveProfile}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <div className="text-sm opacity-70">First name</div>
+                  <div className="text-sm opacity-70">{t("settings.first_name")}</div>
                   <input
                     className="input input-bordered input-sm w-full mt-1"
                     value={profileFirstName}
                     onChange={(e) => setProfileFirstName(e.target.value)}
-                    placeholder="First name"
+                    placeholder={t("settings.first_name")}
                     disabled={profileSaving}
                     autoComplete="given-name"
                   />
                 </div>
                 <div>
-                  <div className="text-sm opacity-70">Last name</div>
+                  <div className="text-sm opacity-70">{t("settings.last_name")}</div>
                   <input
                     className="input input-bordered input-sm w-full mt-1"
                     value={profileLastName}
                     onChange={(e) => setProfileLastName(e.target.value)}
-                    placeholder="Last name"
+                    placeholder={t("settings.last_name")}
                     disabled={profileSaving}
                     autoComplete="family-name"
                   />
                 </div>
                 <div>
-                  <div className="text-sm opacity-70">Phone</div>
+                  <div className="text-sm opacity-70">{t("settings.phone")}</div>
                   <input
                     className="input input-bordered input-sm w-full mt-1"
                     value={profilePhone}
                     onChange={(e) => setProfilePhone(e.target.value)}
-                    placeholder="Phone"
+                    placeholder={t("settings.phone")}
                     disabled={profileSaving}
                     autoComplete="tel"
                   />
                 </div>
                 <div>
-                  <div className="text-sm opacity-70">Email</div>
+                  <div className="text-sm opacity-70">{t("settings.email")}</div>
                   <input
                     className="input input-bordered input-sm w-full mt-1"
                     value={email || ""}
                     disabled
                     readOnly
-                    placeholder="Email"
+                    placeholder={t("settings.email")}
                     autoComplete="email"
                   />
                 </div>
@@ -257,22 +349,22 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
 
               <div className="flex flex-wrap gap-2">
                 <button className="btn btn-primary btn-sm" type="submit" disabled={profileSaving}>
-                  {profileSaving ? "Saving..." : "Save changes"}
+                  {profileSaving ? t("common.saving") : t("settings.save_changes")}
                 </button>
               </div>
             </form>
           </Section>
 
-          <Section title="Account" description="Session and local data controls.">
+          <Section title={t("settings.account_title")} description={t("settings.account_description")}>
             <div className="flex flex-wrap gap-2">
               <button className="btn btn-outline btn-sm" onClick={handleSignOut} type="button">
-                Sign out
+                {t("settings.sign_out")}
               </button>
               <Link className="btn btn-outline btn-sm" to="/settings/password">
-                Change password
+                {t("settings.change_password")}
               </Link>
               <button className="btn btn-sm" onClick={handleClearCaches} type="button">
-                Clear local caches
+                {t("settings.clear_local_caches")}
               </button>
             </div>
           </Section>

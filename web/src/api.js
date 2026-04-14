@@ -1,4 +1,6 @@
 import { supabase } from "./supabase";
+import { localizeManifest } from "./i18n/manifest.js";
+import { getI18nCacheKey } from "./i18n/runtime.js";
 
 const RAW_API_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000").trim();
 const IS_DEV_PROXY_CANDIDATE =
@@ -239,6 +241,27 @@ export function compileManifest(manifest) {
     if (view?.id) viewById.set(view.id, view);
   }
   return { entityById, fieldByEntity, viewById };
+}
+
+function compiledManifestCacheKey(manifestHash, moduleId = "") {
+  return `${manifestHash || moduleId || "manifest"}:${getI18nCacheKey()}`;
+}
+
+async function localizeManifestResult(res, moduleId = "") {
+  const manifest = res?.manifest;
+  if (!manifest || typeof manifest !== "object") return res;
+  const localizedManifest = await localizeManifest(manifest);
+  const compiledKey = compiledManifestCacheKey(res?.manifest_hash, moduleId);
+  const compiled = compiledByHash.get(compiledKey) || compileManifest(localizedManifest);
+  if (!compiledByHash.has(compiledKey)) {
+    compiledByHash.set(compiledKey, compiled);
+  }
+  return { ...res, manifest: localizedManifest, compiled };
+}
+
+function resolveLocalizedPage(manifest, pageId) {
+  const pages = Array.isArray(manifest?.pages) ? manifest.pages : [];
+  return pages.find((page) => page?.id === pageId) || null;
 }
 
 export async function apiFetch(path, options = {}) {
@@ -611,15 +634,7 @@ export async function setModuleOrder(moduleId, displayOrder) {
 export async function getManifest(moduleId) {
   if (isOctoAiSandboxActive()) {
     const res = await apiFetch(`/modules/${moduleId}/manifest`, { cacheTtl: 0 });
-    const manifestHash = res.manifest_hash;
-    if (manifestHash) {
-      const compiled = compiledByHash.get(manifestHash) || compileManifest(res.manifest);
-      if (!compiledByHash.has(manifestHash)) {
-        compiledByHash.set(manifestHash, compiled);
-      }
-      return { ...res, compiled };
-    }
-    return res;
+    return localizeManifestResult(res, moduleId);
   }
   const now = Date.now();
   const scopedModuleId = workspaceScopedKey(moduleId);
@@ -639,23 +654,16 @@ export async function getManifest(moduleId) {
     manifestCacheTs.set(scopedModuleId, now);
     return res;
   }
-  const request = apiFetch(`/modules/${moduleId}/manifest`).then((res) => {
-    const manifestHash = res.manifest_hash;
+  const request = apiFetch(`/modules/${moduleId}/manifest`).then(async (res) => {
+    const result = await localizeManifestResult(res, moduleId);
+    const manifestHash = result.manifest_hash;
     if (manifestHash) {
-      const compiled = compiledByHash.get(manifestHash) || compileManifest(res.manifest);
-      if (!compiledByHash.has(manifestHash)) {
-        compiledByHash.set(manifestHash, compiled);
-      }
-      const result = { ...res, compiled };
       manifestByHash.set(manifestHash, result);
       manifestHashByModule.set(scopedModuleId, manifestHash);
-      manifestCache.set(scopedModuleId, result);
-      manifestCacheTs.set(scopedModuleId, now);
-      return result;
     }
-    manifestCache.set(scopedModuleId, res);
+    manifestCache.set(scopedModuleId, result);
     manifestCacheTs.set(scopedModuleId, now);
-    return res;
+    return result;
   }).finally(() => {
     manifestInFlight.delete(scopedModuleId);
   });
@@ -686,21 +694,24 @@ export async function getPageBootstrap({
   if (searchFields) params.set("search_fields", searchFields);
   if (domain) params.set("domain", domain);
   const res = await apiFetch(`/page/bootstrap?${params.toString()}`, { cacheTtl: isOctoAiSandboxActive() ? 0 : undefined });
-  const manifestHash = res?.manifest_hash;
-  const manifest = res?.manifest;
+  const localized = await localizeManifestResult(res, moduleId);
+  const manifestHash = localized?.manifest_hash;
+  const manifest = localized?.manifest;
   if (moduleId && manifestHash && manifest && typeof manifest === "object") {
     const scopedModuleId = workspaceScopedKey(moduleId);
-    const compiled = res?.compiled || compiledByHash.get(manifestHash) || compileManifest(manifest);
-    if (!compiledByHash.has(manifestHash)) {
-      compiledByHash.set(manifestHash, compiled);
-    }
+    const compiled = localized?.compiled || compileManifest(manifest);
     const manifestResult = { module_id: moduleId, manifest_hash: manifestHash, manifest, compiled };
     manifestByHash.set(manifestHash, manifestResult);
     manifestHashByModule.set(scopedModuleId, manifestHash);
     manifestCache.set(scopedModuleId, manifestResult);
     manifestCacheTs.set(scopedModuleId, Date.now());
+    return {
+      ...localized,
+      compiled,
+      page: resolveLocalizedPage(manifest, localized?.page_id),
+    };
   }
-  return res;
+  return localized;
 }
 
 export function invalidateManifestCache(moduleId) {
@@ -710,9 +721,22 @@ export function invalidateManifestCache(moduleId) {
   const hash = manifestHashByModule.get(scopedModuleId);
   if (hash) {
     manifestByHash.delete(hash);
-    compiledByHash.delete(hash);
+    for (const key of compiledByHash.keys()) {
+      if (key.startsWith(`${hash}:`)) {
+        compiledByHash.delete(key);
+      }
+    }
   }
   manifestHashByModule.delete(scopedModuleId);
+}
+
+export function invalidateManifestCaches() {
+  manifestCache.clear();
+  manifestCacheTs.clear();
+  manifestHashByModule.clear();
+  manifestByHash.clear();
+  compiledByHash.clear();
+  manifestInFlight.clear();
 }
 
 export function clearCaches() {
@@ -723,11 +747,7 @@ export function clearCaches() {
   requestCache.clear();
   requestCacheTs.clear();
   requestInFlight.clear();
-  manifestCache.clear();
-  manifestCacheTs.clear();
-  manifestHashByModule.clear();
-  manifestByHash.clear();
-  compiledByHash.clear();
+  invalidateManifestCaches();
 }
 
 export async function listStudio2Modules() {

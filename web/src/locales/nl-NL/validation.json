@@ -1,0 +1,8 @@
+{
+  "required": "Verplicht",
+  "missing_fields": "Ontbreekt: {{fields}}",
+  "requirements_not_met": "Vereisten niet gehaald.",
+  "title": "Validatie",
+  "draft_valid": "Concept is geldig",
+  "fix_with_ai": "Met AI herstellen"
+}

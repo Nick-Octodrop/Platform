@@ -6,6 +6,7 @@ import NotificationBell from "../components/NotificationBell.jsx";
 import { apiFetch, getManifest, listStudio2Modules } from "../api.js";
 import { appendOctoAiFrameParams, buildTargetRoute } from "../apps/appShellUtils.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import { readStudioPreviewManifest } from "../pages/studio/studioPreviewStore.js";
 
 function isUuidLike(value) {
@@ -13,24 +14,24 @@ function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text);
 }
 
-function readCachedModuleName(moduleId) {
-  if (typeof window === "undefined" || !moduleId) return "";
+function readCachedModuleName(cacheKey) {
+  if (typeof window === "undefined" || !cacheKey) return "";
   try {
     const raw = window.localStorage.getItem("octo:module-name-cache");
     const parsed = raw ? JSON.parse(raw) : {};
-    const text = String(parsed?.[moduleId] || "").trim();
+    const text = String(parsed?.[cacheKey] || "").trim();
     return text;
   } catch {
     return "";
   }
 }
 
-function writeCachedModuleName(moduleId, moduleName) {
-  if (typeof window === "undefined" || !moduleId || !moduleName) return;
+function writeCachedModuleName(cacheKey, moduleName) {
+  if (typeof window === "undefined" || !cacheKey || !moduleName) return;
   try {
     const raw = window.localStorage.getItem("octo:module-name-cache");
     const parsed = raw ? JSON.parse(raw) : {};
-    parsed[moduleId] = moduleName;
+    parsed[cacheKey] = moduleName;
     window.localStorage.setItem("octo:module-name-cache", JSON.stringify(parsed));
   } catch {
     // ignore storage failures
@@ -137,6 +138,7 @@ function buildRecordLabel(record, { preferredFields = [], entity = null, fallbac
 }
 
 export default function TopNav({ user, onSignOut, frameMode = false }) {
+  const { t, locale, version, workspaceKey } = useI18n();
   const isMobile = useMediaQuery("(max-width: 768px)");
   const location = useLocation();
   const { moduleId } = useParams();
@@ -177,45 +179,45 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
   const isDocTemplateStudio = location.pathname.startsWith("/documents/templates/");
   const isSettingsDocumentNumbering = location.pathname.startsWith("/settings/document-numbering");
   const settingsLeafLabel = isSettingsSettings || isSettingsPreferences
-    ? "Profile"
+    ? t("settings.profile_title")
     : isSettingsPassword
-      ? "Password"
+      ? t("settings.change_password")
     : isSettingsUsers
-      ? "Users"
+      ? t("settings.users.workspace_users_title")
     : isSettingsAccessPolicies
-        ? "Access Policies"
+        ? t("settings.access_policies.title")
       : isSettingsApiCredentials
-        ? "API Credentials"
+        ? t("settings.api_credentials.title")
       : isSettingsWorkspaces
-        ? "Workspaces"
+        ? t("settings.workspaces_title")
         : isSettingsSecrets
-          ? "Secrets"
+          ? t("settings.secrets.title")
           : isSettingsWebhookSubscriptions
-            ? "Webhook Subscriptions"
+            ? t("settings.webhook_subscriptions.title")
           : isDiagnostics
-            ? "Diagnostics"
+            ? t("settings.diagnostics.title")
             : isAudit
-              ? "Audit"
+              ? t("navigation.audit")
               : isSecurity
-                ? "Security"
+                ? t("settings.security_center.title")
               : isEmailHome
-                  ? "Email"
+                  ? t("settings.email")
                   : isEmailConnections
-                    ? "Email Connections"
+                    ? t("settings.email_connections.title")
                       : isEmailTemplates
-                        ? "Email Templates"
-                        : isEmailOutbox
-                          ? "Email Outbox"
+                        ? t("settings.email_templates.title")
+                          : isEmailOutbox
+                          ? t("settings.email_outbox.title")
                           : isEmailTemplateStudio
-                            ? "Email Template"
+                            ? t("settings.email_template")
                             : isDocsHome
-                            ? "Documents"
+                            ? t("settings.documents")
                             : isDocsTemplates
-                              ? "Document Templates"
+                              ? t("settings.document_template")
                                 : isDocTemplateStudio
-                                  ? "Document Template"
+                                  ? t("settings.document_template")
                                   : isSettingsDocumentNumbering
-                                    ? "Document Numbering"
+                                    ? t("settings.document_numbering.title")
                                   : "";
   const isSettingsRoute = isSettingsRoot
     || isSettingsSettings
@@ -288,8 +290,8 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
   const [documentNumberingCrumbLabel, setDocumentNumberingCrumbLabel] = useState("");
   const [mobileAppMenuOpen, setMobileAppMenuOpen] = useState(false);
   const [mobileHomeMenuOpen, setMobileHomeMenuOpen] = useState(false);
-  const accountEmail = user?.email || "Account";
-  const accountLabel = user?.email ? user.email.split("@")[0] : "Account";
+  const accountEmail = user?.email || t("settings.account_title");
+  const accountLabel = user?.email ? user.email.split("@")[0] : t("settings.account_title");
 
   useLayoutEffect(() => {
     if (isStudioPreviewRoute && moduleId) {
@@ -297,7 +299,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
       return;
     }
     setManifest(null);
-  }, [moduleId, isAppRoute, isStudioPreviewRoute]);
+  }, [moduleId, isAppRoute, isStudioPreviewRoute, version, workspaceKey]);
 
   useLayoutEffect(() => {
     setRecordCrumbLabel("");
@@ -343,7 +345,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
         window.removeEventListener("message", handlePreviewMessage);
       }
     };
-  }, [isAppRoute, isStudioPreviewRoute, moduleId]);
+  }, [isAppRoute, isStudioPreviewRoute, moduleId, version, workspaceKey]);
 
   useEffect(() => {
     if (!isStudioRoute) return;
@@ -389,8 +391,12 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     };
   }, [isStudioRoute]);
 
-  const cachedModuleName = useMemo(() => readCachedModuleName(moduleId), [moduleId]);
-  const appName = manifest?.module?.name || cachedModuleName || "App";
+  const moduleNameCacheKey = useMemo(() => {
+    if (!moduleId) return "";
+    return [workspaceKey || "default", locale || "default", moduleId].join(":");
+  }, [locale, moduleId, workspaceKey]);
+  const cachedModuleName = useMemo(() => readCachedModuleName(moduleNameCacheKey), [moduleNameCacheKey]);
+  const appName = manifest?.module?.name || cachedModuleName || t("common.app");
   const navGroups = Array.isArray(manifest?.app?.nav) ? manifest.app.nav : [];
   const appHomeTarget = manifest?.app?.home || null;
   const appHomeRoute = appHomeTarget ? buildTargetRoute(moduleId, appHomeTarget) : null;
@@ -440,12 +446,12 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
         const text = buildRecordLabel(record, {
           preferredFields: [recordViewTitleField, recordTitleField],
           entity: recordEntityDef,
-          fallback: currentPageDef?.title || "Record",
+          fallback: currentPageDef?.title || t("common.record"),
           recordId: recordIdParam,
         });
         setRecordCrumbLabel(text);
       } catch {
-        if (mounted) setRecordCrumbLabel(currentPageDef?.title || "Record");
+        if (mounted) setRecordCrumbLabel(currentPageDef?.title || t("common.record"));
       }
     }
     loadRecordCrumb();
@@ -456,9 +462,9 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
 
   useEffect(() => {
     const moduleName = String(manifest?.module?.name || "").trim();
-    if (!moduleId || !moduleName) return;
-    writeCachedModuleName(moduleId, moduleName);
-  }, [moduleId, manifest?.module?.name]);
+    if (!moduleNameCacheKey || !moduleName) return;
+    writeCachedModuleName(moduleNameCacheKey, moduleName);
+  }, [manifest?.module?.name, moduleNameCacheKey]);
 
   useEffect(() => {
     let mounted = true;
@@ -469,11 +475,11 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
           if (!mounted) return;
           const automation = res?.automation || {};
           const label = String(automation?.name || automationIdParam || "").trim();
-          setAutomationCrumbLabel(label || "Automation");
+          setAutomationCrumbLabel(label || t("navigation.automations", {}, { defaultValue: "Automation" }));
           setAutomationCrumbId(String(automation?.id || automationIdParam || "").trim());
         } catch {
           if (mounted) {
-            setAutomationCrumbLabel("Automation");
+            setAutomationCrumbLabel(t("navigation.automations", {}, { defaultValue: "Automation" }));
             setAutomationCrumbId(automationIdParam);
           }
         }
@@ -487,7 +493,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
           if (!mounted) return;
           const run = res?.run || {};
           const runLabel = String(run?.id || automationRunIdParam || "").trim();
-          setAutomationRunCrumbLabel(runLabel ? `Run ${runLabel.slice(0, 8)}` : "Run");
+          setAutomationRunCrumbLabel(runLabel ? `${t("common.run")} ${runLabel.slice(0, 8)}` : t("common.run"));
           const parentAutomationId = String(run?.automation_id || "").trim();
           if (parentAutomationId) {
             setAutomationCrumbId(parentAutomationId);
@@ -496,18 +502,18 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
               if (!mounted) return;
               const automation = automationRes?.automation || {};
               const label = String(automation?.name || parentAutomationId || "").trim();
-              setAutomationCrumbLabel(label || "Automation");
+              setAutomationCrumbLabel(label || t("navigation.automations", {}, { defaultValue: "Automation" }));
             } catch {
-              if (mounted) setAutomationCrumbLabel("Automation");
+              if (mounted) setAutomationCrumbLabel(t("navigation.automations", {}, { defaultValue: "Automation" }));
             }
           } else {
-            setAutomationCrumbLabel("Automation");
+            setAutomationCrumbLabel(t("navigation.automations", {}, { defaultValue: "Automation" }));
             setAutomationCrumbId("");
           }
         } catch {
           if (mounted) {
-            setAutomationCrumbLabel("Automation");
-            setAutomationRunCrumbLabel("Run");
+            setAutomationCrumbLabel(t("navigation.automations", {}, { defaultValue: "Automation" }));
+            setAutomationRunCrumbLabel(t("common.run"));
             setAutomationCrumbId("");
           }
         }
@@ -523,7 +529,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     return () => {
       mounted = false;
     };
-  }, [automationIdParam, automationRunIdParam]);
+  }, [automationIdParam, automationRunIdParam, t]);
 
   useEffect(() => {
     let mounted = true;
@@ -537,16 +543,16 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
         if (!mounted) return;
         const profiles = Array.isArray(res?.profiles) ? res.profiles : [];
         const profile = profiles.find((item) => String(item?.id || "") === accessPolicyIdParam);
-        setAccessPolicyCrumbLabel(String(profile?.name || accessPolicyIdParam || "").trim() || "Access Profile");
+        setAccessPolicyCrumbLabel(String(profile?.name || accessPolicyIdParam || "").trim() || t("settings.access_profile"));
       } catch {
-        if (mounted) setAccessPolicyCrumbLabel("Access Profile");
+        if (mounted) setAccessPolicyCrumbLabel(t("settings.access_profile"));
       }
     }
     loadAccessPolicyCrumb();
     return () => {
       mounted = false;
     };
-  }, [accessPolicyIdParam]);
+  }, [accessPolicyIdParam, t]);
 
   useEffect(() => {
     let mounted = true;
@@ -560,16 +566,16 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
         if (!mounted) return;
         const items = Array.isArray(res?.api_credentials) ? res.api_credentials : [];
         const item = items.find((entry) => String(entry?.id || "") === apiCredentialIdParam);
-        setApiCredentialCrumbLabel(String(item?.name || apiCredentialIdParam || "").trim() || "API Credential");
+        setApiCredentialCrumbLabel(String(item?.name || apiCredentialIdParam || "").trim() || t("settings.api_credential"));
       } catch {
-        if (mounted) setApiCredentialCrumbLabel("API Credential");
+        if (mounted) setApiCredentialCrumbLabel(t("settings.api_credential"));
       }
     }
     loadApiCredentialCrumb();
     return () => {
       mounted = false;
     };
-  }, [apiCredentialIdParam]);
+  }, [apiCredentialIdParam, t]);
 
   useEffect(() => {
     let mounted = true;
@@ -582,16 +588,16 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
         const res = await apiFetch(`/email/connections/${encodeURIComponent(emailConnectionIdParam)}`);
         if (!mounted) return;
         const connection = res?.connection || {};
-        setEmailConnectionCrumbLabel(String(connection?.name || emailConnectionIdParam || "").trim() || "Connection");
+        setEmailConnectionCrumbLabel(String(connection?.name || emailConnectionIdParam || "").trim() || t("common.connection"));
       } catch {
-        if (mounted) setEmailConnectionCrumbLabel("Connection");
+        if (mounted) setEmailConnectionCrumbLabel(t("common.connection"));
       }
     }
     loadEmailConnectionCrumb();
     return () => {
       mounted = false;
     };
-  }, [emailConnectionIdParam]);
+  }, [emailConnectionIdParam, t]);
 
   useEffect(() => {
     let mounted = true;
@@ -604,16 +610,16 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
         const res = await apiFetch(`/integrations/connections/${encodeURIComponent(integrationConnectionIdParam)}`);
         if (!mounted) return;
         const connection = res?.connection || {};
-        setIntegrationConnectionCrumbLabel(String(connection?.name || integrationConnectionIdParam || "").trim() || "Connection");
+        setIntegrationConnectionCrumbLabel(String(connection?.name || integrationConnectionIdParam || "").trim() || t("common.connection"));
       } catch {
-        if (mounted) setIntegrationConnectionCrumbLabel("Connection");
+        if (mounted) setIntegrationConnectionCrumbLabel(t("common.connection"));
       }
     }
     loadIntegrationConnectionCrumb();
     return () => {
       mounted = false;
     };
-  }, [integrationConnectionIdParam]);
+  }, [integrationConnectionIdParam, t]);
 
   useEffect(() => {
     let mounted = true;
@@ -627,16 +633,16 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
         if (!mounted) return;
         const items = Array.isArray(res?.subscriptions) ? res.subscriptions : [];
         const item = items.find((entry) => String(entry?.id || "") === webhookSubscriptionIdParam);
-        setWebhookSubscriptionCrumbLabel(String(item?.name || webhookSubscriptionIdParam || "").trim() || "Webhook Subscription");
+        setWebhookSubscriptionCrumbLabel(String(item?.name || webhookSubscriptionIdParam || "").trim() || t("settings.webhook_subscriptions.title"));
       } catch {
-        if (mounted) setWebhookSubscriptionCrumbLabel("Webhook Subscription");
+        if (mounted) setWebhookSubscriptionCrumbLabel(t("settings.webhook_subscriptions.title"));
       }
     }
     loadWebhookSubscriptionCrumb();
     return () => {
       mounted = false;
     };
-  }, [webhookSubscriptionIdParam]);
+  }, [webhookSubscriptionIdParam, t]);
 
   useEffect(() => {
     let mounted = true;
@@ -649,16 +655,16 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
         const res = await apiFetch(`/email/templates/${encodeURIComponent(emailTemplateIdParam)}`);
         if (!mounted) return;
         const template = res?.template || {};
-        setEmailTemplateCrumbLabel(String(template?.name || emailTemplateIdParam || "").trim() || "Email Template");
+        setEmailTemplateCrumbLabel(String(template?.name || emailTemplateIdParam || "").trim() || t("settings.email_template"));
       } catch {
-        if (mounted) setEmailTemplateCrumbLabel("Email Template");
+        if (mounted) setEmailTemplateCrumbLabel(t("settings.email_template"));
       }
     }
     loadEmailTemplateCrumb();
     return () => {
       mounted = false;
     };
-  }, [emailTemplateIdParam]);
+  }, [emailTemplateIdParam, t]);
 
   useEffect(() => {
     let mounted = true;
@@ -671,16 +677,16 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
         const res = await apiFetch(`/email/outbox/${encodeURIComponent(emailOutboxIdParam)}`);
         if (!mounted) return;
         const outbox = res?.outbox || {};
-        setEmailOutboxCrumbLabel(String(outbox?.subject || emailOutboxIdParam || "").trim() || "Email");
+        setEmailOutboxCrumbLabel(String(outbox?.subject || emailOutboxIdParam || "").trim() || t("settings.email"));
       } catch {
-        if (mounted) setEmailOutboxCrumbLabel("Email");
+        if (mounted) setEmailOutboxCrumbLabel(t("settings.email"));
       }
     }
     loadEmailOutboxCrumb();
     return () => {
       mounted = false;
     };
-  }, [emailOutboxIdParam]);
+  }, [emailOutboxIdParam, t]);
 
   useEffect(() => {
     let mounted = true;
@@ -693,22 +699,22 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
         const res = await apiFetch(`/documents/templates/${encodeURIComponent(docTemplateIdParam)}`);
         if (!mounted) return;
         const template = res?.template || {};
-        setDocTemplateCrumbLabel(String(template?.name || docTemplateIdParam || "").trim() || "Document Template");
+        setDocTemplateCrumbLabel(String(template?.name || docTemplateIdParam || "").trim() || t("settings.document_template"));
       } catch {
-        if (mounted) setDocTemplateCrumbLabel("Document Template");
+        if (mounted) setDocTemplateCrumbLabel(t("settings.document_template"));
       }
     }
     loadDocTemplateCrumb();
     return () => {
       mounted = false;
     };
-  }, [docTemplateIdParam]);
+  }, [docTemplateIdParam, t]);
 
   useEffect(() => {
     let mounted = true;
     async function loadDocumentNumberingCrumb() {
       if (!documentNumberingIdParam || documentNumberingIdParam === "new") {
-        setDocumentNumberingCrumbLabel(documentNumberingIdParam === "new" ? "New Sequence" : "");
+        setDocumentNumberingCrumbLabel(documentNumberingIdParam === "new" ? t("settings.document_numbering.new_sequence") : "");
         return;
       }
       try {
@@ -716,16 +722,16 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
         if (!mounted) return;
         const sequences = Array.isArray(res?.sequences) ? res.sequences : [];
         const sequence = sequences.find((item) => String(item?.id || "") === documentNumberingIdParam);
-        setDocumentNumberingCrumbLabel(String(sequence?.name || documentNumberingIdParam || "").trim() || "Sequence");
+        setDocumentNumberingCrumbLabel(String(sequence?.name || documentNumberingIdParam || "").trim() || t("common.sequence"));
       } catch {
-        if (mounted) setDocumentNumberingCrumbLabel("Sequence");
+        if (mounted) setDocumentNumberingCrumbLabel(t("common.sequence"));
       }
     }
     loadDocumentNumberingCrumb();
     return () => {
       mounted = false;
     };
-  }, [documentNumberingIdParam]);
+  }, [documentNumberingIdParam, t]);
 
   const currentPath = location.pathname;
   const previewTarget = isStudioPreviewRoute ? searchParams.get("preview_target") || appHomeTarget || "" : "";
@@ -743,7 +749,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     const items = [];
     for (const group of navGroups) {
       if (!group || !Array.isArray(group.items)) continue;
-      const groupLabel = group.group || "Navigation";
+      const groupLabel = group.group || t("common.menu");
       const groupItems = group.items.filter((i) => i && i.label && i.to);
       items.push({
         groupLabel,
@@ -754,11 +760,11 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
       });
     }
     return items;
-  }, [navGroups, moduleId]);
+  }, [navGroups, moduleId, t]);
 
   const studioModuleId = studioMatch?.params?.moduleId || "";
   const studioModuleName = studioModules.find((m) => m.module_id === studioModuleId)?.name
-    || (studioLoading ? "Loading…" : studioModuleId);
+    || (studioLoading ? t("common.loading") : studioModuleId);
   const breadcrumbClass = "breadcrumbs text-xs sm:text-sm pl-1 sm:pl-2 overflow-x-auto no-scrollbar max-w-full";
   const currentRoute = `${location.pathname}${location.search}${location.hash}`;
   const CrumbLink = ({ to, children }) => (
@@ -766,28 +772,28 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
   );
   const mobileAppBreadcrumb = useMemo(() => {
     if (!isAppRoute) return "";
-    const appLabel = String(appName || "App").trim();
+    const appLabel = String(appName || t("common.app")).trim();
     const leafLabel = String(
       isRecordPage
-        ? (recordCrumbLabel || currentPageDef?.title || "Record")
-        : (currentPageDef?.title || appLabel || "App")
+        ? (recordCrumbLabel || currentPageDef?.title || t("common.record"))
+        : (currentPageDef?.title || appLabel || t("common.app"))
     ).trim();
     if (!leafLabel || leafLabel === appLabel) return appLabel;
     return `${appLabel} / ${leafLabel}`;
   }, [appName, currentPageDef?.title, isAppRoute, isRecordPage, recordCrumbLabel]);
   const mobileTitle = useMemo(() => {
     if (isAppRoute) {
-      return mobileAppBreadcrumb || appName || "App";
+      return mobileAppBreadcrumb || appName || t("common.app");
     }
-    if (isStudioRoute) return isStudioEditor ? studioModuleName : "Studio";
-    if (isSettingsRoute) return settingsLeafLabel || "Settings";
-    if (isAppsStore) return "Apps";
-    if (isNotifications) return "Notifications";
-    if (isAutomations) return "Automations";
-    if (isAutomationRuns) return automationRunCrumbLabel || "Run";
-    if (isOctoAi) return "Octo AI";
-    if (isIntegrations) return integrationConnectionIdParam ? (integrationConnectionCrumbLabel || "Connection") : "Integrations";
-    if (isOps) return "Ops";
+    if (isStudioRoute) return isStudioEditor ? studioModuleName : t("navigation.studio");
+    if (isSettingsRoute) return settingsLeafLabel || t("navigation.settings");
+    if (isAppsStore) return t("navigation.apps");
+    if (isNotifications) return t("navigation.notifications");
+    if (isAutomations) return t("navigation.automations");
+    if (isAutomationRuns) return automationRunCrumbLabel || t("common.run");
+    if (isOctoAi) return t("navigation.octo_ai");
+    if (isIntegrations) return integrationConnectionIdParam ? (integrationConnectionCrumbLabel || t("common.connection")) : t("navigation.integrations");
+    if (isOps) return t("navigation.ops");
     return "Octodrop";
   }, [
     appName,
@@ -861,7 +867,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     isMobile ? (
       <div className="min-w-0 flex items-center gap-2">
         {mobileBackTarget ? (
-          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
+          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label={t("common.back")}>
             <ChevronLeft className="w-4 h-4" />
           </Link>
         ) : null}
@@ -873,8 +879,8 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className={breadcrumbClass}>
         <ul>
-          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
-          <li><CrumbLink to={appendOctoAiFrameParams("/studio")}>Studio</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{t("navigation.home")}</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/studio")}>{t("navigation.studio")}</CrumbLink></li>
           {isStudioEditor && !isMobile && <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{studioModuleName}</CrumbLink></li>}
         </ul>
       </div>
@@ -886,14 +892,14 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
           <button
             className="btn btn-ghost btn-sm btn-square shrink-0"
             type="button"
-            aria-label="App navigation"
+            aria-label={t("common.menu")}
             onClick={() => setMobileAppMenuOpen((open) => !open)}
           >
             <Menu className="w-4 h-4" />
           </button>
         ) : null}
         {mobileBackTarget ? (
-          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square shrink-0" aria-label="Back">
+          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square shrink-0" aria-label={t("common.back")}>
             <ChevronLeft className="w-4 h-4" />
           </Link>
         ) : null}
@@ -905,11 +911,11 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className={breadcrumbClass}>
         <ul>
-          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{t("navigation.home")}</CrumbLink></li>
           <li>
-            <CrumbLink to={appHomeRoute || appendOctoAiFrameParams(currentRoute)}>{appName || "App"}</CrumbLink>
+            <CrumbLink to={appHomeRoute || appendOctoAiFrameParams(currentRoute)}>{appName || t("common.app")}</CrumbLink>
           </li>
-          {isRecordPage && !isMobile && <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{recordCrumbLabel || currentPageDef?.title || "Record"}</CrumbLink></li>}
+          {isRecordPage && !isMobile && <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{recordCrumbLabel || currentPageDef?.title || t("common.record")}</CrumbLink></li>}
         </ul>
       </div>
     )
@@ -917,7 +923,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     isMobile ? (
       <div className="min-w-0 flex items-center gap-2">
         {mobileBackTarget ? (
-          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
+          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label={t("common.back")}>
             <ChevronLeft className="w-4 h-4" />
           </Link>
         ) : null}
@@ -926,8 +932,8 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className={breadcrumbClass}>
         <ul>
-          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
-          <li><CrumbLink to={appendOctoAiFrameParams("/apps")}>Apps</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{t("navigation.home")}</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/apps")}>{t("navigation.apps")}</CrumbLink></li>
         </ul>
       </div>
     )
@@ -935,7 +941,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     isMobile ? (
       <div className="min-w-0 flex items-center gap-2">
         {mobileBackTarget ? (
-          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
+          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label={t("common.back")}>
             <ChevronLeft className="w-4 h-4" />
           </Link>
         ) : null}
@@ -944,8 +950,8 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className={breadcrumbClass}>
         <ul>
-          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
-          <li><CrumbLink to={appendOctoAiFrameParams("/settings")}>Settings</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{t("navigation.home")}</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/settings")}>{t("navigation.settings")}</CrumbLink></li>
           {settingsLeafLabel && (
             <li>
               <CrumbLink
@@ -971,14 +977,14 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
               </CrumbLink>
             </li>
           )}
-          {isSettingsAccessPolicies && accessPolicyIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{accessPolicyCrumbLabel || "Access Profile"}</CrumbLink></li> : null}
-          {location.pathname.startsWith("/settings/api-credentials") && apiCredentialIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{apiCredentialCrumbLabel || "API Credential"}</CrumbLink></li> : null}
-          {isEmailConnections && emailConnectionIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{emailConnectionCrumbLabel || "Connection"}</CrumbLink></li> : null}
-          {location.pathname.startsWith("/settings/webhook-subscriptions") && webhookSubscriptionIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{webhookSubscriptionCrumbLabel || "Webhook Subscription"}</CrumbLink></li> : null}
-          {isEmailTemplateStudio && emailTemplateIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{emailTemplateCrumbLabel || "Email Template"}</CrumbLink></li> : null}
-          {isEmailOutbox && emailOutboxIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{emailOutboxCrumbLabel || "Email"}</CrumbLink></li> : null}
-          {isDocTemplateStudio && docTemplateIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{docTemplateCrumbLabel || "Document Template"}</CrumbLink></li> : null}
-          {isSettingsDocumentNumbering && documentNumberingIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{documentNumberingCrumbLabel || "Sequence"}</CrumbLink></li> : null}
+          {isSettingsAccessPolicies && accessPolicyIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{accessPolicyCrumbLabel || t("settings.access_profile")}</CrumbLink></li> : null}
+          {location.pathname.startsWith("/settings/api-credentials") && apiCredentialIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{apiCredentialCrumbLabel || t("settings.api_credential")}</CrumbLink></li> : null}
+          {isEmailConnections && emailConnectionIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{emailConnectionCrumbLabel || t("common.connection")}</CrumbLink></li> : null}
+          {location.pathname.startsWith("/settings/webhook-subscriptions") && webhookSubscriptionIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{webhookSubscriptionCrumbLabel || t("settings.webhook_subscriptions.title")}</CrumbLink></li> : null}
+          {isEmailTemplateStudio && emailTemplateIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{emailTemplateCrumbLabel || t("settings.email_template")}</CrumbLink></li> : null}
+          {isEmailOutbox && emailOutboxIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{emailOutboxCrumbLabel || t("settings.email")}</CrumbLink></li> : null}
+          {isDocTemplateStudio && docTemplateIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{docTemplateCrumbLabel || t("settings.document_template")}</CrumbLink></li> : null}
+          {isSettingsDocumentNumbering && documentNumberingIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{documentNumberingCrumbLabel || t("common.sequence")}</CrumbLink></li> : null}
         </ul>
       </div>
     )
@@ -986,7 +992,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     isMobile ? (
       <div className="min-w-0 flex items-center gap-2">
         {mobileBackTarget ? (
-          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
+          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label={t("common.back")}>
             <ChevronLeft className="w-4 h-4" />
           </Link>
         ) : null}
@@ -995,8 +1001,8 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className={breadcrumbClass}>
         <ul>
-          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
-          <li><CrumbLink to={appendOctoAiFrameParams("/notifications")}>Notifications</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{t("navigation.home")}</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/notifications")}>{t("navigation.notifications")}</CrumbLink></li>
         </ul>
       </div>
     )
@@ -1004,7 +1010,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     isMobile ? (
       <div className="min-w-0 flex items-center gap-2">
         {mobileBackTarget ? (
-          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
+          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label={t("common.back")}>
             <ChevronLeft className="w-4 h-4" />
           </Link>
         ) : null}
@@ -1013,9 +1019,9 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className={breadcrumbClass}>
         <ul>
-          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
-          <li><CrumbLink to={appendOctoAiFrameParams("/automations")}>Automations</CrumbLink></li>
-          {automationIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{automationCrumbLabel || "Automation"}</CrumbLink></li> : null}
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{t("navigation.home")}</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/automations")}>{t("navigation.automations")}</CrumbLink></li>
+          {automationIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{automationCrumbLabel || t("navigation.automations", {}, { defaultValue: "Automation" })}</CrumbLink></li> : null}
         </ul>
       </div>
     )
@@ -1023,7 +1029,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     isMobile ? (
       <div className="min-w-0 flex items-center gap-2">
         {mobileBackTarget ? (
-          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
+          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label={t("common.back")}>
             <ChevronLeft className="w-4 h-4" />
           </Link>
         ) : null}
@@ -1032,8 +1038,8 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className={breadcrumbClass}>
         <ul>
-          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
-          <li><CrumbLink to={appendOctoAiFrameParams("/octo-ai")}>Octo AI</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{t("navigation.home")}</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/octo-ai")}>{t("navigation.octo_ai")}</CrumbLink></li>
         </ul>
       </div>
     )
@@ -1041,7 +1047,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     isMobile ? (
       <div className="min-w-0 flex items-center gap-2">
         {mobileBackTarget ? (
-          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
+          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label={t("common.back")}>
             <ChevronLeft className="w-4 h-4" />
           </Link>
         ) : null}
@@ -1050,12 +1056,12 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className={breadcrumbClass}>
         <ul>
-          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
-          <li><CrumbLink to={appendOctoAiFrameParams("/integrations")}>Integrations</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{t("navigation.home")}</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/integrations")}>{t("navigation.integrations")}</CrumbLink></li>
           {integrationConnectionIdParam ? (
             <li>
               <CrumbLink to={appendOctoAiFrameParams(currentRoute)}>
-                {integrationConnectionCrumbLabel || "Connection"}
+                {integrationConnectionCrumbLabel || t("common.connection")}
               </CrumbLink>
             </li>
           ) : null}
@@ -1066,7 +1072,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     isMobile ? (
       <div className="min-w-0 flex items-center gap-2">
         {mobileBackTarget ? (
-          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
+          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label={t("common.back")}>
             <ChevronLeft className="w-4 h-4" />
           </Link>
         ) : null}
@@ -1075,14 +1081,14 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className={breadcrumbClass}>
         <ul>
-          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
-          <li><CrumbLink to={appendOctoAiFrameParams("/automations")}>Automations</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{t("navigation.home")}</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/automations")}>{t("navigation.automations")}</CrumbLink></li>
           <li>
             <CrumbLink to={automationCrumbId ? appendOctoAiFrameParams(`/automations/${automationCrumbId}`) : appendOctoAiFrameParams(currentRoute)}>
-              {automationCrumbLabel || "Automation"}
+              {automationCrumbLabel || t("navigation.automations", {}, { defaultValue: "Automation" })}
             </CrumbLink>
           </li>
-          <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{automationRunCrumbLabel || "Run"}</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{automationRunCrumbLabel || t("common.run")}</CrumbLink></li>
         </ul>
       </div>
     )
@@ -1090,7 +1096,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     isMobile ? (
       <div className="min-w-0 flex items-center gap-2">
         {mobileBackTarget ? (
-          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label="Back">
+          <Link to={mobileBackTarget} className="btn btn-ghost btn-sm btn-square" aria-label={t("common.back")}>
             <ChevronLeft className="w-4 h-4" />
           </Link>
         ) : null}
@@ -1099,8 +1105,8 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className={breadcrumbClass}>
         <ul>
-          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>Home</CrumbLink></li>
-          <li><CrumbLink to={appendOctoAiFrameParams("/ops")}>Ops</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{t("navigation.home")}</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/ops")}>{t("navigation.ops")}</CrumbLink></li>
         </ul>
       </div>
     )
@@ -1109,7 +1115,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
       <button
         className="btn btn-ghost btn-sm btn-square shrink-0"
         type="button"
-        aria-label="Open menu"
+        aria-label={t("common.menu")}
         onClick={() => setMobileHomeMenuOpen(true)}
       >
         <Menu className="w-4 h-4" />
@@ -1118,7 +1124,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     </div>
   ) : (
     !isHome && (
-      <Link to={appendOctoAiFrameParams("/home")} className="btn btn-ghost btn-sm">← Home</Link>
+      <Link to={appendOctoAiFrameParams("/home")} className="btn btn-ghost btn-sm">← {t("navigation.home")}</Link>
     )
   );
 
@@ -1131,7 +1137,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 hidden md:flex items-center justify-center z-[1] max-w-[50vw] pointer-events-none">
         {isStudioRoute && (
           <div className="text-sm font-medium text-primary pointer-events-auto truncate">
-            {isStudioEditor ? studioModuleName : "Studio"}
+            {isStudioEditor ? studioModuleName : t("navigation.studio")}
           </div>
         )}
         {(isAppRoute || isStudioPreviewRoute) && navItems.length > 0 && (
@@ -1216,7 +1222,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
           <button
             type="button"
             className="absolute inset-0 bg-base-content/30"
-            aria-label="Close navigation"
+            aria-label={t("common.close")}
             onClick={() => setMobileAppMenuOpen(false)}
           />
           <aside className="absolute inset-y-0 left-0 w-[82vw] max-w-sm bg-base-100 shadow-2xl border-r border-base-300 flex flex-col">
@@ -1227,14 +1233,14 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
                   className="btn btn-sm btn-primary shrink-0"
                   onClick={() => setMobileAppMenuOpen(false)}
                 >
-                  All Apps
+                  {t("navigation.apps")}
                 </Link>
-                <div className="min-w-0 text-sm font-semibold truncate">{appName || "App"}</div>
+                <div className="min-w-0 text-sm font-semibold truncate">{appName || t("common.app")}</div>
               </div>
               <button
                 type="button"
                 className="btn btn-ghost btn-sm btn-square shrink-0"
-                aria-label="Close navigation"
+                aria-label={t("common.close")}
                 onClick={() => setMobileAppMenuOpen(false)}
               >
                 <X className="w-4 h-4" />
@@ -1276,7 +1282,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
                   onClick={() => setMobileAppMenuOpen(false)}
                   className="block rounded-lg px-3 py-2 text-sm text-base-content/80"
                 >
-                  Settings
+                  {t("navigation.settings")}
                 </Link>
                 <button
                   type="button"
@@ -1286,7 +1292,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
                     onSignOut?.();
                   }}
                 >
-                  Sign out
+                  {t("settings.sign_out")}
                 </button>
               </div>
             </div>
@@ -1298,16 +1304,16 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
           <button
             type="button"
             className="absolute inset-0 bg-base-content/30"
-            aria-label="Close menu"
+            aria-label={t("common.close")}
             onClick={() => setMobileHomeMenuOpen(false)}
           />
           <aside className="absolute inset-y-0 left-0 w-[82vw] max-w-sm bg-base-100 shadow-2xl border-r border-base-300 flex flex-col">
             <div className="flex items-center justify-between px-4 py-4 border-b border-base-200">
-              <div className="text-sm font-semibold">Menu</div>
+              <div className="text-sm font-semibold">{t("common.menu")}</div>
               <button
                 type="button"
                 className="btn btn-ghost btn-sm btn-square shrink-0"
-                aria-label="Close menu"
+                aria-label={t("common.close")}
                 onClick={() => setMobileHomeMenuOpen(false)}
               >
                 <X className="w-4 h-4" />
@@ -1327,7 +1333,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
                   onClick={() => setMobileHomeMenuOpen(false)}
                   className="block rounded-lg px-3 py-2 text-sm text-base-content/80"
                 >
-                  Settings
+                  {t("navigation.settings")}
                 </Link>
                 <button
                   type="button"
@@ -1337,7 +1343,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
                     onSignOut?.();
                   }}
                 >
-                  Sign out
+                  {t("settings.sign_out")}
                 </button>
               </div>
             </div>

@@ -9,6 +9,8 @@ import AppSelect from "../../components/AppSelect.jsx";
 import { formatDateTime } from "../../utils/dateTime.js";
 import ListViewRenderer from "../../ui/ListViewRenderer.jsx";
 import SystemListToolbar from "../../ui/SystemListToolbar.jsx";
+import { translateRuntime } from "../../i18n/runtime.js";
+import { useI18n } from "../../i18n/LocalizationProvider.jsx";
 
 function Fieldset({ label, hint, optional = false, className = "", children }) {
   return (
@@ -19,7 +21,7 @@ function Fieldset({ label, hint, optional = false, className = "", children }) {
       {children}
       {(hint || optional) && (
         <span className="label label-text-alt opacity-50">
-          {hint || (optional ? "(optional)" : "")}
+          {hint || (optional ? translateRuntime("settings.template_studio.optional") : "")}
         </span>
       )}
     </fieldset>
@@ -42,31 +44,31 @@ function DocumentTemplateTab({ draft, setDraft, sample, setSample, entities }) {
   return (
     <div className="space-y-4">
       <SectionGroup
-        title="Template details"
-        description="Set the name, description, entity, and filename pattern for this document template."
+        title={translateRuntime("settings.template_studio.template_details")}
+        description={translateRuntime("settings.template_studio.document_template_details_description")}
       >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Fieldset label="Name">
+          <Fieldset label={translateRuntime("common.name")}>
             <input
               className="input input-bordered"
               value={draft?.name || ""}
               onChange={(e) => setDraft((prev) => ({ ...(prev || {}), name: e.target.value }))}
             />
           </Fieldset>
-          <Fieldset label="Description" optional>
+          <Fieldset label={translateRuntime("common.description")} optional>
             <input
               className="input input-bordered"
               value={draft?.description || ""}
               onChange={(e) => setDraft((prev) => ({ ...(prev || {}), description: e.target.value }))}
             />
           </Fieldset>
-          <Fieldset label="Entity" hint="Templates render fields from one entity.">
+          <Fieldset label={translateRuntime("common.entity")} hint={translateRuntime("settings.template_studio.template_entity_hint")}>
             <AppSelect
               className="select select-bordered"
               value={sample?.entity_id || ""}
               onChange={(e) => setSample({ ...sample, entity_id: e.target.value, record_id: "" })}
             >
-              <option value="">Select entity</option>
+              <option value="">{translateRuntime("settings.template_studio.select_entity")}</option>
               {entities.map((ent) => (
                 <option key={ent.id} value={ent.id}>
                   {ent.label || ent.id}
@@ -74,36 +76,40 @@ function DocumentTemplateTab({ draft, setDraft, sample, setSample, entities }) {
               ))}
             </AppSelect>
           </Fieldset>
-          <Fieldset label="Filename pattern (Jinja)" hint="Tip: use record fields to make filenames unique." className="md:col-span-2">
+          <Fieldset
+            label={translateRuntime("settings.template_studio.filename_pattern")}
+            hint={translateRuntime("settings.template_studio.filename_pattern_hint")}
+            className="md:col-span-2"
+          >
             <input
               className="input input-bordered"
               value={draft?.filename_pattern || ""}
               onChange={(e) => setDraft((prev) => ({ ...(prev || {}), filename_pattern: e.target.value }))}
-              placeholder="Contact - {{ record['contact.display_name'] }}"
+              placeholder={translateRuntime("settings.template_studio.filename_pattern_placeholder")}
             />
           </Fieldset>
         </div>
       </SectionGroup>
       <SectionGroup
-        title="Document content"
-        description="Write the main HTML plus any optional header and footer blocks."
+        title={translateRuntime("settings.template_studio.document_content")}
+        description={translateRuntime("settings.template_studio.document_content_description")}
       >
         <div className="grid grid-cols-1 gap-4">
-          <Fieldset label="HTML Template (Jinja)">
+          <Fieldset label={translateRuntime("settings.template_studio.html_template_jinja")}>
             <CodeTextarea
               value={draft?.html || ""}
               onChange={(e) => setDraft((prev) => ({ ...(prev || {}), html: e.target.value }))}
               minHeight="260px"
             />
           </Fieldset>
-          <Fieldset label="Header HTML" optional>
+          <Fieldset label={translateRuntime("settings.template_studio.header_html")} optional>
             <CodeTextarea
               value={draft?.header_html || ""}
               onChange={(e) => setDraft((prev) => ({ ...(prev || {}), header_html: e.target.value }))}
               minHeight="120px"
             />
           </Fieldset>
-          <Fieldset label="Footer HTML" hint="Use pageNumber / totalPages for pagination.">
+          <Fieldset label={translateRuntime("settings.template_studio.footer_html")} hint={translateRuntime("settings.template_studio.footer_html_hint")}>
             <CodeTextarea
               value={draft?.footer_html || ""}
               onChange={(e) => setDraft((prev) => ({ ...(prev || {}), footer_html: e.target.value }))}
@@ -113,11 +119,11 @@ function DocumentTemplateTab({ draft, setDraft, sample, setSample, entities }) {
         </div>
       </SectionGroup>
       <SectionGroup
-        title="Page setup"
-        description="Choose the paper size and page margins for the generated PDF."
+        title={translateRuntime("settings.template_studio.page_setup")}
+        description={translateRuntime("settings.template_studio.page_setup_description")}
       >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Fieldset label="Paper size">
+          <Fieldset label={translateRuntime("settings.template_studio.paper_size")}>
             <AppSelect
               className="select select-bordered"
               value={draft?.paper_size || "A4"}
@@ -127,28 +133,28 @@ function DocumentTemplateTab({ draft, setDraft, sample, setSample, entities }) {
               <option value="Letter">Letter</option>
             </AppSelect>
           </Fieldset>
-          <Fieldset label="Top margin">
+          <Fieldset label={translateRuntime("settings.template_studio.top_margin")}>
             <input
               className="input input-bordered"
               value={draft?.margin_top || "12mm"}
               onChange={(e) => setDraft((prev) => ({ ...(prev || {}), margin_top: e.target.value }))}
             />
           </Fieldset>
-          <Fieldset label="Right margin">
+          <Fieldset label={translateRuntime("settings.template_studio.right_margin")}>
             <input
               className="input input-bordered"
               value={draft?.margin_right || "12mm"}
               onChange={(e) => setDraft((prev) => ({ ...(prev || {}), margin_right: e.target.value }))}
             />
           </Fieldset>
-          <Fieldset label="Bottom margin">
+          <Fieldset label={translateRuntime("settings.template_studio.bottom_margin")}>
             <input
               className="input input-bordered"
               value={draft?.margin_bottom || "12mm"}
               onChange={(e) => setDraft((prev) => ({ ...(prev || {}), margin_bottom: e.target.value }))}
             />
           </Fieldset>
-          <Fieldset label="Left margin">
+          <Fieldset label={translateRuntime("settings.template_studio.left_margin")}>
             <input
               className="input input-bordered"
               value={draft?.margin_left || "12mm"}
@@ -161,50 +167,51 @@ function DocumentTemplateTab({ draft, setDraft, sample, setSample, entities }) {
   );
 }
 
-export const emailTemplateProfile = {
-  kind: "email",
-  title: "Email Template",
-  defaultTabId: "compose",
-  samplePicker: { enabled: true },
-  autoPreview: false,
-  autoPreviewMode: "placeholder",
-  desktopScrollableTabs: ["compose", "test", "history"],
-  agentMessage: "Describe the email template change you want and I will draft an update.",
-  actions: [
-    { id: "save", label: "Save", kind: "secondary", onClick: (ctx) => ctx.saveNow?.() },
-  ],
-  rightTabs: [
+export function getEmailTemplateProfile(t = translateRuntime) {
+  return {
+    kind: "email",
+    title: t("settings.email_template"),
+    defaultTabId: "compose",
+    samplePicker: { enabled: true },
+    autoPreview: false,
+    autoPreviewMode: "placeholder",
+    desktopScrollableTabs: ["compose", "test", "history"],
+    agentMessage: t("settings.template_studio.email_agent_message"),
+    actions: [
+      { id: "save", label: t("common.save"), kind: "secondary", onClick: (ctx) => ctx.saveNow?.() },
+    ],
+    rightTabs: [
     {
       id: "compose",
-      label: "Compose",
+      label: t("settings.template_studio.compose"),
       render: ({ draft, setDraft, connections = [], sample, setSample, entities }) => (
         <div className="space-y-4">
           <SectionGroup
-            title="Template details"
-            description="Set the name, description, entity, and default sending connection for this template."
+            title={t("settings.template_studio.template_details")}
+            description={t("settings.template_studio.email_template_details_description")}
           >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Fieldset label="Name">
+              <Fieldset label={t("common.name")}>
                 <input
                   className="input input-bordered"
                   value={draft?.name || ""}
                   onChange={(e) => setDraft((prev) => ({ ...(prev || {}), name: e.target.value }))}
                 />
               </Fieldset>
-              <Fieldset label="Description" optional>
+              <Fieldset label={t("common.description")} optional>
                 <input
                   className="input input-bordered"
                   value={draft?.description || ""}
                   onChange={(e) => setDraft((prev) => ({ ...(prev || {}), description: e.target.value }))}
                 />
               </Fieldset>
-              <Fieldset label="Entity" hint="Templates render fields from one entity." className="md:col-start-1">
+              <Fieldset label={t("common.entity")} hint={t("settings.template_studio.template_entity_hint")} className="md:col-start-1">
                 <AppSelect
                   className="select select-bordered"
                   value={sample?.entity_id || ""}
                   onChange={(e) => setSample({ ...sample, entity_id: e.target.value, record_id: "" })}
                 >
-                  <option value="">Select entity</option>
+                  <option value="">{t("settings.template_studio.select_entity")}</option>
                   {entities.map((ent) => (
                     <option key={ent.id} value={ent.id}>
                       {ent.label || ent.id}
@@ -212,14 +219,14 @@ export const emailTemplateProfile = {
                   ))}
                 </AppSelect>
               </Fieldset>
-              <Fieldset label="Default connection" optional>
+              <Fieldset label={t("common.connection")} optional>
                 {connections.length > 0 ? (
                   <AppSelect
                     className="select select-bordered"
                     value={draft?.default_connection_id || ""}
                     onChange={(e) => setDraft((prev) => ({ ...(prev || {}), default_connection_id: e.target.value || null }))}
                   >
-                    <option value="">Use default</option>
+                    <option value="">{t("settings.template_studio.use_default_connection")}</option>
                     {connections.map((conn) => (
                       <option key={conn.id} value={conn.id}>
                         {conn.name || conn.id}
@@ -229,7 +236,7 @@ export const emailTemplateProfile = {
                 ) : (
                   <input
                     className="input input-bordered"
-                    placeholder="Connection ID"
+                    placeholder={t("settings.template_studio.connection_id_placeholder")}
                     value={draft?.default_connection_id || ""}
                     onChange={(e) => setDraft((prev) => ({ ...(prev || {}), default_connection_id: e.target.value }))}
                   />
@@ -238,18 +245,18 @@ export const emailTemplateProfile = {
             </div>
           </SectionGroup>
           <SectionGroup
-            title="Message content"
-            description="Write the subject and HTML body for the email template."
+            title={t("settings.template_studio.message_content")}
+            description={t("settings.template_studio.message_content_description")}
           >
             <div className="grid grid-cols-1 gap-4">
-              <Fieldset label="Subject (Jinja)">
+              <Fieldset label={t("settings.template_studio.subject_jinja")}>
                 <input
                   className="input input-bordered"
                   value={draft?.subject || ""}
                   onChange={(e) => setDraft((prev) => ({ ...(prev || {}), subject: e.target.value }))}
                 />
               </Fieldset>
-              <Fieldset label="Body HTML (Jinja)">
+              <Fieldset label={t("settings.template_studio.body_html_jinja")}>
                 <CodeTextarea
                   value={draft?.body_html || ""}
                   onChange={(e) => setDraft((prev) => ({ ...(prev || {}), body_html: e.target.value }))}
@@ -257,7 +264,7 @@ export const emailTemplateProfile = {
                   minHeight="260px"
                 />
               </Fieldset>
-              <Fieldset label="Text fallback" optional>
+              <Fieldset label={t("settings.template_studio.text_fallback")} optional>
                 <CodeTextarea
                   value={draft?.body_text || ""}
                   onChange={(e) => setDraft((prev) => ({ ...(prev || {}), body_text: e.target.value }))}
@@ -272,7 +279,7 @@ export const emailTemplateProfile = {
     },
     {
       id: "preview",
-      label: "Preview",
+      label: t("common.preview"),
       render: ({ sample, setSample, entities, previewState, runPreview }) => (
         <EmailPreviewTab
           sample={sample}
@@ -285,7 +292,7 @@ export const emailTemplateProfile = {
     },
     {
       id: "test",
-      label: "Send Test",
+      label: t("settings.template_studio.send_test"),
       render: ({ sample, setSample, entities, previewState, sendTest }) => (
         <EmailTestTab
           sample={sample}
@@ -298,35 +305,37 @@ export const emailTemplateProfile = {
     },
     {
       id: "history",
-      label: "History",
+      label: t("common.history"),
       render: ({ record, draft }) => (
         <EmailHistoryTab templateId={record?.id || draft?.id} />
       ),
     },
-  ],
-};
+    ],
+  };
+}
 
-export const documentTemplateProfile = {
-  kind: "document",
-  title: "Document Template",
-  defaultTabId: "template",
-  samplePicker: { enabled: true },
-  autoPreview: true,
-  autoPreviewMode: "placeholder",
-  desktopScrollableTabs: ["template"],
-  agentMessage: "Describe the document template change you want and I will draft an update.",
-  actions: [
-    { id: "save", label: "Save", kind: "secondary", onClick: (ctx) => ctx.saveNow?.() },
-  ],
-  rightTabs: [
+export function getDocumentTemplateProfile(t = translateRuntime) {
+  return {
+    kind: "document",
+    title: t("settings.document_template"),
+    defaultTabId: "template",
+    samplePicker: { enabled: true },
+    autoPreview: true,
+    autoPreviewMode: "placeholder",
+    desktopScrollableTabs: ["template"],
+    agentMessage: t("settings.template_studio.document_agent_message"),
+    actions: [
+      { id: "save", label: t("common.save"), kind: "secondary", onClick: (ctx) => ctx.saveNow?.() },
+    ],
+    rightTabs: [
     {
       id: "template",
-      label: "Template",
+      label: t("settings.template_studio.template"),
       render: (props) => <DocumentTemplateTab {...props} />,
     },
     {
       id: "preview",
-      label: "Preview",
+      label: t("common.preview"),
       render: ({ sample, setSample, entities, previewState, setPreviewState, runPreviewOnce }) => (
         <DocPreviewTab
           sample={sample}
@@ -338,27 +347,30 @@ export const documentTemplateProfile = {
         />
       ),
     },
-  ],
-};
+    ],
+  };
+}
 
-export const smsTemplateProfile = {
-  kind: "sms",
-  title: "SMS Template",
-  defaultTabId: "compose",
-  samplePicker: { enabled: true },
-  actions: [],
-  rightTabs: [
+export function getSmsTemplateProfile(t = translateRuntime) {
+  return {
+    kind: "sms",
+    title: t("settings.template_studio.sms_template"),
+    defaultTabId: "compose",
+    samplePicker: { enabled: true },
+    actions: [],
+    rightTabs: [
     {
       id: "compose",
-      label: "Compose",
+      label: t("settings.template_studio.compose"),
       render: () => (
         <div className="text-sm opacity-70">
-          SMS templates coming soon.
+          {t("settings.template_studio.sms_templates_coming_soon")}
         </div>
       ),
     },
-  ],
-};
+    ],
+  };
+}
 
 function EmailTestTab({ sample, setSample, entities, previewState, sendTest }) {
   const [toEmail, setToEmail] = React.useState("");
@@ -380,7 +392,7 @@ function EmailTestTab({ sample, setSample, entities, previewState, sendTest }) {
   return (
     <div className="border border-base-200 rounded-box p-3 bg-base-100 space-y-4">
       <label className="form-control">
-        <span className="label-text">To email address</span>
+        <span className="label-text">{translateRuntime("settings.template_studio.to_email_address")}</span>
         <input className="input input-bordered" value={toEmail} onChange={(e) => setToEmail(e.target.value)} />
       </label>
       <div>
@@ -396,19 +408,19 @@ function EmailTestTab({ sample, setSample, entities, previewState, sendTest }) {
               onClick={handleSend}
               disabled={!toEmail || !sample?.entity_id || !sample?.record_id || status === "sending"}
             >
-              {status === "sending" ? "Sending..." : "Send Test"}
+              {status === "sending" ? translateRuntime("settings.template_studio.sending") : translateRuntime("settings.template_studio.send_test")}
             </button>
           }
         />
       </div>
       <div className="space-y-2">
-        {status === "sent" && <span className="text-xs text-success">Sent</span>}
-        {status === "error" && <span className="text-xs text-error">Failed</span>}
+        {status === "sent" && <span className="text-xs text-success">{translateRuntime("common.sent")}</span>}
+        {status === "error" && <span className="text-xs text-error">{translateRuntime("common.failed")}</span>}
         {result?.outbox_id && (
-          <div className="text-xs opacity-70">Outbox: {result.outbox_id}</div>
+          <div className="text-xs opacity-70">{translateRuntime("settings.template_studio.outbox_id", { id: result.outbox_id })}</div>
         )}
         {previewState?.rendered_subject && (
-          <div className="text-xs opacity-70">Subject: {previewState.rendered_subject}</div>
+          <div className="text-xs opacity-70">{translateRuntime("settings.template_studio.subject_value", { subject: previewState.rendered_subject })}</div>
         )}
       </div>
     </div>
@@ -452,21 +464,21 @@ function EmailPreviewTab({
                 }
               }}
             >
-              {rendering ? "Rendering..." : "Render preview"}
+              {rendering ? translateRuntime("settings.template_studio.rendering") : translateRuntime("settings.template_studio.render_preview")}
             </button>
           }
         />
       </div>
       {!sample?.entity_id && (
         <div className="text-sm opacity-70">
-          Choose an entity above to render this email with placeholders, or choose a record to preview real data.
+          {translateRuntime("settings.template_studio.choose_entity_preview_email")}
         </div>
       )}
       <div className={`flex-1 min-h-0 border border-base-200 rounded-xl overflow-hidden bg-base-100 ${showPreviewFrame ? "" : "hidden"}`}>
         {showPreviewFrame && (
           <>
           <div className="px-3 py-2 border-b border-base-200 flex items-center justify-end gap-2">
-            <span className="text-xs opacity-70">Zoom</span>
+            <span className="text-xs opacity-70">{translateRuntime("settings.template_studio.zoom")}</span>
             <AppSelect
               className="select select-bordered select-xs w-20"
               value={zoomPct}
@@ -480,7 +492,7 @@ function EmailPreviewTab({
             </AppSelect>
           </div>
           <iframe
-            title="Email Preview"
+            title={translateRuntime("settings.template_studio.email_preview")}
             className="w-full h-full min-h-[420px]"
             sandbox=""
             srcDoc={previewState.rendered_html}
@@ -552,7 +564,7 @@ function DocPreviewTab({
     <div className="h-full min-h-0 flex flex-col gap-4">
       {!sample?.entity_id && (
         <div className="text-sm opacity-70">
-          Select an entity in the Template tab to see a placeholder preview.
+          {translateRuntime("settings.template_studio.select_entity_template_tab_preview")}
         </div>
       )}
       <div className="border border-base-200 rounded-box p-3 bg-base-100">
@@ -575,7 +587,7 @@ function DocPreviewTab({
                 }
               }}
             >
-              {rendering ? "Rendering..." : "Re-render preview"}
+              {rendering ? translateRuntime("settings.template_studio.rendering") : translateRuntime("settings.template_studio.rerender_preview")}
             </button>
           }
         />
@@ -587,7 +599,7 @@ function DocPreviewTab({
           </div>
         )}
         {!loading && previewUrl && (
-          <iframe title="PDF preview" src={previewUrl} className="block w-full h-full min-h-0" />
+          <iframe title={translateRuntime("settings.template_studio.pdf_preview")} src={previewUrl} className="block w-full h-full min-h-0" />
         )}
       </div>
     </div>
@@ -595,6 +607,7 @@ function DocPreviewTab({
 }
 
 function EmailHistoryTab({ templateId }) {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -614,7 +627,7 @@ function EmailHistoryTab({ templateId }) {
         if (!mounted) return;
         setItems(res?.outbox || []);
       } catch (err) {
-        if (mounted) setError(err?.message || "Failed to load history");
+        if (mounted) setError(err?.message || translateRuntime("settings.template_studio.load_history_failed"));
       } finally {
         if (mounted) setLoading(false);
       }
@@ -638,12 +651,12 @@ function EmailHistoryTab({ templateId }) {
 
   const historyFieldIndex = useMemo(
     () => ({
-      "outbox.status": { id: "outbox.status", label: "Status" },
-      "outbox.to": { id: "outbox.to", label: "To" },
-      "outbox.subject": { id: "outbox.subject", label: "Subject" },
-      "outbox.created_at": { id: "outbox.created_at", label: "Created" },
+      "outbox.status": { id: "outbox.status", label: t("common.status") },
+      "outbox.to": { id: "outbox.to", label: t("common.to") },
+      "outbox.subject": { id: "outbox.subject", label: t("common.subject") },
+      "outbox.created_at": { id: "outbox.created_at", label: t("settings.template_studio.created") },
     }),
-    [],
+    [t],
   );
 
   const historyListView = useMemo(
@@ -675,12 +688,12 @@ function EmailHistoryTab({ templateId }) {
 
   const historyFilters = useMemo(
     () => [
-      { id: "all", label: "All", domain: null },
-      { id: "queued", label: "Queued", domain: { op: "eq", field: "outbox.status", value: "queued" } },
-      { id: "sent", label: "Sent", domain: { op: "eq", field: "outbox.status", value: "sent" } },
-      { id: "failed", label: "Failed", domain: { op: "eq", field: "outbox.status", value: "failed" } },
+      { id: "all", label: t("common.all"), domain: null },
+      { id: "queued", label: t("common.queued"), domain: { op: "eq", field: "outbox.status", value: "queued" } },
+      { id: "sent", label: t("common.sent"), domain: { op: "eq", field: "outbox.status", value: "sent" } },
+      { id: "failed", label: t("common.failed"), domain: { op: "eq", field: "outbox.status", value: "failed" } },
     ],
-    [],
+    [t],
   );
 
   const activeHistoryFilter = useMemo(
@@ -691,7 +704,7 @@ function EmailHistoryTab({ templateId }) {
   if (!templateId) {
     return (
       <div className="rounded-box border border-base-300 bg-base-100 p-4">
-        <div className="text-sm opacity-60">Save the template to see history.</div>
+        <div className="text-sm opacity-60">{translateRuntime("settings.template_studio.save_template_to_see_history")}</div>
       </div>
     );
   }
@@ -700,11 +713,11 @@ function EmailHistoryTab({ templateId }) {
       <div className="space-y-4">
         {error && <div className="alert alert-error text-sm">{error}</div>}
         {loading ? (
-          <div className="text-sm opacity-60">Loading history…</div>
+          <div className="text-sm opacity-60">{translateRuntime("settings.template_studio.loading_history")}</div>
         ) : (
           <>
             <SystemListToolbar
-              title="History"
+              title={translateRuntime("common.history")}
               searchValue={search}
               onSearchChange={(value) => {
                 setSearch(value);
@@ -727,7 +740,7 @@ function EmailHistoryTab({ templateId }) {
                   const res = await apiFetch(`/email/templates/${templateId}/history`);
                   setItems(res?.outbox || []);
                 } catch (err) {
-                  setError(err?.message || "Failed to load history");
+                  setError(err?.message || translateRuntime("settings.template_studio.load_history_failed"));
                 } finally {
                   setLoading(false);
                 }
@@ -741,7 +754,7 @@ function EmailHistoryTab({ templateId }) {
               }}
             />
             {rows.length === 0 ? (
-              <div className="text-sm opacity-60">No sends yet.</div>
+              <div className="text-sm opacity-60">{translateRuntime("settings.template_studio.no_sends_yet")}</div>
             ) : (
               <ListViewRenderer
                 view={historyListView}
@@ -791,7 +804,7 @@ function DocHistoryTab({ templateId }) {
         setItems(res?.links || []);
         setAttachments(res?.attachments || []);
       } catch (err) {
-        if (mounted) setError(err?.message || "Failed to load history");
+        if (mounted) setError(err?.message || translateRuntime("settings.template_studio.load_history_failed"));
       } finally {
         if (mounted) setLoading(false);
       }
@@ -803,25 +816,25 @@ function DocHistoryTab({ templateId }) {
   }, [templateId]);
 
   if (!templateId) {
-    return <div className="text-sm opacity-60">Save the template to see history.</div>;
+    return <div className="text-sm opacity-60">{translateRuntime("settings.template_studio.save_template_to_see_history")}</div>;
   }
   if (loading) {
-    return <div className="text-sm opacity-60">Loading history…</div>;
+    return <div className="text-sm opacity-60">{translateRuntime("settings.template_studio.loading_history")}</div>;
   }
   if (error) {
     return <div className="text-sm text-error">{error}</div>;
   }
   if (items.length === 0) {
-    return <div className="text-sm opacity-60">No generated documents yet.</div>;
+    return <div className="text-sm opacity-60">{translateRuntime("settings.template_studio.no_generated_documents_yet")}</div>;
   }
   return (
     <div className="overflow-x-auto">
       <table className="table table-sm min-w-max">
         <thead>
           <tr>
-            <th>Record</th>
-            <th>Filename</th>
-            <th>Created</th>
+            <th>{translateRuntime("common.record")}</th>
+            <th>{translateRuntime("settings.template_studio.filename")}</th>
+            <th>{translateRuntime("settings.template_studio.created")}</th>
             <th />
           </tr>
         </thead>
@@ -836,7 +849,7 @@ function DocHistoryTab({ templateId }) {
                 <td className="whitespace-nowrap">
                   {attachment?.id && (
                     <a className="btn btn-ghost btn-xs" href={`/attachments/${attachment.id}/download`} target="_blank" rel="noreferrer">
-                      Open
+                      {translateRuntime("common.open")}
                     </a>
                   )}
                 </td>
@@ -864,7 +877,7 @@ function DocJobsTab({ templateId }) {
         if (!mounted) return;
         setItems(res?.jobs || []);
       } catch (err) {
-        if (mounted) setError(err?.message || "Failed to load jobs");
+        if (mounted) setError(err?.message || translateRuntime("settings.template_studio.load_jobs_failed"));
       } finally {
         if (mounted) setLoading(false);
       }
@@ -876,26 +889,26 @@ function DocJobsTab({ templateId }) {
   }, [templateId]);
 
   if (!templateId) {
-    return <div className="text-sm opacity-60">Save the template to see jobs.</div>;
+    return <div className="text-sm opacity-60">{translateRuntime("settings.template_studio.save_template_to_see_jobs")}</div>;
   }
   if (loading) {
-    return <div className="text-sm opacity-60">Loading jobs…</div>;
+    return <div className="text-sm opacity-60">{translateRuntime("settings.template_studio.loading_jobs")}</div>;
   }
   if (error) {
     return <div className="text-sm text-error">{error}</div>;
   }
   if (items.length === 0) {
-    return <div className="text-sm opacity-60">No jobs yet.</div>;
+    return <div className="text-sm opacity-60">{translateRuntime("settings.template_studio.no_jobs_yet")}</div>;
   }
   return (
     <div className="overflow-x-auto">
       <table className="table table-sm min-w-max">
         <thead>
           <tr>
-            <th>Status</th>
-            <th>Run At</th>
-            <th>Attempt</th>
-            <th>Error</th>
+            <th>{translateRuntime("common.status")}</th>
+            <th>{translateRuntime("settings.template_studio.run_at")}</th>
+            <th>{translateRuntime("settings.template_studio.attempt")}</th>
+            <th>{translateRuntime("common.error")}</th>
           </tr>
         </thead>
         <tbody>

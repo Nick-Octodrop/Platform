@@ -1,0 +1,264 @@
+{
+  "module": {
+    "name": "Documents",
+    "description": "Contrôle des documents pour les dossiers commerciaux, y compris les devis PDF, les lots de commandes, les documents des fournisseurs, les fichiers de factures et les documents clients signés."
+  },
+  "navigation": {
+    "biz_document_list_page": "Documents",
+    "biz_document_quote_docs_page": "Documents de devis",
+    "biz_document_invoice_docs_page": "Documents de facture",
+    "biz_document_supplier_docs_page": "Documents du fournisseur",
+    "biz_document_archived_page": "Archivé"
+  },
+  "entities": {
+    "biz_document": {
+      "label": "Documenter",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "name": {
+          "label": "Nom du document"
+        },
+        "document_type": {
+          "label": "Tapez",
+          "options": {
+            "quote_pdf": "Devis PDF",
+            "order_confirmation": "Confirmation de commande",
+            "purchase_order_pdf": "Bon de commande PDF",
+            "invoice_pdf": "Facture PDF",
+            "supplier_document": "Document fournisseur",
+            "shipping_document": "Document d'expédition",
+            "compliance_document": "Document de conformité",
+            "signed_customer_document": "Document client signé",
+            "xero_export": "Exportation Xéro",
+            "other": "Autre"
+          }
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "draft": "Brouillon",
+            "approved": "Approuvé",
+            "sent": "Envoyé",
+            "signed": "Signé",
+            "archived": "Archivé"
+          }
+        },
+        "related_contact_id": {
+          "label": "Contacter"
+        },
+        "related_quote_id": {
+          "label": "Citation"
+        },
+        "related_order_id": {
+          "label": "Commande"
+        },
+        "related_purchase_order_id": {
+          "label": "Bon de commande"
+        },
+        "related_invoice_id": {
+          "label": "Facture"
+        },
+        "sales_entity": {
+          "label": "Entité",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "owner_user_id": {
+          "label": "Propriétaire"
+        },
+        "document_date": {
+          "label": "Date du document"
+        },
+        "expiry_date": {
+          "label": "Date d'expiration"
+        },
+        "external_system": {
+          "label": "Système externe",
+          "options": {
+            "none": "Aucun",
+            "pipedrive": "Pipedrive",
+            "xero": "Xéro",
+            "clickup": "Cliquez vers le haut",
+            "email": "Courriel"
+          }
+        },
+        "external_reference": {
+          "label": "Référence externe"
+        },
+        "attachments": {
+          "label": "Fichiers"
+        },
+        "archive_reason": {
+          "label": "Raison de l'archive"
+        },
+        "notes": {
+          "label": "Remarques"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_document_new": {
+      "label": "Nouveau document"
+    },
+    "action_document_approve": {
+      "label": "Approuver"
+    },
+    "action_document_mark_sent": {
+      "label": "Marquer comme envoyé"
+    },
+    "action_document_mark_signed": {
+      "label": "Marque signée"
+    },
+    "action_document_open_archive_modal": {
+      "label": "Archiver"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Rechercher des documents..."
+      },
+      "filters": {
+        "active": {
+          "label": "Documents actifs"
+        },
+        "draft": {
+          "label": "Brouillon"
+        },
+        "approved": {
+          "label": "Approuvé"
+        },
+        "sent": {
+          "label": "Envoyé"
+        },
+        "signed": {
+          "label": "Signé"
+        },
+        "archived": {
+          "label": "Archivé"
+        },
+        "quote_docs": {
+          "label": "PDF de devis"
+        },
+        "invoice_docs": {
+          "label": "PDF des factures"
+        },
+        "supplier_docs": {
+          "label": "Documents du fournisseur"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Documenter"
+        },
+        "links": {
+          "title": "Enregistrements liés"
+        },
+        "external": {
+          "title": "Système externe"
+        },
+        "files": {
+          "title": "Fichiers"
+        },
+        "notes": {
+          "title": "Remarques"
+        }
+      }
+    }
+  },
+  "modals": {
+    "document_archive": {
+      "title": "Document d'archive",
+      "description": "Saisissez pourquoi ce document est archivé.",
+      "actions": {
+        "update_record": {
+          "label": "Document d'archive"
+        },
+        "close_modal": {
+          "label": "Rester ouvert"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Documents"
+    },
+    "quote_docs_page": {
+      "title": "Documents de devis"
+    },
+    "invoice_docs_page": {
+      "title": "Documents de facturation"
+    },
+    "supplier_docs_page": {
+      "title": "Documents du fournisseur"
+    },
+    "archived_page": {
+      "title": "Documents archivés"
+    },
+    "form_page": {
+      "title": "Documenter"
+    }
+  },
+  "workflows": {
+    "document_status_workflow": {
+      "states": {
+        "draft": {
+          "label": "Brouillon"
+        },
+        "approved": {
+          "label": "Approuvé"
+        },
+        "sent": {
+          "label": "Envoyé"
+        },
+        "signed": {
+          "label": "Signé"
+        },
+        "archived": {
+          "label": "Archivé"
+        }
+      },
+      "transitions": {
+        "draft_approved": {
+          "label": "Approuver"
+        },
+        "approved_sent": {
+          "label": "Marquer comme envoyé"
+        },
+        "sent_signed": {
+          "label": "Marque signée"
+        },
+        "draft_archived": {
+          "label": "Archiver"
+        },
+        "approved_archived": {
+          "label": "Archiver"
+        },
+        "sent_archived": {
+          "label": "Archiver"
+        },
+        "signed_archived": {
+          "label": "Archiver"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "document_created": "Document créé",
+    "document_updated": "Document mis à jour",
+    "document_status_changed": "Statut du document modifié",
+    "new_document_clicked": "Nouveau document cliqué",
+    "approve_clicked": "Approuver le clic",
+    "mark_sent_clicked": "Marquer Envoyé cliqué",
+    "mark_signed_clicked": "Mark Signé cliqué",
+    "archive_clicked": "Archiver cliqué"
+  }
+}

@@ -7,8 +7,10 @@ import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 export default function SettingsDocumentNumberingPage() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const { pushToast } = useToast();
   const [items, setItems] = useState([]);
@@ -30,7 +32,7 @@ export default function SettingsDocumentNumberingPage() {
       setItems(Array.isArray(response?.sequences) ? response.sequences : []);
     } catch (err) {
       setItems([]);
-      setError(err?.message || "Failed to load document numbering settings");
+      setError(err?.message || t("settings.document_numbering.load_failed"));
     } finally {
       setLoading(false);
     }
@@ -48,10 +50,10 @@ export default function SettingsDocumentNumberingPage() {
       await Promise.all(selectedIds.map((id) => apiFetch(`/settings/document-numbering/${encodeURIComponent(id)}`, { method: "DELETE" })));
       setSelectedIds([]);
       setShowDeleteModal(false);
-      pushToast("success", selectedIds.length === 1 ? "Sequence deleted." : "Sequences deleted.");
+      pushToast("success", selectedIds.length === 1 ? t("settings.document_numbering.deleted_one") : t("settings.document_numbering.deleted_many"));
       await load();
     } catch (err) {
-      setError(err?.message || "Failed to delete sequences");
+      setError(err?.message || t("settings.document_numbering.delete_failed"));
     } finally {
       setSaving(false);
     }
@@ -66,24 +68,24 @@ export default function SettingsDocumentNumberingPage() {
       assign_on: item.assign_on || "—",
       reset_policy: item.reset_policy || "—",
       assignment_count: Number(item.assignment_count || 0),
-      next_value_preview: item.next_value_preview || item.preview_error || "Preview unavailable",
+      next_value_preview: item.next_value_preview || item.preview_error || t("settings.document_numbering.preview_unavailable"),
       status: item.is_active ? "active" : "inactive",
     })),
-    [items],
+    [items, t],
   );
 
   const listFieldIndex = useMemo(
     () => ({
-      "seq.name": { id: "seq.name", label: "Name" },
-      "seq.code": { id: "seq.code", label: "Code" },
-      "seq.target_entity_id": { id: "seq.target_entity_id", label: "Entity" },
-      "seq.assign_on": { id: "seq.assign_on", label: "Assign On" },
-      "seq.reset_policy": { id: "seq.reset_policy", label: "Reset" },
-      "seq.assignment_count": { id: "seq.assignment_count", label: "Assigned", type: "number" },
-      "seq.next_value_preview": { id: "seq.next_value_preview", label: "Preview" },
-      "seq.status": { id: "seq.status", label: "Status" },
+      "seq.name": { id: "seq.name", label: t("settings.document_numbering.name") },
+      "seq.code": { id: "seq.code", label: t("settings.document_numbering.code") },
+      "seq.target_entity_id": { id: "seq.target_entity_id", label: t("settings.document_numbering.entity") },
+      "seq.assign_on": { id: "seq.assign_on", label: t("settings.document_numbering.assign_on") },
+      "seq.reset_policy": { id: "seq.reset_policy", label: t("settings.document_numbering.reset") },
+      "seq.assignment_count": { id: "seq.assignment_count", label: t("settings.document_numbering.assigned"), type: "number" },
+      "seq.next_value_preview": { id: "seq.next_value_preview", label: t("settings.document_numbering.preview") },
+      "seq.status": { id: "seq.status", label: t("settings.document_numbering.status") },
     }),
-    [],
+    [t],
   );
 
   const listView = useMemo(
@@ -122,11 +124,11 @@ export default function SettingsDocumentNumberingPage() {
 
   const filters = useMemo(
     () => [
-      { id: "all", label: "All", domain: null },
-      { id: "active", label: "Active", domain: { op: "eq", field: "seq.status", value: "active" } },
-      { id: "inactive", label: "Inactive", domain: { op: "eq", field: "seq.status", value: "inactive" } },
+      { id: "all", label: t("common.all"), domain: null },
+      { id: "active", label: t("common.active"), domain: { op: "eq", field: "seq.status", value: "active" } },
+      { id: "inactive", label: t("common.inactive"), domain: { op: "eq", field: "seq.status", value: "inactive" } },
     ],
-    [],
+    [t],
   );
 
   const activeFilter = useMemo(() => filters.find((filter) => filter.id === statusFilter) || null, [filters, statusFilter]);
@@ -138,8 +140,8 @@ export default function SettingsDocumentNumberingPage() {
           <div className="space-y-4 md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
             <SystemListToolbar
-              title="Document Numbering"
-              createTooltip="New sequence"
+              title={t("settings.document_numbering.title")}
+              createTooltip={t("settings.document_numbering.new_sequence")}
               onCreate={() => navigate("/settings/document-numbering/new")}
               searchValue={search}
               onSearchChange={(value) => {
@@ -165,23 +167,23 @@ export default function SettingsDocumentNumberingPage() {
               rightActions={
                 selectedIds.length > 0 ? (
                   <div className="dropdown dropdown-end">
-                    <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                    <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label={t("settings.selection_actions")}>
                       <MoreHorizontal className="h-4 w-4" />
                     </button>
                     <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
                       <li className="menu-title">
-                        <span>Selection</span>
+                        <span>{t("settings.selection")}</span>
                       </li>
                       {selectedIds.length === 1 ? (
                         <li>
                           <button type="button" onClick={() => navigate(`/settings/document-numbering/${selectedIds[0]}`)}>
-                            Open sequence
+                            {t("settings.document_numbering.open_sequence")}
                           </button>
                         </li>
                       ) : null}
                       <li>
                         <button type="button" className="text-error" onClick={() => setShowDeleteModal(true)} disabled={saving}>
-                          {selectedIds.length === 1 ? "Delete" : `Delete selected (${selectedIds.length})`}
+                          {selectedIds.length === 1 ? t("common.delete") : t("common.delete_count", { count: selectedIds.length })}
                         </button>
                       </li>
                     </ul>
@@ -192,7 +194,7 @@ export default function SettingsDocumentNumberingPage() {
 
             <div className="md:mt-4">
               {loading ? (
-                <div className="text-sm opacity-70">Loading…</div>
+                <div className="text-sm opacity-70">{t("common.loading")}</div>
               ) : (
                 <ListViewRenderer
                   view={listView}
@@ -238,24 +240,28 @@ export default function SettingsDocumentNumberingPage() {
         <div className="modal modal-open">
           <div className="modal-box">
             <h3 className="text-lg font-semibold">
-              {selectedIds.length === 1 ? "Delete sequence?" : `Delete ${selectedIds.length} sequences?`}
+              {selectedIds.length === 1
+                ? t("settings.document_numbering.delete_title_one")
+                : t("settings.document_numbering.delete_title_many", { count: selectedIds.length })}
             </h3>
             <p className="mt-2 text-sm opacity-70">
-              This permanently deletes {selectedIds.length === 1 ? "the selected numbering sequence" : "the selected numbering sequences"}.
+              {selectedIds.length === 1
+                ? t("settings.document_numbering.delete_body_one")
+                : t("settings.document_numbering.delete_body_many")}
             </p>
             <div className="modal-action">
               <button type="button" className="btn btn-ghost" onClick={() => setShowDeleteModal(false)} disabled={saving}>
-                Cancel
+                {t("common.cancel")}
               </button>
               <button type="button" className="btn btn-error" onClick={deleteSelectedSequences} disabled={saving}>
-                {saving ? "Deleting..." : (selectedIds.length === 1 ? "Delete" : "Delete selected")}
+                {saving ? t("common.deleting") : selectedIds.length === 1 ? t("common.delete") : t("common.delete_count", { count: selectedIds.length })}
               </button>
             </div>
           </div>
           <button
             type="button"
             className="modal-backdrop"
-            aria-label="Close"
+            aria-label={t("common.close")}
             onClick={() => {
               if (!saving) setShowDeleteModal(false);
             }}

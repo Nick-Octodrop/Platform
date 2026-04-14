@@ -327,6 +327,7 @@ def _handle_doc_generate(job: dict, org_id: str) -> None:
         entity_def,
         entity_id,
         app_main._branding_context_for_org(org_id),
+        localization=app_main._localization_context_for_actor(None),
     )
     html = render_html(template.get("html") or "", context)
     filename_pattern = template.get("filename_pattern") or template.get("name") or "document"

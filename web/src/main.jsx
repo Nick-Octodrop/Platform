@@ -6,6 +6,13 @@ import App from "./App.jsx";
 import "./styles.css";
 import { applyBrandColors, applyTheme, getBrandColors, getInitialTheme } from "./theme/theme.js";
 
+const ENABLE_DEV_PWA = import.meta.env.VITE_ENABLE_DEV_PWA === "1";
+const SHOULD_REGISTER_PWA = !import.meta.env.DEV || ENABLE_DEV_PWA;
+
+if (typeof window !== "undefined") {
+  window.__octoPwaEnabled = SHOULD_REGISTER_PWA;
+}
+
 applyTheme(getInitialTheme());
 applyBrandColors(getBrandColors());
 
@@ -100,27 +107,12 @@ async function recoverFromStaleBundle(reason = "stale-bundle") {
 }
 
 function installServiceWorkerUpdatePolling(registration) {
-  if (!registration || typeof window === "undefined" || typeof document === "undefined") return;
-
-  const checkForUpdate = () => {
-    registration.update().catch(() => {
-      // ignore transient SW update failures
-    });
-  };
-
+  if (!registration || typeof window === "undefined") return;
   window.__octoWebSwRegistration = registration;
-  window.addEventListener("focus", checkForUpdate);
-  window.addEventListener("online", checkForUpdate);
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") {
-      checkForUpdate();
-    }
-  });
-  window.setInterval(checkForUpdate, 60 * 1000);
 }
 
 let hasReloadedForNewController = false;
-if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+if (SHOULD_REGISTER_PWA && typeof navigator !== "undefined" && "serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (hasReloadedForNewController) return;
     hasReloadedForNewController = true;
@@ -128,30 +120,54 @@ if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
   });
 }
 
-const updateSW = registerSW({
-  immediate: true,
-  onRegisteredSW(_swUrl, registration) {
-    window.__octoWebApplyUpdate = updateSW;
-    installServiceWorkerUpdatePolling(registration);
-    if (registration?.waiting) {
+let updateSW = null;
+if (SHOULD_REGISTER_PWA) {
+  updateSW = registerSW({
+    immediate: true,
+    onRegisteredSW(_swUrl, registration) {
+      window.__octoWebApplyUpdate = updateSW;
+      installServiceWorkerUpdatePolling(registration);
+      if (registration?.waiting) {
+        dispatchPwaUpdateReady();
+        if (isStandaloneDisplay()) {
+          updateSW(true).catch(() => {
+            // keep manual update fallback in the shell if auto-apply fails
+          });
+        }
+      }
+    },
+    onNeedRefresh() {
+      window.__octoWebApplyUpdate = updateSW;
       dispatchPwaUpdateReady();
       if (isStandaloneDisplay()) {
         updateSW(true).catch(() => {
           // keep manual update fallback in the shell if auto-apply fails
         });
       }
-    }
-  },
-  onNeedRefresh() {
-    window.__octoWebApplyUpdate = updateSW;
-    dispatchPwaUpdateReady();
-    if (isStandaloneDisplay()) {
-      updateSW(true).catch(() => {
-        // keep manual update fallback in the shell if auto-apply fails
-      });
-    }
-  },
-});
+    },
+  });
+} else if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    Promise.all(
+      registrations.map((registration) =>
+        registration.unregister().catch(() => {
+          // ignore unregister failures in dev cleanup
+        })
+      )
+    ).then(() => {
+      if (typeof window === "undefined") return;
+      const reloadKey = "octo:dev-sw-cleanup-reloaded";
+      if (navigator.serviceWorker.controller && !window.sessionStorage.getItem(reloadKey)) {
+        window.sessionStorage.setItem(reloadKey, "1");
+        window.location.reload();
+      }
+    }).catch(() => {
+      // ignore unregister failures in dev cleanup
+    });
+  }).catch(() => {
+    // ignore registration lookup failures
+  });
+}
 
 if (typeof window !== "undefined") {
   window.__octoRecoverFromStaleBundle = recoverFromStaleBundle;

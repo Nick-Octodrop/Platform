@@ -1,12 +1,13 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { Send } from "lucide-react";
+import { translateRuntime } from "../i18n/runtime.js";
 
 const AgentChatInput = forwardRef(function AgentChatInput({
   value,
   onChange,
   onSend,
   disabled,
-  placeholder = "Describe a change…",
+  placeholder = translateRuntime("settings.studio.agent.placeholder"),
   minRows = 1,
   className = "",
 }, ref) {
@@ -50,7 +51,7 @@ const AgentChatInput = forwardRef(function AgentChatInput({
         }}
         disabled={disabled || !value?.trim()}
         type="button"
-        aria-label="Send message"
+        aria-label={translateRuntime("common.send_message")}
       >
         <Send size={16} strokeWidth={1.5} />
       </button>

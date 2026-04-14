@@ -1,0 +1,426 @@
+{
+  "module": {
+    "name": "Purchase Orders",
+    "description": "Supplier purchasing linked back to customer orders."
+  },
+  "navigation": {
+    "biz_purchase_order_list_page": "Purchase Orders",
+    "biz_purchase_order_sent_page": "Sent",
+    "biz_purchase_order_production_page": "In Production",
+    "biz_purchase_order_shipped_page": "Shipped",
+    "biz_purchase_order_received_page": "Received"
+  },
+  "entities": {
+    "biz_purchase_order": {
+      "label": "Purchase Order",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "po_number": {
+          "label": "PO Number"
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "draft": "Draft",
+            "sent_to_supplier": "Sent to Supplier",
+            "confirmed": "Confirmed",
+            "on_hold": "On Hold",
+            "in_production": "In Production",
+            "shipped": "Shipped",
+            "received": "Received",
+            "closed": "Closed",
+            "cancelled": "Cancelled"
+          }
+        },
+        "supplier_id": {
+          "label": "Supplier"
+        },
+        "purchasing_entity": {
+          "label": "Purchasing Entity",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "source_customer_order_id": {
+          "label": "Source Order"
+        },
+        "source_customer_order_number": {
+          "label": "Source Order"
+        },
+        "po_date": {
+          "label": "PO Date"
+        },
+        "currency": {
+          "label": "Currency",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "supplier_reference": {
+          "label": "Supplier Reference"
+        },
+        "incoterm": {
+          "label": "Incoterm"
+        },
+        "expected_ship_date": {
+          "label": "Expected Ship Date"
+        },
+        "expected_arrival_date": {
+          "label": "Expected Arrival Date"
+        },
+        "notes": {
+          "label": "Notes"
+        },
+        "hold_reason": {
+          "label": "On Hold Reason"
+        },
+        "cancellation_reason": {
+          "label": "Cancellation Reason"
+        },
+        "status_before_hold": {
+          "label": "Previous Status"
+        },
+        "po_total": {
+          "label": "PO Total"
+        },
+        "freight_estimate": {
+          "label": "Freight Estimate"
+        },
+        "landed_cost_estimate": {
+          "label": "Landed Cost Estimate"
+        }
+      }
+    },
+    "biz_purchase_order_line": {
+      "label": "Purchase Order Line",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "purchase_order_id": {
+          "label": "Purchase Order"
+        },
+        "product_id": {
+          "label": "Product"
+        },
+        "description": {
+          "label": "Description"
+        },
+        "purchasing_entity_snapshot": {
+          "label": "Purchasing Entity Snapshot",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "currency_snapshot": {
+          "label": "Currency Snapshot",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "uom": {
+          "label": "UOM",
+          "options": {
+            "ea": "Each",
+            "set": "Set",
+            "kit": "Kit",
+            "lot": "Lot",
+            "pallet": "Pallet",
+            "container": "Container",
+            "m": "Meter"
+          }
+        },
+        "quantity": {
+          "label": "Qty"
+        },
+        "unit_cost": {
+          "label": "Unit Cost"
+        },
+        "line_total": {
+          "label": "Line Total"
+        },
+        "source_order_line_ref": {
+          "label": "Source Order Line Ref"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_purchase_order_new": {
+      "label": "New Purchase Order"
+    },
+    "action_purchase_order_mark_sent": {
+      "label": "Send PO",
+      "confirm": {
+        "title": "Send purchase order?"
+      }
+    },
+    "action_purchase_order_confirm": {
+      "label": "Confirm PO"
+    },
+    "action_purchase_order_open_hold_modal": {
+      "label": "Put On Hold"
+    },
+    "action_purchase_order_resume": {
+      "label": "Resume PO"
+    },
+    "action_purchase_order_mark_in_production": {
+      "label": "Mark In Production"
+    },
+    "action_purchase_order_mark_shipped": {
+      "label": "Mark Shipped"
+    },
+    "action_purchase_order_mark_received": {
+      "label": "Mark Received"
+    },
+    "action_purchase_order_close": {
+      "label": "Close PO",
+      "confirm": {
+        "title": "Close purchase order?"
+      }
+    },
+    "action_purchase_order_open_cancel_modal": {
+      "label": "Cancel PO"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Search purchase orders..."
+      },
+      "filters": {
+        "open": {
+          "label": "Open POs"
+        },
+        "draft": {
+          "label": "Draft POs"
+        },
+        "sent": {
+          "label": "Sent POs"
+        },
+        "on_hold": {
+          "label": "On Hold"
+        },
+        "production": {
+          "label": "In Production"
+        },
+        "shipped": {
+          "label": "Shipped"
+        },
+        "received": {
+          "label": "Received"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Purchase Order"
+        },
+        "financials": {
+          "title": "Costs"
+        },
+        "notes": {
+          "title": "Notes"
+        },
+        "lines": {
+          "title": "PO Lines"
+        },
+        "main": {
+          "title": "PO Line"
+        }
+      }
+    }
+  },
+  "modals": {
+    "purchase_order_hold": {
+      "title": "Put Purchase Order On Hold",
+      "description": "Capture why the supplier-side flow is being paused.",
+      "actions": {
+        "update_record": {
+          "label": "Put On Hold"
+        },
+        "close_modal": {
+          "label": "Close"
+        }
+      }
+    },
+    "purchase_order_cancel": {
+      "title": "Cancel Purchase Order",
+      "description": "Capture why this PO is being cancelled.",
+      "actions": {
+        "update_record": {
+          "label": "Cancel Purchase Order"
+        },
+        "close_modal": {
+          "label": "Close"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Purchase Orders",
+      "header": {
+        "actions": {
+          "navigate": {
+            "label": "New Purchase Order"
+          }
+        }
+      },
+      "blocks": {
+        "1": {
+          "cards": {
+            "purchase_orders_draft_count": {
+              "label": "To Send",
+              "subtitle": "Draft supplier orders"
+            },
+            "purchase_orders_production_count": {
+              "label": "In Production",
+              "subtitle": "Confirmed with supplier"
+            },
+            "purchase_orders_shipped_count": {
+              "label": "In Transit",
+              "subtitle": "Supplier has shipped"
+            },
+            "purchase_orders_received_count": {
+              "label": "Received",
+              "subtitle": "Awaiting closeout"
+            }
+          }
+        }
+      }
+    },
+    "sent_page": {
+      "title": "Sent Purchase Orders"
+    },
+    "production_page": {
+      "title": "Purchase Orders In Production"
+    },
+    "shipped_page": {
+      "title": "Shipped Purchase Orders"
+    },
+    "received_page": {
+      "title": "Received Purchase Orders"
+    },
+    "form_page": {
+      "title": "Purchase Order"
+    }
+  },
+  "workflows": {
+    "purchase_order_status_workflow": {
+      "states": {
+        "draft": {
+          "label": "Draft"
+        },
+        "sent_to_supplier": {
+          "label": "Sent to Supplier"
+        },
+        "confirmed": {
+          "label": "Confirmed"
+        },
+        "on_hold": {
+          "label": "On Hold"
+        },
+        "in_production": {
+          "label": "In Production"
+        },
+        "shipped": {
+          "label": "Shipped"
+        },
+        "received": {
+          "label": "Received"
+        },
+        "closed": {
+          "label": "Closed"
+        },
+        "cancelled": {
+          "label": "Cancelled"
+        }
+      },
+      "transitions": {
+        "draft_sent_to_supplier": {
+          "label": "Send PO"
+        },
+        "sent_to_supplier_confirmed": {
+          "label": "Supplier Confirmed"
+        },
+        "confirmed_on_hold": {
+          "label": "Put On Hold"
+        },
+        "confirmed_in_production": {
+          "label": "Start Production"
+        },
+        "in_production_on_hold": {
+          "label": "Put On Hold"
+        },
+        "in_production_shipped": {
+          "label": "Mark Shipped"
+        },
+        "shipped_on_hold": {
+          "label": "Put On Hold"
+        },
+        "shipped_received": {
+          "label": "Mark Received"
+        },
+        "received_closed": {
+          "label": "Close PO"
+        },
+        "on_hold_confirmed": {
+          "label": "Resume to Confirmed"
+        },
+        "on_hold_in_production": {
+          "label": "Resume to Production"
+        },
+        "on_hold_shipped": {
+          "label": "Resume to Shipped"
+        },
+        "draft_cancelled": {
+          "label": "Cancel PO"
+        },
+        "sent_to_supplier_cancelled": {
+          "label": "Cancel PO"
+        },
+        "confirmed_cancelled": {
+          "label": "Cancel PO"
+        },
+        "in_production_cancelled": {
+          "label": "Cancel PO"
+        },
+        "on_hold_cancelled": {
+          "label": "Cancel PO"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "purchase_order_created": "Purchase Order created",
+    "purchase_order_updated": "Purchase Order updated",
+    "purchase_order_line_created": "Purchase Order Line created",
+    "purchase_order_line_updated": "Purchase Order Line updated",
+    "purchase_order_status_changed": "Purchase Order status changed",
+    "new_purchase_order_clicked": "New Purchase Order clicked",
+    "send_po_clicked": "Send PO clicked",
+    "confirm_po_clicked": "Confirm PO clicked",
+    "put_on_hold_clicked": "Put On Hold clicked",
+    "resume_po_clicked": "Resume PO clicked",
+    "mark_in_production_clicked": "Mark In Production clicked",
+    "mark_shipped_clicked": "Mark Shipped clicked",
+    "mark_received_clicked": "Mark Received clicked",
+    "close_po_clicked": "Close PO clicked",
+    "cancel_po_clicked": "Cancel PO clicked"
+  },
+  "dashboard": {
+    "purchase_orders_by_status": "Purchase Orders by Status"
+  }
+}

@@ -7,12 +7,20 @@
     "version": "1.0.0",
     "description": "Deposit, progress, final, and credit-note customer invoicing.",
     "category": "Commercial",
-    "icon_key": "lucide:Receipt"
+    "icon_key": "lucide:Receipt",
+    "name_key": "invoices.module.name",
+    "description_key": "invoices.module.description"
   },
   "depends_on": {
     "required": [
-      { "module": "biz_contacts", "version": ">=1.0.0" },
-      { "module": "biz_products", "version": ">=1.0.0" }
+      {
+        "module": "biz_contacts",
+        "version": ">=1.0.0"
+      },
+      {
+        "module": "biz_products",
+        "version": ">=1.0.0"
+      }
     ]
   },
   "app": {
@@ -36,12 +44,36 @@
         "group": "Commercial",
         "mode": "inline",
         "items": [
-          { "label": "Invoices", "to": "page:biz_invoice.list_page" },
-          { "label": "Draft", "to": "page:biz_invoice.draft_page" },
-          { "label": "Issued", "to": "page:biz_invoice.issued_page" },
-          { "label": "Part Paid", "to": "page:biz_invoice.part_paid_page" },
-          { "label": "Paid", "to": "page:biz_invoice.paid_page" },
-          { "label": "Credit Notes", "to": "page:biz_invoice.credit_notes_page" }
+          {
+            "label": "Invoices",
+            "to": "page:biz_invoice.list_page",
+            "menu_label_key": "invoices.navigation.biz_invoice_list_page"
+          },
+          {
+            "label": "Draft",
+            "to": "page:biz_invoice.draft_page",
+            "menu_label_key": "invoices.navigation.biz_invoice_draft_page"
+          },
+          {
+            "label": "Issued",
+            "to": "page:biz_invoice.issued_page",
+            "menu_label_key": "invoices.navigation.biz_invoice_issued_page"
+          },
+          {
+            "label": "Part Paid",
+            "to": "page:biz_invoice.part_paid_page",
+            "menu_label_key": "invoices.navigation.biz_invoice_part_paid_page"
+          },
+          {
+            "label": "Paid",
+            "to": "page:biz_invoice.paid_page",
+            "menu_label_key": "invoices.navigation.biz_invoice_paid_page"
+          },
+          {
+            "label": "Credit Notes",
+            "to": "page:biz_invoice.credit_notes_page",
+            "menu_label_key": "invoices.navigation.biz_invoice_credit_notes_page"
+          }
         ]
       }
     ]
@@ -52,23 +84,68 @@
       "label": "Invoice",
       "display_field": "biz_invoice.invoice_number",
       "fields": [
-        { "id": "biz_invoice.id", "type": "uuid", "label": "ID", "readonly": true },
-        { "id": "biz_invoice.invoice_number", "type": "string", "label": "Invoice Number", "readonly": true },
+        {
+          "id": "biz_invoice.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true,
+          "label_key": "invoices.entities.biz_invoice.fields.id.label"
+        },
+        {
+          "id": "biz_invoice.invoice_number",
+          "type": "string",
+          "label": "Invoice Number",
+          "readonly": true,
+          "label_key": "invoices.entities.biz_invoice.fields.invoice_number.label"
+        },
         {
           "id": "biz_invoice.status",
           "type": "enum",
           "label": "Status",
           "required": true,
           "default": "draft",
-          "ui": { "widget": "steps" },
+          "ui": {
+            "widget": "steps"
+          },
           "options": [
-            { "value": "draft", "label": "Draft" },
-            { "value": "issued", "label": "Issued" },
-            { "value": "part_paid", "label": "Part Paid" },
-            { "value": "paid", "label": "Paid" },
-            { "value": "cancelled", "label": "Cancelled" },
-            { "value": "credited", "label": "Credited" }
-          ]
+            {
+              "value": "draft",
+              "label": "Draft",
+              "status_label_key": "invoices.entities.biz_invoice.fields.status.options.draft",
+              "label_key": "invoices.entities.biz_invoice.fields.status.options.draft"
+            },
+            {
+              "value": "issued",
+              "label": "Issued",
+              "status_label_key": "invoices.entities.biz_invoice.fields.status.options.issued",
+              "label_key": "invoices.entities.biz_invoice.fields.status.options.issued"
+            },
+            {
+              "value": "part_paid",
+              "label": "Part Paid",
+              "status_label_key": "invoices.entities.biz_invoice.fields.status.options.part_paid",
+              "label_key": "invoices.entities.biz_invoice.fields.status.options.part_paid"
+            },
+            {
+              "value": "paid",
+              "label": "Paid",
+              "status_label_key": "invoices.entities.biz_invoice.fields.status.options.paid",
+              "label_key": "invoices.entities.biz_invoice.fields.status.options.paid"
+            },
+            {
+              "value": "cancelled",
+              "label": "Cancelled",
+              "status_label_key": "invoices.entities.biz_invoice.fields.status.options.cancelled",
+              "label_key": "invoices.entities.biz_invoice.fields.status.options.cancelled"
+            },
+            {
+              "value": "credited",
+              "label": "Credited",
+              "status_label_key": "invoices.entities.biz_invoice.fields.status.options.credited",
+              "label_key": "invoices.entities.biz_invoice.fields.status.options.credited"
+            }
+          ],
+          "label_key": "invoices.entities.biz_invoice.fields.status.label"
         },
         {
           "id": "biz_invoice.invoice_type",
@@ -77,11 +154,32 @@
           "required": true,
           "default": "deposit",
           "options": [
-            { "value": "deposit", "label": "Deposit" },
-            { "value": "progress", "label": "Progress" },
-            { "value": "final", "label": "Final" },
-            { "value": "credit_note", "label": "Credit Note" }
-          ]
+            {
+              "value": "deposit",
+              "label": "Deposit",
+              "status_label_key": "invoices.entities.biz_invoice.fields.invoice_type.options.deposit",
+              "label_key": "invoices.entities.biz_invoice.fields.invoice_type.options.deposit"
+            },
+            {
+              "value": "progress",
+              "label": "Progress",
+              "status_label_key": "invoices.entities.biz_invoice.fields.invoice_type.options.progress",
+              "label_key": "invoices.entities.biz_invoice.fields.invoice_type.options.progress"
+            },
+            {
+              "value": "final",
+              "label": "Final",
+              "status_label_key": "invoices.entities.biz_invoice.fields.invoice_type.options.final",
+              "label_key": "invoices.entities.biz_invoice.fields.invoice_type.options.final"
+            },
+            {
+              "value": "credit_note",
+              "label": "Credit Note",
+              "status_label_key": "invoices.entities.biz_invoice.fields.invoice_type.options.credit_note",
+              "label_key": "invoices.entities.biz_invoice.fields.invoice_type.options.credit_note"
+            }
+          ],
+          "label_key": "invoices.entities.biz_invoice.fields.invoice_type.label"
         },
         {
           "id": "biz_invoice.customer_id",
@@ -89,7 +187,8 @@
           "label": "Customer",
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
-          "required": true
+          "required": true,
+          "label_key": "invoices.entities.biz_invoice.fields.customer_id.label"
         },
         {
           "id": "biz_invoice.source_order_id",
@@ -98,9 +197,19 @@
           "entity": "entity.biz_order",
           "display_field": "biz_order.order_number",
           "readonly": true,
-          "visible_when": { "op": "exists", "field": "biz_invoice.source_order_id" }
+          "visible_when": {
+            "op": "exists",
+            "field": "biz_invoice.source_order_id"
+          },
+          "label_key": "invoices.entities.biz_invoice.fields.source_order_id.label"
         },
-        { "id": "biz_invoice.source_order_number", "type": "string", "label": "Source Order", "readonly": true },
+        {
+          "id": "biz_invoice.source_order_number",
+          "type": "string",
+          "label": "Source Order",
+          "readonly": true,
+          "label_key": "invoices.entities.biz_invoice.fields.source_order_number.label"
+        },
         {
           "id": "biz_invoice.origin_invoice_id",
           "type": "lookup",
@@ -108,7 +217,12 @@
           "entity": "entity.biz_invoice",
           "display_field": "biz_invoice.invoice_number",
           "readonly": true,
-          "visible_when": { "op": "eq", "field": "biz_invoice.invoice_type", "value": "credit_note" }
+          "visible_when": {
+            "op": "eq",
+            "field": "biz_invoice.invoice_type",
+            "value": "credit_note"
+          },
+          "label_key": "invoices.entities.biz_invoice.fields.origin_invoice_id.label"
         },
         {
           "id": "biz_invoice.credit_note_id",
@@ -117,7 +231,11 @@
           "entity": "entity.biz_invoice",
           "display_field": "biz_invoice.invoice_number",
           "readonly": true,
-          "visible_when": { "op": "exists", "field": "biz_invoice.credit_note_id" }
+          "visible_when": {
+            "op": "exists",
+            "field": "biz_invoice.credit_note_id"
+          },
+          "label_key": "invoices.entities.biz_invoice.fields.credit_note_id.label"
         },
         {
           "id": "biz_invoice.sales_entity",
@@ -125,31 +243,88 @@
           "label": "Sales Entity",
           "default": "NLight BV",
           "options": [
-            { "value": "NLight BV", "label": "NLight BV" },
-            { "value": "EcoTech FZCO", "label": "EcoTech FZCO" }
-          ]
+            {
+              "value": "NLight BV",
+              "label": "NLight BV",
+              "status_label_key": "invoices.entities.biz_invoice.fields.sales_entity.options.nlight_bv",
+              "label_key": "invoices.entities.biz_invoice.fields.sales_entity.options.nlight_bv"
+            },
+            {
+              "value": "EcoTech FZCO",
+              "label": "EcoTech FZCO",
+              "status_label_key": "invoices.entities.biz_invoice.fields.sales_entity.options.ecotech_fzco",
+              "label_key": "invoices.entities.biz_invoice.fields.sales_entity.options.ecotech_fzco"
+            }
+          ],
+          "label_key": "invoices.entities.biz_invoice.fields.sales_entity.label"
         },
-        { "id": "biz_invoice.invoice_date", "type": "date", "label": "Invoice Date" },
-        { "id": "biz_invoice.due_date", "type": "date", "label": "Due Date" },
+        {
+          "id": "biz_invoice.invoice_date",
+          "type": "date",
+          "label": "Invoice Date",
+          "label_key": "invoices.entities.biz_invoice.fields.invoice_date.label"
+        },
+        {
+          "id": "biz_invoice.due_date",
+          "type": "date",
+          "label": "Due Date",
+          "label_key": "invoices.entities.biz_invoice.fields.due_date.label"
+        },
         {
           "id": "biz_invoice.currency",
           "type": "enum",
           "label": "Currency",
           "default": "EUR",
           "options": [
-            { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" },
-            { "value": "GBP", "label": "GBP" },
-            { "value": "AED", "label": "AED" }
-          ]
+            {
+              "value": "EUR",
+              "label": "EUR",
+              "status_label_key": "invoices.entities.biz_invoice.fields.currency.options.eur",
+              "label_key": "invoices.entities.biz_invoice.fields.currency.options.eur"
+            },
+            {
+              "value": "USD",
+              "label": "USD",
+              "status_label_key": "invoices.entities.biz_invoice.fields.currency.options.usd",
+              "label_key": "invoices.entities.biz_invoice.fields.currency.options.usd"
+            },
+            {
+              "value": "GBP",
+              "label": "GBP",
+              "status_label_key": "invoices.entities.biz_invoice.fields.currency.options.gbp",
+              "label_key": "invoices.entities.biz_invoice.fields.currency.options.gbp"
+            },
+            {
+              "value": "AED",
+              "label": "AED",
+              "status_label_key": "invoices.entities.biz_invoice.fields.currency.options.aed",
+              "label_key": "invoices.entities.biz_invoice.fields.currency.options.aed"
+            }
+          ],
+          "label_key": "invoices.entities.biz_invoice.fields.currency.label"
         },
-        { "id": "biz_invoice.customer_reference", "type": "string", "label": "Customer Reference" },
-        { "id": "biz_invoice.notes", "type": "text", "label": "Notes" },
+        {
+          "id": "biz_invoice.customer_reference",
+          "type": "string",
+          "label": "Customer Reference",
+          "label_key": "invoices.entities.biz_invoice.fields.customer_reference.label"
+        },
+        {
+          "id": "biz_invoice.notes",
+          "type": "text",
+          "label": "Notes",
+          "label_key": "invoices.entities.biz_invoice.fields.notes.label"
+        },
         {
           "id": "biz_invoice.cancellation_reason",
           "type": "text",
           "label": "Cancellation Reason",
-          "required_when": { "op": "eq", "field": "biz_invoice.status", "value": "cancelled" }
+          "required_when": {
+            "op": "eq",
+            "field": "biz_invoice.status",
+            "value": "cancelled"
+          },
+          "label_key": "invoices.entities.biz_invoice.fields.cancellation_reason.label"
         },
         {
           "id": "biz_invoice.source_order_total_snapshot",
@@ -159,9 +334,17 @@
           "visible_when": {
             "op": "in",
             "field": "biz_invoice.invoice_type",
-            "value": ["deposit", "final"]
+            "value": [
+              "deposit",
+              "final"
+            ]
           },
-          "format": { "kind": "currency", "currency_field": "biz_invoice.currency", "precision": 2 }
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_invoice.currency",
+            "precision": 2
+          },
+          "label_key": "invoices.entities.biz_invoice.fields.source_order_total_snapshot.label"
         },
         {
           "id": "biz_invoice.deposit_percent_snapshot",
@@ -171,9 +354,16 @@
           "visible_when": {
             "op": "in",
             "field": "biz_invoice.invoice_type",
-            "value": ["deposit", "final"]
+            "value": [
+              "deposit",
+              "final"
+            ]
           },
-          "format": { "kind": "percent", "precision": 2 }
+          "format": {
+            "kind": "percent",
+            "precision": 2
+          },
+          "label_key": "invoices.entities.biz_invoice.fields.deposit_percent_snapshot.label"
         },
         {
           "id": "biz_invoice.invoice_manual_total",
@@ -183,9 +373,17 @@
           "visible_when": {
             "op": "in",
             "field": "biz_invoice.invoice_type",
-            "value": ["progress", "credit_note"]
+            "value": [
+              "progress",
+              "credit_note"
+            ]
           },
-          "format": { "kind": "currency", "currency_field": "biz_invoice.currency", "precision": 2 }
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_invoice.currency",
+            "precision": 2
+          },
+          "label_key": "invoices.entities.biz_invoice.fields.invoice_manual_total.label"
         },
         {
           "id": "biz_invoice.invoice_total",
@@ -193,22 +391,34 @@
           "label": "Invoice Total",
           "readonly": true,
           "default": 0,
-          "format": { "kind": "currency", "currency_field": "biz_invoice.currency", "precision": 2 },
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_invoice.currency",
+            "precision": 2
+          },
           "compute": {
             "expression": {
               "op": "if",
-              "condition": { "op": "eq", "field": "biz_invoice.invoice_type", "value": "deposit" },
+              "condition": {
+                "op": "eq",
+                "field": "biz_invoice.invoice_type",
+                "value": "deposit"
+              },
               "then": {
                 "op": "round",
                 "args": [
                   {
                     "op": "mul",
                     "args": [
-                      { "ref": "$current.biz_invoice.source_order_total_snapshot" },
+                      {
+                        "ref": "$current.biz_invoice.source_order_total_snapshot"
+                      },
                       {
                         "op": "div",
                         "args": [
-                          { "ref": "$current.biz_invoice.deposit_percent_snapshot" },
+                          {
+                            "ref": "$current.biz_invoice.deposit_percent_snapshot"
+                          },
                           100
                         ]
                       }
@@ -219,22 +429,32 @@
               },
               "else": {
                 "op": "if",
-                "condition": { "op": "eq", "field": "biz_invoice.invoice_type", "value": "final" },
+                "condition": {
+                  "op": "eq",
+                  "field": "biz_invoice.invoice_type",
+                  "value": "final"
+                },
                 "then": {
                   "op": "round",
                   "args": [
                     {
                       "op": "sub",
                       "args": [
-                        { "ref": "$current.biz_invoice.source_order_total_snapshot" },
+                        {
+                          "ref": "$current.biz_invoice.source_order_total_snapshot"
+                        },
                         {
                           "op": "mul",
                           "args": [
-                            { "ref": "$current.biz_invoice.source_order_total_snapshot" },
+                            {
+                              "ref": "$current.biz_invoice.source_order_total_snapshot"
+                            },
                             {
                               "op": "div",
                               "args": [
-                                { "ref": "$current.biz_invoice.deposit_percent_snapshot" },
+                                {
+                                  "ref": "$current.biz_invoice.deposit_percent_snapshot"
+                                },
                                 100
                               ]
                             }
@@ -247,23 +467,39 @@
                 },
                 "else": {
                   "op": "if",
-                  "condition": { "op": "eq", "field": "biz_invoice.invoice_type", "value": "credit_note" },
+                  "condition": {
+                    "op": "eq",
+                    "field": "biz_invoice.invoice_type",
+                    "value": "credit_note"
+                  },
                   "then": {
                     "op": "neg",
-                    "args": [{ "ref": "$current.biz_invoice.invoice_manual_total" }]
+                    "args": [
+                      {
+                        "ref": "$current.biz_invoice.invoice_manual_total"
+                      }
+                    ]
                   },
-                  "else": { "ref": "$current.biz_invoice.invoice_manual_total" }
+                  "else": {
+                    "ref": "$current.biz_invoice.invoice_manual_total"
+                  }
                 }
               }
             }
-          }
+          },
+          "label_key": "invoices.entities.biz_invoice.fields.invoice_total.label"
         },
         {
           "id": "biz_invoice.amount_paid",
           "type": "number",
           "label": "Amount Paid",
           "default": 0,
-          "format": { "kind": "currency", "currency_field": "biz_invoice.currency", "precision": 2 }
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_invoice.currency",
+            "precision": 2
+          },
+          "label_key": "invoices.entities.biz_invoice.fields.amount_paid.label"
         },
         {
           "id": "biz_invoice.balance_due",
@@ -271,7 +507,11 @@
           "label": "Balance Due",
           "readonly": true,
           "default": 0,
-          "format": { "kind": "currency", "currency_field": "biz_invoice.currency", "precision": 2 },
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_invoice.currency",
+            "precision": 2
+          },
           "compute": {
             "expression": {
               "op": "round",
@@ -279,48 +519,79 @@
                 {
                   "op": "sub",
                   "args": [
-                    { "ref": "$current.biz_invoice.invoice_total" },
-                    { "ref": "$current.biz_invoice.amount_paid" }
+                    {
+                      "ref": "$current.biz_invoice.invoice_total"
+                    },
+                    {
+                      "ref": "$current.biz_invoice.amount_paid"
+                    }
                   ]
                 },
                 2
               ]
             }
-          }
+          },
+          "label_key": "invoices.entities.biz_invoice.fields.balance_due.label"
         }
-      ]
+      ],
+      "label_key": "invoices.entities.biz_invoice.label"
     },
     {
       "id": "entity.biz_invoice_line",
       "label": "Invoice Line",
       "display_field": "biz_invoice_line.description",
       "fields": [
-        { "id": "biz_invoice_line.id", "type": "uuid", "label": "ID", "readonly": true },
+        {
+          "id": "biz_invoice_line.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true,
+          "label_key": "invoices.entities.biz_invoice_line.fields.id.label"
+        },
         {
           "id": "biz_invoice_line.invoice_id",
           "type": "lookup",
           "label": "Invoice",
           "entity": "entity.biz_invoice",
           "display_field": "biz_invoice.invoice_number",
-          "required": true
+          "required": true,
+          "label_key": "invoices.entities.biz_invoice_line.fields.invoice_id.label"
         },
         {
           "id": "biz_invoice_line.product_id",
           "type": "lookup",
           "label": "Product",
           "entity": "entity.biz_product",
-          "display_field": "biz_product.name"
+          "display_field": "biz_product.name",
+          "label_key": "invoices.entities.biz_invoice_line.fields.product_id.label"
         },
-        { "id": "biz_invoice_line.description", "type": "string", "label": "Description", "required": true },
+        {
+          "id": "biz_invoice_line.description",
+          "type": "string",
+          "label": "Description",
+          "required": true,
+          "label_key": "invoices.entities.biz_invoice_line.fields.description.label"
+        },
         {
           "id": "biz_invoice_line.sales_entity_snapshot",
           "type": "enum",
           "label": "Sales Entity Snapshot",
           "default": "NLight BV",
           "options": [
-            { "value": "NLight BV", "label": "NLight BV" },
-            { "value": "EcoTech FZCO", "label": "EcoTech FZCO" }
-          ]
+            {
+              "value": "NLight BV",
+              "label": "NLight BV",
+              "status_label_key": "invoices.entities.biz_invoice_line.fields.sales_entity_snapshot.options.nlight_bv",
+              "label_key": "invoices.entities.biz_invoice_line.fields.sales_entity_snapshot.options.nlight_bv"
+            },
+            {
+              "value": "EcoTech FZCO",
+              "label": "EcoTech FZCO",
+              "status_label_key": "invoices.entities.biz_invoice_line.fields.sales_entity_snapshot.options.ecotech_fzco",
+              "label_key": "invoices.entities.biz_invoice_line.fields.sales_entity_snapshot.options.ecotech_fzco"
+            }
+          ],
+          "label_key": "invoices.entities.biz_invoice_line.fields.sales_entity_snapshot.label"
         },
         {
           "id": "biz_invoice_line.currency_snapshot",
@@ -328,11 +599,32 @@
           "label": "Currency Snapshot",
           "default": "EUR",
           "options": [
-            { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" },
-            { "value": "GBP", "label": "GBP" },
-            { "value": "AED", "label": "AED" }
-          ]
+            {
+              "value": "EUR",
+              "label": "EUR",
+              "status_label_key": "invoices.entities.biz_invoice_line.fields.currency_snapshot.options.eur",
+              "label_key": "invoices.entities.biz_invoice_line.fields.currency_snapshot.options.eur"
+            },
+            {
+              "value": "USD",
+              "label": "USD",
+              "status_label_key": "invoices.entities.biz_invoice_line.fields.currency_snapshot.options.usd",
+              "label_key": "invoices.entities.biz_invoice_line.fields.currency_snapshot.options.usd"
+            },
+            {
+              "value": "GBP",
+              "label": "GBP",
+              "status_label_key": "invoices.entities.biz_invoice_line.fields.currency_snapshot.options.gbp",
+              "label_key": "invoices.entities.biz_invoice_line.fields.currency_snapshot.options.gbp"
+            },
+            {
+              "value": "AED",
+              "label": "AED",
+              "status_label_key": "invoices.entities.biz_invoice_line.fields.currency_snapshot.options.aed",
+              "label_key": "invoices.entities.biz_invoice_line.fields.currency_snapshot.options.aed"
+            }
+          ],
+          "label_key": "invoices.entities.biz_invoice_line.fields.currency_snapshot.label"
         },
         {
           "id": "biz_invoice_line.uom",
@@ -340,17 +632,65 @@
           "label": "UOM",
           "default": "EA",
           "options": [
-            { "value": "EA", "label": "Each" },
-            { "value": "SET", "label": "Set" },
-            { "value": "KIT", "label": "Kit" },
-            { "value": "LOT", "label": "Lot" },
-            { "value": "PALLET", "label": "Pallet" },
-            { "value": "CONTAINER", "label": "Container" },
-            { "value": "M", "label": "Meter" }
-          ]
+            {
+              "value": "EA",
+              "label": "Each",
+              "status_label_key": "invoices.entities.biz_invoice_line.fields.uom.options.ea",
+              "label_key": "invoices.entities.biz_invoice_line.fields.uom.options.ea"
+            },
+            {
+              "value": "SET",
+              "label": "Set",
+              "status_label_key": "invoices.entities.biz_invoice_line.fields.uom.options.set",
+              "label_key": "invoices.entities.biz_invoice_line.fields.uom.options.set"
+            },
+            {
+              "value": "KIT",
+              "label": "Kit",
+              "status_label_key": "invoices.entities.biz_invoice_line.fields.uom.options.kit",
+              "label_key": "invoices.entities.biz_invoice_line.fields.uom.options.kit"
+            },
+            {
+              "value": "LOT",
+              "label": "Lot",
+              "status_label_key": "invoices.entities.biz_invoice_line.fields.uom.options.lot",
+              "label_key": "invoices.entities.biz_invoice_line.fields.uom.options.lot"
+            },
+            {
+              "value": "PALLET",
+              "label": "Pallet",
+              "status_label_key": "invoices.entities.biz_invoice_line.fields.uom.options.pallet",
+              "label_key": "invoices.entities.biz_invoice_line.fields.uom.options.pallet"
+            },
+            {
+              "value": "CONTAINER",
+              "label": "Container",
+              "status_label_key": "invoices.entities.biz_invoice_line.fields.uom.options.container",
+              "label_key": "invoices.entities.biz_invoice_line.fields.uom.options.container"
+            },
+            {
+              "value": "M",
+              "label": "Meter",
+              "status_label_key": "invoices.entities.biz_invoice_line.fields.uom.options.m",
+              "label_key": "invoices.entities.biz_invoice_line.fields.uom.options.m"
+            }
+          ],
+          "label_key": "invoices.entities.biz_invoice_line.fields.uom.label"
         },
-        { "id": "biz_invoice_line.quantity", "type": "number", "label": "Qty", "default": 1 },
-        { "id": "biz_invoice_line.unit_price", "type": "number", "label": "Unit Price", "default": 0 },
+        {
+          "id": "biz_invoice_line.quantity",
+          "type": "number",
+          "label": "Qty",
+          "default": 1,
+          "label_key": "invoices.entities.biz_invoice_line.fields.quantity.label"
+        },
+        {
+          "id": "biz_invoice_line.unit_price",
+          "type": "number",
+          "label": "Unit Price",
+          "default": 0,
+          "label_key": "invoices.entities.biz_invoice_line.fields.unit_price.label"
+        },
         {
           "id": "biz_invoice_line.line_total",
           "type": "number",
@@ -364,14 +704,19 @@
                 {
                   "op": "mul",
                   "args": [
-                    { "ref": "$current.biz_invoice_line.quantity" },
-                    { "ref": "$current.biz_invoice_line.unit_price" }
+                    {
+                      "ref": "$current.biz_invoice_line.quantity"
+                    },
+                    {
+                      "ref": "$current.biz_invoice_line.unit_price"
+                    }
                   ]
                 },
                 2
               ]
             }
-          }
+          },
+          "label_key": "invoices.entities.biz_invoice_line.fields.line_total.label"
         }
       ],
       "activity": {
@@ -388,7 +733,8 @@
           "biz_invoice_line.unit_price",
           "biz_invoice_line.line_total"
         ]
-      }
+      },
+      "label_key": "invoices.entities.biz_invoice_line.label"
     }
   ],
   "workflows": [
@@ -397,45 +743,221 @@
       "entity": "entity.biz_invoice",
       "status_field": "biz_invoice.status",
       "states": [
-        { "id": "draft", "label": "Draft", "required_fields": ["biz_invoice.customer_id", "biz_invoice.currency"] },
-        { "id": "issued", "label": "Issued", "required_fields": ["biz_invoice.customer_id", "biz_invoice.invoice_date", "biz_invoice.due_date"] },
-        { "id": "part_paid", "label": "Part Paid" },
-        { "id": "paid", "label": "Paid" },
-        { "id": "cancelled", "label": "Cancelled" },
-        { "id": "credited", "label": "Credited" }
+        {
+          "id": "draft",
+          "label": "Draft",
+          "required_fields": [
+            "biz_invoice.customer_id",
+            "biz_invoice.currency"
+          ],
+          "status_label_key": "invoices.workflows.invoice_status_workflow.states.draft.label",
+          "label_key": "invoices.workflows.invoice_status_workflow.states.draft.label"
+        },
+        {
+          "id": "issued",
+          "label": "Issued",
+          "required_fields": [
+            "biz_invoice.customer_id",
+            "biz_invoice.invoice_date",
+            "biz_invoice.due_date"
+          ],
+          "status_label_key": "invoices.workflows.invoice_status_workflow.states.issued.label",
+          "label_key": "invoices.workflows.invoice_status_workflow.states.issued.label"
+        },
+        {
+          "id": "part_paid",
+          "label": "Part Paid",
+          "status_label_key": "invoices.workflows.invoice_status_workflow.states.part_paid.label",
+          "label_key": "invoices.workflows.invoice_status_workflow.states.part_paid.label"
+        },
+        {
+          "id": "paid",
+          "label": "Paid",
+          "status_label_key": "invoices.workflows.invoice_status_workflow.states.paid.label",
+          "label_key": "invoices.workflows.invoice_status_workflow.states.paid.label"
+        },
+        {
+          "id": "cancelled",
+          "label": "Cancelled",
+          "status_label_key": "invoices.workflows.invoice_status_workflow.states.cancelled.label",
+          "label_key": "invoices.workflows.invoice_status_workflow.states.cancelled.label"
+        },
+        {
+          "id": "credited",
+          "label": "Credited",
+          "status_label_key": "invoices.workflows.invoice_status_workflow.states.credited.label",
+          "label_key": "invoices.workflows.invoice_status_workflow.states.credited.label"
+        }
       ],
       "transitions": [
-        { "from": "draft", "to": "issued", "label": "Issue Invoice" },
-        { "from": "issued", "to": "part_paid", "label": "Mark Part Paid" },
-        { "from": "issued", "to": "paid", "label": "Mark Paid" },
-        { "from": "part_paid", "to": "paid", "label": "Mark Paid" },
-        { "from": "draft", "to": "cancelled", "label": "Cancel Invoice" },
-        { "from": "issued", "to": "cancelled", "label": "Cancel Invoice" },
-        { "from": "issued", "to": "credited", "label": "Mark Credited" },
-        { "from": "part_paid", "to": "credited", "label": "Mark Credited" },
-        { "from": "paid", "to": "credited", "label": "Mark Credited" }
+        {
+          "from": "draft",
+          "to": "issued",
+          "label": "Issue Invoice",
+          "action_label_key": "invoices.workflows.invoice_status_workflow.transitions.draft_issued.label",
+          "label_key": "invoices.workflows.invoice_status_workflow.transitions.draft_issued.label"
+        },
+        {
+          "from": "issued",
+          "to": "part_paid",
+          "label": "Mark Part Paid",
+          "action_label_key": "invoices.workflows.invoice_status_workflow.transitions.issued_part_paid.label",
+          "label_key": "invoices.workflows.invoice_status_workflow.transitions.issued_part_paid.label"
+        },
+        {
+          "from": "issued",
+          "to": "paid",
+          "label": "Mark Paid",
+          "action_label_key": "invoices.workflows.invoice_status_workflow.transitions.issued_paid.label",
+          "label_key": "invoices.workflows.invoice_status_workflow.transitions.issued_paid.label"
+        },
+        {
+          "from": "part_paid",
+          "to": "paid",
+          "label": "Mark Paid",
+          "action_label_key": "invoices.workflows.invoice_status_workflow.transitions.part_paid_paid.label",
+          "label_key": "invoices.workflows.invoice_status_workflow.transitions.part_paid_paid.label"
+        },
+        {
+          "from": "draft",
+          "to": "cancelled",
+          "label": "Cancel Invoice",
+          "action_label_key": "invoices.workflows.invoice_status_workflow.transitions.draft_cancelled.label",
+          "label_key": "invoices.workflows.invoice_status_workflow.transitions.draft_cancelled.label"
+        },
+        {
+          "from": "issued",
+          "to": "cancelled",
+          "label": "Cancel Invoice",
+          "action_label_key": "invoices.workflows.invoice_status_workflow.transitions.issued_cancelled.label",
+          "label_key": "invoices.workflows.invoice_status_workflow.transitions.issued_cancelled.label"
+        },
+        {
+          "from": "issued",
+          "to": "credited",
+          "label": "Mark Credited",
+          "action_label_key": "invoices.workflows.invoice_status_workflow.transitions.issued_credited.label",
+          "label_key": "invoices.workflows.invoice_status_workflow.transitions.issued_credited.label"
+        },
+        {
+          "from": "part_paid",
+          "to": "credited",
+          "label": "Mark Credited",
+          "action_label_key": "invoices.workflows.invoice_status_workflow.transitions.part_paid_credited.label",
+          "label_key": "invoices.workflows.invoice_status_workflow.transitions.part_paid_credited.label"
+        },
+        {
+          "from": "paid",
+          "to": "credited",
+          "label": "Mark Credited",
+          "action_label_key": "invoices.workflows.invoice_status_workflow.transitions.paid_credited.label",
+          "label_key": "invoices.workflows.invoice_status_workflow.transitions.paid_credited.label"
+        }
       ],
       "required_fields_by_state": {
-        "issued": ["biz_invoice.customer_id", "biz_invoice.invoice_date", "biz_invoice.due_date"],
-        "part_paid": ["biz_invoice.amount_paid"],
-        "paid": ["biz_invoice.amount_paid"],
-        "cancelled": ["biz_invoice.cancellation_reason"]
+        "issued": [
+          "biz_invoice.customer_id",
+          "biz_invoice.invoice_date",
+          "biz_invoice.due_date"
+        ],
+        "part_paid": [
+          "biz_invoice.amount_paid"
+        ],
+        "paid": [
+          "biz_invoice.amount_paid"
+        ],
+        "cancelled": [
+          "biz_invoice.cancellation_reason"
+        ]
       }
     }
   ],
   "triggers": [
-    { "id": "biz_invoices.record.biz_invoice.created", "label": "Invoice created", "event": "record.created", "entity_id": "entity.biz_invoice" },
-    { "id": "biz_invoices.record.biz_invoice.updated", "label": "Invoice updated", "event": "record.updated", "entity_id": "entity.biz_invoice" },
-    { "id": "biz_invoices.record.biz_invoice_line.created", "label": "Invoice Line created", "event": "record.created", "entity_id": "entity.biz_invoice_line" },
-    { "id": "biz_invoices.record.biz_invoice_line.updated", "label": "Invoice Line updated", "event": "record.updated", "entity_id": "entity.biz_invoice_line" },
-    { "id": "biz_invoices.workflow.biz_invoice.status_changed", "label": "Invoice status changed", "event": "workflow.status_changed", "entity_id": "entity.biz_invoice", "status_field": "biz_invoice.status" },
-    { "id": "biz_invoices.action.invoice_new.clicked", "label": "New Invoice clicked", "event": "action.clicked", "action_id": "action.invoice_new" },
-    { "id": "biz_invoices.action.invoice_issue.clicked", "label": "Issue / Send Invoice clicked", "event": "action.clicked", "action_id": "action.invoice_issue" },
-    { "id": "biz_invoices.action.invoice_mark_part_paid.clicked", "label": "Mark Part Paid clicked", "event": "action.clicked", "action_id": "action.invoice_mark_part_paid" },
-    { "id": "biz_invoices.action.invoice_mark_paid.clicked", "label": "Mark Paid clicked", "event": "action.clicked", "action_id": "action.invoice_mark_paid" },
-    { "id": "biz_invoices.action.invoice_open_cancel_modal.clicked", "label": "Cancel clicked", "event": "action.clicked", "action_id": "action.invoice_open_cancel_modal" },
-    { "id": "biz_invoices.action.invoice_create_credit_note.clicked", "label": "Create Credit Note clicked", "event": "action.clicked", "action_id": "action.invoice_create_credit_note" },
-    { "id": "biz_invoices.action.invoice_mark_credited.clicked", "label": "Mark Credited clicked", "event": "action.clicked", "action_id": "action.invoice_mark_credited" }
+    {
+      "id": "biz_invoices.record.biz_invoice.created",
+      "label": "Invoice created",
+      "label_key": "invoices.triggers.invoice_created",
+      "event": "record.created",
+      "entity_id": "entity.biz_invoice"
+    },
+    {
+      "id": "biz_invoices.record.biz_invoice.updated",
+      "label": "Invoice updated",
+      "label_key": "invoices.triggers.invoice_updated",
+      "event": "record.updated",
+      "entity_id": "entity.biz_invoice"
+    },
+    {
+      "id": "biz_invoices.record.biz_invoice_line.created",
+      "label": "Invoice Line created",
+      "label_key": "invoices.triggers.invoice_line_created",
+      "event": "record.created",
+      "entity_id": "entity.biz_invoice_line"
+    },
+    {
+      "id": "biz_invoices.record.biz_invoice_line.updated",
+      "label": "Invoice Line updated",
+      "label_key": "invoices.triggers.invoice_line_updated",
+      "event": "record.updated",
+      "entity_id": "entity.biz_invoice_line"
+    },
+    {
+      "id": "biz_invoices.workflow.biz_invoice.status_changed",
+      "label": "Invoice status changed",
+      "label_key": "invoices.triggers.invoice_status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.biz_invoice",
+      "status_field": "biz_invoice.status"
+    },
+    {
+      "id": "biz_invoices.action.invoice_new.clicked",
+      "label": "New Invoice clicked",
+      "label_key": "invoices.triggers.new_invoice_clicked",
+      "event": "action.clicked",
+      "action_id": "action.invoice_new"
+    },
+    {
+      "id": "biz_invoices.action.invoice_issue.clicked",
+      "label": "Issue / Send Invoice clicked",
+      "label_key": "invoices.triggers.issue_send_clicked",
+      "event": "action.clicked",
+      "action_id": "action.invoice_issue"
+    },
+    {
+      "id": "biz_invoices.action.invoice_mark_part_paid.clicked",
+      "label": "Mark Part Paid clicked",
+      "label_key": "invoices.triggers.mark_part_paid_clicked",
+      "event": "action.clicked",
+      "action_id": "action.invoice_mark_part_paid"
+    },
+    {
+      "id": "biz_invoices.action.invoice_mark_paid.clicked",
+      "label": "Mark Paid clicked",
+      "label_key": "invoices.triggers.mark_paid_clicked",
+      "event": "action.clicked",
+      "action_id": "action.invoice_mark_paid"
+    },
+    {
+      "id": "biz_invoices.action.invoice_open_cancel_modal.clicked",
+      "label": "Cancel clicked",
+      "label_key": "invoices.triggers.cancel_clicked",
+      "event": "action.clicked",
+      "action_id": "action.invoice_open_cancel_modal"
+    },
+    {
+      "id": "biz_invoices.action.invoice_create_credit_note.clicked",
+      "label": "Create Credit Note clicked",
+      "label_key": "invoices.triggers.create_credit_note_clicked",
+      "event": "action.clicked",
+      "action_id": "action.invoice_create_credit_note"
+    },
+    {
+      "id": "biz_invoices.action.invoice_mark_credited.clicked",
+      "label": "Mark Credited clicked",
+      "label_key": "invoices.triggers.mark_credited_clicked",
+      "event": "action.clicked",
+      "action_id": "action.invoice_mark_credited"
+    }
   ],
   "transformations": [
     {
@@ -443,18 +965,42 @@
       "source_entity_id": "entity.biz_invoice",
       "target_entity_id": "entity.biz_invoice",
       "field_mappings": {
-        "biz_invoice.invoice_type": { "value": "credit_note" },
-        "biz_invoice.customer_id": { "from": "biz_invoice.customer_id" },
-        "biz_invoice.source_order_id": { "from": "biz_invoice.source_order_id" },
-        "biz_invoice.source_order_number": { "from": "biz_invoice.source_order_number" },
-        "biz_invoice.sales_entity": { "from": "biz_invoice.sales_entity" },
-        "biz_invoice.invoice_date": { "ref": "$today" },
-        "biz_invoice.due_date": { "ref": "$today" },
-        "biz_invoice.currency": { "from": "biz_invoice.currency" },
-        "biz_invoice.customer_reference": { "from": "biz_invoice.customer_reference" },
-        "biz_invoice.notes": { "from": "biz_invoice.notes" },
-        "biz_invoice.invoice_manual_total": { "from": "biz_invoice.invoice_total" },
-        "biz_invoice.status": { "value": "draft" }
+        "biz_invoice.invoice_type": {
+          "value": "credit_note"
+        },
+        "biz_invoice.customer_id": {
+          "from": "biz_invoice.customer_id"
+        },
+        "biz_invoice.source_order_id": {
+          "from": "biz_invoice.source_order_id"
+        },
+        "biz_invoice.source_order_number": {
+          "from": "biz_invoice.source_order_number"
+        },
+        "biz_invoice.sales_entity": {
+          "from": "biz_invoice.sales_entity"
+        },
+        "biz_invoice.invoice_date": {
+          "ref": "$today"
+        },
+        "biz_invoice.due_date": {
+          "ref": "$today"
+        },
+        "biz_invoice.currency": {
+          "from": "biz_invoice.currency"
+        },
+        "biz_invoice.customer_reference": {
+          "from": "biz_invoice.customer_reference"
+        },
+        "biz_invoice.notes": {
+          "from": "biz_invoice.notes"
+        },
+        "biz_invoice.invoice_manual_total": {
+          "from": "biz_invoice.invoice_total"
+        },
+        "biz_invoice.status": {
+          "value": "draft"
+        }
       },
       "child_mappings": [
         {
@@ -463,13 +1009,27 @@
           "source_link_field": "biz_invoice_line.invoice_id",
           "target_link_field": "biz_invoice_line.invoice_id",
           "field_mappings": {
-            "biz_invoice_line.product_id": { "from": "biz_invoice_line.product_id" },
-            "biz_invoice_line.description": { "from": "biz_invoice_line.description" },
-            "biz_invoice_line.sales_entity_snapshot": { "from": "biz_invoice_line.sales_entity_snapshot" },
-            "biz_invoice_line.currency_snapshot": { "from": "biz_invoice_line.currency_snapshot" },
-            "biz_invoice_line.uom": { "from": "biz_invoice_line.uom" },
-            "biz_invoice_line.quantity": { "from": "biz_invoice_line.quantity" },
-            "biz_invoice_line.unit_price": { "from": "biz_invoice_line.unit_price" }
+            "biz_invoice_line.product_id": {
+              "from": "biz_invoice_line.product_id"
+            },
+            "biz_invoice_line.description": {
+              "from": "biz_invoice_line.description"
+            },
+            "biz_invoice_line.sales_entity_snapshot": {
+              "from": "biz_invoice_line.sales_entity_snapshot"
+            },
+            "biz_invoice_line.currency_snapshot": {
+              "from": "biz_invoice_line.currency_snapshot"
+            },
+            "biz_invoice_line.uom": {
+              "from": "biz_invoice_line.uom"
+            },
+            "biz_invoice_line.quantity": {
+              "from": "biz_invoice_line.quantity"
+            },
+            "biz_invoice_line.unit_price": {
+              "from": "biz_invoice_line.unit_price"
+            }
           }
         }
       ],
@@ -478,55 +1038,105 @@
         "target_to_source": "biz_invoice.origin_invoice_id"
       },
       "validation": {
-        "require_source_fields": ["biz_invoice.invoice_number", "biz_invoice.customer_id"],
+        "require_source_fields": [
+          "biz_invoice.invoice_number",
+          "biz_invoice.customer_id"
+        ],
         "prevent_if_target_linked": true
       }
     }
   ],
   "actions": [
-    { "id": "action.invoice_new", "kind": "open_form", "label": "New Invoice", "target": "biz_invoice.form" },
+    {
+      "id": "action.invoice_new",
+      "kind": "open_form",
+      "label": "New Invoice",
+      "target": "biz_invoice.form",
+      "action_label_key": "invoices.actions.action_invoice_new.label"
+    },
     {
       "id": "action.invoice_issue",
       "kind": "update_record",
       "entity_id": "entity.biz_invoice",
       "label": "Issue / Send Invoice",
-      "patch": { "biz_invoice.status": "issued" },
+      "patch": {
+        "biz_invoice.status": "issued"
+      },
       "confirm": {
         "title": "Issue invoice?",
-        "body": "Use this once the invoice is ready to be sent to the customer."
+        "body": "Use this once the invoice is ready to be sent to the customer.",
+        "title_key": "invoices.actions.action_invoice_issue.confirm.title"
       },
-      "visible_when": { "op": "eq", "field": "biz_invoice.status", "value": "draft" },
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_invoice.status",
+        "value": "draft"
+      },
       "enabled_when": {
         "op": "and",
         "conditions": [
-          { "op": "exists", "field": "biz_invoice.customer_id" },
-          { "op": "gt", "field": "biz_invoice.invoice_total", "value": 0 }
+          {
+            "op": "exists",
+            "field": "biz_invoice.customer_id"
+          },
+          {
+            "op": "gt",
+            "field": "biz_invoice.invoice_total",
+            "value": 0
+          }
         ]
-      }
+      },
+      "action_label_key": "invoices.actions.action_invoice_issue.label"
     },
     {
       "id": "action.invoice_mark_part_paid",
       "kind": "update_record",
       "entity_id": "entity.biz_invoice",
       "label": "Mark Part Paid",
-      "patch": { "biz_invoice.status": "part_paid" },
-      "visible_when": { "op": "eq", "field": "biz_invoice.status", "value": "issued" },
-      "enabled_when": { "op": "gt", "field": "biz_invoice.amount_paid", "value": 0 }
+      "patch": {
+        "biz_invoice.status": "part_paid"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_invoice.status",
+        "value": "issued"
+      },
+      "enabled_when": {
+        "op": "gt",
+        "field": "biz_invoice.amount_paid",
+        "value": 0
+      },
+      "action_label_key": "invoices.actions.action_invoice_mark_part_paid.label"
     },
     {
       "id": "action.invoice_mark_paid",
       "kind": "update_record",
       "entity_id": "entity.biz_invoice",
       "label": "Mark Paid",
-      "patch": { "biz_invoice.status": "paid" },
+      "patch": {
+        "biz_invoice.status": "paid"
+      },
       "visible_when": {
         "op": "or",
         "conditions": [
-          { "op": "eq", "field": "biz_invoice.status", "value": "issued" },
-          { "op": "eq", "field": "biz_invoice.status", "value": "part_paid" }
+          {
+            "op": "eq",
+            "field": "biz_invoice.status",
+            "value": "issued"
+          },
+          {
+            "op": "eq",
+            "field": "biz_invoice.status",
+            "value": "part_paid"
+          }
         ]
       },
-      "enabled_when": { "op": "gt", "field": "biz_invoice.amount_paid", "value": 0 }
+      "enabled_when": {
+        "op": "gt",
+        "field": "biz_invoice.amount_paid",
+        "value": 0
+      },
+      "action_label_key": "invoices.actions.action_invoice_mark_paid.label"
     },
     {
       "id": "action.invoice_open_cancel_modal",
@@ -537,10 +1147,19 @@
       "visible_when": {
         "op": "or",
         "conditions": [
-          { "op": "eq", "field": "biz_invoice.status", "value": "draft" },
-          { "op": "eq", "field": "biz_invoice.status", "value": "issued" }
+          {
+            "op": "eq",
+            "field": "biz_invoice.status",
+            "value": "draft"
+          },
+          {
+            "op": "eq",
+            "field": "biz_invoice.status",
+            "value": "issued"
+          }
         ]
-      }
+      },
+      "action_label_key": "invoices.actions.action_invoice_open_cancel_modal.label"
     },
     {
       "id": "action.invoice_create_credit_note",
@@ -550,7 +1169,8 @@
       "transformation_key": "invoice_to_credit_note",
       "confirm": {
         "title": "Create credit note?",
-        "body": "This will create a draft credit note linked back to the current invoice."
+        "body": "This will create a draft credit note linked back to the current invoice.",
+        "title_key": "invoices.actions.action_invoice_create_credit_note.confirm.title"
       },
       "visible_when": {
         "op": "and",
@@ -558,29 +1178,48 @@
           {
             "op": "in",
             "field": "biz_invoice.status",
-            "value": ["issued", "part_paid", "paid"]
+            "value": [
+              "issued",
+              "part_paid",
+              "paid"
+            ]
           },
           {
             "op": "not",
-            "condition": { "op": "eq", "field": "biz_invoice.invoice_type", "value": "credit_note" }
+            "condition": {
+              "op": "eq",
+              "field": "biz_invoice.invoice_type",
+              "value": "credit_note"
+            }
           },
           {
             "op": "not",
-            "condition": { "op": "exists", "field": "biz_invoice.credit_note_id" }
+            "condition": {
+              "op": "exists",
+              "field": "biz_invoice.credit_note_id"
+            }
           }
         ]
       },
-      "enabled_when": { "op": "gt", "field": "biz_invoice.invoice_total", "value": 0 }
+      "enabled_when": {
+        "op": "gt",
+        "field": "biz_invoice.invoice_total",
+        "value": 0
+      },
+      "action_label_key": "invoices.actions.action_invoice_create_credit_note.label"
     },
     {
       "id": "action.invoice_mark_credited",
       "kind": "update_record",
       "entity_id": "entity.biz_invoice",
       "label": "Mark Credited",
-      "patch": { "biz_invoice.status": "credited" },
+      "patch": {
+        "biz_invoice.status": "credited"
+      },
       "confirm": {
         "title": "Mark invoice as credited?",
-        "body": "Use this after the related credit note has been issued and the invoice should be treated as fully credited."
+        "body": "Use this after the related credit note has been issued and the invoice should be treated as fully credited.",
+        "title_key": "invoices.actions.action_invoice_mark_credited.confirm.title"
       },
       "visible_when": {
         "op": "and",
@@ -588,11 +1227,19 @@
           {
             "op": "in",
             "field": "biz_invoice.status",
-            "value": ["issued", "part_paid", "paid"]
+            "value": [
+              "issued",
+              "part_paid",
+              "paid"
+            ]
           },
-          { "op": "exists", "field": "biz_invoice.credit_note_id" }
+          {
+            "op": "exists",
+            "field": "biz_invoice.credit_note_id"
+          }
         ]
-      }
+      },
+      "action_label_key": "invoices.actions.action_invoice_mark_credited.label"
     }
   ],
   "views": [
@@ -601,23 +1248,50 @@
       "kind": "list",
       "entity": "entity.biz_invoice",
       "columns": [
-        { "field_id": "biz_invoice.invoice_number" },
-        { "field_id": "biz_invoice.invoice_date" },
-        { "field_id": "biz_invoice.customer_id" },
-        { "field_id": "biz_invoice.invoice_type" },
-        { "field_id": "biz_invoice.source_order_number" },
-        { "field_id": "biz_invoice.currency" },
-        { "field_id": "biz_invoice.invoice_total" },
-        { "field_id": "biz_invoice.amount_paid" },
-        { "field_id": "biz_invoice.status" }
+        {
+          "field_id": "biz_invoice.invoice_number"
+        },
+        {
+          "field_id": "biz_invoice.invoice_date"
+        },
+        {
+          "field_id": "biz_invoice.customer_id"
+        },
+        {
+          "field_id": "biz_invoice.invoice_type"
+        },
+        {
+          "field_id": "biz_invoice.source_order_number"
+        },
+        {
+          "field_id": "biz_invoice.currency"
+        },
+        {
+          "field_id": "biz_invoice.invoice_total"
+        },
+        {
+          "field_id": "biz_invoice.amount_paid"
+        },
+        {
+          "field_id": "biz_invoice.status"
+        }
       ],
       "header": {
-        "primary_actions": [{ "action_id": "action.invoice_new" }],
+        "primary_actions": [
+          {
+            "action_id": "action.invoice_new"
+          }
+        ],
         "open_record_target": "page:biz_invoice.form_page",
         "search": {
           "enabled": true,
           "placeholder": "Search invoices...",
-          "fields": ["biz_invoice.invoice_number", "biz_invoice.customer_reference", "biz_invoice.source_order_number"]
+          "fields": [
+            "biz_invoice.invoice_number",
+            "biz_invoice.customer_reference",
+            "biz_invoice.source_order_number"
+          ],
+          "placeholder_key": "invoices.views.list.search.placeholder"
         },
         "filters": [
           {
@@ -626,14 +1300,64 @@
             "domain": {
               "op": "in",
               "field": "biz_invoice.status",
-              "value": ["draft", "issued", "part_paid"]
-            }
+              "value": [
+                "draft",
+                "issued",
+                "part_paid"
+              ]
+            },
+            "label_key": "invoices.views.list.filters.open_receivables.label"
           },
-          { "id": "draft", "label": "Draft Invoices", "domain": { "op": "eq", "field": "biz_invoice.status", "value": "draft" } },
-          { "id": "issued", "label": "Issued Invoices", "domain": { "op": "eq", "field": "biz_invoice.status", "value": "issued" } },
-          { "id": "part_paid", "label": "Part Paid", "domain": { "op": "eq", "field": "biz_invoice.status", "value": "part_paid" } },
-          { "id": "paid", "label": "Paid", "domain": { "op": "eq", "field": "biz_invoice.status", "value": "paid" } },
-          { "id": "credit_notes", "label": "Credit Notes", "domain": { "op": "eq", "field": "biz_invoice.invoice_type", "value": "credit_note" } }
+          {
+            "id": "draft",
+            "label": "Draft Invoices",
+            "domain": {
+              "op": "eq",
+              "field": "biz_invoice.status",
+              "value": "draft"
+            },
+            "label_key": "invoices.views.list.filters.draft.label"
+          },
+          {
+            "id": "issued",
+            "label": "Issued Invoices",
+            "domain": {
+              "op": "eq",
+              "field": "biz_invoice.status",
+              "value": "issued"
+            },
+            "label_key": "invoices.views.list.filters.issued.label"
+          },
+          {
+            "id": "part_paid",
+            "label": "Part Paid",
+            "domain": {
+              "op": "eq",
+              "field": "biz_invoice.status",
+              "value": "part_paid"
+            },
+            "label_key": "invoices.views.list.filters.part_paid.label"
+          },
+          {
+            "id": "paid",
+            "label": "Paid",
+            "domain": {
+              "op": "eq",
+              "field": "biz_invoice.status",
+              "value": "paid"
+            },
+            "label_key": "invoices.views.list.filters.paid.label"
+          },
+          {
+            "id": "credit_notes",
+            "label": "Credit Notes",
+            "domain": {
+              "op": "eq",
+              "field": "biz_invoice.invoice_type",
+              "value": "credit_note"
+            },
+            "label_key": "invoices.views.list.filters.credit_notes.label"
+          }
         ]
       }
     },
@@ -658,7 +1382,8 @@
             "biz_invoice.customer_reference",
             "biz_invoice.invoice_date",
             "biz_invoice.due_date"
-          ]
+          ],
+          "section_title_key": "invoices.views.form.sections.summary.title"
         },
         {
           "id": "notes",
@@ -666,7 +1391,8 @@
           "fields": [
             "biz_invoice.notes",
             "biz_invoice.cancellation_reason"
-          ]
+          ],
+          "section_title_key": "invoices.views.form.sections.notes.title"
         },
         {
           "id": "financials",
@@ -680,7 +1406,8 @@
             "biz_invoice.invoice_total",
             "biz_invoice.amount_paid",
             "biz_invoice.balance_due"
-          ]
+          ],
+          "section_title_key": "invoices.views.form.sections.financials.title"
         },
         {
           "id": "related",
@@ -690,7 +1417,8 @@
           "fields": [
             "biz_invoice.origin_invoice_id",
             "biz_invoice.credit_note_id"
-          ]
+          ],
+          "section_title_key": "invoices.views.form.sections.related.title"
         },
         {
           "id": "lines",
@@ -719,38 +1447,166 @@
               "biz_invoice_line.unit_price": 0
             },
             "columns": [
-              { "field_id": "biz_invoice_line.product_id", "label": "Product", "readonly": true, "width": 220 },
-              { "field_id": "biz_invoice_line.description", "label": "Description", "width": 500 },
-              { "field_id": "biz_invoice_line.uom", "label": "UOM", "type": "enum", "width": 105, "options": [{ "value": "EA", "label": "Each" }, { "value": "SET", "label": "Set" }, { "value": "KIT", "label": "Kit" }, { "value": "LOT", "label": "Lot" }, { "value": "PALLET", "label": "Pallet" }, { "value": "CONTAINER", "label": "Container" }, { "value": "M", "label": "Meter" }] },
-              { "field_id": "biz_invoice_line.quantity", "label": "Qty", "type": "number", "width": 90, "align": "right" },
-              { "field_id": "biz_invoice_line.unit_price", "label": "Unit Price", "type": "number", "width": 155, "align": "right", "currency_field": "biz_invoice_line.currency_snapshot" },
-              { "field_id": "biz_invoice_line.line_total", "label": "Line Total", "type": "number", "readonly": true, "width": 155, "align": "right", "currency_field": "biz_invoice_line.currency_snapshot" }
+              {
+                "field_id": "biz_invoice_line.product_id",
+                "label": "Product",
+                "label_key": "common.product",
+                "readonly": true,
+                "width": 220
+              },
+              {
+                "field_id": "biz_invoice_line.description",
+                "label": "Description",
+                "label_key": "common.description",
+                "width": 500
+              },
+              {
+                "field_id": "biz_invoice_line.uom",
+                "label": "UOM",
+                "label_key": "common.uom",
+                "type": "enum",
+                "width": 105,
+                "options": [
+                  {
+                    "value": "EA",
+                    "label": "Each",
+                    "label_key": "common.each"
+                  },
+                  {
+                    "value": "SET",
+                    "label": "Set",
+                    "label_key": "common.set"
+                  },
+                  {
+                    "value": "KIT",
+                    "label": "Kit",
+                    "label_key": "common.kit"
+                  },
+                  {
+                    "value": "LOT",
+                    "label": "Lot",
+                    "label_key": "common.lot"
+                  },
+                  {
+                    "value": "PALLET",
+                    "label": "Pallet",
+                    "label_key": "common.pallet"
+                  },
+                  {
+                    "value": "CONTAINER",
+                    "label": "Container",
+                    "label_key": "common.container"
+                  },
+                  {
+                    "value": "M",
+                    "label": "Meter",
+                    "label_key": "common.meter"
+                  }
+                ]
+              },
+              {
+                "field_id": "biz_invoice_line.quantity",
+                "label": "Qty",
+                "label_key": "common.qty",
+                "type": "number",
+                "width": 90,
+                "align": "right"
+              },
+              {
+                "field_id": "biz_invoice_line.unit_price",
+                "label": "Unit Price",
+                "label_key": "common.unit_price",
+                "type": "number",
+                "width": 155,
+                "align": "right",
+                "currency_field": "biz_invoice_line.currency_snapshot"
+              },
+              {
+                "field_id": "biz_invoice_line.line_total",
+                "label": "Line Total",
+                "label_key": "common.line_total",
+                "type": "number",
+                "readonly": true,
+                "width": 155,
+                "align": "right",
+                "currency_field": "biz_invoice_line.currency_snapshot"
+              }
             ]
-          }
+          },
+          "section_title_key": "invoices.views.form.sections.lines.title"
         }
       ],
       "header": {
-        "statusbar": { "field_id": "biz_invoice.status" },
+        "statusbar": {
+          "field_id": "biz_invoice.status"
+        },
         "auto_state_actions": false,
         "primary_actions": [
-          { "action_id": "action.invoice_issue" },
-          { "action_id": "action.invoice_mark_part_paid" },
-          { "action_id": "action.invoice_mark_paid" },
-          { "action_id": "action.invoice_create_credit_note" },
-          { "action_id": "action.invoice_mark_credited" }
+          {
+            "action_id": "action.invoice_issue"
+          },
+          {
+            "action_id": "action.invoice_mark_part_paid"
+          },
+          {
+            "action_id": "action.invoice_mark_paid"
+          },
+          {
+            "action_id": "action.invoice_create_credit_note"
+          },
+          {
+            "action_id": "action.invoice_mark_credited"
+          }
         ],
         "secondary_actions": [
-          { "action_id": "action.invoice_open_cancel_modal" }
+          {
+            "action_id": "action.invoice_open_cancel_modal"
+          }
         ],
         "tabs": {
           "style": "lifted",
           "default_tab": "summary",
           "tabs": [
-            { "id": "summary", "label": "Summary", "sections": ["summary"] },
-            { "id": "notes", "label": "Notes", "sections": ["notes"] },
-            { "id": "financials", "label": "Payments Summary", "sections": ["financials"] },
-            { "id": "lines", "label": "Line Items", "sections": ["lines"] },
-            { "id": "related", "label": "Related Records", "sections": ["related"] }
+            {
+              "id": "summary",
+              "label": "Summary",
+              "tab_label_key": "common.summary",
+              "sections": [
+                "summary"
+              ]
+            },
+            {
+              "id": "notes",
+              "label": "Notes",
+              "tab_label_key": "common.notes",
+              "sections": [
+                "notes"
+              ]
+            },
+            {
+              "id": "financials",
+              "label": "Payments Summary",
+              "tab_label_key": "common.payments_summary",
+              "sections": [
+                "financials"
+              ]
+            },
+            {
+              "id": "lines",
+              "label": "Line Items",
+              "tab_label_key": "common.line_items",
+              "sections": [
+                "lines"
+              ]
+            },
+            {
+              "id": "related",
+              "label": "Related Records",
+              "tab_label_key": "common.related_records",
+              "sections": [
+                "related"
+              ]
+            }
           ]
         }
       },
@@ -819,20 +1675,37 @@
       "kind": "list",
       "entity": "entity.biz_invoice_line",
       "columns": [
-        { "field_id": "biz_invoice_line.invoice_id" },
-        { "field_id": "biz_invoice_line.product_id" },
-        { "field_id": "biz_invoice_line.description" },
-        { "field_id": "biz_invoice_line.uom" },
-        { "field_id": "biz_invoice_line.quantity" },
-        { "field_id": "biz_invoice_line.unit_price" },
-        { "field_id": "biz_invoice_line.line_total" }
+        {
+          "field_id": "biz_invoice_line.invoice_id"
+        },
+        {
+          "field_id": "biz_invoice_line.product_id"
+        },
+        {
+          "field_id": "biz_invoice_line.description"
+        },
+        {
+          "field_id": "biz_invoice_line.uom"
+        },
+        {
+          "field_id": "biz_invoice_line.quantity"
+        },
+        {
+          "field_id": "biz_invoice_line.unit_price"
+        },
+        {
+          "field_id": "biz_invoice_line.line_total"
+        }
       ],
       "header": {
         "open_record_target": "page:biz_invoice_line.form_page",
         "search": {
           "enabled": true,
           "placeholder": "Search invoice lines...",
-          "fields": ["biz_invoice_line.description"]
+          "fields": [
+            "biz_invoice_line.description"
+          ],
+          "placeholder_key": "invoices.views.list.search.placeholder"
         }
       }
     },
@@ -854,7 +1727,8 @@
             "biz_invoice_line.quantity",
             "biz_invoice_line.unit_price",
             "biz_invoice_line.line_total"
-          ]
+          ],
+          "section_title_key": "invoices.views.form.sections.main.title"
         }
       ],
       "activity": {
@@ -882,7 +1756,12 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "kind": "navigate", "label": "New Invoice", "target": "page:biz_invoice.form_page" }
+          {
+            "kind": "navigate",
+            "label": "New Invoice",
+            "target": "page:biz_invoice.form_page",
+            "action_label_key": "invoices.pages.list_page.header.actions.navigate.label"
+          }
         ]
       },
       "content": [
@@ -896,10 +1775,20 @@
               "subtitle": "Draft, issued and part paid",
               "entity_id": "entity.biz_invoice",
               "measure": "count",
-              "domain": { "op": "in", "field": "biz_invoice.status", "value": ["draft", "issued", "part_paid"] },
+              "domain": {
+                "op": "in",
+                "field": "biz_invoice.status",
+                "value": [
+                  "draft",
+                  "issued",
+                  "part_paid"
+                ]
+              },
               "icon": "lucide:ReceiptText",
               "tone": "primary",
-              "format": "number"
+              "format": "number",
+              "label_key": "invoices.pages.list_page.blocks.1.cards.invoice_open_receivables_count.label",
+              "subtitle_key": "invoices.pages.list_page.blocks.1.cards.invoice_open_receivables_count.subtitle"
             },
             {
               "id": "invoice_part_paid_count",
@@ -907,10 +1796,16 @@
               "subtitle": "Collections still in progress",
               "entity_id": "entity.biz_invoice",
               "measure": "count",
-              "domain": { "op": "eq", "field": "biz_invoice.status", "value": "part_paid" },
+              "domain": {
+                "op": "eq",
+                "field": "biz_invoice.status",
+                "value": "part_paid"
+              },
               "icon": "lucide:WalletCards",
               "tone": "warning",
-              "format": "number"
+              "format": "number",
+              "label_key": "invoices.pages.list_page.blocks.1.cards.invoice_part_paid_count.label",
+              "subtitle_key": "invoices.pages.list_page.blocks.1.cards.invoice_part_paid_count.subtitle"
             },
             {
               "id": "invoice_paid_count",
@@ -918,10 +1813,16 @@
               "subtitle": "Fully settled invoices",
               "entity_id": "entity.biz_invoice",
               "measure": "count",
-              "domain": { "op": "eq", "field": "biz_invoice.status", "value": "paid" },
+              "domain": {
+                "op": "eq",
+                "field": "biz_invoice.status",
+                "value": "paid"
+              },
               "icon": "lucide:CircleDollarSign",
               "tone": "success",
-              "format": "number"
+              "format": "number",
+              "label_key": "invoices.pages.list_page.blocks.1.cards.invoice_paid_count.label",
+              "subtitle_key": "invoices.pages.list_page.blocks.1.cards.invoice_paid_count.subtitle"
             },
             {
               "id": "invoice_credit_note_count",
@@ -929,10 +1830,16 @@
               "subtitle": "Commercial reversals",
               "entity_id": "entity.biz_invoice",
               "measure": "count",
-              "domain": { "op": "eq", "field": "biz_invoice.invoice_type", "value": "credit_note" },
+              "domain": {
+                "op": "eq",
+                "field": "biz_invoice.invoice_type",
+                "value": "credit_note"
+              },
               "icon": "lucide:Undo2",
               "tone": "accent",
-              "format": "number"
+              "format": "number",
+              "label_key": "invoices.pages.list_page.blocks.1.cards.invoice_credit_note_count.label",
+              "subtitle_key": "invoices.pages.list_page.blocks.1.cards.invoice_credit_note_count.subtitle"
             }
           ]
         },
@@ -946,16 +1853,34 @@
               "default_mode": "list",
               "default_filter_id": "open_receivables",
               "modes": [
-                { "mode": "list", "target": "view:biz_invoice.list" },
-                { "mode": "kanban", "target": "view:biz_invoice.kanban", "default_group_by": "biz_invoice.status" },
-                { "mode": "calendar", "target": "view:biz_invoice.calendar" },
-                { "mode": "graph", "target": "view:biz_invoice.graph" },
-                { "mode": "pivot", "target": "view:biz_invoice.list", "default_group_by": "biz_invoice.status" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_invoice.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:biz_invoice.kanban",
+                  "default_group_by": "biz_invoice.status"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:biz_invoice.calendar"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:biz_invoice.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:biz_invoice.list",
+                  "default_group_by": "biz_invoice.status"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "invoices.pages.list_page.title"
     },
     {
       "id": "biz_invoice.draft_page",
@@ -964,7 +1889,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.invoice_new" }
+          {
+            "action_id": "action.invoice_new"
+          }
         ]
       },
       "content": [
@@ -978,12 +1905,16 @@
               "default_mode": "list",
               "default_filter_id": "draft",
               "modes": [
-                { "mode": "list", "target": "view:biz_invoice.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_invoice.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "invoices.pages.draft_page.title"
     },
     {
       "id": "biz_invoice.issued_page",
@@ -992,7 +1923,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.invoice_new" }
+          {
+            "action_id": "action.invoice_new"
+          }
         ]
       },
       "content": [
@@ -1006,12 +1939,16 @@
               "default_mode": "list",
               "default_filter_id": "issued",
               "modes": [
-                { "mode": "list", "target": "view:biz_invoice.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_invoice.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "invoices.pages.issued_page.title"
     },
     {
       "id": "biz_invoice.part_paid_page",
@@ -1020,7 +1957,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.invoice_new" }
+          {
+            "action_id": "action.invoice_new"
+          }
         ]
       },
       "content": [
@@ -1034,12 +1973,16 @@
               "default_mode": "list",
               "default_filter_id": "part_paid",
               "modes": [
-                { "mode": "list", "target": "view:biz_invoice.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_invoice.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "invoices.pages.part_paid_page.title"
     },
     {
       "id": "biz_invoice.paid_page",
@@ -1048,7 +1991,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.invoice_new" }
+          {
+            "action_id": "action.invoice_new"
+          }
         ]
       },
       "content": [
@@ -1062,12 +2007,16 @@
               "default_mode": "list",
               "default_filter_id": "paid",
               "modes": [
-                { "mode": "list", "target": "view:biz_invoice.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_invoice.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "invoices.pages.paid_page.title"
     },
     {
       "id": "biz_invoice.credit_notes_page",
@@ -1076,7 +2025,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.invoice_new" }
+          {
+            "action_id": "action.invoice_new"
+          }
         ]
       },
       "content": [
@@ -1090,18 +2041,24 @@
               "default_mode": "list",
               "default_filter_id": "credit_notes",
               "modes": [
-                { "mode": "list", "target": "view:biz_invoice.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_invoice.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "invoices.pages.credit_notes_page.title"
     },
     {
       "id": "biz_invoice.form_page",
       "title": "Invoice",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none"
+      },
       "content": [
         {
           "kind": "record",
@@ -1120,7 +2077,10 @@
                       "kind": "container",
                       "variant": "card",
                       "content": [
-                        { "kind": "view", "target": "view:biz_invoice.form" }
+                        {
+                          "kind": "view",
+                          "target": "view:biz_invoice.form"
+                        }
                       ]
                     }
                   ]
@@ -1132,7 +2092,11 @@
                       "kind": "container",
                       "variant": "card",
                       "content": [
-                        { "kind": "chatter", "entity_id": "entity.biz_invoice", "record_ref": "$record.id" }
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.biz_invoice",
+                          "record_ref": "$record.id"
+                        }
                       ]
                     }
                   ]
@@ -1141,13 +2105,16 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "invoices.pages.form_page.title"
     },
     {
       "id": "biz_invoice_line.list_page",
       "title": "Invoice Lines",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none"
+      },
       "content": [
         {
           "kind": "container",
@@ -1158,18 +2125,24 @@
               "entity_id": "entity.biz_invoice_line",
               "default_mode": "list",
               "modes": [
-                { "mode": "list", "target": "view:biz_invoice_line.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_invoice_line.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "invoices.pages.list_page.title"
     },
     {
       "id": "biz_invoice_line.form_page",
       "title": "Invoice Line",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none"
+      },
       "content": [
         {
           "kind": "record",
@@ -1180,12 +2153,16 @@
               "kind": "container",
               "variant": "card",
               "content": [
-                { "kind": "view", "target": "view:biz_invoice_line.form" }
+                {
+                  "kind": "view",
+                  "target": "view:biz_invoice_line.form"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "invoices.pages.form_page.title"
     }
   ],
   "modals": [
@@ -1204,16 +2181,22 @@
           "entity_id": "entity.biz_invoice",
           "patch": {
             "biz_invoice.status": "cancelled",
-            "biz_invoice.cancellation_reason": { "ref": "$record.biz_invoice.cancellation_reason" }
+            "biz_invoice.cancellation_reason": {
+              "ref": "$record.biz_invoice.cancellation_reason"
+            }
           },
-          "close_on_success": true
+          "close_on_success": true,
+          "action_label_key": "invoices.modals.invoice_cancel.actions.update_record.label"
         },
         {
           "kind": "close_modal",
           "label": "Keep Open",
-          "variant": "ghost"
+          "variant": "ghost",
+          "action_label_key": "invoices.modals.invoice_cancel.actions.close_modal.label"
         }
-      ]
+      ],
+      "title_key": "invoices.modals.invoice_cancel.title",
+      "description_key": "invoices.modals.invoice_cancel.description"
     }
   ],
   "interfaces": {
@@ -1238,6 +2221,7 @@
             "id": "invoices_by_status",
             "type": "group",
             "title": "Invoices by Status",
+            "title_key": "invoices.dashboard.invoices_by_status",
             "group_by": "biz_invoice.status",
             "measure": "count"
           }

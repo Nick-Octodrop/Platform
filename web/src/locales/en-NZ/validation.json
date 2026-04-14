@@ -1,0 +1,8 @@
+{
+  "required": "Required",
+  "missing_fields": "Missing: {{fields}}",
+  "requirements_not_met": "Requirements not met.",
+  "title": "Validation",
+  "draft_valid": "Draft valid",
+  "fix_with_ai": "Fix with AI"
+}

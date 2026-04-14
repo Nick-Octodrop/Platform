@@ -1,0 +1,285 @@
+{
+  "module": {
+    "name": "Tâches",
+    "description": "Travail assigné pour le suivi des ventes, des opérations, des achats, des finances et du transfert des clients."
+  },
+  "navigation": {
+    "biz_task_list_page": "Tâches",
+    "biz_task_mine_page": "Mes tâches",
+    "biz_task_overdue_page": "En retard",
+    "biz_task_crm_page": "CRM",
+    "biz_task_operations_page": "Opérations"
+  },
+  "entities": {
+    "biz_task": {
+      "label": "Tâche",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "title": {
+          "label": "Tâche"
+        },
+        "task_type": {
+          "label": "Tapez",
+          "options": {
+            "follow_up": "Suivi",
+            "quote": "Travaux de devis",
+            "order_handoff": "Transfert de commande",
+            "procurement": "Approvisionnement",
+            "finance": "Finances",
+            "document": "Documenter",
+            "site_visit": "Visite du site",
+            "internal": "Interne"
+          }
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "open": "Ouvert",
+            "in_progress": "En cours",
+            "blocked": "Bloqué",
+            "done": "Terminé",
+            "cancelled": "Annulé"
+          }
+        },
+        "priority": {
+          "label": "Priorité",
+          "options": {
+            "low": "Faible",
+            "normal": "Normale",
+            "high": "Élevé",
+            "urgent": "Urgent"
+          }
+        },
+        "owner_user_id": {
+          "label": "Propriétaire"
+        },
+        "assignee_user_id": {
+          "label": "Cessionnaire"
+        },
+        "participant_user_ids": {
+          "label": "Participants"
+        },
+        "start_date": {
+          "label": "Date de début"
+        },
+        "due_date": {
+          "label": "Date d'échéance"
+        },
+        "company_id": {
+          "label": "Entreprise"
+        },
+        "lead_id": {
+          "label": "Diriger"
+        },
+        "opportunity_id": {
+          "label": "Opportunité"
+        },
+        "site_id": {
+          "label": "Site"
+        },
+        "quote_id": {
+          "label": "Citation"
+        },
+        "order_id": {
+          "label": "Commande"
+        },
+        "purchase_order_id": {
+          "label": "Bon de commande"
+        },
+        "invoice_id": {
+          "label": "Facture"
+        },
+        "document_id": {
+          "label": "Documenter"
+        },
+        "blocked_reason": {
+          "label": "Raison du blocage"
+        },
+        "cancel_reason": {
+          "label": "Raison de l'annulation"
+        },
+        "description": {
+          "label": "Descriptif"
+        },
+        "attachments": {
+          "label": "Pièces jointes"
+        },
+        "created_at": {
+          "label": "Créé à"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_biz_task_new": {
+      "label": "Nouvelle tâche"
+    },
+    "action_biz_task_start": {
+      "label": "Commencer"
+    },
+    "action_biz_task_block": {
+      "label": "Bloquer"
+    },
+    "action_biz_task_done": {
+      "label": "Marquer terminé"
+    },
+    "action_biz_task_cancel": {
+      "label": "Annuler"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Rechercher des tâches..."
+      },
+      "filters": {
+        "open": {
+          "label": "Travail ouvert"
+        },
+        "mine": {
+          "label": "Mes tâches"
+        },
+        "overdue": {
+          "label": "En retard"
+        },
+        "crm": {
+          "label": "Tâches CRM"
+        },
+        "operations": {
+          "label": "Opérations"
+        },
+        "finance": {
+          "label": "Finances"
+        },
+        "blocked": {
+          "label": "Bloqué"
+        },
+        "done": {
+          "label": "Terminé"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Tâche"
+        },
+        "links": {
+          "title": "Enregistrements associés"
+        },
+        "details": {
+          "title": "Détails"
+        }
+      }
+    }
+  },
+  "modals": {
+    "biz_task_block": {
+      "title": "Bloquer la tâche",
+      "actions": {
+        "update_record": {
+          "label": "Bloquer"
+        },
+        "close_modal": {
+          "label": "Rester ouvert"
+        }
+      }
+    },
+    "biz_task_cancel": {
+      "title": "Annuler la tâche",
+      "actions": {
+        "update_record": {
+          "label": "Annuler la tâche"
+        },
+        "close_modal": {
+          "label": "Rester ouvert"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Tâches"
+    },
+    "mine_page": {
+      "title": "Mes tâches"
+    },
+    "overdue_page": {
+      "title": "Tâches en retard"
+    },
+    "crm_page": {
+      "title": "Tâches CRM"
+    },
+    "operations_page": {
+      "title": "Tâches opérationnelles"
+    },
+    "form_page": {
+      "title": "Tâche"
+    }
+  },
+  "workflows": {
+    "biz_task_status_workflow": {
+      "states": {
+        "open": {
+          "label": "Ouvert"
+        },
+        "in_progress": {
+          "label": "En cours"
+        },
+        "blocked": {
+          "label": "Bloqué"
+        },
+        "done": {
+          "label": "Terminé"
+        },
+        "cancelled": {
+          "label": "Annulé"
+        }
+      },
+      "transitions": {
+        "open_in_progress": {
+          "label": "Commencer"
+        },
+        "open_blocked": {
+          "label": "Bloquer"
+        },
+        "in_progress_blocked": {
+          "label": "Bloquer"
+        },
+        "blocked_in_progress": {
+          "label": "CV"
+        },
+        "open_done": {
+          "label": "Marquer terminé"
+        },
+        "in_progress_done": {
+          "label": "Marquer terminé"
+        },
+        "blocked_done": {
+          "label": "Marquer terminé"
+        },
+        "open_cancelled": {
+          "label": "Annuler"
+        },
+        "in_progress_cancelled": {
+          "label": "Annuler"
+        },
+        "blocked_cancelled": {
+          "label": "Annuler"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "task_created": "Tâche créée",
+    "task_updated": "Tâche mise à jour",
+    "task_status_changed": "Statut de la tâche modifié",
+    "new_task_clicked": "Nouvelle tâche cliqué",
+    "start_clicked": "Démarrer cliqué",
+    "block_clicked": "Bloquer cliqué",
+    "mark_done_clicked": "Mark Terminé a cliqué",
+    "cancel_clicked": "Annuler cliqué"
+  }
+}

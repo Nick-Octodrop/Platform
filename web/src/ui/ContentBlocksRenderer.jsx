@@ -11,6 +11,7 @@ import AttachmentGallery from "./AttachmentGallery.jsx";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 import AppModuleIcon from "../components/AppModuleIcon.jsx";
+import { translateRuntime } from "../i18n/runtime.js";
 
 const GAP_MAP = {
   sm: "gap-2",
@@ -1380,7 +1381,7 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
         <div className="shrink-0 pt-4 space-y-2">
           <textarea
             className="textarea textarea-bordered w-full"
-            placeholder="Add a note…"
+            placeholder={translateRuntime("common.add_note_placeholder")}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleTextKeyDown}
@@ -1412,17 +1413,17 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
           )}
           <div className="flex items-center gap-2">
             <button className="btn btn-primary btn-sm" onClick={handlePost} disabled={!canWriteRecords || posting || !text.trim()}>
-              Add Note
+              {translateRuntime("common.add_note")}
             </button>
             <button
               type="button"
               className={SOFT_BUTTON_SM}
               onClick={() => quickAttachInputRef.current?.click()}
               disabled={!canWriteRecords || uploading}
-              title="Attach file"
+              title={translateRuntime("common.attach_file")}
             >
               <Paperclip className="h-4 w-4" />
-              {uploading ? "Uploading..." : "Attach"}
+              {uploading ? translateRuntime("common.uploading") : translateRuntime("common.attach")}
             </button>
             <input
               ref={quickAttachInputRef}

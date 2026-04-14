@@ -4,11 +4,11 @@ import { API_URL, apiFetch, getActiveWorkspaceId } from "../api.js";
 import { supabase } from "../supabase.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import { useAccessContext } from "../access.js";
-import { formatDateTime } from "../utils/dateTime.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
-function authorLabel(author) {
-  if (!author || typeof author !== "object") return "System";
-  return author.name || author.email || "System";
+function authorLabel(author, t) {
+  if (!author || typeof author !== "object") return t("common.activity_panel.system");
+  return author.name || author.email || t("common.activity_panel.system");
 }
 
 function isNonEmptyText(value) {
@@ -55,6 +55,7 @@ function replaceTrailingMention(value, token) {
 
 export default function ActivityPanel({ entityId, recordId, config = {} }) {
   const { hasCapability } = useAccessContext();
+  const { t, formatDateTime } = useI18n();
   const canWriteRecords = hasCapability("records.write");
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -62,7 +63,7 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
   const [uploading, setUploading] = useState(false);
   const [comment, setComment] = useState("");
   const [error, setError] = useState("");
-  const [currentUserLabel, setCurrentUserLabel] = useState("You");
+  const [currentUserLabel, setCurrentUserLabel] = useState("");
   const [members, setMembers] = useState([]);
   const [mentionIndex, setMentionIndex] = useState(0);
 
@@ -83,7 +84,7 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
       setItems(showChanges ? rows : rows.filter((item) => item?.event_type !== "change"));
     } catch (err) {
       setItems([]);
-      setError(err?.message || "Failed to load activity.");
+      setError(err?.message || t("common.activity_panel.load_failed"));
     } finally {
       setLoading(false);
     }
@@ -112,10 +113,10 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
       try {
         const session = (await supabase.auth.getSession()).data.session;
         const user = session?.user;
-        const label = user?.email || user?.user_metadata?.full_name || "You";
+        const label = user?.email || user?.user_metadata?.full_name || "";
         if (mounted) setCurrentUserLabel(label);
       } catch {
-        if (mounted) setCurrentUserLabel("You");
+        if (mounted) setCurrentUserLabel("");
       }
     }
     loadCurrentUser();
@@ -205,10 +206,10 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
 
   const placeholderText = useMemo(() => {
     if (!showComposer) return "";
-    if (allowComments && allowAttachments) return "Add a comment or attach a file...";
-    if (allowComments) return "Add a comment...";
-    return "Attachments only for this form.";
-  }, [allowComments, allowAttachments, showComposer]);
+    if (allowComments && allowAttachments) return t("common.activity_panel.comment_or_attach_placeholder");
+    if (allowComments) return t("common.activity_panel.comment_placeholder");
+    return t("common.activity_panel.attachments_only");
+  }, [allowComments, allowAttachments, showComposer, t]);
 
   async function handlePostComment() {
     if (!canWriteRecords || !allowComments || !isNonEmptyText(comment) || !entityId || !recordId) return;
@@ -232,7 +233,7 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
       }
       setComment("");
     } catch (err) {
-      setError(err?.message || "Failed to post comment.");
+      setError(err?.message || t("common.activity_panel.post_failed"));
     } finally {
       setPosting(false);
     }
@@ -262,13 +263,13 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
           });
           const data = await response.json();
           if (!response.ok || !data?.ok) {
-            throw new Error(data?.errors?.[0]?.message || "Upload failed");
+            throw new Error(data?.errors?.[0]?.message || t("common.activity_panel.upload_failed"));
           }
           if (data?.item) uploadedItems.push(data.item);
         } catch (err) {
-          const message = String(err?.message || "Upload failed");
+          const message = String(err?.message || t("common.activity_panel.upload_failed"));
           failures.push(
-            `${file?.name || "file"}: ${message === "Failed to fetch" ? "Network error reaching upload API" : message}`
+            `${file?.name || t("common.attachments.file")}: ${message === "Failed to fetch" ? t("common.activity_panel.upload_network_error") : message}`
           );
         }
       }
@@ -279,7 +280,7 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
       }
       if (failures.length > 0) setError(failures.join(" | "));
     } catch (err) {
-      setError(err?.message || "Failed to upload attachment.");
+      setError(err?.message || t("common.activity_panel.upload_failed"));
     } finally {
       setUploading(false);
     }
@@ -293,25 +294,25 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
       const response = await fetch(`${API_URL}/attachments/${attachmentId}/download`, {
         headers: workspaceHeaders(token),
       });
-      if (!response.ok) throw new Error("Download failed");
+      if (!response.ok) throw new Error(t("common.activity_panel.download_failed"));
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank", "noopener,noreferrer");
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (err) {
-      setError(err?.message || "Failed to open attachment.");
+      setError(err?.message || t("common.activity_panel.open_attachment_failed"));
     }
   }
 
-  if (!entityId) return <div className="text-sm opacity-70">Activity unavailable: missing entity.</div>;
-  if (!recordId) return <div className="text-sm opacity-70">Save this record to use Activity.</div>;
+  if (!entityId) return <div className="text-sm opacity-70">{t("common.activity_panel.missing_entity")}</div>;
+  if (!recordId) return <div className="text-sm opacity-70">{t("common.activity_panel.save_record")}</div>;
 
   return (
     <div className="h-full min-h-0 flex flex-col gap-3">
       {showComposer && (
         <div className="shrink-0 space-y-2 pt-4">
           {allowComments && (
-            <div className="text-xs opacity-60">Comment as {currentUserLabel}</div>
+            <div className="text-xs opacity-60">{t("common.activity_panel.comment_as", { name: currentUserLabel || t("common.activity_panel.you") })}</div>
           )}
           {allowComments && (
             <div className="join w-full">
@@ -327,7 +328,7 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
                 type="button"
                 onClick={handlePostComment}
                 disabled={posting || !isNonEmptyText(comment)}
-                title="Post comment"
+                title={t("common.activity_panel.post_comment")}
               >
                 <Send className="h-4 w-4" />
               </button>
@@ -360,7 +361,7 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
           {allowAttachments && (
             <label className={`${SOFT_BUTTON_SM} cursor-pointer inline-flex items-center gap-2`}>
               <Paperclip className="h-4 w-4" />
-              <span>{uploading ? "Uploading..." : "Attach"}</span>
+              <span>{uploading ? t("common.uploading") : t("common.attach")}</span>
               <input
                 type="file"
                 multiple
@@ -374,13 +375,13 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
         </div>
       )}
       <div className="flex-1 min-h-0 overflow-auto space-y-2 pr-1">
-        {loading && <div className="text-xs opacity-60">Loading activity...</div>}
-        {!loading && items.length === 0 && <div className="text-xs opacity-60">No activity yet.</div>}
+        {loading && <div className="text-xs opacity-60">{t("common.activity_panel.loading")}</div>}
+        {!loading && items.length === 0 && <div className="text-xs opacity-60">{t("common.activity_panel.empty")}</div>}
         {items.map((item) => {
           const type = item?.event_type;
           const payload = item?.payload || {};
           const createdAt = formatDateTime(item?.created_at);
-          const author = authorLabel(item?.author);
+          const author = authorLabel(item?.author, t);
           if (type === "comment") {
             return (
               <div key={item.id} className="card card-compact rounded-box border border-base-300 bg-base-100">
@@ -400,7 +401,7 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
                 {removed ? (
                   <div className="inline-flex items-center gap-2 text-sm opacity-80">
                     <Trash2 className="h-4 w-4" />
-                    <span>Removed attachment: {payload?.filename || "Attachment"}</span>
+                    <span>{t("common.activity_panel.removed_attachment", { name: payload?.filename || t("common.activity_panel.attachment") })}</span>
                   </div>
                 ) : (
                   <button
@@ -409,7 +410,7 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
                     onClick={() => openAttachment(payload?.attachment_id)}
                   >
                     <Paperclip className="h-4 w-4" />
-                    <span>{payload?.filename || "Attachment"}</span>
+                    <span>{payload?.filename || t("common.activity_panel.attachment")}</span>
                   </button>
                 )}
                 </div>
@@ -426,14 +427,18 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
                 <ul className="space-y-1 text-sm">
                   {changes.map((change, index) => (
                     <li key={`${item.id}-${index}`}>
-                      {change?.label || change?.field || "Field"} changed from {change?.from ?? "empty"} to {change?.to ?? "empty"}
+                      {t("common.activity_panel.field_changed", {
+                        field: change?.label || change?.field || t("common.field"),
+                        from: change?.from ?? t("common.activity_panel.empty_value"),
+                        to: change?.to ?? t("common.activity_panel.empty_value"),
+                      })}
                     </li>
                   ))}
                 </ul>
               ) : systemMessage ? (
                 <div className="text-sm opacity-80">{systemMessage}</div>
               ) : (
-                <div className="text-sm opacity-70">Record updated.</div>
+                <div className="text-sm opacity-70">{t("common.activity_panel.record_updated")}</div>
               )}
               </div>
             </div>

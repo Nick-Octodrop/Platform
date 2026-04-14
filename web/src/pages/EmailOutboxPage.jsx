@@ -7,9 +7,11 @@ import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 export default function EmailOutboxPage() {
   const { pushToast } = useToast();
+  const { t } = useI18n();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -29,7 +31,7 @@ export default function EmailOutboxPage() {
       const res = await apiFetch("/email/outbox");
       setItems(res?.outbox || []);
     } catch (err) {
-      setError(err?.message || "Failed to load outbox");
+      setError(err?.message || t("settings.email_outbox.load_failed"));
     } finally {
       setLoading(false);
     }
@@ -43,23 +45,23 @@ export default function EmailOutboxPage() {
     () => (items || []).map((o) => ({
       id: o.id,
       subject: o.subject || "",
-      status: o.status || "queued",
+      status: o.status === "sent" ? t("common.sent") : o.status === "failed" ? t("common.failed") : t("common.queued"),
       to: Array.isArray(o.to) ? o.to.join(", ") : "",
       created_at: o.created_at || "",
       sent_at: o.sent_at || "",
       last_error: o.last_error || "",
     })),
-    [items],
+    [items, t],
   );
 
   const listFieldIndex = useMemo(
     () => ({
-      "outbox.subject": { id: "outbox.subject", label: "Subject" },
-      "outbox.status": { id: "outbox.status", label: "Status" },
-      "outbox.to": { id: "outbox.to", label: "To" },
-      "outbox.created_at": { id: "outbox.created_at", label: "Created" },
+      "outbox.subject": { id: "outbox.subject", label: t("common.subject") },
+      "outbox.status": { id: "outbox.status", label: t("common.status") },
+      "outbox.to": { id: "outbox.to", label: t("common.to") },
+      "outbox.created_at": { id: "outbox.created_at", label: t("common.created") },
     }),
-    [],
+    [t],
   );
 
   const listView = useMemo(
@@ -91,12 +93,12 @@ export default function EmailOutboxPage() {
 
   const filters = useMemo(
     () => [
-      { id: "all", label: "All", domain: null },
-      { id: "queued", label: "Queued", domain: { op: "eq", field: "outbox.status", value: "queued" } },
-      { id: "sent", label: "Sent", domain: { op: "eq", field: "outbox.status", value: "sent" } },
-      { id: "failed", label: "Failed", domain: { op: "eq", field: "outbox.status", value: "failed" } },
+      { id: "all", label: t("common.all"), domain: null },
+      { id: "queued", label: t("common.queued"), domain: { op: "eq", field: "outbox.status", value: t("common.queued") } },
+      { id: "sent", label: t("common.sent"), domain: { op: "eq", field: "outbox.status", value: t("common.sent") } },
+      { id: "failed", label: t("common.failed"), domain: { op: "eq", field: "outbox.status", value: t("common.failed") } },
     ],
-    [],
+    [t],
   );
 
   const activeFilter = useMemo(
@@ -111,12 +113,12 @@ export default function EmailOutboxPage() {
       await Promise.all(selectedIds.map((id) => apiFetch(`/email/outbox/${id}`, { method: "DELETE" })));
       setSelectedIds([]);
       setShowDeleteModal(false);
-      pushToast("success", selectedIds.length === 1 ? "Email deleted." : "Emails deleted.");
+      pushToast("success", selectedIds.length === 1 ? t("settings.email_outbox.deleted_one") : t("settings.email_outbox.deleted_many"));
       await load();
     } catch (err) {
-      const detail = err?.message || "Failed to delete emails";
+      const detail = err?.message || t("settings.email_outbox.delete_failed");
       if (err?.status === 404 || err?.status === 405) {
-        pushToast("error", `${detail}. If this endpoint was just added, restart the API server.`);
+        pushToast("error", `${detail}. ${t("settings.email_outbox.restart_api_hint")}`);
       } else {
         pushToast("error", detail);
       }
@@ -132,11 +134,11 @@ export default function EmailOutboxPage() {
           <div className="space-y-4 md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {error && <div className="alert alert-error text-sm mb-4">{error}</div>}
             {loading ? (
-              <div className="text-sm opacity-70">Loading…</div>
+              <div className="text-sm opacity-70">{t("common.loading")}</div>
             ) : (
               <div className="flex flex-col gap-4 min-w-0">
                 <SystemListToolbar
-                  title=""
+                  title={t("settings.email_outbox.title")}
                   searchValue={search}
                   onSearchChange={(v) => {
                     setSearch(v);
@@ -163,12 +165,12 @@ export default function EmailOutboxPage() {
                   rightActions={
                     selectedIds.length > 0 ? (
                       <div className="dropdown dropdown-end">
-                        <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                        <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label={t("settings.selection_actions")}>
                           <MoreHorizontal className="h-4 w-4" />
                         </button>
                         <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
                           <li className="menu-title">
-                            <span>Selection</span>
+                            <span>{t("settings.selection")}</span>
                           </li>
                           {selectedIds.length === 1 ? (
                             <li>
@@ -176,7 +178,7 @@ export default function EmailOutboxPage() {
                                 type="button"
                                 onClick={() => navigate(`/settings/email-outbox/${selectedIds[0]}`)}
                               >
-                                Open email
+                                {t("settings.email_outbox.open_email")}
                               </button>
                             </li>
                           ) : null}
@@ -187,7 +189,7 @@ export default function EmailOutboxPage() {
                               onClick={() => setShowDeleteModal(true)}
                               disabled={selectionActionBusy === "delete"}
                             >
-                              {selectedIds.length === 1 ? "Delete" : "Delete selected"}
+                              {selectedIds.length === 1 ? t("common.delete") : t("settings.email_outbox.delete_selected")}
                             </button>
                           </li>
                         </ul>
@@ -197,7 +199,7 @@ export default function EmailOutboxPage() {
                 />
 
                 {rows.length === 0 ? (
-                  <div className="text-sm opacity-60">No emails yet.</div>
+                  <div className="text-sm opacity-60">{t("settings.email_outbox.no_emails")}</div>
                 ) : (
                   <ListViewRenderer
                     view={listView}
@@ -244,10 +246,10 @@ export default function EmailOutboxPage() {
         <div className="modal modal-open">
           <div className="modal-box">
             <h3 className="font-semibold text-lg">
-              {selectedIds.length === 1 ? "Delete email?" : `Delete ${selectedIds.length} emails?`}
+              {selectedIds.length === 1 ? t("settings.email_outbox.delete_title_one") : t("settings.email_outbox.delete_title_many", { count: selectedIds.length })}
             </h3>
             <p className="py-3 text-sm opacity-70">
-              This will permanently remove the selected outbox {selectedIds.length === 1 ? "item" : "items"}.
+              {selectedIds.length === 1 ? t("settings.email_outbox.delete_body_one") : t("settings.email_outbox.delete_body_many")}
             </p>
             <div className="modal-action">
               <button
@@ -256,7 +258,7 @@ export default function EmailOutboxPage() {
                 onClick={() => setShowDeleteModal(false)}
                 disabled={selectionActionBusy === "delete"}
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 type="button"
@@ -264,14 +266,14 @@ export default function EmailOutboxPage() {
                 onClick={deleteSelectedOutbox}
                 disabled={selectionActionBusy === "delete"}
               >
-                {selectionActionBusy === "delete" ? "Deleting..." : (selectedIds.length === 1 ? "Delete" : "Delete selected")}
+                {selectionActionBusy === "delete" ? t("common.deleting") : (selectedIds.length === 1 ? t("common.delete") : t("settings.email_outbox.delete_selected"))}
               </button>
             </div>
           </div>
           <button
             type="button"
             className="modal-backdrop"
-            aria-label="Close"
+            aria-label={t("common.close")}
             onClick={() => {
               if (selectionActionBusy !== "delete") setShowDeleteModal(false);
             }}

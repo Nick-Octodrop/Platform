@@ -7,14 +7,28 @@
     "version": "1.0.0",
     "description": "Accepted customer orders after quote approval, with procurement and invoice links.",
     "category": "Commercial",
-    "icon_key": "lucide:ClipboardList"
+    "icon_key": "lucide:ClipboardList",
+    "name_key": "orders.module.name",
+    "description_key": "orders.module.description"
   },
   "depends_on": {
     "required": [
-      { "module": "biz_contacts", "version": ">=1.0.0" },
-      { "module": "biz_products", "version": ">=1.0.0" },
-      { "module": "biz_purchase_orders", "version": ">=1.0.0" },
-      { "module": "biz_invoices", "version": ">=1.0.0" }
+      {
+        "module": "biz_contacts",
+        "version": ">=1.0.0"
+      },
+      {
+        "module": "biz_products",
+        "version": ">=1.0.0"
+      },
+      {
+        "module": "biz_purchase_orders",
+        "version": ">=1.0.0"
+      },
+      {
+        "module": "biz_invoices",
+        "version": ">=1.0.0"
+      }
     ]
   },
   "app": {
@@ -38,11 +52,31 @@
         "group": "Commercial",
         "mode": "inline",
         "items": [
-          { "label": "Orders", "to": "page:biz_order.list_page" },
-          { "label": "In Production", "to": "page:biz_order.in_production_page" },
-          { "label": "Ready To Invoice", "to": "page:biz_order.ready_to_invoice_page" },
-          { "label": "On Hold", "to": "page:biz_order.on_hold_page" },
-          { "label": "Completed", "to": "page:biz_order.completed_page" }
+          {
+            "label": "Orders",
+            "to": "page:biz_order.list_page",
+            "menu_label_key": "orders.navigation.biz_order_list_page"
+          },
+          {
+            "label": "In Production",
+            "to": "page:biz_order.in_production_page",
+            "menu_label_key": "orders.navigation.biz_order_in_production_page"
+          },
+          {
+            "label": "Ready To Invoice",
+            "to": "page:biz_order.ready_to_invoice_page",
+            "menu_label_key": "orders.navigation.biz_order_ready_to_invoice_page"
+          },
+          {
+            "label": "On Hold",
+            "to": "page:biz_order.on_hold_page",
+            "menu_label_key": "orders.navigation.biz_order_on_hold_page"
+          },
+          {
+            "label": "Completed",
+            "to": "page:biz_order.completed_page",
+            "menu_label_key": "orders.navigation.biz_order_completed_page"
+          }
         ]
       }
     ]
@@ -53,24 +87,74 @@
       "label": "Order",
       "display_field": "biz_order.order_number",
       "fields": [
-        { "id": "biz_order.id", "type": "uuid", "label": "ID", "readonly": true },
-        { "id": "biz_order.order_number", "type": "string", "label": "Order Number", "readonly": true },
+        {
+          "id": "biz_order.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true,
+          "label_key": "orders.entities.biz_order.fields.id.label"
+        },
+        {
+          "id": "biz_order.order_number",
+          "type": "string",
+          "label": "Order Number",
+          "readonly": true,
+          "label_key": "orders.entities.biz_order.fields.order_number.label"
+        },
         {
           "id": "biz_order.status",
           "type": "enum",
           "label": "Status",
-          "ui": { "widget": "steps" },
+          "ui": {
+            "widget": "steps"
+          },
           "required": true,
           "default": "draft",
           "options": [
-            { "value": "draft", "label": "Draft" },
-            { "value": "confirmed", "label": "Confirmed" },
-            { "value": "on_hold", "label": "On Hold" },
-            { "value": "in_production", "label": "In Production" },
-            { "value": "shipped", "label": "Shipped" },
-            { "value": "completed", "label": "Completed" },
-            { "value": "cancelled", "label": "Cancelled" }
-          ]
+            {
+              "value": "draft",
+              "label": "Draft",
+              "status_label_key": "orders.entities.biz_order.fields.status.options.draft",
+              "label_key": "orders.entities.biz_order.fields.status.options.draft"
+            },
+            {
+              "value": "confirmed",
+              "label": "Confirmed",
+              "status_label_key": "orders.entities.biz_order.fields.status.options.confirmed",
+              "label_key": "orders.entities.biz_order.fields.status.options.confirmed"
+            },
+            {
+              "value": "on_hold",
+              "label": "On Hold",
+              "status_label_key": "orders.entities.biz_order.fields.status.options.on_hold",
+              "label_key": "orders.entities.biz_order.fields.status.options.on_hold"
+            },
+            {
+              "value": "in_production",
+              "label": "In Production",
+              "status_label_key": "orders.entities.biz_order.fields.status.options.in_production",
+              "label_key": "orders.entities.biz_order.fields.status.options.in_production"
+            },
+            {
+              "value": "shipped",
+              "label": "Shipped",
+              "status_label_key": "orders.entities.biz_order.fields.status.options.shipped",
+              "label_key": "orders.entities.biz_order.fields.status.options.shipped"
+            },
+            {
+              "value": "completed",
+              "label": "Completed",
+              "status_label_key": "orders.entities.biz_order.fields.status.options.completed",
+              "label_key": "orders.entities.biz_order.fields.status.options.completed"
+            },
+            {
+              "value": "cancelled",
+              "label": "Cancelled",
+              "status_label_key": "orders.entities.biz_order.fields.status.options.cancelled",
+              "label_key": "orders.entities.biz_order.fields.status.options.cancelled"
+            }
+          ],
+          "label_key": "orders.entities.biz_order.fields.status.label"
         },
         {
           "id": "biz_order.customer_id",
@@ -78,7 +162,8 @@
           "label": "Customer",
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
-          "required": true
+          "required": true,
+          "label_key": "orders.entities.biz_order.fields.customer_id.label"
         },
         {
           "id": "biz_order.source_quote_id",
@@ -87,50 +172,138 @@
           "entity": "entity.biz_quote",
           "display_field": "biz_quote.quote_number",
           "readonly": true,
-          "visible_when": { "op": "exists", "field": "biz_order.source_quote_id" }
+          "visible_when": {
+            "op": "exists",
+            "field": "biz_order.source_quote_id"
+          },
+          "label_key": "orders.entities.biz_order.fields.source_quote_id.label"
         },
-        { "id": "biz_order.source_quote_number", "type": "string", "label": "Source Quote", "readonly": true },
+        {
+          "id": "biz_order.source_quote_number",
+          "type": "string",
+          "label": "Source Quote",
+          "readonly": true,
+          "label_key": "orders.entities.biz_order.fields.source_quote_number.label"
+        },
         {
           "id": "biz_order.sales_entity",
           "type": "enum",
           "label": "Sales Entity",
           "default": "NLight BV",
           "options": [
-            { "value": "NLight BV", "label": "NLight BV" },
-            { "value": "EcoTech FZCO", "label": "EcoTech FZCO" }
-          ]
+            {
+              "value": "NLight BV",
+              "label": "NLight BV",
+              "status_label_key": "orders.entities.biz_order.fields.sales_entity.options.nlight_bv",
+              "label_key": "orders.entities.biz_order.fields.sales_entity.options.nlight_bv"
+            },
+            {
+              "value": "EcoTech FZCO",
+              "label": "EcoTech FZCO",
+              "status_label_key": "orders.entities.biz_order.fields.sales_entity.options.ecotech_fzco",
+              "label_key": "orders.entities.biz_order.fields.sales_entity.options.ecotech_fzco"
+            }
+          ],
+          "label_key": "orders.entities.biz_order.fields.sales_entity.label"
         },
-        { "id": "biz_order.order_date", "type": "date", "label": "Order Date" },
+        {
+          "id": "biz_order.order_date",
+          "type": "date",
+          "label": "Order Date",
+          "label_key": "orders.entities.biz_order.fields.order_date.label"
+        },
         {
           "id": "biz_order.currency",
           "type": "enum",
           "label": "Currency",
           "default": "EUR",
           "options": [
-            { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" },
-            { "value": "GBP", "label": "GBP" },
-            { "value": "AED", "label": "AED" }
-          ]
+            {
+              "value": "EUR",
+              "label": "EUR",
+              "status_label_key": "orders.entities.biz_order.fields.currency.options.eur",
+              "label_key": "orders.entities.biz_order.fields.currency.options.eur"
+            },
+            {
+              "value": "USD",
+              "label": "USD",
+              "status_label_key": "orders.entities.biz_order.fields.currency.options.usd",
+              "label_key": "orders.entities.biz_order.fields.currency.options.usd"
+            },
+            {
+              "value": "GBP",
+              "label": "GBP",
+              "status_label_key": "orders.entities.biz_order.fields.currency.options.gbp",
+              "label_key": "orders.entities.biz_order.fields.currency.options.gbp"
+            },
+            {
+              "value": "AED",
+              "label": "AED",
+              "status_label_key": "orders.entities.biz_order.fields.currency.options.aed",
+              "label_key": "orders.entities.biz_order.fields.currency.options.aed"
+            }
+          ],
+          "label_key": "orders.entities.biz_order.fields.currency.label"
         },
-        { "id": "biz_order.customer_reference", "type": "string", "label": "Customer Reference" },
-        { "id": "biz_order.delivery_terms", "type": "string", "label": "Delivery Terms" },
-        { "id": "biz_order.shipping_destination", "type": "text", "label": "Shipping Destination" },
-        { "id": "biz_order.requested_delivery_date", "type": "date", "label": "Requested Delivery Date" },
-        { "id": "biz_order.notes", "type": "text", "label": "Notes" },
+        {
+          "id": "biz_order.customer_reference",
+          "type": "string",
+          "label": "Customer Reference",
+          "label_key": "orders.entities.biz_order.fields.customer_reference.label"
+        },
+        {
+          "id": "biz_order.delivery_terms",
+          "type": "string",
+          "label": "Delivery Terms",
+          "label_key": "orders.entities.biz_order.fields.delivery_terms.label"
+        },
+        {
+          "id": "biz_order.shipping_destination",
+          "type": "text",
+          "label": "Shipping Destination",
+          "label_key": "orders.entities.biz_order.fields.shipping_destination.label"
+        },
+        {
+          "id": "biz_order.requested_delivery_date",
+          "type": "date",
+          "label": "Requested Delivery Date",
+          "label_key": "orders.entities.biz_order.fields.requested_delivery_date.label"
+        },
+        {
+          "id": "biz_order.notes",
+          "type": "text",
+          "label": "Notes",
+          "label_key": "orders.entities.biz_order.fields.notes.label"
+        },
         {
           "id": "biz_order.hold_reason",
           "type": "text",
           "label": "On Hold Reason",
-          "required_when": { "op": "eq", "field": "biz_order.status", "value": "on_hold" }
+          "required_when": {
+            "op": "eq",
+            "field": "biz_order.status",
+            "value": "on_hold"
+          },
+          "label_key": "orders.entities.biz_order.fields.hold_reason.label"
         },
         {
           "id": "biz_order.cancellation_reason",
           "type": "text",
           "label": "Cancellation Reason",
-          "required_when": { "op": "eq", "field": "biz_order.status", "value": "cancelled" }
+          "required_when": {
+            "op": "eq",
+            "field": "biz_order.status",
+            "value": "cancelled"
+          },
+          "label_key": "orders.entities.biz_order.fields.cancellation_reason.label"
         },
-        { "id": "biz_order.status_before_hold", "type": "string", "label": "Previous Status", "readonly": true },
+        {
+          "id": "biz_order.status_before_hold",
+          "type": "string",
+          "label": "Previous Status",
+          "readonly": true,
+          "label_key": "orders.entities.biz_order.fields.status_before_hold.label"
+        },
         {
           "id": "biz_order.primary_purchase_order_id",
           "type": "lookup",
@@ -138,21 +311,30 @@
           "entity": "entity.biz_purchase_order",
           "display_field": "biz_purchase_order.po_number",
           "readonly": true,
-          "visible_when": { "op": "exists", "field": "biz_order.primary_purchase_order_id" }
+          "visible_when": {
+            "op": "exists",
+            "field": "biz_order.primary_purchase_order_id"
+          },
+          "label_key": "orders.entities.biz_order.fields.primary_purchase_order_id.label"
         },
         {
           "id": "biz_order.preferred_supplier_id",
           "type": "lookup",
           "label": "Preferred Supplier",
           "entity": "entity.biz_contact",
-          "display_field": "biz_contact.name"
+          "display_field": "biz_contact.name",
+          "label_key": "orders.entities.biz_order.fields.preferred_supplier_id.label"
         },
         {
           "id": "biz_order.deposit_percent",
           "type": "number",
           "label": "Deposit %",
           "default": 30,
-          "format": { "kind": "percent", "precision": 2 }
+          "format": {
+            "kind": "percent",
+            "precision": 2
+          },
+          "label_key": "orders.entities.biz_order.fields.deposit_percent.label"
         },
         {
           "id": "biz_order.deposit_invoice_id",
@@ -161,7 +343,11 @@
           "entity": "entity.biz_invoice",
           "display_field": "biz_invoice.invoice_number",
           "readonly": true,
-          "visible_when": { "op": "exists", "field": "biz_order.deposit_invoice_id" }
+          "visible_when": {
+            "op": "exists",
+            "field": "biz_order.deposit_invoice_id"
+          },
+          "label_key": "orders.entities.biz_order.fields.deposit_invoice_id.label"
         },
         {
           "id": "biz_order.final_invoice_id",
@@ -170,7 +356,11 @@
           "entity": "entity.biz_invoice",
           "display_field": "biz_invoice.invoice_number",
           "readonly": true,
-          "visible_when": { "op": "exists", "field": "biz_order.final_invoice_id" }
+          "visible_when": {
+            "op": "exists",
+            "field": "biz_order.final_invoice_id"
+          },
+          "label_key": "orders.entities.biz_order.fields.final_invoice_id.label"
         },
         {
           "id": "biz_order.order_total",
@@ -178,7 +368,11 @@
           "label": "Order Total",
           "readonly": true,
           "default": 0,
-          "format": { "kind": "currency", "currency_field": "biz_order.currency", "precision": 2 },
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_order.currency",
+            "precision": 2
+          },
           "compute": {
             "aggregate": {
               "op": "sum",
@@ -187,10 +381,13 @@
               "where": {
                 "op": "eq",
                 "field": "biz_order_line.customer_order_id",
-                "value": { "ref": "$parent.id" }
+                "value": {
+                  "ref": "$parent.id"
+                }
               }
             }
-          }
+          },
+          "label_key": "orders.entities.biz_order.fields.order_total.label"
         },
         {
           "id": "biz_order.invoiced_total",
@@ -198,7 +395,11 @@
           "label": "Invoiced Total",
           "readonly": true,
           "default": 0,
-          "format": { "kind": "currency", "currency_field": "biz_order.currency", "precision": 2 },
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_order.currency",
+            "precision": 2
+          },
           "compute": {
             "aggregate": {
               "op": "sum",
@@ -207,16 +408,27 @@
               "where": {
                 "op": "and",
                 "conditions": [
-                  { "op": "eq", "field": "biz_invoice.source_order_id", "value": { "ref": "$parent.id" } },
+                  {
+                    "op": "eq",
+                    "field": "biz_invoice.source_order_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
                   {
                     "op": "in",
                     "field": "biz_invoice.status",
-                    "value": ["issued", "part_paid", "paid"]
+                    "value": [
+                      "issued",
+                      "part_paid",
+                      "paid"
+                    ]
                   }
                 ]
               }
             }
-          }
+          },
+          "label_key": "orders.entities.biz_order.fields.invoiced_total.label"
         },
         {
           "id": "biz_order.balance_to_invoice",
@@ -224,7 +436,11 @@
           "label": "Balance to Invoice",
           "readonly": true,
           "default": 0,
-          "format": { "kind": "currency", "currency_field": "biz_order.currency", "precision": 2 },
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_order.currency",
+            "precision": 2
+          },
           "compute": {
             "expression": {
               "op": "round",
@@ -232,14 +448,19 @@
                 {
                   "op": "sub",
                   "args": [
-                    { "ref": "$current.biz_order.order_total" },
-                    { "ref": "$current.biz_order.invoiced_total" }
+                    {
+                      "ref": "$current.biz_order.order_total"
+                    },
+                    {
+                      "ref": "$current.biz_order.invoiced_total"
+                    }
                   ]
                 },
                 2
               ]
             }
-          }
+          },
+          "label_key": "orders.entities.biz_order.fields.balance_to_invoice.label"
         },
         {
           "id": "biz_order.estimated_buy_total",
@@ -255,10 +476,13 @@
               "where": {
                 "op": "eq",
                 "field": "biz_order_line.customer_order_id",
-                "value": { "ref": "$parent.id" }
+                "value": {
+                  "ref": "$parent.id"
+                }
               }
             }
-          }
+          },
+          "label_key": "orders.entities.biz_order.fields.estimated_buy_total.label"
         },
         {
           "id": "biz_order.estimated_margin_amount",
@@ -273,14 +497,19 @@
                 {
                   "op": "sub",
                   "args": [
-                    { "ref": "$current.biz_order.order_total" },
-                    { "ref": "$current.biz_order.estimated_buy_total" }
+                    {
+                      "ref": "$current.biz_order.order_total"
+                    },
+                    {
+                      "ref": "$current.biz_order.estimated_buy_total"
+                    }
                   ]
                 },
                 2
               ]
             }
-          }
+          },
+          "label_key": "orders.entities.biz_order.fields.estimated_margin_amount.label"
         },
         {
           "id": "biz_order.estimated_margin_percent",
@@ -288,11 +517,18 @@
           "label": "Estimated Margin %",
           "readonly": true,
           "default": 0,
-          "format": { "kind": "percent", "precision": 2 },
+          "format": {
+            "kind": "percent",
+            "precision": 2
+          },
           "compute": {
             "expression": {
               "op": "if",
-              "condition": { "op": "gt", "field": "biz_order.order_total", "value": 0 },
+              "condition": {
+                "op": "gt",
+                "field": "biz_order.order_total",
+                "value": 0
+              },
               "then": {
                 "op": "round",
                 "args": [
@@ -302,8 +538,12 @@
                       {
                         "op": "div",
                         "args": [
-                          { "ref": "$current.biz_order.estimated_margin_amount" },
-                          { "ref": "$current.biz_order.order_total" }
+                          {
+                            "ref": "$current.biz_order.estimated_margin_amount"
+                          },
+                          {
+                            "ref": "$current.biz_order.order_total"
+                          }
                         ]
                       },
                       100
@@ -314,41 +554,68 @@
               },
               "else": 0
             }
-          }
+          },
+          "label_key": "orders.entities.biz_order.fields.estimated_margin_percent.label"
         }
-      ]
+      ],
+      "label_key": "orders.entities.biz_order.label"
     },
     {
       "id": "entity.biz_order_line",
       "label": "Order Line",
       "display_field": "biz_order_line.description",
       "fields": [
-        { "id": "biz_order_line.id", "type": "uuid", "label": "ID", "readonly": true },
+        {
+          "id": "biz_order_line.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true,
+          "label_key": "orders.entities.biz_order_line.fields.id.label"
+        },
         {
           "id": "biz_order_line.customer_order_id",
           "type": "lookup",
           "label": "Order",
           "entity": "entity.biz_order",
           "display_field": "biz_order.order_number",
-          "required": true
+          "required": true,
+          "label_key": "orders.entities.biz_order_line.fields.customer_order_id.label"
         },
         {
           "id": "biz_order_line.product_id",
           "type": "lookup",
           "label": "Product",
           "entity": "entity.biz_product",
-          "display_field": "biz_product.name"
+          "display_field": "biz_product.name",
+          "label_key": "orders.entities.biz_order_line.fields.product_id.label"
         },
-        { "id": "biz_order_line.description", "type": "string", "label": "Description", "required": true },
+        {
+          "id": "biz_order_line.description",
+          "type": "string",
+          "label": "Description",
+          "required": true,
+          "label_key": "orders.entities.biz_order_line.fields.description.label"
+        },
         {
           "id": "biz_order_line.sales_entity_snapshot",
           "type": "enum",
           "label": "Sales Entity Snapshot",
           "default": "NLight BV",
           "options": [
-            { "value": "NLight BV", "label": "NLight BV" },
-            { "value": "EcoTech FZCO", "label": "EcoTech FZCO" }
-          ]
+            {
+              "value": "NLight BV",
+              "label": "NLight BV",
+              "status_label_key": "orders.entities.biz_order_line.fields.sales_entity_snapshot.options.nlight_bv",
+              "label_key": "orders.entities.biz_order_line.fields.sales_entity_snapshot.options.nlight_bv"
+            },
+            {
+              "value": "EcoTech FZCO",
+              "label": "EcoTech FZCO",
+              "status_label_key": "orders.entities.biz_order_line.fields.sales_entity_snapshot.options.ecotech_fzco",
+              "label_key": "orders.entities.biz_order_line.fields.sales_entity_snapshot.options.ecotech_fzco"
+            }
+          ],
+          "label_key": "orders.entities.biz_order_line.fields.sales_entity_snapshot.label"
         },
         {
           "id": "biz_order_line.currency_snapshot",
@@ -356,11 +623,32 @@
           "label": "Currency Snapshot",
           "default": "EUR",
           "options": [
-            { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" },
-            { "value": "GBP", "label": "GBP" },
-            { "value": "AED", "label": "AED" }
-          ]
+            {
+              "value": "EUR",
+              "label": "EUR",
+              "status_label_key": "orders.entities.biz_order_line.fields.currency_snapshot.options.eur",
+              "label_key": "orders.entities.biz_order_line.fields.currency_snapshot.options.eur"
+            },
+            {
+              "value": "USD",
+              "label": "USD",
+              "status_label_key": "orders.entities.biz_order_line.fields.currency_snapshot.options.usd",
+              "label_key": "orders.entities.biz_order_line.fields.currency_snapshot.options.usd"
+            },
+            {
+              "value": "GBP",
+              "label": "GBP",
+              "status_label_key": "orders.entities.biz_order_line.fields.currency_snapshot.options.gbp",
+              "label_key": "orders.entities.biz_order_line.fields.currency_snapshot.options.gbp"
+            },
+            {
+              "value": "AED",
+              "label": "AED",
+              "status_label_key": "orders.entities.biz_order_line.fields.currency_snapshot.options.aed",
+              "label_key": "orders.entities.biz_order_line.fields.currency_snapshot.options.aed"
+            }
+          ],
+          "label_key": "orders.entities.biz_order_line.fields.currency_snapshot.label"
         },
         {
           "id": "biz_order_line.uom",
@@ -368,17 +656,65 @@
           "label": "UOM",
           "default": "EA",
           "options": [
-            { "value": "EA", "label": "Each" },
-            { "value": "SET", "label": "Set" },
-            { "value": "KIT", "label": "Kit" },
-            { "value": "LOT", "label": "Lot" },
-            { "value": "PALLET", "label": "Pallet" },
-            { "value": "CONTAINER", "label": "Container" },
-            { "value": "M", "label": "Meter" }
-          ]
+            {
+              "value": "EA",
+              "label": "Each",
+              "status_label_key": "orders.entities.biz_order_line.fields.uom.options.ea",
+              "label_key": "orders.entities.biz_order_line.fields.uom.options.ea"
+            },
+            {
+              "value": "SET",
+              "label": "Set",
+              "status_label_key": "orders.entities.biz_order_line.fields.uom.options.set",
+              "label_key": "orders.entities.biz_order_line.fields.uom.options.set"
+            },
+            {
+              "value": "KIT",
+              "label": "Kit",
+              "status_label_key": "orders.entities.biz_order_line.fields.uom.options.kit",
+              "label_key": "orders.entities.biz_order_line.fields.uom.options.kit"
+            },
+            {
+              "value": "LOT",
+              "label": "Lot",
+              "status_label_key": "orders.entities.biz_order_line.fields.uom.options.lot",
+              "label_key": "orders.entities.biz_order_line.fields.uom.options.lot"
+            },
+            {
+              "value": "PALLET",
+              "label": "Pallet",
+              "status_label_key": "orders.entities.biz_order_line.fields.uom.options.pallet",
+              "label_key": "orders.entities.biz_order_line.fields.uom.options.pallet"
+            },
+            {
+              "value": "CONTAINER",
+              "label": "Container",
+              "status_label_key": "orders.entities.biz_order_line.fields.uom.options.container",
+              "label_key": "orders.entities.biz_order_line.fields.uom.options.container"
+            },
+            {
+              "value": "M",
+              "label": "Meter",
+              "status_label_key": "orders.entities.biz_order_line.fields.uom.options.m",
+              "label_key": "orders.entities.biz_order_line.fields.uom.options.m"
+            }
+          ],
+          "label_key": "orders.entities.biz_order_line.fields.uom.label"
         },
-        { "id": "biz_order_line.quantity", "type": "number", "label": "Qty", "default": 1 },
-        { "id": "biz_order_line.unit_price", "type": "number", "label": "Unit Price", "default": 0 },
+        {
+          "id": "biz_order_line.quantity",
+          "type": "number",
+          "label": "Qty",
+          "default": 1,
+          "label_key": "orders.entities.biz_order_line.fields.quantity.label"
+        },
+        {
+          "id": "biz_order_line.unit_price",
+          "type": "number",
+          "label": "Unit Price",
+          "default": 0,
+          "label_key": "orders.entities.biz_order_line.fields.unit_price.label"
+        },
         {
           "id": "biz_order_line.line_total",
           "type": "number",
@@ -392,16 +728,27 @@
                 {
                   "op": "mul",
                   "args": [
-                    { "ref": "$current.biz_order_line.quantity" },
-                    { "ref": "$current.biz_order_line.unit_price" }
+                    {
+                      "ref": "$current.biz_order_line.quantity"
+                    },
+                    {
+                      "ref": "$current.biz_order_line.unit_price"
+                    }
                   ]
                 },
                 2
               ]
             }
-          }
+          },
+          "label_key": "orders.entities.biz_order_line.fields.line_total.label"
         },
-        { "id": "biz_order_line.unit_cost_snapshot", "type": "number", "label": "Unit Cost Snapshot", "default": 0 },
+        {
+          "id": "biz_order_line.unit_cost_snapshot",
+          "type": "number",
+          "label": "Unit Cost Snapshot",
+          "default": 0,
+          "label_key": "orders.entities.biz_order_line.fields.unit_cost_snapshot.label"
+        },
         {
           "id": "biz_order_line.buy_total",
           "type": "number",
@@ -415,17 +762,29 @@
                 {
                   "op": "mul",
                   "args": [
-                    { "ref": "$current.biz_order_line.quantity" },
-                    { "ref": "$current.biz_order_line.unit_cost_snapshot" }
+                    {
+                      "ref": "$current.biz_order_line.quantity"
+                    },
+                    {
+                      "ref": "$current.biz_order_line.unit_cost_snapshot"
+                    }
                   ]
                 },
                 2
               ]
             }
-          }
+          },
+          "label_key": "orders.entities.biz_order_line.fields.buy_total.label"
         },
-        { "id": "biz_order_line.source_quote_line_ref", "type": "string", "label": "Source Quote Line Ref", "readonly": true }
-      ]
+        {
+          "id": "biz_order_line.source_quote_line_ref",
+          "type": "string",
+          "label": "Source Quote Line Ref",
+          "readonly": true,
+          "label_key": "orders.entities.biz_order_line.fields.source_quote_line_ref.label"
+        }
+      ],
+      "label_key": "orders.entities.biz_order_line.label"
     }
   ],
   "workflows": [
@@ -434,55 +793,292 @@
       "entity": "entity.biz_order",
       "status_field": "biz_order.status",
       "states": [
-        { "id": "draft", "label": "Draft", "required_fields": ["biz_order.customer_id", "biz_order.currency"] },
-        { "id": "confirmed", "label": "Confirmed", "required_fields": ["biz_order.customer_id", "biz_order.order_date", "biz_order.currency"] },
-        { "id": "on_hold", "label": "On Hold" },
-        { "id": "in_production", "label": "In Production", "required_fields": ["biz_order.primary_purchase_order_id"] },
-        { "id": "shipped", "label": "Shipped" },
-        { "id": "completed", "label": "Completed" },
-        { "id": "cancelled", "label": "Cancelled" }
+        {
+          "id": "draft",
+          "label": "Draft",
+          "required_fields": [
+            "biz_order.customer_id",
+            "biz_order.currency"
+          ],
+          "status_label_key": "orders.workflows.customer_order_status_workflow.states.draft.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.states.draft.label"
+        },
+        {
+          "id": "confirmed",
+          "label": "Confirmed",
+          "required_fields": [
+            "biz_order.customer_id",
+            "biz_order.order_date",
+            "biz_order.currency"
+          ],
+          "status_label_key": "orders.workflows.customer_order_status_workflow.states.confirmed.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.states.confirmed.label"
+        },
+        {
+          "id": "on_hold",
+          "label": "On Hold",
+          "status_label_key": "orders.workflows.customer_order_status_workflow.states.on_hold.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.states.on_hold.label"
+        },
+        {
+          "id": "in_production",
+          "label": "In Production",
+          "required_fields": [
+            "biz_order.primary_purchase_order_id"
+          ],
+          "status_label_key": "orders.workflows.customer_order_status_workflow.states.in_production.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.states.in_production.label"
+        },
+        {
+          "id": "shipped",
+          "label": "Shipped",
+          "status_label_key": "orders.workflows.customer_order_status_workflow.states.shipped.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.states.shipped.label"
+        },
+        {
+          "id": "completed",
+          "label": "Completed",
+          "status_label_key": "orders.workflows.customer_order_status_workflow.states.completed.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.states.completed.label"
+        },
+        {
+          "id": "cancelled",
+          "label": "Cancelled",
+          "status_label_key": "orders.workflows.customer_order_status_workflow.states.cancelled.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.states.cancelled.label"
+        }
       ],
       "transitions": [
-        { "from": "draft", "to": "confirmed", "label": "Confirm Order" },
-        { "from": "confirmed", "to": "on_hold", "label": "Put On Hold" },
-        { "from": "confirmed", "to": "in_production", "label": "Start Production" },
-        { "from": "in_production", "to": "on_hold", "label": "Put On Hold" },
-        { "from": "in_production", "to": "shipped", "label": "Mark Shipped" },
-        { "from": "shipped", "to": "on_hold", "label": "Put On Hold" },
-        { "from": "shipped", "to": "completed", "label": "Complete Order" },
-        { "from": "on_hold", "to": "confirmed", "label": "Resume to Confirmed" },
-        { "from": "on_hold", "to": "in_production", "label": "Resume to Production" },
-        { "from": "on_hold", "to": "shipped", "label": "Resume to Shipped" },
-        { "from": "draft", "to": "cancelled", "label": "Cancel Order" },
-        { "from": "confirmed", "to": "cancelled", "label": "Cancel Order" },
-        { "from": "in_production", "to": "cancelled", "label": "Cancel Order" },
-        { "from": "on_hold", "to": "cancelled", "label": "Cancel Order" }
+        {
+          "from": "draft",
+          "to": "confirmed",
+          "label": "Confirm Order",
+          "action_label_key": "orders.workflows.customer_order_status_workflow.transitions.draft_confirmed.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.transitions.draft_confirmed.label"
+        },
+        {
+          "from": "confirmed",
+          "to": "on_hold",
+          "label": "Put On Hold",
+          "action_label_key": "orders.workflows.customer_order_status_workflow.transitions.confirmed_on_hold.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.transitions.confirmed_on_hold.label"
+        },
+        {
+          "from": "confirmed",
+          "to": "in_production",
+          "label": "Start Production",
+          "action_label_key": "orders.workflows.customer_order_status_workflow.transitions.confirmed_in_production.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.transitions.confirmed_in_production.label"
+        },
+        {
+          "from": "in_production",
+          "to": "on_hold",
+          "label": "Put On Hold",
+          "action_label_key": "orders.workflows.customer_order_status_workflow.transitions.in_production_on_hold.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.transitions.in_production_on_hold.label"
+        },
+        {
+          "from": "in_production",
+          "to": "shipped",
+          "label": "Mark Shipped",
+          "action_label_key": "orders.workflows.customer_order_status_workflow.transitions.in_production_shipped.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.transitions.in_production_shipped.label"
+        },
+        {
+          "from": "shipped",
+          "to": "on_hold",
+          "label": "Put On Hold",
+          "action_label_key": "orders.workflows.customer_order_status_workflow.transitions.shipped_on_hold.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.transitions.shipped_on_hold.label"
+        },
+        {
+          "from": "shipped",
+          "to": "completed",
+          "label": "Complete Order",
+          "action_label_key": "orders.workflows.customer_order_status_workflow.transitions.shipped_completed.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.transitions.shipped_completed.label"
+        },
+        {
+          "from": "on_hold",
+          "to": "confirmed",
+          "label": "Resume to Confirmed",
+          "action_label_key": "orders.workflows.customer_order_status_workflow.transitions.on_hold_confirmed.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.transitions.on_hold_confirmed.label"
+        },
+        {
+          "from": "on_hold",
+          "to": "in_production",
+          "label": "Resume to Production",
+          "action_label_key": "orders.workflows.customer_order_status_workflow.transitions.on_hold_in_production.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.transitions.on_hold_in_production.label"
+        },
+        {
+          "from": "on_hold",
+          "to": "shipped",
+          "label": "Resume to Shipped",
+          "action_label_key": "orders.workflows.customer_order_status_workflow.transitions.on_hold_shipped.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.transitions.on_hold_shipped.label"
+        },
+        {
+          "from": "draft",
+          "to": "cancelled",
+          "label": "Cancel Order",
+          "action_label_key": "orders.workflows.customer_order_status_workflow.transitions.draft_cancelled.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.transitions.draft_cancelled.label"
+        },
+        {
+          "from": "confirmed",
+          "to": "cancelled",
+          "label": "Cancel Order",
+          "action_label_key": "orders.workflows.customer_order_status_workflow.transitions.confirmed_cancelled.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.transitions.confirmed_cancelled.label"
+        },
+        {
+          "from": "in_production",
+          "to": "cancelled",
+          "label": "Cancel Order",
+          "action_label_key": "orders.workflows.customer_order_status_workflow.transitions.in_production_cancelled.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.transitions.in_production_cancelled.label"
+        },
+        {
+          "from": "on_hold",
+          "to": "cancelled",
+          "label": "Cancel Order",
+          "action_label_key": "orders.workflows.customer_order_status_workflow.transitions.on_hold_cancelled.label",
+          "label_key": "orders.workflows.customer_order_status_workflow.transitions.on_hold_cancelled.label"
+        }
       ],
       "required_fields_by_state": {
-        "confirmed": ["biz_order.customer_id", "biz_order.order_date"],
-        "in_production": ["biz_order.primary_purchase_order_id"],
-        "on_hold": ["biz_order.hold_reason"],
-        "cancelled": ["biz_order.cancellation_reason"]
+        "confirmed": [
+          "biz_order.customer_id",
+          "biz_order.order_date"
+        ],
+        "in_production": [
+          "biz_order.primary_purchase_order_id"
+        ],
+        "on_hold": [
+          "biz_order.hold_reason"
+        ],
+        "cancelled": [
+          "biz_order.cancellation_reason"
+        ]
       }
     }
   ],
   "triggers": [
-    { "id": "biz_orders.record.biz_order.created", "label": "Order created", "event": "record.created", "entity_id": "entity.biz_order" },
-    { "id": "biz_orders.record.biz_order.updated", "label": "Order updated", "event": "record.updated", "entity_id": "entity.biz_order" },
-    { "id": "biz_orders.record.biz_order_line.created", "label": "Order Line created", "event": "record.created", "entity_id": "entity.biz_order_line" },
-    { "id": "biz_orders.record.biz_order_line.updated", "label": "Order Line updated", "event": "record.updated", "entity_id": "entity.biz_order_line" },
-    { "id": "biz_orders.workflow.biz_order.status_changed", "label": "Order status changed", "event": "workflow.status_changed", "entity_id": "entity.biz_order", "status_field": "biz_order.status" },
-    { "id": "biz_orders.action.customer_order_new.clicked", "label": "New Order clicked", "event": "action.clicked", "action_id": "action.customer_order_new" },
-    { "id": "biz_orders.action.customer_order_confirm.clicked", "label": "Confirm Order clicked", "event": "action.clicked", "action_id": "action.customer_order_confirm" },
-    { "id": "biz_orders.action.customer_order_open_hold_modal.clicked", "label": "Put On Hold clicked", "event": "action.clicked", "action_id": "action.customer_order_open_hold_modal" },
-    { "id": "biz_orders.action.customer_order_resume.clicked", "label": "Resume Order clicked", "event": "action.clicked", "action_id": "action.customer_order_resume" },
-    { "id": "biz_orders.action.customer_order_mark_in_production.clicked", "label": "Mark In Production clicked", "event": "action.clicked", "action_id": "action.customer_order_mark_in_production" },
-    { "id": "biz_orders.action.customer_order_mark_shipped.clicked", "label": "Mark Shipped clicked", "event": "action.clicked", "action_id": "action.customer_order_mark_shipped" },
-    { "id": "biz_orders.action.customer_order_mark_completed.clicked", "label": "Mark Completed clicked", "event": "action.clicked", "action_id": "action.customer_order_mark_completed" },
-    { "id": "biz_orders.action.customer_order_open_cancel_modal.clicked", "label": "Cancel Order clicked", "event": "action.clicked", "action_id": "action.customer_order_open_cancel_modal" },
-    { "id": "biz_orders.action.customer_order_create_purchase_order.clicked", "label": "Raise Purchase Order clicked", "event": "action.clicked", "action_id": "action.customer_order_create_purchase_order" },
-    { "id": "biz_orders.action.customer_order_create_deposit_invoice.clicked", "label": "Raise Deposit Invoice clicked", "event": "action.clicked", "action_id": "action.customer_order_create_deposit_invoice" },
-    { "id": "biz_orders.action.customer_order_create_final_invoice.clicked", "label": "Raise Final Invoice clicked", "event": "action.clicked", "action_id": "action.customer_order_create_final_invoice" }
+    {
+      "id": "biz_orders.record.biz_order.created",
+      "label": "Order created",
+      "label_key": "orders.triggers.order_created",
+      "event": "record.created",
+      "entity_id": "entity.biz_order"
+    },
+    {
+      "id": "biz_orders.record.biz_order.updated",
+      "label": "Order updated",
+      "label_key": "orders.triggers.order_updated",
+      "event": "record.updated",
+      "entity_id": "entity.biz_order"
+    },
+    {
+      "id": "biz_orders.record.biz_order_line.created",
+      "label": "Order Line created",
+      "label_key": "orders.triggers.order_line_created",
+      "event": "record.created",
+      "entity_id": "entity.biz_order_line"
+    },
+    {
+      "id": "biz_orders.record.biz_order_line.updated",
+      "label": "Order Line updated",
+      "label_key": "orders.triggers.order_line_updated",
+      "event": "record.updated",
+      "entity_id": "entity.biz_order_line"
+    },
+    {
+      "id": "biz_orders.workflow.biz_order.status_changed",
+      "label": "Order status changed",
+      "label_key": "orders.triggers.order_status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.biz_order",
+      "status_field": "biz_order.status"
+    },
+    {
+      "id": "biz_orders.action.customer_order_new.clicked",
+      "label": "New Order clicked",
+      "label_key": "orders.triggers.new_order_clicked",
+      "event": "action.clicked",
+      "action_id": "action.customer_order_new"
+    },
+    {
+      "id": "biz_orders.action.customer_order_confirm.clicked",
+      "label": "Confirm Order clicked",
+      "label_key": "orders.triggers.confirm_order_clicked",
+      "event": "action.clicked",
+      "action_id": "action.customer_order_confirm"
+    },
+    {
+      "id": "biz_orders.action.customer_order_open_hold_modal.clicked",
+      "label": "Put On Hold clicked",
+      "label_key": "orders.triggers.put_on_hold_clicked",
+      "event": "action.clicked",
+      "action_id": "action.customer_order_open_hold_modal"
+    },
+    {
+      "id": "biz_orders.action.customer_order_resume.clicked",
+      "label": "Resume Order clicked",
+      "label_key": "orders.triggers.resume_order_clicked",
+      "event": "action.clicked",
+      "action_id": "action.customer_order_resume"
+    },
+    {
+      "id": "biz_orders.action.customer_order_mark_in_production.clicked",
+      "label": "Mark In Production clicked",
+      "label_key": "orders.triggers.mark_in_production_clicked",
+      "event": "action.clicked",
+      "action_id": "action.customer_order_mark_in_production"
+    },
+    {
+      "id": "biz_orders.action.customer_order_mark_shipped.clicked",
+      "label": "Mark Shipped clicked",
+      "label_key": "orders.triggers.mark_shipped_clicked",
+      "event": "action.clicked",
+      "action_id": "action.customer_order_mark_shipped"
+    },
+    {
+      "id": "biz_orders.action.customer_order_mark_completed.clicked",
+      "label": "Mark Completed clicked",
+      "label_key": "orders.triggers.mark_completed_clicked",
+      "event": "action.clicked",
+      "action_id": "action.customer_order_mark_completed"
+    },
+    {
+      "id": "biz_orders.action.customer_order_open_cancel_modal.clicked",
+      "label": "Cancel Order clicked",
+      "label_key": "orders.triggers.cancel_order_clicked",
+      "event": "action.clicked",
+      "action_id": "action.customer_order_open_cancel_modal"
+    },
+    {
+      "id": "biz_orders.action.customer_order_create_purchase_order.clicked",
+      "label": "Raise Purchase Order clicked",
+      "label_key": "orders.triggers.raise_purchase_order_clicked",
+      "event": "action.clicked",
+      "action_id": "action.customer_order_create_purchase_order"
+    },
+    {
+      "id": "biz_orders.action.customer_order_create_deposit_invoice.clicked",
+      "label": "Raise Deposit Invoice clicked",
+      "label_key": "orders.triggers.raise_deposit_invoice_clicked",
+      "event": "action.clicked",
+      "action_id": "action.customer_order_create_deposit_invoice"
+    },
+    {
+      "id": "biz_orders.action.customer_order_create_final_invoice.clicked",
+      "label": "Raise Final Invoice clicked",
+      "label_key": "orders.triggers.raise_final_invoice_clicked",
+      "event": "action.clicked",
+      "action_id": "action.customer_order_create_final_invoice"
+    }
   ],
   "transformations": [
     {
@@ -490,12 +1086,24 @@
       "source_entity_id": "entity.biz_order",
       "target_entity_id": "entity.biz_purchase_order",
       "field_mappings": {
-        "biz_purchase_order.supplier_id": { "from": "biz_order.preferred_supplier_id" },
-        "biz_purchase_order.purchasing_entity": { "value": "EcoTech FZCO" },
-        "biz_purchase_order.source_customer_order_number": { "from": "biz_order.order_number" },
-        "biz_purchase_order.currency": { "value": "USD" },
-        "biz_purchase_order.po_date": { "ref": "$today" },
-        "biz_purchase_order.status": { "value": "draft" }
+        "biz_purchase_order.supplier_id": {
+          "from": "biz_order.preferred_supplier_id"
+        },
+        "biz_purchase_order.purchasing_entity": {
+          "value": "EcoTech FZCO"
+        },
+        "biz_purchase_order.source_customer_order_number": {
+          "from": "biz_order.order_number"
+        },
+        "biz_purchase_order.currency": {
+          "value": "USD"
+        },
+        "biz_purchase_order.po_date": {
+          "ref": "$today"
+        },
+        "biz_purchase_order.status": {
+          "value": "draft"
+        }
       },
       "child_mappings": [
         {
@@ -504,14 +1112,30 @@
           "source_link_field": "biz_order_line.customer_order_id",
           "target_link_field": "biz_purchase_order_line.purchase_order_id",
           "field_mappings": {
-            "biz_purchase_order_line.product_id": { "from": "biz_order_line.product_id" },
-            "biz_purchase_order_line.description": { "from": "biz_order_line.description" },
-            "biz_purchase_order_line.purchasing_entity_snapshot": { "value": "EcoTech FZCO" },
-            "biz_purchase_order_line.currency_snapshot": { "value": "USD" },
-            "biz_purchase_order_line.uom": { "from": "biz_order_line.uom" },
-            "biz_purchase_order_line.quantity": { "from": "biz_order_line.quantity" },
-            "biz_purchase_order_line.unit_cost": { "from": "biz_order_line.unit_cost_snapshot" },
-            "biz_purchase_order_line.source_order_line_ref": { "ref": "$source.id" }
+            "biz_purchase_order_line.product_id": {
+              "from": "biz_order_line.product_id"
+            },
+            "biz_purchase_order_line.description": {
+              "from": "biz_order_line.description"
+            },
+            "biz_purchase_order_line.purchasing_entity_snapshot": {
+              "value": "EcoTech FZCO"
+            },
+            "biz_purchase_order_line.currency_snapshot": {
+              "value": "USD"
+            },
+            "biz_purchase_order_line.uom": {
+              "from": "biz_order_line.uom"
+            },
+            "biz_purchase_order_line.quantity": {
+              "from": "biz_order_line.quantity"
+            },
+            "biz_purchase_order_line.unit_cost": {
+              "from": "biz_order_line.unit_cost_snapshot"
+            },
+            "biz_purchase_order_line.source_order_line_ref": {
+              "ref": "$source.id"
+            }
           }
         }
       ],
@@ -520,7 +1144,10 @@
         "target_to_source": "biz_purchase_order.source_customer_order_id"
       },
       "validation": {
-        "require_source_fields": ["biz_order.order_number", "biz_order.preferred_supplier_id"],
+        "require_source_fields": [
+          "biz_order.order_number",
+          "biz_order.preferred_supplier_id"
+        ],
         "require_child_records": true,
         "prevent_if_target_linked": true
       }
@@ -530,24 +1157,49 @@
       "source_entity_id": "entity.biz_order",
       "target_entity_id": "entity.biz_invoice",
       "field_mappings": {
-        "biz_invoice.invoice_type": { "value": "deposit" },
-        "biz_invoice.customer_id": { "from": "biz_order.customer_id" },
-        "biz_invoice.source_order_number": { "from": "biz_order.order_number" },
-        "biz_invoice.sales_entity": { "from": "biz_order.sales_entity" },
-        "biz_invoice.invoice_date": { "ref": "$today" },
-        "biz_invoice.currency": { "from": "biz_order.currency" },
-        "biz_invoice.customer_reference": { "from": "biz_order.customer_reference" },
-        "biz_invoice.notes": { "from": "biz_order.notes" },
-        "biz_invoice.source_order_total_snapshot": { "from": "biz_order.order_total" },
-        "biz_invoice.deposit_percent_snapshot": { "from": "biz_order.deposit_percent" },
-        "biz_invoice.status": { "value": "draft" }
+        "biz_invoice.invoice_type": {
+          "value": "deposit"
+        },
+        "biz_invoice.customer_id": {
+          "from": "biz_order.customer_id"
+        },
+        "biz_invoice.source_order_number": {
+          "from": "biz_order.order_number"
+        },
+        "biz_invoice.sales_entity": {
+          "from": "biz_order.sales_entity"
+        },
+        "biz_invoice.invoice_date": {
+          "ref": "$today"
+        },
+        "biz_invoice.currency": {
+          "from": "biz_order.currency"
+        },
+        "biz_invoice.customer_reference": {
+          "from": "biz_order.customer_reference"
+        },
+        "biz_invoice.notes": {
+          "from": "biz_order.notes"
+        },
+        "biz_invoice.source_order_total_snapshot": {
+          "from": "biz_order.order_total"
+        },
+        "biz_invoice.deposit_percent_snapshot": {
+          "from": "biz_order.deposit_percent"
+        },
+        "biz_invoice.status": {
+          "value": "draft"
+        }
       },
       "link_fields": {
         "source_to_target": "biz_order.deposit_invoice_id",
         "target_to_source": "biz_invoice.source_order_id"
       },
       "validation": {
-        "require_source_fields": ["biz_order.order_number", "biz_order.customer_id"],
+        "require_source_fields": [
+          "biz_order.order_number",
+          "biz_order.customer_id"
+        ],
         "prevent_if_target_linked": true
       }
     },
@@ -556,48 +1208,94 @@
       "source_entity_id": "entity.biz_order",
       "target_entity_id": "entity.biz_invoice",
       "field_mappings": {
-        "biz_invoice.invoice_type": { "value": "final" },
-        "biz_invoice.customer_id": { "from": "biz_order.customer_id" },
-        "biz_invoice.source_order_number": { "from": "biz_order.order_number" },
-        "biz_invoice.sales_entity": { "from": "biz_order.sales_entity" },
-        "biz_invoice.invoice_date": { "ref": "$today" },
-        "biz_invoice.currency": { "from": "biz_order.currency" },
-        "biz_invoice.customer_reference": { "from": "biz_order.customer_reference" },
-        "biz_invoice.notes": { "from": "biz_order.notes" },
-        "biz_invoice.source_order_total_snapshot": { "from": "biz_order.order_total" },
-        "biz_invoice.deposit_percent_snapshot": { "from": "biz_order.deposit_percent" },
-        "biz_invoice.status": { "value": "draft" }
+        "biz_invoice.invoice_type": {
+          "value": "final"
+        },
+        "biz_invoice.customer_id": {
+          "from": "biz_order.customer_id"
+        },
+        "biz_invoice.source_order_number": {
+          "from": "biz_order.order_number"
+        },
+        "biz_invoice.sales_entity": {
+          "from": "biz_order.sales_entity"
+        },
+        "biz_invoice.invoice_date": {
+          "ref": "$today"
+        },
+        "biz_invoice.currency": {
+          "from": "biz_order.currency"
+        },
+        "biz_invoice.customer_reference": {
+          "from": "biz_order.customer_reference"
+        },
+        "biz_invoice.notes": {
+          "from": "biz_order.notes"
+        },
+        "biz_invoice.source_order_total_snapshot": {
+          "from": "biz_order.order_total"
+        },
+        "biz_invoice.deposit_percent_snapshot": {
+          "from": "biz_order.deposit_percent"
+        },
+        "biz_invoice.status": {
+          "value": "draft"
+        }
       },
       "link_fields": {
         "source_to_target": "biz_order.final_invoice_id",
         "target_to_source": "biz_invoice.source_order_id"
       },
       "validation": {
-        "require_source_fields": ["biz_order.order_number", "biz_order.customer_id"],
+        "require_source_fields": [
+          "biz_order.order_number",
+          "biz_order.customer_id"
+        ],
         "prevent_if_target_linked": true
       }
     }
   ],
   "actions": [
-    { "id": "action.customer_order_new", "kind": "open_form", "label": "New Order", "target": "biz_order.form" },
+    {
+      "id": "action.customer_order_new",
+      "kind": "open_form",
+      "label": "New Order",
+      "target": "biz_order.form",
+      "action_label_key": "orders.actions.action_customer_order_new.label"
+    },
     {
       "id": "action.customer_order_confirm",
       "kind": "update_record",
       "entity_id": "entity.biz_order",
       "label": "Confirm Order",
-      "patch": { "biz_order.status": "confirmed" },
+      "patch": {
+        "biz_order.status": "confirmed"
+      },
       "confirm": {
         "title": "Confirm order?",
-        "body": "Use this once the commercial order is agreed and ready for execution."
+        "body": "Use this once the commercial order is agreed and ready for execution.",
+        "title_key": "orders.actions.action_customer_order_confirm.confirm.title"
       },
-      "visible_when": { "op": "eq", "field": "biz_order.status", "value": "draft" },
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_order.status",
+        "value": "draft"
+      },
       "enabled_when": {
         "op": "and",
         "conditions": [
-          { "op": "exists", "field": "biz_order.customer_id" },
-          { "op": "gt", "field": "biz_order.order_total", "value": 0 }
+          {
+            "op": "exists",
+            "field": "biz_order.customer_id"
+          },
+          {
+            "op": "gt",
+            "field": "biz_order.order_total",
+            "value": 0
+          }
         ]
-      }
+      },
+      "action_label_key": "orders.actions.action_customer_order_confirm.label"
     },
     {
       "id": "action.customer_order_open_hold_modal",
@@ -608,8 +1306,13 @@
       "visible_when": {
         "op": "in",
         "field": "biz_order.status",
-        "value": ["confirmed", "in_production", "shipped"]
-      }
+        "value": [
+          "confirmed",
+          "in_production",
+          "shipped"
+        ]
+      },
+      "action_label_key": "orders.actions.action_customer_order_open_hold_modal.label"
     },
     {
       "id": "action.customer_order_resume",
@@ -617,37 +1320,74 @@
       "entity_id": "entity.biz_order",
       "label": "Resume Order",
       "patch": {
-        "biz_order.status": { "ref": "$record.biz_order.status_before_hold" },
+        "biz_order.status": {
+          "ref": "$record.biz_order.status_before_hold"
+        },
         "biz_order.hold_reason": ""
       },
-      "visible_when": { "op": "eq", "field": "biz_order.status", "value": "on_hold" },
-      "enabled_when": { "op": "exists", "field": "biz_order.status_before_hold" }
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_order.status",
+        "value": "on_hold"
+      },
+      "enabled_when": {
+        "op": "exists",
+        "field": "biz_order.status_before_hold"
+      },
+      "action_label_key": "orders.actions.action_customer_order_resume.label"
     },
     {
       "id": "action.customer_order_mark_in_production",
       "kind": "update_record",
       "entity_id": "entity.biz_order",
       "label": "Mark In Production",
-      "patch": { "biz_order.status": "in_production" },
-      "visible_when": { "op": "eq", "field": "biz_order.status", "value": "confirmed" },
-      "enabled_when": { "op": "exists", "field": "biz_order.primary_purchase_order_id" }
+      "patch": {
+        "biz_order.status": "in_production"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_order.status",
+        "value": "confirmed"
+      },
+      "enabled_when": {
+        "op": "exists",
+        "field": "biz_order.primary_purchase_order_id"
+      },
+      "action_label_key": "orders.actions.action_customer_order_mark_in_production.label"
     },
     {
       "id": "action.customer_order_mark_shipped",
       "kind": "update_record",
       "entity_id": "entity.biz_order",
       "label": "Mark Shipped",
-      "patch": { "biz_order.status": "shipped" },
-      "visible_when": { "op": "eq", "field": "biz_order.status", "value": "in_production" },
-      "enabled_when": { "op": "exists", "field": "biz_order.primary_purchase_order_id" }
+      "patch": {
+        "biz_order.status": "shipped"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_order.status",
+        "value": "in_production"
+      },
+      "enabled_when": {
+        "op": "exists",
+        "field": "biz_order.primary_purchase_order_id"
+      },
+      "action_label_key": "orders.actions.action_customer_order_mark_shipped.label"
     },
     {
       "id": "action.customer_order_mark_completed",
       "kind": "update_record",
       "entity_id": "entity.biz_order",
       "label": "Mark Completed",
-      "patch": { "biz_order.status": "completed" },
-      "visible_when": { "op": "eq", "field": "biz_order.status", "value": "shipped" }
+      "patch": {
+        "biz_order.status": "completed"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_order.status",
+        "value": "shipped"
+      },
+      "action_label_key": "orders.actions.action_customer_order_mark_completed.label"
     },
     {
       "id": "action.customer_order_open_cancel_modal",
@@ -658,12 +1398,29 @@
       "visible_when": {
         "op": "or",
         "conditions": [
-          { "op": "eq", "field": "biz_order.status", "value": "draft" },
-          { "op": "eq", "field": "biz_order.status", "value": "confirmed" },
-          { "op": "eq", "field": "biz_order.status", "value": "in_production" },
-          { "op": "eq", "field": "biz_order.status", "value": "on_hold" }
+          {
+            "op": "eq",
+            "field": "biz_order.status",
+            "value": "draft"
+          },
+          {
+            "op": "eq",
+            "field": "biz_order.status",
+            "value": "confirmed"
+          },
+          {
+            "op": "eq",
+            "field": "biz_order.status",
+            "value": "in_production"
+          },
+          {
+            "op": "eq",
+            "field": "biz_order.status",
+            "value": "on_hold"
+          }
         ]
-      }
+      },
+      "action_label_key": "orders.actions.action_customer_order_open_cancel_modal.label"
     },
     {
       "id": "action.customer_order_create_purchase_order",
@@ -673,7 +1430,8 @@
       "transformation_key": "customer_order_to_purchase_order",
       "confirm": {
         "title": "Raise purchase order?",
-        "body": "This will create a supplier PO from the current order lines."
+        "body": "This will create a supplier PO from the current order lines.",
+        "title_key": "orders.actions.action_customer_order_create_purchase_order.confirm.title"
       },
       "visible_when": {
         "op": "and",
@@ -681,21 +1439,46 @@
           {
             "op": "or",
             "conditions": [
-              { "op": "eq", "field": "biz_order.status", "value": "confirmed" },
-              { "op": "eq", "field": "biz_order.status", "value": "in_production" }
+              {
+                "op": "eq",
+                "field": "biz_order.status",
+                "value": "confirmed"
+              },
+              {
+                "op": "eq",
+                "field": "biz_order.status",
+                "value": "in_production"
+              }
             ]
           },
-          { "op": "exists", "field": "biz_order.preferred_supplier_id" },
-          { "op": "not", "condition": { "op": "exists", "field": "biz_order.primary_purchase_order_id" } }
+          {
+            "op": "exists",
+            "field": "biz_order.preferred_supplier_id"
+          },
+          {
+            "op": "not",
+            "condition": {
+              "op": "exists",
+              "field": "biz_order.primary_purchase_order_id"
+            }
+          }
         ]
       },
       "enabled_when": {
         "op": "and",
         "conditions": [
-          { "op": "exists", "field": "biz_order.order_number" },
-          { "op": "gt", "field": "biz_order.order_total", "value": 0 }
+          {
+            "op": "exists",
+            "field": "biz_order.order_number"
+          },
+          {
+            "op": "gt",
+            "field": "biz_order.order_total",
+            "value": 0
+          }
         ]
-      }
+      },
+      "action_label_key": "orders.actions.action_customer_order_create_purchase_order.label"
     },
     {
       "id": "action.customer_order_create_deposit_invoice",
@@ -705,7 +1488,8 @@
       "transformation_key": "customer_order_to_deposit_invoice",
       "confirm": {
         "title": "Raise deposit invoice?",
-        "body": "This will create a draft deposit invoice linked to this order."
+        "body": "This will create a draft deposit invoice linked to this order.",
+        "title_key": "orders.actions.action_customer_order_create_deposit_invoice.confirm.title"
       },
       "visible_when": {
         "op": "and",
@@ -713,20 +1497,42 @@
           {
             "op": "or",
             "conditions": [
-              { "op": "eq", "field": "biz_order.status", "value": "confirmed" },
-              { "op": "eq", "field": "biz_order.status", "value": "in_production" }
+              {
+                "op": "eq",
+                "field": "biz_order.status",
+                "value": "confirmed"
+              },
+              {
+                "op": "eq",
+                "field": "biz_order.status",
+                "value": "in_production"
+              }
             ]
           },
-          { "op": "not", "condition": { "op": "exists", "field": "biz_order.deposit_invoice_id" } }
+          {
+            "op": "not",
+            "condition": {
+              "op": "exists",
+              "field": "biz_order.deposit_invoice_id"
+            }
+          }
         ]
       },
       "enabled_when": {
         "op": "and",
         "conditions": [
-          { "op": "exists", "field": "biz_order.customer_id" },
-          { "op": "gt", "field": "biz_order.order_total", "value": 0 }
+          {
+            "op": "exists",
+            "field": "biz_order.customer_id"
+          },
+          {
+            "op": "gt",
+            "field": "biz_order.order_total",
+            "value": 0
+          }
         ]
-      }
+      },
+      "action_label_key": "orders.actions.action_customer_order_create_deposit_invoice.label"
     },
     {
       "id": "action.customer_order_create_final_invoice",
@@ -736,7 +1542,8 @@
       "transformation_key": "customer_order_to_final_invoice",
       "confirm": {
         "title": "Raise final invoice?",
-        "body": "This will create the final commercial invoice for the shipped order."
+        "body": "This will create the final commercial invoice for the shipped order.",
+        "title_key": "orders.actions.action_customer_order_create_final_invoice.confirm.title"
       },
       "visible_when": {
         "op": "and",
@@ -744,20 +1551,42 @@
           {
             "op": "or",
             "conditions": [
-              { "op": "eq", "field": "biz_order.status", "value": "shipped" },
-              { "op": "eq", "field": "biz_order.status", "value": "completed" }
+              {
+                "op": "eq",
+                "field": "biz_order.status",
+                "value": "shipped"
+              },
+              {
+                "op": "eq",
+                "field": "biz_order.status",
+                "value": "completed"
+              }
             ]
           },
-          { "op": "not", "condition": { "op": "exists", "field": "biz_order.final_invoice_id" } }
+          {
+            "op": "not",
+            "condition": {
+              "op": "exists",
+              "field": "biz_order.final_invoice_id"
+            }
+          }
         ]
       },
       "enabled_when": {
         "op": "and",
         "conditions": [
-          { "op": "exists", "field": "biz_order.customer_id" },
-          { "op": "gt", "field": "biz_order.order_total", "value": 0 }
+          {
+            "op": "exists",
+            "field": "biz_order.customer_id"
+          },
+          {
+            "op": "gt",
+            "field": "biz_order.order_total",
+            "value": 0
+          }
         ]
-      }
+      },
+      "action_label_key": "orders.actions.action_customer_order_create_final_invoice.label"
     }
   ],
   "views": [
@@ -766,22 +1595,47 @@
       "kind": "list",
       "entity": "entity.biz_order",
       "columns": [
-        { "field_id": "biz_order.order_number" },
-        { "field_id": "biz_order.order_date" },
-        { "field_id": "biz_order.customer_id" },
-        { "field_id": "biz_order.source_quote_number" },
-        { "field_id": "biz_order.sales_entity" },
-        { "field_id": "biz_order.currency" },
-        { "field_id": "biz_order.order_total" },
-        { "field_id": "biz_order.status" }
+        {
+          "field_id": "biz_order.order_number"
+        },
+        {
+          "field_id": "biz_order.order_date"
+        },
+        {
+          "field_id": "biz_order.customer_id"
+        },
+        {
+          "field_id": "biz_order.source_quote_number"
+        },
+        {
+          "field_id": "biz_order.sales_entity"
+        },
+        {
+          "field_id": "biz_order.currency"
+        },
+        {
+          "field_id": "biz_order.order_total"
+        },
+        {
+          "field_id": "biz_order.status"
+        }
       ],
       "header": {
-        "primary_actions": [{ "action_id": "action.customer_order_new" }],
+        "primary_actions": [
+          {
+            "action_id": "action.customer_order_new"
+          }
+        ],
         "open_record_target": "page:biz_order.form_page",
         "search": {
           "enabled": true,
           "placeholder": "Search orders...",
-          "fields": ["biz_order.order_number", "biz_order.customer_reference", "biz_order.source_quote_number"]
+          "fields": [
+            "biz_order.order_number",
+            "biz_order.customer_reference",
+            "biz_order.source_quote_number"
+          ],
+          "placeholder_key": "orders.views.list.search.placeholder"
         },
         "filters": [
           {
@@ -790,25 +1644,99 @@
             "domain": {
               "op": "in",
               "field": "biz_order.status",
-              "value": ["confirmed", "on_hold", "in_production", "shipped"]
-            }
+              "value": [
+                "confirmed",
+                "on_hold",
+                "in_production",
+                "shipped"
+              ]
+            },
+            "label_key": "orders.views.list.filters.active.label"
           },
-          { "id": "draft", "label": "Draft Orders", "domain": { "op": "eq", "field": "biz_order.status", "value": "draft" } },
-          { "id": "confirmed", "label": "Confirmed Orders", "domain": { "op": "eq", "field": "biz_order.status", "value": "confirmed" } },
-          { "id": "in_production", "label": "In Production", "domain": { "op": "eq", "field": "biz_order.status", "value": "in_production" } },
-          { "id": "on_hold", "label": "On Hold", "domain": { "op": "eq", "field": "biz_order.status", "value": "on_hold" } },
-          { "id": "shipped", "label": "Shipped Orders", "domain": { "op": "eq", "field": "biz_order.status", "value": "shipped" } },
-          { "id": "completed", "label": "Completed Orders", "domain": { "op": "eq", "field": "biz_order.status", "value": "completed" } },
+          {
+            "id": "draft",
+            "label": "Draft Orders",
+            "domain": {
+              "op": "eq",
+              "field": "biz_order.status",
+              "value": "draft"
+            },
+            "label_key": "orders.views.list.filters.draft.label"
+          },
+          {
+            "id": "confirmed",
+            "label": "Confirmed Orders",
+            "domain": {
+              "op": "eq",
+              "field": "biz_order.status",
+              "value": "confirmed"
+            },
+            "label_key": "orders.views.list.filters.confirmed.label"
+          },
+          {
+            "id": "in_production",
+            "label": "In Production",
+            "domain": {
+              "op": "eq",
+              "field": "biz_order.status",
+              "value": "in_production"
+            },
+            "label_key": "orders.views.list.filters.in_production.label"
+          },
+          {
+            "id": "on_hold",
+            "label": "On Hold",
+            "domain": {
+              "op": "eq",
+              "field": "biz_order.status",
+              "value": "on_hold"
+            },
+            "label_key": "orders.views.list.filters.on_hold.label"
+          },
+          {
+            "id": "shipped",
+            "label": "Shipped Orders",
+            "domain": {
+              "op": "eq",
+              "field": "biz_order.status",
+              "value": "shipped"
+            },
+            "label_key": "orders.views.list.filters.shipped.label"
+          },
+          {
+            "id": "completed",
+            "label": "Completed Orders",
+            "domain": {
+              "op": "eq",
+              "field": "biz_order.status",
+              "value": "completed"
+            },
+            "label_key": "orders.views.list.filters.completed.label"
+          },
           {
             "id": "ready_to_invoice",
             "label": "Ready To Invoice",
             "domain": {
               "op": "and",
               "conditions": [
-                { "op": "in", "field": "biz_order.status", "value": ["shipped", "completed"] },
-                { "op": "not", "condition": { "op": "exists", "field": "biz_order.final_invoice_id" } }
+                {
+                  "op": "in",
+                  "field": "biz_order.status",
+                  "value": [
+                    "shipped",
+                    "completed"
+                  ]
+                },
+                {
+                  "op": "not",
+                  "condition": {
+                    "op": "exists",
+                    "field": "biz_order.final_invoice_id"
+                  }
+                }
               ]
-            }
+            },
+            "label_key": "orders.views.list.filters.ready_to_invoice.label"
           }
         ]
       }
@@ -835,7 +1763,8 @@
             "biz_order.delivery_terms",
             "biz_order.shipping_destination",
             "biz_order.requested_delivery_date"
-          ]
+          ],
+          "section_title_key": "orders.views.form.sections.summary.title"
         },
         {
           "id": "commercials",
@@ -848,7 +1777,8 @@
             "biz_order.order_total",
             "biz_order.invoiced_total",
             "biz_order.balance_to_invoice"
-          ]
+          ],
+          "section_title_key": "orders.views.form.sections.commercials.title"
         },
         {
           "id": "related",
@@ -859,7 +1789,8 @@
             "biz_order.primary_purchase_order_id",
             "biz_order.deposit_invoice_id",
             "biz_order.final_invoice_id"
-          ]
+          ],
+          "section_title_key": "orders.views.form.sections.related.title"
         },
         {
           "id": "profitability",
@@ -870,7 +1801,8 @@
             "biz_order.estimated_buy_total",
             "biz_order.estimated_margin_amount",
             "biz_order.estimated_margin_percent"
-          ]
+          ],
+          "section_title_key": "orders.views.form.sections.profitability.title"
         },
         {
           "id": "notes",
@@ -879,7 +1811,8 @@
             "biz_order.notes",
             "biz_order.hold_reason",
             "biz_order.cancellation_reason"
-          ]
+          ],
+          "section_title_key": "orders.views.form.sections.notes.title"
         },
         {
           "id": "lines",
@@ -910,43 +1843,186 @@
               "biz_order_line.unit_cost_snapshot": 0
             },
             "columns": [
-              { "field_id": "biz_order_line.product_id", "label": "Product", "readonly": true, "width": 220 },
-              { "field_id": "biz_order_line.description", "label": "Description", "width": 500 },
-              { "field_id": "biz_order_line.uom", "label": "UOM", "type": "enum", "width": 105, "options": [{ "value": "EA", "label": "Each" }, { "value": "SET", "label": "Set" }, { "value": "KIT", "label": "Kit" }, { "value": "LOT", "label": "Lot" }, { "value": "PALLET", "label": "Pallet" }, { "value": "CONTAINER", "label": "Container" }, { "value": "M", "label": "Meter" }] },
-              { "field_id": "biz_order_line.quantity", "label": "Qty", "type": "number", "width": 90, "align": "right" },
-              { "field_id": "biz_order_line.unit_price", "label": "Unit Price", "type": "number", "width": 155, "align": "right", "currency_field": "biz_order_line.currency_snapshot" },
-              { "field_id": "biz_order_line.line_total", "label": "Line Total", "type": "number", "readonly": true, "width": 155, "align": "right", "currency_field": "biz_order_line.currency_snapshot" }
+              {
+                "field_id": "biz_order_line.product_id",
+                "label": "Product",
+                "label_key": "common.product",
+                "readonly": true,
+                "width": 220
+              },
+              {
+                "field_id": "biz_order_line.description",
+                "label": "Description",
+                "label_key": "common.description",
+                "width": 500
+              },
+              {
+                "field_id": "biz_order_line.uom",
+                "label": "UOM",
+                "label_key": "common.uom",
+                "type": "enum",
+                "width": 105,
+                "options": [
+                  {
+                    "value": "EA",
+                    "label": "Each",
+                    "label_key": "common.each"
+                  },
+                  {
+                    "value": "SET",
+                    "label": "Set",
+                    "label_key": "common.set"
+                  },
+                  {
+                    "value": "KIT",
+                    "label": "Kit",
+                    "label_key": "common.kit"
+                  },
+                  {
+                    "value": "LOT",
+                    "label": "Lot",
+                    "label_key": "common.lot"
+                  },
+                  {
+                    "value": "PALLET",
+                    "label": "Pallet",
+                    "label_key": "common.pallet"
+                  },
+                  {
+                    "value": "CONTAINER",
+                    "label": "Container",
+                    "label_key": "common.container"
+                  },
+                  {
+                    "value": "M",
+                    "label": "Meter",
+                    "label_key": "common.meter"
+                  }
+                ]
+              },
+              {
+                "field_id": "biz_order_line.quantity",
+                "label": "Qty",
+                "label_key": "common.qty",
+                "type": "number",
+                "width": 90,
+                "align": "right"
+              },
+              {
+                "field_id": "biz_order_line.unit_price",
+                "label": "Unit Price",
+                "label_key": "common.unit_price",
+                "type": "number",
+                "width": 155,
+                "align": "right",
+                "currency_field": "biz_order_line.currency_snapshot"
+              },
+              {
+                "field_id": "biz_order_line.line_total",
+                "label": "Line Total",
+                "label_key": "common.line_total",
+                "type": "number",
+                "readonly": true,
+                "width": 155,
+                "align": "right",
+                "currency_field": "biz_order_line.currency_snapshot"
+              }
             ]
-          }
+          },
+          "section_title_key": "orders.views.form.sections.lines.title"
         }
       ],
       "header": {
-        "statusbar": { "field_id": "biz_order.status" },
+        "statusbar": {
+          "field_id": "biz_order.status"
+        },
         "auto_state_actions": false,
         "primary_actions": [
-          { "action_id": "action.customer_order_confirm" },
-          { "action_id": "action.customer_order_resume" },
-          { "action_id": "action.customer_order_create_purchase_order" },
-          { "action_id": "action.customer_order_create_deposit_invoice" },
-          { "action_id": "action.customer_order_mark_in_production" },
-          { "action_id": "action.customer_order_mark_shipped" },
-          { "action_id": "action.customer_order_create_final_invoice" },
-          { "action_id": "action.customer_order_mark_completed" }
+          {
+            "action_id": "action.customer_order_confirm"
+          },
+          {
+            "action_id": "action.customer_order_resume"
+          },
+          {
+            "action_id": "action.customer_order_create_purchase_order"
+          },
+          {
+            "action_id": "action.customer_order_create_deposit_invoice"
+          },
+          {
+            "action_id": "action.customer_order_mark_in_production"
+          },
+          {
+            "action_id": "action.customer_order_mark_shipped"
+          },
+          {
+            "action_id": "action.customer_order_create_final_invoice"
+          },
+          {
+            "action_id": "action.customer_order_mark_completed"
+          }
         ],
         "secondary_actions": [
-          { "action_id": "action.customer_order_open_hold_modal" },
-          { "action_id": "action.customer_order_open_cancel_modal" }
+          {
+            "action_id": "action.customer_order_open_hold_modal"
+          },
+          {
+            "action_id": "action.customer_order_open_cancel_modal"
+          }
         ],
         "tabs": {
           "style": "lifted",
           "default_tab": "summary",
           "tabs": [
-            { "id": "summary", "label": "Summary", "sections": ["summary"] },
-            { "id": "lines", "label": "Line Items", "sections": ["lines"] },
-            { "id": "commercials", "label": "Commercials", "sections": ["commercials"] },
-            { "id": "related", "label": "Related Records", "sections": ["related"] },
-            { "id": "profitability", "label": "Profitability", "sections": ["profitability"] },
-            { "id": "notes", "label": "Notes", "sections": ["notes"] }
+            {
+              "id": "summary",
+              "label": "Summary",
+              "tab_label_key": "common.summary",
+              "sections": [
+                "summary"
+              ]
+            },
+            {
+              "id": "lines",
+              "label": "Line Items",
+              "tab_label_key": "common.line_items",
+              "sections": [
+                "lines"
+              ]
+            },
+            {
+              "id": "commercials",
+              "label": "Commercials",
+              "tab_label_key": "common.commercials",
+              "sections": [
+                "commercials"
+              ]
+            },
+            {
+              "id": "related",
+              "label": "Related Records",
+              "tab_label_key": "common.related_records",
+              "sections": [
+                "related"
+              ]
+            },
+            {
+              "id": "profitability",
+              "label": "Profitability",
+              "tab_label_key": "common.profitability",
+              "sections": [
+                "profitability"
+              ]
+            },
+            {
+              "id": "notes",
+              "label": "Notes",
+              "tab_label_key": "common.notes",
+              "sections": [
+                "notes"
+              ]
+            }
           ]
         }
       },
@@ -1018,20 +2094,38 @@
       "kind": "list",
       "entity": "entity.biz_order_line",
       "columns": [
-        { "field_id": "biz_order_line.customer_order_id" },
-        { "field_id": "biz_order_line.product_id" },
-        { "field_id": "biz_order_line.description" },
-        { "field_id": "biz_order_line.uom" },
-        { "field_id": "biz_order_line.quantity" },
-        { "field_id": "biz_order_line.unit_price" },
-        { "field_id": "biz_order_line.line_total" }
+        {
+          "field_id": "biz_order_line.customer_order_id"
+        },
+        {
+          "field_id": "biz_order_line.product_id"
+        },
+        {
+          "field_id": "biz_order_line.description"
+        },
+        {
+          "field_id": "biz_order_line.uom"
+        },
+        {
+          "field_id": "biz_order_line.quantity"
+        },
+        {
+          "field_id": "biz_order_line.unit_price"
+        },
+        {
+          "field_id": "biz_order_line.line_total"
+        }
       ],
       "header": {
         "open_record_target": "page:biz_order_line.form_page",
         "search": {
           "enabled": true,
           "placeholder": "Search order lines...",
-          "fields": ["biz_order_line.description", "biz_order_line.source_quote_line_ref"]
+          "fields": [
+            "biz_order_line.description",
+            "biz_order_line.source_quote_line_ref"
+          ],
+          "placeholder_key": "orders.views.list.search.placeholder"
         }
       }
     },
@@ -1056,7 +2150,8 @@
             "biz_order_line.unit_cost_snapshot",
             "biz_order_line.buy_total",
             "biz_order_line.source_quote_line_ref"
-          ]
+          ],
+          "section_title_key": "orders.views.form.sections.main.title"
         }
       ],
       "activity": {
@@ -1086,7 +2181,12 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "kind": "navigate", "label": "New Order", "target": "page:biz_order.form_page" }
+          {
+            "kind": "navigate",
+            "label": "New Order",
+            "target": "page:biz_order.form_page",
+            "action_label_key": "orders.pages.list_page.header.actions.navigate.label"
+          }
         ]
       },
       "content": [
@@ -1100,10 +2200,16 @@
               "subtitle": "Ready for fulfilment",
               "entity_id": "entity.biz_order",
               "measure": "count",
-              "domain": { "op": "eq", "field": "biz_order.status", "value": "confirmed" },
+              "domain": {
+                "op": "eq",
+                "field": "biz_order.status",
+                "value": "confirmed"
+              },
               "icon": "lucide:BadgeCheck",
               "tone": "primary",
-              "format": "number"
+              "format": "number",
+              "label_key": "orders.pages.list_page.blocks.1.cards.customer_orders_confirmed_count.label",
+              "subtitle_key": "orders.pages.list_page.blocks.1.cards.customer_orders_confirmed_count.subtitle"
             },
             {
               "id": "customer_orders_in_production_count",
@@ -1111,10 +2217,16 @@
               "subtitle": "Being prepared with suppliers",
               "entity_id": "entity.biz_order",
               "measure": "count",
-              "domain": { "op": "eq", "field": "biz_order.status", "value": "in_production" },
+              "domain": {
+                "op": "eq",
+                "field": "biz_order.status",
+                "value": "in_production"
+              },
               "icon": "lucide:Factory",
               "tone": "warning",
-              "format": "number"
+              "format": "number",
+              "label_key": "orders.pages.list_page.blocks.1.cards.customer_orders_in_production_count.label",
+              "subtitle_key": "orders.pages.list_page.blocks.1.cards.customer_orders_in_production_count.subtitle"
             },
             {
               "id": "customer_orders_ready_to_invoice_count",
@@ -1125,13 +2237,28 @@
               "domain": {
                 "op": "and",
                 "conditions": [
-                  { "op": "in", "field": "biz_order.status", "value": ["shipped", "completed"] },
-                  { "op": "not", "condition": { "op": "exists", "field": "biz_order.final_invoice_id" } }
+                  {
+                    "op": "in",
+                    "field": "biz_order.status",
+                    "value": [
+                      "shipped",
+                      "completed"
+                    ]
+                  },
+                  {
+                    "op": "not",
+                    "condition": {
+                      "op": "exists",
+                      "field": "biz_order.final_invoice_id"
+                    }
+                  }
                 ]
               },
               "icon": "lucide:ReceiptText",
               "tone": "success",
-              "format": "number"
+              "format": "number",
+              "label_key": "orders.pages.list_page.blocks.1.cards.customer_orders_ready_to_invoice_count.label",
+              "subtitle_key": "orders.pages.list_page.blocks.1.cards.customer_orders_ready_to_invoice_count.subtitle"
             },
             {
               "id": "customer_orders_completed_count",
@@ -1139,10 +2266,16 @@
               "subtitle": "Closed orders",
               "entity_id": "entity.biz_order",
               "measure": "count",
-              "domain": { "op": "eq", "field": "biz_order.status", "value": "completed" },
+              "domain": {
+                "op": "eq",
+                "field": "biz_order.status",
+                "value": "completed"
+              },
               "icon": "lucide:CircleCheckBig",
               "tone": "accent",
-              "format": "number"
+              "format": "number",
+              "label_key": "orders.pages.list_page.blocks.1.cards.customer_orders_completed_count.label",
+              "subtitle_key": "orders.pages.list_page.blocks.1.cards.customer_orders_completed_count.subtitle"
             }
           ]
         },
@@ -1156,16 +2289,34 @@
               "default_mode": "kanban",
               "default_filter_id": "active",
               "modes": [
-                { "mode": "list", "target": "view:biz_order.list" },
-                { "mode": "kanban", "target": "view:biz_order.kanban", "default_group_by": "biz_order.status" },
-                { "mode": "calendar", "target": "view:biz_order.calendar" },
-                { "mode": "graph", "target": "view:biz_order.graph" },
-                { "mode": "pivot", "target": "view:biz_order.list", "default_group_by": "biz_order.status" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_order.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:biz_order.kanban",
+                  "default_group_by": "biz_order.status"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:biz_order.calendar"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:biz_order.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:biz_order.list",
+                  "default_group_by": "biz_order.status"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "orders.pages.list_page.title"
     },
     {
       "id": "biz_order.in_production_page",
@@ -1174,7 +2325,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.customer_order_new" }
+          {
+            "action_id": "action.customer_order_new"
+          }
         ]
       },
       "content": [
@@ -1188,13 +2341,21 @@
               "default_mode": "list",
               "default_filter_id": "in_production",
               "modes": [
-                { "mode": "list", "target": "view:biz_order.list" },
-                { "mode": "kanban", "target": "view:biz_order.kanban", "default_group_by": "biz_order.status" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_order.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:biz_order.kanban",
+                  "default_group_by": "biz_order.status"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "orders.pages.in_production_page.title"
     },
     {
       "id": "biz_order.ready_to_invoice_page",
@@ -1203,7 +2364,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.customer_order_new" }
+          {
+            "action_id": "action.customer_order_new"
+          }
         ]
       },
       "content": [
@@ -1217,12 +2380,16 @@
               "default_mode": "list",
               "default_filter_id": "ready_to_invoice",
               "modes": [
-                { "mode": "list", "target": "view:biz_order.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_order.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "orders.pages.ready_to_invoice_page.title"
     },
     {
       "id": "biz_order.on_hold_page",
@@ -1231,7 +2398,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.customer_order_new" }
+          {
+            "action_id": "action.customer_order_new"
+          }
         ]
       },
       "content": [
@@ -1245,12 +2414,16 @@
               "default_mode": "list",
               "default_filter_id": "on_hold",
               "modes": [
-                { "mode": "list", "target": "view:biz_order.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_order.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "orders.pages.on_hold_page.title"
     },
     {
       "id": "biz_order.completed_page",
@@ -1259,7 +2432,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.customer_order_new" }
+          {
+            "action_id": "action.customer_order_new"
+          }
         ]
       },
       "content": [
@@ -1273,18 +2448,24 @@
               "default_mode": "list",
               "default_filter_id": "completed",
               "modes": [
-                { "mode": "list", "target": "view:biz_order.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_order.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "orders.pages.completed_page.title"
     },
     {
       "id": "biz_order.form_page",
       "title": "Order",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none"
+      },
       "content": [
         {
           "kind": "record",
@@ -1303,7 +2484,10 @@
                       "kind": "container",
                       "variant": "card",
                       "content": [
-                        { "kind": "view", "target": "view:biz_order.form" }
+                        {
+                          "kind": "view",
+                          "target": "view:biz_order.form"
+                        }
                       ]
                     }
                   ]
@@ -1315,7 +2499,11 @@
                       "kind": "container",
                       "variant": "card",
                       "content": [
-                        { "kind": "chatter", "entity_id": "entity.biz_order", "record_ref": "$record.id" }
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.biz_order",
+                          "record_ref": "$record.id"
+                        }
                       ]
                     }
                   ]
@@ -1324,13 +2512,16 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "orders.pages.form_page.title"
     },
     {
       "id": "biz_order_line.list_page",
       "title": "Order Lines",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none"
+      },
       "content": [
         {
           "kind": "container",
@@ -1341,18 +2532,24 @@
               "entity_id": "entity.biz_order_line",
               "default_mode": "list",
               "modes": [
-                { "mode": "list", "target": "view:biz_order_line.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_order_line.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "orders.pages.list_page.title"
     },
     {
       "id": "biz_order_line.form_page",
       "title": "Order Line",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none"
+      },
       "content": [
         {
           "kind": "record",
@@ -1363,12 +2560,16 @@
               "kind": "container",
               "variant": "card",
               "content": [
-                { "kind": "view", "target": "view:biz_order_line.form" }
+                {
+                  "kind": "view",
+                  "target": "view:biz_order_line.form"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "orders.pages.form_page.title"
     }
   ],
   "modals": [
@@ -1386,17 +2587,25 @@
           "entity_id": "entity.biz_order",
           "label": "Put On Hold",
           "patch": {
-            "biz_order.status_before_hold": { "ref": "$record.biz_order.status" },
+            "biz_order.status_before_hold": {
+              "ref": "$record.biz_order.status"
+            },
             "biz_order.status": "on_hold",
-            "biz_order.hold_reason": { "ref": "$record.biz_order.hold_reason" }
-          }
+            "biz_order.hold_reason": {
+              "ref": "$record.biz_order.hold_reason"
+            }
+          },
+          "action_label_key": "orders.modals.customer_order_hold.actions.update_record.label"
         },
         {
           "kind": "close_modal",
           "label": "Close",
-          "variant": "ghost"
+          "variant": "ghost",
+          "action_label_key": "orders.modals.customer_order_hold.actions.close_modal.label"
         }
-      ]
+      ],
+      "title_key": "orders.modals.customer_order_hold.title",
+      "description_key": "orders.modals.customer_order_hold.description"
     },
     {
       "id": "modal.customer_order_cancel",
@@ -1413,15 +2622,21 @@
           "label": "Cancel Order",
           "patch": {
             "biz_order.status": "cancelled",
-            "biz_order.cancellation_reason": { "ref": "$record.biz_order.cancellation_reason" }
-          }
+            "biz_order.cancellation_reason": {
+              "ref": "$record.biz_order.cancellation_reason"
+            }
+          },
+          "action_label_key": "orders.modals.customer_order_cancel.actions.update_record.label"
         },
         {
           "kind": "close_modal",
           "label": "Close",
-          "variant": "ghost"
+          "variant": "ghost",
+          "action_label_key": "orders.modals.customer_order_cancel.actions.close_modal.label"
         }
-      ]
+      ],
+      "title_key": "orders.modals.customer_order_cancel.title",
+      "description_key": "orders.modals.customer_order_cancel.description"
     }
   ],
   "interfaces": {
@@ -1445,6 +2660,7 @@
             "id": "orders_by_status",
             "type": "group",
             "title": "Orders by Status",
+            "title_key": "orders.dashboard.orders_by_status",
             "group_by": "biz_order.status",
             "measure": "count"
           }

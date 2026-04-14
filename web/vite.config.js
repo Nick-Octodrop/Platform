@@ -6,6 +6,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const proxyTarget = (env.VITE_API_URL || "http://localhost:8000").trim();
   const buildId = String(Date.now());
+  const enableDevPwa = env.VITE_ENABLE_DEV_PWA === "1";
   return {
     define: {
       __OCTO_BUILD_ID__: JSON.stringify(buildId),
@@ -16,7 +17,7 @@ export default defineConfig(({ mode }) => {
         registerType: "autoUpdate",
         injectRegister: null,
         devOptions: {
-          enabled: true,
+          enabled: enableDevPwa,
           suppressWarnings: true,
         },
         includeAssets: ["icons/icon.svg", "icons/maskable-icon.svg"],

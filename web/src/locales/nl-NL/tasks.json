@@ -1,0 +1,285 @@
+{
+  "module": {
+    "name": "Taken",
+    "description": "Toegewezen werk voor verkoop, bedrijfsvoering, inkoop, financiën en opvolging van de klantoverdracht."
+  },
+  "navigation": {
+    "biz_task_list_page": "Taken",
+    "biz_task_mine_page": "Mijn taken",
+    "biz_task_overdue_page": "Te laat",
+    "biz_task_crm_page": "CRM",
+    "biz_task_operations_page": "Operaties"
+  },
+  "entities": {
+    "biz_task": {
+      "label": "Taak",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "title": {
+          "label": "Taak"
+        },
+        "task_type": {
+          "label": "Typ",
+          "options": {
+            "follow_up": "Vervolg",
+            "quote": "Citaat werk",
+            "order_handoff": "Bestel Handoff",
+            "procurement": "Inkoop",
+            "finance": "Financiën",
+            "document": "Documenteren",
+            "site_visit": "Bezoek ter plaatse",
+            "internal": "Intern"
+          }
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "open": "Openen",
+            "in_progress": "In uitvoering",
+            "blocked": "Geblokkeerd",
+            "done": "Klaar",
+            "cancelled": "Geannuleerd"
+          }
+        },
+        "priority": {
+          "label": "Prioriteit",
+          "options": {
+            "low": "Laag",
+            "normal": "Normaal",
+            "high": "Hoog",
+            "urgent": "Dringend"
+          }
+        },
+        "owner_user_id": {
+          "label": "Eigenaar"
+        },
+        "assignee_user_id": {
+          "label": "Gevolmachtigde"
+        },
+        "participant_user_ids": {
+          "label": "Deelnemers"
+        },
+        "start_date": {
+          "label": "Startdatum"
+        },
+        "due_date": {
+          "label": "Vervaldatum"
+        },
+        "company_id": {
+          "label": "Bedrijf"
+        },
+        "lead_id": {
+          "label": "Lood"
+        },
+        "opportunity_id": {
+          "label": "Gelegenheid"
+        },
+        "site_id": {
+          "label": "Locatie"
+        },
+        "quote_id": {
+          "label": "Citaat"
+        },
+        "order_id": {
+          "label": "Bestel"
+        },
+        "purchase_order_id": {
+          "label": "Aankooporder"
+        },
+        "invoice_id": {
+          "label": "Factuur"
+        },
+        "document_id": {
+          "label": "Documenteren"
+        },
+        "blocked_reason": {
+          "label": "Geblokkeerde reden"
+        },
+        "cancel_reason": {
+          "label": "Reden van annulering"
+        },
+        "description": {
+          "label": "Beschrijving"
+        },
+        "attachments": {
+          "label": "Bijlagen"
+        },
+        "created_at": {
+          "label": "Gemaakt op"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_biz_task_new": {
+      "label": "Nieuwe taak"
+    },
+    "action_biz_task_start": {
+      "label": "Begin"
+    },
+    "action_biz_task_block": {
+      "label": "Blok"
+    },
+    "action_biz_task_done": {
+      "label": "Markeer klaar"
+    },
+    "action_biz_task_cancel": {
+      "label": "Annuleer"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Taken zoeken..."
+      },
+      "filters": {
+        "open": {
+          "label": "Open werk"
+        },
+        "mine": {
+          "label": "Mijn taken"
+        },
+        "overdue": {
+          "label": "Te laat"
+        },
+        "crm": {
+          "label": "CRM-taken"
+        },
+        "operations": {
+          "label": "Operaties"
+        },
+        "finance": {
+          "label": "Financiën"
+        },
+        "blocked": {
+          "label": "Geblokkeerd"
+        },
+        "done": {
+          "label": "Klaar"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Taak"
+        },
+        "links": {
+          "title": "Gerelateerde gegevens"
+        },
+        "details": {
+          "title": "Details"
+        }
+      }
+    }
+  },
+  "modals": {
+    "biz_task_block": {
+      "title": "Blokkeer taak",
+      "actions": {
+        "update_record": {
+          "label": "Blok"
+        },
+        "close_modal": {
+          "label": "Blijf open"
+        }
+      }
+    },
+    "biz_task_cancel": {
+      "title": "Taak annuleren",
+      "actions": {
+        "update_record": {
+          "label": "Taak annuleren"
+        },
+        "close_modal": {
+          "label": "Blijf open"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Taken"
+    },
+    "mine_page": {
+      "title": "Mijn taken"
+    },
+    "overdue_page": {
+      "title": "Achterstallige taken"
+    },
+    "crm_page": {
+      "title": "CRM-taken"
+    },
+    "operations_page": {
+      "title": "Operationele taken"
+    },
+    "form_page": {
+      "title": "Taak"
+    }
+  },
+  "workflows": {
+    "biz_task_status_workflow": {
+      "states": {
+        "open": {
+          "label": "Openen"
+        },
+        "in_progress": {
+          "label": "In uitvoering"
+        },
+        "blocked": {
+          "label": "Geblokkeerd"
+        },
+        "done": {
+          "label": "Klaar"
+        },
+        "cancelled": {
+          "label": "Geannuleerd"
+        }
+      },
+      "transitions": {
+        "open_in_progress": {
+          "label": "Begin"
+        },
+        "open_blocked": {
+          "label": "Blok"
+        },
+        "in_progress_blocked": {
+          "label": "Blok"
+        },
+        "blocked_in_progress": {
+          "label": "Hervatten"
+        },
+        "open_done": {
+          "label": "Markeer klaar"
+        },
+        "in_progress_done": {
+          "label": "Markeer klaar"
+        },
+        "blocked_done": {
+          "label": "Markeer klaar"
+        },
+        "open_cancelled": {
+          "label": "Annuleer"
+        },
+        "in_progress_cancelled": {
+          "label": "Annuleer"
+        },
+        "blocked_cancelled": {
+          "label": "Annuleer"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "task_created": "Taak gemaakt",
+    "task_updated": "Taak bijgewerkt",
+    "task_status_changed": "Taakstatus gewijzigd",
+    "new_task_clicked": "Er is op Nieuwe taak geklikt",
+    "start_clicked": "Begin geklikt",
+    "block_clicked": "Blok heeft geklikt",
+    "mark_done_clicked": "Markeer gereed klikte",
+    "cancel_clicked": "Annuleren heeft geklikt"
+  }
+}

@@ -7,7 +7,9 @@
     "version": "3.0.0",
     "description": "Unified construction management for projects, labour, materials, costs, and daily site operations.",
     "category": "Construction",
-    "icon_key": "lucide:HardHat"
+    "icon_key": "lucide:HardHat",
+    "name_key": "construction.module.name",
+    "description_key": "construction.module.description"
   },
   "depends_on": {
     "required": [
@@ -96,39 +98,48 @@
         "items": [
           {
             "label": "Dashboard",
-            "to": "page:construction.dashboard_page"
+            "to": "page:construction.dashboard_page",
+            "menu_label_key": "construction.navigation.construction_dashboard_page"
           },
           {
             "label": "Projects",
-            "to": "page:construction_project.list_page"
+            "to": "page:construction_project.list_page",
+            "menu_label_key": "construction.navigation.construction_project_list_page"
           },
           {
             "label": "Sites",
-            "to": "page:construction_site.list_page"
+            "to": "page:construction_site.list_page",
+            "menu_label_key": "construction.navigation.construction_site_list_page"
           },
           {
             "label": "Workers",
-            "to": "page:construction_worker.list_page"
+            "to": "page:construction_worker.list_page",
+            "menu_label_key": "construction.navigation.construction_worker_list_page"
           },
           {
             "label": "Time Entries",
-            "to": "page:time_entry.list_page"
+            "to": "page:time_entry.list_page",
+            "menu_label_key": "construction.navigation.time_entry_list_page"
           },
           {
             "label": "Material Logs",
-            "to": "page:material_log.list_page"
+            "to": "page:material_log.list_page",
+            "menu_label_key": "construction.navigation.material_log_list_page"
           },
           {
             "label": "Expenses / Costs",
-            "to": "page:construction_expense.list_page"
+            "to": "page:construction_expense.list_page",
+            "menu_label_key": "construction.navigation.construction_expense_list_page"
           },
           {
             "label": "Daily Reports",
-            "to": "page:construction_daily_report.list_page"
+            "to": "page:construction_daily_report.list_page",
+            "menu_label_key": "construction.navigation.construction_daily_report_list_page"
           },
           {
             "label": "Issues",
-            "to": "page:construction_issue.list_page"
+            "to": "page:construction_issue.list_page",
+            "menu_label_key": "construction.navigation.construction_issue_list_page"
           }
         ]
       }
@@ -143,18 +154,21 @@
           "id": "construction_site.id",
           "type": "uuid",
           "label": "ID",
-          "readonly": true
+          "readonly": true,
+          "label_key": "construction.entities.construction_site.fields.id.label"
         },
         {
           "id": "construction_site.name",
           "type": "string",
           "label": "Site Name",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_site.fields.name.label"
         },
         {
           "id": "construction_site.code",
           "type": "string",
-          "label": "Site Code"
+          "label": "Site Code",
+          "label_key": "construction.entities.construction_site.fields.code.label"
         },
         {
           "id": "construction_site.address",
@@ -164,22 +178,26 @@
             "op": "eq",
             "field": "construction_site.status",
             "value": "active"
-          }
+          },
+          "label_key": "construction.entities.construction_site.fields.address.label"
         },
         {
           "id": "construction_site.city",
           "type": "string",
-          "label": "City"
+          "label": "City",
+          "label_key": "construction.entities.construction_site.fields.city.label"
         },
         {
           "id": "construction_site.region",
           "type": "string",
-          "label": "Region / State"
+          "label": "Region / State",
+          "label_key": "construction.entities.construction_site.fields.region.label"
         },
         {
           "id": "construction_site.country",
           "type": "string",
-          "label": "Country"
+          "label": "Country",
+          "label_key": "construction.entities.construction_site.fields.country.label"
         },
         {
           "id": "construction_site.supervisor_id",
@@ -189,12 +207,14 @@
             "op": "eq",
             "field": "construction_site.status",
             "value": "active"
-          }
+          },
+          "label_key": "construction.entities.construction_site.fields.supervisor_id.label"
         },
         {
           "id": "construction_site.phone",
           "type": "string",
-          "label": "Phone"
+          "label": "Phone",
+          "label_key": "construction.entities.construction_site.fields.phone.label"
         },
         {
           "id": "construction_site.status",
@@ -204,23 +224,30 @@
           "options": [
             {
               "value": "active",
-              "label": "Active"
+              "label": "Active",
+              "status_label_key": "construction.entities.construction_site.fields.status.options.active",
+              "label_key": "construction.entities.construction_site.fields.status.options.active"
             },
             {
               "value": "inactive",
-              "label": "Inactive"
+              "label": "Inactive",
+              "status_label_key": "construction.entities.construction_site.fields.status.options.inactive",
+              "label_key": "construction.entities.construction_site.fields.status.options.inactive"
             }
-          ]
+          ],
+          "label_key": "construction.entities.construction_site.fields.status.label"
         },
         {
           "id": "construction_site.notes",
           "type": "text",
-          "label": "Notes"
+          "label": "Notes",
+          "label_key": "construction.entities.construction_site.fields.notes.label"
         },
         {
           "id": "construction_site.created_at",
           "type": "datetime",
-          "label": "Created At"
+          "label": "Created At",
+          "label_key": "construction.entities.construction_site.fields.created_at.label"
         }
       ]
     },
@@ -232,18 +259,21 @@
           "id": "construction_crew.id",
           "type": "uuid",
           "label": "ID",
-          "readonly": true
+          "readonly": true,
+          "label_key": "construction.entities.construction_crew.fields.id.label"
         },
         {
           "id": "construction_crew.name",
           "type": "string",
           "label": "Crew Name",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_crew.fields.name.label"
         },
         {
           "id": "construction_crew.code",
           "type": "string",
-          "label": "Crew Code"
+          "label": "Crew Code",
+          "label_key": "construction.entities.construction_crew.fields.code.label"
         },
         {
           "id": "construction_crew.foreman_user_id",
@@ -253,7 +283,8 @@
             "op": "eq",
             "field": "construction_crew.status",
             "value": "active"
-          }
+          },
+          "label_key": "construction.entities.construction_crew.fields.foreman_user_id.label"
         },
         {
           "id": "construction_crew.default_site_id",
@@ -265,7 +296,8 @@
             "op": "eq",
             "field": "construction_crew.status",
             "value": "active"
-          }
+          },
+          "label_key": "construction.entities.construction_crew.fields.default_site_id.label"
         },
         {
           "id": "construction_crew.status",
@@ -275,23 +307,30 @@
           "options": [
             {
               "value": "active",
-              "label": "Active"
+              "label": "Active",
+              "status_label_key": "construction.entities.construction_crew.fields.status.options.active",
+              "label_key": "construction.entities.construction_crew.fields.status.options.active"
             },
             {
               "value": "inactive",
-              "label": "Inactive"
+              "label": "Inactive",
+              "status_label_key": "construction.entities.construction_crew.fields.status.options.inactive",
+              "label_key": "construction.entities.construction_crew.fields.status.options.inactive"
             }
-          ]
+          ],
+          "label_key": "construction.entities.construction_crew.fields.status.label"
         },
         {
           "id": "construction_crew.notes",
           "type": "text",
-          "label": "Notes"
+          "label": "Notes",
+          "label_key": "construction.entities.construction_crew.fields.notes.label"
         },
         {
           "id": "construction_crew.created_at",
           "type": "datetime",
-          "label": "Created At"
+          "label": "Created At",
+          "label_key": "construction.entities.construction_crew.fields.created_at.label"
         }
       ]
     },
@@ -303,19 +342,22 @@
           "id": "construction_cost_code.id",
           "type": "uuid",
           "label": "ID",
-          "readonly": true
+          "readonly": true,
+          "label_key": "construction.entities.construction_cost_code.fields.id.label"
         },
         {
           "id": "construction_cost_code.code",
           "type": "string",
           "label": "Code",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_cost_code.fields.code.label"
         },
         {
           "id": "construction_cost_code.name",
           "type": "string",
           "label": "Name",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_cost_code.fields.name.label"
         },
         {
           "id": "construction_cost_code.category",
@@ -325,41 +367,55 @@
           "options": [
             {
               "value": "labor",
-              "label": "Labor"
+              "label": "Labor",
+              "status_label_key": "construction.entities.construction_cost_code.fields.category.options.labor",
+              "label_key": "construction.entities.construction_cost_code.fields.category.options.labor"
             },
             {
               "value": "materials",
-              "label": "Materials"
+              "label": "Materials",
+              "status_label_key": "construction.entities.construction_cost_code.fields.category.options.materials",
+              "label_key": "construction.entities.construction_cost_code.fields.category.options.materials"
             },
             {
               "value": "subcontract",
-              "label": "Subcontract"
+              "label": "Subcontract",
+              "status_label_key": "construction.entities.construction_cost_code.fields.category.options.subcontract",
+              "label_key": "construction.entities.construction_cost_code.fields.category.options.subcontract"
             },
             {
               "value": "equipment",
-              "label": "Equipment"
+              "label": "Equipment",
+              "status_label_key": "construction.entities.construction_cost_code.fields.category.options.equipment",
+              "label_key": "construction.entities.construction_cost_code.fields.category.options.equipment"
             },
             {
               "value": "other",
-              "label": "Other"
+              "label": "Other",
+              "status_label_key": "construction.entities.construction_cost_code.fields.category.options.other",
+              "label_key": "construction.entities.construction_cost_code.fields.category.options.other"
             }
-          ]
+          ],
+          "label_key": "construction.entities.construction_cost_code.fields.category.label"
         },
         {
           "id": "construction_cost_code.active",
           "type": "bool",
           "label": "Active",
-          "default": true
+          "default": true,
+          "label_key": "construction.entities.construction_cost_code.fields.active.label"
         },
         {
           "id": "construction_cost_code.notes",
           "type": "text",
-          "label": "Notes"
+          "label": "Notes",
+          "label_key": "construction.entities.construction_cost_code.fields.notes.label"
         },
         {
           "id": "construction_cost_code.created_at",
           "type": "datetime",
-          "label": "Created At"
+          "label": "Created At",
+          "label_key": "construction.entities.construction_cost_code.fields.created_at.label"
         }
       ]
     },
@@ -371,37 +427,43 @@
           "id": "construction_project.id",
           "type": "uuid",
           "label": "ID",
-          "readonly": true
+          "readonly": true,
+          "label_key": "construction.entities.construction_project.fields.id.label"
         },
         {
           "id": "construction_project.name",
           "type": "string",
           "label": "Project Name",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_project.fields.name.label"
         },
         {
           "id": "construction_project.code",
           "type": "string",
-          "label": "Project Code"
+          "label": "Project Code",
+          "label_key": "construction.entities.construction_project.fields.code.label"
         },
         {
           "id": "construction_project.client_contact_id",
           "type": "lookup",
           "label": "Client",
           "entity": "entity.contact",
-          "display_field": "contact.name"
+          "display_field": "contact.name",
+          "label_key": "construction.entities.construction_project.fields.client_contact_id.label"
         },
         {
           "id": "construction_project.site_id",
           "type": "lookup",
           "label": "Primary Site",
           "entity": "entity.construction_site",
-          "display_field": "construction_site.name"
+          "display_field": "construction_site.name",
+          "label_key": "construction.entities.construction_project.fields.site_id.label"
         },
         {
           "id": "construction_project.site_location",
           "type": "string",
-          "label": "Site Location"
+          "label": "Site Location",
+          "label_key": "construction.entities.construction_project.fields.site_location.label"
         },
         {
           "id": "construction_project.status",
@@ -411,25 +473,36 @@
           "options": [
             {
               "value": "planned",
-              "label": "Planned"
+              "label": "Planned",
+              "status_label_key": "construction.entities.construction_project.fields.status.options.planned",
+              "label_key": "construction.entities.construction_project.fields.status.options.planned"
             },
             {
               "value": "active",
-              "label": "Active"
+              "label": "Active",
+              "status_label_key": "construction.entities.construction_project.fields.status.options.active",
+              "label_key": "construction.entities.construction_project.fields.status.options.active"
             },
             {
               "value": "on_hold",
-              "label": "On Hold"
+              "label": "On Hold",
+              "status_label_key": "construction.entities.construction_project.fields.status.options.on_hold",
+              "label_key": "construction.entities.construction_project.fields.status.options.on_hold"
             },
             {
               "value": "completed",
-              "label": "Completed"
+              "label": "Completed",
+              "status_label_key": "construction.entities.construction_project.fields.status.options.completed",
+              "label_key": "construction.entities.construction_project.fields.status.options.completed"
             },
             {
               "value": "cancelled",
-              "label": "Cancelled"
+              "label": "Cancelled",
+              "status_label_key": "construction.entities.construction_project.fields.status.options.cancelled",
+              "label_key": "construction.entities.construction_project.fields.status.options.cancelled"
             }
-          ]
+          ],
+          "label_key": "construction.entities.construction_project.fields.status.label"
         },
         {
           "id": "construction_project.project_type",
@@ -439,25 +512,36 @@
           "options": [
             {
               "value": "building",
-              "label": "Building"
+              "label": "Building",
+              "status_label_key": "construction.entities.construction_project.fields.project_type.options.building",
+              "label_key": "construction.entities.construction_project.fields.project_type.options.building"
             },
             {
               "value": "renovation",
-              "label": "Renovation"
+              "label": "Renovation",
+              "status_label_key": "construction.entities.construction_project.fields.project_type.options.renovation",
+              "label_key": "construction.entities.construction_project.fields.project_type.options.renovation"
             },
             {
               "value": "fitout",
-              "label": "Fitout"
+              "label": "Fitout",
+              "status_label_key": "construction.entities.construction_project.fields.project_type.options.fitout",
+              "label_key": "construction.entities.construction_project.fields.project_type.options.fitout"
             },
             {
               "value": "maintenance",
-              "label": "Maintenance"
+              "label": "Maintenance",
+              "status_label_key": "construction.entities.construction_project.fields.project_type.options.maintenance",
+              "label_key": "construction.entities.construction_project.fields.project_type.options.maintenance"
             },
             {
               "value": "other",
-              "label": "Other"
+              "label": "Other",
+              "status_label_key": "construction.entities.construction_project.fields.project_type.options.other",
+              "label_key": "construction.entities.construction_project.fields.project_type.options.other"
             }
-          ]
+          ],
+          "label_key": "construction.entities.construction_project.fields.project_type.label"
         },
         {
           "id": "construction_project.priority",
@@ -467,27 +551,36 @@
           "options": [
             {
               "value": "low",
-              "label": "Low"
+              "label": "Low",
+              "status_label_key": "construction.entities.construction_project.fields.priority.options.low",
+              "label_key": "construction.entities.construction_project.fields.priority.options.low"
             },
             {
               "value": "medium",
-              "label": "Medium"
+              "label": "Medium",
+              "status_label_key": "construction.entities.construction_project.fields.priority.options.medium",
+              "label_key": "construction.entities.construction_project.fields.priority.options.medium"
             },
             {
               "value": "high",
-              "label": "High"
+              "label": "High",
+              "status_label_key": "construction.entities.construction_project.fields.priority.options.high",
+              "label_key": "construction.entities.construction_project.fields.priority.options.high"
             }
-          ]
+          ],
+          "label_key": "construction.entities.construction_project.fields.priority.label"
         },
         {
           "id": "construction_project.project_manager_id",
           "type": "user",
-          "label": "Project Manager"
+          "label": "Project Manager",
+          "label_key": "construction.entities.construction_project.fields.project_manager_id.label"
         },
         {
           "id": "construction_project.site_manager_id",
           "type": "user",
-          "label": "Site Manager"
+          "label": "Site Manager",
+          "label_key": "construction.entities.construction_project.fields.site_manager_id.label"
         },
         {
           "id": "construction_project.start_date",
@@ -501,7 +594,8 @@
               "on_hold",
               "completed"
             ]
-          }
+          },
+          "label_key": "construction.entities.construction_project.fields.start_date.label"
         },
         {
           "id": "construction_project.target_end_date",
@@ -515,7 +609,8 @@
               "on_hold",
               "completed"
             ]
-          }
+          },
+          "label_key": "construction.entities.construction_project.fields.target_end_date.label"
         },
         {
           "id": "construction_project.contract_value",
@@ -525,7 +620,8 @@
             "kind": "currency",
             "currency": "NZD",
             "precision": 2
-          }
+          },
+          "label_key": "construction.entities.construction_project.fields.contract_value.label"
         },
         {
           "id": "construction_project.labor_budget",
@@ -535,7 +631,8 @@
             "kind": "currency",
             "currency": "NZD",
             "precision": 2
-          }
+          },
+          "label_key": "construction.entities.construction_project.fields.labor_budget.label"
         },
         {
           "id": "construction_project.material_budget",
@@ -545,7 +642,8 @@
             "kind": "currency",
             "currency": "NZD",
             "precision": 2
-          }
+          },
+          "label_key": "construction.entities.construction_project.fields.material_budget.label"
         },
         {
           "id": "construction_project.other_budget",
@@ -555,22 +653,26 @@
             "kind": "currency",
             "currency": "NZD",
             "precision": 2
-          }
+          },
+          "label_key": "construction.entities.construction_project.fields.other_budget.label"
         },
         {
           "id": "construction_project.notes",
           "type": "text",
-          "label": "Notes"
+          "label": "Notes",
+          "label_key": "construction.entities.construction_project.fields.notes.label"
         },
         {
           "id": "construction_project.attachments",
           "type": "attachments",
-          "label": "Attachments"
+          "label": "Attachments",
+          "label_key": "construction.entities.construction_project.fields.attachments.label"
         },
         {
           "id": "construction_project.created_at",
           "type": "datetime",
-          "label": "Created At"
+          "label": "Created At",
+          "label_key": "construction.entities.construction_project.fields.created_at.label"
         },
         {
           "id": "construction_project.total_hours",
@@ -596,7 +698,8 @@
                 }
               }
             }
-          }
+          },
+          "label_key": "construction.entities.construction_project.fields.total_hours.label"
         },
         {
           "id": "construction_project.total_labour_cost",
@@ -637,7 +740,8 @@
                 ]
               }
             }
-          }
+          },
+          "label_key": "construction.entities.construction_project.fields.total_labour_cost.label"
         },
         {
           "id": "construction_project.total_material_cost",
@@ -678,7 +782,8 @@
                 ]
               }
             }
-          }
+          },
+          "label_key": "construction.entities.construction_project.fields.total_material_cost.label"
         },
         {
           "id": "construction_project.total_other_cost",
@@ -723,7 +828,8 @@
                 ]
               }
             }
-          }
+          },
+          "label_key": "construction.entities.construction_project.fields.total_other_cost.label"
         },
         {
           "id": "construction_project.total_cost",
@@ -757,7 +863,8 @@
                 2
               ]
             }
-          }
+          },
+          "label_key": "construction.entities.construction_project.fields.total_cost.label"
         }
       ]
     },
@@ -769,7 +876,8 @@
           "id": "construction_work_item.id",
           "type": "uuid",
           "label": "ID",
-          "readonly": true
+          "readonly": true,
+          "label_key": "construction.entities.construction_work_item.fields.id.label"
         },
         {
           "id": "construction_work_item.project_id",
@@ -777,25 +885,29 @@
           "label": "Project",
           "entity": "entity.construction_project",
           "display_field": "construction_project.name",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_work_item.fields.project_id.label"
         },
         {
           "id": "construction_work_item.site_id",
           "type": "lookup",
           "label": "Site",
           "entity": "entity.construction_site",
-          "display_field": "construction_site.name"
+          "display_field": "construction_site.name",
+          "label_key": "construction.entities.construction_work_item.fields.site_id.label"
         },
         {
           "id": "construction_work_item.title",
           "type": "string",
           "label": "Title",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_work_item.fields.title.label"
         },
         {
           "id": "construction_work_item.sequence_code",
           "type": "string",
-          "label": "Sequence / Code"
+          "label": "Sequence / Code",
+          "label_key": "construction.entities.construction_work_item.fields.sequence_code.label"
         },
         {
           "id": "construction_work_item.phase",
@@ -805,47 +917,64 @@
           "options": [
             {
               "value": "preliminaries",
-              "label": "Preliminaries"
+              "label": "Preliminaries",
+              "status_label_key": "construction.entities.construction_work_item.fields.phase.options.preliminaries",
+              "label_key": "construction.entities.construction_work_item.fields.phase.options.preliminaries"
             },
             {
               "value": "foundation",
-              "label": "Foundation"
+              "label": "Foundation",
+              "status_label_key": "construction.entities.construction_work_item.fields.phase.options.foundation",
+              "label_key": "construction.entities.construction_work_item.fields.phase.options.foundation"
             },
             {
               "value": "structure",
-              "label": "Structure"
+              "label": "Structure",
+              "status_label_key": "construction.entities.construction_work_item.fields.phase.options.structure",
+              "label_key": "construction.entities.construction_work_item.fields.phase.options.structure"
             },
             {
               "value": "mep",
-              "label": "MEP"
+              "label": "MEP",
+              "status_label_key": "construction.entities.construction_work_item.fields.phase.options.mep",
+              "label_key": "construction.entities.construction_work_item.fields.phase.options.mep"
             },
             {
               "value": "finishing",
-              "label": "Finishing"
+              "label": "Finishing",
+              "status_label_key": "construction.entities.construction_work_item.fields.phase.options.finishing",
+              "label_key": "construction.entities.construction_work_item.fields.phase.options.finishing"
             },
             {
               "value": "handover",
-              "label": "Handover"
+              "label": "Handover",
+              "status_label_key": "construction.entities.construction_work_item.fields.phase.options.handover",
+              "label_key": "construction.entities.construction_work_item.fields.phase.options.handover"
             },
             {
               "value": "other",
-              "label": "Other"
+              "label": "Other",
+              "status_label_key": "construction.entities.construction_work_item.fields.phase.options.other",
+              "label_key": "construction.entities.construction_work_item.fields.phase.options.other"
             }
-          ]
+          ],
+          "label_key": "construction.entities.construction_work_item.fields.phase.label"
         },
         {
           "id": "construction_work_item.cost_code_id",
           "type": "lookup",
           "label": "Cost Code",
           "entity": "entity.construction_cost_code",
-          "display_field": "construction_cost_code.name"
+          "display_field": "construction_cost_code.name",
+          "label_key": "construction.entities.construction_work_item.fields.cost_code_id.label"
         },
         {
           "id": "construction_work_item.assigned_crew_id",
           "type": "lookup",
           "label": "Assigned Crew",
           "entity": "entity.construction_crew",
-          "display_field": "construction_crew.name"
+          "display_field": "construction_crew.name",
+          "label_key": "construction.entities.construction_work_item.fields.assigned_crew_id.label"
         },
         {
           "id": "construction_work_item.owner_id",
@@ -859,7 +988,8 @@
               "blocked",
               "done"
             ]
-          }
+          },
+          "label_key": "construction.entities.construction_work_item.fields.owner_id.label"
         },
         {
           "id": "construction_work_item.status",
@@ -869,25 +999,36 @@
           "options": [
             {
               "value": "pending",
-              "label": "Pending"
+              "label": "Pending",
+              "status_label_key": "construction.entities.construction_work_item.fields.status.options.pending",
+              "label_key": "construction.entities.construction_work_item.fields.status.options.pending"
             },
             {
               "value": "in_progress",
-              "label": "In Progress"
+              "label": "In Progress",
+              "status_label_key": "construction.entities.construction_work_item.fields.status.options.in_progress",
+              "label_key": "construction.entities.construction_work_item.fields.status.options.in_progress"
             },
             {
               "value": "blocked",
-              "label": "Blocked"
+              "label": "Blocked",
+              "status_label_key": "construction.entities.construction_work_item.fields.status.options.blocked",
+              "label_key": "construction.entities.construction_work_item.fields.status.options.blocked"
             },
             {
               "value": "done",
-              "label": "Done"
+              "label": "Done",
+              "status_label_key": "construction.entities.construction_work_item.fields.status.options.done",
+              "label_key": "construction.entities.construction_work_item.fields.status.options.done"
             },
             {
               "value": "cancelled",
-              "label": "Cancelled"
+              "label": "Cancelled",
+              "status_label_key": "construction.entities.construction_work_item.fields.status.options.cancelled",
+              "label_key": "construction.entities.construction_work_item.fields.status.options.cancelled"
             }
-          ]
+          ],
+          "label_key": "construction.entities.construction_work_item.fields.status.label"
         },
         {
           "id": "construction_work_item.progress_percent",
@@ -897,7 +1038,8 @@
           "format": {
             "kind": "percent",
             "precision": 0
-          }
+          },
+          "label_key": "construction.entities.construction_work_item.fields.progress_percent.label"
         },
         {
           "id": "construction_work_item.planned_start_date",
@@ -911,7 +1053,8 @@
               "blocked",
               "done"
             ]
-          }
+          },
+          "label_key": "construction.entities.construction_work_item.fields.planned_start_date.label"
         },
         {
           "id": "construction_work_item.planned_end_date",
@@ -924,17 +1067,20 @@
               "blocked",
               "done"
             ]
-          }
+          },
+          "label_key": "construction.entities.construction_work_item.fields.planned_end_date.label"
         },
         {
           "id": "construction_work_item.notes",
           "type": "text",
-          "label": "Notes"
+          "label": "Notes",
+          "label_key": "construction.entities.construction_work_item.fields.notes.label"
         },
         {
           "id": "construction_work_item.created_at",
           "type": "datetime",
-          "label": "Created At"
+          "label": "Created At",
+          "label_key": "construction.entities.construction_work_item.fields.created_at.label"
         }
       ]
     },
@@ -946,23 +1092,27 @@
           "id": "construction_worker.id",
           "type": "uuid",
           "label": "ID",
-          "readonly": true
+          "readonly": true,
+          "label_key": "construction.entities.construction_worker.fields.id.label"
         },
         {
           "id": "construction_worker.full_name",
           "type": "string",
           "label": "Full Name",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_worker.fields.full_name.label"
         },
         {
           "id": "construction_worker.worker_code",
           "type": "string",
-          "label": "Worker Code"
+          "label": "Worker Code",
+          "label_key": "construction.entities.construction_worker.fields.worker_code.label"
         },
         {
           "id": "construction_worker.phone",
           "type": "string",
-          "label": "Phone"
+          "label": "Phone",
+          "label_key": "construction.entities.construction_worker.fields.phone.label"
         },
         {
           "id": "construction_worker.role",
@@ -972,58 +1122,73 @@
           "options": [
             {
               "value": "worker",
-              "label": "Worker"
+              "label": "Worker",
+              "status_label_key": "construction.entities.construction_worker.fields.role.options.worker",
+              "label_key": "construction.entities.construction_worker.fields.role.options.worker"
             },
             {
               "value": "supervisor",
-              "label": "Supervisor"
+              "label": "Supervisor",
+              "status_label_key": "construction.entities.construction_worker.fields.role.options.supervisor",
+              "label_key": "construction.entities.construction_worker.fields.role.options.supervisor"
             },
             {
               "value": "foreman",
-              "label": "Foreman"
+              "label": "Foreman",
+              "status_label_key": "construction.entities.construction_worker.fields.role.options.foreman",
+              "label_key": "construction.entities.construction_worker.fields.role.options.foreman"
             },
             {
               "value": "manager",
-              "label": "Manager"
+              "label": "Manager",
+              "status_label_key": "construction.entities.construction_worker.fields.role.options.manager",
+              "label_key": "construction.entities.construction_worker.fields.role.options.manager"
             }
-          ]
+          ],
+          "label_key": "construction.entities.construction_worker.fields.role.label"
         },
         {
           "id": "construction_worker.crew_id",
           "type": "lookup",
           "label": "Crew",
           "entity": "entity.construction_crew",
-          "display_field": "construction_crew.name"
+          "display_field": "construction_crew.name",
+          "label_key": "construction.entities.construction_worker.fields.crew_id.label"
         },
         {
           "id": "construction_worker.crew_name",
           "type": "string",
-          "label": "Crew Name"
+          "label": "Crew Name",
+          "label_key": "construction.entities.construction_worker.fields.crew_name.label"
         },
         {
           "id": "construction_worker.portal_user_id",
           "type": "user",
-          "label": "Portal User"
+          "label": "Portal User",
+          "label_key": "construction.entities.construction_worker.fields.portal_user_id.label"
         },
         {
           "id": "construction_worker.active",
           "type": "bool",
           "label": "Active",
-          "default": true
+          "default": true,
+          "label_key": "construction.entities.construction_worker.fields.active.label"
         },
         {
           "id": "construction_worker.default_project_id",
           "type": "lookup",
           "label": "Default Project",
           "entity": "entity.construction_project",
-          "display_field": "construction_project.name"
+          "display_field": "construction_project.name",
+          "label_key": "construction.entities.construction_worker.fields.default_project_id.label"
         },
         {
           "id": "construction_worker.default_site_id",
           "type": "lookup",
           "label": "Default Site",
           "entity": "entity.construction_site",
-          "display_field": "construction_site.name"
+          "display_field": "construction_site.name",
+          "label_key": "construction.entities.construction_worker.fields.default_site_id.label"
         },
         {
           "id": "construction_worker.hourly_cost_rate",
@@ -1033,17 +1198,20 @@
             "kind": "currency",
             "currency": "NZD",
             "precision": 2
-          }
+          },
+          "label_key": "construction.entities.construction_worker.fields.hourly_cost_rate.label"
         },
         {
           "id": "construction_worker.notes",
           "type": "text",
-          "label": "Notes"
+          "label": "Notes",
+          "label_key": "construction.entities.construction_worker.fields.notes.label"
         },
         {
           "id": "construction_worker.created_at",
           "type": "datetime",
-          "label": "Created At"
+          "label": "Created At",
+          "label_key": "construction.entities.construction_worker.fields.created_at.label"
         }
       ]
     },
@@ -1055,7 +1223,8 @@
           "id": "construction_worker_assignment.id",
           "type": "uuid",
           "label": "ID",
-          "readonly": true
+          "readonly": true,
+          "label_key": "construction.entities.construction_worker_assignment.fields.id.label"
         },
         {
           "id": "construction_worker_assignment.worker_id",
@@ -1063,7 +1232,8 @@
           "label": "Worker",
           "entity": "entity.construction_worker",
           "display_field": "construction_worker.full_name",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_worker_assignment.fields.worker_id.label"
         },
         {
           "id": "construction_worker_assignment.project_id",
@@ -1071,14 +1241,16 @@
           "label": "Project",
           "entity": "entity.construction_project",
           "display_field": "construction_project.name",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_worker_assignment.fields.project_id.label"
         },
         {
           "id": "construction_worker_assignment.site_id",
           "type": "lookup",
           "label": "Site",
           "entity": "entity.construction_site",
-          "display_field": "construction_site.name"
+          "display_field": "construction_site.name",
+          "label_key": "construction.entities.construction_worker_assignment.fields.site_id.label"
         },
         {
           "id": "construction_worker_assignment.assignment_role",
@@ -1088,27 +1260,37 @@
           "options": [
             {
               "value": "worker",
-              "label": "Worker"
+              "label": "Worker",
+              "status_label_key": "construction.entities.construction_worker_assignment.fields.assignment_role.options.worker",
+              "label_key": "construction.entities.construction_worker_assignment.fields.assignment_role.options.worker"
             },
             {
               "value": "supervisor",
-              "label": "Supervisor"
+              "label": "Supervisor",
+              "status_label_key": "construction.entities.construction_worker_assignment.fields.assignment_role.options.supervisor",
+              "label_key": "construction.entities.construction_worker_assignment.fields.assignment_role.options.supervisor"
             },
             {
               "value": "foreman",
-              "label": "Foreman"
+              "label": "Foreman",
+              "status_label_key": "construction.entities.construction_worker_assignment.fields.assignment_role.options.foreman",
+              "label_key": "construction.entities.construction_worker_assignment.fields.assignment_role.options.foreman"
             },
             {
               "value": "manager",
-              "label": "Manager"
+              "label": "Manager",
+              "status_label_key": "construction.entities.construction_worker_assignment.fields.assignment_role.options.manager",
+              "label_key": "construction.entities.construction_worker_assignment.fields.assignment_role.options.manager"
             }
-          ]
+          ],
+          "label_key": "construction.entities.construction_worker_assignment.fields.assignment_role.label"
         },
         {
           "id": "construction_worker_assignment.start_date",
           "type": "date",
           "label": "Start Date",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_worker_assignment.fields.start_date.label"
         },
         {
           "id": "construction_worker_assignment.end_date",
@@ -1118,23 +1300,27 @@
             "op": "eq",
             "field": "construction_worker_assignment.active",
             "value": false
-          }
+          },
+          "label_key": "construction.entities.construction_worker_assignment.fields.end_date.label"
         },
         {
           "id": "construction_worker_assignment.active",
           "type": "bool",
           "label": "Active",
-          "default": true
+          "default": true,
+          "label_key": "construction.entities.construction_worker_assignment.fields.active.label"
         },
         {
           "id": "construction_worker_assignment.notes",
           "type": "text",
-          "label": "Notes"
+          "label": "Notes",
+          "label_key": "construction.entities.construction_worker_assignment.fields.notes.label"
         },
         {
           "id": "construction_worker_assignment.created_at",
           "type": "datetime",
-          "label": "Created At"
+          "label": "Created At",
+          "label_key": "construction.entities.construction_worker_assignment.fields.created_at.label"
         }
       ]
     },
@@ -1146,7 +1332,8 @@
           "id": "time_entry.id",
           "type": "uuid",
           "label": "ID",
-          "readonly": true
+          "readonly": true,
+          "label_key": "construction.entities.time_entry.fields.id.label"
         },
         {
           "id": "time_entry.project_id",
@@ -1154,14 +1341,16 @@
           "label": "Project",
           "entity": "entity.construction_project",
           "display_field": "construction_project.name",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.time_entry.fields.project_id.label"
         },
         {
           "id": "time_entry.site_id",
           "type": "lookup",
           "label": "Site",
           "entity": "entity.construction_site",
-          "display_field": "construction_site.name"
+          "display_field": "construction_site.name",
+          "label_key": "construction.entities.time_entry.fields.site_id.label"
         },
         {
           "id": "time_entry.worker_id",
@@ -1169,27 +1358,31 @@
           "label": "Worker",
           "entity": "entity.construction_worker",
           "display_field": "construction_worker.full_name",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.time_entry.fields.worker_id.label"
         },
         {
           "id": "time_entry.crew_id",
           "type": "lookup",
           "label": "Crew",
           "entity": "entity.construction_crew",
-          "display_field": "construction_crew.name"
+          "display_field": "construction_crew.name",
+          "label_key": "construction.entities.time_entry.fields.crew_id.label"
         },
         {
           "id": "time_entry.work_item_id",
           "type": "lookup",
           "label": "Work Item",
           "entity": "entity.construction_work_item",
-          "display_field": "construction_work_item.title"
+          "display_field": "construction_work_item.title",
+          "label_key": "construction.entities.time_entry.fields.work_item_id.label"
         },
         {
           "id": "time_entry.entry_date",
           "type": "date",
           "label": "Entry Date",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.time_entry.fields.entry_date.label"
         },
         {
           "id": "time_entry.check_in_at",
@@ -1203,7 +1396,8 @@
               "closed",
               "approved"
             ]
-          }
+          },
+          "label_key": "construction.entities.time_entry.fields.check_in_at.label"
         },
         {
           "id": "time_entry.check_out_at",
@@ -1216,7 +1410,8 @@
               "closed",
               "approved"
             ]
-          }
+          },
+          "label_key": "construction.entities.time_entry.fields.check_out_at.label"
         },
         {
           "id": "time_entry.break_minutes",
@@ -1227,7 +1422,8 @@
             "kind": "duration",
             "unit": "min",
             "precision": 0
-          }
+          },
+          "label_key": "construction.entities.time_entry.fields.break_minutes.label"
         },
         {
           "id": "time_entry.hours_worked",
@@ -1245,7 +1441,8 @@
               "closed",
               "approved"
             ]
-          }
+          },
+          "label_key": "construction.entities.time_entry.fields.hours_worked.label"
         },
         {
           "id": "time_entry.status",
@@ -1255,17 +1452,24 @@
           "options": [
             {
               "value": "open",
-              "label": "Open"
+              "label": "Open",
+              "status_label_key": "construction.entities.time_entry.fields.status.options.open",
+              "label_key": "construction.entities.time_entry.fields.status.options.open"
             },
             {
               "value": "closed",
-              "label": "Closed"
+              "label": "Closed",
+              "status_label_key": "construction.entities.time_entry.fields.status.options.closed",
+              "label_key": "construction.entities.time_entry.fields.status.options.closed"
             },
             {
               "value": "approved",
-              "label": "Approved"
+              "label": "Approved",
+              "status_label_key": "construction.entities.time_entry.fields.status.options.approved",
+              "label_key": "construction.entities.time_entry.fields.status.options.approved"
             }
-          ]
+          ],
+          "label_key": "construction.entities.time_entry.fields.status.label"
         },
         {
           "id": "time_entry.source",
@@ -1275,17 +1479,24 @@
           "options": [
             {
               "value": "pwa",
-              "label": "PWA"
+              "label": "PWA",
+              "status_label_key": "construction.entities.time_entry.fields.source.options.pwa",
+              "label_key": "construction.entities.time_entry.fields.source.options.pwa"
             },
             {
               "value": "portal",
-              "label": "Portal"
+              "label": "Portal",
+              "status_label_key": "construction.entities.time_entry.fields.source.options.portal",
+              "label_key": "construction.entities.time_entry.fields.source.options.portal"
             },
             {
               "value": "manual",
-              "label": "Manual"
+              "label": "Manual",
+              "status_label_key": "construction.entities.time_entry.fields.source.options.manual",
+              "label_key": "construction.entities.time_entry.fields.source.options.manual"
             }
-          ]
+          ],
+          "label_key": "construction.entities.time_entry.fields.source.label"
         },
         {
           "id": "time_entry.approved_by",
@@ -1295,17 +1506,20 @@
             "op": "eq",
             "field": "time_entry.status",
             "value": "approved"
-          }
+          },
+          "label_key": "construction.entities.time_entry.fields.approved_by.label"
         },
         {
           "id": "time_entry.notes",
           "type": "text",
-          "label": "Notes"
+          "label": "Notes",
+          "label_key": "construction.entities.time_entry.fields.notes.label"
         },
         {
           "id": "time_entry.created_at",
           "type": "datetime",
-          "label": "Created At"
+          "label": "Created At",
+          "label_key": "construction.entities.time_entry.fields.created_at.label"
         }
       ]
     },
@@ -1317,7 +1531,8 @@
           "id": "construction_daily_report.id",
           "type": "uuid",
           "label": "ID",
-          "readonly": true
+          "readonly": true,
+          "label_key": "construction.entities.construction_daily_report.fields.id.label"
         },
         {
           "id": "construction_daily_report.project_id",
@@ -1325,20 +1540,23 @@
           "label": "Project",
           "entity": "entity.construction_project",
           "display_field": "construction_project.name",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_daily_report.fields.project_id.label"
         },
         {
           "id": "construction_daily_report.site_id",
           "type": "lookup",
           "label": "Site",
           "entity": "entity.construction_site",
-          "display_field": "construction_site.name"
+          "display_field": "construction_site.name",
+          "label_key": "construction.entities.construction_daily_report.fields.site_id.label"
         },
         {
           "id": "construction_daily_report.report_date",
           "type": "date",
           "label": "Report Date",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_daily_report.fields.report_date.label"
         },
         {
           "id": "construction_daily_report.supervisor_id",
@@ -1351,7 +1569,8 @@
               "submitted",
               "approved"
             ]
-          }
+          },
+          "label_key": "construction.entities.construction_daily_report.fields.supervisor_id.label"
         },
         {
           "id": "construction_daily_report.weather",
@@ -1361,25 +1580,36 @@
           "options": [
             {
               "value": "clear",
-              "label": "Clear"
+              "label": "Clear",
+              "status_label_key": "construction.entities.construction_daily_report.fields.weather.options.clear",
+              "label_key": "construction.entities.construction_daily_report.fields.weather.options.clear"
             },
             {
               "value": "cloudy",
-              "label": "Cloudy"
+              "label": "Cloudy",
+              "status_label_key": "construction.entities.construction_daily_report.fields.weather.options.cloudy",
+              "label_key": "construction.entities.construction_daily_report.fields.weather.options.cloudy"
             },
             {
               "value": "rain",
-              "label": "Rain"
+              "label": "Rain",
+              "status_label_key": "construction.entities.construction_daily_report.fields.weather.options.rain",
+              "label_key": "construction.entities.construction_daily_report.fields.weather.options.rain"
             },
             {
               "value": "storm",
-              "label": "Storm"
+              "label": "Storm",
+              "status_label_key": "construction.entities.construction_daily_report.fields.weather.options.storm",
+              "label_key": "construction.entities.construction_daily_report.fields.weather.options.storm"
             },
             {
               "value": "other",
-              "label": "Other"
+              "label": "Other",
+              "status_label_key": "construction.entities.construction_daily_report.fields.weather.options.other",
+              "label_key": "construction.entities.construction_daily_report.fields.weather.options.other"
             }
-          ]
+          ],
+          "label_key": "construction.entities.construction_daily_report.fields.weather.label"
         },
         {
           "id": "construction_daily_report.summary",
@@ -1392,22 +1622,26 @@
               "submitted",
               "approved"
             ]
-          }
+          },
+          "label_key": "construction.entities.construction_daily_report.fields.summary.label"
         },
         {
           "id": "construction_daily_report.blockers",
           "type": "text",
-          "label": "Blockers / Delays"
+          "label": "Blockers / Delays",
+          "label_key": "construction.entities.construction_daily_report.fields.blockers.label"
         },
         {
           "id": "construction_daily_report.safety_notes",
           "type": "text",
-          "label": "Safety Notes"
+          "label": "Safety Notes",
+          "label_key": "construction.entities.construction_daily_report.fields.safety_notes.label"
         },
         {
           "id": "construction_daily_report.photos",
           "type": "attachments",
-          "label": "Photos"
+          "label": "Photos",
+          "label_key": "construction.entities.construction_daily_report.fields.photos.label"
         },
         {
           "id": "construction_daily_report.status",
@@ -1417,22 +1651,30 @@
           "options": [
             {
               "value": "draft",
-              "label": "Draft"
+              "label": "Draft",
+              "status_label_key": "construction.entities.construction_daily_report.fields.status.options.draft",
+              "label_key": "construction.entities.construction_daily_report.fields.status.options.draft"
             },
             {
               "value": "submitted",
-              "label": "Submitted"
+              "label": "Submitted",
+              "status_label_key": "construction.entities.construction_daily_report.fields.status.options.submitted",
+              "label_key": "construction.entities.construction_daily_report.fields.status.options.submitted"
             },
             {
               "value": "approved",
-              "label": "Approved"
+              "label": "Approved",
+              "status_label_key": "construction.entities.construction_daily_report.fields.status.options.approved",
+              "label_key": "construction.entities.construction_daily_report.fields.status.options.approved"
             }
-          ]
+          ],
+          "label_key": "construction.entities.construction_daily_report.fields.status.label"
         },
         {
           "id": "construction_daily_report.created_at",
           "type": "datetime",
-          "label": "Created At"
+          "label": "Created At",
+          "label_key": "construction.entities.construction_daily_report.fields.created_at.label"
         }
       ]
     },
@@ -1444,7 +1686,8 @@
           "id": "construction_issue.id",
           "type": "uuid",
           "label": "ID",
-          "readonly": true
+          "readonly": true,
+          "label_key": "construction.entities.construction_issue.fields.id.label"
         },
         {
           "id": "construction_issue.project_id",
@@ -1452,27 +1695,31 @@
           "label": "Project",
           "entity": "entity.construction_project",
           "display_field": "construction_project.name",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_issue.fields.project_id.label"
         },
         {
           "id": "construction_issue.site_id",
           "type": "lookup",
           "label": "Site",
           "entity": "entity.construction_site",
-          "display_field": "construction_site.name"
+          "display_field": "construction_site.name",
+          "label_key": "construction.entities.construction_issue.fields.site_id.label"
         },
         {
           "id": "construction_issue.work_item_id",
           "type": "lookup",
           "label": "Work Item",
           "entity": "entity.construction_work_item",
-          "display_field": "construction_work_item.title"
+          "display_field": "construction_work_item.title",
+          "label_key": "construction.entities.construction_issue.fields.work_item_id.label"
         },
         {
           "id": "construction_issue.title",
           "type": "string",
           "label": "Title",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_issue.fields.title.label"
         },
         {
           "id": "construction_issue.issue_type",
@@ -1482,29 +1729,42 @@
           "options": [
             {
               "value": "delay",
-              "label": "Delay"
+              "label": "Delay",
+              "status_label_key": "construction.entities.construction_issue.fields.issue_type.options.delay",
+              "label_key": "construction.entities.construction_issue.fields.issue_type.options.delay"
             },
             {
               "value": "quality",
-              "label": "Quality"
+              "label": "Quality",
+              "status_label_key": "construction.entities.construction_issue.fields.issue_type.options.quality",
+              "label_key": "construction.entities.construction_issue.fields.issue_type.options.quality"
             },
             {
               "value": "safety",
-              "label": "Safety"
+              "label": "Safety",
+              "status_label_key": "construction.entities.construction_issue.fields.issue_type.options.safety",
+              "label_key": "construction.entities.construction_issue.fields.issue_type.options.safety"
             },
             {
               "value": "materials",
-              "label": "Materials"
+              "label": "Materials",
+              "status_label_key": "construction.entities.construction_issue.fields.issue_type.options.materials",
+              "label_key": "construction.entities.construction_issue.fields.issue_type.options.materials"
             },
             {
               "value": "coordination",
-              "label": "Coordination"
+              "label": "Coordination",
+              "status_label_key": "construction.entities.construction_issue.fields.issue_type.options.coordination",
+              "label_key": "construction.entities.construction_issue.fields.issue_type.options.coordination"
             },
             {
               "value": "other",
-              "label": "Other"
+              "label": "Other",
+              "status_label_key": "construction.entities.construction_issue.fields.issue_type.options.other",
+              "label_key": "construction.entities.construction_issue.fields.issue_type.options.other"
             }
-          ]
+          ],
+          "label_key": "construction.entities.construction_issue.fields.issue_type.label"
         },
         {
           "id": "construction_issue.priority",
@@ -1514,21 +1774,30 @@
           "options": [
             {
               "value": "low",
-              "label": "Low"
+              "label": "Low",
+              "status_label_key": "construction.entities.construction_issue.fields.priority.options.low",
+              "label_key": "construction.entities.construction_issue.fields.priority.options.low"
             },
             {
               "value": "medium",
-              "label": "Medium"
+              "label": "Medium",
+              "status_label_key": "construction.entities.construction_issue.fields.priority.options.medium",
+              "label_key": "construction.entities.construction_issue.fields.priority.options.medium"
             },
             {
               "value": "high",
-              "label": "High"
+              "label": "High",
+              "status_label_key": "construction.entities.construction_issue.fields.priority.options.high",
+              "label_key": "construction.entities.construction_issue.fields.priority.options.high"
             },
             {
               "value": "critical",
-              "label": "Critical"
+              "label": "Critical",
+              "status_label_key": "construction.entities.construction_issue.fields.priority.options.critical",
+              "label_key": "construction.entities.construction_issue.fields.priority.options.critical"
             }
-          ]
+          ],
+          "label_key": "construction.entities.construction_issue.fields.priority.label"
         },
         {
           "id": "construction_issue.status",
@@ -1538,21 +1807,30 @@
           "options": [
             {
               "value": "open",
-              "label": "Open"
+              "label": "Open",
+              "status_label_key": "construction.entities.construction_issue.fields.status.options.open",
+              "label_key": "construction.entities.construction_issue.fields.status.options.open"
             },
             {
               "value": "in_progress",
-              "label": "In Progress"
+              "label": "In Progress",
+              "status_label_key": "construction.entities.construction_issue.fields.status.options.in_progress",
+              "label_key": "construction.entities.construction_issue.fields.status.options.in_progress"
             },
             {
               "value": "resolved",
-              "label": "Resolved"
+              "label": "Resolved",
+              "status_label_key": "construction.entities.construction_issue.fields.status.options.resolved",
+              "label_key": "construction.entities.construction_issue.fields.status.options.resolved"
             },
             {
               "value": "closed",
-              "label": "Closed"
+              "label": "Closed",
+              "status_label_key": "construction.entities.construction_issue.fields.status.options.closed",
+              "label_key": "construction.entities.construction_issue.fields.status.options.closed"
             }
-          ]
+          ],
+          "label_key": "construction.entities.construction_issue.fields.status.label"
         },
         {
           "id": "construction_issue.owner_id",
@@ -1566,19 +1844,22 @@
               "resolved",
               "closed"
             ]
-          }
+          },
+          "label_key": "construction.entities.construction_issue.fields.owner_id.label"
         },
         {
           "id": "construction_issue.reported_by_worker_id",
           "type": "lookup",
           "label": "Reported By Worker",
           "entity": "entity.construction_worker",
-          "display_field": "construction_worker.full_name"
+          "display_field": "construction_worker.full_name",
+          "label_key": "construction.entities.construction_issue.fields.reported_by_worker_id.label"
         },
         {
           "id": "construction_issue.due_date",
           "type": "date",
-          "label": "Due Date"
+          "label": "Due Date",
+          "label_key": "construction.entities.construction_issue.fields.due_date.label"
         },
         {
           "id": "construction_issue.description",
@@ -1592,17 +1873,20 @@
               "resolved",
               "closed"
             ]
-          }
+          },
+          "label_key": "construction.entities.construction_issue.fields.description.label"
         },
         {
           "id": "construction_issue.photos",
           "type": "attachments",
-          "label": "Photos"
+          "label": "Photos",
+          "label_key": "construction.entities.construction_issue.fields.photos.label"
         },
         {
           "id": "construction_issue.created_at",
           "type": "datetime",
-          "label": "Created At"
+          "label": "Created At",
+          "label_key": "construction.entities.construction_issue.fields.created_at.label"
         }
       ]
     },
@@ -1614,7 +1898,8 @@
           "id": "material_request.id",
           "type": "uuid",
           "label": "ID",
-          "readonly": true
+          "readonly": true,
+          "label_key": "construction.entities.material_request.fields.id.label"
         },
         {
           "id": "material_request.project_id",
@@ -1622,27 +1907,31 @@
           "label": "Project",
           "entity": "entity.construction_project",
           "display_field": "construction_project.name",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.material_request.fields.project_id.label"
         },
         {
           "id": "material_request.site_id",
           "type": "lookup",
           "label": "Site",
           "entity": "entity.construction_site",
-          "display_field": "construction_site.name"
+          "display_field": "construction_site.name",
+          "label_key": "construction.entities.material_request.fields.site_id.label"
         },
         {
           "id": "material_request.request_date",
           "type": "date",
           "label": "Request Date",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.material_request.fields.request_date.label"
         },
         {
           "id": "material_request.item_id",
           "type": "lookup",
           "label": "Catalog Item",
           "entity": "entity.item",
-          "display_field": "item.name"
+          "display_field": "item.name",
+          "label_key": "construction.entities.material_request.fields.item_id.label"
         },
         {
           "id": "material_request.description",
@@ -1656,7 +1945,8 @@
               "approved",
               "fulfilled"
             ]
-          }
+          },
+          "label_key": "construction.entities.material_request.fields.description.label"
         },
         {
           "id": "material_request.quantity",
@@ -1667,7 +1957,8 @@
             "unit_field": "material_request.unit",
             "precision": 2
           },
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.material_request.fields.quantity.label"
         },
         {
           "id": "material_request.unit",
@@ -1677,25 +1968,36 @@
           "options": [
             {
               "value": "bag",
-              "label": "Bag"
+              "label": "Bag",
+              "status_label_key": "construction.entities.material_request.fields.unit.options.bag",
+              "label_key": "construction.entities.material_request.fields.unit.options.bag"
             },
             {
               "value": "kg",
-              "label": "kg"
+              "label": "kg",
+              "status_label_key": "construction.entities.material_request.fields.unit.options.kg",
+              "label_key": "construction.entities.material_request.fields.unit.options.kg"
             },
             {
               "value": "ton",
-              "label": "Ton"
+              "label": "Ton",
+              "status_label_key": "construction.entities.material_request.fields.unit.options.ton",
+              "label_key": "construction.entities.material_request.fields.unit.options.ton"
             },
             {
               "value": "m3",
-              "label": "m3"
+              "label": "m3",
+              "status_label_key": "construction.entities.material_request.fields.unit.options.m3",
+              "label_key": "construction.entities.material_request.fields.unit.options.m3"
             },
             {
               "value": "piece",
-              "label": "Piece"
+              "label": "Piece",
+              "status_label_key": "construction.entities.material_request.fields.unit.options.piece",
+              "label_key": "construction.entities.material_request.fields.unit.options.piece"
             }
-          ]
+          ],
+          "label_key": "construction.entities.material_request.fields.unit.label"
         },
         {
           "id": "material_request.requested_by_worker_id",
@@ -1711,7 +2013,8 @@
               "approved",
               "fulfilled"
             ]
-          }
+          },
+          "label_key": "construction.entities.material_request.fields.requested_by_worker_id.label"
         },
         {
           "id": "material_request.needed_by_date",
@@ -1724,7 +2027,8 @@
               "requested",
               "approved"
             ]
-          }
+          },
+          "label_key": "construction.entities.material_request.fields.needed_by_date.label"
         },
         {
           "id": "material_request.status",
@@ -1734,25 +2038,36 @@
           "options": [
             {
               "value": "draft",
-              "label": "Draft"
+              "label": "Draft",
+              "status_label_key": "construction.entities.material_request.fields.status.options.draft",
+              "label_key": "construction.entities.material_request.fields.status.options.draft"
             },
             {
               "value": "requested",
-              "label": "Requested"
+              "label": "Requested",
+              "status_label_key": "construction.entities.material_request.fields.status.options.requested",
+              "label_key": "construction.entities.material_request.fields.status.options.requested"
             },
             {
               "value": "approved",
-              "label": "Approved"
+              "label": "Approved",
+              "status_label_key": "construction.entities.material_request.fields.status.options.approved",
+              "label_key": "construction.entities.material_request.fields.status.options.approved"
             },
             {
               "value": "fulfilled",
-              "label": "Fulfilled"
+              "label": "Fulfilled",
+              "status_label_key": "construction.entities.material_request.fields.status.options.fulfilled",
+              "label_key": "construction.entities.material_request.fields.status.options.fulfilled"
             },
             {
               "value": "cancelled",
-              "label": "Cancelled"
+              "label": "Cancelled",
+              "status_label_key": "construction.entities.material_request.fields.status.options.cancelled",
+              "label_key": "construction.entities.material_request.fields.status.options.cancelled"
             }
-          ]
+          ],
+          "label_key": "construction.entities.material_request.fields.status.label"
         },
         {
           "id": "material_request.approved_by",
@@ -1765,17 +2080,20 @@
               "approved",
               "fulfilled"
             ]
-          }
+          },
+          "label_key": "construction.entities.material_request.fields.approved_by.label"
         },
         {
           "id": "material_request.notes",
           "type": "text",
-          "label": "Notes"
+          "label": "Notes",
+          "label_key": "construction.entities.material_request.fields.notes.label"
         },
         {
           "id": "material_request.created_at",
           "type": "datetime",
-          "label": "Created At"
+          "label": "Created At",
+          "label_key": "construction.entities.material_request.fields.created_at.label"
         }
       ]
     },
@@ -1787,7 +2105,8 @@
           "id": "material_receipt.id",
           "type": "uuid",
           "label": "ID",
-          "readonly": true
+          "readonly": true,
+          "label_key": "construction.entities.material_receipt.fields.id.label"
         },
         {
           "id": "material_receipt.project_id",
@@ -1795,20 +2114,23 @@
           "label": "Project",
           "entity": "entity.construction_project",
           "display_field": "construction_project.name",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.material_receipt.fields.project_id.label"
         },
         {
           "id": "material_receipt.site_id",
           "type": "lookup",
           "label": "Site",
           "entity": "entity.construction_site",
-          "display_field": "construction_site.name"
+          "display_field": "construction_site.name",
+          "label_key": "construction.entities.material_receipt.fields.site_id.label"
         },
         {
           "id": "material_receipt.receipt_date",
           "type": "date",
           "label": "Receipt Date",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.material_receipt.fields.receipt_date.label"
         },
         {
           "id": "material_receipt.item_id",
@@ -1816,7 +2138,8 @@
           "label": "Catalog Item",
           "entity": "entity.item",
           "display_field": "item.name",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.material_receipt.fields.item_id.label"
         },
         {
           "id": "material_receipt.supplier_contact_id",
@@ -1831,7 +2154,8 @@
               "received",
               "posted"
             ]
-          }
+          },
+          "label_key": "construction.entities.material_receipt.fields.supplier_contact_id.label"
         },
         {
           "id": "material_receipt.quantity",
@@ -1842,7 +2166,8 @@
             "precision": 2
           },
           "label": "Quantity",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.material_receipt.fields.quantity.label"
         },
         {
           "id": "material_receipt.unit",
@@ -1852,25 +2177,36 @@
           "options": [
             {
               "value": "bag",
-              "label": "Bag"
+              "label": "Bag",
+              "status_label_key": "construction.entities.material_receipt.fields.unit.options.bag",
+              "label_key": "construction.entities.material_receipt.fields.unit.options.bag"
             },
             {
               "value": "kg",
-              "label": "kg"
+              "label": "kg",
+              "status_label_key": "construction.entities.material_receipt.fields.unit.options.kg",
+              "label_key": "construction.entities.material_receipt.fields.unit.options.kg"
             },
             {
               "value": "ton",
-              "label": "Ton"
+              "label": "Ton",
+              "status_label_key": "construction.entities.material_receipt.fields.unit.options.ton",
+              "label_key": "construction.entities.material_receipt.fields.unit.options.ton"
             },
             {
               "value": "m3",
-              "label": "m3"
+              "label": "m3",
+              "status_label_key": "construction.entities.material_receipt.fields.unit.options.m3",
+              "label_key": "construction.entities.material_receipt.fields.unit.options.m3"
             },
             {
               "value": "piece",
-              "label": "Piece"
+              "label": "Piece",
+              "status_label_key": "construction.entities.material_receipt.fields.unit.options.piece",
+              "label_key": "construction.entities.material_receipt.fields.unit.options.piece"
             }
-          ]
+          ],
+          "label_key": "construction.entities.material_receipt.fields.unit.label"
         },
         {
           "id": "material_receipt.unit_cost",
@@ -1885,7 +2221,8 @@
             "op": "eq",
             "field": "material_receipt.status",
             "value": "posted"
-          }
+          },
+          "label_key": "construction.entities.material_receipt.fields.unit_cost.label"
         },
         {
           "id": "material_receipt.total_cost",
@@ -1916,7 +2253,8 @@
                 2
               ]
             }
-          }
+          },
+          "label_key": "construction.entities.material_receipt.fields.total_cost.label"
         },
         {
           "id": "material_receipt.received_by",
@@ -1929,7 +2267,8 @@
               "received",
               "posted"
             ]
-          }
+          },
+          "label_key": "construction.entities.material_receipt.fields.received_by.label"
         },
         {
           "id": "material_receipt.invoice_ref",
@@ -1942,7 +2281,8 @@
               "received",
               "posted"
             ]
-          }
+          },
+          "label_key": "construction.entities.material_receipt.fields.invoice_ref.label"
         },
         {
           "id": "material_receipt.status",
@@ -1952,32 +2292,42 @@
           "options": [
             {
               "value": "draft",
-              "label": "Draft"
+              "label": "Draft",
+              "status_label_key": "construction.entities.material_receipt.fields.status.options.draft",
+              "label_key": "construction.entities.material_receipt.fields.status.options.draft"
             },
             {
               "value": "received",
-              "label": "Received"
+              "label": "Received",
+              "status_label_key": "construction.entities.material_receipt.fields.status.options.received",
+              "label_key": "construction.entities.material_receipt.fields.status.options.received"
             },
             {
               "value": "posted",
-              "label": "Posted"
+              "label": "Posted",
+              "status_label_key": "construction.entities.material_receipt.fields.status.options.posted",
+              "label_key": "construction.entities.material_receipt.fields.status.options.posted"
             }
-          ]
+          ],
+          "label_key": "construction.entities.material_receipt.fields.status.label"
         },
         {
           "id": "material_receipt.notes",
           "type": "text",
-          "label": "Notes"
+          "label": "Notes",
+          "label_key": "construction.entities.material_receipt.fields.notes.label"
         },
         {
           "id": "material_receipt.attachments",
           "type": "attachments",
-          "label": "Attachments"
+          "label": "Attachments",
+          "label_key": "construction.entities.material_receipt.fields.attachments.label"
         },
         {
           "id": "material_receipt.created_at",
           "type": "datetime",
-          "label": "Created At"
+          "label": "Created At",
+          "label_key": "construction.entities.material_receipt.fields.created_at.label"
         }
       ]
     },
@@ -1989,7 +2339,8 @@
           "id": "material_log.id",
           "type": "uuid",
           "label": "ID",
-          "readonly": true
+          "readonly": true,
+          "label_key": "construction.entities.material_log.fields.id.label"
         },
         {
           "id": "material_log.project_id",
@@ -1997,34 +2348,39 @@
           "label": "Project",
           "entity": "entity.construction_project",
           "display_field": "construction_project.name",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.material_log.fields.project_id.label"
         },
         {
           "id": "material_log.site_id",
           "type": "lookup",
           "label": "Site",
           "entity": "entity.construction_site",
-          "display_field": "construction_site.name"
+          "display_field": "construction_site.name",
+          "label_key": "construction.entities.material_log.fields.site_id.label"
         },
         {
           "id": "material_log.work_item_id",
           "type": "lookup",
           "label": "Work Item",
           "entity": "entity.construction_work_item",
-          "display_field": "construction_work_item.title"
+          "display_field": "construction_work_item.title",
+          "label_key": "construction.entities.material_log.fields.work_item_id.label"
         },
         {
           "id": "material_log.log_date",
           "type": "date",
           "label": "Log Date",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.material_log.fields.log_date.label"
         },
         {
           "id": "material_log.item_id",
           "type": "lookup",
           "label": "Catalog Item",
           "entity": "entity.item",
-          "display_field": "item.name"
+          "display_field": "item.name",
+          "label_key": "construction.entities.material_log.fields.item_id.label"
         },
         {
           "id": "material_log.material_type",
@@ -2034,29 +2390,42 @@
           "options": [
             {
               "value": "cement",
-              "label": "Cement"
+              "label": "Cement",
+              "status_label_key": "construction.entities.material_log.fields.material_type.options.cement",
+              "label_key": "construction.entities.material_log.fields.material_type.options.cement"
             },
             {
               "value": "sand",
-              "label": "Sand"
+              "label": "Sand",
+              "status_label_key": "construction.entities.material_log.fields.material_type.options.sand",
+              "label_key": "construction.entities.material_log.fields.material_type.options.sand"
             },
             {
               "value": "steel",
-              "label": "Steel"
+              "label": "Steel",
+              "status_label_key": "construction.entities.material_log.fields.material_type.options.steel",
+              "label_key": "construction.entities.material_log.fields.material_type.options.steel"
             },
             {
               "value": "blocks",
-              "label": "Blocks"
+              "label": "Blocks",
+              "status_label_key": "construction.entities.material_log.fields.material_type.options.blocks",
+              "label_key": "construction.entities.material_log.fields.material_type.options.blocks"
             },
             {
               "value": "gravel",
-              "label": "Gravel"
+              "label": "Gravel",
+              "status_label_key": "construction.entities.material_log.fields.material_type.options.gravel",
+              "label_key": "construction.entities.material_log.fields.material_type.options.gravel"
             },
             {
               "value": "other",
-              "label": "Other"
+              "label": "Other",
+              "status_label_key": "construction.entities.material_log.fields.material_type.options.other",
+              "label_key": "construction.entities.material_log.fields.material_type.options.other"
             }
-          ]
+          ],
+          "label_key": "construction.entities.material_log.fields.material_type.label"
         },
         {
           "id": "material_log.quantity",
@@ -2067,7 +2436,8 @@
             "precision": 2
           },
           "label": "Quantity",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.material_log.fields.quantity.label"
         },
         {
           "id": "material_log.unit",
@@ -2077,25 +2447,36 @@
           "options": [
             {
               "value": "bag",
-              "label": "Bag"
+              "label": "Bag",
+              "status_label_key": "construction.entities.material_log.fields.unit.options.bag",
+              "label_key": "construction.entities.material_log.fields.unit.options.bag"
             },
             {
               "value": "kg",
-              "label": "kg"
+              "label": "kg",
+              "status_label_key": "construction.entities.material_log.fields.unit.options.kg",
+              "label_key": "construction.entities.material_log.fields.unit.options.kg"
             },
             {
               "value": "ton",
-              "label": "Ton"
+              "label": "Ton",
+              "status_label_key": "construction.entities.material_log.fields.unit.options.ton",
+              "label_key": "construction.entities.material_log.fields.unit.options.ton"
             },
             {
               "value": "m3",
-              "label": "m3"
+              "label": "m3",
+              "status_label_key": "construction.entities.material_log.fields.unit.options.m3",
+              "label_key": "construction.entities.material_log.fields.unit.options.m3"
             },
             {
               "value": "piece",
-              "label": "Piece"
+              "label": "Piece",
+              "status_label_key": "construction.entities.material_log.fields.unit.options.piece",
+              "label_key": "construction.entities.material_log.fields.unit.options.piece"
             }
-          ]
+          ],
+          "label_key": "construction.entities.material_log.fields.unit.label"
         },
         {
           "id": "material_log.unit_cost",
@@ -2105,7 +2486,8 @@
             "kind": "currency",
             "currency": "NZD",
             "precision": 2
-          }
+          },
+          "label_key": "construction.entities.material_log.fields.unit_cost.label"
         },
         {
           "id": "material_log.total_cost",
@@ -2136,7 +2518,8 @@
                 2
               ]
             }
-          }
+          },
+          "label_key": "construction.entities.material_log.fields.total_cost.label"
         },
         {
           "id": "material_log.entered_by_worker_id",
@@ -2151,7 +2534,8 @@
               "submitted",
               "approved"
             ]
-          }
+          },
+          "label_key": "construction.entities.material_log.fields.entered_by_worker_id.label"
         },
         {
           "id": "material_log.supervisor_id",
@@ -2161,7 +2545,8 @@
             "op": "eq",
             "field": "material_log.status",
             "value": "approved"
-          }
+          },
+          "label_key": "construction.entities.material_log.fields.supervisor_id.label"
         },
         {
           "id": "material_log.status",
@@ -2171,32 +2556,42 @@
           "options": [
             {
               "value": "draft",
-              "label": "Draft"
+              "label": "Draft",
+              "status_label_key": "construction.entities.material_log.fields.status.options.draft",
+              "label_key": "construction.entities.material_log.fields.status.options.draft"
             },
             {
               "value": "submitted",
-              "label": "Submitted"
+              "label": "Submitted",
+              "status_label_key": "construction.entities.material_log.fields.status.options.submitted",
+              "label_key": "construction.entities.material_log.fields.status.options.submitted"
             },
             {
               "value": "approved",
-              "label": "Approved"
+              "label": "Approved",
+              "status_label_key": "construction.entities.material_log.fields.status.options.approved",
+              "label_key": "construction.entities.material_log.fields.status.options.approved"
             }
-          ]
+          ],
+          "label_key": "construction.entities.material_log.fields.status.label"
         },
         {
           "id": "material_log.notes",
           "type": "text",
-          "label": "Notes"
+          "label": "Notes",
+          "label_key": "construction.entities.material_log.fields.notes.label"
         },
         {
           "id": "material_log.photo",
           "type": "attachments",
-          "label": "Photos"
+          "label": "Photos",
+          "label_key": "construction.entities.material_log.fields.photo.label"
         },
         {
           "id": "material_log.created_at",
           "type": "datetime",
-          "label": "Created At"
+          "label": "Created At",
+          "label_key": "construction.entities.material_log.fields.created_at.label"
         }
       ]
     },
@@ -2208,7 +2603,8 @@
           "id": "construction_budget_line.id",
           "type": "uuid",
           "label": "ID",
-          "readonly": true
+          "readonly": true,
+          "label_key": "construction.entities.construction_budget_line.fields.id.label"
         },
         {
           "id": "construction_budget_line.project_id",
@@ -2216,7 +2612,8 @@
           "label": "Project",
           "entity": "entity.construction_project",
           "display_field": "construction_project.name",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_budget_line.fields.project_id.label"
         },
         {
           "id": "construction_budget_line.cost_code_id",
@@ -2224,7 +2621,8 @@
           "label": "Cost Code",
           "entity": "entity.construction_cost_code",
           "display_field": "construction_cost_code.name",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_budget_line.fields.cost_code_id.label"
         },
         {
           "id": "construction_budget_line.category",
@@ -2234,31 +2632,43 @@
           "options": [
             {
               "value": "labor",
-              "label": "Labor"
+              "label": "Labor",
+              "status_label_key": "construction.entities.construction_budget_line.fields.category.options.labor",
+              "label_key": "construction.entities.construction_budget_line.fields.category.options.labor"
             },
             {
               "value": "materials",
-              "label": "Materials"
+              "label": "Materials",
+              "status_label_key": "construction.entities.construction_budget_line.fields.category.options.materials",
+              "label_key": "construction.entities.construction_budget_line.fields.category.options.materials"
             },
             {
               "value": "subcontract",
-              "label": "Subcontract"
+              "label": "Subcontract",
+              "status_label_key": "construction.entities.construction_budget_line.fields.category.options.subcontract",
+              "label_key": "construction.entities.construction_budget_line.fields.category.options.subcontract"
             },
             {
               "value": "equipment",
-              "label": "Equipment"
+              "label": "Equipment",
+              "status_label_key": "construction.entities.construction_budget_line.fields.category.options.equipment",
+              "label_key": "construction.entities.construction_budget_line.fields.category.options.equipment"
             },
             {
               "value": "other",
-              "label": "Other"
+              "label": "Other",
+              "status_label_key": "construction.entities.construction_budget_line.fields.category.options.other",
+              "label_key": "construction.entities.construction_budget_line.fields.category.options.other"
             }
-          ]
+          ],
+          "label_key": "construction.entities.construction_budget_line.fields.category.label"
         },
         {
           "id": "construction_budget_line.description",
           "type": "string",
           "label": "Description",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_budget_line.fields.description.label"
         },
         {
           "id": "construction_budget_line.planned_amount",
@@ -2269,7 +2679,8 @@
             "currency": "NZD",
             "precision": 2
           },
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_budget_line.fields.planned_amount.label"
         },
         {
           "id": "construction_budget_line.committed_amount",
@@ -2280,7 +2691,8 @@
             "kind": "currency",
             "currency": "NZD",
             "precision": 2
-          }
+          },
+          "label_key": "construction.entities.construction_budget_line.fields.committed_amount.label"
         },
         {
           "id": "construction_budget_line.actual_amount",
@@ -2291,7 +2703,8 @@
             "kind": "currency",
             "currency": "NZD",
             "precision": 2
-          }
+          },
+          "label_key": "construction.entities.construction_budget_line.fields.actual_amount.label"
         },
         {
           "id": "construction_budget_line.variance_amount",
@@ -2322,17 +2735,20 @@
                 2
               ]
             }
-          }
+          },
+          "label_key": "construction.entities.construction_budget_line.fields.variance_amount.label"
         },
         {
           "id": "construction_budget_line.notes",
           "type": "text",
-          "label": "Notes"
+          "label": "Notes",
+          "label_key": "construction.entities.construction_budget_line.fields.notes.label"
         },
         {
           "id": "construction_budget_line.created_at",
           "type": "datetime",
-          "label": "Created At"
+          "label": "Created At",
+          "label_key": "construction.entities.construction_budget_line.fields.created_at.label"
         }
       ]
     },
@@ -2344,7 +2760,8 @@
           "id": "construction_expense.id",
           "type": "uuid",
           "label": "ID",
-          "readonly": true
+          "readonly": true,
+          "label_key": "construction.entities.construction_expense.fields.id.label"
         },
         {
           "id": "construction_expense.project_id",
@@ -2352,14 +2769,16 @@
           "label": "Project",
           "entity": "entity.construction_project",
           "display_field": "construction_project.name",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_expense.fields.project_id.label"
         },
         {
           "id": "construction_expense.site_id",
           "type": "lookup",
           "label": "Site",
           "entity": "entity.construction_site",
-          "display_field": "construction_site.name"
+          "display_field": "construction_site.name",
+          "label_key": "construction.entities.construction_expense.fields.site_id.label"
         },
         {
           "id": "construction_expense.cost_code_id",
@@ -2367,19 +2786,22 @@
           "label": "Cost Code",
           "entity": "entity.construction_cost_code",
           "display_field": "construction_cost_code.name",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_expense.fields.cost_code_id.label"
         },
         {
           "id": "construction_expense.title",
           "type": "string",
           "label": "Title",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_expense.fields.title.label"
         },
         {
           "id": "construction_expense.expense_date",
           "type": "date",
           "label": "Expense Date",
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_expense.fields.expense_date.label"
         },
         {
           "id": "construction_expense.expense_type",
@@ -2389,25 +2811,36 @@
           "options": [
             {
               "value": "labor",
-              "label": "Labor"
+              "label": "Labor",
+              "status_label_key": "construction.entities.construction_expense.fields.expense_type.options.labor",
+              "label_key": "construction.entities.construction_expense.fields.expense_type.options.labor"
             },
             {
               "value": "materials",
-              "label": "Materials"
+              "label": "Materials",
+              "status_label_key": "construction.entities.construction_expense.fields.expense_type.options.materials",
+              "label_key": "construction.entities.construction_expense.fields.expense_type.options.materials"
             },
             {
               "value": "subcontract",
-              "label": "Subcontract"
+              "label": "Subcontract",
+              "status_label_key": "construction.entities.construction_expense.fields.expense_type.options.subcontract",
+              "label_key": "construction.entities.construction_expense.fields.expense_type.options.subcontract"
             },
             {
               "value": "equipment",
-              "label": "Equipment"
+              "label": "Equipment",
+              "status_label_key": "construction.entities.construction_expense.fields.expense_type.options.equipment",
+              "label_key": "construction.entities.construction_expense.fields.expense_type.options.equipment"
             },
             {
               "value": "other",
-              "label": "Other"
+              "label": "Other",
+              "status_label_key": "construction.entities.construction_expense.fields.expense_type.options.other",
+              "label_key": "construction.entities.construction_expense.fields.expense_type.options.other"
             }
-          ]
+          ],
+          "label_key": "construction.entities.construction_expense.fields.expense_type.label"
         },
         {
           "id": "construction_expense.supplier_contact_id",
@@ -2422,7 +2855,8 @@
               "posted",
               "void"
             ]
-          }
+          },
+          "label_key": "construction.entities.construction_expense.fields.supplier_contact_id.label"
         },
         {
           "id": "construction_expense.reference",
@@ -2435,7 +2869,8 @@
               "posted",
               "void"
             ]
-          }
+          },
+          "label_key": "construction.entities.construction_expense.fields.reference.label"
         },
         {
           "id": "construction_expense.amount",
@@ -2446,7 +2881,8 @@
             "currency": "NZD",
             "precision": 2
           },
-          "required": true
+          "required": true,
+          "label_key": "construction.entities.construction_expense.fields.amount.label"
         },
         {
           "id": "construction_expense.status",
@@ -2456,32 +2892,42 @@
           "options": [
             {
               "value": "draft",
-              "label": "Draft"
+              "label": "Draft",
+              "status_label_key": "construction.entities.construction_expense.fields.status.options.draft",
+              "label_key": "construction.entities.construction_expense.fields.status.options.draft"
             },
             {
               "value": "posted",
-              "label": "Posted"
+              "label": "Posted",
+              "status_label_key": "construction.entities.construction_expense.fields.status.options.posted",
+              "label_key": "construction.entities.construction_expense.fields.status.options.posted"
             },
             {
               "value": "void",
-              "label": "Void"
+              "label": "Void",
+              "status_label_key": "construction.entities.construction_expense.fields.status.options.void",
+              "label_key": "construction.entities.construction_expense.fields.status.options.void"
             }
-          ]
+          ],
+          "label_key": "construction.entities.construction_expense.fields.status.label"
         },
         {
           "id": "construction_expense.notes",
           "type": "text",
-          "label": "Notes"
+          "label": "Notes",
+          "label_key": "construction.entities.construction_expense.fields.notes.label"
         },
         {
           "id": "construction_expense.attachments",
           "type": "attachments",
-          "label": "Attachments"
+          "label": "Attachments",
+          "label_key": "construction.entities.construction_expense.fields.attachments.label"
         },
         {
           "id": "construction_expense.created_at",
           "type": "datetime",
-          "label": "Created At"
+          "label": "Created At",
+          "label_key": "construction.entities.construction_expense.fields.created_at.label"
         }
       ]
     }
@@ -2491,19 +2937,22 @@
       "id": "action.construction_site_new",
       "kind": "open_form",
       "label": "+ New Site",
-      "target": "construction_site.form"
+      "target": "construction_site.form",
+      "action_label_key": "construction.actions.action_construction_site_new.label"
     },
     {
       "id": "action.construction_crew_new",
       "kind": "open_form",
       "label": "+ New Crew",
-      "target": "construction_crew.form"
+      "target": "construction_crew.form",
+      "action_label_key": "construction.actions.action_construction_crew_new.label"
     },
     {
       "id": "action.construction_cost_code_new",
       "kind": "open_form",
       "label": "+ New Cost Code",
-      "target": "construction_cost_code.form"
+      "target": "construction_cost_code.form",
+      "action_label_key": "construction.actions.action_construction_cost_code_new.label"
     },
     {
       "id": "action.construction_site_deactivate",
@@ -2522,7 +2971,8 @@
         "op": "eq",
         "field": "construction_site.status",
         "value": "active"
-      }
+      },
+      "action_label_key": "construction.actions.action_construction_site_deactivate.label"
     },
     {
       "id": "action.construction_site_activate",
@@ -2541,7 +2991,8 @@
         "op": "eq",
         "field": "construction_site.status",
         "value": "inactive"
-      }
+      },
+      "action_label_key": "construction.actions.action_construction_site_activate.label"
     },
     {
       "id": "action.construction_crew_deactivate",
@@ -2560,7 +3011,8 @@
         "op": "eq",
         "field": "construction_crew.status",
         "value": "active"
-      }
+      },
+      "action_label_key": "construction.actions.action_construction_crew_deactivate.label"
     },
     {
       "id": "action.construction_crew_activate",
@@ -2579,19 +3031,22 @@
         "op": "eq",
         "field": "construction_crew.status",
         "value": "inactive"
-      }
+      },
+      "action_label_key": "construction.actions.action_construction_crew_activate.label"
     },
     {
       "id": "action.construction_project_new",
       "kind": "open_form",
       "label": "+ New Project",
-      "target": "construction_project.form"
+      "target": "construction_project.form",
+      "action_label_key": "construction.actions.action_construction_project_new.label"
     },
     {
       "id": "action.construction_work_item_new",
       "kind": "open_form",
       "label": "+ New Work Item",
-      "target": "construction_work_item.form"
+      "target": "construction_work_item.form",
+      "action_label_key": "construction.actions.action_construction_work_item_new.label"
     },
     {
       "id": "action.construction_project_activate",
@@ -2610,7 +3065,8 @@
         "op": "eq",
         "field": "construction_project.status",
         "value": "planned"
-      }
+      },
+      "action_label_key": "construction.actions.action_construction_project_activate.label"
     },
     {
       "id": "action.construction_project_hold",
@@ -2629,7 +3085,8 @@
         "op": "eq",
         "field": "construction_project.status",
         "value": "active"
-      }
+      },
+      "action_label_key": "construction.actions.action_construction_project_hold.label"
     },
     {
       "id": "action.construction_project_resume",
@@ -2648,7 +3105,8 @@
         "op": "eq",
         "field": "construction_project.status",
         "value": "on_hold"
-      }
+      },
+      "action_label_key": "construction.actions.action_construction_project_resume.label"
     },
     {
       "id": "action.construction_project_complete",
@@ -2673,7 +3131,8 @@
           "active",
           "on_hold"
         ]
-      }
+      },
+      "action_label_key": "construction.actions.action_construction_project_complete.label"
     },
     {
       "id": "action.construction_project_cancel",
@@ -2700,7 +3159,8 @@
           "active",
           "on_hold"
         ]
-      }
+      },
+      "action_label_key": "construction.actions.action_construction_project_cancel.label"
     },
     {
       "id": "action.construction_work_item_start",
@@ -2719,7 +3179,8 @@
         "op": "eq",
         "field": "construction_work_item.status",
         "value": "pending"
-      }
+      },
+      "action_label_key": "construction.actions.action_construction_work_item_start.label"
     },
     {
       "id": "action.construction_work_item_block",
@@ -2738,7 +3199,8 @@
         "op": "eq",
         "field": "construction_work_item.status",
         "value": "in_progress"
-      }
+      },
+      "action_label_key": "construction.actions.action_construction_work_item_block.label"
     },
     {
       "id": "action.construction_work_item_resume",
@@ -2757,7 +3219,8 @@
         "op": "eq",
         "field": "construction_work_item.status",
         "value": "blocked"
-      }
+      },
+      "action_label_key": "construction.actions.action_construction_work_item_resume.label"
     },
     {
       "id": "action.construction_work_item_done",
@@ -2783,7 +3246,8 @@
           "in_progress",
           "blocked"
         ]
-      }
+      },
+      "action_label_key": "construction.actions.action_construction_work_item_done.label"
     },
     {
       "id": "action.construction_work_item_cancel",
@@ -2810,25 +3274,29 @@
           "in_progress",
           "blocked"
         ]
-      }
+      },
+      "action_label_key": "construction.actions.action_construction_work_item_cancel.label"
     },
     {
       "id": "action.construction_worker_new",
       "kind": "open_form",
       "label": "+ New Worker",
-      "target": "construction_worker.form"
+      "target": "construction_worker.form",
+      "action_label_key": "construction.actions.action_construction_worker_new.label"
     },
     {
       "id": "action.construction_worker_assignment_new",
       "kind": "open_form",
       "label": "+ New Assignment",
-      "target": "construction_worker_assignment.form"
+      "target": "construction_worker_assignment.form",
+      "action_label_key": "construction.actions.action_construction_worker_assignment_new.label"
     },
     {
       "id": "action.time_entry_new",
       "kind": "open_form",
       "label": "+ New Time Entry",
-      "target": "time_entry.form"
+      "target": "time_entry.form",
+      "action_label_key": "construction.actions.action_time_entry_new.label"
     },
     {
       "id": "action.construction_worker_activate",
@@ -2847,7 +3315,8 @@
         "op": "eq",
         "field": "construction_worker.active",
         "value": false
-      }
+      },
+      "action_label_key": "construction.actions.action_construction_worker_activate.label"
     },
     {
       "id": "action.construction_worker_deactivate",
@@ -2866,7 +3335,8 @@
         "op": "eq",
         "field": "construction_worker.active",
         "value": true
-      }
+      },
+      "action_label_key": "construction.actions.action_construction_worker_deactivate.label"
     },
     {
       "id": "action.time_entry_close",
@@ -2885,7 +3355,8 @@
         "op": "eq",
         "field": "time_entry.status",
         "value": "open"
-      }
+      },
+      "action_label_key": "construction.actions.action_time_entry_close.label"
     },
     {
       "id": "action.time_entry_approve",
@@ -2904,7 +3375,8 @@
         "op": "eq",
         "field": "time_entry.status",
         "value": "closed"
-      }
+      },
+      "action_label_key": "construction.actions.action_time_entry_approve.label"
     },
     {
       "id": "action.time_entry_reopen",
@@ -2929,7 +3401,8 @@
           "closed",
           "approved"
         ]
-      }
+      },
+      "action_label_key": "construction.actions.action_time_entry_reopen.label"
     },
     {
       "id": "action.construction_worker_assignment_activate",
@@ -2948,7 +3421,8 @@
         "op": "eq",
         "field": "construction_worker_assignment.active",
         "value": false
-      }
+      },
+      "action_label_key": "construction.actions.action_construction_worker_assignment_activate.label"
     },
     {
       "id": "action.construction_worker_assignment_deactivate",
@@ -2967,19 +3441,22 @@
         "op": "eq",
         "field": "construction_worker_assignment.active",
         "value": true
-      }
+      },
+      "action_label_key": "construction.actions.action_construction_worker_assignment_deactivate.label"
     },
     {
       "id": "action.daily_report_new",
       "kind": "open_form",
       "label": "+ New Report",
-      "target": "construction_daily_report.form"
+      "target": "construction_daily_report.form",
+      "action_label_key": "construction.actions.action_daily_report_new.label"
     },
     {
       "id": "action.issue_new",
       "kind": "open_form",
       "label": "+ New Issue",
-      "target": "construction_issue.form"
+      "target": "construction_issue.form",
+      "action_label_key": "construction.actions.action_issue_new.label"
     },
     {
       "id": "action.daily_report_submit",
@@ -2998,7 +3475,8 @@
         "op": "eq",
         "field": "construction_daily_report.status",
         "value": "draft"
-      }
+      },
+      "action_label_key": "construction.actions.action_daily_report_submit.label"
     },
     {
       "id": "action.daily_report_approve",
@@ -3017,7 +3495,8 @@
         "op": "eq",
         "field": "construction_daily_report.status",
         "value": "submitted"
-      }
+      },
+      "action_label_key": "construction.actions.action_daily_report_approve.label"
     },
     {
       "id": "action.daily_report_reopen",
@@ -3042,7 +3521,8 @@
           "submitted",
           "approved"
         ]
-      }
+      },
+      "action_label_key": "construction.actions.action_daily_report_reopen.label"
     },
     {
       "id": "action.issue_start",
@@ -3061,7 +3541,8 @@
         "op": "eq",
         "field": "construction_issue.status",
         "value": "open"
-      }
+      },
+      "action_label_key": "construction.actions.action_issue_start.label"
     },
     {
       "id": "action.issue_resolve",
@@ -3086,7 +3567,8 @@
           "open",
           "in_progress"
         ]
-      }
+      },
+      "action_label_key": "construction.actions.action_issue_resolve.label"
     },
     {
       "id": "action.issue_close",
@@ -3105,7 +3587,8 @@
         "op": "eq",
         "field": "construction_issue.status",
         "value": "resolved"
-      }
+      },
+      "action_label_key": "construction.actions.action_issue_close.label"
     },
     {
       "id": "action.issue_reopen",
@@ -3130,25 +3613,29 @@
           "resolved",
           "closed"
         ]
-      }
+      },
+      "action_label_key": "construction.actions.action_issue_reopen.label"
     },
     {
       "id": "action.material_request_new",
       "kind": "open_form",
       "label": "+ New Request",
-      "target": "material_request.form"
+      "target": "material_request.form",
+      "action_label_key": "construction.actions.action_material_request_new.label"
     },
     {
       "id": "action.material_receipt_new",
       "kind": "open_form",
       "label": "+ New Receipt",
-      "target": "material_receipt.form"
+      "target": "material_receipt.form",
+      "action_label_key": "construction.actions.action_material_receipt_new.label"
     },
     {
       "id": "action.material_log_new",
       "kind": "open_form",
       "label": "+ New Usage Log",
-      "target": "material_log.form"
+      "target": "material_log.form",
+      "action_label_key": "construction.actions.action_material_log_new.label"
     },
     {
       "id": "action.material_request_send",
@@ -3167,7 +3654,8 @@
         "op": "eq",
         "field": "material_request.status",
         "value": "draft"
-      }
+      },
+      "action_label_key": "construction.actions.action_material_request_send.label"
     },
     {
       "id": "action.material_request_approve",
@@ -3186,7 +3674,8 @@
         "op": "eq",
         "field": "material_request.status",
         "value": "requested"
-      }
+      },
+      "action_label_key": "construction.actions.action_material_request_approve.label"
     },
     {
       "id": "action.material_request_fulfill",
@@ -3205,7 +3694,8 @@
         "op": "eq",
         "field": "material_request.status",
         "value": "approved"
-      }
+      },
+      "action_label_key": "construction.actions.action_material_request_fulfill.label"
     },
     {
       "id": "action.material_receipt_receive",
@@ -3224,7 +3714,8 @@
         "op": "eq",
         "field": "material_receipt.status",
         "value": "draft"
-      }
+      },
+      "action_label_key": "construction.actions.action_material_receipt_receive.label"
     },
     {
       "id": "action.material_receipt_post",
@@ -3243,7 +3734,8 @@
         "op": "eq",
         "field": "material_receipt.status",
         "value": "received"
-      }
+      },
+      "action_label_key": "construction.actions.action_material_receipt_post.label"
     },
     {
       "id": "action.material_log_submit",
@@ -3262,7 +3754,8 @@
         "op": "eq",
         "field": "material_log.status",
         "value": "draft"
-      }
+      },
+      "action_label_key": "construction.actions.action_material_log_submit.label"
     },
     {
       "id": "action.material_log_approve",
@@ -3281,19 +3774,22 @@
         "op": "eq",
         "field": "material_log.status",
         "value": "submitted"
-      }
+      },
+      "action_label_key": "construction.actions.action_material_log_approve.label"
     },
     {
       "id": "action.construction_budget_line_new",
       "kind": "open_form",
       "label": "+ New Budget Line",
-      "target": "construction_budget_line.form"
+      "target": "construction_budget_line.form",
+      "action_label_key": "construction.actions.action_construction_budget_line_new.label"
     },
     {
       "id": "action.construction_expense_new",
       "kind": "open_form",
       "label": "+ New Expense",
-      "target": "construction_expense.form"
+      "target": "construction_expense.form",
+      "action_label_key": "construction.actions.action_construction_expense_new.label"
     },
     {
       "id": "action.construction_expense_post",
@@ -3312,7 +3808,8 @@
         "op": "eq",
         "field": "construction_expense.status",
         "value": "draft"
-      }
+      },
+      "action_label_key": "construction.actions.action_construction_expense_post.label"
     },
     {
       "id": "action.construction_expense_void",
@@ -3331,43 +3828,50 @@
         "op": "eq",
         "field": "construction_expense.status",
         "value": "posted"
-      }
+      },
+      "action_label_key": "construction.actions.action_construction_expense_void.label"
     },
     {
       "id": "action.construction_open_dashboard",
       "kind": "navigate",
       "label": "Operations Dashboard",
-      "target": "page:construction.dashboard_page"
+      "target": "page:construction.dashboard_page",
+      "action_label_key": "construction.actions.action_construction_open_dashboard.label"
     },
     {
       "id": "action.construction_open_projects",
       "kind": "navigate",
       "label": "Projects",
-      "target": "page:construction_project.list_page"
+      "target": "page:construction_project.list_page",
+      "action_label_key": "construction.actions.action_construction_open_projects.label"
     },
     {
       "id": "action.construction_open_time_report",
       "kind": "navigate",
       "label": "Time Entries Report",
-      "target": "page:construction.time_report_page"
+      "target": "page:construction.time_report_page",
+      "action_label_key": "construction.actions.action_construction_open_time_report.label"
     },
     {
       "id": "action.construction_open_material_report",
       "kind": "navigate",
       "label": "Material Usage Report",
-      "target": "page:construction.material_report_page"
+      "target": "page:construction.material_report_page",
+      "action_label_key": "construction.actions.action_construction_open_material_report.label"
     },
     {
       "id": "action.construction_open_cost_report",
       "kind": "navigate",
       "label": "Project Cost Summary",
-      "target": "page:construction.cost_report_page"
+      "target": "page:construction.cost_report_page",
+      "action_label_key": "construction.actions.action_construction_open_cost_report.label"
     },
     {
       "id": "action.construction_open_daily_summary",
       "kind": "navigate",
       "label": "Daily Site Summary",
-      "target": "page:construction.daily_summary_page"
+      "target": "page:construction.daily_summary_page",
+      "action_label_key": "construction.actions.action_construction_open_daily_summary.label"
     }
   ],
   "triggers": [
@@ -3496,7 +4000,8 @@
             "construction_site.city",
             "construction_site.region",
             "construction_site.country"
-          ]
+          ],
+          "placeholder_key": "construction.views.list.search.placeholder"
         },
         "filters": [
           {
@@ -3506,7 +4011,8 @@
               "op": "eq",
               "field": "construction_site.status",
               "value": "active"
-            }
+            },
+            "label_key": "construction.views.list.filters.active.label"
           },
           {
             "id": "inactive",
@@ -3515,7 +4021,8 @@
               "op": "eq",
               "field": "construction_site.status",
               "value": "inactive"
-            }
+            },
+            "label_key": "construction.views.list.filters.inactive.label"
           }
         ]
       }
@@ -3555,14 +4062,16 @@
             "construction_site.supervisor_id",
             "construction_site.phone",
             "construction_site.address"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.general.title"
         },
         {
           "id": "notes",
           "title": "Notes",
           "fields": [
             "construction_site.notes"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.notes.title"
         }
       ],
       "header": {
@@ -3584,6 +4093,7 @@
             {
               "id": "general_tab",
               "label": "General",
+              "tab_label_key": "construction.views.form.sections.general.title",
               "sections": [
                 "general"
               ]
@@ -3591,6 +4101,7 @@
             {
               "id": "notes_tab",
               "label": "Notes",
+              "tab_label_key": "construction.views.form.sections.notes.title",
               "sections": [
                 "notes"
               ]
@@ -3650,7 +4161,8 @@
             "construction_crew.name",
             "construction_crew.code",
             "construction_crew.notes"
-          ]
+          ],
+          "placeholder_key": "construction.views.list.search.placeholder"
         }
       }
     },
@@ -3683,14 +4195,16 @@
             "construction_crew.code",
             "construction_crew.foreman_user_id",
             "construction_crew.default_site_id"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.general.title"
         },
         {
           "id": "notes",
           "title": "Notes",
           "fields": [
             "construction_crew.notes"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.notes.title"
         }
       ],
       "header": {
@@ -3712,6 +4226,7 @@
             {
               "id": "general_tab",
               "label": "General",
+              "tab_label_key": "construction.views.form.sections.general.title",
               "sections": [
                 "general"
               ]
@@ -3719,6 +4234,7 @@
             {
               "id": "notes_tab",
               "label": "Notes",
+              "tab_label_key": "construction.views.form.sections.notes.title",
               "sections": [
                 "notes"
               ]
@@ -3775,7 +4291,8 @@
             "construction_cost_code.code",
             "construction_cost_code.name",
             "construction_cost_code.notes"
-          ]
+          ],
+          "placeholder_key": "construction.views.list.search.placeholder"
         }
       }
     },
@@ -3809,14 +4326,16 @@
             "construction_cost_code.name",
             "construction_cost_code.category",
             "construction_cost_code.active"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.general.title"
         },
         {
           "id": "notes",
           "title": "Notes",
           "fields": [
             "construction_cost_code.notes"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.notes.title"
         }
       ],
       "header": {
@@ -3827,6 +4346,7 @@
             {
               "id": "general_tab",
               "label": "General",
+              "tab_label_key": "construction.views.form.sections.general.title",
               "sections": [
                 "general"
               ]
@@ -3834,6 +4354,7 @@
             {
               "id": "notes_tab",
               "label": "Notes",
+              "tab_label_key": "construction.views.form.sections.notes.title",
               "sections": [
                 "notes"
               ]
@@ -3902,7 +4423,8 @@
             "construction_project.name",
             "construction_project.code",
             "construction_project.site_location"
-          ]
+          ],
+          "placeholder_key": "construction.views.list.search.placeholder"
         },
         "filters": [
           {
@@ -3916,7 +4438,8 @@
                 "active",
                 "on_hold"
               ]
-            }
+            },
+            "label_key": "construction.views.list.filters.open.label"
           },
           {
             "id": "active",
@@ -3925,7 +4448,8 @@
               "op": "eq",
               "field": "construction_project.status",
               "value": "active"
-            }
+            },
+            "label_key": "construction.views.list.filters.active.label"
           },
           {
             "id": "completed",
@@ -3934,7 +4458,8 @@
               "op": "eq",
               "field": "construction_project.status",
               "value": "completed"
-            }
+            },
+            "label_key": "construction.views.list.filters.completed.label"
           }
         ],
         "secondary_actions": [
@@ -3998,7 +4523,8 @@
             "construction_project.priority",
             "construction_project.start_date",
             "construction_project.target_end_date"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.overview.title"
         },
         {
           "id": "summary",
@@ -4012,7 +4538,8 @@
             "construction_project.total_other_cost",
             "construction_project.total_cost",
             "construction_project.contract_value"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.summary.title"
         },
         {
           "id": "crew",
@@ -4022,21 +4549,24 @@
           "fields": [
             "construction_project.project_manager_id",
             "construction_project.site_manager_id"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.crew.title"
         },
         {
           "id": "time_entries",
           "title": "Time Entries",
           "fields": [
             "construction_project.labor_budget"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.time_entries.title"
         },
         {
           "id": "materials",
           "title": "Materials",
           "fields": [
             "construction_project.material_budget"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.materials.title"
         },
         {
           "id": "costs",
@@ -4052,21 +4582,24 @@
             "construction_project.total_material_cost",
             "construction_project.total_other_cost",
             "construction_project.total_cost"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.costs.title"
         },
         {
           "id": "daily_reports",
           "title": "Daily Reports",
           "fields": [
             "construction_project.notes"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.daily_reports.title"
         },
         {
           "id": "issues",
           "title": "Issues",
           "fields": [
             "construction_project.attachments"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.issues.title"
         }
       ],
       "header": {
@@ -4097,6 +4630,7 @@
             {
               "id": "overview_tab",
               "label": "Overview",
+              "tab_label_key": "construction.views.form.sections.overview.title",
               "sections": [
                 "overview",
                 "summary"
@@ -4105,6 +4639,7 @@
             {
               "id": "crew_tab",
               "label": "Workers / Crew",
+              "tab_label_key": "construction.views.form.sections.crew.title",
               "sections": [
                 "crew"
               ]
@@ -4112,6 +4647,7 @@
             {
               "id": "time_entries_tab",
               "label": "Time Entries",
+              "tab_label_key": "construction.views.form.sections.time_entries.title",
               "sections": [
                 "time_entries"
               ]
@@ -4119,6 +4655,7 @@
             {
               "id": "materials_tab",
               "label": "Materials",
+              "tab_label_key": "construction.views.form.sections.materials.title",
               "sections": [
                 "materials"
               ]
@@ -4126,6 +4663,7 @@
             {
               "id": "costs_tab",
               "label": "Costs / Expenses",
+              "tab_label_key": "construction.views.form.sections.costs.title",
               "sections": [
                 "costs"
               ]
@@ -4133,6 +4671,7 @@
             {
               "id": "daily_reports_tab",
               "label": "Daily Reports",
+              "tab_label_key": "construction.views.form.sections.daily_reports.title",
               "sections": [
                 "daily_reports"
               ]
@@ -4140,6 +4679,7 @@
             {
               "id": "issues_tab",
               "label": "Issues",
+              "tab_label_key": "construction.views.form.sections.issues.title",
               "sections": [
                 "issues"
               ]
@@ -4215,7 +4755,8 @@
             "construction_work_item.title",
             "construction_work_item.sequence_code",
             "construction_work_item.notes"
-          ]
+          ],
+          "placeholder_key": "construction.views.list.search.placeholder"
         },
         "filters": [
           {
@@ -4229,7 +4770,8 @@
                 "in_progress",
                 "blocked"
               ]
-            }
+            },
+            "label_key": "construction.views.list.filters.open.label"
           },
           {
             "id": "done",
@@ -4238,7 +4780,8 @@
               "op": "eq",
               "field": "construction_work_item.status",
               "value": "done"
-            }
+            },
+            "label_key": "construction.views.list.filters.done.label"
           }
         ]
       }
@@ -4292,14 +4835,16 @@
             "construction_work_item.progress_percent",
             "construction_work_item.planned_start_date",
             "construction_work_item.planned_end_date"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.main.title"
         },
         {
           "id": "notes",
           "title": "Notes",
           "fields": [
             "construction_work_item.notes"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.notes.title"
         }
       ],
       "header": {
@@ -4330,6 +4875,7 @@
             {
               "id": "main_tab",
               "label": "Work Item",
+              "tab_label_key": "construction.views.form.sections.main.title",
               "sections": [
                 "main"
               ]
@@ -4337,6 +4883,7 @@
             {
               "id": "notes_tab",
               "label": "Notes",
+              "tab_label_key": "construction.views.form.sections.notes.title",
               "sections": [
                 "notes"
               ]
@@ -4403,7 +4950,8 @@
             "construction_worker.worker_code",
             "construction_worker.phone",
             "construction_worker.crew_name"
-          ]
+          ],
+          "placeholder_key": "construction.views.list.search.placeholder"
         },
         "filters": [
           {
@@ -4413,7 +4961,8 @@
               "op": "eq",
               "field": "construction_worker.active",
               "value": true
-            }
+            },
+            "label_key": "construction.views.list.filters.active.label"
           },
           {
             "id": "inactive",
@@ -4422,7 +4971,8 @@
               "op": "eq",
               "field": "construction_worker.active",
               "value": false
-            }
+            },
+            "label_key": "construction.views.list.filters.inactive.label"
           },
           {
             "id": "supervisors",
@@ -4434,7 +4984,8 @@
                 "supervisor",
                 "foreman"
               ]
-            }
+            },
+            "label_key": "construction.views.list.filters.supervisors.label"
           }
         ]
       }
@@ -4474,24 +5025,28 @@
             "construction_worker.crew_name",
             "construction_worker.portal_user_id",
             "construction_worker.hourly_cost_rate"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.general.title"
         },
         {
           "id": "notes",
           "title": "Notes",
           "fields": [
             "construction_worker.notes"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.notes.title"
         },
         {
           "id": "assignments_related",
           "title": "Assignments",
-          "fields": []
+          "fields": [],
+          "section_title_key": "construction.views.form.sections.assignments_related.title"
         },
         {
           "id": "time_entries_related",
           "title": "Time Entries",
-          "fields": []
+          "fields": [],
+          "section_title_key": "construction.views.form.sections.time_entries_related.title"
         }
       ],
       "header": {
@@ -4510,6 +5065,7 @@
             {
               "id": "worker_tab",
               "label": "Worker",
+              "tab_label_key": "construction.views.form.sections.worker.title",
               "sections": [
                 "general"
               ]
@@ -4517,6 +5073,7 @@
             {
               "id": "notes_form_tab",
               "label": "Notes",
+              "tab_label_key": "construction.views.form.sections.notes.title",
               "sections": [
                 "notes"
               ]
@@ -4524,6 +5081,7 @@
             {
               "id": "assignments_tab",
               "label": "Assignments",
+              "tab_label_key": "construction.views.form.sections.assignments_related.title",
               "sections": [
                 "assignments_related"
               ],
@@ -4561,6 +5119,7 @@
             {
               "id": "time_entries_tab",
               "label": "Time Entries",
+              "tab_label_key": "construction.views.form.sections.time_entries_related.title",
               "sections": [
                 "time_entries_related"
               ],
@@ -4652,7 +5211,8 @@
             "construction_worker_assignment.project_id",
             "construction_worker_assignment.site_id",
             "construction_worker_assignment.notes"
-          ]
+          ],
+          "placeholder_key": "construction.views.list.search.placeholder"
         },
         "filters": [
           {
@@ -4662,7 +5222,8 @@
               "op": "eq",
               "field": "construction_worker_assignment.active",
               "value": true
-            }
+            },
+            "label_key": "construction.views.list.filters.active.label"
           },
           {
             "id": "inactive",
@@ -4671,7 +5232,8 @@
               "op": "eq",
               "field": "construction_worker_assignment.active",
               "value": false
-            }
+            },
+            "label_key": "construction.views.list.filters.inactive.label"
           }
         ]
       }
@@ -4693,14 +5255,16 @@
             "construction_worker_assignment.assignment_role",
             "construction_worker_assignment.start_date",
             "construction_worker_assignment.end_date"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.assignment.title"
         },
         {
           "id": "notes",
           "title": "Notes",
           "fields": [
             "construction_worker_assignment.notes"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.notes.title"
         }
       ],
       "header": {
@@ -4719,6 +5283,7 @@
             {
               "id": "assignment_tab",
               "label": "Assignment",
+              "tab_label_key": "construction.views.form.sections.assignment.title",
               "sections": [
                 "assignment"
               ]
@@ -4726,6 +5291,7 @@
             {
               "id": "notes_tab",
               "label": "Notes",
+              "tab_label_key": "construction.views.form.sections.notes.title",
               "sections": [
                 "notes"
               ]
@@ -4789,7 +5355,8 @@
             "time_entry.site_id",
             "time_entry.work_item_id",
             "time_entry.notes"
-          ]
+          ],
+          "placeholder_key": "construction.views.list.search.placeholder"
         },
         "filters": [
           {
@@ -4799,7 +5366,8 @@
               "op": "eq",
               "field": "time_entry.status",
               "value": "open"
-            }
+            },
+            "label_key": "construction.views.list.filters.open.label"
           },
           {
             "id": "closed",
@@ -4808,7 +5376,8 @@
               "op": "eq",
               "field": "time_entry.status",
               "value": "closed"
-            }
+            },
+            "label_key": "construction.views.list.filters.closed.label"
           },
           {
             "id": "approved",
@@ -4817,7 +5386,8 @@
               "op": "eq",
               "field": "time_entry.status",
               "value": "approved"
-            }
+            },
+            "label_key": "construction.views.list.filters.approved.label"
           }
         ]
       }
@@ -4856,14 +5426,16 @@
             "time_entry.hours_worked",
             "time_entry.source",
             "time_entry.approved_by"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.entry.title"
         },
         {
           "id": "notes",
           "title": "Notes",
           "fields": [
             "time_entry.notes"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.notes.title"
         }
       ],
       "header": {
@@ -4888,6 +5460,7 @@
             {
               "id": "entry_tab",
               "label": "Entry",
+              "tab_label_key": "construction.views.form.sections.entry.title",
               "sections": [
                 "entry"
               ]
@@ -4895,6 +5468,7 @@
             {
               "id": "notes_tab",
               "label": "Notes",
+              "tab_label_key": "construction.views.form.sections.notes.title",
               "sections": [
                 "notes"
               ]
@@ -4950,7 +5524,8 @@
           "fields": [
             "construction_daily_report.summary",
             "construction_daily_report.blockers"
-          ]
+          ],
+          "placeholder_key": "construction.views.list.search.placeholder"
         },
         "filters": [
           {
@@ -4960,7 +5535,8 @@
               "op": "eq",
               "field": "construction_daily_report.status",
               "value": "draft"
-            }
+            },
+            "label_key": "construction.views.list.filters.draft.label"
           },
           {
             "id": "submitted",
@@ -4969,7 +5545,8 @@
               "op": "eq",
               "field": "construction_daily_report.status",
               "value": "submitted"
-            }
+            },
+            "label_key": "construction.views.list.filters.submitted.label"
           },
           {
             "id": "approved",
@@ -4978,7 +5555,8 @@
               "op": "eq",
               "field": "construction_daily_report.status",
               "value": "approved"
-            }
+            },
+            "label_key": "construction.views.list.filters.approved.label"
           }
         ]
       }
@@ -5013,14 +5591,16 @@
             "construction_daily_report.summary",
             "construction_daily_report.blockers",
             "construction_daily_report.safety_notes"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.report.title"
         },
         {
           "id": "photos",
           "title": "Photos",
           "fields": [
             "construction_daily_report.photos"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.photos.title"
         }
       ],
       "header": {
@@ -5045,6 +5625,7 @@
             {
               "id": "report_tab",
               "label": "Report",
+              "tab_label_key": "construction.views.form.sections.report.title",
               "sections": [
                 "report"
               ]
@@ -5052,6 +5633,7 @@
             {
               "id": "photos_tab",
               "label": "Photos",
+              "tab_label_key": "construction.views.form.sections.photos.title",
               "sections": [
                 "photos"
               ]
@@ -5116,7 +5698,8 @@
           "fields": [
             "construction_issue.title",
             "construction_issue.description"
-          ]
+          ],
+          "placeholder_key": "construction.views.list.search.placeholder"
         },
         "filters": [
           {
@@ -5129,7 +5712,8 @@
                 "open",
                 "in_progress"
               ]
-            }
+            },
+            "label_key": "construction.views.list.filters.open.label"
           },
           {
             "id": "resolved",
@@ -5138,7 +5722,8 @@
               "op": "eq",
               "field": "construction_issue.status",
               "value": "resolved"
-            }
+            },
+            "label_key": "construction.views.list.filters.resolved.label"
           },
           {
             "id": "critical",
@@ -5147,7 +5732,8 @@
               "op": "eq",
               "field": "construction_issue.priority",
               "value": "critical"
-            }
+            },
+            "label_key": "construction.views.list.filters.critical.label"
           }
         ]
       }
@@ -5189,14 +5775,16 @@
             "construction_issue.reported_by_worker_id",
             "construction_issue.due_date",
             "construction_issue.description"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.issue.title"
         },
         {
           "id": "photos",
           "title": "Photos",
           "fields": [
             "construction_issue.photos"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.photos.title"
         }
       ],
       "header": {
@@ -5224,6 +5812,7 @@
             {
               "id": "issue_tab",
               "label": "Issue",
+              "tab_label_key": "construction.views.form.sections.issue.title",
               "sections": [
                 "issue"
               ]
@@ -5231,6 +5820,7 @@
             {
               "id": "photos_tab",
               "label": "Photos",
+              "tab_label_key": "construction.views.form.sections.photos.title",
               "sections": [
                 "photos"
               ]
@@ -5292,7 +5882,8 @@
           "fields": [
             "material_request.description",
             "material_request.notes"
-          ]
+          ],
+          "placeholder_key": "construction.views.list.search.placeholder"
         },
         "filters": [
           {
@@ -5302,7 +5893,8 @@
               "op": "eq",
               "field": "material_request.status",
               "value": "draft"
-            }
+            },
+            "label_key": "construction.views.list.filters.draft.label"
           },
           {
             "id": "requested",
@@ -5311,7 +5903,8 @@
               "op": "eq",
               "field": "material_request.status",
               "value": "requested"
-            }
+            },
+            "label_key": "construction.views.list.filters.requested.label"
           },
           {
             "id": "approved",
@@ -5320,7 +5913,8 @@
               "op": "eq",
               "field": "material_request.status",
               "value": "approved"
-            }
+            },
+            "label_key": "construction.views.list.filters.approved.label"
           }
         ]
       }
@@ -5346,14 +5940,16 @@
             "material_request.requested_by_worker_id",
             "material_request.needed_by_date",
             "material_request.approved_by"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.request.title"
         },
         {
           "id": "notes",
           "title": "Notes",
           "fields": [
             "material_request.notes"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.notes.title"
         }
       ],
       "header": {
@@ -5378,6 +5974,7 @@
             {
               "id": "request_tab",
               "label": "Request",
+              "tab_label_key": "construction.views.form.sections.request.title",
               "sections": [
                 "request"
               ]
@@ -5385,6 +5982,7 @@
             {
               "id": "notes_tab",
               "label": "Notes",
+              "tab_label_key": "construction.views.form.sections.notes.title",
               "sections": [
                 "notes"
               ]
@@ -5443,7 +6041,8 @@
           "fields": [
             "material_receipt.invoice_ref",
             "material_receipt.notes"
-          ]
+          ],
+          "placeholder_key": "construction.views.list.search.placeholder"
         }
       }
     },
@@ -5469,7 +6068,8 @@
             "material_receipt.total_cost",
             "material_receipt.received_by",
             "material_receipt.invoice_ref"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.receipt.title"
         },
         {
           "id": "supporting",
@@ -5477,7 +6077,8 @@
           "fields": [
             "material_receipt.notes",
             "material_receipt.attachments"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.supporting.title"
         }
       ],
       "header": {
@@ -5499,6 +6100,7 @@
             {
               "id": "receipt_tab",
               "label": "Receipt",
+              "tab_label_key": "construction.views.form.sections.receipt.title",
               "sections": [
                 "receipt"
               ]
@@ -5506,6 +6108,7 @@
             {
               "id": "supporting_tab",
               "label": "Supporting",
+              "tab_label_key": "construction.views.form.sections.supporting.title",
               "sections": [
                 "supporting"
               ]
@@ -5566,7 +6169,8 @@
           "placeholder": "Search material usage...",
           "fields": [
             "material_log.notes"
-          ]
+          ],
+          "placeholder_key": "construction.views.list.search.placeholder"
         },
         "filters": [
           {
@@ -5576,7 +6180,8 @@
               "op": "eq",
               "field": "material_log.status",
               "value": "draft"
-            }
+            },
+            "label_key": "construction.views.list.filters.draft.label"
           },
           {
             "id": "submitted",
@@ -5585,7 +6190,8 @@
               "op": "eq",
               "field": "material_log.status",
               "value": "submitted"
-            }
+            },
+            "label_key": "construction.views.list.filters.submitted.label"
           },
           {
             "id": "approved",
@@ -5594,7 +6200,8 @@
               "op": "eq",
               "field": "material_log.status",
               "value": "approved"
-            }
+            },
+            "label_key": "construction.views.list.filters.approved.label"
           }
         ]
       }
@@ -5633,7 +6240,8 @@
             "material_log.total_cost",
             "material_log.entered_by_worker_id",
             "material_log.supervisor_id"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.usage.title"
         },
         {
           "id": "notes",
@@ -5641,7 +6249,8 @@
           "fields": [
             "material_log.notes",
             "material_log.photo"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.notes.title"
         }
       ],
       "header": {
@@ -5663,6 +6272,7 @@
             {
               "id": "usage_tab",
               "label": "Usage",
+              "tab_label_key": "construction.views.form.sections.usage.title",
               "sections": [
                 "usage"
               ]
@@ -5670,6 +6280,7 @@
             {
               "id": "notes_tab",
               "label": "Notes",
+              "tab_label_key": "construction.views.form.sections.notes.title",
               "sections": [
                 "notes"
               ]
@@ -5728,7 +6339,8 @@
           "fields": [
             "construction_budget_line.description",
             "construction_budget_line.notes"
-          ]
+          ],
+          "placeholder_key": "construction.views.list.search.placeholder"
         }
       }
     },
@@ -5751,14 +6363,16 @@
             "construction_budget_line.committed_amount",
             "construction_budget_line.actual_amount",
             "construction_budget_line.variance_amount"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.budget.title"
         },
         {
           "id": "notes",
           "title": "Notes",
           "fields": [
             "construction_budget_line.notes"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.notes.title"
         }
       ],
       "header": {
@@ -5769,6 +6383,7 @@
             {
               "id": "budget_tab",
               "label": "Budget",
+              "tab_label_key": "construction.views.form.sections.budget.title",
               "sections": [
                 "budget"
               ]
@@ -5776,6 +6391,7 @@
             {
               "id": "notes_tab",
               "label": "Notes",
+              "tab_label_key": "construction.views.form.sections.notes.title",
               "sections": [
                 "notes"
               ]
@@ -5844,7 +6460,8 @@
             "construction_expense.title",
             "construction_expense.reference",
             "construction_expense.notes"
-          ]
+          ],
+          "placeholder_key": "construction.views.list.search.placeholder"
         },
         "filters": [
           {
@@ -5854,7 +6471,8 @@
               "op": "eq",
               "field": "construction_expense.status",
               "value": "draft"
-            }
+            },
+            "label_key": "construction.views.list.filters.draft.label"
           },
           {
             "id": "posted",
@@ -5863,7 +6481,8 @@
               "op": "eq",
               "field": "construction_expense.status",
               "value": "posted"
-            }
+            },
+            "label_key": "construction.views.list.filters.posted.label"
           }
         ]
       }
@@ -5888,7 +6507,8 @@
             "construction_expense.supplier_contact_id",
             "construction_expense.reference",
             "construction_expense.amount"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.expense.title"
         },
         {
           "id": "supporting",
@@ -5896,7 +6516,8 @@
           "fields": [
             "construction_expense.notes",
             "construction_expense.attachments"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.supporting.title"
         }
       ],
       "header": {
@@ -5918,6 +6539,7 @@
             {
               "id": "expense_tab",
               "label": "Expense",
+              "tab_label_key": "construction.views.form.sections.expense.title",
               "sections": [
                 "expense"
               ]
@@ -5925,6 +6547,7 @@
             {
               "id": "supporting_tab",
               "label": "Supporting",
+              "tab_label_key": "construction.views.form.sections.supporting.title",
               "sections": [
                 "supporting"
               ]
@@ -5985,7 +6608,8 @@
             "time_entry.site_id",
             "time_entry.worker_id",
             "time_entry.notes"
-          ]
+          ],
+          "placeholder_key": "construction.views.report.search.placeholder"
         },
         "filters": [
           {
@@ -5995,7 +6619,8 @@
               "op": "eq",
               "field": "time_entry.status",
               "value": "open"
-            }
+            },
+            "label_key": "construction.views.report.filters.open.label"
           },
           {
             "id": "closed",
@@ -6004,7 +6629,8 @@
               "op": "eq",
               "field": "time_entry.status",
               "value": "closed"
-            }
+            },
+            "label_key": "construction.views.report.filters.closed.label"
           },
           {
             "id": "approved",
@@ -6013,7 +6639,8 @@
               "op": "eq",
               "field": "time_entry.status",
               "value": "approved"
-            }
+            },
+            "label_key": "construction.views.report.filters.approved.label"
           }
         ]
       }
@@ -6057,7 +6684,8 @@
             "material_log.site_id",
             "material_log.item_id",
             "material_log.notes"
-          ]
+          ],
+          "placeholder_key": "construction.views.report.search.placeholder"
         },
         "filters": [
           {
@@ -6067,7 +6695,8 @@
               "op": "eq",
               "field": "material_log.status",
               "value": "draft"
-            }
+            },
+            "label_key": "construction.views.report.filters.draft.label"
           },
           {
             "id": "submitted",
@@ -6076,7 +6705,8 @@
               "op": "eq",
               "field": "material_log.status",
               "value": "submitted"
-            }
+            },
+            "label_key": "construction.views.report.filters.submitted.label"
           },
           {
             "id": "approved",
@@ -6085,7 +6715,8 @@
               "op": "eq",
               "field": "material_log.status",
               "value": "approved"
-            }
+            },
+            "label_key": "construction.views.report.filters.approved.label"
           }
         ]
       }
@@ -6126,7 +6757,8 @@
             "construction_expense.site_id",
             "construction_expense.reference",
             "construction_expense.notes"
-          ]
+          ],
+          "placeholder_key": "construction.views.report.search.placeholder"
         },
         "filters": [
           {
@@ -6136,7 +6768,8 @@
               "op": "eq",
               "field": "construction_expense.status",
               "value": "draft"
-            }
+            },
+            "label_key": "construction.views.report.filters.draft.label"
           },
           {
             "id": "posted",
@@ -6145,7 +6778,8 @@
               "op": "eq",
               "field": "construction_expense.status",
               "value": "posted"
-            }
+            },
+            "label_key": "construction.views.report.filters.posted.label"
           }
         ]
       }
@@ -6183,7 +6817,8 @@
             "construction_daily_report.site_id",
             "construction_daily_report.summary",
             "construction_daily_report.blockers"
-          ]
+          ],
+          "placeholder_key": "construction.views.summary_list.search.placeholder"
         },
         "filters": [
           {
@@ -6193,7 +6828,8 @@
               "op": "eq",
               "field": "construction_daily_report.status",
               "value": "draft"
-            }
+            },
+            "label_key": "construction.views.summary_list.filters.draft.label"
           },
           {
             "id": "submitted",
@@ -6202,7 +6838,8 @@
               "op": "eq",
               "field": "construction_daily_report.status",
               "value": "submitted"
-            }
+            },
+            "label_key": "construction.views.summary_list.filters.submitted.label"
           },
           {
             "id": "approved",
@@ -6211,7 +6848,8 @@
               "op": "eq",
               "field": "construction_daily_report.status",
               "value": "approved"
-            }
+            },
+            "label_key": "construction.views.summary_list.filters.approved.label"
           }
         ]
       }
@@ -6283,7 +6921,9 @@
               "icon": "lucide:HardHat",
               "tone": "primary",
               "format": "number",
-              "target": "page:construction_project.list_page"
+              "target": "page:construction_project.list_page",
+              "label_key": "construction.pages.dashboard_page.blocks.1.cards.workers_on_site_today.label",
+              "subtitle_key": "construction.pages.dashboard_page.blocks.1.cards.workers_on_site_today.subtitle"
             },
             {
               "id": "labour_hours_today",
@@ -6302,7 +6942,9 @@
               "icon": "lucide:Clock3",
               "tone": "success",
               "format": "hours",
-              "target": "page:construction.time_report_page"
+              "target": "page:construction.time_report_page",
+              "label_key": "construction.pages.dashboard_page.blocks.1.cards.labour_hours_today.label",
+              "subtitle_key": "construction.pages.dashboard_page.blocks.1.cards.labour_hours_today.subtitle"
             },
             {
               "id": "materials_logged_today",
@@ -6321,7 +6963,9 @@
               "icon": "lucide:Package",
               "tone": "warning",
               "format": "number",
-              "target": "page:construction.material_report_page"
+              "target": "page:construction.material_report_page",
+              "label_key": "construction.pages.dashboard_page.blocks.1.cards.materials_logged_today.label",
+              "subtitle_key": "construction.pages.dashboard_page.blocks.1.cards.materials_logged_today.subtitle"
             },
             {
               "id": "cost_today",
@@ -6340,7 +6984,9 @@
               "icon": "lucide:BadgeDollarSign",
               "tone": "error",
               "format": "currency",
-              "target": "page:construction.cost_report_page"
+              "target": "page:construction.cost_report_page",
+              "label_key": "construction.pages.dashboard_page.blocks.1.cards.cost_today.label",
+              "subtitle_key": "construction.pages.dashboard_page.blocks.1.cards.cost_today.subtitle"
             }
           ]
         },
@@ -6367,7 +7013,8 @@
                 }
               ]
             }
-          ]
+          ],
+          "title_key": "construction.pages.dashboard_page.blocks.2.title"
         },
         {
           "kind": "grid",
@@ -6403,7 +7050,8 @@
                         }
                       ]
                     }
-                  ]
+                  ],
+                  "title_key": "construction.pages.dashboard_page.blocks.3.items.1.content.1.title"
                 }
               ]
             },
@@ -6436,13 +7084,15 @@
                         }
                       ]
                     }
-                  ]
+                  ],
+                  "title_key": "construction.pages.dashboard_page.blocks.3.items.2.content.1.title"
                 }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.dashboard_page.title"
     },
     {
       "id": "construction_site.list_page",
@@ -6479,7 +7129,8 @@
               },
               "icon": "lucide:BriefcaseBusiness",
               "tone": "primary",
-              "format": "number"
+              "format": "number",
+              "label_key": "construction.pages.list_page.blocks.1.cards.active_projects.label"
             },
             {
               "id": "project_hours_total",
@@ -6488,7 +7139,8 @@
               "measure": "sum:construction_project.total_hours",
               "icon": "lucide:Clock3",
               "tone": "success",
-              "format": "hours"
+              "format": "hours",
+              "label_key": "construction.pages.list_page.blocks.1.cards.project_hours_total.label"
             },
             {
               "id": "project_cost_total",
@@ -6497,7 +7149,8 @@
               "measure": "sum:construction_project.total_cost",
               "icon": "lucide:BadgeDollarSign",
               "tone": "warning",
-              "format": "currency"
+              "format": "currency",
+              "label_key": "construction.pages.list_page.blocks.1.cards.project_cost_total.label"
             },
             {
               "id": "open_project_issues",
@@ -6517,7 +7170,8 @@
               },
               "icon": "lucide:TriangleAlert",
               "tone": "error",
-              "format": "number"
+              "format": "number",
+              "label_key": "construction.pages.list_page.blocks.1.cards.open_project_issues.label"
             }
           ]
         },
@@ -6552,7 +7206,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.list_page.title"
     },
     {
       "id": "construction_site.form_page",
@@ -6607,7 +7262,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.form_page.title"
     },
     {
       "id": "construction_crew.list_page",
@@ -6653,7 +7309,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.list_page.title"
     },
     {
       "id": "construction_crew.form_page",
@@ -6708,7 +7365,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.form_page.title"
     },
     {
       "id": "construction_cost_code.list_page",
@@ -6754,7 +7412,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.list_page.title"
     },
     {
       "id": "construction_cost_code.form_page",
@@ -6809,7 +7468,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.form_page.title"
     },
     {
       "id": "construction_project.list_page",
@@ -6859,7 +7519,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.list_page.title"
     },
     {
       "id": "construction_project.form_page",
@@ -6914,7 +7575,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.form_page.title"
     },
     {
       "id": "construction_work_item.list_page",
@@ -6964,7 +7626,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.list_page.title"
     },
     {
       "id": "construction_work_item.form_page",
@@ -7019,7 +7682,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.form_page.title"
     },
     {
       "id": "construction_worker.list_page",
@@ -7065,7 +7729,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.list_page.title"
     },
     {
       "id": "construction_worker.form_page",
@@ -7120,7 +7785,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.form_page.title"
     },
     {
       "id": "construction_worker_assignment.list_page",
@@ -7157,7 +7823,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.list_page.title"
     },
     {
       "id": "construction_worker_assignment.form_page",
@@ -7212,7 +7879,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.form_page.title"
     },
     {
       "id": "time_entry.list_page",
@@ -7257,7 +7925,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.list_page.title"
     },
     {
       "id": "time_entry.form_page",
@@ -7312,7 +7981,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.form_page.title"
     },
     {
       "id": "construction_daily_report.list_page",
@@ -7357,7 +8027,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.list_page.title"
     },
     {
       "id": "construction_daily_report.form_page",
@@ -7412,7 +8083,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.form_page.title"
     },
     {
       "id": "construction_issue.list_page",
@@ -7458,7 +8130,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.list_page.title"
     },
     {
       "id": "construction_issue.form_page",
@@ -7513,7 +8186,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.form_page.title"
     },
     {
       "id": "material_request.list_page",
@@ -7554,7 +8228,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.list_page.title"
     },
     {
       "id": "material_request.form_page",
@@ -7609,7 +8284,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.form_page.title"
     },
     {
       "id": "material_receipt.list_page",
@@ -7650,7 +8326,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.list_page.title"
     },
     {
       "id": "material_receipt.form_page",
@@ -7705,7 +8382,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.form_page.title"
     },
     {
       "id": "material_log.list_page",
@@ -7750,7 +8428,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.list_page.title"
     },
     {
       "id": "material_log.form_page",
@@ -7805,7 +8484,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.form_page.title"
     },
     {
       "id": "construction_budget_line.list_page",
@@ -7846,7 +8526,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.list_page.title"
     },
     {
       "id": "construction_budget_line.form_page",
@@ -7901,7 +8582,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.form_page.title"
     },
     {
       "id": "construction_expense.list_page",
@@ -7942,7 +8624,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.list_page.title"
     },
     {
       "id": "construction_expense.form_page",
@@ -7997,7 +8680,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.form_page.title"
     },
     {
       "id": "construction.time_report_page",
@@ -8038,7 +8722,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.time_report_page.title"
     },
     {
       "id": "construction.material_report_page",
@@ -8079,7 +8764,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.material_report_page.title"
     },
     {
       "id": "construction.cost_report_page",
@@ -8120,7 +8806,8 @@
                         }
                       ]
                     }
-                  ]
+                  ],
+                  "title_key": "construction.pages.cost_report_page.blocks.1.items.1.content.1.title"
                 }
               ]
             },
@@ -8145,7 +8832,8 @@
                         }
                       ]
                     }
-                  ]
+                  ],
+                  "title_key": "construction.pages.cost_report_page.blocks.1.items.2.content.1.title"
                 }
               ]
             },
@@ -8182,7 +8870,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.cost_report_page.title"
     },
     {
       "id": "construction.daily_summary_page",
@@ -8223,7 +8912,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "construction.pages.daily_summary_page.title"
     }
   ],
   "interfaces": {
@@ -8275,6 +8965,7 @@
             "id": "projects_by_status",
             "type": "group",
             "title": "Projects by Status",
+            "title_key": "construction.dashboard.projects_by_status",
             "group_by": "construction_project.status",
             "measure": "count"
           },
@@ -8282,6 +8973,7 @@
             "id": "project_cost_to_date",
             "type": "group",
             "title": "Cost To Date by Project",
+            "title_key": "construction.dashboard.project_cost_to_date",
             "group_by": "construction_project.name",
             "measure": "sum:construction_project.total_cost"
           }
@@ -8353,6 +9045,7 @@
             "id": "labour_hours_by_project",
             "type": "group",
             "title": "Labour Hours by Project",
+            "title_key": "construction.dashboard.labour_hours_by_project",
             "group_by": "time_entry.project_id",
             "measure": "sum:time_entry.hours_worked"
           }
@@ -8377,6 +9070,7 @@
             "id": "daily_reports_by_project",
             "type": "group",
             "title": "Daily Reports by Project",
+            "title_key": "construction.dashboard.daily_reports_by_project",
             "group_by": "construction_daily_report.project_id",
             "measure": "count"
           }
@@ -8451,6 +9145,7 @@
             "id": "materials_by_type",
             "type": "group",
             "title": "Material Usage by Type",
+            "title_key": "construction.dashboard.materials_by_type",
             "group_by": "material_log.material_type",
             "measure": "sum:material_log.quantity"
           }
@@ -8494,6 +9189,7 @@
             "id": "costs_by_project",
             "type": "group",
             "title": "Costs by Project",
+            "title_key": "construction.dashboard.costs_by_project",
             "group_by": "construction_expense.project_id",
             "measure": "sum:construction_expense.amount"
           }
@@ -8608,11 +9304,15 @@
       "states": [
         {
           "id": "active",
-          "label": "Active"
+          "label": "Active",
+          "status_label_key": "construction.workflows.workflow_construction_site_status.states.active.label",
+          "label_key": "construction.workflows.workflow_construction_site_status.states.active.label"
         },
         {
           "id": "inactive",
-          "label": "Inactive"
+          "label": "Inactive",
+          "status_label_key": "construction.workflows.workflow_construction_site_status.states.inactive.label",
+          "label_key": "construction.workflows.workflow_construction_site_status.states.inactive.label"
         }
       ]
     },
@@ -8623,11 +9323,15 @@
       "states": [
         {
           "id": "active",
-          "label": "Active"
+          "label": "Active",
+          "status_label_key": "construction.workflows.workflow_construction_crew_status.states.active.label",
+          "label_key": "construction.workflows.workflow_construction_crew_status.states.active.label"
         },
         {
           "id": "inactive",
-          "label": "Inactive"
+          "label": "Inactive",
+          "status_label_key": "construction.workflows.workflow_construction_crew_status.states.inactive.label",
+          "label_key": "construction.workflows.workflow_construction_crew_status.states.inactive.label"
         }
       ]
     },
@@ -8638,23 +9342,33 @@
       "states": [
         {
           "id": "planned",
-          "label": "Planned"
+          "label": "Planned",
+          "status_label_key": "construction.workflows.workflow_construction_project_status.states.planned.label",
+          "label_key": "construction.workflows.workflow_construction_project_status.states.planned.label"
         },
         {
           "id": "active",
-          "label": "Active"
+          "label": "Active",
+          "status_label_key": "construction.workflows.workflow_construction_project_status.states.active.label",
+          "label_key": "construction.workflows.workflow_construction_project_status.states.active.label"
         },
         {
           "id": "on_hold",
-          "label": "On Hold"
+          "label": "On Hold",
+          "status_label_key": "construction.workflows.workflow_construction_project_status.states.on_hold.label",
+          "label_key": "construction.workflows.workflow_construction_project_status.states.on_hold.label"
         },
         {
           "id": "completed",
-          "label": "Completed"
+          "label": "Completed",
+          "status_label_key": "construction.workflows.workflow_construction_project_status.states.completed.label",
+          "label_key": "construction.workflows.workflow_construction_project_status.states.completed.label"
         },
         {
           "id": "cancelled",
-          "label": "Cancelled"
+          "label": "Cancelled",
+          "status_label_key": "construction.workflows.workflow_construction_project_status.states.cancelled.label",
+          "label_key": "construction.workflows.workflow_construction_project_status.states.cancelled.label"
         }
       ]
     },
@@ -8665,23 +9379,33 @@
       "states": [
         {
           "id": "pending",
-          "label": "Pending"
+          "label": "Pending",
+          "status_label_key": "construction.workflows.workflow_construction_work_item_status.states.pending.label",
+          "label_key": "construction.workflows.workflow_construction_work_item_status.states.pending.label"
         },
         {
           "id": "in_progress",
-          "label": "In Progress"
+          "label": "In Progress",
+          "status_label_key": "construction.workflows.workflow_construction_work_item_status.states.in_progress.label",
+          "label_key": "construction.workflows.workflow_construction_work_item_status.states.in_progress.label"
         },
         {
           "id": "blocked",
-          "label": "Blocked"
+          "label": "Blocked",
+          "status_label_key": "construction.workflows.workflow_construction_work_item_status.states.blocked.label",
+          "label_key": "construction.workflows.workflow_construction_work_item_status.states.blocked.label"
         },
         {
           "id": "done",
-          "label": "Done"
+          "label": "Done",
+          "status_label_key": "construction.workflows.workflow_construction_work_item_status.states.done.label",
+          "label_key": "construction.workflows.workflow_construction_work_item_status.states.done.label"
         },
         {
           "id": "cancelled",
-          "label": "Cancelled"
+          "label": "Cancelled",
+          "status_label_key": "construction.workflows.workflow_construction_work_item_status.states.cancelled.label",
+          "label_key": "construction.workflows.workflow_construction_work_item_status.states.cancelled.label"
         }
       ]
     },
@@ -8692,15 +9416,21 @@
       "states": [
         {
           "id": "open",
-          "label": "Open"
+          "label": "Open",
+          "status_label_key": "construction.workflows.workflow_time_entry_status.states.open.label",
+          "label_key": "construction.workflows.workflow_time_entry_status.states.open.label"
         },
         {
           "id": "closed",
-          "label": "Closed"
+          "label": "Closed",
+          "status_label_key": "construction.workflows.workflow_time_entry_status.states.closed.label",
+          "label_key": "construction.workflows.workflow_time_entry_status.states.closed.label"
         },
         {
           "id": "approved",
-          "label": "Approved"
+          "label": "Approved",
+          "status_label_key": "construction.workflows.workflow_time_entry_status.states.approved.label",
+          "label_key": "construction.workflows.workflow_time_entry_status.states.approved.label"
         }
       ]
     },
@@ -8711,15 +9441,21 @@
       "states": [
         {
           "id": "draft",
-          "label": "Draft"
+          "label": "Draft",
+          "status_label_key": "construction.workflows.workflow_construction_daily_report_status.states.draft.label",
+          "label_key": "construction.workflows.workflow_construction_daily_report_status.states.draft.label"
         },
         {
           "id": "submitted",
-          "label": "Submitted"
+          "label": "Submitted",
+          "status_label_key": "construction.workflows.workflow_construction_daily_report_status.states.submitted.label",
+          "label_key": "construction.workflows.workflow_construction_daily_report_status.states.submitted.label"
         },
         {
           "id": "approved",
-          "label": "Approved"
+          "label": "Approved",
+          "status_label_key": "construction.workflows.workflow_construction_daily_report_status.states.approved.label",
+          "label_key": "construction.workflows.workflow_construction_daily_report_status.states.approved.label"
         }
       ]
     },
@@ -8730,19 +9466,27 @@
       "states": [
         {
           "id": "open",
-          "label": "Open"
+          "label": "Open",
+          "status_label_key": "construction.workflows.workflow_construction_issue_status.states.open.label",
+          "label_key": "construction.workflows.workflow_construction_issue_status.states.open.label"
         },
         {
           "id": "in_progress",
-          "label": "In Progress"
+          "label": "In Progress",
+          "status_label_key": "construction.workflows.workflow_construction_issue_status.states.in_progress.label",
+          "label_key": "construction.workflows.workflow_construction_issue_status.states.in_progress.label"
         },
         {
           "id": "resolved",
-          "label": "Resolved"
+          "label": "Resolved",
+          "status_label_key": "construction.workflows.workflow_construction_issue_status.states.resolved.label",
+          "label_key": "construction.workflows.workflow_construction_issue_status.states.resolved.label"
         },
         {
           "id": "closed",
-          "label": "Closed"
+          "label": "Closed",
+          "status_label_key": "construction.workflows.workflow_construction_issue_status.states.closed.label",
+          "label_key": "construction.workflows.workflow_construction_issue_status.states.closed.label"
         }
       ]
     },
@@ -8753,23 +9497,33 @@
       "states": [
         {
           "id": "draft",
-          "label": "Draft"
+          "label": "Draft",
+          "status_label_key": "construction.workflows.workflow_material_request_status.states.draft.label",
+          "label_key": "construction.workflows.workflow_material_request_status.states.draft.label"
         },
         {
           "id": "requested",
-          "label": "Requested"
+          "label": "Requested",
+          "status_label_key": "construction.workflows.workflow_material_request_status.states.requested.label",
+          "label_key": "construction.workflows.workflow_material_request_status.states.requested.label"
         },
         {
           "id": "approved",
-          "label": "Approved"
+          "label": "Approved",
+          "status_label_key": "construction.workflows.workflow_material_request_status.states.approved.label",
+          "label_key": "construction.workflows.workflow_material_request_status.states.approved.label"
         },
         {
           "id": "fulfilled",
-          "label": "Fulfilled"
+          "label": "Fulfilled",
+          "status_label_key": "construction.workflows.workflow_material_request_status.states.fulfilled.label",
+          "label_key": "construction.workflows.workflow_material_request_status.states.fulfilled.label"
         },
         {
           "id": "cancelled",
-          "label": "Cancelled"
+          "label": "Cancelled",
+          "status_label_key": "construction.workflows.workflow_material_request_status.states.cancelled.label",
+          "label_key": "construction.workflows.workflow_material_request_status.states.cancelled.label"
         }
       ]
     },
@@ -8780,15 +9534,21 @@
       "states": [
         {
           "id": "draft",
-          "label": "Draft"
+          "label": "Draft",
+          "status_label_key": "construction.workflows.workflow_material_receipt_status.states.draft.label",
+          "label_key": "construction.workflows.workflow_material_receipt_status.states.draft.label"
         },
         {
           "id": "received",
-          "label": "Received"
+          "label": "Received",
+          "status_label_key": "construction.workflows.workflow_material_receipt_status.states.received.label",
+          "label_key": "construction.workflows.workflow_material_receipt_status.states.received.label"
         },
         {
           "id": "posted",
-          "label": "Posted"
+          "label": "Posted",
+          "status_label_key": "construction.workflows.workflow_material_receipt_status.states.posted.label",
+          "label_key": "construction.workflows.workflow_material_receipt_status.states.posted.label"
         }
       ]
     },
@@ -8799,15 +9559,21 @@
       "states": [
         {
           "id": "draft",
-          "label": "Draft"
+          "label": "Draft",
+          "status_label_key": "construction.workflows.workflow_material_log_status.states.draft.label",
+          "label_key": "construction.workflows.workflow_material_log_status.states.draft.label"
         },
         {
           "id": "submitted",
-          "label": "Submitted"
+          "label": "Submitted",
+          "status_label_key": "construction.workflows.workflow_material_log_status.states.submitted.label",
+          "label_key": "construction.workflows.workflow_material_log_status.states.submitted.label"
         },
         {
           "id": "approved",
-          "label": "Approved"
+          "label": "Approved",
+          "status_label_key": "construction.workflows.workflow_material_log_status.states.approved.label",
+          "label_key": "construction.workflows.workflow_material_log_status.states.approved.label"
         }
       ]
     },
@@ -8818,15 +9584,21 @@
       "states": [
         {
           "id": "draft",
-          "label": "Draft"
+          "label": "Draft",
+          "status_label_key": "construction.workflows.workflow_construction_expense_status.states.draft.label",
+          "label_key": "construction.workflows.workflow_construction_expense_status.states.draft.label"
         },
         {
           "id": "posted",
-          "label": "Posted"
+          "label": "Posted",
+          "status_label_key": "construction.workflows.workflow_construction_expense_status.states.posted.label",
+          "label_key": "construction.workflows.workflow_construction_expense_status.states.posted.label"
         },
         {
           "id": "void",
-          "label": "Void"
+          "label": "Void",
+          "status_label_key": "construction.workflows.workflow_construction_expense_status.states.void.label",
+          "label_key": "construction.workflows.workflow_construction_expense_status.states.void.label"
         }
       ]
     }

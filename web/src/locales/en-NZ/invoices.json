@@ -1,0 +1,382 @@
+{
+  "module": {
+    "name": "Invoices",
+    "description": "Deposit, progress, final, and credit-note customer invoicing."
+  },
+  "navigation": {
+    "biz_invoice_list_page": "Invoices",
+    "biz_invoice_draft_page": "Draft",
+    "biz_invoice_issued_page": "Issued",
+    "biz_invoice_part_paid_page": "Part Paid",
+    "biz_invoice_paid_page": "Paid",
+    "biz_invoice_credit_notes_page": "Credit Notes"
+  },
+  "entities": {
+    "biz_invoice": {
+      "label": "Invoice",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "invoice_number": {
+          "label": "Invoice Number"
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "draft": "Draft",
+            "issued": "Issued",
+            "part_paid": "Part Paid",
+            "paid": "Paid",
+            "cancelled": "Cancelled",
+            "credited": "Credited"
+          }
+        },
+        "invoice_type": {
+          "label": "Invoice Type",
+          "options": {
+            "deposit": "Deposit",
+            "progress": "Progress",
+            "final": "Final",
+            "credit_note": "Credit Note"
+          }
+        },
+        "customer_id": {
+          "label": "Customer"
+        },
+        "source_order_id": {
+          "label": "Source Order"
+        },
+        "source_order_number": {
+          "label": "Source Order"
+        },
+        "origin_invoice_id": {
+          "label": "Origin Invoice"
+        },
+        "credit_note_id": {
+          "label": "Credit Note"
+        },
+        "sales_entity": {
+          "label": "Sales Entity",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "invoice_date": {
+          "label": "Invoice Date"
+        },
+        "due_date": {
+          "label": "Due Date"
+        },
+        "currency": {
+          "label": "Currency",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "customer_reference": {
+          "label": "Customer Reference"
+        },
+        "notes": {
+          "label": "Notes"
+        },
+        "cancellation_reason": {
+          "label": "Cancellation Reason"
+        },
+        "source_order_total_snapshot": {
+          "label": "Order Total Snapshot"
+        },
+        "deposit_percent_snapshot": {
+          "label": "Deposit % Snapshot"
+        },
+        "invoice_manual_total": {
+          "label": "Manual Total Override"
+        },
+        "invoice_total": {
+          "label": "Invoice Total"
+        },
+        "amount_paid": {
+          "label": "Amount Paid"
+        },
+        "balance_due": {
+          "label": "Balance Due"
+        }
+      }
+    },
+    "biz_invoice_line": {
+      "label": "Invoice Line",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "invoice_id": {
+          "label": "Invoice"
+        },
+        "product_id": {
+          "label": "Product"
+        },
+        "description": {
+          "label": "Description"
+        },
+        "sales_entity_snapshot": {
+          "label": "Sales Entity Snapshot",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "currency_snapshot": {
+          "label": "Currency Snapshot",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "uom": {
+          "label": "UOM",
+          "options": {
+            "ea": "Each",
+            "set": "Set",
+            "kit": "Kit",
+            "lot": "Lot",
+            "pallet": "Pallet",
+            "container": "Container",
+            "m": "Meter"
+          }
+        },
+        "quantity": {
+          "label": "Qty"
+        },
+        "unit_price": {
+          "label": "Unit Price"
+        },
+        "line_total": {
+          "label": "Line Total"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_invoice_new": {
+      "label": "New Invoice"
+    },
+    "action_invoice_issue": {
+      "label": "Issue / Send Invoice",
+      "confirm": {
+        "title": "Issue invoice?"
+      }
+    },
+    "action_invoice_mark_part_paid": {
+      "label": "Mark Part Paid"
+    },
+    "action_invoice_mark_paid": {
+      "label": "Mark Paid"
+    },
+    "action_invoice_open_cancel_modal": {
+      "label": "Cancel"
+    },
+    "action_invoice_create_credit_note": {
+      "label": "Create Credit Note",
+      "confirm": {
+        "title": "Create credit note?"
+      }
+    },
+    "action_invoice_mark_credited": {
+      "label": "Mark Credited",
+      "confirm": {
+        "title": "Mark invoice as credited?"
+      }
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Search invoices..."
+      },
+      "filters": {
+        "open_receivables": {
+          "label": "Open Receivables"
+        },
+        "draft": {
+          "label": "Draft Invoices"
+        },
+        "issued": {
+          "label": "Issued Invoices"
+        },
+        "part_paid": {
+          "label": "Part Paid"
+        },
+        "paid": {
+          "label": "Paid"
+        },
+        "credit_notes": {
+          "label": "Credit Notes"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Invoice"
+        },
+        "notes": {
+          "title": "Notes"
+        },
+        "financials": {
+          "title": "Payments Summary"
+        },
+        "related": {
+          "title": "Related Records"
+        },
+        "lines": {
+          "title": "Invoice Lines"
+        },
+        "main": {
+          "title": "Invoice Line"
+        }
+      }
+    }
+  },
+  "modals": {
+    "invoice_cancel": {
+      "title": "Cancel Invoice",
+      "description": "Record the cancellation reason before removing this invoice from the active receivables flow.",
+      "actions": {
+        "update_record": {
+          "label": "Cancel Invoice"
+        },
+        "close_modal": {
+          "label": "Keep Open"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Invoices",
+      "header": {
+        "actions": {
+          "navigate": {
+            "label": "New Invoice"
+          }
+        }
+      },
+      "blocks": {
+        "1": {
+          "cards": {
+            "invoice_open_receivables_count": {
+              "label": "Open Receivables",
+              "subtitle": "Draft, issued and part paid"
+            },
+            "invoice_part_paid_count": {
+              "label": "Part Paid",
+              "subtitle": "Collections still in progress"
+            },
+            "invoice_paid_count": {
+              "label": "Paid",
+              "subtitle": "Fully settled invoices"
+            },
+            "invoice_credit_note_count": {
+              "label": "Credit Notes",
+              "subtitle": "Commercial reversals"
+            }
+          }
+        }
+      }
+    },
+    "draft_page": {
+      "title": "Draft Invoices"
+    },
+    "issued_page": {
+      "title": "Issued Invoices"
+    },
+    "part_paid_page": {
+      "title": "Part Paid Invoices"
+    },
+    "paid_page": {
+      "title": "Paid Invoices"
+    },
+    "credit_notes_page": {
+      "title": "Credit Notes"
+    },
+    "form_page": {
+      "title": "Invoice"
+    }
+  },
+  "workflows": {
+    "invoice_status_workflow": {
+      "states": {
+        "draft": {
+          "label": "Draft"
+        },
+        "issued": {
+          "label": "Issued"
+        },
+        "part_paid": {
+          "label": "Part Paid"
+        },
+        "paid": {
+          "label": "Paid"
+        },
+        "cancelled": {
+          "label": "Cancelled"
+        },
+        "credited": {
+          "label": "Credited"
+        }
+      },
+      "transitions": {
+        "draft_issued": {
+          "label": "Issue Invoice"
+        },
+        "issued_part_paid": {
+          "label": "Mark Part Paid"
+        },
+        "issued_paid": {
+          "label": "Mark Paid"
+        },
+        "part_paid_paid": {
+          "label": "Mark Paid"
+        },
+        "draft_cancelled": {
+          "label": "Cancel Invoice"
+        },
+        "issued_cancelled": {
+          "label": "Cancel Invoice"
+        },
+        "issued_credited": {
+          "label": "Mark Credited"
+        },
+        "part_paid_credited": {
+          "label": "Mark Credited"
+        },
+        "paid_credited": {
+          "label": "Mark Credited"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "invoice_created": "Invoice created",
+    "invoice_updated": "Invoice updated",
+    "invoice_line_created": "Invoice Line created",
+    "invoice_line_updated": "Invoice Line updated",
+    "invoice_status_changed": "Invoice status changed",
+    "new_invoice_clicked": "New Invoice clicked",
+    "issue_send_clicked": "Issue / Send Invoice clicked",
+    "mark_part_paid_clicked": "Mark Part Paid clicked",
+    "mark_paid_clicked": "Mark Paid clicked",
+    "cancel_clicked": "Cancel clicked",
+    "create_credit_note_clicked": "Create Credit Note clicked",
+    "mark_credited_clicked": "Mark Credited clicked"
+  },
+  "dashboard": {
+    "invoices_by_status": "Invoices by Status"
+  }
+}

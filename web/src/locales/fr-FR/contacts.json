@@ -1,0 +1,96 @@
+{
+  "module": {
+    "name": "Contacts",
+    "description": "Clients, fournisseurs et partenaires d'usine pour le flux de travail commercial."
+  },
+  "navigation": {
+    "contacts": "Contacts"
+  },
+  "entity": {
+    "contact": "Contacter"
+  },
+  "fields": {
+    "id": "ID",
+    "name": "Nom",
+    "contact_type": "Tapez",
+    "company_entity_scope": "Portée de l'entité",
+    "email": "Courriel",
+    "phone": "Téléphone",
+    "website": "Site Web",
+    "country": "Pays",
+    "currency_preference": "Préférence de devise",
+    "billing_street": "Rue de facturation",
+    "billing_street2": "Rue de facturation 2",
+    "billing_city": "Ville de facturation",
+    "billing_state": "État/région de facturation",
+    "billing_postcode": "Code postal de facturation",
+    "billing_country": "Pays de facturation",
+    "shipping_street": "Rue maritime",
+    "shipping_street2": "Rue maritime 2",
+    "shipping_city": "Ville d'expédition",
+    "shipping_state": "État/région d'expédition",
+    "shipping_postcode": "Code postal d'expédition",
+    "shipping_country": "Pays d'expédition",
+    "notes": "Remarques",
+    "is_active": "Actif"
+  },
+  "sections": {
+    "main": "Contacter",
+    "addresses": "Adresses",
+    "notes": "Remarques"
+  },
+  "actions": {
+    "new": "Nouveau contact",
+    "deactivate": "Désactiver",
+    "activate": "Activer"
+  },
+  "search": {
+    "placeholder": "Rechercher des contacts..."
+  },
+  "filters": {
+    "all": "Tous les contacts",
+    "customers": "Clients",
+    "suppliers": "Fournisseurs",
+    "factory_partners": "Partenaires d'usine",
+    "active": "Actif"
+  },
+  "pages": {
+    "list": "Contacts",
+    "form": "Contacter"
+  },
+  "options": {
+    "contact_type": {
+      "customer": "Client",
+      "supplier": "Fournisseur",
+      "factory_partner": "Partenaire d'usine"
+    }
+  },
+  "entities": {
+    "biz_contact": {
+      "fields": {
+        "contact_type": {
+          "options": {
+            "customer": "Client",
+            "supplier": "Fournisseur",
+            "factory_partner": "Partenaire d'usine"
+          }
+        },
+        "currency_preference": {
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        }
+      }
+    }
+  },
+  "triggers": {
+    "contact_created": "Contact créé",
+    "contact_updated": "Contact mis à jour",
+    "new_contact_clicked": "Nouveau contact cliqué",
+    "deactivate_clicked": "Désactiver cliqué",
+    "activate_clicked": "Activer cliqué"
+  }
+}

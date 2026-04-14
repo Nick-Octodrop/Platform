@@ -7,8 +7,10 @@ import { loadEntityIndex } from "../data/entityIndex.js";
 import { getDevMode, subscribeDevMode } from "../dev/devMode.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { useAccessContext } from "../access.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 export default function DataExplorerPage() {
+  const { t, version } = useI18n();
   const { entity } = useParams();
   const navigate = useNavigate();
   const { modules } = useModuleStore();
@@ -95,13 +97,13 @@ export default function DataExplorerPage() {
           setManifestError(null);
         }
       } catch (err) {
-        setError(err.message || "Failed to load records");
+        setError(err.message || t("settings.data_explorer.load_failed"));
       } finally {
         setLoading(false);
       }
     }
     loadRecords();
-  }, [selected?.entityId, selected?.moduleId, selected?.listViewId, refreshTick]);
+  }, [selected?.entityId, selected?.moduleId, selected?.listViewId, refreshTick, t, version]);
 
   const noEnabled = (index && Object.keys(index.byId || {}).length === 0);
 
@@ -110,10 +112,10 @@ export default function DataExplorerPage() {
       <div className="col-span-12 lg:col-span-3">
         <div className="card bg-base-100 shadow">
           <div className="card-body">
-            <h3 className="card-title">Entities</h3>
+            <h3 className="card-title">{t("settings.data_explorer.entities")}</h3>
             <input
               className="input input-bordered w-full"
-              placeholder="Search entities…"
+              placeholder={t("settings.data_explorer.search_entities")}
               value={entitySearch}
               onChange={(e) => setEntitySearch(e.target.value)}
             />
@@ -121,7 +123,7 @@ export default function DataExplorerPage() {
               {moduleGroups.map((g) => (
                 <div key={g.moduleId}>
                   <div className="text-xs uppercase opacity-60 mb-2">{g.moduleName}</div>
-                  {g.entities.length === 0 && <div className="text-sm opacity-60">No entities</div>}
+                  {g.entities.length === 0 && <div className="text-sm opacity-60">{t("settings.data_explorer.no_entities")}</div>}
                   {g.entities.map((e) => (
                     <button
                       key={e.entityId}
@@ -133,7 +135,7 @@ export default function DataExplorerPage() {
                   ))}
                 </div>
               ))}
-              {noEnabled && <div className="text-sm opacity-70">Install/enable an app to see data.</div>}
+              {noEnabled && <div className="text-sm opacity-70">{t("settings.data_explorer.install_app_to_see_data")}</div>}
             </div>
           </div>
         </div>
@@ -143,9 +145,9 @@ export default function DataExplorerPage() {
         {!entity && (
           <div className="card bg-base-100 shadow">
             <div className="card-body">
-              <h3 className="card-title">Select an entity</h3>
+              <h3 className="card-title">{t("settings.data_explorer.select_entity")}</h3>
               <div className="text-sm opacity-70">
-                {noEnabled ? "Install/enable an app to see data." : "Choose an entity from the left panel to view records."}
+                {noEnabled ? t("settings.data_explorer.install_app_to_see_data") : t("settings.data_explorer.choose_entity")}
               </div>
             </div>
           </div>
@@ -153,8 +155,8 @@ export default function DataExplorerPage() {
         {entity && !selected && (
           <div className="card bg-base-100 shadow">
             <div className="card-body">
-              <h3 className="card-title">Entity unavailable</h3>
-              <div className="text-sm opacity-70">This entity is not available or the module is disabled.</div>
+              <h3 className="card-title">{t("common.entity_unavailable")}</h3>
+              <div className="text-sm opacity-70">{t("settings.data_explorer.entity_unavailable_description")}</div>
             </div>
           </div>
         )}
@@ -166,22 +168,22 @@ export default function DataExplorerPage() {
                 <div className="text-xs opacity-60">{selected.moduleId}</div>
               </div>
               <div className="flex gap-2">
-                {canWriteRecords ? <Link className="btn btn-primary" to={`/data/${selected.entityId}/new`}>New</Link> : null}
-                <button className="btn btn-outline" onClick={() => setRefreshTick((t) => t + 1)}>Refresh</button>
+                {canWriteRecords ? <Link className="btn btn-primary" to={`/data/${selected.entityId}/new`}>{t("common.create")}</Link> : null}
+                <button className="btn btn-outline" onClick={() => setRefreshTick((tick) => tick + 1)}>{t("common.refresh")}</button>
               </div>
             </div>
             {devMode && (
               <div className="card bg-base-100 shadow mb-4">
                 <div className="card-body">
-                  <h3 className="card-title">Debug</h3>
-                  <div className="text-sm opacity-70">Entity ID: {selected.entityId}</div>
-                  <div className="text-sm opacity-70">Module ID: {selected.moduleId}</div>
-                  <div className="text-sm opacity-70">List View ID: {selected.listViewId || "—"}</div>
-                  <div className="text-sm opacity-70">Form View ID: {selected.formViewId || "—"}</div>
-                  <div className="text-sm opacity-70">Manifest Hash: {manifestHash || "—"}</div>
+                  <h3 className="card-title">{t("settings.data_explorer.debug")}</h3>
+                  <div className="text-sm opacity-70">{t("settings.data_explorer.entity_id")}: {selected.entityId}</div>
+                  <div className="text-sm opacity-70">{t("settings.data_explorer.module_id")}: {selected.moduleId}</div>
+                  <div className="text-sm opacity-70">{t("settings.data_explorer.list_view_id")}: {selected.listViewId || "—"}</div>
+                  <div className="text-sm opacity-70">{t("settings.data_explorer.form_view_id")}: {selected.formViewId || "—"}</div>
+                  <div className="text-sm opacity-70">{t("settings.data_explorer.manifest_hash")}: {manifestHash || "—"}</div>
                   <div className="flex gap-2 mt-2">
-                    <Link className="btn btn-sm btn-ghost" to={`/apps/${selected.moduleId}`}>Open module</Link>
-                    <Link className="btn btn-sm btn-ghost" to={`/settings/diagnostics/${encodeURIComponent(selected.moduleId)}`}>Open diagnostics</Link>
+                    <Link className="btn btn-sm btn-ghost" to={`/apps/${selected.moduleId}`}>{t("settings.data_explorer.open_module")}</Link>
+                    <Link className="btn btn-sm btn-ghost" to={`/settings/diagnostics/${encodeURIComponent(selected.moduleId)}`}>{t("common.open_diagnostics")}</Link>
                   </div>
                 </div>
               </div>
@@ -189,9 +191,9 @@ export default function DataExplorerPage() {
             {(manifestError === "NO_LIST_VIEW" || manifestError === "LIST_VIEW_MISSING") && (
               <div className="card bg-base-100 shadow">
                 <div className="card-body">
-                  <h3 className="card-title">No list view defined</h3>
-                  <div className="text-sm opacity-70">This entity has no list view in its manifest.</div>
-                  <Link className="btn btn-ghost" to={`/settings/diagnostics/${encodeURIComponent(selected.moduleId)}`}>Open diagnostics</Link>
+                  <h3 className="card-title">{t("common.missing_list_view")}</h3>
+                  <div className="text-sm opacity-70">{t("settings.data_explorer.no_list_view_description")}</div>
+                  <Link className="btn btn-ghost" to={`/settings/diagnostics/${encodeURIComponent(selected.moduleId)}`}>{t("common.open_diagnostics")}</Link>
                 </div>
               </div>
             )}

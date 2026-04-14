@@ -1,0 +1,604 @@
+{
+  "module": {
+    "name": "CRM",
+    "description": "Espace de travail de vente remplaçant les écarts de transfert CRM, avec transfert de devis et de commande intégré."
+  },
+  "navigation": {
+    "crm_dashboard_page": "CRM",
+    "crm_lead_list_page": "Pistes",
+    "crm_opportunity_list_page": "Opportunités",
+    "crm_activity_list_page": "Activités",
+    "crm_site_list_page": "Sites"
+  },
+  "entities": {
+    "crm_site": {
+      "label": "Site",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "name": {
+          "label": "Nom du site"
+        },
+        "company_id": {
+          "label": "Entreprise"
+        },
+        "address_line_1": {
+          "label": "Ligne d'adresse 1"
+        },
+        "address_line_2": {
+          "label": "Ligne d'adresse 2"
+        },
+        "city": {
+          "label": "Ville"
+        },
+        "region": {
+          "label": "Région / État"
+        },
+        "postcode": {
+          "label": "Code postal"
+        },
+        "country": {
+          "label": "Pays"
+        },
+        "site_notes": {
+          "label": "Remarques sur le site"
+        },
+        "is_active": {
+          "label": "Actif"
+        }
+      }
+    },
+    "crm_lead": {
+      "label": "Diriger",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "title": {
+          "label": "Diriger"
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "new": "Nouveau",
+            "contacted": "Contacté",
+            "qualified": "Qualifié",
+            "disqualified": "Disqualifié"
+          }
+        },
+        "source": {
+          "label": "Origine",
+          "options": {
+            "website": "Site Web",
+            "referral": "Référence",
+            "trade_show": "Salon professionnel",
+            "pipedrive_import": "Importation Pipedrive",
+            "repeat_customer": "Client régulier",
+            "manual": "Manuel"
+          }
+        },
+        "company_id": {
+          "label": "Entreprise"
+        },
+        "contact_name": {
+          "label": "Nom du contact"
+        },
+        "contact_email": {
+          "label": "E-mail de contact"
+        },
+        "contact_phone": {
+          "label": "Téléphone de contact"
+        },
+        "owner_user_id": {
+          "label": "Propriétaire"
+        },
+        "currency": {
+          "label": "Devise",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "estimated_value": {
+          "label": "Valeur estimée"
+        },
+        "next_action": {
+          "label": "Action suivante"
+        },
+        "next_activity_date": {
+          "label": "Date de la prochaine activité"
+        },
+        "disqualification_reason": {
+          "label": "Raison de disqualification"
+        },
+        "linked_opportunity_id": {
+          "label": "Opportunité liée"
+        },
+        "notes": {
+          "label": "Remarques"
+        }
+      }
+    },
+    "crm_opportunity": {
+      "label": "Opportunité",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "title": {
+          "label": "Opportunité"
+        },
+        "company_id": {
+          "label": "Entreprise"
+        },
+        "primary_contact_name": {
+          "label": "Contact principal"
+        },
+        "primary_contact_email": {
+          "label": "E-mail de contact"
+        },
+        "site_id": {
+          "label": "Site"
+        },
+        "owner_user_id": {
+          "label": "Propriétaire"
+        },
+        "pipeline": {
+          "label": "Pipeline",
+          "options": {
+            "nlight_sales": "Ventes NLight",
+            "ecotech_supply": "Fourniture EcoTech",
+            "after_sales": "Après-vente"
+          }
+        },
+        "stage": {
+          "label": "Scène",
+          "options": {
+            "new": "Nouveau",
+            "discovery": "Découverte",
+            "solution": "Ajustement de la solution",
+            "quote": "Citation",
+            "negotiation": "Négociation",
+            "won": "Gagné",
+            "lost": "Perdu"
+          }
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "open": "Ouvert",
+            "won": "Gagné",
+            "lost": "Perdu"
+          }
+        },
+        "currency": {
+          "label": "Devise",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "value": {
+          "label": "Valeur de la transaction"
+        },
+        "probability": {
+          "label": "Probabilité %"
+        },
+        "weighted_value": {
+          "label": "Valeur pondérée"
+        },
+        "expected_close_date": {
+          "label": "Clôture prévue"
+        },
+        "next_activity_date": {
+          "label": "Activité suivante"
+        },
+        "source": {
+          "label": "Origine",
+          "options": {
+            "website": "Site Web",
+            "referral": "Référence",
+            "trade_show": "Salon professionnel",
+            "pipedrive_import": "Importation Pipedrive",
+            "repeat_customer": "Client régulier",
+            "existing_customer": "Client existant",
+            "manual": "Manuel"
+          }
+        },
+        "quote_state": {
+          "label": "État du devis",
+          "options": {
+            "unquoted": "Non cité",
+            "quote_needed": "Devis nécessaire",
+            "quoted": "Cité",
+            "accepted": "Accepté"
+          }
+        },
+        "linked_quote_id": {
+          "label": "Devis lié"
+        },
+        "linked_order_id": {
+          "label": "Commande liée"
+        },
+        "won_lost_reason": {
+          "label": "Raison de la perte"
+        },
+        "description": {
+          "label": "Descriptif"
+        },
+        "notes": {
+          "label": "Remarques"
+        },
+        "attachments": {
+          "label": "Pièces jointes"
+        }
+      }
+    },
+    "crm_activity": {
+      "label": "Activité",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "title": {
+          "label": "Activité"
+        },
+        "activity_type": {
+          "label": "Tapez",
+          "options": {
+            "call": "Appeler",
+            "meeting": "Réunion",
+            "task": "Tâche",
+            "email_follow_up": "Suivi par courrier électronique",
+            "site_visit": "Visite du site",
+            "quote_follow_up": "Suivi des devis"
+          }
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "planned": "Prévu",
+            "done": "Terminé",
+            "cancelled": "Annulé"
+          }
+        },
+        "due_date": {
+          "label": "Date d'échéance"
+        },
+        "owner_user_id": {
+          "label": "Propriétaire"
+        },
+        "company_id": {
+          "label": "Entreprise"
+        },
+        "lead_id": {
+          "label": "Diriger"
+        },
+        "opportunity_id": {
+          "label": "Opportunité"
+        },
+        "site_id": {
+          "label": "Site"
+        },
+        "notes": {
+          "label": "Remarques"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_crm_lead_new": {
+      "label": "Nouveau responsable"
+    },
+    "action_crm_opportunity_new": {
+      "label": "Nouvelle opportunité"
+    },
+    "action_crm_activity_new": {
+      "label": "Nouvelle activité"
+    },
+    "action_crm_site_new": {
+      "label": "Nouveau site"
+    },
+    "action_crm_lead_mark_contacted": {
+      "label": "Marc contacté"
+    },
+    "action_crm_lead_qualify": {
+      "label": "Qualifier le responsable"
+    },
+    "action_crm_lead_open_disqualify_modal": {
+      "label": "Disqualifier"
+    },
+    "action_crm_opportunity_discovery": {
+      "label": "Démarrer la découverte"
+    },
+    "action_crm_opportunity_solution": {
+      "label": "Ajustement de la solution"
+    },
+    "action_crm_opportunity_quote_stage": {
+      "label": "Déplacer vers le devis"
+    },
+    "action_crm_opportunity_create_quote": {
+      "label": "Créer un devis"
+    },
+    "action_crm_opportunity_negotiation": {
+      "label": "Passer à la négociation"
+    },
+    "action_crm_opportunity_mark_won": {
+      "label": "Mark a gagné"
+    },
+    "action_crm_opportunity_open_lost_modal": {
+      "label": "Marque perdue"
+    },
+    "action_crm_opportunity_create_order": {
+      "label": "Créer une commande"
+    },
+    "action_crm_activity_done": {
+      "label": "Marquer terminé"
+    },
+    "action_crm_activity_cancel": {
+      "label": "Annuler"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Rechercher des pistes..."
+      },
+      "filters": {
+        "active": {
+          "label": "Pistes actives"
+        },
+        "new": {
+          "label": "Nouveau"
+        },
+        "contacted": {
+          "label": "Contacté"
+        },
+        "qualified": {
+          "label": "Qualifié"
+        },
+        "disqualified": {
+          "label": "Disqualifié"
+        },
+        "open": {
+          "label": "Opportunités ouvertes"
+        },
+        "needs_quote": {
+          "label": "Besoin d'un devis"
+        },
+        "no_next_activity": {
+          "label": "Aucune activité suivante"
+        },
+        "closing_this_month": {
+          "label": "Fermeture ce mois-ci"
+        },
+        "won": {
+          "label": "Gagné"
+        },
+        "lost": {
+          "label": "Perdu"
+        },
+        "planned": {
+          "label": "Prévu"
+        },
+        "overdue": {
+          "label": "En retard"
+        },
+        "done": {
+          "label": "Terminé"
+        },
+        "site_visits": {
+          "label": "Visites de sites"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Diriger"
+        },
+        "notes": {
+          "title": "Remarques"
+        },
+        "commercial": {
+          "title": "Commercial"
+        }
+      }
+    }
+  },
+  "modals": {
+    "crm_lead_disqualify": {
+      "title": "Disqualifier le prospect",
+      "description": "Découvrez pourquoi cette demande ne devrait pas entrer dans le pipeline des ventes.",
+      "actions": {
+        "update_record": {
+          "label": "Disqualifier le prospect"
+        },
+        "close_modal": {
+          "label": "Rester ouvert"
+        }
+      }
+    },
+    "crm_opportunity_lost": {
+      "title": "Marquer l'opportunité perdue",
+      "description": "Capturez la raison de la perte pour que le pipeline reste utile.",
+      "actions": {
+        "update_record": {
+          "label": "Marque perdue"
+        },
+        "close_modal": {
+          "label": "Rester ouvert"
+        }
+      }
+    }
+  },
+  "pages": {
+    "dashboard_page": {
+      "title": "CRM",
+      "header": {
+        "actions": {
+          "navigate": {
+            "label": "Nouveau responsable"
+          }
+        }
+      },
+      "blocks": {
+        "1": {
+          "cards": {
+            "crm_open_pipeline_value": {
+              "label": "Pipeline ouvert",
+              "subtitle": "Valeur de la transaction active"
+            },
+            "crm_weighted_pipeline_value": {
+              "label": "Pipeline pondéré",
+              "subtitle": "Probabilité ajustée"
+            },
+            "crm_needs_quote": {
+              "label": "Besoin d'un devis",
+              "subtitle": "Transfert prêt pour la vente"
+            },
+            "crm_overdue_activities": {
+              "label": "Activités en retard",
+              "subtitle": "Suivis prévus à prévoir"
+            }
+          }
+        }
+      }
+    },
+    "list_page": {
+      "title": "Pistes"
+    },
+    "form_page": {
+      "title": "Diriger"
+    }
+  },
+  "workflows": {
+    "crm_lead_status_workflow": {
+      "states": {
+        "new": {
+          "label": "Nouveau"
+        },
+        "contacted": {
+          "label": "Contacté"
+        },
+        "qualified": {
+          "label": "Qualifié"
+        },
+        "disqualified": {
+          "label": "Disqualifié"
+        }
+      },
+      "transitions": {
+        "new_contacted": {
+          "label": "Marc contacté"
+        },
+        "new_qualified": {
+          "label": "Qualifier"
+        },
+        "contacted_qualified": {
+          "label": "Qualifier"
+        },
+        "new_disqualified": {
+          "label": "Disqualifier"
+        },
+        "contacted_disqualified": {
+          "label": "Disqualifier"
+        }
+      }
+    },
+    "crm_opportunity_stage_workflow": {
+      "states": {
+        "new": {
+          "label": "Nouveau"
+        },
+        "discovery": {
+          "label": "Découverte"
+        },
+        "solution": {
+          "label": "Ajustement de la solution"
+        },
+        "quote": {
+          "label": "Citation"
+        },
+        "negotiation": {
+          "label": "Négociation"
+        },
+        "won": {
+          "label": "Gagné"
+        },
+        "lost": {
+          "label": "Perdu"
+        }
+      },
+      "transitions": {
+        "new_discovery": {
+          "label": "Démarrer la découverte"
+        },
+        "discovery_solution": {
+          "label": "Ajustement de la solution"
+        },
+        "solution_quote": {
+          "label": "Citation"
+        },
+        "quote_negotiation": {
+          "label": "Négociation"
+        },
+        "quote_won": {
+          "label": "Mark a gagné"
+        },
+        "negotiation_won": {
+          "label": "Mark a gagné"
+        },
+        "new_lost": {
+          "label": "Marque perdue"
+        },
+        "discovery_lost": {
+          "label": "Marque perdue"
+        },
+        "solution_lost": {
+          "label": "Marque perdue"
+        },
+        "quote_lost": {
+          "label": "Marque perdue"
+        },
+        "negotiation_lost": {
+          "label": "Marque perdue"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "site_created": "Site créé",
+    "site_updated": "Site mis à jour",
+    "lead_created": "Prospect créé",
+    "lead_updated": "Prospect mis à jour",
+    "opportunity_created": "Opportunité créée",
+    "opportunity_updated": "Opportunité mise à jour",
+    "activity_created": "Activité créée",
+    "activity_updated": "Activité mise à jour",
+    "lead_status_changed": "Statut du prospect modifié",
+    "opportunity_status_changed": "Statut de l'opportunité modifié",
+    "new_lead_clicked": "Nouveau prospect cliqué",
+    "new_opportunity_clicked": "Nouvelle opportunité cliquée",
+    "new_activity_clicked": "Nouvelle activité cliqué",
+    "new_site_clicked": "Nouveau site cliqué",
+    "mark_contacted_clicked": "Mark Contacté a cliqué",
+    "qualify_lead_clicked": "Qualifier le prospect cliqué",
+    "disqualify_clicked": "Disqualifier cliqué",
+    "start_discovery_clicked": "Cliquez sur Démarrer la découverte",
+    "solution_fit_clicked": "Solution Ajustement cliqué",
+    "move_to_quote_clicked": "Déplacer vers le devis cliqué",
+    "create_quote_clicked": "Créer un devis cliqué",
+    "move_to_negotiation_clicked": "Cliquez sur Passer à la négociation",
+    "mark_won_clicked": "Mark Won a cliqué",
+    "mark_lost_clicked": "Mark Lost a cliqué",
+    "create_order_clicked": "Cliquez sur Créer une commande",
+    "mark_done_clicked": "Mark Terminé a cliqué",
+    "cancel_clicked": "Annuler cliqué"
+  }
+}

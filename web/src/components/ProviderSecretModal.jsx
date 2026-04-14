@@ -1,22 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { createWorkspaceSecret } from "../api.js";
-
-const PROVIDER_COPY = {
-  openai: {
-    title: "Connect OpenAI",
-    description: "Add the workspace OpenAI API key to enable AI in Studio, Automations, Templates, and Octo AI.",
-    providerKey: "openai",
-    secretKey: "api_key",
-    placeholder: "sk-...",
-  },
-  google_maps: {
-    title: "Connect Google Maps",
-    description: "Add a workspace server-side Google Maps / Places API key with billing and Places API enabled to use address autocomplete in forms.",
-    providerKey: "google_maps",
-    secretKey: "api_key",
-    placeholder: "AIza...",
-  },
-};
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 export default function ProviderSecretModal({
   open,
@@ -26,13 +10,34 @@ export default function ProviderSecretModal({
   onClose,
   onSaved,
 }) {
-  const copy = useMemo(() => PROVIDER_COPY[providerKey] || {
-    title: "Connect Provider",
-    description: "Add a workspace secret for this provider.",
-    providerKey,
-    secretKey: "api_key",
-    placeholder: "Enter API key",
-  }, [providerKey]);
+  const { t } = useI18n();
+  const copy = useMemo(() => {
+    if (providerKey === "openai") {
+      return {
+        title: t("settings.provider_secret_modal.openai_title"),
+        description: t("settings.provider_secret_modal.openai_description"),
+        providerKey: "openai",
+        secretKey: "api_key",
+        placeholder: "sk-...",
+      };
+    }
+    if (providerKey === "google_maps") {
+      return {
+        title: t("settings.provider_secret_modal.google_maps_title"),
+        description: t("settings.provider_secret_modal.google_maps_description"),
+        providerKey: "google_maps",
+        secretKey: "api_key",
+        placeholder: "AIza...",
+      };
+    }
+    return {
+      title: t("settings.provider_secret_modal.default_title"),
+      description: t("settings.provider_secret_modal.default_description"),
+      providerKey,
+      secretKey: "api_key",
+      placeholder: t("settings.provider_secret_modal.default_placeholder"),
+    };
+  }, [providerKey, t]);
   const [name, setName] = useState(copy.title);
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
@@ -62,7 +67,7 @@ export default function ProviderSecretModal({
       });
       onSaved?.();
     } catch (err) {
-      setError(err?.message || "Failed to save secret");
+      setError(err?.message || t("settings.provider_secret_modal.save_failed"));
     } finally {
       setSaving(false);
     }
@@ -75,12 +80,12 @@ export default function ProviderSecretModal({
         <div className="mt-2 text-sm opacity-70">{copy.description}</div>
         {!canManageSettings ? (
           <div className="alert alert-info mt-4 text-sm">
-            You do not have permission to manage workspace secrets. Ask a workspace admin to connect this provider in Settings.
+            {t("settings.provider_secret_modal.permission_required")}
           </div>
         ) : null}
         <div className="mt-4 space-y-4">
           <label className="form-control">
-            <span className="label-text text-sm">Secret name</span>
+            <span className="label-text text-sm">{t("settings.provider_secret_modal.secret_name")}</span>
             <input
               className="input input-bordered"
               value={name}
@@ -89,7 +94,7 @@ export default function ProviderSecretModal({
             />
           </label>
           <label className="form-control">
-            <span className="label-text text-sm">API key</span>
+            <span className="label-text text-sm">{t("settings.provider_secret_modal.api_key")}</span>
             <textarea
               className="textarea textarea-bordered min-h-[8rem]"
               value={value}
@@ -102,11 +107,11 @@ export default function ProviderSecretModal({
         </div>
         <div className="modal-action">
           <button className="btn btn-ghost" type="button" onClick={onClose} disabled={saving || busy}>
-            Close
+            {t("common.close")}
           </button>
           {canManageSettings ? (
             <button className="btn btn-primary" type="button" onClick={handleSave} disabled={saving || busy || !value.trim()}>
-              {saving ? "Saving..." : "Save key"}
+              {saving ? t("common.saving") : t("settings.provider_secret_modal.save_key")}
             </button>
           ) : null}
         </div>

@@ -4,6 +4,7 @@ import { apiFetch } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import AppSelect from "../components/AppSelect.jsx";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 const DEFAULT_CONFIG = {
   host: "",
@@ -41,6 +42,7 @@ function Section({ title, description, children, tone = "bg-base-100" }) {
 export default function EmailConnectionDetailPage() {
   const { connectionId } = useParams();
   const { pushToast } = useToast();
+  const { t } = useI18n();
   const [item, setItem] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -68,7 +70,7 @@ export default function EmailConnectionDetailPage() {
       setConfig(normalizeConfig(conn?.config));
     } catch (err) {
       setItem(null);
-      setError(err?.message || "Failed to load connection");
+      setError(err?.message || t("settings.email_connections.load_failed"));
     } finally {
       setLoading(false);
     }
@@ -112,10 +114,10 @@ export default function EmailConnectionDetailPage() {
         body,
       });
       setItem(res?.connection || null);
-      pushToast("success", "Saved");
+      pushToast("success", t("common.saved"));
     } catch (err) {
-      setError(err?.message || "Save failed");
-      pushToast("error", err?.message || "Save failed");
+      setError(err?.message || t("common.save_failed"));
+      pushToast("error", err?.message || t("common.save_failed"));
     } finally {
       setSaving(false);
     }
@@ -128,38 +130,38 @@ export default function EmailConnectionDetailPage() {
       {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
 
       {loading ? (
-        <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-70">Loading…</div>
+        <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-70">{t("common.loading")}</div>
       ) : !item ? (
-        <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-60">Connection not found.</div>
+        <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-60">{t("settings.email_connections.not_found")}</div>
       ) : (
         <div className="space-y-4">
-          <Section title="Connection" description="SMTP connection setup.">
+          <Section title={t("settings.email_connections.section_title")} description={t("settings.email_connections.section_description")}>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="space-y-6 md:col-start-1">
                 <div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label className="form-control md:col-span-2">
-                      <span className="label-text text-sm">Connection Name</span>
+                      <span className="label-text text-sm">{t("settings.email_connections.connection_name")}</span>
                       <input
                         className="input input-bordered input-sm"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         disabled={saving}
                       />
-                      <span className="label label-text-alt opacity-50">Required. Use a clear name like Support SMTP or Marketing Outbound.</span>
+                      <span className="label label-text-alt opacity-50">{t("settings.email_connections.connection_name_help")}</span>
                     </label>
                     <label className="form-control">
-                      <span className="label-text text-sm">Status</span>
+                      <span className="label-text text-sm">{t("common.status")}</span>
                       <AppSelect
                         className="select select-bordered select-sm"
                         value={status}
                         onChange={(e) => setStatus(e.target.value)}
                         disabled={saving}
                       >
-                        <option value="active">Active</option>
-                        <option value="disabled">Disabled</option>
+                        <option value="active">{t("common.active")}</option>
+                        <option value="disabled">{t("common.disabled")}</option>
                       </AppSelect>
-                      <span className="label label-text-alt opacity-50">Optional. Disable the connection without deleting it.</span>
+                      <span className="label label-text-alt opacity-50">{t("settings.email_connections.status_help")}</span>
                     </label>
                   </div>
                 </div>
@@ -167,18 +169,18 @@ export default function EmailConnectionDetailPage() {
                 <div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label className="form-control md:col-span-2">
-                      <span className="label-text text-sm">SMTP Host</span>
+                      <span className="label-text text-sm">{t("settings.email_connections.smtp_host")}</span>
                       <input
                         className="input input-bordered input-sm"
                         value={config.host}
                         onChange={(e) => setConfig((prev) => ({ ...prev, host: e.target.value }))}
-                        placeholder="smtp.gmail.com"
+                        placeholder={t("settings.email_connections.smtp_host_placeholder")}
                         disabled={saving}
                       />
-                      <span className="label label-text-alt opacity-50">Required. Enter the outgoing mail server host provided by your email provider.</span>
+                      <span className="label label-text-alt opacity-50">{t("settings.email_connections.smtp_host_help")}</span>
                     </label>
                     <label className="form-control">
-                      <span className="label-text text-sm">Port</span>
+                      <span className="label-text text-sm">{t("common.port")}</span>
                       <input
                         className="input input-bordered input-sm"
                         type="number"
@@ -186,21 +188,21 @@ export default function EmailConnectionDetailPage() {
                         onChange={(e) => setConfig((prev) => ({ ...prev, port: Number(e.target.value || 0) }))}
                         disabled={saving}
                       />
-                      <span className="label label-text-alt opacity-50">Usually `587` for STARTTLS or `465` for SSL/TLS.</span>
+                      <span className="label label-text-alt opacity-50">{t("settings.email_connections.port_help")}</span>
                     </label>
                     <label className="form-control">
-                      <span className="label-text text-sm">Security</span>
+                      <span className="label-text text-sm">{t("settings.email_connections.security")}</span>
                       <AppSelect
                         className="select select-bordered select-sm"
                         value={config.security}
                         onChange={(e) => setConfig((prev) => ({ ...prev, security: e.target.value }))}
                         disabled={saving}
                       >
-                        <option value="starttls">STARTTLS</option>
-                        <option value="ssl">SSL/TLS</option>
-                        <option value="none">None</option>
+                        <option value="starttls">{t("settings.email_connections.security_starttls")}</option>
+                        <option value="ssl">{t("settings.email_connections.security_ssl")}</option>
+                        <option value="none">{t("settings.email_connections.security_none")}</option>
                       </AppSelect>
-                      <span className="label label-text-alt opacity-50">Choose the transport security required by the server.</span>
+                      <span className="label label-text-alt opacity-50">{t("settings.email_connections.security_help")}</span>
                     </label>
                   </div>
                 </div>
@@ -208,71 +210,71 @@ export default function EmailConnectionDetailPage() {
                 <div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label className="form-control md:col-span-2">
-                      <span className="label-text text-sm">Password Source</span>
+                      <span className="label-text text-sm">{t("settings.email_connections.password_source")}</span>
                       <AppSelect
                         className="select select-bordered select-sm"
                         value={authMode}
                         onChange={(e) => setAuthMode(e.target.value)}
                         disabled={saving}
                       >
-                        <option value="password">Direct Password</option>
-                        <option value="secret">Saved Secret</option>
+                        <option value="password">{t("settings.email_connections.password_source_direct")}</option>
+                        <option value="secret">{t("settings.email_connections.password_source_secret")}</option>
                       </AppSelect>
-                      <span className="label label-text-alt opacity-50">Choose whether the SMTP password is stored directly here or pulled from Secrets.</span>
+                      <span className="label label-text-alt opacity-50">{t("settings.email_connections.password_source_help")}</span>
                     </label>
                     <label className="form-control">
-                      <span className="label-text text-sm">Username</span>
+                      <span className="label-text text-sm">{t("settings.email_connections.username")}</span>
                       <input
                         className="input input-bordered input-sm"
                         value={config.username}
                         onChange={(e) => setConfig((prev) => ({ ...prev, username: e.target.value }))}
                         disabled={saving}
                       />
-                      <span className="label label-text-alt opacity-50">Usually the mailbox email address or SMTP username.</span>
+                      <span className="label label-text-alt opacity-50">{t("settings.email_connections.username_help")}</span>
                     </label>
                     {authMode === "secret" ? (
                       <>
                         <label className="form-control md:col-span-2">
-                          <span className="label-text text-sm">Saved Secret</span>
+                          <span className="label-text text-sm">{t("settings.email_connections.saved_secret")}</span>
                           <AppSelect
                             className="select select-bordered select-sm"
                             value={secretRef}
                             onChange={(e) => setSecretRef(e.target.value)}
                             disabled={saving}
                           >
-                            <option value="">Select a secret…</option>
+                            <option value="">{t("settings.email_connections.saved_secret_placeholder")}</option>
                             {secrets.map((s) => (
                               <option key={s.id} value={s.id}>
                                 {s.name || s.id}
                               </option>
                             ))}
                           </AppSelect>
-                          <span className="label label-text-alt opacity-50">Optional. Pick a stored secret instead of entering the password directly.</span>
+                          <span className="label label-text-alt opacity-50">{t("settings.email_connections.saved_secret_help")}</span>
                         </label>
                         <label className="form-control md:col-span-2">
-                          <span className="label-text text-sm">Secret ID Override</span>
+                          <span className="label-text text-sm">{t("settings.email_connections.secret_id_override")}</span>
                           <input
                             className="input input-bordered input-sm font-mono"
                             value={secretRef}
                             onChange={(e) => setSecretRef(e.target.value)}
-                            placeholder="UUID"
+                            placeholder={t("settings.email_connections.secret_id_override_placeholder")}
                             disabled={saving}
                           />
-                          <span className="label label-text-alt opacity-50">Optional. Use this only if you need to point at a secret id directly.</span>
+                          <span className="label label-text-alt opacity-50">{t("settings.email_connections.secret_id_override_help")}</span>
                         </label>
                       </>
                     ) : (
                       <label className="form-control">
-                        <span className="label-text text-sm">Password</span>
+                        <span className="label-text text-sm">{t("settings.email_connections.password")}</span>
                         <input
                           className="input input-bordered input-sm"
                           type="password"
                           value={config.password}
                           onChange={(e) => setConfig((prev) => ({ ...prev, password: e.target.value }))}
-                          placeholder="SMTP app password"
+                          placeholder={t("settings.email_connections.password_placeholder")}
                           disabled={saving}
                         />
-                        <span className="label label-text-alt opacity-50">Optional if your server does not require authentication. Otherwise use the SMTP password or app password.</span>
+                        <span className="label label-text-alt opacity-50">{t("settings.email_connections.password_help")}</span>
                       </label>
                     )}
                   </div>
@@ -281,31 +283,31 @@ export default function EmailConnectionDetailPage() {
                 <div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label className="form-control">
-                      <span className="label-text text-sm">From Email</span>
+                      <span className="label-text text-sm">{t("settings.email_connections.from_email")}</span>
                       <input
                         className="input input-bordered input-sm"
                         value={config.from_email}
                         onChange={(e) => setConfig((prev) => ({ ...prev, from_email: e.target.value }))}
                         disabled={saving}
                       />
-                      <span className="label label-text-alt opacity-50">Optional. Leave blank to let the provider default the sender address.</span>
+                      <span className="label label-text-alt opacity-50">{t("settings.email_connections.from_email_help")}</span>
                     </label>
                     <label className="form-control">
-                      <span className="label-text text-sm">From Name</span>
+                      <span className="label-text text-sm">{t("settings.email_connections.from_name")}</span>
                       <input
                         className="input input-bordered input-sm"
                         value={config.from_name}
                         onChange={(e) => setConfig((prev) => ({ ...prev, from_name: e.target.value }))}
                         disabled={saving}
                       />
-                      <span className="label label-text-alt opacity-50">Optional display name that appears in the recipient inbox.</span>
+                      <span className="label label-text-alt opacity-50">{t("settings.email_connections.from_name_help")}</span>
                     </label>
                   </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
                   <button className="btn btn-sm btn-primary" type="button" onClick={save} disabled={loading || saving || !name.trim()}>
-                    {saving ? "Saving..." : "Save"}
+                    {saving ? t("common.saving") : t("common.save")}
                   </button>
                 </div>
               </div>

@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useModuleStore } from "../state/moduleStore.jsx";
 import { useToast } from "../components/Toast.jsx";
-import { getAppDisplayName } from "../state/appCatalog.js";
+import { getAppDescription, getAppDisplayName, getAppTranslationNamespaces } from "../state/appCatalog.js";
 import { recordRecentApp } from "../state/appUsage.js";
 import { apiFetch, invalidateModulesCache, setModuleIcon, setModuleOrder } from "../api.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
@@ -21,6 +21,8 @@ import { appendOctoAiFrameParams, deriveAppHomeRoute } from "../apps/appShellUti
 import useMediaQuery from "../hooks/useMediaQuery.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 import AppModuleIcon from "../components/AppModuleIcon.jsx";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
+import { ensureRuntimeNamespaces } from "../i18n/runtime.js";
 
 // Kept intentionally minimal: App Manager cards shouldn't surface extra status/meta beyond actions + app version.
 
@@ -41,6 +43,7 @@ function AppIcon({ app }) {
 const SETTINGS_CARD_CLASS = "border rounded-box p-4 bg-base-100 shadow-sm flex flex-col min-h-[140px]";
 
 export default function AppsPage({ user }) {
+  const { locale, t, version } = useI18n();
   const isMobile = useMediaQuery("(max-width: 768px)");
   const { modules, loading, error, actions } = useModuleStore();
   const { pushToast } = useToast();
@@ -76,6 +79,12 @@ export default function AppsPage({ user }) {
   }, [modules]);
 
   useEffect(() => {
+    const namespaces = getAppTranslationNamespaces(modules);
+    if (namespaces.length === 0) return;
+    ensureRuntimeNamespaces(namespaces).catch(() => {});
+  }, [locale, modules]);
+
+  useEffect(() => {
     if (!user) return;
     let alive = true;
     setInitialMarketplaceSettled(false);
@@ -96,7 +105,7 @@ export default function AppsPage({ user }) {
       setMarketplaceApps(Array.isArray(res?.apps) ? res.apps : []);
     } catch (err) {
       if (!isAlive()) return;
-      setMarketplaceError(err?.message || "Failed to load marketplace");
+      setMarketplaceError(err?.message || t("settings.apps_page.marketplace_load_failed"));
     } finally {
       if (isAlive()) {
         setMarketplaceLoading(false);
@@ -109,14 +118,14 @@ export default function AppsPage({ user }) {
     try {
       if (enabled) {
         await actions.enableModule(moduleId);
-        pushToast("success", "Module enabled");
+        pushToast("success", t("settings.apps_page.module_enabled"));
       } else {
         await actions.disableModule(moduleId);
-        pushToast("info", "Module disabled");
+        pushToast("info", t("settings.apps_page.module_disabled"));
       }
       await actions.refresh({ force: true });
     } catch (err) {
-      pushToast("error", err.message || "Action failed");
+      pushToast("error", err.message || t("common.app_shell.action_failed"));
     }
   }
 
@@ -150,19 +159,19 @@ export default function AppsPage({ user }) {
 
   async function handleSetOrder(app) {
     const current = app.module?.display_order;
-    const next = window.prompt("Display order (blank to clear)", current ?? "");
+    const next = window.prompt(t("settings.apps_page.display_order_prompt"), current ?? "");
     if (next === null) return;
     const trimmed = `${next}`.trim();
     const value = trimmed === "" ? null : Number(trimmed);
     if (trimmed !== "" && !Number.isInteger(value)) {
-      pushToast("error", "Display order must be an integer");
+      pushToast("error", t("settings.apps_page.display_order_integer"));
       return;
     }
     try {
       await setModuleOrder(app.id, value);
       await actions.refresh({ force: true });
     } catch (err) {
-      pushToast("error", err.message || "Failed to set order");
+      pushToast("error", err.message || t("settings.apps_page.display_order_set_failed"));
     }
   }
 
@@ -171,11 +180,16 @@ export default function AppsPage({ user }) {
     try {
       const opts = deleteMode === "delete_records" ? { force: true } : { archive: true };
       await actions.deleteModule(deleteTarget, opts);
-      pushToast("success", deleteMode === "delete_records" ? "Module deleted (records removed)" : "Module removed (records kept)");
+      pushToast(
+        "success",
+        deleteMode === "delete_records"
+          ? t("settings.apps_page.module_deleted_records_removed")
+          : t("settings.apps_page.module_removed_records_kept")
+      );
       invalidateModulesCache();
       await actions.refresh({ force: true });
     } catch (err) {
-      pushToast("error", err.message || "Delete failed");
+      pushToast("error", err.message || t("common.delete_failed"));
     } finally {
       closeDelete();
     }
@@ -187,10 +201,16 @@ export default function AppsPage({ user }) {
     try {
       const res = await apiFetch(`/marketplace/apps/${app.id}/clone`, { method: "POST", body: {} });
       const newId = res?.module_id || res?.data?.module_id;
-      pushToast("success", `Cloned ${app.title || app.slug || "app"}${newId ? ` (${newId})` : ""} (disabled)`);
+      pushToast(
+        "success",
+        t("settings.apps_page.cloned_disabled", {
+          name: app.title || app.slug || t("common.app"),
+          suffix: newId ? ` (${newId})` : "",
+        })
+      );
       await actions.refresh({ force: true });
     } catch (err) {
-      pushToast("error", err?.message || "Clone failed");
+      pushToast("error", err?.message || t("settings.apps_page.clone_failed"));
     } finally {
       setMarketplaceCloneBusy("");
     }
@@ -198,14 +218,14 @@ export default function AppsPage({ user }) {
 
   async function deleteMarketplaceApp(app) {
     if (!app?.id) return;
-    const confirm = window.prompt("Type DELETE to permanently remove this marketplace app.");
+    const confirm = window.prompt(t("settings.apps_page.marketplace_delete_prompt"));
     if (confirm !== "DELETE") return;
     try {
       await apiFetch(`/marketplace/apps/${app.id}`, { method: "DELETE" });
-      pushToast("success", "Marketplace app deleted");
+      pushToast("success", t("settings.apps_page.marketplace_deleted"));
       await refreshMarketplace();
     } catch (err) {
-      pushToast("error", err?.message || "Failed to delete marketplace app");
+      pushToast("error", err?.message || t("settings.apps_page.marketplace_delete_failed"));
     }
   }
 
@@ -214,7 +234,7 @@ export default function AppsPage({ user }) {
   }
 
   if (!user) {
-    return <div className="alert">Please log in to view apps.</div>;
+    return <div className="alert">{t("settings.apps_page.login_required")}</div>;
   }
 
   const items = useMemo(() => {
@@ -224,12 +244,12 @@ export default function AppsPage({ user }) {
       kind: "installed",
       id: m.module_id,
       title: getAppDisplayName(m.module_id, m),
-      description: m.description || "",
+      description: getAppDescription(m),
       module_version: m.module_version || "",
       module: m,
       icon: <Package size={64} strokeWidth={1.31} className="text-primary" />,
       icon_url: m.icon_key || null,
-      keywords: ["installed", m.module_id, m.name || "", m.description || ""].filter(Boolean),
+      keywords: ["installed", m.module_id, m.name || "", m.description || "", m.name_key || "", m.description_key || ""].filter(Boolean),
     }));
     const marketplace = (Array.isArray(marketplaceApps) ? marketplaceApps : [])
       .filter((a) => isSuperadmin || (a.id !== "octo_ai" && a.source_module_id !== "octo_ai"))
@@ -244,7 +264,7 @@ export default function AppsPage({ user }) {
       keywords: ["marketplace", a.slug, a.title, a.source_module_id, a.description].filter(Boolean),
     }));
     return [...installed, ...marketplace];
-  }, [isSuperadmin, marketplaceApps, modules]);
+  }, [isSuperadmin, locale, marketplaceApps, modules, version]);
 
   const filteredItems = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -313,13 +333,13 @@ export default function AppsPage({ user }) {
         <div className={DESKTOP_PAGE_SHELL_BODY}>
           <div className="shrink-0">
             <SystemListToolbar
-              title="Apps"
+              title={t("settings.apps_page.title")}
               searchValue={query}
               onSearchChange={setQuery}
               filters={[
-                { id: "all", label: "All" },
-                { id: "installed", label: "Installed" },
-                { id: "marketplace", label: "Marketplace" },
+                { id: "all", label: t("common.all") },
+                { id: "installed", label: t("settings.apps_page.installed") },
+                { id: "marketplace", label: t("settings.apps_page.marketplace") },
               ]}
               onFilterChange={setActiveFilter}
               onClearFilters={() => setActiveFilter("all")}
@@ -336,7 +356,7 @@ export default function AppsPage({ user }) {
             {marketplaceError && <div className="alert alert-error mb-4">{marketplaceError}</div>}
 
             {!showInitialLoading && filteredItems.length === 0 ? (
-              <div className="text-sm opacity-60">No apps match your search.</div>
+              <div className="text-sm opacity-60">{t("settings.apps_page.no_apps_match")}</div>
             ) : null}
 
             {!showInitialLoading && filteredItems.length > 0 ? (
@@ -434,11 +454,11 @@ export default function AppsPage({ user }) {
                           {canManageModules ? (
                             moduleRecord?.enabled ? (
                               <button className="btn btn-sm btn-outline" onClick={() => toggleModule(item.id, false)} type="button">
-                                Disable
+                                {t("settings.apps_page.disable_button")}
                               </button>
                             ) : (
                               <button className="btn btn-sm btn-primary" onClick={() => toggleModule(item.id, true)} type="button">
-                                Enable
+                                {t("settings.apps_page.enable_button")}
                               </button>
                             )
                           ) : null}
@@ -455,7 +475,7 @@ export default function AppsPage({ user }) {
                             </button>
                             {openMenuId === item.id ? (
                               <ul className={`absolute right-0 ${isMobile ? "bottom-full mb-2" : "top-full mt-2"} menu p-2 shadow bg-base-100 rounded-box w-48 z-50 border border-base-300`}>
-                                <li><button onClick={() => { closeAppMenu(); handleDetails(item.id); }}>View details</button></li>
+                                <li><button onClick={() => { closeAppMenu(); handleDetails(item.id); }}>{t("settings.apps_page.view_details")}</button></li>
                                 {canManageModules ? (
                                   <>
                                     <li>
@@ -469,11 +489,11 @@ export default function AppsPage({ user }) {
                                           setIconPickerOpen(true);
                                         }}
                                       >
-                                        Choose icon…
+                                        {t("settings.apps_page.choose_icon")}
                                       </button>
                                     </li>
-                                    <li><button onClick={() => { closeAppMenu(); handleSetOrder(app); }}>Set order…</button></li>
-                                    <li><button onClick={() => { closeAppMenu(); openDelete(item.id); }} className="text-error">Remove / delete…</button></li>
+                                    <li><button onClick={() => { closeAppMenu(); handleSetOrder(app); }}>{t("settings.apps_page.set_order")}</button></li>
+                                    <li><button onClick={() => { closeAppMenu(); openDelete(item.id); }} className="text-error">{t("settings.apps_page.remove_delete")}</button></li>
                                   </>
                                 ) : null}
                               </ul>
@@ -496,9 +516,9 @@ export default function AppsPage({ user }) {
       {deleteTarget && (
         <div className="modal modal-open">
           <div className="modal-box">
-            <h3 className="font-bold text-lg">Delete module</h3>
+            <h3 className="font-bold text-lg">{t("settings.apps_page.delete_title")}</h3>
             <p className="text-sm opacity-70 mt-2">
-              Choose whether to keep records created by this module, or delete everything.
+              {t("settings.apps_page.delete_body")}
             </p>
             <div className="mt-4 space-y-2">
               <label className="flex items-start gap-3 cursor-pointer">
@@ -510,8 +530,8 @@ export default function AppsPage({ user }) {
                   onChange={() => setDeleteMode("keep_records")}
                 />
                 <div>
-                  <div className="font-semibold">Remove module (keep records)</div>
-                  <div className="text-xs opacity-70">The app is archived/disabled, but your workspace data remains.</div>
+                  <div className="font-semibold">{t("settings.apps_page.remove_keep_records")}</div>
+                  <div className="text-xs opacity-70">{t("settings.apps_page.remove_keep_records_help")}</div>
                 </div>
               </label>
               <label className="flex items-start gap-3 cursor-pointer">
@@ -523,39 +543,39 @@ export default function AppsPage({ user }) {
                   onChange={() => setDeleteMode("delete_records")}
                 />
                 <div>
-                  <div className="font-semibold text-error">Delete module + records</div>
+                  <div className="font-semibold text-error">{t("settings.apps_page.delete_module_records")}</div>
                   <div className="text-xs opacity-70">
-                    Irreversible. Removes all records for entities defined by this module (and any other module using the same entities).
+                    {t("settings.apps_page.delete_module_records_help")}
                   </div>
                 </div>
               </label>
             </div>
-            <p className="text-sm mt-2">Type <span className="font-mono">{deleteTarget}</span> to confirm.</p>
+            <p className="text-sm mt-2">{t("settings.apps_page.type_value_to_confirm", { value: deleteTarget })}</p>
             <input
               className="input input-bordered input-sm w-full mt-3"
               value={deleteConfirm}
               onChange={(e) => setDeleteConfirm(e.target.value)}
-              placeholder="module id"
+              placeholder={t("settings.apps_page.module_id_placeholder")}
             />
             {deleteMode === "delete_records" && (
               <div className="mt-3">
-                <div className="text-sm">Also type <span className="font-mono">DELETE</span> to confirm record deletion.</div>
+                <div className="text-sm">{t("settings.apps_page.also_type_delete_to_confirm")}</div>
                 <input
                   className="input input-bordered input-sm w-full mt-2"
                   value={forceConfirm}
                   onChange={(e) => setForceConfirm(e.target.value)}
-                  placeholder="DELETE"
+                  placeholder={t("settings.apps_page.delete_keyword_placeholder")}
                 />
               </div>
             )}
             <div className="modal-action">
-              <button className="btn" onClick={closeDelete}>Cancel</button>
+              <button className="btn" onClick={closeDelete}>{t("common.cancel")}</button>
               <button
                 className={`btn ${deleteMode === "delete_records" ? "btn-error" : "btn-warning"}`}
                 onClick={handleDelete}
                 disabled={deleteConfirm !== deleteTarget || (deleteMode === "delete_records" && forceConfirm !== "DELETE")}
               >
-                {deleteMode === "delete_records" ? "Delete" : "Remove"}
+                {deleteMode === "delete_records" ? t("common.delete") : t("common.remove")}
               </button>
             </div>
           </div>
@@ -565,12 +585,12 @@ export default function AppsPage({ user }) {
         <div className="modal modal-open">
           <div className="modal-box max-w-4xl">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold">Choose an icon</h3>
+              <h3 className="font-semibold">{t("settings.apps_page.choose_icon_title")}</h3>
               <button className="btn btn-ghost btn-xs" onClick={() => setIconPickerOpen(false)}>✕</button>
             </div>
             <input
               className="input input-bordered input-sm w-full mb-4"
-              placeholder="Search icons…"
+              placeholder={t("settings.apps_page.search_icons")}
               value={iconQuery}
               onChange={(e) => setIconQuery(e.target.value)}
             />
@@ -624,7 +644,7 @@ export default function AppsPage({ user }) {
                         setIconPickerOpen(false);
                         await actions.refresh({ force: true });
                       } catch (err) {
-                        pushToast("error", err.message || "Failed to set icon");
+                        pushToast("error", err.message || t("settings.apps_page.icon_set_failed"));
                       }
                     }}
                   >
@@ -646,7 +666,7 @@ export default function AppsPage({ user }) {
                         setIconPickerOpen(false);
                         await actions.refresh({ force: true });
                       } catch (err) {
-                        pushToast("error", err.message || "Failed to set icon");
+                        pushToast("error", err.message || t("settings.apps_page.icon_set_failed"));
                       }
                     }}
                   >

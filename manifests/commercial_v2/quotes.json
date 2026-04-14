@@ -7,15 +7,32 @@
     "version": "1.0.0",
     "description": "Quote workflow from pricing and customer approval through order conversion.",
     "category": "Commercial",
-    "icon_key": "lucide:FileCheck2"
+    "icon_key": "lucide:FileCheck2",
+    "name_key": "quotes.module.name",
+    "description_key": "quotes.module.description"
   },
   "depends_on": {
     "required": [
-      { "module": "biz_contacts", "version": ">=1.0.0" },
-      { "module": "biz_products", "version": ">=1.0.0" },
-      { "module": "biz_purchase_orders", "version": ">=1.0.0" },
-      { "module": "biz_invoices", "version": ">=1.0.0" },
-      { "module": "biz_orders", "version": ">=1.0.0" }
+      {
+        "module": "biz_contacts",
+        "version": ">=1.0.0"
+      },
+      {
+        "module": "biz_products",
+        "version": ">=1.0.0"
+      },
+      {
+        "module": "biz_purchase_orders",
+        "version": ">=1.0.0"
+      },
+      {
+        "module": "biz_invoices",
+        "version": ">=1.0.0"
+      },
+      {
+        "module": "biz_orders",
+        "version": ">=1.0.0"
+      }
     ]
   },
   "app": {
@@ -39,10 +56,26 @@
         "group": "Commercial",
         "mode": "inline",
         "items": [
-          { "label": "Quotes", "to": "page:biz_quote.list_page" },
-          { "label": "Draft", "to": "page:biz_quote.draft_page" },
-          { "label": "Sent", "to": "page:biz_quote.sent_page" },
-          { "label": "Ready To Convert", "to": "page:biz_quote.ready_to_convert_page" }
+          {
+            "label": "Quotes",
+            "to": "page:biz_quote.list_page",
+            "menu_label_key": "quotes.navigation.biz_quote_list_page"
+          },
+          {
+            "label": "Draft",
+            "to": "page:biz_quote.draft_page",
+            "menu_label_key": "quotes.navigation.biz_quote_draft_page"
+          },
+          {
+            "label": "Sent",
+            "to": "page:biz_quote.sent_page",
+            "menu_label_key": "quotes.navigation.biz_quote_sent_page"
+          },
+          {
+            "label": "Ready To Convert",
+            "to": "page:biz_quote.ready_to_convert_page",
+            "menu_label_key": "quotes.navigation.biz_quote_ready_to_convert_page"
+          }
         ]
       }
     ]
@@ -53,34 +86,95 @@
       "label": "Quote",
       "display_field": "biz_quote.quote_number",
       "fields": [
-        { "id": "biz_quote.id", "type": "uuid", "label": "ID", "readonly": true },
-        { "id": "biz_quote.quote_number", "type": "string", "label": "Quote Number", "readonly": true },
+        {
+          "id": "biz_quote.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true,
+          "label_key": "quotes.entities.biz_quote.fields.id.label"
+        },
+        {
+          "id": "biz_quote.quote_number",
+          "type": "string",
+          "label": "Quote Number",
+          "readonly": true,
+          "label_key": "quotes.entities.biz_quote.fields.quote_number.label"
+        },
         {
           "id": "biz_quote.status",
           "type": "enum",
           "label": "Status",
-          "ui": { "widget": "steps" },
+          "ui": {
+            "widget": "steps"
+          },
           "required": true,
           "default": "draft",
           "options": [
-            { "value": "draft", "label": "Draft" },
-            { "value": "sent", "label": "Sent" },
-            { "value": "accepted", "label": "Accepted" },
-            { "value": "lost", "label": "Lost" },
-            { "value": "expired", "label": "Expired" }
-          ]
+            {
+              "value": "draft",
+              "label": "Draft",
+              "status_label_key": "quotes.entities.biz_quote.fields.status.options.draft",
+              "label_key": "quotes.entities.biz_quote.fields.status.options.draft"
+            },
+            {
+              "value": "sent",
+              "label": "Sent",
+              "status_label_key": "quotes.entities.biz_quote.fields.status.options.sent",
+              "label_key": "quotes.entities.biz_quote.fields.status.options.sent"
+            },
+            {
+              "value": "accepted",
+              "label": "Accepted",
+              "status_label_key": "quotes.entities.biz_quote.fields.status.options.accepted",
+              "label_key": "quotes.entities.biz_quote.fields.status.options.accepted"
+            },
+            {
+              "value": "lost",
+              "label": "Lost",
+              "status_label_key": "quotes.entities.biz_quote.fields.status.options.lost",
+              "label_key": "quotes.entities.biz_quote.fields.status.options.lost"
+            },
+            {
+              "value": "expired",
+              "label": "Expired",
+              "status_label_key": "quotes.entities.biz_quote.fields.status.options.expired",
+              "label_key": "quotes.entities.biz_quote.fields.status.options.expired"
+            }
+          ],
+          "label_key": "quotes.entities.biz_quote.fields.status.label"
         },
-        { "id": "biz_quote.quote_date", "type": "date", "label": "Quote Date" },
-        { "id": "biz_quote.expiry_date", "type": "date", "label": "Expiry Date" },
+        {
+          "id": "biz_quote.quote_date",
+          "type": "date",
+          "label": "Quote Date",
+          "label_key": "quotes.entities.biz_quote.fields.quote_date.label"
+        },
+        {
+          "id": "biz_quote.expiry_date",
+          "type": "date",
+          "label": "Expiry Date",
+          "label_key": "quotes.entities.biz_quote.fields.expiry_date.label"
+        },
         {
           "id": "biz_quote.sales_entity",
           "type": "enum",
           "label": "Sales Entity",
           "default": "NLight BV",
           "options": [
-            { "value": "NLight BV", "label": "NLight BV" },
-            { "value": "EcoTech FZCO", "label": "EcoTech FZCO" }
-          ]
+            {
+              "value": "NLight BV",
+              "label": "NLight BV",
+              "status_label_key": "quotes.entities.biz_quote.fields.sales_entity.options.nlight_bv",
+              "label_key": "quotes.entities.biz_quote.fields.sales_entity.options.nlight_bv"
+            },
+            {
+              "value": "EcoTech FZCO",
+              "label": "EcoTech FZCO",
+              "status_label_key": "quotes.entities.biz_quote.fields.sales_entity.options.ecotech_fzco",
+              "label_key": "quotes.entities.biz_quote.fields.sales_entity.options.ecotech_fzco"
+            }
+          ],
+          "label_key": "quotes.entities.biz_quote.fields.sales_entity.label"
         },
         {
           "id": "biz_quote.customer_id",
@@ -88,23 +182,60 @@
           "label": "Customer",
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
-          "required": true
+          "required": true,
+          "label_key": "quotes.entities.biz_quote.fields.customer_id.label"
         },
-        { "id": "biz_quote.customer_contact_name", "type": "string", "label": "Customer Contact" },
-        { "id": "biz_quote.customer_reference", "type": "string", "label": "Customer Reference" },
+        {
+          "id": "biz_quote.customer_contact_name",
+          "type": "string",
+          "label": "Customer Contact",
+          "label_key": "quotes.entities.biz_quote.fields.customer_contact_name.label"
+        },
+        {
+          "id": "biz_quote.customer_reference",
+          "type": "string",
+          "label": "Customer Reference",
+          "label_key": "quotes.entities.biz_quote.fields.customer_reference.label"
+        },
         {
           "id": "biz_quote.currency",
           "type": "enum",
           "label": "Currency",
           "default": "EUR",
           "options": [
-            { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" },
-            { "value": "GBP", "label": "GBP" },
-            { "value": "AED", "label": "AED" }
-          ]
+            {
+              "value": "EUR",
+              "label": "EUR",
+              "status_label_key": "quotes.entities.biz_quote.fields.currency.options.eur",
+              "label_key": "quotes.entities.biz_quote.fields.currency.options.eur"
+            },
+            {
+              "value": "USD",
+              "label": "USD",
+              "status_label_key": "quotes.entities.biz_quote.fields.currency.options.usd",
+              "label_key": "quotes.entities.biz_quote.fields.currency.options.usd"
+            },
+            {
+              "value": "GBP",
+              "label": "GBP",
+              "status_label_key": "quotes.entities.biz_quote.fields.currency.options.gbp",
+              "label_key": "quotes.entities.biz_quote.fields.currency.options.gbp"
+            },
+            {
+              "value": "AED",
+              "label": "AED",
+              "status_label_key": "quotes.entities.biz_quote.fields.currency.options.aed",
+              "label_key": "quotes.entities.biz_quote.fields.currency.options.aed"
+            }
+          ],
+          "label_key": "quotes.entities.biz_quote.fields.currency.label"
         },
-        { "id": "biz_quote.sales_owner", "type": "string", "label": "Sales Owner" },
+        {
+          "id": "biz_quote.sales_owner",
+          "type": "string",
+          "label": "Sales Owner",
+          "label_key": "quotes.entities.biz_quote.fields.sales_owner.label"
+        },
         {
           "id": "biz_quote.follow_up_date",
           "type": "date",
@@ -112,13 +243,37 @@
           "visible_when": {
             "op": "in",
             "field": "biz_quote.status",
-            "value": ["draft", "sent"]
-          }
+            "value": [
+              "draft",
+              "sent"
+            ]
+          },
+          "label_key": "quotes.entities.biz_quote.fields.follow_up_date.label"
         },
-        { "id": "biz_quote.payment_terms", "type": "string", "label": "Payment Terms" },
-        { "id": "biz_quote.incoterm", "type": "string", "label": "Incoterm" },
-        { "id": "biz_quote.shipping_terms", "type": "string", "label": "Shipping Terms" },
-        { "id": "biz_quote.validity_notes", "type": "text", "label": "Validity Notes" },
+        {
+          "id": "biz_quote.payment_terms",
+          "type": "string",
+          "label": "Payment Terms",
+          "label_key": "quotes.entities.biz_quote.fields.payment_terms.label"
+        },
+        {
+          "id": "biz_quote.incoterm",
+          "type": "string",
+          "label": "Incoterm",
+          "label_key": "quotes.entities.biz_quote.fields.incoterm.label"
+        },
+        {
+          "id": "biz_quote.shipping_terms",
+          "type": "string",
+          "label": "Shipping Terms",
+          "label_key": "quotes.entities.biz_quote.fields.shipping_terms.label"
+        },
+        {
+          "id": "biz_quote.validity_notes",
+          "type": "text",
+          "label": "Validity Notes",
+          "label_key": "quotes.entities.biz_quote.fields.validity_notes.label"
+        },
         {
           "id": "biz_quote.loss_reason",
           "type": "text",
@@ -126,12 +281,31 @@
           "required_when": {
             "op": "in",
             "field": "biz_quote.status",
-            "value": ["lost", "expired"]
-          }
+            "value": [
+              "lost",
+              "expired"
+            ]
+          },
+          "label_key": "quotes.entities.biz_quote.fields.loss_reason.label"
         },
-        { "id": "biz_quote.internal_notes", "type": "text", "label": "Internal Notes" },
-        { "id": "biz_quote.customer_notes", "type": "text", "label": "Customer Notes" },
-        { "id": "biz_quote.pdf_template_name", "type": "string", "label": "PDF Template Name" },
+        {
+          "id": "biz_quote.internal_notes",
+          "type": "text",
+          "label": "Internal Notes",
+          "label_key": "quotes.entities.biz_quote.fields.internal_notes.label"
+        },
+        {
+          "id": "biz_quote.customer_notes",
+          "type": "text",
+          "label": "Customer Notes",
+          "label_key": "quotes.entities.biz_quote.fields.customer_notes.label"
+        },
+        {
+          "id": "biz_quote.pdf_template_name",
+          "type": "string",
+          "label": "PDF Template Name",
+          "label_key": "quotes.entities.biz_quote.fields.pdf_template_name.label"
+        },
         {
           "id": "biz_quote.linked_customer_order_id",
           "type": "lookup",
@@ -139,16 +313,30 @@
           "entity": "entity.biz_order",
           "display_field": "biz_order.order_number",
           "readonly": true,
-          "visible_when": { "op": "exists", "field": "biz_quote.linked_customer_order_id" }
+          "visible_when": {
+            "op": "exists",
+            "field": "biz_quote.linked_customer_order_id"
+          },
+          "label_key": "quotes.entities.biz_quote.fields.linked_customer_order_id.label"
         },
-        { "id": "biz_quote.linked_customer_order_number", "type": "string", "label": "Linked Order", "readonly": true },
+        {
+          "id": "biz_quote.linked_customer_order_number",
+          "type": "string",
+          "label": "Linked Order",
+          "readonly": true,
+          "label_key": "quotes.entities.biz_quote.fields.linked_customer_order_number.label"
+        },
         {
           "id": "biz_quote.subtotal",
           "type": "number",
           "label": "Subtotal",
           "readonly": true,
           "default": 0,
-          "format": { "kind": "currency", "currency_field": "biz_quote.currency", "precision": 2 },
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_quote.currency",
+            "precision": 2
+          },
           "compute": {
             "aggregate": {
               "op": "sum",
@@ -157,24 +345,37 @@
               "where": {
                 "op": "eq",
                 "field": "biz_quote_line.quote_id",
-                "value": { "ref": "$parent.id" }
+                "value": {
+                  "ref": "$parent.id"
+                }
               }
             }
-          }
+          },
+          "label_key": "quotes.entities.biz_quote.fields.subtotal.label"
         },
         {
           "id": "biz_quote.discount_total",
           "type": "number",
           "label": "Discount Total",
           "default": 0,
-          "format": { "kind": "currency", "currency_field": "biz_quote.currency", "precision": 2 }
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_quote.currency",
+            "precision": 2
+          },
+          "label_key": "quotes.entities.biz_quote.fields.discount_total.label"
         },
         {
           "id": "biz_quote.tax_total",
           "type": "number",
           "label": "Tax Total",
           "default": 0,
-          "format": { "kind": "currency", "currency_field": "biz_quote.currency", "precision": 2 }
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_quote.currency",
+            "precision": 2
+          },
+          "label_key": "quotes.entities.biz_quote.fields.tax_total.label"
         },
         {
           "id": "biz_quote.grand_total",
@@ -182,7 +383,11 @@
           "label": "Grand Total",
           "readonly": true,
           "default": 0,
-          "format": { "kind": "currency", "currency_field": "biz_quote.currency", "precision": 2 },
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_quote.currency",
+            "precision": 2
+          },
           "compute": {
             "expression": {
               "op": "round",
@@ -193,17 +398,24 @@
                     {
                       "op": "sub",
                       "args": [
-                        { "ref": "$current.biz_quote.subtotal" },
-                        { "ref": "$current.biz_quote.discount_total" }
+                        {
+                          "ref": "$current.biz_quote.subtotal"
+                        },
+                        {
+                          "ref": "$current.biz_quote.discount_total"
+                        }
                       ]
                     },
-                    { "ref": "$current.biz_quote.tax_total" }
+                    {
+                      "ref": "$current.biz_quote.tax_total"
+                    }
                   ]
                 },
                 2
               ]
             }
-          }
+          },
+          "label_key": "quotes.entities.biz_quote.fields.grand_total.label"
         },
         {
           "id": "biz_quote.estimated_buy_total",
@@ -219,10 +431,13 @@
               "where": {
                 "op": "eq",
                 "field": "biz_quote_line.quote_id",
-                "value": { "ref": "$parent.id" }
+                "value": {
+                  "ref": "$parent.id"
+                }
               }
             }
-          }
+          },
+          "label_key": "quotes.entities.biz_quote.fields.estimated_buy_total.label"
         },
         {
           "id": "biz_quote.estimated_margin_amount",
@@ -237,14 +452,19 @@
                 {
                   "op": "sub",
                   "args": [
-                    { "ref": "$current.biz_quote.grand_total" },
-                    { "ref": "$current.biz_quote.estimated_buy_total" }
+                    {
+                      "ref": "$current.biz_quote.grand_total"
+                    },
+                    {
+                      "ref": "$current.biz_quote.estimated_buy_total"
+                    }
                   ]
                 },
                 2
               ]
             }
-          }
+          },
+          "label_key": "quotes.entities.biz_quote.fields.estimated_margin_amount.label"
         },
         {
           "id": "biz_quote.estimated_margin_percent",
@@ -252,11 +472,18 @@
           "label": "Estimated Margin %",
           "readonly": true,
           "default": 0,
-          "format": { "kind": "percent", "precision": 2 },
+          "format": {
+            "kind": "percent",
+            "precision": 2
+          },
           "compute": {
             "expression": {
               "op": "if",
-              "condition": { "op": "gt", "field": "biz_quote.grand_total", "value": 0 },
+              "condition": {
+                "op": "gt",
+                "field": "biz_quote.grand_total",
+                "value": 0
+              },
               "then": {
                 "op": "round",
                 "args": [
@@ -266,8 +493,12 @@
                       {
                         "op": "div",
                         "args": [
-                          { "ref": "$current.biz_quote.estimated_margin_amount" },
-                          { "ref": "$current.biz_quote.grand_total" }
+                          {
+                            "ref": "$current.biz_quote.estimated_margin_amount"
+                          },
+                          {
+                            "ref": "$current.biz_quote.grand_total"
+                          }
                         ]
                       },
                       100
@@ -278,23 +509,32 @@
               },
               "else": 0
             }
-          }
+          },
+          "label_key": "quotes.entities.biz_quote.fields.estimated_margin_percent.label"
         }
-      ]
+      ],
+      "label_key": "quotes.entities.biz_quote.label"
     },
     {
       "id": "entity.biz_quote_line",
       "label": "Quote Line",
       "display_field": "biz_quote_line.description",
       "fields": [
-        { "id": "biz_quote_line.id", "type": "uuid", "label": "ID", "readonly": true },
+        {
+          "id": "biz_quote_line.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true,
+          "label_key": "quotes.entities.biz_quote_line.fields.id.label"
+        },
         {
           "id": "biz_quote_line.quote_id",
           "type": "lookup",
           "label": "Quote",
           "entity": "entity.biz_quote",
           "display_field": "biz_quote.quote_number",
-          "required": true
+          "required": true,
+          "label_key": "quotes.entities.biz_quote_line.fields.quote_id.label"
         },
         {
           "id": "biz_quote_line.line_type",
@@ -302,27 +542,56 @@
           "label": "Line Type",
           "default": "catalogue",
           "options": [
-            { "value": "catalogue", "label": "Catalogue" },
-            { "value": "custom", "label": "Custom" }
-          ]
+            {
+              "value": "catalogue",
+              "label": "Catalogue",
+              "status_label_key": "quotes.entities.biz_quote_line.fields.line_type.options.catalogue",
+              "label_key": "quotes.entities.biz_quote_line.fields.line_type.options.catalogue"
+            },
+            {
+              "value": "custom",
+              "label": "Custom",
+              "status_label_key": "quotes.entities.biz_quote_line.fields.line_type.options.custom",
+              "label_key": "quotes.entities.biz_quote_line.fields.line_type.options.custom"
+            }
+          ],
+          "label_key": "quotes.entities.biz_quote_line.fields.line_type.label"
         },
         {
           "id": "biz_quote_line.product_id",
           "type": "lookup",
           "label": "Product",
           "entity": "entity.biz_product",
-          "display_field": "biz_product.name"
+          "display_field": "biz_product.name",
+          "label_key": "quotes.entities.biz_quote_line.fields.product_id.label"
         },
-        { "id": "biz_quote_line.description", "type": "string", "label": "Description", "required": true },
+        {
+          "id": "biz_quote_line.description",
+          "type": "string",
+          "label": "Description",
+          "required": true,
+          "label_key": "quotes.entities.biz_quote_line.fields.description.label"
+        },
         {
           "id": "biz_quote_line.sales_entity_snapshot",
           "type": "enum",
           "label": "Sales Entity Snapshot",
           "default": "NLight BV",
           "options": [
-            { "value": "NLight BV", "label": "NLight BV" },
-            { "value": "EcoTech FZCO", "label": "EcoTech FZCO" }
-          ]
+            {
+              "value": "NLight BV",
+              "label": "NLight BV",
+              "status_label_key": "quotes.entities.biz_quote_line.fields.sales_entity_snapshot.options.nlight_bv",
+              "label_key": "quotes.entities.biz_quote_line.fields.sales_entity_snapshot.options.nlight_bv"
+            },
+            {
+              "value": "EcoTech FZCO",
+              "label": "EcoTech FZCO",
+              "status_label_key": "quotes.entities.biz_quote_line.fields.sales_entity_snapshot.options.ecotech_fzco",
+              "label_key": "quotes.entities.biz_quote_line.fields.sales_entity_snapshot.options.ecotech_fzco"
+            }
+          ],
+          "label_key": "quotes.entities.biz_quote_line.fields.sales_entity_snapshot.label"
         },
         {
           "id": "biz_quote_line.currency_snapshot",
@@ -330,11 +599,32 @@
           "label": "Currency Snapshot",
           "default": "EUR",
           "options": [
-            { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" },
-            { "value": "GBP", "label": "GBP" },
-            { "value": "AED", "label": "AED" }
-          ]
+            {
+              "value": "EUR",
+              "label": "EUR",
+              "status_label_key": "quotes.entities.biz_quote_line.fields.currency_snapshot.options.eur",
+              "label_key": "quotes.entities.biz_quote_line.fields.currency_snapshot.options.eur"
+            },
+            {
+              "value": "USD",
+              "label": "USD",
+              "status_label_key": "quotes.entities.biz_quote_line.fields.currency_snapshot.options.usd",
+              "label_key": "quotes.entities.biz_quote_line.fields.currency_snapshot.options.usd"
+            },
+            {
+              "value": "GBP",
+              "label": "GBP",
+              "status_label_key": "quotes.entities.biz_quote_line.fields.currency_snapshot.options.gbp",
+              "label_key": "quotes.entities.biz_quote_line.fields.currency_snapshot.options.gbp"
+            },
+            {
+              "value": "AED",
+              "label": "AED",
+              "status_label_key": "quotes.entities.biz_quote_line.fields.currency_snapshot.options.aed",
+              "label_key": "quotes.entities.biz_quote_line.fields.currency_snapshot.options.aed"
+            }
+          ],
+          "label_key": "quotes.entities.biz_quote_line.fields.currency_snapshot.label"
         },
         {
           "id": "biz_quote_line.uom",
@@ -342,18 +632,72 @@
           "label": "UOM",
           "default": "EA",
           "options": [
-            { "value": "EA", "label": "Each" },
-            { "value": "SET", "label": "Set" },
-            { "value": "KIT", "label": "Kit" },
-            { "value": "LOT", "label": "Lot" },
-            { "value": "PALLET", "label": "Pallet" },
-            { "value": "CONTAINER", "label": "Container" },
-            { "value": "M", "label": "Meter" }
-          ]
+            {
+              "value": "EA",
+              "label": "Each",
+              "status_label_key": "quotes.entities.biz_quote_line.fields.uom.options.ea",
+              "label_key": "quotes.entities.biz_quote_line.fields.uom.options.ea"
+            },
+            {
+              "value": "SET",
+              "label": "Set",
+              "status_label_key": "quotes.entities.biz_quote_line.fields.uom.options.set",
+              "label_key": "quotes.entities.biz_quote_line.fields.uom.options.set"
+            },
+            {
+              "value": "KIT",
+              "label": "Kit",
+              "status_label_key": "quotes.entities.biz_quote_line.fields.uom.options.kit",
+              "label_key": "quotes.entities.biz_quote_line.fields.uom.options.kit"
+            },
+            {
+              "value": "LOT",
+              "label": "Lot",
+              "status_label_key": "quotes.entities.biz_quote_line.fields.uom.options.lot",
+              "label_key": "quotes.entities.biz_quote_line.fields.uom.options.lot"
+            },
+            {
+              "value": "PALLET",
+              "label": "Pallet",
+              "status_label_key": "quotes.entities.biz_quote_line.fields.uom.options.pallet",
+              "label_key": "quotes.entities.biz_quote_line.fields.uom.options.pallet"
+            },
+            {
+              "value": "CONTAINER",
+              "label": "Container",
+              "status_label_key": "quotes.entities.biz_quote_line.fields.uom.options.container",
+              "label_key": "quotes.entities.biz_quote_line.fields.uom.options.container"
+            },
+            {
+              "value": "M",
+              "label": "Meter",
+              "status_label_key": "quotes.entities.biz_quote_line.fields.uom.options.m",
+              "label_key": "quotes.entities.biz_quote_line.fields.uom.options.m"
+            }
+          ],
+          "label_key": "quotes.entities.biz_quote_line.fields.uom.label"
         },
-        { "id": "biz_quote_line.quantity", "type": "number", "label": "Qty", "default": 1 },
-        { "id": "biz_quote_line.unit_price", "type": "number", "label": "Unit Price", "default": 0 },
-        { "id": "biz_quote_line.line_discount_percent", "type": "number", "label": "Discount %", "default": 0 },
+        {
+          "id": "biz_quote_line.quantity",
+          "type": "number",
+          "label": "Qty",
+          "default": 1,
+          "label_key": "quotes.entities.biz_quote_line.fields.quantity.label"
+        },
+        {
+          "id": "biz_quote_line.unit_price",
+          "type": "number",
+          "label": "Unit Price",
+          "default": 0,
+          "label_key": "quotes.entities.biz_quote_line.fields.unit_price.label"
+        },
+        {
+          "id": "biz_quote_line.line_discount_percent",
+          "type": "number",
+          "label": "Discount %",
+          "default": 0,
+          "label_key": "quotes.entities.biz_quote_line.fields.line_discount_percent.label"
+        },
         {
           "id": "biz_quote_line.line_total",
           "type": "number",
@@ -370,8 +714,12 @@
                     {
                       "op": "mul",
                       "args": [
-                        { "ref": "$current.biz_quote_line.quantity" },
-                        { "ref": "$current.biz_quote_line.unit_price" }
+                        {
+                          "ref": "$current.biz_quote_line.quantity"
+                        },
+                        {
+                          "ref": "$current.biz_quote_line.unit_price"
+                        }
                       ]
                     },
                     {
@@ -381,7 +729,9 @@
                         {
                           "op": "div",
                           "args": [
-                            { "ref": "$current.biz_quote_line.line_discount_percent" },
+                            {
+                              "ref": "$current.biz_quote_line.line_discount_percent"
+                            },
                             100
                           ]
                         }
@@ -392,20 +742,48 @@
                 2
               ]
             }
-          }
+          },
+          "label_key": "quotes.entities.biz_quote_line.fields.line_total.label"
         },
-        { "id": "biz_quote_line.default_buy_price_snapshot", "type": "number", "label": "Buy Price Snapshot", "default": 0 },
+        {
+          "id": "biz_quote_line.default_buy_price_snapshot",
+          "type": "number",
+          "label": "Buy Price Snapshot",
+          "default": 0,
+          "label_key": "quotes.entities.biz_quote_line.fields.default_buy_price_snapshot.label"
+        },
         {
           "id": "biz_quote_line.buy_currency_snapshot",
           "type": "enum",
           "label": "Buy Currency Snapshot",
           "default": "USD",
           "options": [
-            { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" },
-            { "value": "GBP", "label": "GBP" },
-            { "value": "AED", "label": "AED" }
-          ]
+            {
+              "value": "EUR",
+              "label": "EUR",
+              "status_label_key": "quotes.entities.biz_quote_line.fields.buy_currency_snapshot.options.eur",
+              "label_key": "quotes.entities.biz_quote_line.fields.buy_currency_snapshot.options.eur"
+            },
+            {
+              "value": "USD",
+              "label": "USD",
+              "status_label_key": "quotes.entities.biz_quote_line.fields.buy_currency_snapshot.options.usd",
+              "label_key": "quotes.entities.biz_quote_line.fields.buy_currency_snapshot.options.usd"
+            },
+            {
+              "value": "GBP",
+              "label": "GBP",
+              "status_label_key": "quotes.entities.biz_quote_line.fields.buy_currency_snapshot.options.gbp",
+              "label_key": "quotes.entities.biz_quote_line.fields.buy_currency_snapshot.options.gbp"
+            },
+            {
+              "value": "AED",
+              "label": "AED",
+              "status_label_key": "quotes.entities.biz_quote_line.fields.buy_currency_snapshot.options.aed",
+              "label_key": "quotes.entities.biz_quote_line.fields.buy_currency_snapshot.options.aed"
+            }
+          ],
+          "label_key": "quotes.entities.biz_quote_line.fields.buy_currency_snapshot.label"
         },
         {
           "id": "biz_quote_line.buy_total",
@@ -420,14 +798,19 @@
                 {
                   "op": "mul",
                   "args": [
-                    { "ref": "$current.biz_quote_line.quantity" },
-                    { "ref": "$current.biz_quote_line.default_buy_price_snapshot" }
+                    {
+                      "ref": "$current.biz_quote_line.quantity"
+                    },
+                    {
+                      "ref": "$current.biz_quote_line.default_buy_price_snapshot"
+                    }
                   ]
                 },
                 2
               ]
             }
-          }
+          },
+          "label_key": "quotes.entities.biz_quote_line.fields.buy_total.label"
         },
         {
           "id": "biz_quote_line.estimated_margin_amount",
@@ -442,14 +825,19 @@
                 {
                   "op": "sub",
                   "args": [
-                    { "ref": "$current.biz_quote_line.line_total" },
-                    { "ref": "$current.biz_quote_line.buy_total" }
+                    {
+                      "ref": "$current.biz_quote_line.line_total"
+                    },
+                    {
+                      "ref": "$current.biz_quote_line.buy_total"
+                    }
                   ]
                 },
                 2
               ]
             }
-          }
+          },
+          "label_key": "quotes.entities.biz_quote_line.fields.estimated_margin_amount.label"
         },
         {
           "id": "biz_quote_line.estimated_margin_percent",
@@ -460,7 +848,11 @@
           "compute": {
             "expression": {
               "op": "if",
-              "condition": { "op": "gt", "field": "biz_quote_line.line_total", "value": 0 },
+              "condition": {
+                "op": "gt",
+                "field": "biz_quote_line.line_total",
+                "value": 0
+              },
               "then": {
                 "op": "round",
                 "args": [
@@ -470,8 +862,12 @@
                       {
                         "op": "div",
                         "args": [
-                          { "ref": "$current.biz_quote_line.estimated_margin_amount" },
-                          { "ref": "$current.biz_quote_line.line_total" }
+                          {
+                            "ref": "$current.biz_quote_line.estimated_margin_amount"
+                          },
+                          {
+                            "ref": "$current.biz_quote_line.line_total"
+                          }
                         ]
                       },
                       100
@@ -482,7 +878,8 @@
               },
               "else": 0
             }
-          }
+          },
+          "label_key": "quotes.entities.biz_quote_line.fields.estimated_margin_percent.label"
         }
       ],
       "activity": {
@@ -503,7 +900,8 @@
           "biz_quote_line.default_buy_price_snapshot",
           "biz_quote_line.buy_total"
         ]
-      }
+      },
+      "label_key": "quotes.entities.biz_quote_line.label"
     }
   ],
   "workflows": [
@@ -512,39 +910,183 @@
       "entity": "entity.biz_quote",
       "status_field": "biz_quote.status",
       "states": [
-        { "id": "draft", "label": "Draft", "required_fields": ["biz_quote.customer_id", "biz_quote.currency"] },
-        { "id": "sent", "label": "Sent", "required_fields": ["biz_quote.customer_id", "biz_quote.expiry_date"] },
-        { "id": "accepted", "label": "Accepted", "required_fields": ["biz_quote.customer_id", "biz_quote.expiry_date"] },
-        { "id": "lost", "label": "Lost" },
-        { "id": "expired", "label": "Expired" }
+        {
+          "id": "draft",
+          "label": "Draft",
+          "required_fields": [
+            "biz_quote.customer_id",
+            "biz_quote.currency"
+          ],
+          "status_label_key": "quotes.workflows.quote_status_workflow.states.draft.label",
+          "label_key": "quotes.workflows.quote_status_workflow.states.draft.label"
+        },
+        {
+          "id": "sent",
+          "label": "Sent",
+          "required_fields": [
+            "biz_quote.customer_id",
+            "biz_quote.expiry_date"
+          ],
+          "status_label_key": "quotes.workflows.quote_status_workflow.states.sent.label",
+          "label_key": "quotes.workflows.quote_status_workflow.states.sent.label"
+        },
+        {
+          "id": "accepted",
+          "label": "Accepted",
+          "required_fields": [
+            "biz_quote.customer_id",
+            "biz_quote.expiry_date"
+          ],
+          "status_label_key": "quotes.workflows.quote_status_workflow.states.accepted.label",
+          "label_key": "quotes.workflows.quote_status_workflow.states.accepted.label"
+        },
+        {
+          "id": "lost",
+          "label": "Lost",
+          "status_label_key": "quotes.workflows.quote_status_workflow.states.lost.label",
+          "label_key": "quotes.workflows.quote_status_workflow.states.lost.label"
+        },
+        {
+          "id": "expired",
+          "label": "Expired",
+          "status_label_key": "quotes.workflows.quote_status_workflow.states.expired.label",
+          "label_key": "quotes.workflows.quote_status_workflow.states.expired.label"
+        }
       ],
       "transitions": [
-        { "from": "draft", "to": "sent", "label": "Send Quote" },
-        { "from": "sent", "to": "accepted", "label": "Mark Accepted" },
-        { "from": "draft", "to": "lost", "label": "Mark Lost" },
-        { "from": "sent", "to": "lost", "label": "Mark Lost" },
-        { "from": "sent", "to": "expired", "label": "Mark Expired" }
+        {
+          "from": "draft",
+          "to": "sent",
+          "label": "Send Quote",
+          "action_label_key": "quotes.workflows.quote_status_workflow.transitions.draft_sent.label",
+          "label_key": "quotes.workflows.quote_status_workflow.transitions.draft_sent.label"
+        },
+        {
+          "from": "sent",
+          "to": "accepted",
+          "label": "Mark Accepted",
+          "action_label_key": "quotes.workflows.quote_status_workflow.transitions.sent_accepted.label",
+          "label_key": "quotes.workflows.quote_status_workflow.transitions.sent_accepted.label"
+        },
+        {
+          "from": "draft",
+          "to": "lost",
+          "label": "Mark Lost",
+          "action_label_key": "quotes.workflows.quote_status_workflow.transitions.draft_lost.label",
+          "label_key": "quotes.workflows.quote_status_workflow.transitions.draft_lost.label"
+        },
+        {
+          "from": "sent",
+          "to": "lost",
+          "label": "Mark Lost",
+          "action_label_key": "quotes.workflows.quote_status_workflow.transitions.sent_lost.label",
+          "label_key": "quotes.workflows.quote_status_workflow.transitions.sent_lost.label"
+        },
+        {
+          "from": "sent",
+          "to": "expired",
+          "label": "Mark Expired",
+          "action_label_key": "quotes.workflows.quote_status_workflow.transitions.sent_expired.label",
+          "label_key": "quotes.workflows.quote_status_workflow.transitions.sent_expired.label"
+        }
       ],
       "required_fields_by_state": {
-        "sent": ["biz_quote.customer_id", "biz_quote.expiry_date"],
-        "accepted": ["biz_quote.customer_id", "biz_quote.expiry_date"],
-        "lost": ["biz_quote.loss_reason"],
-        "expired": ["biz_quote.loss_reason"]
+        "sent": [
+          "biz_quote.customer_id",
+          "biz_quote.expiry_date"
+        ],
+        "accepted": [
+          "biz_quote.customer_id",
+          "biz_quote.expiry_date"
+        ],
+        "lost": [
+          "biz_quote.loss_reason"
+        ],
+        "expired": [
+          "biz_quote.loss_reason"
+        ]
       }
     }
   ],
   "triggers": [
-    { "id": "biz_quotes.record.biz_quote.created", "label": "Quote created", "event": "record.created", "entity_id": "entity.biz_quote" },
-    { "id": "biz_quotes.record.biz_quote.updated", "label": "Quote updated", "event": "record.updated", "entity_id": "entity.biz_quote" },
-    { "id": "biz_quotes.record.biz_quote_line.created", "label": "Quote Line created", "event": "record.created", "entity_id": "entity.biz_quote_line" },
-    { "id": "biz_quotes.record.biz_quote_line.updated", "label": "Quote Line updated", "event": "record.updated", "entity_id": "entity.biz_quote_line" },
-    { "id": "biz_quotes.workflow.biz_quote.status_changed", "label": "Quote status changed", "event": "workflow.status_changed", "entity_id": "entity.biz_quote", "status_field": "biz_quote.status" },
-    { "id": "biz_quotes.action.quote_new.clicked", "label": "New Quote clicked", "event": "action.clicked", "action_id": "action.quote_new" },
-    { "id": "biz_quotes.action.quote_mark_sent.clicked", "label": "Mark Sent clicked", "event": "action.clicked", "action_id": "action.quote_mark_sent" },
-    { "id": "biz_quotes.action.quote_mark_accepted.clicked", "label": "Mark Accepted clicked", "event": "action.clicked", "action_id": "action.quote_mark_accepted" },
-    { "id": "biz_quotes.action.quote_convert_to_order.clicked", "label": "Create Order clicked", "event": "action.clicked", "action_id": "action.quote_convert_to_order" },
-    { "id": "biz_quotes.action.quote_open_lost_modal.clicked", "label": "Mark Lost clicked", "event": "action.clicked", "action_id": "action.quote_open_lost_modal" },
-    { "id": "biz_quotes.action.quote_open_expired_modal.clicked", "label": "Mark Expired clicked", "event": "action.clicked", "action_id": "action.quote_open_expired_modal" }
+    {
+      "id": "biz_quotes.record.biz_quote.created",
+      "label": "Quote created",
+      "label_key": "quotes.triggers.quote_created",
+      "event": "record.created",
+      "entity_id": "entity.biz_quote"
+    },
+    {
+      "id": "biz_quotes.record.biz_quote.updated",
+      "label": "Quote updated",
+      "label_key": "quotes.triggers.quote_updated",
+      "event": "record.updated",
+      "entity_id": "entity.biz_quote"
+    },
+    {
+      "id": "biz_quotes.record.biz_quote_line.created",
+      "label": "Quote Line created",
+      "label_key": "quotes.triggers.quote_line_created",
+      "event": "record.created",
+      "entity_id": "entity.biz_quote_line"
+    },
+    {
+      "id": "biz_quotes.record.biz_quote_line.updated",
+      "label": "Quote Line updated",
+      "label_key": "quotes.triggers.quote_line_updated",
+      "event": "record.updated",
+      "entity_id": "entity.biz_quote_line"
+    },
+    {
+      "id": "biz_quotes.workflow.biz_quote.status_changed",
+      "label": "Quote status changed",
+      "label_key": "quotes.triggers.quote_status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.biz_quote",
+      "status_field": "biz_quote.status"
+    },
+    {
+      "id": "biz_quotes.action.quote_new.clicked",
+      "label": "New Quote clicked",
+      "label_key": "quotes.triggers.new_quote_clicked",
+      "event": "action.clicked",
+      "action_id": "action.quote_new"
+    },
+    {
+      "id": "biz_quotes.action.quote_mark_sent.clicked",
+      "label": "Mark Sent clicked",
+      "label_key": "quotes.triggers.mark_sent_clicked",
+      "event": "action.clicked",
+      "action_id": "action.quote_mark_sent"
+    },
+    {
+      "id": "biz_quotes.action.quote_mark_accepted.clicked",
+      "label": "Mark Accepted clicked",
+      "label_key": "quotes.triggers.mark_accepted_clicked",
+      "event": "action.clicked",
+      "action_id": "action.quote_mark_accepted"
+    },
+    {
+      "id": "biz_quotes.action.quote_convert_to_order.clicked",
+      "label": "Create Order clicked",
+      "label_key": "quotes.triggers.create_order_clicked",
+      "event": "action.clicked",
+      "action_id": "action.quote_convert_to_order"
+    },
+    {
+      "id": "biz_quotes.action.quote_open_lost_modal.clicked",
+      "label": "Mark Lost clicked",
+      "label_key": "quotes.triggers.mark_lost_clicked",
+      "event": "action.clicked",
+      "action_id": "action.quote_open_lost_modal"
+    },
+    {
+      "id": "biz_quotes.action.quote_open_expired_modal.clicked",
+      "label": "Mark Expired clicked",
+      "label_key": "quotes.triggers.mark_expired_clicked",
+      "event": "action.clicked",
+      "action_id": "action.quote_open_expired_modal"
+    }
   ],
   "transformations": [
     {
@@ -552,15 +1094,33 @@
       "source_entity_id": "entity.biz_quote",
       "target_entity_id": "entity.biz_order",
       "field_mappings": {
-        "biz_order.customer_id": { "from": "biz_quote.customer_id" },
-        "biz_order.source_quote_number": { "from": "biz_quote.quote_number" },
-        "biz_order.sales_entity": { "from": "biz_quote.sales_entity" },
-        "biz_order.order_date": { "ref": "$today" },
-        "biz_order.currency": { "from": "biz_quote.currency" },
-        "biz_order.customer_reference": { "from": "biz_quote.customer_reference" },
-        "biz_order.delivery_terms": { "from": "biz_quote.shipping_terms" },
-        "biz_order.notes": { "from": "biz_quote.internal_notes" },
-        "biz_order.status": { "value": "draft" }
+        "biz_order.customer_id": {
+          "from": "biz_quote.customer_id"
+        },
+        "biz_order.source_quote_number": {
+          "from": "biz_quote.quote_number"
+        },
+        "biz_order.sales_entity": {
+          "from": "biz_quote.sales_entity"
+        },
+        "biz_order.order_date": {
+          "ref": "$today"
+        },
+        "biz_order.currency": {
+          "from": "biz_quote.currency"
+        },
+        "biz_order.customer_reference": {
+          "from": "biz_quote.customer_reference"
+        },
+        "biz_order.delivery_terms": {
+          "from": "biz_quote.shipping_terms"
+        },
+        "biz_order.notes": {
+          "from": "biz_quote.internal_notes"
+        },
+        "biz_order.status": {
+          "value": "draft"
+        }
       },
       "child_mappings": [
         {
@@ -569,15 +1129,33 @@
           "source_link_field": "biz_quote_line.quote_id",
           "target_link_field": "biz_order_line.customer_order_id",
           "field_mappings": {
-            "biz_order_line.product_id": { "from": "biz_quote_line.product_id" },
-            "biz_order_line.description": { "from": "biz_quote_line.description" },
-            "biz_order_line.sales_entity_snapshot": { "from": "biz_quote_line.sales_entity_snapshot" },
-            "biz_order_line.currency_snapshot": { "from": "biz_quote_line.currency_snapshot" },
-            "biz_order_line.uom": { "from": "biz_quote_line.uom" },
-            "biz_order_line.quantity": { "from": "biz_quote_line.quantity" },
-            "biz_order_line.unit_price": { "from": "biz_quote_line.unit_price" },
-            "biz_order_line.unit_cost_snapshot": { "from": "biz_quote_line.default_buy_price_snapshot" },
-            "biz_order_line.source_quote_line_ref": { "ref": "$source.id" }
+            "biz_order_line.product_id": {
+              "from": "biz_quote_line.product_id"
+            },
+            "biz_order_line.description": {
+              "from": "biz_quote_line.description"
+            },
+            "biz_order_line.sales_entity_snapshot": {
+              "from": "biz_quote_line.sales_entity_snapshot"
+            },
+            "biz_order_line.currency_snapshot": {
+              "from": "biz_quote_line.currency_snapshot"
+            },
+            "biz_order_line.uom": {
+              "from": "biz_quote_line.uom"
+            },
+            "biz_order_line.quantity": {
+              "from": "biz_quote_line.quantity"
+            },
+            "biz_order_line.unit_price": {
+              "from": "biz_quote_line.unit_price"
+            },
+            "biz_order_line.unit_cost_snapshot": {
+              "from": "biz_quote_line.default_buy_price_snapshot"
+            },
+            "biz_order_line.source_quote_line_ref": {
+              "ref": "$source.id"
+            }
           }
         }
       ],
@@ -591,59 +1169,110 @@
         }
       },
       "validation": {
-        "require_source_fields": ["biz_quote.quote_number", "biz_quote.customer_id"],
+        "require_source_fields": [
+          "biz_quote.quote_number",
+          "biz_quote.customer_id"
+        ],
         "require_child_records": true,
         "prevent_if_target_linked": true
       }
     }
   ],
   "actions": [
-    { "id": "action.quote_new", "kind": "open_form", "label": "New Quote", "target": "biz_quote.form" },
+    {
+      "id": "action.quote_new",
+      "kind": "open_form",
+      "label": "New Quote",
+      "target": "biz_quote.form",
+      "action_label_key": "quotes.actions.action_quote_new.label"
+    },
     {
       "id": "action.quote_mark_sent",
       "kind": "update_record",
       "entity_id": "entity.biz_quote",
       "label": "Mark Sent",
-      "patch": { "biz_quote.status": "sent" },
+      "patch": {
+        "biz_quote.status": "sent"
+      },
       "confirm": {
         "title": "Mark quote as sent?",
-        "body": "Use this once the commercial quote has actually been shared with the customer."
+        "body": "Use this once the commercial quote has actually been shared with the customer.",
+        "title_key": "quotes.actions.action_quote_mark_sent.confirm.title"
       },
-      "visible_when": { "op": "eq", "field": "biz_quote.status", "value": "draft" },
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_quote.status",
+        "value": "draft"
+      },
       "enabled_when": {
         "op": "and",
         "conditions": [
-          { "op": "exists", "field": "biz_quote.customer_id" },
-          { "op": "exists", "field": "biz_quote.expiry_date" },
-          { "op": "gt", "field": "biz_quote.grand_total", "value": 0 }
+          {
+            "op": "exists",
+            "field": "biz_quote.customer_id"
+          },
+          {
+            "op": "exists",
+            "field": "biz_quote.expiry_date"
+          },
+          {
+            "op": "gt",
+            "field": "biz_quote.grand_total",
+            "value": 0
+          }
         ]
-      }
+      },
+      "action_label_key": "quotes.actions.action_quote_mark_sent.label"
     },
     {
       "id": "action.quote_mark_accepted",
       "kind": "update_record",
       "entity_id": "entity.biz_quote",
       "label": "Mark Accepted",
-      "patch": { "biz_quote.status": "accepted" },
+      "patch": {
+        "biz_quote.status": "accepted"
+      },
       "confirm": {
         "title": "Mark quote as accepted?",
-        "body": "Use this once the customer has accepted the quote and the deal is ready for order conversion."
+        "body": "Use this once the customer has accepted the quote and the deal is ready for order conversion.",
+        "title_key": "quotes.actions.action_quote_mark_accepted.confirm.title"
       },
       "visible_when": {
         "op": "and",
         "conditions": [
-          { "op": "eq", "field": "biz_quote.status", "value": "sent" },
-          { "op": "not", "condition": { "op": "exists", "field": "biz_quote.linked_customer_order_id" } }
+          {
+            "op": "eq",
+            "field": "biz_quote.status",
+            "value": "sent"
+          },
+          {
+            "op": "not",
+            "condition": {
+              "op": "exists",
+              "field": "biz_quote.linked_customer_order_id"
+            }
+          }
         ]
       },
       "enabled_when": {
         "op": "and",
         "conditions": [
-          { "op": "exists", "field": "biz_quote.customer_id" },
-          { "op": "exists", "field": "biz_quote.expiry_date" },
-          { "op": "gt", "field": "biz_quote.grand_total", "value": 0 }
+          {
+            "op": "exists",
+            "field": "biz_quote.customer_id"
+          },
+          {
+            "op": "exists",
+            "field": "biz_quote.expiry_date"
+          },
+          {
+            "op": "gt",
+            "field": "biz_quote.grand_total",
+            "value": 0
+          }
         ]
-      }
+      },
+      "action_label_key": "quotes.actions.action_quote_mark_accepted.label"
     },
     {
       "id": "action.quote_convert_to_order",
@@ -654,21 +1283,40 @@
       "visible_when": {
         "op": "and",
         "conditions": [
-          { "op": "eq", "field": "biz_quote.status", "value": "accepted" },
-          { "op": "not", "condition": { "op": "exists", "field": "biz_quote.linked_customer_order_id" } }
+          {
+            "op": "eq",
+            "field": "biz_quote.status",
+            "value": "accepted"
+          },
+          {
+            "op": "not",
+            "condition": {
+              "op": "exists",
+              "field": "biz_quote.linked_customer_order_id"
+            }
+          }
         ]
       },
       "enabled_when": {
         "op": "and",
         "conditions": [
-          { "op": "exists", "field": "biz_quote.customer_id" },
-          { "op": "gt", "field": "biz_quote.grand_total", "value": 0 }
+          {
+            "op": "exists",
+            "field": "biz_quote.customer_id"
+          },
+          {
+            "op": "gt",
+            "field": "biz_quote.grand_total",
+            "value": 0
+          }
         ]
       },
       "confirm": {
         "title": "Create order from quote?",
-        "body": "This will create an Order and copy the accepted quote lines."
-      }
+        "body": "This will create an Order and copy the accepted quote lines.",
+        "title_key": "quotes.actions.action_quote_convert_to_order.confirm.title"
+      },
+      "action_label_key": "quotes.actions.action_quote_convert_to_order.label"
     },
     {
       "id": "action.quote_open_lost_modal",
@@ -679,10 +1327,19 @@
       "visible_when": {
         "op": "or",
         "conditions": [
-          { "op": "eq", "field": "biz_quote.status", "value": "draft" },
-          { "op": "eq", "field": "biz_quote.status", "value": "sent" }
+          {
+            "op": "eq",
+            "field": "biz_quote.status",
+            "value": "draft"
+          },
+          {
+            "op": "eq",
+            "field": "biz_quote.status",
+            "value": "sent"
+          }
         ]
-      }
+      },
+      "action_label_key": "quotes.actions.action_quote_open_lost_modal.label"
     },
     {
       "id": "action.quote_open_expired_modal",
@@ -690,7 +1347,12 @@
       "entity_id": "entity.biz_quote",
       "label": "Mark Expired",
       "modal_id": "modal.quote_mark_expired",
-      "visible_when": { "op": "eq", "field": "biz_quote.status", "value": "sent" }
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_quote.status",
+        "value": "sent"
+      },
+      "action_label_key": "quotes.actions.action_quote_open_expired_modal.label"
     }
   ],
   "views": [
@@ -699,22 +1361,47 @@
       "kind": "list",
       "entity": "entity.biz_quote",
       "columns": [
-        { "field_id": "biz_quote.quote_number" },
-        { "field_id": "biz_quote.quote_date" },
-        { "field_id": "biz_quote.customer_id" },
-        { "field_id": "biz_quote.sales_entity" },
-        { "field_id": "biz_quote.currency" },
-        { "field_id": "biz_quote.grand_total" },
-        { "field_id": "biz_quote.status" },
-        { "field_id": "biz_quote.sales_owner" }
+        {
+          "field_id": "biz_quote.quote_number"
+        },
+        {
+          "field_id": "biz_quote.quote_date"
+        },
+        {
+          "field_id": "biz_quote.customer_id"
+        },
+        {
+          "field_id": "biz_quote.sales_entity"
+        },
+        {
+          "field_id": "biz_quote.currency"
+        },
+        {
+          "field_id": "biz_quote.grand_total"
+        },
+        {
+          "field_id": "biz_quote.status"
+        },
+        {
+          "field_id": "biz_quote.sales_owner"
+        }
       ],
       "header": {
-        "primary_actions": [{ "action_id": "action.quote_new" }],
+        "primary_actions": [
+          {
+            "action_id": "action.quote_new"
+          }
+        ],
         "open_record_target": "page:biz_quote.form_page",
         "search": {
           "enabled": true,
           "placeholder": "Search quotes...",
-          "fields": ["biz_quote.quote_number", "biz_quote.customer_reference", "biz_quote.sales_owner"]
+          "fields": [
+            "biz_quote.quote_number",
+            "biz_quote.customer_reference",
+            "biz_quote.sales_owner"
+          ],
+          "placeholder_key": "quotes.views.list.search.placeholder"
         },
         "filters": [
           {
@@ -723,25 +1410,86 @@
             "domain": {
               "op": "in",
               "field": "biz_quote.status",
-              "value": ["draft", "sent", "accepted"]
-            }
+              "value": [
+                "draft",
+                "sent",
+                "accepted"
+              ]
+            },
+            "label_key": "quotes.views.list.filters.open.label"
           },
-          { "id": "draft", "label": "Draft Quotes", "domain": { "op": "eq", "field": "biz_quote.status", "value": "draft" } },
-          { "id": "sent", "label": "Sent Quotes", "domain": { "op": "eq", "field": "biz_quote.status", "value": "sent" } },
-          { "id": "accepted", "label": "Accepted Quotes", "domain": { "op": "eq", "field": "biz_quote.status", "value": "accepted" } },
+          {
+            "id": "draft",
+            "label": "Draft Quotes",
+            "domain": {
+              "op": "eq",
+              "field": "biz_quote.status",
+              "value": "draft"
+            },
+            "label_key": "quotes.views.list.filters.draft.label"
+          },
+          {
+            "id": "sent",
+            "label": "Sent Quotes",
+            "domain": {
+              "op": "eq",
+              "field": "biz_quote.status",
+              "value": "sent"
+            },
+            "label_key": "quotes.views.list.filters.sent.label"
+          },
+          {
+            "id": "accepted",
+            "label": "Accepted Quotes",
+            "domain": {
+              "op": "eq",
+              "field": "biz_quote.status",
+              "value": "accepted"
+            },
+            "label_key": "quotes.views.list.filters.accepted.label"
+          },
           {
             "id": "ready_to_convert",
             "label": "Ready To Convert",
             "domain": {
               "op": "and",
               "conditions": [
-                { "op": "eq", "field": "biz_quote.status", "value": "accepted" },
-                { "op": "not", "condition": { "op": "exists", "field": "biz_quote.linked_customer_order_id" } }
+                {
+                  "op": "eq",
+                  "field": "biz_quote.status",
+                  "value": "accepted"
+                },
+                {
+                  "op": "not",
+                  "condition": {
+                    "op": "exists",
+                    "field": "biz_quote.linked_customer_order_id"
+                  }
+                }
               ]
-            }
+            },
+            "label_key": "quotes.views.list.filters.ready_to_convert.label"
           },
-          { "id": "expired", "label": "Expired Quotes", "domain": { "op": "eq", "field": "biz_quote.status", "value": "expired" } },
-          { "id": "lost", "label": "Lost Quotes", "domain": { "op": "eq", "field": "biz_quote.status", "value": "lost" } }
+          {
+            "id": "expired",
+            "label": "Expired Quotes",
+            "domain": {
+              "op": "eq",
+              "field": "biz_quote.status",
+              "value": "expired"
+            },
+            "label_key": "quotes.views.list.filters.expired.label"
+          },
+          {
+            "id": "lost",
+            "label": "Lost Quotes",
+            "domain": {
+              "op": "eq",
+              "field": "biz_quote.status",
+              "value": "lost"
+            },
+            "label_key": "quotes.views.list.filters.lost.label"
+          }
         ]
       }
     },
@@ -771,7 +1519,8 @@
             "biz_quote.incoterm",
             "biz_quote.shipping_terms",
             "biz_quote.linked_customer_order_id"
-          ]
+          ],
+          "section_title_key": "quotes.views.form.sections.summary.title"
         },
         {
           "id": "lines",
@@ -808,15 +1557,101 @@
               "biz_quote_line.line_type": "custom"
             },
             "columns": [
-              { "field_id": "biz_quote_line.product_id", "label": "Product", "readonly": true, "width": 220 },
-              { "field_id": "biz_quote_line.description", "label": "Description", "width": 460 },
-              { "field_id": "biz_quote_line.uom", "label": "UOM", "type": "enum", "width": 105, "options": [{ "value": "EA", "label": "Each" }, { "value": "SET", "label": "Set" }, { "value": "KIT", "label": "Kit" }, { "value": "LOT", "label": "Lot" }, { "value": "PALLET", "label": "Pallet" }, { "value": "CONTAINER", "label": "Container" }, { "value": "M", "label": "Meter" }] },
-              { "field_id": "biz_quote_line.quantity", "label": "Qty", "type": "number", "width": 90, "align": "right" },
-              { "field_id": "biz_quote_line.unit_price", "label": "Unit Price", "type": "number", "width": 155, "align": "right", "currency_field": "biz_quote_line.currency_snapshot" },
-              { "field_id": "biz_quote_line.line_discount_percent", "label": "Disc %", "type": "number", "width": 95, "align": "right" },
-              { "field_id": "biz_quote_line.line_total", "label": "Line Total", "type": "number", "readonly": true, "width": 155, "align": "right", "currency_field": "biz_quote_line.currency_snapshot" }
+              {
+                "field_id": "biz_quote_line.product_id",
+                "label": "Product",
+                "label_key": "common.product",
+                "readonly": true,
+                "width": 220
+              },
+              {
+                "field_id": "biz_quote_line.description",
+                "label": "Description",
+                "label_key": "common.description",
+                "width": 460
+              },
+              {
+                "field_id": "biz_quote_line.uom",
+                "label": "UOM",
+                "label_key": "common.uom",
+                "type": "enum",
+                "width": 105,
+                "options": [
+                  {
+                    "value": "EA",
+                    "label": "Each",
+                    "label_key": "common.each"
+                  },
+                  {
+                    "value": "SET",
+                    "label": "Set",
+                    "label_key": "common.set"
+                  },
+                  {
+                    "value": "KIT",
+                    "label": "Kit",
+                    "label_key": "common.kit"
+                  },
+                  {
+                    "value": "LOT",
+                    "label": "Lot",
+                    "label_key": "common.lot"
+                  },
+                  {
+                    "value": "PALLET",
+                    "label": "Pallet",
+                    "label_key": "common.pallet"
+                  },
+                  {
+                    "value": "CONTAINER",
+                    "label": "Container",
+                    "label_key": "common.container"
+                  },
+                  {
+                    "value": "M",
+                    "label": "Meter",
+                    "label_key": "common.meter"
+                  }
+                ]
+              },
+              {
+                "field_id": "biz_quote_line.quantity",
+                "label": "Qty",
+                "label_key": "common.qty",
+                "type": "number",
+                "width": 90,
+                "align": "right"
+              },
+              {
+                "field_id": "biz_quote_line.unit_price",
+                "label": "Unit Price",
+                "label_key": "common.unit_price",
+                "type": "number",
+                "width": 155,
+                "align": "right",
+                "currency_field": "biz_quote_line.currency_snapshot"
+              },
+              {
+                "field_id": "biz_quote_line.line_discount_percent",
+                "label": "Disc %",
+                "label_key": "common.discount_percent",
+                "type": "number",
+                "width": 95,
+                "align": "right"
+              },
+              {
+                "field_id": "biz_quote_line.line_total",
+                "label": "Line Total",
+                "label_key": "common.line_total",
+                "type": "number",
+                "readonly": true,
+                "width": 155,
+                "align": "right",
+                "currency_field": "biz_quote_line.currency_snapshot"
+              }
             ]
-          }
+          },
+          "section_title_key": "quotes.views.form.sections.lines.title"
         },
         {
           "id": "totals",
@@ -828,7 +1663,8 @@
             "biz_quote.discount_total",
             "biz_quote.tax_total",
             "biz_quote.grand_total"
-          ]
+          ],
+          "section_title_key": "quotes.views.form.sections.totals.title"
         },
         {
           "id": "profitability",
@@ -839,7 +1675,8 @@
             "biz_quote.estimated_buy_total",
             "biz_quote.estimated_margin_amount",
             "biz_quote.estimated_margin_percent"
-          ]
+          ],
+          "section_title_key": "quotes.views.form.sections.profitability.title"
         },
         {
           "id": "notes",
@@ -850,30 +1687,78 @@
             "biz_quote.loss_reason",
             "biz_quote.internal_notes",
             "biz_quote.pdf_template_name"
-          ]
+          ],
+          "section_title_key": "quotes.views.form.sections.notes.title"
         }
       ],
       "header": {
-        "statusbar": { "field_id": "biz_quote.status" },
+        "statusbar": {
+          "field_id": "biz_quote.status"
+        },
         "auto_state_actions": false,
         "primary_actions": [
-          { "action_id": "action.quote_mark_sent" },
-          { "action_id": "action.quote_mark_accepted" },
-          { "action_id": "action.quote_convert_to_order" }
+          {
+            "action_id": "action.quote_mark_sent"
+          },
+          {
+            "action_id": "action.quote_mark_accepted"
+          },
+          {
+            "action_id": "action.quote_convert_to_order"
+          }
         ],
         "secondary_actions": [
-          { "action_id": "action.quote_open_lost_modal" },
-          { "action_id": "action.quote_open_expired_modal" }
+          {
+            "action_id": "action.quote_open_lost_modal"
+          },
+          {
+            "action_id": "action.quote_open_expired_modal"
+          }
         ],
         "tabs": {
           "style": "lifted",
           "default_tab": "summary",
           "tabs": [
-            { "id": "summary", "label": "Summary", "sections": ["summary"] },
-            { "id": "lines", "label": "Line Items", "sections": ["lines"] },
-            { "id": "totals", "label": "Totals", "sections": ["totals"] },
-            { "id": "profitability", "label": "Profitability", "sections": ["profitability"] },
-            { "id": "notes", "label": "Notes & Terms", "sections": ["notes"] }
+            {
+              "id": "summary",
+              "label": "Summary",
+              "tab_label_key": "common.summary",
+              "sections": [
+                "summary"
+              ]
+            },
+            {
+              "id": "lines",
+              "label": "Line Items",
+              "tab_label_key": "common.line_items",
+              "sections": [
+                "lines"
+              ]
+            },
+            {
+              "id": "totals",
+              "label": "Totals",
+              "tab_label_key": "common.totals",
+              "sections": [
+                "totals"
+              ]
+            },
+            {
+              "id": "profitability",
+              "label": "Profitability",
+              "tab_label_key": "common.profitability",
+              "sections": [
+                "profitability"
+              ]
+            },
+            {
+              "id": "notes",
+              "label": "Notes & Terms",
+              "tab_label_key": "common.notes_terms",
+              "sections": [
+                "notes"
+              ]
+            }
           ]
         }
       },
@@ -944,20 +1829,37 @@
       "kind": "list",
       "entity": "entity.biz_quote_line",
       "columns": [
-        { "field_id": "biz_quote_line.quote_id" },
-        { "field_id": "biz_quote_line.product_id" },
-        { "field_id": "biz_quote_line.description" },
-        { "field_id": "biz_quote_line.uom" },
-        { "field_id": "biz_quote_line.quantity" },
-        { "field_id": "biz_quote_line.unit_price" },
-        { "field_id": "biz_quote_line.line_total" }
+        {
+          "field_id": "biz_quote_line.quote_id"
+        },
+        {
+          "field_id": "biz_quote_line.product_id"
+        },
+        {
+          "field_id": "biz_quote_line.description"
+        },
+        {
+          "field_id": "biz_quote_line.uom"
+        },
+        {
+          "field_id": "biz_quote_line.quantity"
+        },
+        {
+          "field_id": "biz_quote_line.unit_price"
+        },
+        {
+          "field_id": "biz_quote_line.line_total"
+        }
       ],
       "header": {
         "open_record_target": "page:biz_quote_line.form_page",
         "search": {
           "enabled": true,
           "placeholder": "Search quote lines...",
-          "fields": ["biz_quote_line.description"]
+          "fields": [
+            "biz_quote_line.description"
+          ],
+          "placeholder_key": "quotes.views.list.search.placeholder"
         }
       }
     },
@@ -986,7 +1888,8 @@
             "biz_quote_line.buy_total",
             "biz_quote_line.estimated_margin_amount",
             "biz_quote_line.estimated_margin_percent"
-          ]
+          ],
+          "section_title_key": "quotes.views.form.sections.main.title"
         }
       ],
       "activity": {
@@ -1021,7 +1924,12 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "kind": "navigate", "label": "New Quote", "target": "page:biz_quote.form_page" }
+          {
+            "kind": "navigate",
+            "label": "New Quote",
+            "target": "page:biz_quote.form_page",
+            "action_label_key": "quotes.pages.list_page.header.actions.navigate.label"
+          }
         ]
       },
       "content": [
@@ -1035,10 +1943,19 @@
               "subtitle": "Draft and sent pipeline",
               "entity_id": "entity.biz_quote",
               "measure": "count",
-              "domain": { "op": "in", "field": "biz_quote.status", "value": ["draft", "sent"] },
+              "domain": {
+                "op": "in",
+                "field": "biz_quote.status",
+                "value": [
+                  "draft",
+                  "sent"
+                ]
+              },
               "icon": "lucide:FileCheck2",
               "tone": "primary",
-              "format": "number"
+              "format": "number",
+              "label_key": "quotes.pages.list_page.blocks.1.cards.quote_open_count.label",
+              "subtitle_key": "quotes.pages.list_page.blocks.1.cards.quote_open_count.subtitle"
             },
             {
               "id": "quote_ready_to_convert_count",
@@ -1049,13 +1966,25 @@
               "domain": {
                 "op": "and",
                 "conditions": [
-                  { "op": "eq", "field": "biz_quote.status", "value": "accepted" },
-                  { "op": "not", "condition": { "op": "exists", "field": "biz_quote.linked_customer_order_id" } }
+                  {
+                    "op": "eq",
+                    "field": "biz_quote.status",
+                    "value": "accepted"
+                  },
+                  {
+                    "op": "not",
+                    "condition": {
+                      "op": "exists",
+                      "field": "biz_quote.linked_customer_order_id"
+                    }
+                  }
                 ]
               },
               "icon": "lucide:BadgeCheck",
               "tone": "warning",
-              "format": "number"
+              "format": "number",
+              "label_key": "quotes.pages.list_page.blocks.1.cards.quote_ready_to_convert_count.label",
+              "subtitle_key": "quotes.pages.list_page.blocks.1.cards.quote_ready_to_convert_count.subtitle"
             },
             {
               "id": "quote_sent_count",
@@ -1063,10 +1992,16 @@
               "subtitle": "Sent to customer",
               "entity_id": "entity.biz_quote",
               "measure": "count",
-              "domain": { "op": "eq", "field": "biz_quote.status", "value": "sent" },
+              "domain": {
+                "op": "eq",
+                "field": "biz_quote.status",
+                "value": "sent"
+              },
               "icon": "lucide:Send",
               "tone": "success",
-              "format": "number"
+              "format": "number",
+              "label_key": "quotes.pages.list_page.blocks.1.cards.quote_sent_count.label",
+              "subtitle_key": "quotes.pages.list_page.blocks.1.cards.quote_sent_count.subtitle"
             },
             {
               "id": "quote_exception_count",
@@ -1074,10 +2009,19 @@
               "subtitle": "Lost and expired",
               "entity_id": "entity.biz_quote",
               "measure": "count",
-              "domain": { "op": "in", "field": "biz_quote.status", "value": ["lost", "expired"] },
+              "domain": {
+                "op": "in",
+                "field": "biz_quote.status",
+                "value": [
+                  "lost",
+                  "expired"
+                ]
+              },
               "icon": "lucide:CircleOff",
               "tone": "accent",
-              "format": "number"
+              "format": "number",
+              "label_key": "quotes.pages.list_page.blocks.1.cards.quote_exception_count.label",
+              "subtitle_key": "quotes.pages.list_page.blocks.1.cards.quote_exception_count.subtitle"
             }
           ]
         },
@@ -1091,16 +2035,34 @@
               "default_mode": "kanban",
               "default_filter_id": "open",
               "modes": [
-                { "mode": "list", "target": "view:biz_quote.list" },
-                { "mode": "kanban", "target": "view:biz_quote.kanban", "default_group_by": "biz_quote.status" },
-                { "mode": "calendar", "target": "view:biz_quote.calendar" },
-                { "mode": "graph", "target": "view:biz_quote.graph" },
-                { "mode": "pivot", "target": "view:biz_quote.list", "default_group_by": "biz_quote.status" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_quote.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:biz_quote.kanban",
+                  "default_group_by": "biz_quote.status"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:biz_quote.calendar"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:biz_quote.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:biz_quote.list",
+                  "default_group_by": "biz_quote.status"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "quotes.pages.list_page.title"
     },
     {
       "id": "biz_quote.draft_page",
@@ -1109,7 +2071,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.quote_new" }
+          {
+            "action_id": "action.quote_new"
+          }
         ]
       },
       "content": [
@@ -1123,12 +2087,16 @@
               "default_mode": "list",
               "default_filter_id": "draft",
               "modes": [
-                { "mode": "list", "target": "view:biz_quote.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_quote.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "quotes.pages.draft_page.title"
     },
     {
       "id": "biz_quote.sent_page",
@@ -1137,7 +2105,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.quote_new" }
+          {
+            "action_id": "action.quote_new"
+          }
         ]
       },
       "content": [
@@ -1151,12 +2121,16 @@
               "default_mode": "list",
               "default_filter_id": "sent",
               "modes": [
-                { "mode": "list", "target": "view:biz_quote.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_quote.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "quotes.pages.sent_page.title"
     },
     {
       "id": "biz_quote.ready_to_convert_page",
@@ -1165,7 +2139,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.quote_new" }
+          {
+            "action_id": "action.quote_new"
+          }
         ]
       },
       "content": [
@@ -1179,18 +2155,24 @@
               "default_mode": "list",
               "default_filter_id": "ready_to_convert",
               "modes": [
-                { "mode": "list", "target": "view:biz_quote.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_quote.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "quotes.pages.ready_to_convert_page.title"
     },
     {
       "id": "biz_quote.form_page",
       "title": "Quote",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none"
+      },
       "content": [
         {
           "kind": "record",
@@ -1209,7 +2191,10 @@
                       "kind": "container",
                       "variant": "card",
                       "content": [
-                        { "kind": "view", "target": "view:biz_quote.form" }
+                        {
+                          "kind": "view",
+                          "target": "view:biz_quote.form"
+                        }
                       ]
                     }
                   ]
@@ -1221,7 +2206,11 @@
                       "kind": "container",
                       "variant": "card",
                       "content": [
-                        { "kind": "chatter", "entity_id": "entity.biz_quote", "record_ref": "$record.id" }
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.biz_quote",
+                          "record_ref": "$record.id"
+                        }
                       ]
                     }
                   ]
@@ -1230,13 +2219,16 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "quotes.pages.form_page.title"
     },
     {
       "id": "biz_quote_line.list_page",
       "title": "Quote Lines",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none"
+      },
       "content": [
         {
           "kind": "container",
@@ -1247,18 +2239,24 @@
               "entity_id": "entity.biz_quote_line",
               "default_mode": "list",
               "modes": [
-                { "mode": "list", "target": "view:biz_quote_line.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_quote_line.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "quotes.pages.list_page.title"
     },
     {
       "id": "biz_quote_line.form_page",
       "title": "Quote Line",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none"
+      },
       "content": [
         {
           "kind": "record",
@@ -1269,12 +2267,16 @@
               "kind": "container",
               "variant": "card",
               "content": [
-                { "kind": "view", "target": "view:biz_quote_line.form" }
+                {
+                  "kind": "view",
+                  "target": "view:biz_quote_line.form"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "quotes.pages.form_page.title"
     }
   ],
   "modals": [
@@ -1293,15 +2295,21 @@
           "label": "Mark Lost",
           "patch": {
             "biz_quote.status": "lost",
-            "biz_quote.loss_reason": { "ref": "$record.biz_quote.loss_reason" }
-          }
+            "biz_quote.loss_reason": {
+              "ref": "$record.biz_quote.loss_reason"
+            }
+          },
+          "action_label_key": "quotes.modals.quote_mark_lost.actions.update_record.label"
         },
         {
           "kind": "close_modal",
           "label": "Close",
-          "variant": "ghost"
+          "variant": "ghost",
+          "action_label_key": "quotes.modals.quote_mark_lost.actions.close_modal.label"
         }
-      ]
+      ],
+      "title_key": "quotes.modals.quote_mark_lost.title",
+      "description_key": "quotes.modals.quote_mark_lost.description"
     },
     {
       "id": "modal.quote_mark_expired",
@@ -1318,15 +2326,21 @@
           "label": "Mark Expired",
           "patch": {
             "biz_quote.status": "expired",
-            "biz_quote.loss_reason": { "ref": "$record.biz_quote.loss_reason" }
-          }
+            "biz_quote.loss_reason": {
+              "ref": "$record.biz_quote.loss_reason"
+            }
+          },
+          "action_label_key": "quotes.modals.quote_mark_expired.actions.update_record.label"
         },
         {
           "kind": "close_modal",
           "label": "Close",
-          "variant": "ghost"
+          "variant": "ghost",
+          "action_label_key": "quotes.modals.quote_mark_expired.actions.close_modal.label"
         }
-      ]
+      ],
+      "title_key": "quotes.modals.quote_mark_expired.title",
+      "description_key": "quotes.modals.quote_mark_expired.description"
     }
   ],
   "interfaces": {
@@ -1350,6 +2364,7 @@
             "id": "quotes_by_status",
             "type": "group",
             "title": "Quotes by Status",
+            "title_key": "quotes.dashboard.quotes_by_status",
             "group_by": "biz_quote.status",
             "measure": "count"
           }

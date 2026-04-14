@@ -4,21 +4,14 @@ import { apiFetch } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
-const AVAILABLE_SCOPES = [
-  { id: "meta.read", label: "Metadata Read", help: "List entities and field metadata." },
-  { id: "records.read", label: "Records Read", help: "Read records through the external API." },
-  { id: "records.write", label: "Records Write", help: "Create and update records through the external API." },
-  { id: "automations.read", label: "Automations Read", help: "List published automations." },
-  { id: "automations.write", label: "Automations Write", help: "Trigger published automations." },
-];
-
-function TokenModal({ token, onClose }) {
+function TokenModal({ t, token, onClose }) {
   return (
     <div className="modal modal-open">
       <div className="modal-box max-w-2xl">
-        <h3 className="text-lg font-semibold">Copy API Key Now</h3>
-        <p className="mt-1 text-sm opacity-70">This is the only time the full token is shown. Store it now.</p>
+        <h3 className="text-lg font-semibold">{t("settings.api_credentials.copy_title")}</h3>
+        <p className="mt-1 text-sm opacity-70">{t("settings.api_credentials.copy_description")}</p>
         <textarea className="textarea textarea-bordered mt-4 min-h-[8rem] w-full font-mono text-sm" readOnly value={token} />
         <div className="modal-action">
           <button
@@ -32,10 +25,10 @@ function TokenModal({ token, onClose }) {
               }
             }}
           >
-            Copy
+            {t("common.copy")}
           </button>
           <button type="button" className="btn btn-primary" onClick={onClose}>
-            Done
+            {t("common.done")}
           </button>
         </div>
       </div>
@@ -54,6 +47,7 @@ function DetailPanel({ title, description, children, tone = "bg-base-100" }) {
 }
 
 export default function SettingsApiCredentialDetailPage() {
+  const { t } = useI18n();
   const { credentialId } = useParams();
   const navigate = useNavigate();
   const { pushToast } = useToast();
@@ -69,6 +63,17 @@ export default function SettingsApiCredentialDetailPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [revealedToken, setRevealedToken] = useState("");
 
+  const availableScopes = useMemo(
+    () => [
+      { id: "meta.read", label: t("settings.api_credentials.scopes.meta_read.label"), help: t("settings.api_credentials.scopes.meta_read.help") },
+      { id: "records.read", label: t("settings.api_credentials.scopes.records_read.label"), help: t("settings.api_credentials.scopes.records_read.help") },
+      { id: "records.write", label: t("settings.api_credentials.scopes.records_write.label"), help: t("settings.api_credentials.scopes.records_write.help") },
+      { id: "automations.read", label: t("settings.api_credentials.scopes.automations_read.label"), help: t("settings.api_credentials.scopes.automations_read.help") },
+      { id: "automations.write", label: t("settings.api_credentials.scopes.automations_write.label"), help: t("settings.api_credentials.scopes.automations_write.help") },
+    ],
+    [t],
+  );
+
   async function load() {
     setLoading(true);
     setError("");
@@ -77,7 +82,7 @@ export default function SettingsApiCredentialDetailPage() {
       setItems(Array.isArray(response?.api_credentials) ? response.api_credentials : []);
     } catch (err) {
       setItems([]);
-      setError(err?.message || "Failed to load API credentials");
+      setError(err?.message || t("settings.api_credentials.load_failed"));
     } finally {
       setLoading(false);
     }
@@ -90,7 +95,7 @@ export default function SettingsApiCredentialDetailPage() {
       setLogs(Array.isArray(response?.logs) ? response.logs : []);
     } catch (err) {
       setLogs([]);
-      setError((current) => current || err?.message || "Failed to load request logs");
+      setError((current) => current || err?.message || t("settings.api_credentials.request_logs_load_failed"));
     } finally {
       setLoadingLogs(false);
     }
@@ -110,11 +115,11 @@ export default function SettingsApiCredentialDetailPage() {
     setError("");
     try {
       await apiFetch(`/settings/api-credentials/${encodeURIComponent(item.id)}/revoke`, { method: "POST" });
-      pushToast("success", "API credential revoked.");
+      pushToast("success", t("settings.api_credentials.revoked_one"));
       await load();
       await loadLogs();
     } catch (err) {
-      setError(err?.message || "Failed to revoke API credential");
+      setError(err?.message || t("settings.api_credentials.revoke_failed"));
     } finally {
       setRevokingId("");
     }
@@ -130,11 +135,11 @@ export default function SettingsApiCredentialDetailPage() {
         body: {},
       });
       setRevealedToken(response?.token || "");
-      pushToast("success", "API credential rotated.");
+      pushToast("success", t("settings.api_credentials.rotated"));
       await load();
       await loadLogs();
     } catch (err) {
-      setError(err?.message || "Failed to rotate API credential");
+      setError(err?.message || t("settings.api_credentials.rotate_failed"));
     } finally {
       setRotatingId("");
     }
@@ -146,10 +151,10 @@ export default function SettingsApiCredentialDetailPage() {
     setError("");
     try {
       await apiFetch(`/settings/api-credentials/${encodeURIComponent(item.id)}`, { method: "DELETE" });
-      pushToast("success", "API credential deleted.");
+      pushToast("success", t("settings.api_credentials.deleted_one"));
       navigate("/settings/api-credentials");
     } catch (err) {
-      setError(err?.message || "Failed to delete API credential");
+      setError(err?.message || t("settings.api_credentials.delete_failed"));
     } finally {
       setDeleting(false);
     }
@@ -160,8 +165,8 @@ export default function SettingsApiCredentialDetailPage() {
       title=""
       subtitle=""
       tabs={[
-        { id: "details", label: "Details" },
-        { id: "requests", label: "Request Logs" },
+        { id: "details", label: t("settings.api_credentials.details_tab") },
+        { id: "requests", label: t("settings.api_credentials.request_logs_tab") },
       ]}
       activeTabId={activeTabId}
       onTabChange={setActiveTabId}
@@ -171,34 +176,36 @@ export default function SettingsApiCredentialDetailPage() {
       {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
 
       {loading ? (
-        <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-70">Loading…</div>
+        <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-70">{t("common.loading")}</div>
       ) : !item ? (
-        <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-60">Credential not found.</div>
+        <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-60">{t("settings.api_credentials.not_found")}</div>
       ) : activeTabId === "details" ? (
         <div className="space-y-4">
-          <DetailPanel title="Credential Details" description="Rotate and revoke from here. Scopes are fixed after creation.">
+          <DetailPanel title={t("settings.api_credentials.details_title")} description={t("settings.api_credentials.details_description")}>
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="text-lg font-semibold">{item.name || "Untitled"}</div>
-                <span className={`badge ${item.status === "active" ? "badge-success" : "badge-ghost"}`}>{item.status || "active"}</span>
+                <div className="text-lg font-semibold">{item.name || t("settings.untitled")}</div>
+                <span className={`badge ${item.status === "active" ? "badge-success" : "badge-ghost"}`}>
+                  {item.status === "revoked" ? t("common.revoked") : t("common.active")}
+                </span>
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="rounded-box bg-base-200/40 p-3">
-                  <div className="text-xs uppercase tracking-wide opacity-60">Key Prefix</div>
+                  <div className="text-xs uppercase tracking-wide opacity-60">{t("settings.api_credentials.key_prefix")}</div>
                   <div className="mt-1 font-mono text-sm">{item.key_prefix || "—"}</div>
                 </div>
                 <div className="rounded-box bg-base-200/40 p-3">
-                  <div className="text-xs uppercase tracking-wide opacity-60">Expiry</div>
-                  <div className="mt-1 text-sm">{formatDateTime(item.expires_at) || "No expiry"}</div>
+                  <div className="text-xs uppercase tracking-wide opacity-60">{t("settings.api_credentials.expiry")}</div>
+                  <div className="mt-1 text-sm">{formatDateTime(item.expires_at) || t("settings.api_credentials.no_expiry")}</div>
                 </div>
                 <div className="rounded-box bg-base-200/40 p-3">
-                  <div className="text-xs uppercase tracking-wide opacity-60">Last Rotated</div>
+                  <div className="text-xs uppercase tracking-wide opacity-60">{t("settings.api_credentials.last_rotated")}</div>
                   <div className="mt-1 text-sm">{formatDateTime(item.last_rotated_at) || "—"}</div>
                 </div>
                 <div className="rounded-box bg-base-200/40 p-3">
-                  <div className="text-xs uppercase tracking-wide opacity-60">Last Used</div>
-                  <div className="mt-1 text-sm">{formatDateTime(item.last_used_at) || "Never"}</div>
+                  <div className="text-xs uppercase tracking-wide opacity-60">{t("settings.api_credentials.last_used")}</div>
+                  <div className="mt-1 text-sm">{formatDateTime(item.last_used_at) || t("settings.api_credentials.never")}</div>
                 </div>
               </div>
 
@@ -209,7 +216,7 @@ export default function SettingsApiCredentialDetailPage() {
                   onClick={rotateCredential}
                   disabled={item.status !== "active" || rotatingId === item.id}
                 >
-                  {rotatingId === item.id ? "Rotating..." : "Rotate Key"}
+                  {rotatingId === item.id ? t("settings.api_credentials.rotating") : t("settings.api_credentials.rotate_key")}
                 </button>
                 <button
                   type="button"
@@ -217,30 +224,30 @@ export default function SettingsApiCredentialDetailPage() {
                   onClick={revokeCredential}
                   disabled={item.status !== "active" || revokingId === item.id}
                 >
-                  {revokingId === item.id ? "Revoking..." : "Revoke Key"}
+                  {revokingId === item.id ? t("settings.api_credentials.revoking") : t("settings.api_credentials.revoke_key")}
                 </button>
                 <button
                   type="button"
                   className="btn btn-sm btn-error"
                   onClick={() => setShowDeleteModal(true)}
                   disabled={item.status !== "revoked" || deleting}
-                  title={item.status === "revoked" ? "Delete API credential" : "Revoke this API credential before deleting it"}
+                  title={item.status === "revoked" ? t("settings.api_credentials.delete_credential") : t("settings.api_credentials.revoke_before_delete_single")}
                 >
-                  {deleting ? "Deleting..." : "Delete Key"}
+                  {deleting ? t("common.deleting") : t("settings.api_credentials.delete_key")}
                 </button>
               </div>
             </div>
           </DetailPanel>
 
-          <DetailPanel title="Allowed Scopes" description="Keep credentials narrow. Only grant what the destination system needs.">
+          <DetailPanel title={t("settings.api_credentials.allowed_scopes")} description={t("settings.api_credentials.allowed_scopes_description")}>
             <div className="space-y-2">
-              {AVAILABLE_SCOPES.map((scope) => {
+              {availableScopes.map((scope) => {
                 const enabled = (item.scopes || []).includes(scope.id);
                 return (
                   <div key={scope.id} className={`rounded-box border px-3 py-3 ${enabled ? "border-base-300 bg-base-100" : "border-base-300 bg-base-200/30 opacity-60"}`}>
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-sm font-medium">{scope.label}</div>
-                      <span className={`badge badge-sm ${enabled ? "badge-success" : "badge-ghost"}`}>{enabled ? "Enabled" : "Off"}</span>
+                      <span className={`badge badge-sm ${enabled ? "badge-success" : "badge-ghost"}`}>{enabled ? t("settings.enabled") : t("settings.off")}</span>
                     </div>
                     <div className="mt-1 text-xs opacity-70">{scope.help}</div>
                   </div>
@@ -251,28 +258,28 @@ export default function SettingsApiCredentialDetailPage() {
         </div>
       ) : (
         <DetailPanel
-          title={`Request Logs for ${item.name || item.key_prefix}`}
-          description="Recent `/ext/v1` activity for this credential."
+          title={t("settings.api_credentials.request_logs_for", { name: item.name || item.key_prefix })}
+          description={t("settings.api_credentials.request_logs_description")}
         >
           <div className="overflow-x-auto">
             <table className="table">
               <thead>
                 <tr>
-                  <th>When</th>
-                  <th>Request</th>
-                  <th>Status</th>
-                  <th>Duration</th>
+                  <th>{t("settings.api_credentials.when")}</th>
+                  <th>{t("settings.api_credentials.request")}</th>
+                  <th>{t("settings.api_credentials.status")}</th>
+                  <th>{t("settings.api_credentials.duration")}</th>
                   <th>IP</th>
                 </tr>
               </thead>
               <tbody>
                 {loadingLogs ? (
                   <tr>
-                    <td colSpan={5} className="py-10 text-center text-sm opacity-60">Loading request logs...</td>
+                    <td colSpan={5} className="py-10 text-center text-sm opacity-60">{t("settings.api_credentials.loading_request_logs")}</td>
                   </tr>
                 ) : selectedLogs.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-10 text-center text-sm opacity-60">No external API requests logged yet.</td>
+                    <td colSpan={5} className="py-10 text-center text-sm opacity-60">{t("settings.api_credentials.no_requests")}</td>
                   </tr>
                 ) : (
                   selectedLogs.map((log) => (
@@ -284,7 +291,7 @@ export default function SettingsApiCredentialDetailPage() {
                           {log.status_code}
                         </span>
                       </td>
-                      <td className="text-sm">{log.duration_ms != null ? `${log.duration_ms} ms` : "—"}</td>
+                      <td className="text-sm">{log.duration_ms != null ? t("settings.api_credentials.duration_ms", { value: log.duration_ms }) : "—"}</td>
                       <td className="text-sm">{log.ip_address || "—"}</td>
                     </tr>
                   ))
@@ -295,29 +302,27 @@ export default function SettingsApiCredentialDetailPage() {
         </DetailPanel>
       )}
 
-      {revealedToken ? <TokenModal token={revealedToken} onClose={() => setRevealedToken("")} /> : null}
+      {revealedToken ? <TokenModal t={t} token={revealedToken} onClose={() => setRevealedToken("")} /> : null}
 
       {showDeleteModal ? (
         <div className="modal modal-open">
           <div className="modal-box max-w-md">
-            <h3 className="text-lg font-semibold">Delete API credential?</h3>
-            <p className="mt-2 text-sm opacity-70">
-              This will permanently remove this revoked API credential. Request logs will remain for audit history.
-            </p>
+            <h3 className="text-lg font-semibold">{t("settings.api_credentials.delete_title_one")}</h3>
+            <p className="mt-2 text-sm opacity-70">{t("settings.api_credentials.delete_single_body")}</p>
             {item?.status !== "revoked" ? (
-              <div className="alert alert-warning mt-4 text-sm">Revoke this API credential before deleting it.</div>
+              <div className="alert alert-warning mt-4 text-sm">{t("settings.api_credentials.revoke_before_delete_single")}</div>
             ) : null}
             <div className="modal-action">
               <button className="btn btn-ghost btn-sm" type="button" onClick={() => !deleting && setShowDeleteModal(false)} disabled={deleting}>
-                Cancel
+                {t("common.cancel")}
               </button>
               <button className="btn btn-error btn-sm" type="button" onClick={deleteCredential} disabled={deleting || item?.status !== "revoked"}>
-                {deleting ? "Deleting..." : "Delete"}
+                {deleting ? t("common.deleting") : t("common.delete")}
               </button>
             </div>
           </div>
           <button className="modal-backdrop" type="button" onClick={() => !deleting && setShowDeleteModal(false)}>
-            close
+            {t("common.close")}
           </button>
         </div>
       ) : null}

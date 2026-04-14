@@ -5,9 +5,15 @@ const ToastContext = createContext(null);
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
 
-  function pushToast(type, message) {
+  function pushToast(typeOrToast, message) {
+    const type = typeof typeOrToast === "object" && typeOrToast
+      ? String(typeOrToast.type || "info")
+      : typeOrToast;
+    const text = typeof typeOrToast === "object" && typeOrToast
+      ? typeOrToast.message
+      : message;
     const id = Date.now().toString(36);
-    setToasts((prev) => [...prev, { id, type, message }]);
+    setToasts((prev) => [...prev, { id, type, message: text }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4000);

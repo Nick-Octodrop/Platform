@@ -4,19 +4,21 @@ import { PRIMARY_BUTTON_SM } from "../components/buttonStyles.js";
 import SystemListToolbar from "./SystemListToolbar.jsx";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "./pageShell.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 export default function SettingsShell({
   title,
   categories = [],
   blocks = [],
 }) {
+  const { t } = useI18n();
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
 
   const navCategories = useMemo(() => {
-    return [{ id: "all", label: "All" }, ...categories];
-  }, [categories]);
+    return [{ id: "all", label: t("common.all") }, ...categories];
+  }, [categories, t]);
   const toolbarFilters = useMemo(
     () => navCategories.map((cat) => ({ id: cat.id, label: cat.label })),
     [navCategories]
@@ -53,7 +55,7 @@ export default function SettingsShell({
           </div>
           <div className="mt-4 flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
             {filteredBlocks.length === 0 ? (
-              <div className="text-sm opacity-60">No settings match your search.</div>
+              <div className="text-sm opacity-60">{t("empty.no_settings_match_search")}</div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {filteredBlocks.map((block) => (
@@ -69,13 +71,13 @@ export default function SettingsShell({
                     )}
                     {block.wired === false && (
                       <div className="mt-2">
-                        <span className="badge badge-warning badge-sm">Not wired</span>
+                        <span className="badge badge-warning badge-sm">{t("common.not_wired")}</span>
                       </div>
                     )}
                     <div className="mt-auto pt-4 flex items-center gap-3">
                       {block.wired === false ? (
                         <button className={`${PRIMARY_BUTTON_SM} btn-disabled`} type="button" disabled>
-                          {block.primary?.label || "Open"}
+                          {block.primary?.label || t("common.open")}
                         </button>
                       ) : (
                         <Link className={PRIMARY_BUTTON_SM} to={block.primary.to_page}>

@@ -5,8 +5,10 @@ import { Bell, MoreHorizontal } from "lucide-react";
 import { SOFT_BUTTON_XS } from "../components/buttonStyles.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 import { resolveNotificationTarget } from "../utils/notificationTargets.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 export default function NotificationBell() {
+  const { t } = useI18n();
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [count, setCount] = useState(0);
   const [items, setItems] = useState([]);
@@ -181,32 +183,32 @@ export default function NotificationBell() {
         <div className="absolute right-0 mt-2 w-80 card bg-base-100 shadow z-50">
           <div className="card-body p-3">
             <div className="flex items-center justify-between gap-2">
-              <div className="font-semibold">Notifications</div>
+              <div className="font-semibold">{t("common.notifications.title")}</div>
               <div className="dropdown dropdown-end">
                 <button
                   type="button"
                   tabIndex={0}
                   className={SOFT_BUTTON_XS}
-                  aria-label="Notification actions"
+                  aria-label={t("common.notifications.actions")}
                 >
                   <MoreHorizontal className="h-4 w-4" />
                 </button>
                 <ul tabIndex={0} className="dropdown-content menu z-[240] mt-2 w-44 rounded-box border border-base-300 bg-base-100 p-2 shadow">
                   <li>
                     <button type="button" onClick={markAllSeen} disabled={items.length === 0}>
-                      Mark all seen
+                      {t("common.notifications.mark_all")}
                     </button>
                   </li>
                   <li>
                     <button type="button" className="text-error" onClick={() => setShowClearModal(true)} disabled={items.length === 0}>
-                      Clear all
+                      {t("common.notifications.clear_all")}
                     </button>
                   </li>
                 </ul>
               </div>
             </div>
             <div className="mt-2 space-y-2 max-h-80 overflow-auto">
-              {items.length === 0 && <div className="text-xs opacity-60">No notifications</div>}
+              {items.length === 0 && <div className="text-xs opacity-60">{t("common.notifications.empty")}</div>}
               {items.map((n) => (
                 <button
                   key={n.id}
@@ -227,38 +229,38 @@ export default function NotificationBell() {
           <button
             type="button"
             className="absolute inset-0 bg-base-content/35"
-            aria-label="Close notifications"
+            aria-label={t("common.close")}
             onClick={() => setOpen(false)}
           />
           <div className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4">
             <div className="mx-auto mb-4 h-1.5 w-24 rounded-full bg-base-300" />
             <div className="mb-3 flex items-center justify-between gap-2">
-              <div className="font-semibold">Notifications</div>
+              <div className="font-semibold">{t("common.notifications.title")}</div>
               <div className="dropdown dropdown-end">
                 <button
                   type="button"
                   tabIndex={0}
                   className={SOFT_BUTTON_XS}
-                  aria-label="Notification actions"
+                  aria-label={t("common.notifications.actions")}
                 >
                   <MoreHorizontal className="h-4 w-4" />
                 </button>
                 <ul tabIndex={0} className="dropdown-content menu z-[240] mt-2 w-44 rounded-box border border-base-300 bg-base-100 p-2 shadow">
                   <li>
                     <button type="button" onClick={markAllSeen} disabled={items.length === 0}>
-                      Mark all seen
+                      {t("common.notifications.mark_all")}
                     </button>
                   </li>
                   <li>
                     <button type="button" className="text-error" onClick={() => setShowClearModal(true)} disabled={items.length === 0}>
-                      Clear all
+                      {t("common.notifications.clear_all")}
                     </button>
                   </li>
                 </ul>
               </div>
             </div>
             <div className="space-y-2 max-h-[60vh] overflow-auto">
-              {items.length === 0 && <div className="text-sm opacity-60 px-2 py-4">No notifications</div>}
+              {items.length === 0 && <div className="text-sm opacity-60 px-2 py-4">{t("common.notifications.empty")}</div>}
               {items.map((n) => (
                 <button
                   key={n.id}
@@ -277,16 +279,16 @@ export default function NotificationBell() {
       {showClearModal ? (
         <div className="fixed inset-0 z-[230] flex items-center justify-center bg-base-content/40 px-4">
           <div className="w-full max-w-sm rounded-box border border-base-300 bg-base-100 p-5 shadow-2xl">
-            <h3 className="text-lg font-semibold">Clear notifications</h3>
+            <h3 className="text-lg font-semibold">{t("common.notifications.clear_title")}</h3>
             <p className="mt-2 text-sm text-base-content/70">
-              Remove all notifications from your list. This cannot be undone.
+              {t("common.notifications.clear_body")}
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <button type="button" className="btn btn-ghost" onClick={() => setShowClearModal(false)} disabled={clearing}>
-                Cancel
+                {t("common.cancel")}
               </button>
               <button type="button" className="btn btn-error" onClick={clearAll} disabled={clearing}>
-                {clearing ? "Clearing..." : "Clear all"}
+                {clearing ? t("common.notifications.clearing") : t("common.notifications.clear_all")}
               </button>
             </div>
           </div>

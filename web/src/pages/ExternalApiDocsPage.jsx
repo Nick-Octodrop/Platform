@@ -12,6 +12,7 @@ import {
 import { API_URL } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 function trimTrailingSlash(value) {
   return String(value || "").replace(/\/+$/, "");
@@ -87,6 +88,7 @@ function EndpointRow({ label, endpoints }) {
 }
 
 export function ExternalApiDocsRedirectPage({ path, label }) {
+  const { t } = useI18n();
   const url = useMemo(() => buildDocUrl(path), [path]);
 
   useEffect(() => {
@@ -101,19 +103,19 @@ export function ExternalApiDocsRedirectPage({ path, label }) {
           <div className={DESKTOP_PAGE_SHELL_BODY}>
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] opacity-50">Octodrop API</p>
-                <h1 className="mt-2 text-2xl font-semibold tracking-tight">{label || "Redirecting"}</h1>
-                <p className="mt-2 text-sm leading-6 opacity-70">Opening the backend documentation endpoint.</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] opacity-50">{t("settings.external_api_docs.badge")}</p>
+                <h1 className="mt-2 text-2xl font-semibold tracking-tight">{label || t("settings.external_api_docs.redirecting")}</h1>
+                <p className="mt-2 text-sm leading-6 opacity-70">{t("settings.external_api_docs.redirect_description")}</p>
               </div>
               <span className="badge badge-success badge-outline">v1</span>
             </div>
             <div className="mt-5 rounded-box border border-base-300 bg-base-200/60 p-4">
-              <div className="text-xs font-semibold uppercase tracking-[0.14em] opacity-50">Destination</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] opacity-50">{t("settings.external_api_docs.destination")}</div>
               <div className="mt-2 break-all font-mono text-sm">{url}</div>
             </div>
             <a className="btn btn-primary btn-sm mt-5 gap-2" href={url}>
               <ExternalLink className="h-4 w-4" />
-              Open now
+              {t("settings.external_api_docs.open_now")}
             </a>
           </div>
         </div>
@@ -124,6 +126,7 @@ export function ExternalApiDocsRedirectPage({ path, label }) {
 
 export default function ExternalApiDocsPage() {
   const { pushToast } = useToast();
+  const { t } = useI18n();
   const apiBaseUrl = useMemo(() => resolveApiBaseUrl(), []);
   const curlExample = `curl "${apiBaseUrl || "https://api.example.com"}/ext/v1/meta/entities?limit=50" \\
   -H "X-Api-Key: octo_live_..."`;
@@ -131,46 +134,46 @@ export default function ExternalApiDocsPage() {
   const links = useMemo(
     () => [
       {
-        label: "Swagger UI",
-        description: "Interactive reference for testing calls with an API key.",
+        label: t("settings.external_api_docs.links.swagger.label"),
+        description: t("settings.external_api_docs.links.swagger.description"),
         href: buildDocUrl("/ext/v1/docs"),
         icon: Terminal,
       },
       {
-        label: "ReDoc",
-        description: "Clean reference view for reading the full public API.",
+        label: t("settings.external_api_docs.links.redoc.label"),
+        description: t("settings.external_api_docs.links.redoc.description"),
         href: buildDocUrl("/ext/v1/redoc"),
         icon: BookOpen,
       },
       {
-        label: "OpenAPI JSON",
-        description: "Machine-readable schema for SDKs and generated clients.",
+        label: t("settings.external_api_docs.links.openapi.label"),
+        description: t("settings.external_api_docs.links.openapi.description"),
         href: buildDocUrl("/ext/v1/openapi.json"),
         icon: FileJson,
       },
       {
-        label: "Guide",
-        description: "Production integration notes, auth, retries, and webhooks.",
+        label: t("settings.external_api_docs.links.guide.label"),
+        description: t("settings.external_api_docs.links.guide.description"),
         href: buildDocUrl("/ext/v1/guide.md"),
         icon: BookOpen,
       },
       {
-        label: "Events",
-        description: "Webhook event names and payload expectations.",
+        label: t("settings.external_api_docs.links.events.label"),
+        description: t("settings.external_api_docs.links.events.description"),
         href: buildDocUrl("/ext/v1/events.md"),
         icon: Radio,
       },
     ],
-    [],
+    [t],
   );
 
-  async function copy(value, label = "Copied") {
+  async function copy(value, label = t("settings.external_api_docs.copied")) {
     try {
       if (typeof navigator === "undefined" || !navigator.clipboard) throw new Error("Clipboard unavailable");
       await navigator.clipboard.writeText(value);
       pushToast("success", label);
     } catch {
-      pushToast("error", "Could not copy");
+      pushToast("error", t("settings.external_api_docs.copy_failed"));
     }
   }
 
@@ -181,23 +184,22 @@ export default function ExternalApiDocsPage() {
           <div className={`${DESKTOP_PAGE_SHELL_BODY} gap-4 overflow-visible pb-8`}>
             <div className="space-y-4">
               <div className="max-w-3xl">
-                <span className="badge badge-success badge-outline">External API v1</span>
-                <h1 className="mt-3 text-3xl font-semibold tracking-tight">Octodrop External API</h1>
+                <span className="badge badge-success badge-outline">{t("settings.external_api_docs.version_badge")}</span>
+                <h1 className="mt-3 text-3xl font-semibold tracking-tight">{t("settings.external_api_docs.title")}</h1>
                 <p className="mt-3 max-w-2xl text-sm leading-6 opacity-70">
-                  Client-ready documentation for records, files, automations, and signed webhooks. The docs are public;
-                  the API itself requires a scoped <span className="font-mono text-xs">X-Api-Key</span>.
+                  {t("settings.external_api_docs.subtitle")} <span className="font-mono text-xs">X-Api-Key</span>.
                 </p>
               </div>
               <div className="rounded-box border border-base-300 bg-base-200/60 p-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.14em] opacity-50">Base URL</div>
-                <div className="mt-2 break-all font-mono text-xs leading-5">{apiBaseUrl || "Not configured"}</div>
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] opacity-50">{t("settings.external_api_docs.base_url")}</div>
+                <div className="mt-2 break-all font-mono text-xs leading-5">{apiBaseUrl || t("settings.external_api_docs.not_configured")}</div>
                 <button
                   className="btn btn-ghost btn-xs mt-3 gap-1"
                   type="button"
-                  onClick={() => copy(apiBaseUrl, "Base URL copied")}
+                  onClick={() => copy(apiBaseUrl, t("settings.external_api_docs.base_url_copied"))}
                 >
                   <Copy className="h-3.5 w-3.5" />
-                  Copy base URL
+                  {t("settings.external_api_docs.copy_base_url")}
                 </button>
               </div>
             </div>
@@ -205,10 +207,10 @@ export default function ExternalApiDocsPage() {
             <section className="rounded-box border border-base-300 bg-base-100 p-4">
               <div className="flex items-center gap-2 text-sm font-semibold">
                 <BookOpen className="h-4 w-4 text-success" />
-                Reference docs
+                {t("settings.external_api_docs.reference_title")}
               </div>
               <p className="mt-1 text-sm leading-6 opacity-70">
-                Use these links to read the full contract, test requests, or generate clients.
+                {t("settings.external_api_docs.reference_description")}
               </p>
               <div className="mt-4 space-y-3">
               {links.map((link) => (
@@ -221,25 +223,25 @@ export default function ExternalApiDocsPage() {
               <section className="rounded-box border border-base-300 bg-base-100 p-4">
                 <div className="flex items-center gap-2 text-sm font-semibold">
                   <KeyRound className="h-4 w-4 text-success" />
-                  Production contract
+                  {t("settings.external_api_docs.contract_title")}
                 </div>
                 <div className="mt-4 space-y-3">
-                  <DetailRow label="Auth" value="Send X-Api-Key on every /ext/v1 request. Do not put keys in query strings." />
-                  <DetailRow label="Scopes" value="Use one credential per integration with only the scopes it needs." />
-                  <DetailRow label="Rate limits" value="Default is 300 requests per 60 seconds per API credential. Handle 429 with Retry-After." />
-                  <DetailRow label="Pagination" value="Use limit and cursor. The current hard cap is 200 records per page." />
-                  <DetailRow label="Webhooks" value="Verify X-Octo-Timestamp and X-Octo-Signature before processing events." />
-                  <DetailRow label="Errors" value="Expect stable JSON errors with ok=false and errors[].code/message/path." />
+                  <DetailRow label={t("settings.external_api_docs.contract.auth_label")} value={t("settings.external_api_docs.contract.auth_value")} />
+                  <DetailRow label={t("settings.external_api_docs.contract.scopes_label")} value={t("settings.external_api_docs.contract.scopes_value")} />
+                  <DetailRow label={t("settings.external_api_docs.contract.rate_limits_label")} value={t("settings.external_api_docs.contract.rate_limits_value")} />
+                  <DetailRow label={t("settings.external_api_docs.contract.pagination_label")} value={t("settings.external_api_docs.contract.pagination_value")} />
+                  <DetailRow label={t("settings.external_api_docs.contract.webhooks_label")} value={t("settings.external_api_docs.contract.webhooks_value")} />
+                  <DetailRow label={t("settings.external_api_docs.contract.errors_label")} value={t("settings.external_api_docs.contract.errors_value")} />
                 </div>
               </section>
 
               <section className="rounded-box border border-base-300 bg-base-100 p-4">
                 <div className="flex items-center gap-2 text-sm font-semibold">
                   <Terminal className="h-4 w-4 text-success" />
-                  Quickstart
+                  {t("settings.external_api_docs.quickstart_title")}
                 </div>
                 <p className="mt-2 text-sm leading-6 opacity-70">
-                  Create a scoped API credential in Settings, then call metadata first to discover installed entity IDs.
+                  {t("settings.external_api_docs.quickstart_description")}
                 </p>
                 <div className="mt-4">
                   <CodeBlock>{curlExample}</CodeBlock>
@@ -247,10 +249,10 @@ export default function ExternalApiDocsPage() {
                 <button
                   className="btn btn-primary btn-sm mt-3 gap-2"
                   type="button"
-                  onClick={() => copy(curlExample, "Quickstart copied")}
+                  onClick={() => copy(curlExample, t("settings.external_api_docs.quickstart_copied"))}
                 >
                   <Copy className="h-4 w-4" />
-                  Copy
+                  {t("common.copy")}
                 </button>
               </section>
             </div>
@@ -260,19 +262,19 @@ export default function ExternalApiDocsPage() {
                 <div>
                   <div className="flex items-center gap-2 text-sm font-semibold">
                     <Database className="h-4 w-4 text-success" />
-                    Public API surface
+                    {t("settings.external_api_docs.surface_title")}
                   </div>
-                  <p className="mt-1 text-sm leading-6 opacity-70">Supported client-facing routes for v1.</p>
+                  <p className="mt-1 text-sm leading-6 opacity-70">{t("settings.external_api_docs.surface_description")}</p>
                 </div>
                 <a className="btn btn-outline btn-sm gap-2" href={buildDocUrl("/ext/v1/redoc")} target="_blank" rel="noreferrer">
-                  Full reference
+                  {t("settings.external_api_docs.full_reference")}
                   <ExternalLink className="h-4 w-4" />
                 </a>
               </div>
               <div className="mt-4 space-y-3">
-                <EndpointRow label="Metadata" endpoints={["GET /ext/v1/meta/entities"]} />
+                <EndpointRow label={t("settings.external_api_docs.endpoints.metadata")} endpoints={["GET /ext/v1/meta/entities"]} />
                 <EndpointRow
-                  label="Records"
+                  label={t("settings.external_api_docs.endpoints.records")}
                   endpoints={[
                     "GET /ext/v1/records/{entity_id}",
                     "POST /ext/v1/records/{entity_id}",
@@ -280,7 +282,7 @@ export default function ExternalApiDocsPage() {
                   ]}
                 />
                 <EndpointRow
-                  label="Attachments"
+                  label={t("settings.external_api_docs.endpoints.attachments")}
                   endpoints={[
                     "POST /ext/v1/attachments/upload",
                     "POST /ext/v1/attachments/link",
@@ -289,7 +291,7 @@ export default function ExternalApiDocsPage() {
                   ]}
                 />
                 <EndpointRow
-                  label="Automations"
+                  label={t("settings.external_api_docs.endpoints.automations")}
                   endpoints={[
                     "GET /ext/v1/automations",
                     "POST /ext/v1/automations/{automation_id}/runs",
@@ -300,12 +302,12 @@ export default function ExternalApiDocsPage() {
             </section>
 
             <section className="rounded-box border border-base-300 bg-base-200/45 p-4">
-              <div className="text-sm font-semibold">Client handoff</div>
+              <div className="text-sm font-semibold">{t("settings.external_api_docs.handoff_title")}</div>
               <div className="mt-2 grid gap-2 text-sm leading-6 opacity-75 md:grid-cols-2">
-                <div>Create one credential per external system and grant minimum scopes.</div>
-                <div>Store keys server-side only and rotate them on a regular schedule.</div>
-                <div>Use metadata routes to discover entity and field IDs instead of hardcoding labels.</div>
-                <div>Handle 401, 403, 429, and cursor pagination in the integration client.</div>
+                <div>{t("settings.external_api_docs.handoff_items.credential")}</div>
+                <div>{t("settings.external_api_docs.handoff_items.keys")}</div>
+                <div>{t("settings.external_api_docs.handoff_items.metadata")}</div>
+                <div>{t("settings.external_api_docs.handoff_items.errors")}</div>
               </div>
             </section>
           </div>

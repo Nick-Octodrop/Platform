@@ -1,14 +1,18 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
-import { getAppDisplayName } from "../state/appCatalog.js";
+import { getAppDisplayName, getAppTranslationNamespaces } from "../state/appCatalog.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
+import { ensureRuntimeNamespaces } from "../i18n/runtime.js";
 
 export default function DiagnosticsPage() {
+  const { t, locale } = useI18n();
   const navigate = useNavigate();
   const [modules, setModules] = useState([]);
+  const [installedModules, setInstalledModules] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [moduleNamesById, setModuleNamesById] = useState({});
@@ -28,6 +32,7 @@ export default function DiagnosticsPage() {
       ]);
       const data = diagRes?.data || {};
       const installed = Array.isArray(modulesRes?.modules) ? modulesRes.modules : [];
+      setInstalledModules(installed);
       const nextNames = {};
       for (const mod of installed) {
         if (!mod?.module_id) continue;
@@ -37,7 +42,7 @@ export default function DiagnosticsPage() {
       setModules(Array.isArray(data.modules) ? data.modules : []);
     } catch (err) {
       setModules([]);
-      setError(err?.message || "Failed to load diagnostics");
+      setError(err?.message || t("settings.diagnostics.load_failed"));
     } finally {
       setLoading(false);
     }
@@ -45,7 +50,23 @@ export default function DiagnosticsPage() {
 
   useEffect(() => {
     loadDiagnostics();
-  }, []);
+  }, [locale]);
+
+  useEffect(() => {
+    const namespaces = getAppTranslationNamespaces(installedModules);
+    if (namespaces.length === 0) return;
+    ensureRuntimeNamespaces(namespaces).catch(() => {});
+  }, [installedModules, locale]);
+
+  useEffect(() => {
+    if (!Array.isArray(installedModules) || installedModules.length === 0) return;
+    const nextNames = {};
+    for (const mod of installedModules) {
+      if (!mod?.module_id) continue;
+      nextNames[mod.module_id] = getAppDisplayName(mod.module_id, mod);
+    }
+    setModuleNamesById(nextNames);
+  }, [installedModules, locale, t]);
 
   const rows = useMemo(
     () => (modules || []).map((m) => ({
@@ -65,17 +86,17 @@ export default function DiagnosticsPage() {
 
   const listFieldIndex = useMemo(
     () => ({
-      "diag.module_name": { id: "diag.module_name", label: "Name" },
-      "diag.module_id": { id: "diag.module_id", label: "Module" },
-      "diag.health": { id: "diag.health", label: "Health" },
-      "diag.warnings_count": { id: "diag.warnings_count", label: "Warnings", type: "number" },
-      "diag.pages": { id: "diag.pages", label: "Pages", type: "number" },
-      "diag.views": { id: "diag.views", label: "Views", type: "number" },
-      "diag.entities": { id: "diag.entities", label: "Entities", type: "number" },
-      "diag.module_version": { id: "diag.module_version", label: "Version" },
-      "diag.manifest_hash": { id: "diag.manifest_hash", label: "Manifest Hash" },
+      "diag.module_name": { id: "diag.module_name", label: t("settings.diagnostics.name") },
+      "diag.module_id": { id: "diag.module_id", label: t("settings.diagnostics.module") },
+      "diag.health": { id: "diag.health", label: t("settings.diagnostics.health") },
+      "diag.warnings_count": { id: "diag.warnings_count", label: t("settings.diagnostics.warnings"), type: "number" },
+      "diag.pages": { id: "diag.pages", label: t("settings.diagnostics.pages"), type: "number" },
+      "diag.views": { id: "diag.views", label: t("settings.diagnostics.views"), type: "number" },
+      "diag.entities": { id: "diag.entities", label: t("settings.diagnostics.entities"), type: "number" },
+      "diag.module_version": { id: "diag.module_version", label: t("settings.diagnostics.version") },
+      "diag.manifest_hash": { id: "diag.manifest_hash", label: t("settings.diagnostics.manifest_hash") },
     }),
-    [],
+    [t],
   );
 
   const listView = useMemo(
@@ -101,7 +122,7 @@ export default function DiagnosticsPage() {
       record: {
         "diag.module_name": row.module_name,
         "diag.module_id": row.module_id,
-        "diag.health": row.health,
+        "diag.health": row.health === "warning" ? t("settings.diagnostics.warning") : t("settings.diagnostics.ok"),
         "diag.warnings_count": row.warnings_count,
         "diag.pages": row.pages,
         "diag.views": row.views,
@@ -110,16 +131,16 @@ export default function DiagnosticsPage() {
         "diag.manifest_hash": row.manifest_hash,
       },
     })),
-    [rows],
+    [rows, t],
   );
 
   const filters = useMemo(
     () => [
-      { id: "all", label: "All", domain: null },
-      { id: "ok", label: "Healthy", domain: { op: "eq", field: "diag.health", value: "ok" } },
-      { id: "warning", label: "Warnings", domain: { op: "eq", field: "diag.health", value: "warning" } },
+      { id: "all", label: t("common.all"), domain: null },
+      { id: "ok", label: t("settings.diagnostics.healthy"), domain: { op: "eq", field: "diag.health", value: t("settings.diagnostics.ok") } },
+      { id: "warning", label: t("settings.diagnostics.warnings"), domain: { op: "eq", field: "diag.health", value: t("settings.diagnostics.warning") } },
     ],
-    [],
+    [t],
   );
 
   const activeFilter = useMemo(() => filters.find((f) => f.id === statusFilter) || null, [filters, statusFilter]);
@@ -131,7 +152,7 @@ export default function DiagnosticsPage() {
           <div className="space-y-4 md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
             <SystemListToolbar
-              title="Diagnostics"
+              title={t("settings.diagnostics.title")}
               searchValue={search}
               onSearchChange={(v) => {
                 setSearch(v);
@@ -158,7 +179,7 @@ export default function DiagnosticsPage() {
 
             <div className="md:mt-4">
               {loading ? (
-                <div className="text-sm opacity-70">Loading…</div>
+                <div className="text-sm opacity-70">{t("common.loading")}</div>
               ) : (
                 <ListViewRenderer
                   view={listView}

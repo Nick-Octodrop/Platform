@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useModuleStore } from "../state/moduleStore.jsx";
-import { getAppDisplayName } from "../state/appCatalog.js";
+import { getAppDisplayName, getAppTranslationNamespaces } from "../state/appCatalog.js";
 import { getPinnedApps, getRecentApps, recordRecentApp, subscribeAppUsage } from "../state/appUsage.js";
 import { appendOctoAiFrameParams } from "../apps/appShellUtils.js";
 import { useAccessContext } from "../access.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
+import { ensureRuntimeNamespaces } from "../i18n/runtime.js";
 
 const navLinkClass = ({ isActive }) =>
   `btn btn-ghost justify-start w-full ${isActive ? "bg-base-200" : ""}`;
@@ -30,6 +32,7 @@ function AppShortcut({ id, label, homeRoute }) {
 export default function SideNav() {
   const { modules } = useModuleStore();
   const { loading: accessLoading, hasCapability, isSuperadmin } = useAccessContext();
+  const { t, locale } = useI18n();
   const [pinned, setPinned] = useState(getPinnedApps());
   const [recent, setRecent] = useState(getRecentApps());
   const enabledApps = modules.filter((m) => m.enabled && (isSuperadmin || m.module_id !== "octo_ai"));
@@ -49,6 +52,12 @@ export default function SideNav() {
     return unsubscribe;
   }, []);
 
+  useEffect(() => {
+    const namespaces = getAppTranslationNamespaces(modules);
+    if (namespaces.length === 0) return;
+    ensureRuntimeNamespaces(namespaces).catch(() => {});
+  }, [locale, modules]);
+
   const orderedApps = useMemo(() => {
     const enabledIds = enabledApps.map((m) => m.module_id);
     const pinnedFirst = pinned.filter((id) => enabledIds.includes(id));
@@ -64,22 +73,22 @@ export default function SideNav() {
       <div className="text-lg font-semibold mb-4">OCTO</div>
       <div className="menu space-y-4">
         <div>
-          <div className="text-xs uppercase opacity-60 mb-2">Core</div>
-          <NavLink to={appendOctoAiFrameParams("/home")} className={navLinkClass}>Home</NavLink>
-          <NavLink to={appendOctoAiFrameParams("/apps")} className={navLinkClass}>Apps</NavLink>
+          <div className="text-xs uppercase opacity-60 mb-2">{t("navigation.core")}</div>
+          <NavLink to={appendOctoAiFrameParams("/home")} className={navLinkClass}>{t("navigation.home")}</NavLink>
+          <NavLink to={appendOctoAiFrameParams("/apps")} className={navLinkClass}>{t("navigation.apps")}</NavLink>
           {canSeeOctoAi ? <NavLink to={appendOctoAiFrameParams("/octo-ai")} className={navLinkClass}>Octo AI</NavLink> : null}
-          <NavLink to={appendOctoAiFrameParams("/ops")} className={navLinkClass}>Ops</NavLink>
+          <NavLink to={appendOctoAiFrameParams("/ops")} className={navLinkClass}>{t("navigation.ops")}</NavLink>
         </div>
         <div>
-          <div className="text-xs uppercase opacity-60 mb-2">Settings</div>
-          <NavLink to={appendOctoAiFrameParams("/settings")} className={navLinkClass}>Settings</NavLink>
-          {canSeeOctoAi ? <NavLink to={appendOctoAiFrameParams("/settings/security")} className={navLinkClass}>Security</NavLink> : null}
+          <div className="text-xs uppercase opacity-60 mb-2">{t("navigation.settings")}</div>
+          <NavLink to={appendOctoAiFrameParams("/settings")} className={navLinkClass}>{t("navigation.settings")}</NavLink>
+          {canSeeOctoAi ? <NavLink to={appendOctoAiFrameParams("/settings/security")} className={navLinkClass}>{t("navigation.security")}</NavLink> : null}
         </div>
         <div className="divider"></div>
         <div>
-          <div className="text-xs uppercase opacity-60 mb-2">Enabled Apps</div>
+          <div className="text-xs uppercase opacity-60 mb-2">{t("navigation.enabled_apps")}</div>
           {orderedApps.length === 0 && (
-            <div className="text-sm opacity-70">Install an app</div>
+            <div className="text-sm opacity-70">{t("empty.install_app")}</div>
           )}
           {orderedApps.map((id) => {
             const moduleRecord = enabledById[id];

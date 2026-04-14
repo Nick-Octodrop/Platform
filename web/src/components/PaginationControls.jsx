@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { SOFT_ICON_SM } from "./buttonStyles.js";
 import DaisyTooltip from "./DaisyTooltip.jsx";
 import useMediaQuery from "../hooks/useMediaQuery.js";
+import { translateRuntime } from "../i18n/runtime.js";
 
 export default function PaginationControls({
   page = 0,
@@ -24,7 +25,7 @@ export default function PaginationControls({
   return (
     <div className={`flex items-center ${isMobile ? "gap-1" : "gap-2"} ${className}`.trim()}>
       <div className="join">
-        <DaisyTooltip label="Previous" className="join-item" placement="top">
+        <DaisyTooltip label={translateRuntime("common.previous")} className="join-item" placement="top">
           <button
             className={SOFT_ICON_SM}
             type="button"
@@ -37,7 +38,7 @@ export default function PaginationControls({
         <div className={`join-item pagination-page-indicator h-8 min-h-8 flex items-center opacity-80 tabular-nums border border-base-content/20 bg-base-100 ${isMobile ? "px-1.5 text-[11px]" : "px-2 text-xs"}`}>
           {safePage + 1} / {totalPages}
         </div>
-        <DaisyTooltip label="Next" className="join-item" placement="top">
+        <DaisyTooltip label={translateRuntime("common.next")} className="join-item" placement="top">
           <button
             className={SOFT_ICON_SM}
             type="button"

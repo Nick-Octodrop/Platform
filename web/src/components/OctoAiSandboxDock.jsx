@@ -14,6 +14,8 @@ import {
   setTabWorkspaceId,
   validateOctoAiPatchset,
 } from "../api.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
+import { translateRuntime } from "../i18n/runtime.js";
 
 function questionKind(meta) {
   return meta && typeof meta === "object" && typeof meta.kind === "string" ? meta.kind : "text";
@@ -23,18 +25,22 @@ function questionNeedsTypedReply(meta) {
   return ["text", "module_target", "entity_target", "field_target", "tab_target", "target_resolution"].includes(questionKind(meta));
 }
 
-function summarizeAnswer(msg) {
+function summarizeAnswer(msg, translate = translateRuntime) {
   if (!msg || typeof msg !== "object") return "";
   const answer = msg.answer_json && typeof msg.answer_json === "object" ? msg.answer_json : null;
   const body = typeof msg.body === "string" ? msg.body.trim() : "";
   if (!answer) return body;
-  if (typeof answer.confirm_plan === "boolean") return answer.confirm_plan ? "Approved." : body || "Needs changes.";
-  return body || "Answered.";
+  if (typeof answer.confirm_plan === "boolean") {
+    return answer.confirm_plan
+      ? translate("settings.octo_ai.sandbox_dock.answers.approved")
+      : body || translate("settings.octo_ai.sandbox_dock.answers.needs_changes");
+  }
+  return body || translate("settings.octo_ai.sandbox_dock.answers.answered");
 }
 
-function chatMessageText(msg) {
+function chatMessageText(msg, translate = translateRuntime) {
   if (!msg || typeof msg !== "object") return "";
-  if (msg.message_type === "answer") return summarizeAnswer(msg);
+  if (msg.message_type === "answer") return summarizeAnswer(msg, translate);
   return typeof msg.body === "string" ? msg.body : "";
 }
 
@@ -182,9 +188,9 @@ function messageBubbleClass(msg) {
   return "chat-bubble max-w-[85%] bg-base-200 text-base-content text-sm leading-5";
 }
 
-function messageRoleLabel(msg) {
-  if (msg?.role === "user") return "you";
-  return msg?.role || "assistant";
+function messageRoleLabel(msg, translate = translateRuntime) {
+  if (msg?.role === "user") return translate("settings.octo_ai.sandbox_dock.message_roles.you");
+  return translate("settings.octo_ai.sandbox_dock.message_roles.assistant");
 }
 
 function findFormSectionLabel(result) {
@@ -219,17 +225,17 @@ function findFormSectionLabel(result) {
   return typeof section?.title === "string" ? section.title : "";
 }
 
-function buildApplySummary(validation) {
+function buildApplySummary(validation, translate = translateRuntime) {
   const results = Array.isArray(validation?.results) ? validation.results : [];
   if (results.length === 0) return null;
   const primary = results[0] || {};
-  const moduleName = primary?.manifest?.module?.name || primary?.module_id || "Module";
+  const moduleName = primary?.manifest?.module?.name || primary?.module_id || translate("common.module");
   const resolvedOps = Array.isArray(primary?.resolved_ops) ? primary.resolved_ops : [];
   const workflowTouched = resolvedOps.some((op) => typeof op?.path === "string" && op.path.startsWith("/workflows/"));
   if (workflowTouched) {
     return {
-      title: `${moduleName} status flow updated in sandbox`,
-      body: `Refresh ${moduleName} and check the status bar plus the status action buttons on the form to see the new lifecycle state.`,
+      title: translate("settings.octo_ai.sandbox_dock.apply_summary.status_flow_title", { moduleName }),
+      body: translate("settings.octo_ai.sandbox_dock.apply_summary.status_flow_body", { moduleName }),
     };
   }
   const addedField = Array.isArray(primary?.manifest?.entities)
@@ -242,19 +248,19 @@ function buildApplySummary(validation) {
   const tabLabel = findFormSectionLabel(primary);
   if (fieldLabel && tabLabel) {
     return {
-      title: `${moduleName} updated in sandbox`,
-      body: `Open ${moduleName}, open a record, then check the ${tabLabel} tab for the '${fieldLabel}' field.`,
+      title: translate("settings.octo_ai.sandbox_dock.apply_summary.field_in_tab_title", { moduleName }),
+      body: translate("settings.octo_ai.sandbox_dock.apply_summary.field_in_tab_body", { moduleName, tabLabel, fieldLabel }),
     };
   }
   if (fieldLabel) {
     return {
-      title: `${moduleName} updated in sandbox`,
-      body: `Open ${moduleName} and look for the new '${fieldLabel}' field on the affected form or view.`,
+      title: translate("settings.octo_ai.sandbox_dock.apply_summary.field_added_title", { moduleName }),
+      body: translate("settings.octo_ai.sandbox_dock.apply_summary.field_added_body", { moduleName, fieldLabel }),
     };
   }
   return {
-    title: `${moduleName} updated in sandbox`,
-    body: `Refresh ${moduleName} in the sandbox to review the latest change.`,
+    title: translate("settings.octo_ai.sandbox_dock.apply_summary.generic_title", { moduleName }),
+    body: translate("settings.octo_ai.sandbox_dock.apply_summary.generic_body", { moduleName }),
   };
 }
 
@@ -273,6 +279,7 @@ function shouldForceSandboxReload(validation) {
 }
 
 export default function OctoAiSandboxDock({ sessionId, onExit }) {
+  const { t } = useI18n();
   const location = useLocation();
   const chatScrollRef = useRef(null);
   const autoApplyAttemptsRef = useRef(new Set());
@@ -350,10 +357,17 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
     () =>
       Array.isArray(structuredPlan?.modules)
         ? structuredPlan.modules
-            .map((item) => `${item?.module_label || item?.module_id || "Unknown module"} (${(item?.status || "planned").replace(/_/g, " ")})`)
+            .map((item) => {
+              const moduleLabel = item?.module_label || item?.module_id || t("settings.octo_ai.sandbox_dock.module_summary.unknown_module");
+              const status = String(item?.status || "planned");
+              const statusLabel = t(`settings.octo_ai.sandbox_dock.status_values.${status}`, null, {
+                fallback: status.replace(/_/g, " "),
+              });
+              return `${moduleLabel} (${statusLabel})`;
+            })
             .filter(Boolean)
         : [],
-    [structuredPlan],
+    [structuredPlan, t],
   );
   const planAssumptions = useMemo(
     () => (Array.isArray(structuredPlan?.assumptions) ? structuredPlan.assumptions.filter((item) => typeof item === "string" && item.trim()) : []),
@@ -373,25 +387,25 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
     [data.releases, error, latestPatchsetStatus],
   );
   const statusBadge = useMemo(() => {
-    if (activeQuestionMeta?.kind === "confirm_plan") return { label: "Plan ready", tone: "badge-warning" };
-    if (questionNeedsTypedReply(activeQuestionMeta)) return { label: "Needs detail", tone: "badge-info" };
-    if (latestPatchsetStatus === "applied") return { label: "Sandbox updated", tone: "badge-success" };
-    if (latestPatchsetStatus === "invalid" || data.session?.status === "failed") return { label: "Needs fix", tone: "badge-error" };
-    return { label: "Planning", tone: "badge-ghost" };
-  }, [activeQuestionMeta, data.session?.status, latestPatchsetStatus]);
+    if (activeQuestionMeta?.kind === "confirm_plan") return { label: t("settings.octo_ai.sandbox_dock.status.plan_ready"), tone: "badge-warning" };
+    if (questionNeedsTypedReply(activeQuestionMeta)) return { label: t("settings.octo_ai.sandbox_dock.status.needs_detail"), tone: "badge-info" };
+    if (latestPatchsetStatus === "applied") return { label: t("settings.octo_ai.sandbox_dock.status.sandbox_updated"), tone: "badge-success" };
+    if (latestPatchsetStatus === "invalid" || data.session?.status === "failed") return { label: t("settings.octo_ai.sandbox_dock.status.needs_fix"), tone: "badge-error" };
+    return { label: t("settings.octo_ai.sandbox_dock.status.planning"), tone: "badge-ghost" };
+  }, [activeQuestionMeta, data.session?.status, latestPatchsetStatus, t]);
 
   const headerSummary = useMemo(() => {
     if (activeQuestionMeta?.kind === "confirm_plan") {
-      return "Review the plan below. When you approve it, Octo AI will apply the validated change to this sandbox automatically.";
+      return t("settings.octo_ai.sandbox_dock.header.review_plan");
     }
     if (latestPatchsetStatus === "applied") {
-      return "Sandbox updated. Keep chatting to refine it, or roll back the latest sandbox change.";
+      return t("settings.octo_ai.sandbox_dock.header.sandbox_updated");
     }
     if (latestPatchsetStatus === "invalid" || data.session?.status === "failed") {
-      return "The latest sandbox change needs attention. Ask Octo AI to revise it or review the details below.";
+      return t("settings.octo_ai.sandbox_dock.header.needs_attention");
     }
-    return "Describe what you want changed in this sandbox. Octo AI will explain the plan first, then apply it here after approval.";
-  }, [activeQuestionMeta?.kind, data.session?.status, latestPatchsetStatus]);
+    return t("settings.octo_ai.sandbox_dock.header.describe_request");
+  }, [activeQuestionMeta?.kind, data.session?.status, latestPatchsetStatus, t]);
 
   async function refreshSession({ showLoading = false } = {}) {
     if (!sessionId) return null;
@@ -409,7 +423,7 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
       setData(nextData);
       return nextData;
     } catch (err) {
-      setError(err?.message || "Failed to load AI session");
+      setError(err?.message || t("settings.octo_ai.sandbox_dock.errors.load_session"));
       return null;
     } finally {
       if (showLoading) setLoading(false);
@@ -451,7 +465,7 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
         await applyLatestPlanToSandbox();
       } catch (err) {
         if (!cancelled) {
-          setError(err?.message || "Failed to apply the latest plan to this sandbox");
+          setError(err?.message || t("settings.octo_ai.sandbox_dock.errors.apply_latest_plan"));
           autoApplyAttemptsRef.current.delete(attemptKey);
         }
       }
@@ -522,14 +536,14 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
     }
 
     if (patchset?.status !== "validated" && patchset?.status !== "approved") {
-      throw new Error("The approved plan could not be validated for this sandbox.");
+      throw new Error(t("settings.octo_ai.sandbox_dock.errors.approved_plan_not_valid"));
     }
 
     await applyOctoAiPatchset(patchset.id, true);
     const refreshed = await refreshSession();
     const latestAppliedPatchset = latestPatchsetForPlan(refreshed, planId);
     const latestValidation = latestAppliedPatchset?.validation_json || validationSummary || null;
-    setApplySummary(buildApplySummary(latestValidation));
+    setApplySummary(buildApplySummary(latestValidation, t));
     refreshSandboxWorkspace();
     if (shouldForceSandboxReload(latestValidation)) {
       window.setTimeout(() => {
@@ -552,7 +566,7 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
       setMessage("");
       await refreshSession();
     } catch (err) {
-      setError(err?.message || "Failed to submit answer");
+      setError(err?.message || t("settings.octo_ai.sandbox_dock.errors.submit_answer"));
     } finally {
       setBusy(false);
     }
@@ -573,7 +587,7 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
       setMessage("");
       await refreshSession();
     } catch (err) {
-      setError(err?.message || "Failed to send message");
+      setError(err?.message || t("settings.octo_ai.sandbox_dock.errors.send_message"));
     } finally {
       setStreaming(false);
     }
@@ -586,7 +600,7 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
     try {
       await applyLatestPlanToSandbox();
     } catch (err) {
-      setError(err?.message || "Failed to apply the latest plan to this sandbox");
+      setError(err?.message || t("settings.octo_ai.sandbox_dock.errors.apply_latest_plan"));
     } finally {
       setBusy(false);
     }
@@ -601,7 +615,7 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
       await refreshSession();
       refreshSandboxWorkspace();
     } catch (err) {
-      setError(err?.message || "Failed to roll back the latest sandbox change");
+      setError(err?.message || t("settings.octo_ai.sandbox_dock.errors.rollback"));
     } finally {
       setBusy(false);
     }
@@ -615,7 +629,7 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
       await discardOctoAiSandbox(sessionId);
       onExit?.();
     } catch (err) {
-      setError(err?.message || "Failed to discard sandbox");
+      setError(err?.message || t("settings.octo_ai.sandbox_dock.errors.discard"));
     } finally {
       setBusy(false);
     }
@@ -626,7 +640,7 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
   }
 
   if (loading) {
-    return <div className="flex h-full items-center justify-center text-sm opacity-70">Loading AI sandbox…</div>;
+    return <div className="flex h-full items-center justify-center text-sm opacity-70">{t("settings.octo_ai.sandbox_dock.loading")}</div>;
   }
 
   return (
@@ -640,14 +654,14 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
             </div>
             <div className="mt-1 text-sm leading-6 opacity-75">{headerSummary}</div>
           </div>
-          <button className={SOFT_BUTTON_SM} type="button" onClick={onExit}>Exit</button>
+          <button className={SOFT_BUTTON_SM} type="button" onClick={onExit}>{t("settings.octo_ai.sandbox_dock.actions.exit")}</button>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           {latestPlan && !hasPendingQuestion && latestPatchsetStatus !== "applied" ? (
-            <button className={SOFT_BUTTON_SM} disabled={busy} onClick={doApplyLatestPlan}>Apply latest plan</button>
+            <button className={SOFT_BUTTON_SM} disabled={busy} onClick={doApplyLatestPlan}>{t("settings.octo_ai.sandbox_dock.actions.apply_latest_plan")}</button>
           ) : null}
-          <button className={SOFT_BUTTON_SM} disabled={busy || !latestPatchset} onClick={doRollbackPatchset}>Rollback</button>
-          <button className={SOFT_BUTTON_SM} disabled={busy} onClick={doDiscardSandbox}>Discard</button>
+          <button className={SOFT_BUTTON_SM} disabled={busy || !latestPatchset} onClick={doRollbackPatchset}>{t("settings.octo_ai.sandbox_dock.actions.rollback")}</button>
+          <button className={SOFT_BUTTON_SM} disabled={busy} onClick={doDiscardSandbox}>{t("settings.octo_ai.sandbox_dock.actions.discard")}</button>
         </div>
       </div>
 
@@ -664,26 +678,26 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
             </div>
           ) : null}
           {latestPatchsetStatus === "invalid" ? (
-            <div className="alert alert-warning text-sm">The last sandbox apply attempt failed validation. Ask Octo AI to revise the plan.</div>
+            <div className="alert alert-warning text-sm">{t("settings.octo_ai.sandbox_dock.hints.failed_validation")}</div>
           ) : null}
 
           {(data.messages || []).length > 0 ? (
             (data.messages || []).map((msg) => (
               <div key={msg.id} className={`chat ${messageRoleClass(msg)}`}>
-                <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{messageRoleLabel(msg)}</div>
+                <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{messageRoleLabel(msg, t)}</div>
                 <div className={messageBubbleClass(msg)}>
-                  {msg?.role === "assistant" ? <AssistantNarrative text={chatMessageText(msg)} /> : <div className="whitespace-pre-wrap text-sm leading-6">{chatMessageText(msg)}</div>}
+                  {msg?.role === "assistant" ? <AssistantNarrative text={chatMessageText(msg, t)} /> : <div className="whitespace-pre-wrap text-sm leading-6">{chatMessageText(msg, t)}</div>}
                 </div>
               </div>
             ))
           ) : (
             <div className="rounded-box border border-dashed border-base-300 p-4 text-sm opacity-70">
-              Start by telling Octo AI what to build or change in this sandbox.
+              {t("settings.octo_ai.sandbox_dock.empty.start_prompt")}
             </div>
           )}
           {detailSections.length > 0 ? (
             <div className="rounded-box border border-base-200 bg-base-100 p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide opacity-70">Plan details</div>
+              <div className="text-xs font-semibold uppercase tracking-wide opacity-70">{t("settings.octo_ai.sandbox_dock.labels.plan_details")}</div>
               <div className="mt-2 space-y-3">
                 {detailSections.map((section) => (
                   <InfoList key={section.title} title={section.title} items={section.items} emptyText="" />
@@ -694,27 +708,27 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
 
           {structuredPlan && (moduleSummaries.length > 0 || latestAdvisories.length > 0 || planRisks.length > 0) ? (
             <div className="rounded-box border border-base-200 bg-base-100 p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide opacity-70">At a glance</div>
+              <div className="text-xs font-semibold uppercase tracking-wide opacity-70">{translateRuntime("common.at_a_glance")}</div>
               <div className="mt-2 space-y-3">
-                {moduleSummaries.length > 0 ? <InfoList title="Affected modules" items={moduleSummaries} emptyText="" /> : null}
-                {latestAdvisories.length > 0 ? <InfoList title="Suggestions" items={latestAdvisories.slice(0, 2)} emptyText="" /> : null}
-                {planRisks.length > 0 ? <InfoList title="Watchouts" items={planRisks.slice(0, 2)} emptyText="" /> : null}
+                {moduleSummaries.length > 0 ? <InfoList title={translateRuntime("common.affected_modules")} items={moduleSummaries} emptyText="" /> : null}
+                {latestAdvisories.length > 0 ? <InfoList title={translateRuntime("common.suggestions")} items={latestAdvisories.slice(0, 2)} emptyText="" /> : null}
+                {planRisks.length > 0 ? <InfoList title={translateRuntime("common.watchouts")} items={planRisks.slice(0, 2)} emptyText="" /> : null}
               </div>
             </div>
           ) : null}
 
           {showTechnicalDetails ? (
             <details className="rounded-box border border-base-200 bg-base-100" open={Boolean(validationSummary && latestPatchsetStatus === "invalid")}>
-              <summary className="cursor-pointer list-none px-4 py-3 text-xs font-semibold uppercase tracking-wide opacity-70">Technical details</summary>
+              <summary className="cursor-pointer list-none px-4 py-3 text-xs font-semibold uppercase tracking-wide opacity-70">{translateRuntime("common.technical_details")}</summary>
               <div className="space-y-3 border-t border-base-200 px-4 py-3">
                 <InfoList
-                  title="Sandbox activity"
+                  title={translateRuntime("common.sandbox_activity")}
                   items={[
-                    data.session?.sandbox_name ? `Sandbox: ${data.session.sandbox_name}` : "",
-                    data.session?.sandbox_status ? `Sandbox status: ${String(data.session.sandbox_status).replace(/_/g, " ")}` : "",
-                    latestPatchsetStatus ? `Latest patchset: ${latestPatchsetStatus.replace(/_/g, " ")}` : "",
+                    data.session?.sandbox_name ? t("settings.octo_ai.sandbox_dock.technical.sandbox_named", { name: data.session.sandbox_name }) : "",
+                    data.session?.sandbox_status ? t("settings.octo_ai.sandbox_dock.technical.sandbox_status", { status: String(data.session.sandbox_status).replace(/_/g, " ") }) : "",
+                    latestPatchsetStatus ? t("settings.octo_ai.sandbox_dock.technical.latest_patchset", { status: latestPatchsetStatus.replace(/_/g, " ") }) : "",
                   ].filter(Boolean)}
-                  emptyText="No technical activity yet."
+                  emptyText={t("settings.octo_ai.sandbox_dock.technical.no_activity")}
                 />
                 <pre className="rounded-box bg-base-200 p-3 text-xs whitespace-pre-wrap overflow-auto">
                   {JSON.stringify({ validation: validationSummary || {}, releases: data.releases || [] }, null, 2)}
@@ -729,19 +743,19 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
         {hasPendingQuestion ? (
           <div className="rounded-box border border-base-300 bg-base-200/60 p-3 space-y-2">
             <div className="text-xs font-semibold uppercase tracking-wide opacity-70">
-              {questionKind(activeQuestionMeta) === "confirm_plan" ? "Plan review" : "Clarification needed"}
+              {questionKind(activeQuestionMeta) === "confirm_plan" ? t("settings.octo_ai.sandbox_dock.labels.plan_review") : t("settings.octo_ai.sandbox_dock.labels.clarification_needed")}
             </div>
             <div className="text-sm leading-6">{activeQuestionMeta?.prompt || activeQuestion}</div>
             {questionNeedsTypedReply(activeQuestionMeta) ? (
-              <div className="text-xs opacity-70">Reply below with the missing detail.</div>
+              <div className="text-xs opacity-70">{t("settings.octo_ai.sandbox_dock.hints.reply_with_missing_detail")}</div>
             ) : null}
             {questionKind(activeQuestionMeta) === "confirm_plan" ? (
               <div className="flex flex-wrap gap-2">
                 <button type="button" className="btn btn-xs btn-primary" disabled={busy || streaming} onClick={() => submitQuestionAnswer("approve")}>
-                  Approve and apply
+                  {t("settings.octo_ai.sandbox_dock.actions.approve_and_apply")}
                 </button>
                 <button type="button" className="btn btn-xs" disabled={busy || streaming} onClick={() => submitQuestionAnswer("disapprove")}>
-                  Revise plan
+                  {t("settings.octo_ai.sandbox_dock.actions.revise_plan")}
                 </button>
               </div>
             ) : null}
@@ -754,14 +768,14 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
           onChange={(e) => setMessage(e.target.value)}
           placeholder={
             questionKind(activeQuestionMeta) === "confirm_plan"
-              ? "Tell Octo AI what you want changed about this plan..."
+              ? t("settings.octo_ai.sandbox_dock.placeholders.confirm_plan")
               : hasPendingQuestion
-                ? "Reply with the missing detail..."
-                : "Describe what you want changed in this sandbox..."
+                ? t("settings.octo_ai.sandbox_dock.placeholders.reply_missing_detail")
+                : t("settings.octo_ai.sandbox_dock.placeholders.describe_change")
           }
         />
         <button className={PRIMARY_BUTTON_SM} disabled={streaming || busy || !message.trim()} onClick={sendMessage}>
-          {streaming ? "Planning..." : questionKind(activeQuestionMeta) === "confirm_plan" ? "Send revision" : hasPendingQuestion ? "Reply" : "Send"}
+          {streaming ? t("settings.octo_ai.sandbox_dock.status.planning") : questionKind(activeQuestionMeta) === "confirm_plan" ? t("settings.octo_ai.sandbox_dock.actions.send_revision") : hasPendingQuestion ? t("common.reply") : t("common.send")}
         </button>
       </div>
     </div>

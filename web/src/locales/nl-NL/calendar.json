@@ -1,0 +1,250 @@
+{
+  "module": {
+    "name": "Kalender",
+    "description": "Teamkalender voor verkoopopvolgingen, locatiebezoeken, orderoverdrachten, inkoopgesprekken en financiële mijlpalen."
+  },
+  "navigation": {
+    "biz_calendar_event_calendar_page": "Kalender",
+    "biz_calendar_event_mine_page": "Mijn kalender",
+    "biz_calendar_event_site_visits_page": "Bezoeken ter plaatse",
+    "biz_calendar_event_operations_page": "Operaties",
+    "biz_calendar_event_finance_page": "Financiën"
+  },
+  "entities": {
+    "biz_calendar_event": {
+      "label": "Kalender evenement",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "title": {
+          "label": "Evenement"
+        },
+        "event_type": {
+          "label": "Typ",
+          "options": {
+            "call": "Bel",
+            "meeting": "Vergadering",
+            "site_visit": "Bezoek ter plaatse",
+            "quote_follow_up": "Opvolging van offertes",
+            "order_handoff": "Bestel Handoff",
+            "supplier_check_in": "Inchecken van leveranciers",
+            "finance_review": "Financiën beoordeling",
+            "internal": "Intern"
+          }
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "planned": "Gepland",
+            "confirmed": "Bevestigd",
+            "done": "Klaar",
+            "cancelled": "Geannuleerd"
+          }
+        },
+        "start_at": {
+          "label": "Begin"
+        },
+        "end_at": {
+          "label": "Einde"
+        },
+        "all_day": {
+          "label": "De hele dag"
+        },
+        "owner_user_id": {
+          "label": "Eigenaar"
+        },
+        "participant_user_ids": {
+          "label": "Deelnemers"
+        },
+        "visibility": {
+          "label": "Zichtbaarheid",
+          "options": {
+            "private": "Privé",
+            "team": "Team",
+            "directors": "Directeuren"
+          }
+        },
+        "location": {
+          "label": "Locatie"
+        },
+        "company_id": {
+          "label": "Bedrijf"
+        },
+        "lead_id": {
+          "label": "Lood"
+        },
+        "opportunity_id": {
+          "label": "Gelegenheid"
+        },
+        "site_id": {
+          "label": "Locatie"
+        },
+        "task_id": {
+          "label": "Taak"
+        },
+        "quote_id": {
+          "label": "Citaat"
+        },
+        "order_id": {
+          "label": "Bestel"
+        },
+        "purchase_order_id": {
+          "label": "Aankooporder"
+        },
+        "invoice_id": {
+          "label": "Factuur"
+        },
+        "description": {
+          "label": "Beschrijving"
+        },
+        "cancel_reason": {
+          "label": "Reden van annulering"
+        },
+        "attachments": {
+          "label": "Bijlagen"
+        },
+        "created_at": {
+          "label": "Gemaakt op"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_biz_calendar_event_new": {
+      "label": "Nieuw evenement"
+    },
+    "action_biz_calendar_event_confirm": {
+      "label": "Bevestig"
+    },
+    "action_biz_calendar_event_done": {
+      "label": "Markeer klaar"
+    },
+    "action_biz_calendar_event_cancel": {
+      "label": "Annuleer"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Agenda zoeken..."
+      },
+      "filters": {
+        "planned": {
+          "label": "Gepland"
+        },
+        "mine": {
+          "label": "Mijn kalender"
+        },
+        "crm": {
+          "label": "CRM-evenementen"
+        },
+        "site_visits": {
+          "label": "Bezoeken ter plaatse"
+        },
+        "operations": {
+          "label": "Operaties"
+        },
+        "finance": {
+          "label": "Financiën"
+        },
+        "done": {
+          "label": "Klaar"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Evenement"
+        },
+        "links": {
+          "title": "Gerelateerde gegevens"
+        },
+        "details": {
+          "title": "Details"
+        }
+      }
+    }
+  },
+  "modals": {
+    "biz_calendar_event_cancel": {
+      "title": "Evenement annuleren",
+      "actions": {
+        "update_record": {
+          "label": "Evenement annuleren"
+        },
+        "close_modal": {
+          "label": "Blijf gepland"
+        }
+      }
+    }
+  },
+  "pages": {
+    "calendar_page": {
+      "title": "Kalender"
+    },
+    "list_page": {
+      "title": "Agenda-evenementen"
+    },
+    "mine_page": {
+      "title": "Mijn kalender"
+    },
+    "site_visits_page": {
+      "title": "Bezoeken ter plaatse"
+    },
+    "operations_page": {
+      "title": "Operaties Kalender"
+    },
+    "finance_page": {
+      "title": "Financiële kalender"
+    },
+    "form_page": {
+      "title": "Kalender evenement"
+    }
+  },
+  "workflows": {
+    "biz_calendar_event_status_workflow": {
+      "states": {
+        "planned": {
+          "label": "Gepland"
+        },
+        "confirmed": {
+          "label": "Bevestigd"
+        },
+        "done": {
+          "label": "Klaar"
+        },
+        "cancelled": {
+          "label": "Geannuleerd"
+        }
+      },
+      "transitions": {
+        "planned_confirmed": {
+          "label": "Bevestig"
+        },
+        "planned_done": {
+          "label": "Markeer klaar"
+        },
+        "confirmed_done": {
+          "label": "Markeer klaar"
+        },
+        "planned_cancelled": {
+          "label": "Annuleer"
+        },
+        "confirmed_cancelled": {
+          "label": "Annuleer"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "event_created": "Agenda-evenement gemaakt",
+    "event_updated": "Agenda-evenement bijgewerkt",
+    "event_status_changed": "Status van agenda-evenement gewijzigd",
+    "new_event_clicked": "Er is op 'Nieuw evenement' geklikt",
+    "confirm_clicked": "Bevestig geklikt",
+    "mark_done_clicked": "Markeer gereed klikte",
+    "cancel_clicked": "Annuleren heeft geklikt"
+  }
+}

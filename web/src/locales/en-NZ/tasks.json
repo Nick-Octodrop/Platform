@@ -1,0 +1,285 @@
+{
+  "module": {
+    "name": "Tasks",
+    "description": "Assigned work for sales, operations, procurement, finance, and customer handoff follow-ups."
+  },
+  "navigation": {
+    "biz_task_list_page": "Tasks",
+    "biz_task_mine_page": "My Tasks",
+    "biz_task_overdue_page": "Overdue",
+    "biz_task_crm_page": "CRM",
+    "biz_task_operations_page": "Operations"
+  },
+  "entities": {
+    "biz_task": {
+      "label": "Task",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "title": {
+          "label": "Task"
+        },
+        "task_type": {
+          "label": "Type",
+          "options": {
+            "follow_up": "Follow-Up",
+            "quote": "Quote Work",
+            "order_handoff": "Order Handoff",
+            "procurement": "Procurement",
+            "finance": "Finance",
+            "document": "Document",
+            "site_visit": "Site Visit",
+            "internal": "Internal"
+          }
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "open": "Open",
+            "in_progress": "In Progress",
+            "blocked": "Blocked",
+            "done": "Done",
+            "cancelled": "Cancelled"
+          }
+        },
+        "priority": {
+          "label": "Priority",
+          "options": {
+            "low": "Low",
+            "normal": "Normal",
+            "high": "High",
+            "urgent": "Urgent"
+          }
+        },
+        "owner_user_id": {
+          "label": "Owner"
+        },
+        "assignee_user_id": {
+          "label": "Assignee"
+        },
+        "participant_user_ids": {
+          "label": "Participants"
+        },
+        "start_date": {
+          "label": "Start Date"
+        },
+        "due_date": {
+          "label": "Due Date"
+        },
+        "company_id": {
+          "label": "Company"
+        },
+        "lead_id": {
+          "label": "Lead"
+        },
+        "opportunity_id": {
+          "label": "Opportunity"
+        },
+        "site_id": {
+          "label": "Site"
+        },
+        "quote_id": {
+          "label": "Quote"
+        },
+        "order_id": {
+          "label": "Order"
+        },
+        "purchase_order_id": {
+          "label": "Purchase Order"
+        },
+        "invoice_id": {
+          "label": "Invoice"
+        },
+        "document_id": {
+          "label": "Document"
+        },
+        "blocked_reason": {
+          "label": "Blocked Reason"
+        },
+        "cancel_reason": {
+          "label": "Cancel Reason"
+        },
+        "description": {
+          "label": "Description"
+        },
+        "attachments": {
+          "label": "Attachments"
+        },
+        "created_at": {
+          "label": "Created At"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_biz_task_new": {
+      "label": "New Task"
+    },
+    "action_biz_task_start": {
+      "label": "Start"
+    },
+    "action_biz_task_block": {
+      "label": "Block"
+    },
+    "action_biz_task_done": {
+      "label": "Mark Done"
+    },
+    "action_biz_task_cancel": {
+      "label": "Cancel"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Search tasks..."
+      },
+      "filters": {
+        "open": {
+          "label": "Open Work"
+        },
+        "mine": {
+          "label": "My Tasks"
+        },
+        "overdue": {
+          "label": "Overdue"
+        },
+        "crm": {
+          "label": "CRM Tasks"
+        },
+        "operations": {
+          "label": "Operations"
+        },
+        "finance": {
+          "label": "Finance"
+        },
+        "blocked": {
+          "label": "Blocked"
+        },
+        "done": {
+          "label": "Done"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Task"
+        },
+        "links": {
+          "title": "Related Records"
+        },
+        "details": {
+          "title": "Details"
+        }
+      }
+    }
+  },
+  "modals": {
+    "biz_task_block": {
+      "title": "Block Task",
+      "actions": {
+        "update_record": {
+          "label": "Block"
+        },
+        "close_modal": {
+          "label": "Keep Open"
+        }
+      }
+    },
+    "biz_task_cancel": {
+      "title": "Cancel Task",
+      "actions": {
+        "update_record": {
+          "label": "Cancel Task"
+        },
+        "close_modal": {
+          "label": "Keep Open"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Tasks"
+    },
+    "mine_page": {
+      "title": "My Tasks"
+    },
+    "overdue_page": {
+      "title": "Overdue Tasks"
+    },
+    "crm_page": {
+      "title": "CRM Tasks"
+    },
+    "operations_page": {
+      "title": "Operations Tasks"
+    },
+    "form_page": {
+      "title": "Task"
+    }
+  },
+  "workflows": {
+    "biz_task_status_workflow": {
+      "states": {
+        "open": {
+          "label": "Open"
+        },
+        "in_progress": {
+          "label": "In Progress"
+        },
+        "blocked": {
+          "label": "Blocked"
+        },
+        "done": {
+          "label": "Done"
+        },
+        "cancelled": {
+          "label": "Cancelled"
+        }
+      },
+      "transitions": {
+        "open_in_progress": {
+          "label": "Start"
+        },
+        "open_blocked": {
+          "label": "Block"
+        },
+        "in_progress_blocked": {
+          "label": "Block"
+        },
+        "blocked_in_progress": {
+          "label": "Resume"
+        },
+        "open_done": {
+          "label": "Mark Done"
+        },
+        "in_progress_done": {
+          "label": "Mark Done"
+        },
+        "blocked_done": {
+          "label": "Mark Done"
+        },
+        "open_cancelled": {
+          "label": "Cancel"
+        },
+        "in_progress_cancelled": {
+          "label": "Cancel"
+        },
+        "blocked_cancelled": {
+          "label": "Cancel"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "task_created": "Task created",
+    "task_updated": "Task updated",
+    "task_status_changed": "Task status changed",
+    "new_task_clicked": "New Task clicked",
+    "start_clicked": "Start clicked",
+    "block_clicked": "Block clicked",
+    "mark_done_clicked": "Mark Done clicked",
+    "cancel_clicked": "Cancel clicked"
+  }
+}

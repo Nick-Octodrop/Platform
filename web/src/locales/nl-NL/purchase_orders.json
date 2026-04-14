@@ -1,0 +1,426 @@
+{
+  "module": {
+    "name": "Inkooporders",
+    "description": "Inkoop van leveranciers gekoppeld aan klantorders."
+  },
+  "navigation": {
+    "biz_purchase_order_list_page": "Inkooporders",
+    "biz_purchase_order_sent_page": "Verzonden",
+    "biz_purchase_order_production_page": "In productie",
+    "biz_purchase_order_shipped_page": "Verzonden",
+    "biz_purchase_order_received_page": "Ontvangen"
+  },
+  "entities": {
+    "biz_purchase_order": {
+      "label": "Aankooporder",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "po_number": {
+          "label": "PO-nummer"
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "draft": "Diepgang",
+            "sent_to_supplier": "Verzonden naar leverancier",
+            "confirmed": "Bevestigd",
+            "on_hold": "In de wacht",
+            "in_production": "In productie",
+            "shipped": "Verzonden",
+            "received": "Ontvangen",
+            "closed": "Gesloten",
+            "cancelled": "Geannuleerd"
+          }
+        },
+        "supplier_id": {
+          "label": "Leverancier"
+        },
+        "purchasing_entity": {
+          "label": "Aankopende entiteit",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "source_customer_order_id": {
+          "label": "Bronvolgorde"
+        },
+        "source_customer_order_number": {
+          "label": "Bronvolgorde"
+        },
+        "po_date": {
+          "label": "PO-datum"
+        },
+        "currency": {
+          "label": "Valuta",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "supplier_reference": {
+          "label": "Leveranciersreferentie"
+        },
+        "incoterm": {
+          "label": "Incoterm"
+        },
+        "expected_ship_date": {
+          "label": "Verwachte verzenddatum"
+        },
+        "expected_arrival_date": {
+          "label": "Verwachte aankomstdatum"
+        },
+        "notes": {
+          "label": "Opmerkingen"
+        },
+        "hold_reason": {
+          "label": "Reden in de wacht"
+        },
+        "cancellation_reason": {
+          "label": "Reden van annulering"
+        },
+        "status_before_hold": {
+          "label": "Vorige status"
+        },
+        "po_total": {
+          "label": "PO Totaal"
+        },
+        "freight_estimate": {
+          "label": "Schatting van de vracht"
+        },
+        "landed_cost_estimate": {
+          "label": "Schatting van de landkosten"
+        }
+      }
+    },
+    "biz_purchase_order_line": {
+      "label": "Inkooporderregel",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "purchase_order_id": {
+          "label": "Aankooporder"
+        },
+        "product_id": {
+          "label": "Product"
+        },
+        "description": {
+          "label": "Beschrijving"
+        },
+        "purchasing_entity_snapshot": {
+          "label": "Momentopname van de inkoopentiteit",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "currency_snapshot": {
+          "label": "Valutamomentopname",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "uom": {
+          "label": "UOM",
+          "options": {
+            "ea": "Elk",
+            "set": "Instellen",
+            "kit": "Kit",
+            "lot": "Veel",
+            "pallet": "Pallet",
+            "container": "Houder",
+            "m": "Meter"
+          }
+        },
+        "quantity": {
+          "label": "Aantal"
+        },
+        "unit_cost": {
+          "label": "Eenheidskosten"
+        },
+        "line_total": {
+          "label": "Lijntotaal"
+        },
+        "source_order_line_ref": {
+          "label": "Bronorderregelref"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_purchase_order_new": {
+      "label": "Nieuwe inkooporder"
+    },
+    "action_purchase_order_mark_sent": {
+      "label": "PO verzenden",
+      "confirm": {
+        "title": "Bestelbon versturen?"
+      }
+    },
+    "action_purchase_order_confirm": {
+      "label": "Bevestig inkooporder"
+    },
+    "action_purchase_order_open_hold_modal": {
+      "label": "In de wacht zetten"
+    },
+    "action_purchase_order_resume": {
+      "label": "Hervat PO"
+    },
+    "action_purchase_order_mark_in_production": {
+      "label": "Markeer in productie"
+    },
+    "action_purchase_order_mark_shipped": {
+      "label": "Markeer verzonden"
+    },
+    "action_purchase_order_mark_received": {
+      "label": "Markeer ontvangen"
+    },
+    "action_purchase_order_close": {
+      "label": "PO sluiten",
+      "confirm": {
+        "title": "Inkooporder sluiten?"
+      }
+    },
+    "action_purchase_order_open_cancel_modal": {
+      "label": "PO annuleren"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Zoek inkooporders..."
+      },
+      "filters": {
+        "open": {
+          "label": "Open inkooporders"
+        },
+        "draft": {
+          "label": "Ontwerp PO's"
+        },
+        "sent": {
+          "label": "PO's verzonden"
+        },
+        "on_hold": {
+          "label": "In de wacht"
+        },
+        "production": {
+          "label": "In productie"
+        },
+        "shipped": {
+          "label": "Verzonden"
+        },
+        "received": {
+          "label": "Ontvangen"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Aankooporder"
+        },
+        "financials": {
+          "title": "Kosten"
+        },
+        "notes": {
+          "title": "Opmerkingen"
+        },
+        "lines": {
+          "title": "PO-lijnen"
+        },
+        "main": {
+          "title": "PO-lijn"
+        }
+      }
+    }
+  },
+  "modals": {
+    "purchase_order_hold": {
+      "title": "Zet de inkooporder in de wacht",
+      "description": "Leg vast waarom de stroom aan de leverancierszijde wordt onderbroken.",
+      "actions": {
+        "update_record": {
+          "label": "In de wacht zetten"
+        },
+        "close_modal": {
+          "label": "Sluiten"
+        }
+      }
+    },
+    "purchase_order_cancel": {
+      "title": "Annuleer de aankooporder",
+      "description": "Leg vast waarom deze inkooporder wordt geannuleerd.",
+      "actions": {
+        "update_record": {
+          "label": "Annuleer de aankooporder"
+        },
+        "close_modal": {
+          "label": "Sluiten"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Inkooporders",
+      "header": {
+        "actions": {
+          "navigate": {
+            "label": "Nieuwe inkooporder"
+          }
+        }
+      },
+      "blocks": {
+        "1": {
+          "cards": {
+            "purchase_orders_draft_count": {
+              "label": "Om te verzenden",
+              "subtitle": "Leveranciersorders opstellen"
+            },
+            "purchase_orders_production_count": {
+              "label": "In productie",
+              "subtitle": "Bevestigd met leverancier"
+            },
+            "purchase_orders_shipped_count": {
+              "label": "In transit",
+              "subtitle": "Leverancier is verzonden"
+            },
+            "purchase_orders_received_count": {
+              "label": "Ontvangen",
+              "subtitle": "In afwachting van afsluiting"
+            }
+          }
+        }
+      }
+    },
+    "sent_page": {
+      "title": "Inkooporders verzonden"
+    },
+    "production_page": {
+      "title": "Inkooporders in productie"
+    },
+    "shipped_page": {
+      "title": "Verzonden inkooporders"
+    },
+    "received_page": {
+      "title": "Ontvangen inkooporders"
+    },
+    "form_page": {
+      "title": "Aankooporder"
+    }
+  },
+  "workflows": {
+    "purchase_order_status_workflow": {
+      "states": {
+        "draft": {
+          "label": "Diepgang"
+        },
+        "sent_to_supplier": {
+          "label": "Verzonden naar leverancier"
+        },
+        "confirmed": {
+          "label": "Bevestigd"
+        },
+        "on_hold": {
+          "label": "In de wacht"
+        },
+        "in_production": {
+          "label": "In productie"
+        },
+        "shipped": {
+          "label": "Verzonden"
+        },
+        "received": {
+          "label": "Ontvangen"
+        },
+        "closed": {
+          "label": "Gesloten"
+        },
+        "cancelled": {
+          "label": "Geannuleerd"
+        }
+      },
+      "transitions": {
+        "draft_sent_to_supplier": {
+          "label": "PO verzenden"
+        },
+        "sent_to_supplier_confirmed": {
+          "label": "Leverancier bevestigd"
+        },
+        "confirmed_on_hold": {
+          "label": "In de wacht zetten"
+        },
+        "confirmed_in_production": {
+          "label": "Start productie"
+        },
+        "in_production_on_hold": {
+          "label": "In de wacht zetten"
+        },
+        "in_production_shipped": {
+          "label": "Markeer verzonden"
+        },
+        "shipped_on_hold": {
+          "label": "In de wacht zetten"
+        },
+        "shipped_received": {
+          "label": "Markeer ontvangen"
+        },
+        "received_closed": {
+          "label": "PO sluiten"
+        },
+        "on_hold_confirmed": {
+          "label": "Hervatten naar Bevestigd"
+        },
+        "on_hold_in_production": {
+          "label": "Ga verder met productie"
+        },
+        "on_hold_shipped": {
+          "label": "Hervatten naar Verzonden"
+        },
+        "draft_cancelled": {
+          "label": "PO annuleren"
+        },
+        "sent_to_supplier_cancelled": {
+          "label": "PO annuleren"
+        },
+        "confirmed_cancelled": {
+          "label": "PO annuleren"
+        },
+        "in_production_cancelled": {
+          "label": "PO annuleren"
+        },
+        "on_hold_cancelled": {
+          "label": "PO annuleren"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "purchase_order_created": "Inkooporder aangemaakt",
+    "purchase_order_updated": "Inkooporder bijgewerkt",
+    "purchase_order_line_created": "Inkooporderregel gemaakt",
+    "purchase_order_line_updated": "Inkooporderregel bijgewerkt",
+    "purchase_order_status_changed": "Status van inkooporder gewijzigd",
+    "new_purchase_order_clicked": "Er is op Nieuwe inkooporder geklikt",
+    "send_po_clicked": "PO verzenden is aangeklikt",
+    "confirm_po_clicked": "Bevestig de inkooporder. Er is geklikt",
+    "put_on_hold_clicked": "In de wacht zetten heeft geklikt",
+    "resume_po_clicked": "Hervatten PO geklikt",
+    "mark_in_production_clicked": "Mark In Production klikte",
+    "mark_shipped_clicked": "Markeren als verzonden heeft geklikt",
+    "mark_received_clicked": "Markeren als ontvangen heeft geklikt",
+    "close_po_clicked": "PO sluiten is geklikt",
+    "cancel_po_clicked": "Er is op Annuleren PO geklikt"
+  },
+  "dashboard": {
+    "purchase_orders_by_status": "Inkooporders op status"
+  }
+}

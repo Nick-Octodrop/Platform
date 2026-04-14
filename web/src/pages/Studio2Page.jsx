@@ -38,6 +38,7 @@ import useWorkspaceProviderStatus from "../hooks/useWorkspaceProviderStatus.js";
 import ProviderSecretModal from "../components/ProviderSecretModal.jsx";
 import ProviderUnavailableState from "../components/ProviderUnavailableState.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import { writeStudioPreviewManifest } from "./studio/studioPreviewStore.js";
 
 function nowIso() {
@@ -57,26 +58,27 @@ function stringifyPretty(value) {
 }
 
 
-function summarizeChanges(calls = [], opsByModule = []) {
+function summarizeChanges(calls = [], opsByModule = [], t = null) {
+  const translate = (key, values, fallback) => (typeof t === "function" ? t(key, values) : fallback);
   const summary = [];
   calls.forEach((call) => {
     if (!call || typeof call !== "object") return;
     const tool = call.tool;
     const entityId = call.entity_id || call.args?.entity_id;
-    if (tool === "ensure_entity" && entityId) summary.push(`Added entity: ${entityId}`);
-    if (tool === "ensure_entity_pages" && entityId) summary.push(`Ensured pages for: ${entityId}`);
-    if (tool === "ensure_nav") summary.push("Ensured app navigation");
-    if (tool === "ensure_relation") summary.push("Added relation");
-    if (tool === "ensure_workflow") summary.push("Added workflow");
-    if (tool === "ensure_ui_pattern") summary.push("Applied UI pattern");
-    if (tool === "ensure_actions_for_status") summary.push("Ensured status actions");
+    if (tool === "ensure_entity" && entityId) summary.push(translate("settings.studio.change_log.added_entity", { entityId }, `Added entity: ${entityId}`));
+    if (tool === "ensure_entity_pages" && entityId) summary.push(translate("settings.studio.change_log.ensured_pages_for", { entityId }, `Ensured pages for: ${entityId}`));
+    if (tool === "ensure_nav") summary.push(translate("settings.studio.change_log.ensured_app_navigation", null, "Ensured app navigation"));
+    if (tool === "ensure_relation") summary.push(translate("settings.studio.change_log.added_relation", null, "Added relation"));
+    if (tool === "ensure_workflow") summary.push(translate("settings.studio.change_log.added_workflow", null, "Added workflow"));
+    if (tool === "ensure_ui_pattern") summary.push(translate("settings.studio.change_log.applied_ui_pattern", null, "Applied UI pattern"));
+    if (tool === "ensure_actions_for_status") summary.push(translate("settings.studio.change_log.ensured_status_actions", null, "Ensured status actions"));
   });
   opsByModule.forEach((entry) => {
     if (!entry || typeof entry !== "object") return;
     const ops = entry.ops || [];
     ops.forEach((op) => {
       if (!op || typeof op !== "object") return;
-      summary.push(`Op: ${op.op} ${op.path}`);
+      summary.push(translate("settings.studio.change_log.operation", { op: op.op, path: op.path }, `Op: ${op.op} ${op.path}`));
     });
   });
   return summary;
@@ -631,6 +633,7 @@ function applyOps(manifest, ops) {
 export default function Studio2Page({ user }) {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const { pushToast } = useToast();
+  const { t, formatDateTime: formatLocalizedDateTime } = useI18n();
   const navigate = useNavigate();
   const { moduleId: routeModuleId } = useParams();
   const { isSuperadmin, hasCapability } = useAccessContext();
@@ -720,7 +723,7 @@ export default function Studio2Page({ user }) {
       setModulesError(null);
     } catch (err) {
       if (!mounted) return;
-      setModulesError(err.message || "Failed to load modules");
+      setModulesError(err.message || t("settings.studio.errors.load_modules_failed"));
     } finally {
       if (mounted) setLoadingModules(false);
     }
@@ -772,7 +775,7 @@ export default function Studio2Page({ user }) {
         setInstalledManifest(res.data?.manifest || {});
         setDraftText(text);
       } catch (err) {
-        pushToast("error", err.message || "Failed to load manifest");
+        pushToast("error", err.message || t("settings.studio.errors.load_manifest_failed"));
       }
     }
     loadManifest();
@@ -912,7 +915,7 @@ export default function Studio2Page({ user }) {
         if (!active) return;
         setValidation({
           status: "error",
-          errors: [{ code: "VALIDATE_FAILED", message: err.message || "Validation failed" }],
+          errors: [{ code: "VALIDATE_FAILED", message: err.message || t("settings.studio.errors.validation_failed") }],
           warnings: [],
           strictErrors: [],
           completenessErrors: [],
@@ -994,13 +997,13 @@ export default function Studio2Page({ user }) {
 
   const listFieldIndex = useMemo(
     () => ({
-      "studio.name": { id: "studio.name", label: "Name" },
-      "studio.status": { id: "studio.status", label: "Status" },
-      "studio.updated_at": { id: "studio.updated_at", label: "Updated" },
-      "studio.module_key": { id: "studio.module_key", label: "Key" },
-      "studio.module_id": { id: "studio.module_id", label: "Module ID" },
+      "studio.name": { id: "studio.name", label: t("common.name") },
+      "studio.status": { id: "studio.status", label: t("common.status") },
+      "studio.updated_at": { id: "studio.updated_at", label: t("common.updated") },
+      "studio.module_key": { id: "studio.module_key", label: t("settings.key") },
+      "studio.module_id": { id: "studio.module_id", label: t("settings.module_id") },
     }),
-    []
+    [t]
   );
 
   const listView = useMemo(
@@ -1011,11 +1014,11 @@ export default function Studio2Page({ user }) {
         { field_id: "studio.name" },
         { field_id: "studio.status" },
         { field_id: "studio.updated_at" },
-        { field_id: "studio.module_key", label: "Key" },
-        { field_id: "studio.module_id", label: "ID" },
+        { field_id: "studio.module_key", label: t("settings.key") },
+        { field_id: "studio.module_id", label: t("common.id") },
       ],
     }),
-    []
+    [t]
   );
 
   const listRecords = useMemo(() => {
@@ -1023,11 +1026,11 @@ export default function Studio2Page({ user }) {
       const status = row.installed
         ? row.has_draft
           ? row.draft_in_sync
-            ? "Installed"
-            : "Dirty"
-          : "Installed"
+            ? t("settings.studio.list_status.installed")
+            : t("settings.studio.list_status.dirty")
+          : t("settings.studio.list_status.installed")
         : row.has_draft
-          ? "Draft"
+          ? t("common.draft")
           : "—";
       return {
         record_id: row.module_id,
@@ -1040,7 +1043,7 @@ export default function Studio2Page({ user }) {
         },
       };
     });
-  }, [moduleRows]);
+  }, [moduleRows, t]);
 
   const activeModuleName = useMemo(() => {
     if (!routeModuleId) return "";
@@ -1050,12 +1053,12 @@ export default function Studio2Page({ user }) {
 
   const listFilters = useMemo(
     () => [
-      { id: "all", label: "All", domain: null },
-      { id: "drafts", label: "Drafts", domain: { op: "eq", field: "studio.status", value: "Draft" } },
-      { id: "installed", label: "Installed", domain: { op: "eq", field: "studio.status", value: "Installed" } },
-      { id: "dirty", label: "Dirty", domain: { op: "eq", field: "studio.status", value: "Dirty" } },
+      { id: "all", label: t("common.all"), domain: null },
+      { id: "drafts", label: t("settings.studio.list_filters.drafts"), domain: { op: "eq", field: "studio.status", value: t("common.draft") } },
+      { id: "installed", label: t("settings.studio.list_status.installed"), domain: { op: "eq", field: "studio.status", value: t("settings.studio.list_status.installed") } },
+      { id: "dirty", label: t("settings.studio.list_status.dirty"), domain: { op: "eq", field: "studio.status", value: t("settings.studio.list_status.dirty") } },
     ],
-    []
+    [t]
   );
 
   const activeListFilter = useMemo(
@@ -1065,13 +1068,13 @@ export default function Studio2Page({ user }) {
 
   const filterableFields = useMemo(
     () => [
-      { id: "studio.name", label: "Name" },
-      { id: "studio.status", label: "Status" },
-      { id: "studio.updated_at", label: "Updated" },
-      { id: "studio.module_key", label: "Key" },
-      { id: "studio.module_id", label: "Module ID" },
+      { id: "studio.name", label: t("common.name") },
+      { id: "studio.status", label: t("common.status") },
+      { id: "studio.updated_at", label: t("common.updated") },
+      { id: "studio.module_key", label: t("settings.key") },
+      { id: "studio.module_id", label: t("settings.module_id") },
     ],
-    []
+    [t]
   );
 
   const moduleById = useMemo(() => {
@@ -1250,7 +1253,7 @@ function buildPreviewManifest() {
     if (!resolvedTarget && pages.length === 0) {
       const placeholder = {
         id: "preview.placeholder",
-        title: "Preview",
+        title: t("common.preview"),
         layout: "single",
         content: [],
       };
@@ -1286,12 +1289,12 @@ function buildPreviewManifest() {
 
   function parsePatchsetOrToast() {
     if (!patchsetText?.trim()) {
-      pushToast("error", "PatchSet is empty");
+      pushToast("error", t("settings.studio.errors.patchset_empty"));
       return null;
     }
     const parsed = parseJsonWithPos(patchsetText);
     if (parsed.error) {
-      pushToast("error", "PatchSet JSON invalid");
+      pushToast("error", t("settings.studio.errors.patchset_json_invalid"));
       return null;
     }
     return parsed.value;
@@ -1300,7 +1303,7 @@ function buildPreviewManifest() {
   async function handleValidate() {
     if (!patchsetText?.trim()) {
       if (!draftManifest) {
-        pushToast("error", "Draft JSON invalid; cannot validate");
+        pushToast("error", t("settings.studio.errors.draft_json_invalid_validate"));
         return;
       }
       setValidation({
@@ -1331,17 +1334,20 @@ function buildPreviewManifest() {
           setPreviewManifest(draftManifest);
           setRightTab("preview");
         }
-        pushToast(errors.length ? "error" : "success", errors.length ? "Draft validation failed" : "Draft valid");
+        pushToast(
+          errors.length ? "error" : "success",
+          errors.length ? t("settings.studio.errors.draft_validation_failed") : t("validation.draft_valid")
+        );
       } catch (err) {
         setValidation({
           status: "error",
-          errors: [{ message: err.message || "Validation failed" }],
+          errors: [{ message: err.message || t("settings.studio.errors.validation_failed") }],
           warnings: [],
           strictErrors: [],
           completenessErrors: [],
           designWarnings: [],
         });
-        pushToast("error", err.message || "Validation failed");
+        pushToast("error", err.message || t("settings.studio.errors.validation_failed"));
       }
       return;
     }
@@ -1366,7 +1372,7 @@ function buildPreviewManifest() {
           completenessErrors: res.completenessErrors || [],
           designWarnings: res.designWarnings || [],
         });
-        pushToast("error", "Validation failed");
+        pushToast("error", t("settings.studio.errors.validation_failed"));
         return;
       }
       const errors = res.data?.errors || res.errors || [];
@@ -1383,23 +1389,26 @@ function buildPreviewManifest() {
         completenessErrors,
         designWarnings,
       });
-      pushToast(errors.length ? "error" : "success", errors.length ? "Validation failed" : "Validation complete");
+      pushToast(
+        errors.length ? "error" : "success",
+        errors.length ? t("settings.studio.errors.validation_failed") : t("settings.studio.notices.validation_complete")
+      );
     } catch (err) {
       setValidation({
         status: "error",
-        errors: [{ message: err.message || "Validation failed" }],
+        errors: [{ message: err.message || t("settings.studio.errors.validation_failed") }],
         warnings: [],
         strictErrors: [],
         completenessErrors: [],
         designWarnings: [],
       });
-      pushToast("error", err.message || "Validation failed");
+      pushToast("error", err.message || t("settings.studio.errors.validation_failed"));
     }
   }
 
   function handlePreview() {
     if (!draftManifest) {
-      pushToast("error", "Draft JSON invalid; cannot preview");
+      pushToast("error", t("settings.studio.errors.draft_json_invalid_preview"));
       return;
     }
     if (!patchsetText?.trim()) {
@@ -1410,7 +1419,7 @@ function buildPreviewManifest() {
     if (!patchset) return;
     const applied = applyPatchset(draftManifest, patchset);
     if (!applied.ok) {
-      pushToast("error", applied.errors[0] || "Preview failed");
+      pushToast("error", applied.errors[0] || t("settings.studio.errors.preview_failed"));
       setPreviewManifest(null);
       return;
     }
@@ -1420,11 +1429,11 @@ function buildPreviewManifest() {
   async function handleApply() {
     if (!patchsetText?.trim()) {
       if (!draftManifest) {
-        pushToast("error", "Draft JSON invalid; cannot install");
+        pushToast("error", t("settings.studio.errors.draft_json_invalid_install"));
         return;
       }
       if (!canInstallDraft) {
-        pushToast("error", "Fix draft validation errors before install");
+        pushToast("error", t("settings.studio.errors.fix_validation_before_install"));
         return;
       }
       try {
@@ -1432,19 +1441,19 @@ function buildPreviewManifest() {
         if (res?.ok === false) {
           setValidation({
             status: "ok",
-            errors: Array.isArray(res?.errors) ? res.errors : [{ message: "Install blocked by validation errors" }],
+            errors: Array.isArray(res?.errors) ? res.errors : [{ message: t("settings.studio.errors.install_blocked_by_validation") }],
             warnings: Array.isArray(res?.warnings) ? res.warnings : [],
             strictErrors: [],
             completenessErrors: [],
             designWarnings: [],
           });
-          pushToast("error", res?.errors?.[0]?.message || "Install blocked by validation errors");
+          pushToast("error", res?.errors?.[0]?.message || t("settings.studio.errors.install_blocked_by_validation"));
           return;
         }
         const info = { ...res.data, applied_at: nowIso() };
         setApplyInfo(info);
         setRollbackTarget(info.transaction_group_id || "");
-        pushToast("success", "Draft installed");
+        pushToast("success", t("settings.studio.notices.draft_installed"));
         await refreshModules(true);
         const historyRes = await listStudio2History(routeModuleId);
         setHistorySnapshots(historyRes.data?.snapshots || []);
@@ -1460,14 +1469,14 @@ function buildPreviewManifest() {
             designWarnings: [],
           });
         }
-        pushToast("error", err.message || "Install failed");
+        pushToast("error", err.message || t("settings.studio.errors.install_failed"));
       }
       return;
     }
     const patchset = parsePatchsetOrToast();
     if (!patchset) return;
     if (validation.status !== "ok") {
-      pushToast("error", "Validate before applying");
+      pushToast("error", t("settings.studio.errors.validate_before_apply"));
       return;
     }
     try {
@@ -1475,17 +1484,17 @@ function buildPreviewManifest() {
       const info = { ...res.data, applied_at: nowIso() };
       setApplyInfo(info);
       setRollbackTarget(info.transaction_group_id || "");
-      pushToast("success", "PatchSet applied");
+      pushToast("success", t("settings.studio.notices.patchset_applied"));
       await refreshModules(true);
     } catch (err) {
-      pushToast("error", err.message || "Apply failed");
+      pushToast("error", err.message || t("settings.studio.errors.apply_failed"));
     }
   }
 
   async function handleRollback() {
     if (!routeModuleId) return;
     if (!rollbackTarget?.trim()) {
-      pushToast("error", "No rollback target");
+      pushToast("error", t("settings.studio.errors.no_rollback_target"));
       return;
     }
     const payload = rollbackTarget.startsWith("sha256:")
@@ -1493,12 +1502,12 @@ function buildPreviewManifest() {
       : { to_transaction_group_id: rollbackTarget };
     try {
       await rollbackStudio2Module(routeModuleId, payload);
-      pushToast("success", "Rollback complete");
+      pushToast("success", t("settings.studio.notices.rollback_complete"));
       const res = await listStudio2History(routeModuleId);
       setHistorySnapshots(res.data?.snapshots || []);
       setHistoryDrafts(res.data?.draft_versions || []);
     } catch (err) {
-      pushToast("error", err.message || "Rollback failed");
+      pushToast("error", err.message || t("settings.studio.errors.rollback_failed"));
     }
   }
 
@@ -1513,7 +1522,7 @@ function buildPreviewManifest() {
         fixed = fallback.data?.fixed_text || null;
       }
       if (!fixed) {
-        pushToast("error", "Unable to fix JSON");
+        pushToast("error", t("settings.studio.errors.unable_to_fix_json"));
         return;
       }
       const beforeLines = draftText.split("\n").length;
@@ -1522,7 +1531,7 @@ function buildPreviewManifest() {
       setFixSummary({ beforeLines, afterLines, beforeChars: draftText.length, afterChars: fixed.length });
       setFixModalOpen(true);
     } catch (err) {
-      pushToast("error", err.message || "Fix JSON failed");
+      pushToast("error", err.message || t("settings.studio.errors.fix_json_failed"));
     }
   }
 
@@ -1532,7 +1541,7 @@ function buildPreviewManifest() {
     setFixModalOpen(false);
     setFixCandidate(null);
     setFixSummary(null);
-    pushToast("success", "JSON fixed");
+    pushToast("success", t("settings.studio.notices.json_fixed"));
   }
 
   async function sendAgentMessage(userMessage) {
@@ -1543,7 +1552,7 @@ function buildPreviewManifest() {
       const history = chatMessages.slice(-6).map((m) => ({ role: m.role, text: m.text }));
       const res = await studio2AgentChat(routeModuleId, userMessage, null, null, null, history);
       const payload = res.data || {};
-      const assistantMessage = payload.notes || payload.assistant_message || "(no response)";
+      const assistantMessage = payload.notes || payload.assistant_message || t("settings.studio.agent.no_response");
       setChatMessages((prev) => [
         ...prev,
         { role: "assistant", text: assistantMessage, ts: nowIso(), diagnostics: payload.diagnostics || null },
@@ -1557,10 +1566,10 @@ function buildPreviewManifest() {
         if (canManageSettings) {
           setOpenAiModalOpen(true);
         } else {
-          pushToast("error", "OpenAI is not connected for this workspace.");
+          pushToast("error", t("settings.studio.agent.openai_not_connected"));
         }
       } else {
-        pushToast("error", err.message || "Agent chat failed");
+        pushToast("error", err.message || t("settings.studio.errors.agent_chat_failed"));
       }
     } finally {
       setChatLoading(false);
@@ -1576,7 +1585,7 @@ function buildPreviewManifest() {
 
   async function handleFixPatchsetWithAgent() {
     if (!patchsetText.trim()) {
-      pushToast("error", "PatchSet is empty");
+      pushToast("error", t("settings.studio.errors.patchset_empty"));
       return;
     }
     const errors = validationErrors
@@ -1593,7 +1602,7 @@ function buildPreviewManifest() {
   async function generatePatchsetFromDraft() {
     if (!routeModuleId) return;
     if (draftError || !draftManifest) {
-      pushToast("error", "Draft JSON invalid");
+      pushToast("error", t("settings.studio.errors.draft_json_invalid"));
       return;
     }
     let base = installedManifest;
@@ -1626,13 +1635,13 @@ function buildPreviewManifest() {
     };
     setPatchsetText(stringifyPretty(patchset));
     setRightTab("patchset");
-    pushToast("success", "PatchSet generated from draft");
+    pushToast("success", t("settings.studio.notices.patchset_generated_from_draft"));
   }
 
   async function saveDraftVersion(note = null, manifestOverride = null) {
     const manifestText = manifestOverride ? stringifyPretty(manifestOverride) : draftText;
     if (!manifestText.trim()) {
-      pushToast("error", "Draft is empty");
+      pushToast("error", t("settings.studio.errors.draft_empty"));
       return null;
     }
     try {
@@ -1643,7 +1652,7 @@ function buildPreviewManifest() {
       setHistoryDrafts(historyRes.data?.draft_versions || []);
       return res.data?.draft_version_id || null;
     } catch (err) {
-      pushToast("error", err.message || "Save draft failed");
+      pushToast("error", err.message || t("settings.studio.errors.save_draft_failed"));
       return null;
     }
   }
@@ -1659,7 +1668,7 @@ function buildPreviewManifest() {
   }
 
   function applyAgentPayload(payload, assistantOverride = null) {
-    const assistantMessage = assistantOverride || payload.notes || payload.assistant_message || "Draft updated.";
+    const assistantMessage = assistantOverride || payload.notes || payload.assistant_message || t("settings.studio.agent.draft_updated");
     setChatMessages((prev) => [...prev, { role: "assistant", text: assistantMessage, ts: nowIso() }]);
     const drafts = payload.drafts || {};
     if (drafts && drafts[routeModuleId]) {
@@ -1670,7 +1679,7 @@ function buildPreviewManifest() {
     const strictErrors = payload.validation?.strict_errors || [];
     const completenessErrors = payload.validation?.completeness_errors || [];
     const designWarnings = payload.validation?.design_warnings || [];
-    setLastChanges(summarizeChanges(payload.calls || [], payload.ops_by_module || []));
+    setLastChanges(summarizeChanges(payload.calls || [], payload.ops_by_module || [], t));
     const hasErrors = errors.length + strictErrors.length + completenessErrors.length > 0;
     setValidation({
       status: hasErrors ? "error" : "ok",
@@ -1728,7 +1737,7 @@ function buildPreviewManifest() {
       doneReceived = true;
       setStreamDone(true);
       if (!finalEnvelope?.ok) {
-        pushToast("error", finalEnvelope?.errors?.[0]?.message || "Agent stream failed");
+        pushToast("error", finalEnvelope?.errors?.[0]?.message || t("settings.studio.errors.agent_stream_failed"));
         return;
       }
       applyAgentPayload(finalEnvelope.data || {});
@@ -1750,10 +1759,10 @@ function buildPreviewManifest() {
           if (canManageSettings) {
             setOpenAiModalOpen(true);
           } else {
-            pushToast("error", "OpenAI is not connected for this workspace.");
+            pushToast("error", t("settings.studio.agent.openai_not_connected"));
           }
         } else {
-          pushToast("error", fallbackErr.message || "Agent chat failed");
+          pushToast("error", fallbackErr.message || t("settings.studio.errors.agent_chat_failed"));
         }
         setStreamDone(true);
       }
@@ -1777,9 +1786,9 @@ function buildPreviewManifest() {
     if (!value) return;
     try {
       navigator.clipboard?.writeText(value);
-      pushToast("success", "Copied");
+      pushToast("success", t("settings.external_api_docs.copied"));
     } catch (err) {
-      pushToast("error", "Copy failed");
+      pushToast("error", t("settings.external_api_docs.copy_failed"));
     }
   }
 
@@ -1788,7 +1797,7 @@ function buildPreviewManifest() {
       setNewModuleBusy(true);
       const name = newModuleName.trim();
       if (!name) {
-        pushToast("error", "Module name is required");
+        pushToast("error", t("settings.studio.errors.module_name_required"));
         return;
       }
       const res = await createStudio2Module(name, newModuleDescription.trim());
@@ -1798,10 +1807,10 @@ function buildPreviewManifest() {
       setNewModuleName("");
       setNewModuleDescription("");
       navigate(`/studio/${createdId}`);
-      pushToast("success", "Module created");
+      pushToast("success", t("settings.studio.notices.module_created"));
       await refreshModules(true);
     } catch (err) {
-      pushToast("error", err.message || "Failed to create module");
+      pushToast("error", err.message || t("settings.studio.errors.create_module_failed"));
     } finally {
       setNewModuleBusy(false);
     }
@@ -1845,10 +1854,10 @@ function buildPreviewManifest() {
       if (publishSlug.trim()) payload.slug = publishSlug.trim();
       if (publishCategory.trim()) payload.category = publishCategory.trim();
       await publishMarketplaceApp(payload);
-      pushToast("success", "Published to marketplace");
+      pushToast("success", t("settings.studio.notices.published_to_marketplace"));
       setPublishModalOpen(false);
     } catch (err) {
-      pushToast("error", err?.message || "Publish failed");
+      pushToast("error", err?.message || t("settings.studio.publish_failed"));
     } finally {
       setPublishBusy(false);
     }
@@ -1858,7 +1867,7 @@ function buildPreviewManifest() {
     setListActionLoading(true);
     try {
       await deleteModule(moduleId, opts);
-      pushToast("success", "Module deleted");
+      pushToast("success", t("settings.studio.notices.module_deleted"));
       await refreshModules(true);
       return false;
     } catch (err) {
@@ -1873,7 +1882,7 @@ function buildPreviewManifest() {
         setDeleteConfirm("");
         return true;
       }
-      pushToast("error", err.message || "Failed to delete module");
+      pushToast("error", err.message || t("settings.studio.errors.delete_module_failed"));
       return false;
     } finally {
       setListActionLoading(false);
@@ -1884,10 +1893,10 @@ function buildPreviewManifest() {
     setListActionLoading(true);
     try {
       await deleteStudio2Draft(moduleId);
-      pushToast("success", "Draft deleted");
+      pushToast("success", t("settings.studio.notices.draft_deleted"));
       await refreshModules(true);
     } catch (err) {
-      pushToast("error", err.message || "Failed to delete draft");
+      pushToast("error", err.message || t("settings.studio.errors.delete_draft_failed"));
     } finally {
       setListActionLoading(false);
     }
@@ -1898,11 +1907,11 @@ function buildPreviewManifest() {
     setListActionLoading(true);
     try {
       await deleteModule(deleteBlocked.moduleId, { archive: true });
-      pushToast("success", "Module archived");
+      pushToast("success", t("settings.studio.notices.module_archived"));
       setDeleteBlocked(null);
       await refreshModules(true);
     } catch (err) {
-      pushToast("error", err.message || "Failed to archive module");
+      pushToast("error", err.message || t("settings.studio.errors.archive_module_failed"));
     } finally {
       setListActionLoading(false);
     }
@@ -1914,11 +1923,11 @@ function buildPreviewManifest() {
     setListActionLoading(true);
     try {
       await deleteModule(deleteBlocked.moduleId, { force: true });
-      pushToast("success", "Module deleted");
+      pushToast("success", t("settings.studio.notices.module_deleted"));
       setDeleteBlocked(null);
       await refreshModules(true);
     } catch (err) {
-      pushToast("error", err.message || "Failed to delete module");
+      pushToast("error", err.message || t("settings.studio.errors.delete_module_failed"));
     } finally {
       setListActionLoading(false);
     }
@@ -2102,7 +2111,7 @@ function buildPreviewManifest() {
       const historyRes = await listStudio2History(moduleId);
       setRollbackHistory(historyRes.data?.history || []);
     } catch (err) {
-      setRollbackError(err.message || "Failed to load snapshots");
+      setRollbackError(err.message || t("settings.studio.errors.load_snapshots_failed"));
     } finally {
       setRollbackLoading(false);
     }
@@ -2112,13 +2121,13 @@ function buildPreviewManifest() {
     if (!snapshotHash) return;
     try {
       await rollbackStudio2Module(routeModuleId, { to_snapshot_hash: snapshotHash });
-      pushToast("success", "Rollback complete");
+      pushToast("success", t("settings.studio.notices.rollback_complete"));
       await refreshModules(true);
       const res = await listStudio2History(routeModuleId);
       setHistorySnapshots(res.data?.snapshots || []);
       setHistoryDrafts(res.data?.draft_versions || []);
     } catch (err) {
-      pushToast("error", err.message || "Rollback failed");
+      pushToast("error", err.message || t("settings.studio.errors.rollback_failed"));
     }
   }
 
@@ -2126,12 +2135,12 @@ function buildPreviewManifest() {
     if (!versionId) return;
     try {
       await rollbackStudio2Module(routeModuleId, { to_draft_version_id: versionId });
-      pushToast("success", "Draft rolled back");
+      pushToast("success", t("settings.studio.notices.draft_rolled_back"));
       const res = await listStudio2History(routeModuleId);
       setHistorySnapshots(res.data?.snapshots || []);
       setHistoryDrafts(res.data?.draft_versions || []);
     } catch (err) {
-      pushToast("error", err.message || "Draft rollback failed");
+      pushToast("error", err.message || t("settings.studio.errors.draft_rollback_failed"));
     }
   }
 
@@ -2141,11 +2150,11 @@ function buildPreviewManifest() {
     setRollbackError("");
     try {
       await rollbackStudio2Module(rollbackTargetModule, { to_snapshot_hash: rollbackSelected });
-      pushToast("success", "Rollback complete");
+      pushToast("success", t("settings.studio.notices.rollback_complete"));
       setRollbackModalOpen(false);
       await refreshModules(true);
     } catch (err) {
-      setRollbackError(err.message || "Rollback failed");
+      setRollbackError(err.message || t("settings.studio.errors.rollback_failed"));
     } finally {
       setRollbackLoading(false);
     }
@@ -2157,9 +2166,9 @@ function buildPreviewManifest() {
   const canInstallDraft = !draftError && !hasValidationErrors;
   const debugClass = localStorage.getItem("octo_layout_debug") === "1" ? "outline outline-1 outline-red-500" : "";
   const moduleTitle = useMemo(() => {
-    if (!routeModuleId) return "Studio";
+    if (!routeModuleId) return t("settings.index.blocks.studio.title");
     return draftManifest?.module?.name || moduleById.get(routeModuleId)?.name || routeModuleId;
-  }, [routeModuleId, draftManifest, moduleById]);
+  }, [routeModuleId, draftManifest, moduleById, t]);
 
   useEffect(() => {
     if (!routeModuleId) return;
@@ -2183,7 +2192,7 @@ function buildPreviewManifest() {
       <div className="mt-3 flex-1 min-h-0 overflow-hidden md:mt-0">
         {!previewOverride && (
           <div className="text-sm opacity-60">
-            {draftError ? "Preview unavailable: draft JSON is invalid." : "Preview unavailable: missing app/pages configuration."}
+            {draftError ? t("settings.studio.preview.invalid_draft_json") : t("settings.studio.preview.missing_configuration")}
           </div>
         )}
         {previewOverride && (
@@ -2192,7 +2201,7 @@ function buildPreviewManifest() {
               <div className="h-full min-h-0 overflow-hidden bg-base-200">
                 <iframe
                   ref={previewFrameRef}
-                  title="Studio module preview"
+                  title={t("settings.studio.preview.frame_title")}
                   src={`/studio/preview/${routeModuleId}?octo_ai_frame=1`}
                   className="block h-full w-full border-0 bg-transparent"
                 />
@@ -2207,7 +2216,7 @@ function buildPreviewManifest() {
   const draftTab = (
     <div className="h-full min-h-0 flex flex-col">
       <div className="flex items-center justify-between mb-2">
-        <div className="text-sm font-semibold">Manifest</div>
+        <div className="text-sm font-semibold">{t("settings.studio.tabs.manifest")}</div>
         <div />
       </div>
       <CodeTextarea
@@ -2218,7 +2227,7 @@ function buildPreviewManifest() {
       />
       {draftError && (
         <div className="alert alert-error text-xs mt-2">
-          JSON error: {draftError.message} {draftError.line ? `(${draftError.line}:${draftError.col})` : ""}
+          {t("settings.studio.errors.json_error")}: {draftError.message} {draftError.line ? `(${draftError.line}:${draftError.col})` : ""}
         </div>
       )}
     </div>
@@ -2226,48 +2235,48 @@ function buildPreviewManifest() {
 
   const historyTab = (
     <div className="h-full min-h-0 overflow-auto">
-      {historyLoading && <div className="text-sm opacity-60">Loading history…</div>}
+      {historyLoading && <div className="text-sm opacity-60">{t("settings.studio.history.loading")}</div>}
       {!historyLoading && (
         <div className="space-y-6">
           <div>
-            <div className="text-sm font-semibold mb-2">Installed snapshots</div>
-            {historySnapshots.length === 0 && <div className="text-xs opacity-60">No snapshots yet.</div>}
+            <div className="text-sm font-semibold mb-2">{t("settings.studio.history.installed_snapshots")}</div>
+            {historySnapshots.length === 0 && <div className="text-xs opacity-60">{t("settings.studio.history.no_snapshots")}</div>}
             <div className="space-y-2">
               {historySnapshots.map((snap) => (
                 <div key={`${snap.manifest_hash}-${snap.created_at}`} className="flex items-center justify-between gap-2 text-xs">
                   <div className="flex items-center gap-2">
-                    <span className="badge badge-outline">{snap.action || "snapshot"}</span>
+                    <span className="badge badge-outline">{snap.action || t("settings.studio.history.snapshot")}</span>
                     <span className="font-mono">{(snap.manifest_hash || "").slice(0, 12)}</span>
                     {snap.transaction_group_id && <span className="font-mono">{snap.transaction_group_id}</span>}
-                    <span className="opacity-60">{formatDateTime(snap.created_at, "")}</span>
+                    <span className="opacity-60">{formatLocalizedDateTime(snap.created_at) || "—"}</span>
                   </div>
                   <button
                     className="btn btn-xs btn-outline"
                     onClick={() => handleRollbackSnapshot(snap.manifest_hash)}
                   >
-                    Rollback
+                    {t("settings.studio.actions.rollback")}
                   </button>
                 </div>
               ))}
             </div>
           </div>
           <div>
-            <div className="text-sm font-semibold mb-2">Draft versions</div>
-            {historyDrafts.length === 0 && <div className="text-xs opacity-60">No draft history yet.</div>}
+            <div className="text-sm font-semibold mb-2">{t("settings.studio.history.draft_versions")}</div>
+            {historyDrafts.length === 0 && <div className="text-xs opacity-60">{t("settings.studio.history.no_draft_history")}</div>}
             <div className="space-y-2">
               {historyDrafts.map((dv) => (
                 <div key={dv.draft_version_id} className="flex items-center justify-between gap-2 text-xs">
                   <div className="flex items-center gap-2">
-                    <span className="badge badge-outline">draft</span>
+                    <span className="badge badge-outline">{t("common.draft")}</span>
                     <span className="font-mono">{(dv.draft_version_id || "").slice(0, 8)}</span>
                     {dv.note && <span>{dv.note}</span>}
-                    <span className="opacity-60">{formatDateTime(dv.created_at, "")}</span>
+                    <span className="opacity-60">{formatLocalizedDateTime(dv.created_at) || "—"}</span>
                   </div>
                   <button
                     className="btn btn-xs btn-outline"
                     onClick={() => handleRollbackDraftVersion(dv.draft_version_id)}
                   >
-                    Rollback draft
+                    {t("settings.studio.actions.rollback_draft")}
                   </button>
                 </div>
               ))}
@@ -2282,9 +2291,9 @@ function buildPreviewManifest() {
     <div className="h-full min-h-0 flex flex-col overflow-hidden">
       <div>
         <div className="flex items-center justify-between">
-          <div className="text-sm font-semibold">PatchSet JSON (Advanced)</div>
+          <div className="text-sm font-semibold">{t("settings.studio.advanced.patchset_json")}</div>
           <button className="btn btn-xs btn-outline" onClick={generatePatchsetFromDraft} disabled={!routeModuleId}>
-            Generate from Draft
+            {t("settings.studio.actions.generate_from_draft")}
           </button>
         </div>
         <CodeTextarea
@@ -2293,16 +2302,16 @@ function buildPreviewManifest() {
           minHeight="220px"
         />
         {patchsetError && (
-          <div className="alert alert-error text-xs mt-2">PatchSet JSON error: {patchsetError.message}</div>
+          <div className="alert alert-error text-xs mt-2">{t("settings.studio.errors.patchset_json_error")}: {patchsetError.message}</div>
         )}
-        {patchsetSummary && <div className="text-xs opacity-70 mt-1">Summary: {patchsetSummary}</div>}
+        {patchsetSummary && <div className="text-xs opacity-70 mt-1">{t("settings.studio.summary")}: {patchsetSummary}</div>}
       </div>
 
       <div className="mt-3">
-        <div className="text-sm font-semibold">Apply / Rollback</div>
-        <div className="text-xs opacity-70">Last apply: {applyInfo?.applied_at || "—"}</div>
+        <div className="text-sm font-semibold">{t("settings.studio.advanced.apply_rollback")}</div>
+        <div className="text-xs opacity-70">{t("settings.studio.advanced.last_apply")}: {formatLocalizedDateTime(applyInfo?.applied_at) || "—"}</div>
         <div className="text-xs opacity-70 flex items-center gap-2">
-          Transaction group:
+          {t("settings.studio.advanced.transaction_group")}:
           {applyInfo?.transaction_group_id ? (
             <span className="badge badge-outline cursor-pointer" onClick={() => copyText(applyInfo.transaction_group_id)}>
               {applyInfo.transaction_group_id}
@@ -2313,16 +2322,16 @@ function buildPreviewManifest() {
         </div>
         <input
           className="input input-bordered input-sm mt-2 w-full"
-          placeholder="transaction_group_id or snapshot hash"
+          placeholder={t("settings.studio.advanced.rollback_target_placeholder")}
           value={rollbackTarget}
           onChange={(e) => setRollbackTarget(e.target.value)}
         />
         <div className="mt-2 flex items-center gap-2">
           <button className="btn btn-xs btn-outline" onClick={handleRollback} disabled={!rollbackTarget.trim()}>
-            Rollback
+            {t("settings.studio.actions.rollback")}
           </button>
           <button className="btn btn-xs btn-outline" onClick={() => openRollback(routeModuleId)}>
-            View history / rollback
+            {t("settings.studio.actions.view_history_rollback")}
           </button>
           {applyInfo?.transaction_group_id && (
             <button className="btn btn-xs btn-outline" onClick={() => setRollbackTarget(applyInfo.transaction_group_id)}>
@@ -2349,9 +2358,9 @@ function buildPreviewManifest() {
       return (
         <div ref={leftPaneRef} className="h-full min-h-0 flex flex-col overflow-hidden">
           <ProviderUnavailableState
-            title="OpenAI not connected"
-            description="Connect an OpenAI key for this workspace to use Studio AI."
-            actionLabel="Connect OpenAI"
+            title={t("settings.studio.agent.openai_not_connected")}
+            description={t("settings.studio.agent.openai_not_connected_description")}
+            actionLabel={t("settings.studio.agent.connect_openai")}
             canManageSettings={canManageSettings}
             loading={providerStatusLoading}
             onAction={() => setOpenAiModalOpen(true)}
@@ -2364,11 +2373,11 @@ function buildPreviewManifest() {
         <div ref={chatListRef} className="flex-1 min-h-0 overflow-auto space-y-4">
           {chatMessages.length === 0 && (
             <div className="chat chat-start">
-              <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">assistant</div>
+              <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{t("common.assistant")}</div>
               <div className="chat-bubble text-sm leading-5 max-w-[85%] bg-base-200 text-base-content">
                 {routeModuleId
-                  ? `Describe the change you want for ${activeModuleName} and I will draft an update.`
-                  : "Describe the module change you want and I will draft an update."}
+                  ? t("settings.studio.agent.describe_change_for_module", { moduleName: activeModuleName })
+                  : t("settings.studio.agent.intro")}
               </div>
             </div>
           )}
@@ -2420,7 +2429,7 @@ function buildPreviewManifest() {
               onChange={setChatInput}
               onSend={handleAgentChat}
               disabled={!routeModuleId || chatLoading}
-              placeholder={routeModuleId ? "Describe a Studio change..." : "Select a module first..."}
+              placeholder={routeModuleId ? t("settings.studio.agent.placeholder") : t("settings.studio.agent.select_module_first")}
               minRows={4}
             />
             {chatLoading && (
@@ -2550,13 +2559,13 @@ function buildPreviewManifest() {
             </div>
           )}
           {baseErrors.length === 0 && strictErrors.length === 0 && completenessErrors.length === 0 && validationWarnings.length === 0 && (
-            <div className="alert alert-success text-xs">Draft valid</div>
+            <div className="alert alert-success text-xs">{t("validation.draft_valid")}</div>
           )}
         </div>
       )}
       {lastChanges.length > 0 && (
         <details className="mt-2">
-          <summary className="text-xs font-semibold cursor-pointer">What changed</summary>
+          <summary className="text-xs font-semibold cursor-pointer">{t("settings.studio.change_log.title")}</summary>
           <ul className="mt-2 text-xs space-y-1">
             {lastChanges.map((item, idx) => (
               <li key={`${item}-${idx}`} className="opacity-80">
@@ -2585,16 +2594,16 @@ function buildPreviewManifest() {
     kind: "studio",
     defaultTabId: "preview",
     rightTabs: [
-      { id: "preview", label: "Preview", render: () => previewTab },
-      { id: "draft", label: "Manifest", render: () => draftTab },
-      { id: "history", label: "History", render: () => historyTab },
-      { id: "advanced", label: "Advanced", render: () => advancedTab },
+      { id: "preview", label: t("settings.studio.tabs.preview"), render: () => previewTab },
+      { id: "draft", label: t("settings.studio.tabs.manifest"), render: () => draftTab },
+      { id: "history", label: t("settings.studio.tabs.history"), render: () => historyTab },
+      { id: "advanced", label: t("settings.studio.tabs.advanced"), render: () => advancedTab },
     ],
     actions: [
-      { id: "save-draft", label: "Save Draft", kind: "secondary", onClick: () => saveDraftVersion("manual save"), disabled: !routeModuleId },
-      { id: "install-draft", label: "Install Draft", kind: "primary", onClick: handleApply, disabled: !canInstallDraft },
+      { id: "save-draft", label: t("settings.studio.actions.save_draft"), kind: "secondary", onClick: () => saveDraftVersion("manual save"), disabled: !routeModuleId },
+      { id: "install-draft", label: t("settings.studio.actions.install_draft"), kind: "primary", onClick: handleApply, disabled: !canInstallDraft },
     ],
-  }), [advancedTab, canInstallDraft, draftTab, handleApply, historyTab, previewTab, routeModuleId, saveDraftVersion]);
+  }), [advancedTab, canInstallDraft, draftTab, handleApply, historyTab, previewTab, routeModuleId, saveDraftVersion, t]);
 
   const loadRecord = useCallback(async () => ({ id: routeModuleId || "studio" }), [routeModuleId]);
 
@@ -2602,12 +2611,12 @@ function buildPreviewManifest() {
     <div className="modal modal-open">
       <div className="modal-box">
         <h3 className="font-bold text-lg">
-          {pendingDeleteKind === "draft" ? "Delete draft" : "Delete module"}
+          {pendingDeleteKind === "draft" ? t("settings.studio.delete_modal.draft_title") : t("settings.studio.actions.delete_module")}
         </h3>
         <p className="text-sm opacity-70 mt-2">
           {pendingDeleteKind === "draft"
-            ? "This will remove the draft without affecting any installed module."
-            : "Choose whether to keep records created by this module, or delete everything."}
+            ? t("settings.studio.delete_modal.draft_body")
+            : t("apps_page.delete_body")}
         </p>
         {pendingDeleteKind !== "draft" && (
           <div className="mt-4 space-y-2">
@@ -2620,9 +2629,9 @@ function buildPreviewManifest() {
                 onChange={() => setDeleteMode("keep_records")}
               />
               <div>
-                <div className="font-semibold">Remove module (keep records)</div>
+                <div className="font-semibold">{t("settings.studio.delete_modal.remove_keep_records")}</div>
                 <div className="text-xs opacity-70">
-                  The app is archived/disabled, but your workspace data remains.
+                  {t("settings.studio.delete_modal.remove_keep_records_help")}
                 </div>
               </div>
             </label>
@@ -2635,29 +2644,29 @@ function buildPreviewManifest() {
                 onChange={() => setDeleteMode("delete_records")}
               />
               <div>
-                <div className="font-semibold text-error">Delete module + records</div>
+                <div className="font-semibold text-error">{t("settings.studio.delete_modal.delete_module_records")}</div>
                 <div className="text-xs opacity-70">
-                  Irreversible. Removes all records for entities defined by this module (and any other module using the same entities).
+                  {t("settings.studio.delete_modal.delete_module_records_help")}
                 </div>
               </div>
             </label>
           </div>
         )}
-        <p className="text-sm mt-2">Type <span className="font-mono">{pendingDelete}</span> to confirm.</p>
+        <p className="text-sm mt-2">{t("settings.studio.delete_modal.type_value_to_confirm", { value: pendingDelete })}</p>
         <input
           className="input input-bordered input-sm w-full mt-3"
           value={deleteConfirm}
           onChange={(e) => setDeleteConfirm(e.target.value)}
-          placeholder="module id"
+          placeholder={t("settings.studio.delete_modal.module_id_placeholder")}
         />
         {pendingDeleteKind !== "draft" && deleteMode === "delete_records" && (
           <div className="mt-3">
-            <div className="text-sm">Also type <span className="font-mono">DELETE</span> to confirm record deletion.</div>
+            <div className="text-sm">{t("settings.studio.delete_modal.also_type_delete_to_confirm")}</div>
             <input
               className="input input-bordered input-sm w-full mt-2"
               value={forceConfirm}
               onChange={(e) => setForceConfirm(e.target.value)}
-              placeholder="DELETE"
+              placeholder={t("settings.studio.delete_modal.delete_keyword_placeholder")}
             />
           </div>
         )}
@@ -2677,7 +2686,11 @@ function buildPreviewManifest() {
               (pendingDeleteKind !== "draft" && deleteMode === "delete_records" && forceConfirm !== "DELETE")
             }
           >
-            {pendingDeleteKind === "draft" ? "Delete" : deleteMode === "delete_records" ? "Delete" : "Remove"}
+            {pendingDeleteKind === "draft"
+              ? t("common.delete")
+              : deleteMode === "delete_records"
+                ? t("common.delete")
+                : t("common.remove")}
           </button>
         </div>
       </div>
@@ -2687,13 +2700,13 @@ function buildPreviewManifest() {
   const deleteBlockedModal = deleteBlocked ? (
     <div className="modal modal-open">
       <div className="modal-box">
-        <h3 className="font-bold text-lg">Module has records</h3>
+        <h3 className="font-bold text-lg">{t("settings.studio.delete_blocked.title")}</h3>
         <p className="text-sm opacity-70 mt-2">
-          This module has {deleteBlocked.recordCount || 0} record(s). You can archive it, or force delete to remove all records.
+          {t("settings.studio.delete_blocked.body", { count: deleteBlocked.recordCount || 0 })}
         </p>
         {Object.keys(deleteBlocked.entityCounts || {}).length > 0 && (
           <div className="mt-3">
-            <div className="text-xs uppercase opacity-60 mb-2">Records by entity</div>
+            <div className="text-xs uppercase opacity-60 mb-2">{t("settings.studio.delete_blocked.records_by_entity")}</div>
             <ul className="text-sm space-y-1">
               {Object.entries(deleteBlocked.entityCounts)
                 .sort((a, b) => a[0].localeCompare(b[0]))
@@ -2706,21 +2719,21 @@ function buildPreviewManifest() {
           </div>
         )}
         <div className="mt-4">
-          <div className="text-sm">Type <span className="font-mono">DELETE</span> to force delete.</div>
+          <div className="text-sm">{t("settings.studio.delete_blocked.type_delete_to_force")}</div>
           <input
             className="input input-bordered input-sm w-full mt-2"
             value={forceConfirm}
             onChange={(e) => setForceConfirm(e.target.value)}
-            placeholder="DELETE"
+            placeholder={t("settings.studio.delete_modal.delete_keyword_placeholder")}
           />
         </div>
         <div className="modal-action">
           <button className="btn" onClick={() => setDeleteBlocked(null)}>Cancel</button>
           <button className="btn btn-ghost" onClick={handleArchiveBlocked} disabled={listActionLoading}>
-            Archive instead
+            {t("settings.studio.delete_blocked.archive_instead")}
           </button>
           <button className="btn btn-error" onClick={handleForceDeleteBlocked} disabled={forceConfirm !== "DELETE" || listActionLoading}>
-            Force delete
+            {t("settings.studio.delete_blocked.force_delete")}
           </button>
         </div>
       </div>
@@ -2730,64 +2743,64 @@ function buildPreviewManifest() {
   const publishModal = publishModalOpen ? (
     <div className="modal modal-open">
       <div className="modal-box max-w-xl">
-        <h3 className="font-bold text-lg">Publish to marketplace</h3>
+        <h3 className="font-bold text-lg">{t("settings.studio.publish_modal.title")}</h3>
         <div className="text-sm opacity-70 mt-1">
-          Publishes an immutable snapshot of <span className="font-mono">{publishModuleId}</span>.
+          {t("settings.studio.publish_modal.description", { moduleId: publishModuleId })}
         </div>
         <div className="mt-4 grid gap-3">
           <label className="form-control">
             <div className="label">
-              <span className="label-text">Title</span>
+              <span className="label-text">{t("settings.studio.publish_modal.title_label")}</span>
             </div>
             <input
               className="input input-bordered input-sm w-full"
               value={publishTitle}
               onChange={(e) => setPublishTitle(e.target.value)}
-              placeholder="Marketplace title"
+              placeholder={t("settings.studio.publish_modal.title_placeholder")}
             />
           </label>
           <label className="form-control">
             <div className="label">
-              <span className="label-text">Description</span>
+              <span className="label-text">{t("common.description")}</span>
             </div>
             <textarea
               className="textarea textarea-bordered textarea-sm w-full min-h-[92px]"
               value={publishDescription}
               onChange={(e) => setPublishDescription(e.target.value)}
-              placeholder="Optional description"
+              placeholder={t("settings.studio.publish_modal.description_placeholder")}
             />
           </label>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <label className="form-control">
               <div className="label">
-                <span className="label-text">Slug (optional)</span>
+                <span className="label-text">{t("settings.studio.publish_modal.slug_optional")}</span>
               </div>
               <input
                 className="input input-bordered input-sm w-full"
                 value={publishSlug}
                 onChange={(e) => setPublishSlug(e.target.value)}
-                placeholder="work-orders"
+                placeholder={t("settings.studio.publish_modal.slug_placeholder")}
               />
             </label>
             <label className="form-control">
               <div className="label">
-                <span className="label-text">Category (optional)</span>
+                <span className="label-text">{t("settings.studio.publish_modal.category_optional")}</span>
               </div>
               <input
                 className="input input-bordered input-sm w-full"
                 value={publishCategory}
                 onChange={(e) => setPublishCategory(e.target.value)}
-                placeholder="Operations"
+                placeholder={t("settings.studio.publish_modal.category_placeholder")}
               />
             </label>
           </div>
         </div>
         <div className="modal-action">
           <button className="btn" onClick={() => setPublishModalOpen(false)} disabled={publishBusy}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button className="btn btn-primary" onClick={confirmPublish} disabled={publishBusy}>
-            {publishBusy ? "Publishing..." : "Publish"}
+            {publishBusy ? t("settings.studio.publish_modal.publishing_action") : t("settings.studio.actions.publish")}
           </button>
         </div>
       </div>
@@ -2806,13 +2819,13 @@ function buildPreviewManifest() {
         <div className={isMobile ? "h-full min-h-0 flex flex-col bg-base-100 overflow-hidden" : "card bg-base-100 shadow h-full min-h-0 flex flex-col overflow-hidden"}>
           <div className={isMobile ? "h-full min-h-0 p-4 flex flex-col" : "card-body flex flex-col min-h-0"}>
             <div className={`${isMobile ? "flex-1 min-h-0 overflow-auto overflow-x-hidden" : "mt-4 flex-1 min-h-0 overflow-auto overflow-x-hidden"}`}>
-              {loadingModules && <div className="text-sm opacity-60">Loading modules...</div>}
+              {loadingModules && <div className="text-sm opacity-60">{t("settings.studio.loading_modules")}</div>}
               {modulesError && <div className="text-sm text-error">{modulesError}</div>}
               {!loadingModules && !modulesError && (
                 <div className="flex flex-col gap-4 min-w-0">
                   <SystemListToolbar
-                    title="Module"
-                    createTooltip="New Module"
+                    title={t("common.module")}
+                    createTooltip={t("settings.studio.new_module_tooltip")}
                     onCreate={() => setCreateModalOpen(true)}
                     searchValue={search}
                     onSearchChange={setSearch}
@@ -2834,31 +2847,31 @@ function buildPreviewManifest() {
                     rightActions={
                       listSelectedIds.length > 0 ? (
                         <div className="dropdown dropdown-end">
-                          <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                          <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label={t("settings.selection_actions")}>
                             <MoreHorizontal className="h-4 w-4" />
                           </button>
                           <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
                             <li className="menu-title">
-                              <span>Selection</span>
+                              <span>{t("settings.selection")}</span>
                             </li>
                             {listSelectedIds.length === 1 && singleSelected ? (
                               <>
                                 <li>
                                   <button onClick={() => navigate(`/studio/${singleSelected.module_id}`)}>
-                                    Open module
+                                    {t("settings.studio.actions.open_module")}
                                   </button>
                                 </li>
                                 {isSuperadmin && singleSelected.installed ? (
                                   <li>
                                     <button onClick={() => openPublish(singleSelected)} disabled={listActionLoading}>
-                                      Publish
+                                      {t("settings.studio.actions.publish")}
                                     </button>
                                   </li>
                                 ) : null}
                                 {singleSelected.installed ? (
                                   <li>
                                     <button onClick={() => openRollback(singleSelected.module_id)} disabled={listActionLoading}>
-                                      Rollback
+                                      {t("settings.studio.actions.rollback")}
                                     </button>
                                   </li>
                                 ) : null}
@@ -2876,7 +2889,7 @@ function buildPreviewManifest() {
                                     return;
                                   }
                                   if (listActionLoading) return;
-                                  const ok = window.confirm(`Delete ${listSelectedIds.length} module(s)?`);
+                                  const ok = window.confirm(t("settings.studio.delete_selected_modules_confirm", { count: listSelectedIds.length }));
                                   if (!ok) return;
                                   Promise.all(
                                     selectedRows.map((row) => {
@@ -2894,7 +2907,7 @@ function buildPreviewManifest() {
                                 }}
                                 disabled={listActionLoading}
                               >
-                                {listSelectedIds.length === 1 ? "Delete" : `Delete selected (${listSelectedIds.length})`}
+                                {listSelectedIds.length === 1 ? t("common.delete") : t("settings.studio.actions.delete_selected", { count: listSelectedIds.length })}
                               </button>
                             </li>
                           </ul>
@@ -2940,31 +2953,31 @@ function buildPreviewManifest() {
         {createModalOpen && (
           <div className="modal modal-open">
             <div className="modal-box">
-              <h3 className="font-bold text-lg">Create New Module</h3>
+              <h3 className="font-bold text-lg">{t("settings.studio.create_new_module")}</h3>
               <div className="mt-4 space-y-3">
                 <div>
-                  <label className="text-xs opacity-70">Module Name</label>
+                  <label className="text-xs opacity-70">{t("settings.studio.module_name")}</label>
                   <input
                     className="input input-bordered input-sm w-full"
-                    placeholder="Work Orders"
+                    placeholder={t("settings.studio.module_name_placeholder")}
                     value={newModuleName}
                     onChange={(e) => setNewModuleName(e.target.value)}
                   />
                 </div>
                 <div>
-                  <label className="text-xs opacity-70">Description (optional)</label>
+                  <label className="text-xs opacity-70">{t("settings.studio.description_optional")}</label>
                   <textarea
                     className="textarea textarea-bordered textarea-sm w-full"
                     rows={3}
-                    placeholder="Short description of this module"
+                    placeholder={t("settings.studio.description_placeholder")}
                     value={newModuleDescription}
                     onChange={(e) => setNewModuleDescription(e.target.value)}
                   />
                 </div>
               </div>
               <div className="modal-action">
-                <button className="btn btn-ghost" onClick={() => setCreateModalOpen(false)}>Cancel</button>
-                <button className="btn btn-primary" onClick={handleCreateModule}>Create</button>
+                <button className="btn btn-ghost" onClick={() => setCreateModalOpen(false)}>{t("common.cancel")}</button>
+                <button className="btn btn-primary" onClick={handleCreateModule}>{t("common.create")}</button>
               </div>
             </div>
           </div>
@@ -2972,12 +2985,12 @@ function buildPreviewManifest() {
         {rollbackModalOpen && (
           <div className="modal modal-open">
             <div className="modal-box">
-              <h3 className="font-bold text-lg">Rollback Module</h3>
+              <h3 className="font-bold text-lg">{t("settings.studio.rollback_module")}</h3>
               <div className="mt-4 space-y-3">
-                {rollbackLoading && <div className="text-sm opacity-60">Loading snapshots...</div>}
+                {rollbackLoading && <div className="text-sm opacity-60">{t("settings.studio.loading_snapshots")}</div>}
                 {rollbackError && <div className="alert alert-error text-sm">{rollbackError}</div>}
                 {!rollbackLoading && rollbackSnapshots.length === 0 && !rollbackError && (
-                  <div className="text-sm opacity-60">No snapshots available.</div>
+                  <div className="text-sm opacity-60">{t("settings.studio.no_snapshots_available")}</div>
                 )}
                 {!rollbackLoading && rollbackSnapshots.length > 0 && (
                   <div className="space-y-2">
@@ -2998,14 +3011,14 @@ function buildPreviewManifest() {
                 )}
                 {!rollbackLoading && rollbackHistory.length > 0 && (
                   <div className="mt-4">
-                    <div className="text-xs font-semibold mb-2">Recent history</div>
+                    <div className="text-xs font-semibold mb-2">{t("settings.studio.recent_history")}</div>
                     <div className="space-y-2 text-xs">
                       {rollbackHistory.slice(0, 10).map((entry) => (
                         <div key={entry.audit_id || entry.at} className="flex flex-wrap items-center gap-2">
-                          <span className="badge badge-outline">{entry.action || "change"}</span>
+                          <span className="badge badge-outline">{entry.action || t("settings.studio.change")}</span>
                           {entry.transaction_group_id && <span className="font-mono">{entry.transaction_group_id}</span>}
                           {entry.patch_id && <span className="font-mono">{entry.patch_id}</span>}
-                          <span className="opacity-60">{formatDateTime(entry.at, "")}</span>
+                          <span className="opacity-60">{formatLocalizedDateTime(entry.at) || "—"}</span>
                         </div>
                       ))}
                     </div>
@@ -3013,9 +3026,9 @@ function buildPreviewManifest() {
                 )}
               </div>
               <div className="modal-action">
-                <button className="btn btn-ghost" onClick={() => setRollbackModalOpen(false)}>Cancel</button>
+                <button className="btn btn-ghost" onClick={() => setRollbackModalOpen(false)}>{t("common.cancel")}</button>
                 <button className="btn btn-primary" onClick={handleRollbackFromList} disabled={rollbackLoading || !rollbackSelected}>
-                  Rollback
+                  {t("settings.studio.actions.rollback")}
                 </button>
               </div>
             </div>
@@ -3045,15 +3058,15 @@ function buildPreviewManifest() {
       {fixModalOpen && (
         <div className="modal modal-open">
           <div className="modal-box">
-            <h3 className="font-bold text-lg">Apply JSON Fix?</h3>
-            <p className="text-sm opacity-70 mt-2">Proposed changes summary:</p>
+            <h3 className="font-bold text-lg">{t("settings.studio.apply_json_fix_title")}</h3>
+            <p className="text-sm opacity-70 mt-2">{t("settings.studio.proposed_changes_summary")}</p>
             <div className="mt-2 text-xs">
-              <div>Lines: {fixSummary?.beforeLines} → {fixSummary?.afterLines}</div>
-              <div>Chars: {fixSummary?.beforeChars} → {fixSummary?.afterChars}</div>
+              <div>{t("settings.studio.lines")}: {fixSummary?.beforeLines} → {fixSummary?.afterLines}</div>
+              <div>{t("settings.studio.chars")}: {fixSummary?.beforeChars} → {fixSummary?.afterChars}</div>
             </div>
             <div className="modal-action">
-              <button className="btn btn-ghost" onClick={() => setFixModalOpen(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={applyFixJson}>Apply Fix</button>
+              <button className="btn btn-ghost" onClick={() => setFixModalOpen(false)}>{t("common.cancel")}</button>
+              <button className="btn btn-primary" onClick={applyFixJson}>{t("settings.studio.actions.apply_fix")}</button>
             </div>
           </div>
         </div>
@@ -3062,32 +3075,32 @@ function buildPreviewManifest() {
       {createModalOpen && (
         <div className="modal modal-open">
           <div className="modal-box">
-            <h3 className="font-bold text-lg">Create New Module</h3>
+            <h3 className="font-bold text-lg">{t("settings.studio.create_new_module")}</h3>
             <div className="mt-4 space-y-3">
               <div>
-                <label className="text-xs opacity-70">Module Name</label>
+                <label className="text-xs opacity-70">{t("settings.studio.module_name")}</label>
                 <input
                   className="input input-bordered input-sm w-full"
-                  placeholder="Work Orders"
+                  placeholder={t("settings.studio.module_name_placeholder")}
                   value={newModuleName}
                   onChange={(e) => setNewModuleName(e.target.value)}
                 />
               </div>
               <div>
-                <label className="text-xs opacity-70">Description (optional)</label>
+                <label className="text-xs opacity-70">{t("settings.studio.description_optional")}</label>
                 <textarea
                   className="textarea textarea-bordered textarea-sm w-full text-xs"
                   rows={3}
-                  placeholder="Short description of this module"
+                  placeholder={t("settings.studio.description_placeholder")}
                   value={newModuleDescription}
                   onChange={(e) => setNewModuleDescription(e.target.value)}
                 />
               </div>
             </div>
             <div className="modal-action">
-              <button className="btn btn-ghost" onClick={() => setCreateModalOpen(false)}>Cancel</button>
+              <button className="btn btn-ghost" onClick={() => setCreateModalOpen(false)}>{t("common.cancel")}</button>
               <button className="btn btn-primary" onClick={handleCreateModule} disabled={newModuleBusy}>
-                {newModuleBusy ? "Creating..." : "Create"}
+                {newModuleBusy ? t("settings.studio.creating") : t("common.create")}
               </button>
             </div>
           </div>
@@ -3096,12 +3109,12 @@ function buildPreviewManifest() {
       {rollbackModalOpen && (
         <div className="modal modal-open">
           <div className="modal-box">
-            <h3 className="font-bold text-lg">Rollback Module</h3>
+            <h3 className="font-bold text-lg">{t("settings.studio.rollback_module")}</h3>
             <div className="mt-4 space-y-3">
-              {rollbackLoading && <div className="text-sm opacity-60">Loading snapshots...</div>}
+              {rollbackLoading && <div className="text-sm opacity-60">{t("settings.studio.loading_snapshots")}</div>}
               {rollbackError && <div className="alert alert-error text-sm">{rollbackError}</div>}
               {!rollbackLoading && rollbackSnapshots.length === 0 && !rollbackError && (
-                <div className="text-sm opacity-60">No snapshots available.</div>
+                <div className="text-sm opacity-60">{t("settings.studio.no_snapshots_available")}</div>
               )}
               {!rollbackLoading && rollbackSnapshots.length > 0 && (
                 <div className="space-y-2">
@@ -3122,14 +3135,14 @@ function buildPreviewManifest() {
               )}
               {!rollbackLoading && rollbackHistory.length > 0 && (
                 <div className="mt-4">
-                  <div className="text-xs font-semibold mb-2">Recent history</div>
+                  <div className="text-xs font-semibold mb-2">{t("settings.studio.recent_history")}</div>
                   <div className="space-y-2 text-xs">
                     {rollbackHistory.slice(0, 10).map((entry) => (
                       <div key={entry.audit_id || entry.at} className="flex flex-wrap items-center gap-2">
-                        <span className="badge badge-outline">{entry.action || "change"}</span>
+                        <span className="badge badge-outline">{entry.action || t("settings.studio.change")}</span>
                         {entry.transaction_group_id && <span className="font-mono">{entry.transaction_group_id}</span>}
                         {entry.patch_id && <span className="font-mono">{entry.patch_id}</span>}
-                        <span className="opacity-60">{formatDateTime(entry.at, "")}</span>
+                        <span className="opacity-60">{formatLocalizedDateTime(entry.at) || "—"}</span>
                       </div>
                     ))}
                   </div>
@@ -3137,9 +3150,9 @@ function buildPreviewManifest() {
               )}
             </div>
             <div className="modal-action">
-              <button className="btn btn-ghost" onClick={() => setRollbackModalOpen(false)}>Cancel</button>
+              <button className="btn btn-ghost" onClick={() => setRollbackModalOpen(false)}>{t("common.cancel")}</button>
               <button className="btn btn-primary" onClick={handleRollbackFromList} disabled={rollbackLoading || !rollbackSelected}>
-                Rollback
+                {t("settings.studio.actions.rollback")}
               </button>
             </div>
           </div>

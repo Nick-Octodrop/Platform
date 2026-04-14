@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import AppShell from "../../apps/AppShell.jsx";
+import { useI18n } from "../../i18n/LocalizationProvider.jsx";
 import { readStudioPreviewManifest } from "./studioPreviewStore.js";
 
 export default function StudioModulePreviewFramePage() {
   const { moduleId } = useParams();
+  const { t } = useI18n();
   const [manifest, setManifest] = useState(() => readStudioPreviewManifest(moduleId));
 
   useEffect(() => {
@@ -25,7 +27,7 @@ export default function StudioModulePreviewFramePage() {
   if (!manifest) {
     return (
       <div className="flex h-full min-h-0 items-center justify-center p-6 text-sm opacity-60">
-        Preview unavailable for this module.
+        {t("settings.studio.preview.frame_unavailable")}
       </div>
     );
   }

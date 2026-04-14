@@ -1,0 +1,604 @@
+{
+  "module": {
+    "name": "CRM",
+    "description": "Sales workspace replacing CRM handoff gaps, with quote and order handoff built in."
+  },
+  "navigation": {
+    "crm_dashboard_page": "CRM",
+    "crm_lead_list_page": "Leads",
+    "crm_opportunity_list_page": "Opportunities",
+    "crm_activity_list_page": "Activities",
+    "crm_site_list_page": "Sites"
+  },
+  "entities": {
+    "crm_site": {
+      "label": "Site",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "name": {
+          "label": "Site Name"
+        },
+        "company_id": {
+          "label": "Company"
+        },
+        "address_line_1": {
+          "label": "Address Line 1"
+        },
+        "address_line_2": {
+          "label": "Address Line 2"
+        },
+        "city": {
+          "label": "City"
+        },
+        "region": {
+          "label": "Region / State"
+        },
+        "postcode": {
+          "label": "Postcode"
+        },
+        "country": {
+          "label": "Country"
+        },
+        "site_notes": {
+          "label": "Site Notes"
+        },
+        "is_active": {
+          "label": "Active"
+        }
+      }
+    },
+    "crm_lead": {
+      "label": "Lead",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "title": {
+          "label": "Lead"
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "new": "New",
+            "contacted": "Contacted",
+            "qualified": "Qualified",
+            "disqualified": "Disqualified"
+          }
+        },
+        "source": {
+          "label": "Source",
+          "options": {
+            "website": "Website",
+            "referral": "Referral",
+            "trade_show": "Trade Show",
+            "pipedrive_import": "Pipedrive Import",
+            "repeat_customer": "Repeat Customer",
+            "manual": "Manual"
+          }
+        },
+        "company_id": {
+          "label": "Company"
+        },
+        "contact_name": {
+          "label": "Contact Name"
+        },
+        "contact_email": {
+          "label": "Contact Email"
+        },
+        "contact_phone": {
+          "label": "Contact Phone"
+        },
+        "owner_user_id": {
+          "label": "Owner"
+        },
+        "currency": {
+          "label": "Currency",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "estimated_value": {
+          "label": "Estimated Value"
+        },
+        "next_action": {
+          "label": "Next Action"
+        },
+        "next_activity_date": {
+          "label": "Next Activity Date"
+        },
+        "disqualification_reason": {
+          "label": "Disqualification Reason"
+        },
+        "linked_opportunity_id": {
+          "label": "Linked Opportunity"
+        },
+        "notes": {
+          "label": "Notes"
+        }
+      }
+    },
+    "crm_opportunity": {
+      "label": "Opportunity",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "title": {
+          "label": "Opportunity"
+        },
+        "company_id": {
+          "label": "Company"
+        },
+        "primary_contact_name": {
+          "label": "Primary Contact"
+        },
+        "primary_contact_email": {
+          "label": "Contact Email"
+        },
+        "site_id": {
+          "label": "Site"
+        },
+        "owner_user_id": {
+          "label": "Owner"
+        },
+        "pipeline": {
+          "label": "Pipeline",
+          "options": {
+            "nlight_sales": "NLight Sales",
+            "ecotech_supply": "EcoTech Supply",
+            "after_sales": "After Sales"
+          }
+        },
+        "stage": {
+          "label": "Stage",
+          "options": {
+            "new": "New",
+            "discovery": "Discovery",
+            "solution": "Solution Fit",
+            "quote": "Quote",
+            "negotiation": "Negotiation",
+            "won": "Won",
+            "lost": "Lost"
+          }
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "open": "Open",
+            "won": "Won",
+            "lost": "Lost"
+          }
+        },
+        "currency": {
+          "label": "Currency",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "value": {
+          "label": "Deal Value"
+        },
+        "probability": {
+          "label": "Probability %"
+        },
+        "weighted_value": {
+          "label": "Weighted Value"
+        },
+        "expected_close_date": {
+          "label": "Expected Close"
+        },
+        "next_activity_date": {
+          "label": "Next Activity"
+        },
+        "source": {
+          "label": "Source",
+          "options": {
+            "website": "Website",
+            "referral": "Referral",
+            "trade_show": "Trade Show",
+            "pipedrive_import": "Pipedrive Import",
+            "repeat_customer": "Repeat Customer",
+            "existing_customer": "Existing Customer",
+            "manual": "Manual"
+          }
+        },
+        "quote_state": {
+          "label": "Quote State",
+          "options": {
+            "unquoted": "Unquoted",
+            "quote_needed": "Quote Needed",
+            "quoted": "Quoted",
+            "accepted": "Accepted"
+          }
+        },
+        "linked_quote_id": {
+          "label": "Linked Quote"
+        },
+        "linked_order_id": {
+          "label": "Linked Order"
+        },
+        "won_lost_reason": {
+          "label": "Loss Reason"
+        },
+        "description": {
+          "label": "Description"
+        },
+        "notes": {
+          "label": "Notes"
+        },
+        "attachments": {
+          "label": "Attachments"
+        }
+      }
+    },
+    "crm_activity": {
+      "label": "Activity",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "title": {
+          "label": "Activity"
+        },
+        "activity_type": {
+          "label": "Type",
+          "options": {
+            "call": "Call",
+            "meeting": "Meeting",
+            "task": "Task",
+            "email_follow_up": "Email Follow-Up",
+            "site_visit": "Site Visit",
+            "quote_follow_up": "Quote Follow-Up"
+          }
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "planned": "Planned",
+            "done": "Done",
+            "cancelled": "Cancelled"
+          }
+        },
+        "due_date": {
+          "label": "Due Date"
+        },
+        "owner_user_id": {
+          "label": "Owner"
+        },
+        "company_id": {
+          "label": "Company"
+        },
+        "lead_id": {
+          "label": "Lead"
+        },
+        "opportunity_id": {
+          "label": "Opportunity"
+        },
+        "site_id": {
+          "label": "Site"
+        },
+        "notes": {
+          "label": "Notes"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_crm_lead_new": {
+      "label": "New Lead"
+    },
+    "action_crm_opportunity_new": {
+      "label": "New Opportunity"
+    },
+    "action_crm_activity_new": {
+      "label": "New Activity"
+    },
+    "action_crm_site_new": {
+      "label": "New Site"
+    },
+    "action_crm_lead_mark_contacted": {
+      "label": "Mark Contacted"
+    },
+    "action_crm_lead_qualify": {
+      "label": "Qualify Lead"
+    },
+    "action_crm_lead_open_disqualify_modal": {
+      "label": "Disqualify"
+    },
+    "action_crm_opportunity_discovery": {
+      "label": "Start Discovery"
+    },
+    "action_crm_opportunity_solution": {
+      "label": "Solution Fit"
+    },
+    "action_crm_opportunity_quote_stage": {
+      "label": "Move To Quote"
+    },
+    "action_crm_opportunity_create_quote": {
+      "label": "Create Quote"
+    },
+    "action_crm_opportunity_negotiation": {
+      "label": "Move To Negotiation"
+    },
+    "action_crm_opportunity_mark_won": {
+      "label": "Mark Won"
+    },
+    "action_crm_opportunity_open_lost_modal": {
+      "label": "Mark Lost"
+    },
+    "action_crm_opportunity_create_order": {
+      "label": "Create Order"
+    },
+    "action_crm_activity_done": {
+      "label": "Mark Done"
+    },
+    "action_crm_activity_cancel": {
+      "label": "Cancel"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Search leads..."
+      },
+      "filters": {
+        "active": {
+          "label": "Active Leads"
+        },
+        "new": {
+          "label": "New"
+        },
+        "contacted": {
+          "label": "Contacted"
+        },
+        "qualified": {
+          "label": "Qualified"
+        },
+        "disqualified": {
+          "label": "Disqualified"
+        },
+        "open": {
+          "label": "Open Opportunities"
+        },
+        "needs_quote": {
+          "label": "Needs Quote"
+        },
+        "no_next_activity": {
+          "label": "No Next Activity"
+        },
+        "closing_this_month": {
+          "label": "Closing This Month"
+        },
+        "won": {
+          "label": "Won"
+        },
+        "lost": {
+          "label": "Lost"
+        },
+        "planned": {
+          "label": "Planned"
+        },
+        "overdue": {
+          "label": "Overdue"
+        },
+        "done": {
+          "label": "Done"
+        },
+        "site_visits": {
+          "label": "Site Visits"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Lead"
+        },
+        "notes": {
+          "title": "Notes"
+        },
+        "commercial": {
+          "title": "Commercial"
+        }
+      }
+    }
+  },
+  "modals": {
+    "crm_lead_disqualify": {
+      "title": "Disqualify Lead",
+      "description": "Capture why this enquiry should not move into the sales pipeline.",
+      "actions": {
+        "update_record": {
+          "label": "Disqualify Lead"
+        },
+        "close_modal": {
+          "label": "Keep Open"
+        }
+      }
+    },
+    "crm_opportunity_lost": {
+      "title": "Mark Opportunity Lost",
+      "description": "Capture the loss reason so the pipeline remains useful.",
+      "actions": {
+        "update_record": {
+          "label": "Mark Lost"
+        },
+        "close_modal": {
+          "label": "Keep Open"
+        }
+      }
+    }
+  },
+  "pages": {
+    "dashboard_page": {
+      "title": "CRM",
+      "header": {
+        "actions": {
+          "navigate": {
+            "label": "New Lead"
+          }
+        }
+      },
+      "blocks": {
+        "1": {
+          "cards": {
+            "crm_open_pipeline_value": {
+              "label": "Open Pipeline",
+              "subtitle": "Active deal value"
+            },
+            "crm_weighted_pipeline_value": {
+              "label": "Weighted Pipeline",
+              "subtitle": "Probability adjusted"
+            },
+            "crm_needs_quote": {
+              "label": "Needs Quote",
+              "subtitle": "Sales-ready handoff"
+            },
+            "crm_overdue_activities": {
+              "label": "Overdue Activities",
+              "subtitle": "Planned follow-ups due"
+            }
+          }
+        }
+      }
+    },
+    "list_page": {
+      "title": "Leads"
+    },
+    "form_page": {
+      "title": "Lead"
+    }
+  },
+  "workflows": {
+    "crm_lead_status_workflow": {
+      "states": {
+        "new": {
+          "label": "New"
+        },
+        "contacted": {
+          "label": "Contacted"
+        },
+        "qualified": {
+          "label": "Qualified"
+        },
+        "disqualified": {
+          "label": "Disqualified"
+        }
+      },
+      "transitions": {
+        "new_contacted": {
+          "label": "Mark Contacted"
+        },
+        "new_qualified": {
+          "label": "Qualify"
+        },
+        "contacted_qualified": {
+          "label": "Qualify"
+        },
+        "new_disqualified": {
+          "label": "Disqualify"
+        },
+        "contacted_disqualified": {
+          "label": "Disqualify"
+        }
+      }
+    },
+    "crm_opportunity_stage_workflow": {
+      "states": {
+        "new": {
+          "label": "New"
+        },
+        "discovery": {
+          "label": "Discovery"
+        },
+        "solution": {
+          "label": "Solution Fit"
+        },
+        "quote": {
+          "label": "Quote"
+        },
+        "negotiation": {
+          "label": "Negotiation"
+        },
+        "won": {
+          "label": "Won"
+        },
+        "lost": {
+          "label": "Lost"
+        }
+      },
+      "transitions": {
+        "new_discovery": {
+          "label": "Start Discovery"
+        },
+        "discovery_solution": {
+          "label": "Solution Fit"
+        },
+        "solution_quote": {
+          "label": "Quote"
+        },
+        "quote_negotiation": {
+          "label": "Negotiation"
+        },
+        "quote_won": {
+          "label": "Mark Won"
+        },
+        "negotiation_won": {
+          "label": "Mark Won"
+        },
+        "new_lost": {
+          "label": "Mark Lost"
+        },
+        "discovery_lost": {
+          "label": "Mark Lost"
+        },
+        "solution_lost": {
+          "label": "Mark Lost"
+        },
+        "quote_lost": {
+          "label": "Mark Lost"
+        },
+        "negotiation_lost": {
+          "label": "Mark Lost"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "site_created": "Site created",
+    "site_updated": "Site updated",
+    "lead_created": "Lead created",
+    "lead_updated": "Lead updated",
+    "opportunity_created": "Opportunity created",
+    "opportunity_updated": "Opportunity updated",
+    "activity_created": "Activity created",
+    "activity_updated": "Activity updated",
+    "lead_status_changed": "Lead status changed",
+    "opportunity_status_changed": "Opportunity status changed",
+    "new_lead_clicked": "New Lead clicked",
+    "new_opportunity_clicked": "New Opportunity clicked",
+    "new_activity_clicked": "New Activity clicked",
+    "new_site_clicked": "New Site clicked",
+    "mark_contacted_clicked": "Mark Contacted clicked",
+    "qualify_lead_clicked": "Qualify Lead clicked",
+    "disqualify_clicked": "Disqualify clicked",
+    "start_discovery_clicked": "Start Discovery clicked",
+    "solution_fit_clicked": "Solution Fit clicked",
+    "move_to_quote_clicked": "Move To Quote clicked",
+    "create_quote_clicked": "Create Quote clicked",
+    "move_to_negotiation_clicked": "Move To Negotiation clicked",
+    "mark_won_clicked": "Mark Won clicked",
+    "mark_lost_clicked": "Mark Lost clicked",
+    "create_order_clicked": "Create Order clicked",
+    "mark_done_clicked": "Mark Done clicked",
+    "cancel_clicked": "Cancel clicked"
+  }
+}

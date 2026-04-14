@@ -1,3 +1,10 @@
+import {
+  formatCurrencyRuntime,
+  formatNumberRuntime,
+  formatPercentRuntime,
+  getI18nRuntimeSnapshot,
+} from "../i18n/runtime.js";
+
 function getRecordValue(record, fieldId) {
   if (!record || typeof record !== "object" || typeof fieldId !== "string") return "";
   if (fieldId.endsWith(".id")) return record.id || "";
@@ -12,15 +19,18 @@ function normalizePrecision(value, fallback = 2) {
 
 function resolveFormatKind(field) {
   const kind = field?.format?.kind;
+  if (field?.type === "currency") return "currency";
   if (typeof kind !== "string" || !kind.trim()) return "plain";
   return kind.trim().toLowerCase();
 }
 
 function resolveCurrencyCode(field, record) {
-  const dynamicField = field?.format?.currency_field;
+  const dynamicField = field?.currency_field || field?.format?.currency_field;
   const dynamicValue = typeof dynamicField === "string" ? getRecordValue(record || {}, dynamicField) : null;
-  const raw = dynamicValue || field?.format?.currency || "USD";
-  return typeof raw === "string" && raw.trim() ? raw.trim().toUpperCase() : "USD";
+  const workspaceCurrency = getI18nRuntimeSnapshot().defaultCurrency || "NZD";
+  const explicitCode = field?.currency_code || field?.format?.currency_code || field?.format?.currency;
+  const raw = dynamicValue || explicitCode || (field?.currency_source === "workspace_default" || field?.format?.currency_source === "workspace_default" ? workspaceCurrency : workspaceCurrency);
+  return typeof raw === "string" && raw.trim() ? raw.trim().toUpperCase() : workspaceCurrency;
 }
 
 function resolveUnitLabel(field, record) {
@@ -32,7 +42,7 @@ function resolveUnitLabel(field, record) {
 
 function getCurrencySymbol(currency) {
   try {
-    const formatter = new Intl.NumberFormat(undefined, {
+    const formatter = new Intl.NumberFormat(getI18nRuntimeSnapshot().locale, {
       style: "currency",
       currency,
       currencyDisplay: "symbol",
@@ -47,10 +57,14 @@ function getCurrencySymbol(currency) {
 }
 
 function formatPlainNumber(numeric, precision) {
-  return new Intl.NumberFormat(undefined, {
+  return formatNumberRuntime(numeric, {
     minimumFractionDigits: Number.isInteger(numeric) ? 0 : Math.min(precision, 2),
     maximumFractionDigits: precision,
-  }).format(numeric);
+  });
+}
+
+export function isNumericField(field) {
+  return field?.type === "number" || field?.type === "currency";
 }
 
 export function resolveFieldNumericFormat(field, record = null) {
@@ -68,7 +82,7 @@ export function resolveFieldNumericFormat(field, record = null) {
 }
 
 export function getFieldInputAffixes(field, record = null) {
-  if (field?.type !== "number") return { prefix: "", suffix: "", align: "" };
+  if (!isNumericField(field)) return { prefix: "", suffix: "", align: "" };
   const format = resolveFieldNumericFormat(field, record);
   if (format.kind === "currency") {
     return { prefix: getCurrencySymbol(format.currency), suffix: "", align: "text-right" };
@@ -84,25 +98,25 @@ export function getFieldInputAffixes(field, record = null) {
 
 export function formatFieldValue(field, value, record = null) {
   if (value === null || value === undefined || value === "") return "";
-  if (field?.type !== "number") return String(value);
+  if (!isNumericField(field)) return String(value);
   const numeric = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(numeric)) return String(value);
   const format = resolveFieldNumericFormat(field, record);
   if (format.kind === "currency") {
     try {
-      return new Intl.NumberFormat(undefined, {
-        style: "currency",
-        currency: format.currency,
-        currencyDisplay: "symbol",
+      return formatCurrencyRuntime(numeric, format.currency, {
         minimumFractionDigits: format.precision,
         maximumFractionDigits: format.precision,
-      }).format(numeric);
+      });
     } catch {
       return `${format.currency} ${numeric.toFixed(format.precision)}`;
     }
   }
   if (format.kind === "percent") {
-    return `${formatPlainNumber(numeric, format.precision)}%`;
+    return formatPercentRuntime(numeric, {
+      minimumFractionDigits: Math.min(format.precision, 6),
+      maximumFractionDigits: format.precision,
+    });
   }
   if (format.kind === "measurement" || format.kind === "duration") {
     const base = formatPlainNumber(numeric, format.precision);

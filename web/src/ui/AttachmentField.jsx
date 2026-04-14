@@ -3,6 +3,7 @@ import { Paperclip } from "lucide-react";
 import { API_URL, apiFetch, getActiveWorkspaceId } from "../api.js";
 import { supabase } from "../supabase.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import AttachmentGallery from "./AttachmentGallery.jsx";
 
 export default function AttachmentField({
@@ -11,9 +12,10 @@ export default function AttachmentField({
   fieldId = "",
   readonly = false,
   previewMode = false,
-  buttonLabel = "Attach",
+  buttonLabel = "",
   description = "",
 }) {
+  const { t } = useI18n();
   const [attachments, setAttachments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -35,7 +37,7 @@ export default function AttachmentField({
       const res = await apiFetch(`/records/${encodeURIComponent(entityId)}/${encodeURIComponent(recordId)}/attachments?${qs}`);
       setAttachments(Array.isArray(res?.attachments) ? res.attachments : []);
     } catch (err) {
-      setError(err?.message || "Failed to load attachments");
+      setError(err?.message || t("common.attachments.load_failed"));
       setAttachments([]);
     } finally {
       setLoading(false);
@@ -64,10 +66,10 @@ export default function AttachmentField({
     });
     const uploadData = await uploadRes.json();
     if (!uploadRes.ok || !uploadData?.ok) {
-      throw new Error(uploadData?.errors?.[0]?.message || "Upload failed");
+      throw new Error(uploadData?.errors?.[0]?.message || t("common.attachments.upload_failed"));
     }
     const attachmentId = uploadData?.attachment?.id;
-    if (!attachmentId) throw new Error("Upload missing attachment id");
+    if (!attachmentId) throw new Error(t("common.attachments.upload_missing_id"));
 
     await apiFetch("/attachments/link", {
       method: "POST",
@@ -93,13 +95,13 @@ export default function AttachmentField({
         try {
           await uploadOne(file);
         } catch (err) {
-          failures.push(`${file?.name || "file"}: ${err?.message || "Upload failed"}`);
+          failures.push(`${file?.name || t("common.attachments.file")}: ${err?.message || t("common.attachments.upload_failed")}`);
         }
       }
       if (failures.length > 0) setError(failures.join(" | "));
       await loadAttachments();
     } catch (err) {
-      setError(err?.message || "Upload failed");
+      setError(err?.message || t("common.attachments.upload_failed"));
     } finally {
       setUploading(false);
     }
@@ -117,25 +119,25 @@ export default function AttachmentField({
       setAttachments((prev) => prev.filter((a) => a?.id !== toDelete.id));
       setToDelete(null);
     } catch (err) {
-      setError(err?.message || "Failed to delete attachment");
+      setError(err?.message || t("common.attachments.delete_failed"));
     } finally {
       setDeletingId("");
     }
   }
 
   if (!recordId) {
-    return <div className="text-xs opacity-60">Save this record before adding attachments.</div>;
+    return <div className="text-xs opacity-60">{t("common.attachments.save_record_before_adding")}</div>;
   }
 
   return (
     <div className="space-y-2">
       <label className={`${SOFT_BUTTON_SM} gap-2 cursor-pointer inline-flex`} aria-disabled={readonly || previewMode || uploading}>
         <Paperclip className="h-4 w-4" />
-        {uploading ? "Uploading..." : buttonLabel}
+        {uploading ? t("common.uploading") : (buttonLabel || t("common.attach"))}
         <input type="file" multiple className="hidden" onChange={handleUpload} disabled={readonly || previewMode || uploading} />
       </label>
       {description ? <div className="text-xs opacity-70">{description}</div> : null}
-      {loading ? <div className="text-xs opacity-60">Loading attachments...</div> : null}
+      {loading ? <div className="text-xs opacity-60">{t("common.attachments.loading")}</div> : null}
       {error ? <div className="text-xs text-error">{error}</div> : null}
       <AttachmentGallery
         attachments={attachments}
@@ -151,21 +153,21 @@ export default function AttachmentField({
       {toDelete ? (
         <div className="modal modal-open">
           <div className="modal-box">
-            <h3 className="font-semibold text-base">Delete attachment?</h3>
+            <h3 className="font-semibold text-base">{t("common.attachments.delete_title")}</h3>
             <p className="mt-2 text-sm opacity-80 break-all">
-              This will remove <span className="font-medium">{toDelete.filename || "this file"}</span> from this record.
+              {t("common.attachments.delete_body_prefix")} <span className="font-medium">{toDelete.filename || t("common.attachments.this_file")}</span> {t("common.attachments.delete_body_suffix")}
             </p>
             <div className="modal-action">
               <button className="btn btn-sm" type="button" onClick={() => setToDelete(null)} disabled={!!deletingId}>
-                Cancel
+                {t("common.cancel")}
               </button>
               <button className="btn btn-sm btn-error" type="button" onClick={handleDelete} disabled={!!deletingId}>
-                {deletingId ? "Deleting..." : "Delete"}
+                {deletingId ? t("common.deleting") : t("common.delete")}
               </button>
             </div>
           </div>
           <button className="modal-backdrop" type="button" onClick={() => setToDelete(null)}>
-            Close
+            {t("common.close")}
           </button>
         </div>
       ) : null}

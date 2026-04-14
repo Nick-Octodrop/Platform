@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useModuleStore } from "../state/moduleStore.jsx";
 import { invalidateManifestCache } from "../api";
+import { translateRuntime } from "../i18n/runtime.js";
 
 export default function PatchModal({ mode, moduleId, onClose, onApplied }) {
   const { actions } = useModuleStore();
@@ -19,7 +20,7 @@ export default function PatchModal({ mode, moduleId, onClose, onApplied }) {
           setError(null);
         }
       } catch (err) {
-        if (mounted) setError(err.message || "Preview failed");
+        if (mounted) setError(err.message || translateRuntime("settings.studio.errors.preview_failed"));
       } finally {
         if (mounted) setLoading(false);
       }
@@ -43,7 +44,7 @@ export default function PatchModal({ mode, moduleId, onClose, onApplied }) {
       if (onApplied) onApplied(res);
       onClose();
     } catch (err) {
-      setError(err.message || "Apply failed");
+      setError(err.message || translateRuntime("settings.studio.errors.apply_failed"));
     } finally {
       setLoading(false);
     }

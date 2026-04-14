@@ -32,6 +32,7 @@ import { formatFieldValue } from "../utils/fieldFormatting.js";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_BUTTON_XS, SOFT_ICON_SM } from "../components/buttonStyles.js";
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
 import useMediaQuery from "../hooks/useMediaQuery.js";
+import { translateRuntime } from "../i18n/runtime.js";
 
 function IconList() {
   return <List className="h-4 w-4" />;
@@ -160,6 +161,20 @@ function IconSort() {
   return <ArrowUpDown className="h-4 w-4" />;
 }
 
+function viewModeLabel(mode) {
+  if (mode === "kanban") return translateRuntime("common.view_modes.kanban");
+  if (mode === "graph") return translateRuntime("common.view_modes.graph");
+  if (mode === "calendar") return translateRuntime("common.view_modes.calendar");
+  if (mode === "pivot") return translateRuntime("common.view_modes.pivot");
+  return translateRuntime("common.view_modes.list");
+}
+
+function graphTypeLabel(type) {
+  if (type === "line") return translateRuntime("common.view_modes.line_chart");
+  if (type === "pie") return translateRuntime("common.view_modes.pie_chart");
+  return translateRuntime("common.view_modes.bar_chart");
+}
+
 function normalizeViewTarget(target) {
   if (!target || typeof target !== "string") return null;
   if (target.startsWith("view:")) return target.slice(5);
@@ -249,7 +264,7 @@ function formatGroupedFieldValue(fieldDef, rawValue, lookupLabels = {}, memberLa
     const userId = String(rawValue || "").trim();
     return String(memberLabels[userId] || (isUuidLike(userId) ? "" : userId));
   }
-  if (fieldDef.type === "bool") return rawValue ? "Yes" : "No";
+  if (fieldDef.type === "bool") return rawValue ? translateRuntime("common.yes") : translateRuntime("common.no");
   if (fieldDef.type === "date" || fieldDef.type === "datetime") {
     const parsed = toDateValue(rawValue);
     if (parsed) {
@@ -674,7 +689,7 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
             : []);
       return values.map((userId) => memberLabels[userId] || userId).join(", ");
     }
-    if (fieldDef?.type === "bool") return rawValue ? "Yes" : "No";
+  if (fieldDef?.type === "bool") return rawValue ? translateRuntime("common.yes") : translateRuntime("common.no");
     if (fieldDef?.type === "date" || fieldDef?.type === "datetime") {
       const parsed = toDateValue(rawValue);
       if (parsed) {
@@ -757,12 +772,12 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
                 }}
               >
                 <div className="p-2 flex items-center justify-between gap-2">
-                  <div className="font-semibold truncate">{groupBy ? (groupKey ? (formatCardValue(groupBy, groupKey) || humanize(groupKey)) : "Ungrouped") : "All"}</div>
+                  <div className="font-semibold truncate">{groupBy ? (groupKey ? (formatCardValue(groupBy, groupKey) || humanize(groupKey)) : translateRuntime("common.view_modes.ungrouped")) : translateRuntime("common.all")}</div>
                   <span className="badge badge-ghost badge-sm">{(grouped[groupKey] || []).length}</span>
                 </div>
                 <div className="p-[7px] space-y-3 overflow-y-auto min-h-0">
                   {(grouped[groupKey] || []).length === 0 ? (
-                    <div className="text-xs text-base-content/50 p-2">No {emptyEntityLabel} found</div>
+                    <div className="text-xs text-base-content/50 p-2">{translateRuntime("common.view_modes.no_records_found_named", { name: emptyEntityLabel })}</div>
                   ) : (grouped[groupKey] || []).map((row) => {
                     const record = row.record || {};
                     const rowId = row.record_id || record.id;
@@ -847,7 +862,7 @@ function GraphView({ data, type = "bar" }) {
     return { key, value: Number.isFinite(value) ? value : 0 };
   });
   if (normalized.length === 0) {
-    return <div className="text-sm opacity-60">No data</div>;
+    return <div className="text-sm opacity-60">{translateRuntime("common.view_modes.no_data")}</div>;
   }
   const values = normalized.map((d) => d.value || 0);
   const max = Math.max(1, ...values);
@@ -1117,7 +1132,7 @@ function CalendarView({ view, records, onSelectRow, entityDef }) {
       const userId = String(rawValue || "").trim();
       return String(memberLabels[userId] || userId);
     }
-    if (fieldDef?.type === "bool") return rawValue ? "Yes" : "No";
+    if (fieldDef?.type === "bool") return rawValue ? translateRuntime("common.yes") : translateRuntime("common.no");
     if (fieldDef?.type === "date" || fieldDef?.type === "datetime") {
       const parsed = toDateValue(rawValue);
       if (parsed) {
@@ -1151,7 +1166,7 @@ function CalendarView({ view, records, onSelectRow, entityDef }) {
       const startDay = atMidnight(start);
       const endDay = atMidnight(end);
       const rawTitle = rec?.[titleField];
-      const eventTitle = formatCalendarValue(titleField, rawTitle, rec) || safeOpaqueLabel(row?.record_id, "Record");
+      const eventTitle = formatCalendarValue(titleField, rawTitle, rec) || safeOpaqueLabel(row?.record_id, translateRuntime("common.record"));
       const allDay = Boolean(allDayField && rec?.[allDayField]);
 
       const walker = new Date(startDay);
@@ -1170,7 +1185,7 @@ function CalendarView({ view, records, onSelectRow, entityDef }) {
         const sortMinutes = allDay ? -1 : segStart.getHours() * 60 + segStart.getMinutes();
         let timeLabel = "";
         if (allDay) {
-          timeLabel = "All day";
+          timeLabel = translateRuntime("common.view_modes.all_day");
         } else if (sameDay) {
           timeLabel = `${startLabel}${segEnd > segStart ? ` - ${endLabel}` : ""}`;
         } else {
@@ -1200,7 +1215,7 @@ function CalendarView({ view, records, onSelectRow, entityDef }) {
       const startDay = atMidnight(start);
       const endDay = atMidnight(end);
       const rawTitle = rec?.[titleField];
-      const eventTitle = formatCalendarValue(titleField, rawTitle, rec) || safeOpaqueLabel(row?.record_id, "Record");
+      const eventTitle = formatCalendarValue(titleField, rawTitle, rec) || safeOpaqueLabel(row?.record_id, translateRuntime("common.record"));
       const explicitAllDay = Boolean(allDayField && rec?.[allDayField]);
       const treatAsTimed = !explicitAllDay && (hasTimeComponent(start) || hasTimeComponent(end));
 
@@ -1340,15 +1355,15 @@ function CalendarView({ view, records, onSelectRow, entityDef }) {
       : scale === "day"
         ? cursorMonth.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" })
       : scale === "week"
-        ? `Week of ${startOfWeek(cursorMonth).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`
+        ? `${translateRuntime("common.view_modes.week_of")} ${startOfWeek(cursorMonth).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`
         : cursorMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
   const describeEvent = (event) => {
     const rec = event?.row?.record || {};
-    const title = event?.title || safeOpaqueLabel(rec?.[titleField], safeOpaqueLabel(event?.row?.record_id, "Record"));
+    const title = event?.title || safeOpaqueLabel(rec?.[titleField], safeOpaqueLabel(event?.row?.record_id, translateRuntime("common.record")));
     const status = statusField && rec?.[statusField]
-      ? `Status: ${String(rec[statusField]).replace(/_/g, " ")}`
+      ? `${translateRuntime("common.status")}: ${String(rec[statusField]).replace(/_/g, " ")}`
       : "";
-    const when = event?.timeLabel ? `When: ${event.timeLabel}` : "";
+    const when = event?.timeLabel ? `${translateRuntime("common.view_modes.when")}: ${event.timeLabel}` : "";
     return [title, when, status].filter(Boolean).join(" | ");
   };
 
@@ -1360,7 +1375,7 @@ function CalendarView({ view, records, onSelectRow, entityDef }) {
             <ChevronLeft className="h-4 w-4" />
           </button>
           <button className={`${SOFT_BUTTON_SM} join-item`} onClick={() => setCursorMonth(new Date())}>
-            Today
+            {translateRuntime("common.view_modes.today")}
           </button>
           <button className={`${SOFT_BUTTON_SM} join-item`} onClick={() => moveCursor(1)}>
             <ChevronRight className="h-4 w-4" />
@@ -1369,10 +1384,10 @@ function CalendarView({ view, records, onSelectRow, entityDef }) {
         <div className="min-w-0 flex-1 text-sm sm:text-base font-semibold text-center sm:text-left">{monthLabel}</div>
         <div className="w-full sm:w-auto overflow-x-auto no-scrollbar">
           <div className="join min-w-max">
-            <button className={`${SOFT_BUTTON_SM} join-item ${scale === "day" ? "bg-base-300" : ""}`} onClick={() => setScale("day")}>Day</button>
-            <button className={`${SOFT_BUTTON_SM} join-item ${scale === "week" ? "bg-base-300" : ""}`} onClick={() => setScale("week")}>Week</button>
-            <button className={`${SOFT_BUTTON_SM} join-item ${scale === "month" ? "bg-base-300" : ""}`} onClick={() => setScale("month")}>Month</button>
-            <button className={`${SOFT_BUTTON_SM} join-item ${scale === "year" ? "bg-base-300" : ""}`} onClick={() => setScale("year")}>Year</button>
+            <button className={`${SOFT_BUTTON_SM} join-item ${scale === "day" ? "bg-base-300" : ""}`} onClick={() => setScale("day")}>{translateRuntime("common.view_modes.day")}</button>
+            <button className={`${SOFT_BUTTON_SM} join-item ${scale === "week" ? "bg-base-300" : ""}`} onClick={() => setScale("week")}>{translateRuntime("common.view_modes.week")}</button>
+            <button className={`${SOFT_BUTTON_SM} join-item ${scale === "month" ? "bg-base-300" : ""}`} onClick={() => setScale("month")}>{translateRuntime("common.view_modes.month")}</button>
+            <button className={`${SOFT_BUTTON_SM} join-item ${scale === "year" ? "bg-base-300" : ""}`} onClick={() => setScale("year")}>{translateRuntime("common.view_modes.year")}</button>
           </div>
         </div>
       </div>
@@ -1496,7 +1511,7 @@ function CalendarView({ view, records, onSelectRow, entityDef }) {
                                 {cell.date.toLocaleDateString(undefined, scale === "week"
                                   ? { weekday: "short", day: "numeric", month: "short" }
                                   : { weekday: "long", day: "numeric", month: "short" })}
-                                {allDayCount > 0 ? <span className="ml-2 text-base-content/50">({allDayCount} all-day)</span> : null}
+                                {allDayCount > 0 ? <span className="ml-2 text-base-content/50">{translateRuntime("common.view_modes.events_count_all_day", { count: allDayCount })}</span> : null}
                               </button>
                             );
                           })}
@@ -1602,7 +1617,7 @@ function CalendarView({ view, records, onSelectRow, entityDef }) {
                 }}
               >
                 <div className="font-medium">{month.label}</div>
-                <div className="text-xs text-base-content/60">{month.total} event{month.total === 1 ? "" : "s"}</div>
+                <div className="text-xs text-base-content/60">{translateRuntime("common.view_modes.events_count", { count: month.total })}</div>
               </button>
             ))}
             </div>
@@ -1615,7 +1630,7 @@ function CalendarView({ view, records, onSelectRow, entityDef }) {
 
 function PivotView({ data, measure }) {
   if (!data || !Array.isArray(data.rows) || !Array.isArray(data.cols)) {
-    return <div className="text-sm opacity-60">No data</div>;
+    return <div className="text-sm opacity-60">{translateRuntime("common.view_modes.no_data")}</div>;
   }
   const humanize = (value) =>
     String(value || "")
@@ -1623,7 +1638,7 @@ function PivotView({ data, measure }) {
       .pop()
       .replace(/_/g, " ")
       .replace(/\b\w/g, (m) => m.toUpperCase());
-  const rowHeader = data?.row_group_by ? humanize(data.row_group_by) : "Row";
+  const rowHeader = data?.row_group_by ? humanize(data.row_group_by) : translateRuntime("common.view_modes.row");
   const formatValue = (value) => {
     if (measure?.startsWith("sum:")) return Number(value || 0).toFixed(2);
     return String(value || 0);
@@ -1636,16 +1651,16 @@ function PivotView({ data, measure }) {
             <th className="bg-base-300">{rowHeader}</th>
             {data.cols.map((col) => (
               <th key={col.key} className="bg-base-300">
-                {col.label || "(empty)"}
+                {col.label || translateRuntime("common.view_modes.empty")}
               </th>
             ))}
-            <th className="bg-base-300">Total</th>
+            <th className="bg-base-300">{translateRuntime("common.view_modes.total")}</th>
           </tr>
         </thead>
         <tbody>
           {data.rows.map((row) => (
             <tr key={row.key}>
-              <th>{row.label || "(empty)"}</th>
+              <th>{row.label || translateRuntime("common.view_modes.empty")}</th>
               {data.cols.map((col) => {
                 const value = data.matrix?.[row.key]?.[col.key] || 0;
                 return <td key={`${row.key}-${col.key}`}>{formatValue(value)}</td>;
@@ -1654,7 +1669,7 @@ function PivotView({ data, measure }) {
             </tr>
           ))}
           <tr>
-            <th>Total</th>
+            <th>{translateRuntime("common.view_modes.total")}</th>
             {data.cols.map((col) => (
               <td key={`total-${col.key}`} className="font-semibold">
                 {formatValue(data.col_totals?.[col.key] || 0)}
@@ -2526,7 +2541,7 @@ export default function ViewModesBlock({
   async function handleSaveFilter() {
     if (!onPrompt) return;
     const promptDialog = onPrompt;
-    const name = await promptDialog({ title: "Save view as", defaultValue: "" });
+    const name = await promptDialog({ title: translateRuntime("common.view_modes.save_view_as_title"), defaultValue: "" });
     if (!name) return;
     const state = {
       mode: activeMode || "",
@@ -2570,8 +2585,8 @@ export default function ViewModesBlock({
     if (!onConfirm) return;
     const confirmDialog = onConfirm;
     const ok = await confirmDialog({
-      title: "Delete records",
-      body: `Delete ${selectedIds.length} record(s)?`,
+      title: translateRuntime("common.view_modes.delete_records_title"),
+      body: translateRuntime("common.view_modes.delete_records_body", { count: selectedIds.length }),
     });
     if (!ok) return;
     const deletingIds = [...selectedIds];
@@ -2587,10 +2602,10 @@ export default function ViewModesBlock({
 
   function resolveActionLabel(action) {
     if (action.label) return action.label;
-    if (action.kind === "create_record" || action.kind === "open_form") return "New";
-    if (action.kind === "update_record") return "Save";
-    if (action.kind === "refresh") return "Refresh";
-    return "Action";
+    if (action.kind === "create_record" || action.kind === "open_form") return translateRuntime("common.new");
+    if (action.kind === "update_record") return translateRuntime("common.save");
+    if (action.kind === "refresh") return translateRuntime("common.refresh");
+    return translateRuntime("common.action");
   }
 
   function runBulkAction(action) {
@@ -2643,11 +2658,11 @@ export default function ViewModesBlock({
     return entityDef.fields.filter((f) => f?.id && ["string", "text", "enum", "bool", "date", "datetime", "number", "user"].includes(f.type));
   }, [entityDef]);
   const measureOptions = useMemo(() => {
-    const opts = [{ value: "count", label: "Count" }];
+    const opts = [{ value: "count", label: translateRuntime("common.view_modes.count") }];
     if (!entityDef || !Array.isArray(entityDef.fields)) return opts;
     for (const f of entityDef.fields) {
       if (f?.id && f.type === "number") {
-        opts.push({ value: `sum:${f.id}`, label: `Sum ${f.label || f.id}` });
+        opts.push({ value: `sum:${f.id}`, label: translateRuntime("common.view_modes.sum_named", { name: f.label || f.id }) });
       }
     }
     return opts;
@@ -2920,7 +2935,7 @@ export default function ViewModesBlock({
       const text = await file.text();
       const parsed = parseCsvText(text);
       if (!parsed.length) {
-        setImportParseError("CSV is empty.");
+        setImportParseError(translateRuntime("common.view_modes.csv_empty"));
         setImportHeaders([]);
         setImportRows([]);
         setImportMappedFields([]);
@@ -2929,7 +2944,7 @@ export default function ViewModesBlock({
       }
       const headerRow = parsed[0].map((value) => String(value || "").trim());
       if (!headerRow.length) {
-        setImportParseError("CSV header row is missing.");
+        setImportParseError(translateRuntime("common.view_modes.csv_header_missing"));
         return;
       }
       const fieldDefs = Array.isArray(templateFieldDefs) ? templateFieldDefs : [];
@@ -2957,7 +2972,7 @@ export default function ViewModesBlock({
       setImportUnmappedHeaders(unmapped);
       if (!rows.length) setImportParseError("CSV has no data rows.");
     } catch (err) {
-      setImportParseError(err?.message || "Failed to parse CSV.");
+      setImportParseError(err?.message || translateRuntime("common.view_modes.csv_parse_failed"));
       setImportHeaders([]);
       setImportRows([]);
       setImportMappedFields([]);
@@ -2969,7 +2984,7 @@ export default function ViewModesBlock({
     if (!importRows.length || importBusy) return;
     const mappedCount = importMappedFields.filter(Boolean).length;
     if (!mappedCount) {
-      setImportParseError("No CSV columns map to manifest fields.");
+      setImportParseError(translateRuntime("common.view_modes.no_csv_columns_mapped"));
       return;
     }
     setImportBusy(true);
@@ -2998,7 +3013,7 @@ export default function ViewModesBlock({
       } catch (err) {
         failures.push({
           row: rowIndex + 2,
-          error: err?.message || "Import failed",
+          error: err?.message || translateRuntime("common.view_modes.import_failed"),
         });
       }
     }
@@ -3018,7 +3033,7 @@ export default function ViewModesBlock({
         <div className={isMobile ? "flex flex-wrap items-center justify-between gap-3 relative z-30 shrink-0" : "grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 relative z-30 shrink-0"}>
           <div className="flex items-center gap-2 min-w-0">
           {canWriteRecords && (
-            <DaisyTooltip label={`New ${entityLabel}`} placement="bottom">
+            <DaisyTooltip label={translateRuntime("common.new_record_named", { name: entityLabel })} placement="bottom">
               <button
                 className={PRIMARY_BUTTON_SM}
                 onClick={async () => {
@@ -3047,18 +3062,18 @@ export default function ViewModesBlock({
             <div className={mobileToolbarGroupClass}>
               {showSearch && (
                 <>
-                  <DaisyTooltip label="Search" className="join-item" placement="bottom">
+                  <DaisyTooltip label={translateRuntime("common.search")} className="join-item" placement="bottom">
                     <button
                       className={mobileToolbarButtonClass}
                       type="button"
-                      aria-label="Search"
+                      aria-label={translateRuntime("common.search")}
                     >
                       <IconSearch />
                     </button>
                   </DaisyTooltip>
                   <input
                     className="input input-bordered input-sm join-item w-full max-w-xs"
-                    placeholder="Search…"
+                    placeholder={translateRuntime("common.search")}
                     value={searchText}
                     onChange={(e) => handleSearchChange(e.target.value)}
                   />
@@ -3066,11 +3081,11 @@ export default function ViewModesBlock({
               )}
               {showFilters && (
                 <div className="dropdown dropdown-bottom join-item">
-                  <DaisyTooltip label="Filters" className="join-item" placement="bottom">
+                  <DaisyTooltip label={translateRuntime("common.filters")} className="join-item" placement="bottom">
                     <button
                       className={mobileToolbarButtonClass}
                       type="button"
-                      aria-label="Filters"
+                      aria-label={translateRuntime("common.filters")}
                     >
                       <IconFilter />
                     </button>
@@ -3082,13 +3097,13 @@ export default function ViewModesBlock({
                           <button onClick={() => handleFilterChange(flt.id)}>{flt.label || flt.id}</button>
                         </li>
                       ))}
-                      {filterableFields.length > 0 && <li className="menu-title">Custom</li>}
+                      {filterableFields.length > 0 && <li className="menu-title">{translateRuntime("common.custom")}</li>}
                       {filterableFields.map((field) => (
                         <li key={field.id}>
                           <button
                             onClick={async () => {
                               if (!onPrompt) return;
-                              const value = await onPrompt({ title: `Filter ${field.label}`, defaultValue: "" });
+                              const value = await onPrompt({ title: translateRuntime("common.view_modes.filter_named", { name: field.label || field.id }), defaultValue: "" });
                               if (value === null || value === "") return;
                               setClientFilters((prev) => [
                                 ...prev,
@@ -3101,7 +3116,7 @@ export default function ViewModesBlock({
                         </li>
                       ))}
                       <li>
-                        <button onClick={() => handleFilterChange("")}>Clear</button>
+                        <button onClick={() => handleFilterChange("")}>{translateRuntime("common.clear")}</button>
                       </li>
                     </ul>
                   </div>
@@ -3109,11 +3124,11 @@ export default function ViewModesBlock({
               )}
               {showGroupBy && (
                 <div className="dropdown dropdown-bottom join-item">
-                  <DaisyTooltip label="Sort and group" className="join-item" placement="bottom">
+                  <DaisyTooltip label={translateRuntime("common.view_modes.sort_and_group")} className="join-item" placement="bottom">
                     <button
                       className={mobileToolbarButtonClass}
                       type="button"
-                      aria-label="Sort and group"
+                      aria-label={translateRuntime("common.view_modes.sort_and_group")}
                     >
                       <IconSort />
                     </button>
@@ -3126,7 +3141,7 @@ export default function ViewModesBlock({
                         </li>
                       ))}
                       <li>
-                        <button onClick={() => handleGroupByChange("")}>Clear</button>
+                        <button onClick={() => handleGroupByChange("")}>{translateRuntime("common.clear")}</button>
                       </li>
                     </ul>
                   </div>
@@ -3134,11 +3149,11 @@ export default function ViewModesBlock({
               )}
               {showSavedViews && (
                 <div className="dropdown dropdown-bottom join-item">
-                  <DaisyTooltip label="Saved views" className="join-item" placement="bottom">
+                  <DaisyTooltip label={translateRuntime("common.view_modes.saved_views")} className="join-item" placement="bottom">
                     <button
                       className={mobileToolbarButtonClass}
                       type="button"
-                      aria-label="Saved views"
+                      aria-label={translateRuntime("common.view_modes.saved_views")}
                     >
                       <IconBookmark />
                     </button>
@@ -3158,7 +3173,7 @@ export default function ViewModesBlock({
                                 e.stopPropagation();
                                 handleDeleteSavedView(flt.id);
                               }}
-                              aria-label={`Remove ${flt.name}`}
+                              aria-label={translateRuntime("common.remove_named", { name: flt.name })}
                             >
                               ×
                             </button>
@@ -3166,17 +3181,17 @@ export default function ViewModesBlock({
                         </li>
                       ))}
                       <li>
-                        <button onClick={handleSaveFilter}>Save current view</button>
+                        <button onClick={handleSaveFilter}>{translateRuntime("common.view_modes.save_current_view")}</button>
                       </li>
                       <li>
-                        <button onClick={handleSetDefault} disabled={!filterParam}>Set as default</button>
+                        <button onClick={handleSetDefault} disabled={!filterParam}>{translateRuntime("common.view_modes.set_as_default")}</button>
                       </li>
                     </ul>
                   </div>
                 </div>
               )}
-              <DaisyTooltip label="Refresh" className="join-item" placement="bottom">
-                <button className={mobileToolbarButtonClass} type="button" onClick={() => setRefreshTick((v) => v + 1)} aria-label="Refresh">
+              <DaisyTooltip label={translateRuntime("common.refresh")} className="join-item" placement="bottom">
+                <button className={mobileToolbarButtonClass} type="button" onClick={() => setRefreshTick((v) => v + 1)} aria-label={translateRuntime("common.refresh")}>
                   <IconRefresh />
                 </button>
               </DaisyTooltip>
@@ -3188,7 +3203,7 @@ export default function ViewModesBlock({
           <div className="order-4 w-full shrink-0">
             <input
               className="input input-bordered w-full"
-              placeholder="Search…"
+              placeholder={translateRuntime("common.view_modes.search_placeholder")}
               value={searchText}
               onChange={(e) => handleSearchChange(e.target.value)}
               autoFocus
@@ -3199,11 +3214,11 @@ export default function ViewModesBlock({
         <div className={isMobile ? "flex w-full items-center gap-2 min-w-0" : "order-none sm:order-3 flex items-center justify-end gap-2 min-w-0 flex-nowrap overflow-visible"}>
           <div className={isMobile ? "flex items-center gap-2 min-w-0 flex-1 flex-nowrap overflow-x-auto overflow-y-visible no-scrollbar" : "contents"}>
             {isMobile && showSearch && (
-              <DaisyTooltip label="Search" placement="top">
+              <DaisyTooltip label={translateRuntime("common.search")} placement="top">
                 <button
                   className={`${mobileToolbarButtonClass} shrink-0`}
                   type="button"
-                  aria-label="Search"
+                  aria-label={translateRuntime("common.search")}
                   onClick={() => setMobileSearchOpen((open) => !open)}
                 >
                   <IconSearch />
@@ -3211,12 +3226,12 @@ export default function ViewModesBlock({
               </DaisyTooltip>
             )}
             {isMobile && (
-              <DaisyTooltip label="Refresh" placement="top">
+              <DaisyTooltip label={translateRuntime("common.refresh")} placement="top">
                 <button
                   className={`${mobileToolbarButtonClass} shrink-0`}
                   type="button"
                   onClick={() => setRefreshTick((v) => v + 1)}
-                  aria-label="Refresh"
+                  aria-label={translateRuntime("common.refresh")}
                 >
                   <IconRefresh />
                 </button>
@@ -3227,7 +3242,7 @@ export default function ViewModesBlock({
                 <button
                   className={mobileToolbarButtonClass}
                   type="button"
-                  aria-label={isMobile ? "More actions" : "Import export settings"}
+                  aria-label={isMobile ? translateRuntime("common.more_actions") : translateRuntime("common.view_modes.import_export_settings")}
                   onClick={() => setSettingsMenuOpen((open) => !open)}
                 >
                   <MoreHorizontal className="h-4 w-4" />
@@ -3236,7 +3251,7 @@ export default function ViewModesBlock({
                   <ul className={settingsMenuClass}>
                     {selectedIds.length > 0 && activeMode === "list" && (
                       <>
-                        <li className="menu-title">Selection</li>
+                        <li className="menu-title">{translateRuntime("settings.selection")}</li>
                         <li>
                           <button
                             onClick={() => {
@@ -3244,7 +3259,7 @@ export default function ViewModesBlock({
                               setSettingsMenuOpen(false);
                             }}
                           >
-                            Delete Selected
+                            {translateRuntime("common.view_modes.delete_selected")}
                           </button>
                         </li>
                         <li>
@@ -3254,7 +3269,7 @@ export default function ViewModesBlock({
                               setSettingsMenuOpen(false);
                             }}
                           >
-                            Export Selected
+                            {translateRuntime("common.view_modes.export_selected")}
                           </button>
                         </li>
                         {bulkActions.map((action) => (
@@ -3271,7 +3286,7 @@ export default function ViewModesBlock({
                         ))}
                       </>
                     )}
-                    {(selectedIds.length > 0 && activeMode === "list") && <li className="menu-title">Import / Export</li>}
+                    {(selectedIds.length > 0 && activeMode === "list") && <li className="menu-title">{translateRuntime("common.view_modes.import_export")}</li>}
                     <li>
                       <button
                         onClick={() => {
@@ -3281,7 +3296,7 @@ export default function ViewModesBlock({
                         disabled={!templateFieldDefs.length}
                       >
                         <Download className="h-4 w-4" />
-                        Download import template
+                        {translateRuntime("common.view_modes.download_import_template")}
                       </button>
                     </li>
                     <li>
@@ -3294,7 +3309,7 @@ export default function ViewModesBlock({
                         disabled={!canWriteRecords}
                       >
                         <Upload className="h-4 w-4" />
-                        Import CSV
+                        {translateRuntime("common.view_modes.import_csv")}
                       </button>
                     </li>
                   </ul>
@@ -3303,7 +3318,7 @@ export default function ViewModesBlock({
             )}
             {activeMode === "graph" && (
               <div className={`${mobileToolbarGroupClass} shrink-0`}>
-              <DaisyTooltip label="Bar chart" className="join-item" placement="top">
+              <DaisyTooltip label={translateRuntime("common.view_modes.bar_chart")} className="join-item" placement="top">
                 <button
                   className={`${mobileToolbarButtonClass} ${graphType === "bar" ? mobileToolbarButtonActiveClass : ""}`}
                   onClick={() => handleGraphTypeChange("bar")}
@@ -3311,7 +3326,7 @@ export default function ViewModesBlock({
                   <IconGraph />
                 </button>
               </DaisyTooltip>
-              <DaisyTooltip label="Line chart" className="join-item" placement="top">
+              <DaisyTooltip label={translateRuntime("common.view_modes.line_chart")} className="join-item" placement="top">
                 <button
                   className={`${mobileToolbarButtonClass} ${graphType === "line" ? mobileToolbarButtonActiveClass : ""}`}
                   onClick={() => handleGraphTypeChange("line")}
@@ -3319,7 +3334,7 @@ export default function ViewModesBlock({
                   <IconLine />
                 </button>
               </DaisyTooltip>
-              <DaisyTooltip label="Pie chart" className="join-item" placement="top">
+              <DaisyTooltip label={translateRuntime("common.view_modes.pie_chart")} className="join-item" placement="top">
                 <button
                   className={`${mobileToolbarButtonClass} ${graphType === "pie" ? mobileToolbarButtonActiveClass : ""}`}
                   onClick={() => handleGraphTypeChange("pie")}
@@ -3329,7 +3344,7 @@ export default function ViewModesBlock({
               </DaisyTooltip>
               {showGraphMeasure && (
                 <div className="dropdown dropdown-end dropdown-bottom join-item">
-                  <DaisyTooltip label="Measure" className="join-item" placement="top">
+                  <DaisyTooltip label={translateRuntime("common.view_modes.measure")} className="join-item" placement="top">
                     <button
                       className={mobileToolbarButtonClass}
                       type="button"
@@ -3357,7 +3372,7 @@ export default function ViewModesBlock({
             {activeMode === "pivot" && (
               <div className={`${mobileToolbarGroupClass} shrink-0`}>
               <div className="dropdown dropdown-end dropdown-bottom join-item">
-                <DaisyTooltip label="Rows" className="join-item" placement="top">
+                <DaisyTooltip label={translateRuntime("common.view_modes.rows")} className="join-item" placement="top">
                   <button
                     className={mobileToolbarButtonClass}
                     type="button"
@@ -3380,7 +3395,7 @@ export default function ViewModesBlock({
                 </div>}
               </div>
               <div className="dropdown dropdown-end dropdown-bottom join-item">
-                <DaisyTooltip label="Columns" className="join-item" placement="top">
+                <DaisyTooltip label={translateRuntime("common.view_modes.columns")} className="join-item" placement="top">
                   <button
                     className={mobileToolbarButtonClass}
                     type="button"
@@ -3400,14 +3415,14 @@ export default function ViewModesBlock({
                       </li>
                     ))}
                     <li>
-                      <button onClick={() => handlePivotColChange("")}>Clear</button>
+                      <button onClick={() => handlePivotColChange("")}>{translateRuntime("common.clear")}</button>
                     </li>
                   </ul>
                 </div>}
               </div>
               {showPivotMeasure && (
                 <div className="dropdown dropdown-end dropdown-bottom join-item">
-                  <DaisyTooltip label="Measure" className="join-item" placement="top">
+                  <DaisyTooltip label={translateRuntime("common.view_modes.measure")} className="join-item" placement="top">
                     <button
                       className={mobileToolbarButtonClass}
                       type="button"
@@ -3434,12 +3449,12 @@ export default function ViewModesBlock({
             )}
             {!forceListOnly && (
               isMobile ? (
-                <DaisyTooltip label="View mode" placement="top">
+                <DaisyTooltip label={translateRuntime("common.view_modes.view_mode")} placement="top">
                   <button
                     className={`${mobileToolbarButtonClass} shrink-0`}
                     type="button"
                     onClick={() => setMobileModeSheetOpen(true)}
-                    aria-label="View mode"
+                    aria-label={translateRuntime("common.view_modes.view_mode")}
                   >
                     {activeMode === "list"
                       ? <IconList />
@@ -3465,15 +3480,7 @@ export default function ViewModesBlock({
                           : m.mode === "calendar"
                             ? <IconCalendar />
                             : <IconPivot />;
-                    const modeTip = m.mode === "kanban"
-                      ? "Kanban"
-                      : m.mode === "graph"
-                        ? "Graph"
-                        : m.mode === "calendar"
-                          ? "Calendar"
-                          : m.mode === "pivot"
-                            ? "Pivot"
-                            : "List";
+                    const modeTip = viewModeLabel(m.mode);
                     return (
                       <DaisyTooltip key={m.mode} label={modeTip} className="join-item" placement="top">
                         <button
@@ -3514,7 +3521,7 @@ export default function ViewModesBlock({
               <button
                 className="badge-remove"
                 onClick={() => setClientFilters((prev) => prev.filter((_, i) => i !== idx))}
-                aria-label={`Remove ${flt.label || flt.field_id}`}
+                aria-label={translateRuntime("common.remove_named", { name: flt.label || flt.field_id })}
               >
                 ×
               </button>
@@ -3630,13 +3637,13 @@ export default function ViewModesBlock({
       {exportModalOpen && (
         <div className="modal modal-open">
           <div className="modal-box max-w-lg">
-            <h3 className="font-semibold text-lg">Export Selected Records</h3>
+            <h3 className="font-semibold text-lg">{translateRuntime("common.view_modes.export_selected_records")}</h3>
             <div className="text-sm opacity-70 mt-1">
-              {selectedRows.length} row(s) selected in {entityLabel}.
+              {translateRuntime("common.view_modes.rows_selected_in", { count: selectedRows.length, name: entityLabel })}
             </div>
             <div className="mt-4 space-y-4">
               <div>
-                <div className="text-xs opacity-60 mb-2">Format</div>
+                <div className="text-xs opacity-60 mb-2">{translateRuntime("common.view_modes.format")}</div>
                 <div className="join">
                   <button
                     type="button"
@@ -3655,40 +3662,40 @@ export default function ViewModesBlock({
                 </div>
               </div>
               <div>
-                <div className="text-xs opacity-60 mb-2">Columns</div>
+                <div className="text-xs opacity-60 mb-2">{translateRuntime("common.view_modes.columns")}</div>
                 <div className="join">
                   <button
                     type="button"
                     className={`${SOFT_BUTTON_SM} join-item ${exportColumnScope === "visible" ? "bg-base-300" : ""}`}
                     onClick={() => setExportColumnScope("visible")}
                   >
-                    Visible ({visibleExportFields.length})
+                    {translateRuntime("common.view_modes.visible_count", { count: visibleExportFields.length })}
                   </button>
                   <button
                     type="button"
                     className={`${SOFT_BUTTON_SM} join-item ${exportColumnScope === "all" ? "bg-base-300" : ""}`}
                     onClick={() => setExportColumnScope("all")}
                   >
-                    All ({allExportFields.length})
+                    {translateRuntime("common.view_modes.all_count", { count: allExportFields.length })}
                   </button>
                 </div>
               </div>
             </div>
             <div className="modal-action">
               <button className="btn" onClick={() => setExportModalOpen(false)} disabled={exportBusy}>
-                Cancel
+                {translateRuntime("common.cancel")}
               </button>
               <button
                 className="btn btn-primary"
                 onClick={handleExportSelectedRows}
                 disabled={exportBusy || selectedRows.length === 0}
               >
-                {exportBusy ? "Preparing..." : "Download"}
+                {exportBusy ? translateRuntime("common.view_modes.preparing") : translateRuntime("common.view_modes.download")}
               </button>
             </div>
           </div>
           <button className="modal-backdrop" type="button" onClick={() => !exportBusy && setExportModalOpen(false)}>
-            close
+            {translateRuntime("common.close")}
           </button>
         </div>
       )}
@@ -3696,9 +3703,9 @@ export default function ViewModesBlock({
       {importModalOpen && (
         <div className="modal modal-open">
           <div className="modal-box max-w-2xl">
-            <h3 className="font-semibold text-lg">Import CSV</h3>
+            <h3 className="font-semibold text-lg">{translateRuntime("common.view_modes.import_csv")}</h3>
             <p className="text-sm opacity-70 mt-1">
-              Import records into {entityLabel}. Use the template to match required field ids.
+              {translateRuntime("common.view_modes.import_records_into", { name: entityLabel })}
             </p>
             <div className="mt-4 space-y-4">
               <div className="flex items-center gap-2">
@@ -3714,16 +3721,16 @@ export default function ViewModesBlock({
                 />
               </div>
               {importFileName && (
-                <div className="text-xs opacity-70">File: {importFileName}</div>
+                <div className="text-xs opacity-70">{translateRuntime("common.view_modes.file_name", { name: importFileName })}</div>
               )}
               {importHeaders.length > 0 && (
                 <div className="rounded-md border border-base-300 p-3 text-sm space-y-1">
-                  <div>Columns: {importHeaders.length}</div>
-                  <div>Mapped fields: {importMappedFields.filter(Boolean).length}</div>
-                  <div>Rows detected: {importRows.length}</div>
+                  <div>{translateRuntime("common.view_modes.columns_count", { count: importHeaders.length })}</div>
+                  <div>{translateRuntime("common.view_modes.mapped_fields_count", { count: importMappedFields.filter(Boolean).length })}</div>
+                  <div>{translateRuntime("common.view_modes.rows_detected", { count: importRows.length })}</div>
                   {importUnmappedHeaders.length > 0 && (
                     <div className="text-warning">
-                      Unmapped columns: {importUnmappedHeaders.join(", ")}
+                      {translateRuntime("common.view_modes.unmapped_columns", { names: importUnmappedHeaders.join(", ") })}
                     </div>
                   )}
                 </div>
@@ -3733,16 +3740,16 @@ export default function ViewModesBlock({
               )}
               {importResult && (
                 <div className="rounded-md border border-base-300 p-3 text-sm space-y-1">
-                  <div>Total rows processed: {importResult.total}</div>
-                  <div className="text-success">Imported: {importResult.successCount}</div>
+                  <div>{translateRuntime("common.view_modes.total_rows_processed", { count: importResult.total })}</div>
+                  <div className="text-success">{translateRuntime("common.view_modes.imported_count", { count: importResult.successCount })}</div>
                   <div className={importResult.failureCount > 0 ? "text-error" : ""}>
-                    Failed: {importResult.failureCount}
+                    {translateRuntime("common.view_modes.failed_count", { count: importResult.failureCount })}
                   </div>
                   {Array.isArray(importResult.failures) && importResult.failures.length > 0 && (
                     <div className="mt-2 max-h-40 overflow-auto text-xs space-y-1">
                       {importResult.failures.map((item) => (
                         <div key={`${item.row}-${item.error}`} className="opacity-80">
-                          Row {item.row}: {item.error}
+                          {translateRuntime("common.view_modes.row_error", { row: item.row, error: item.error })}
                         </div>
                       ))}
                     </div>
@@ -3752,19 +3759,19 @@ export default function ViewModesBlock({
             </div>
             <div className="modal-action">
               <button className="btn" onClick={() => setImportModalOpen(false)} disabled={importBusy}>
-                Close
+                {translateRuntime("common.close")}
               </button>
               <button
                 className="btn btn-primary"
                 onClick={handleImportCsv}
                 disabled={importBusy || importRows.length === 0 || importMappedFields.filter(Boolean).length === 0}
               >
-                {importBusy ? "Importing..." : `Import ${importRows.length || ""}`.trim()}
+                {importBusy ? translateRuntime("common.view_modes.importing") : translateRuntime("common.view_modes.import_count", { count: importRows.length || 0 })}
               </button>
             </div>
           </div>
           <button className="modal-backdrop" type="button" onClick={() => !importBusy && setImportModalOpen(false)}>
-            close
+            {translateRuntime("common.close")}
           </button>
         </div>
       )}
@@ -3774,7 +3781,7 @@ export default function ViewModesBlock({
           <button
             type="button"
             className="absolute inset-0 bg-base-content/35"
-            aria-label="Close actions"
+            aria-label={translateRuntime("common.view_modes.close_actions")}
             onClick={() => setSettingsMenuOpen(false)}
           />
           <div className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4">
@@ -3782,7 +3789,7 @@ export default function ViewModesBlock({
             <div className="space-y-2">
               {(showFilters || showGroupBy || showSavedViews) && (
                 <div className="border-b border-base-300 pb-2 mb-2">
-                  <div className="px-2 pb-2 text-sm font-semibold">View Options</div>
+                  <div className="px-2 pb-2 text-sm font-semibold">{translateRuntime("common.view_modes.view_options")}</div>
                   {showFilters && (
                     <button
                       type="button"
@@ -3793,7 +3800,7 @@ export default function ViewModesBlock({
                       }}
                     >
                       <Filter className="h-5 w-5" />
-                      <span className="font-medium">Filters</span>
+                      <span className="font-medium">{translateRuntime("common.filters")}</span>
                     </button>
                   )}
                   {showGroupBy && (
@@ -3806,7 +3813,7 @@ export default function ViewModesBlock({
                       }}
                     >
                       <ArrowUpDown className="h-5 w-5" />
-                      <span className="font-medium">Sort and Group</span>
+                      <span className="font-medium">{translateRuntime("common.view_modes.sort_and_group")}</span>
                     </button>
                   )}
                   {showSavedViews && (
@@ -3819,35 +3826,35 @@ export default function ViewModesBlock({
                       }}
                     >
                       <Bookmark className="h-5 w-5" />
-                      <span className="font-medium">Saved Views</span>
+                      <span className="font-medium">{translateRuntime("settings.saved_views")}</span>
                     </button>
                   )}
                 </div>
               )}
               {activeMode === "graph" && (
                 <div className="border-b border-base-300 pb-2 mb-2">
-                  <div className="px-2 pb-2 text-sm font-semibold">Graph</div>
+                  <div className="px-2 pb-2 text-sm font-semibold">{translateRuntime("common.view_modes.graph")}</div>
                   <div className="grid grid-cols-3 gap-2 px-2 pb-2">
                     <button
                       type="button"
                       className={`rounded-2xl border px-3 py-3 text-sm ${graphType === "bar" ? "border-primary bg-primary/5 text-primary" : "border-base-300"}`}
                       onClick={() => handleGraphTypeChange("bar")}
                     >
-                      Bar
+                      {translateRuntime("common.view_modes.bar")}
                     </button>
                     <button
                       type="button"
                       className={`rounded-2xl border px-3 py-3 text-sm ${graphType === "line" ? "border-primary bg-primary/5 text-primary" : "border-base-300"}`}
                       onClick={() => handleGraphTypeChange("line")}
                     >
-                      Line
+                      {translateRuntime("common.view_modes.line")}
                     </button>
                     <button
                       type="button"
                       className={`rounded-2xl border px-3 py-3 text-sm ${graphType === "pie" ? "border-primary bg-primary/5 text-primary" : "border-base-300"}`}
                       onClick={() => handleGraphTypeChange("pie")}
                     >
-                      Pie
+                      {translateRuntime("common.view_modes.pie")}
                     </button>
                   </div>
                   {showGraphMeasure && (
@@ -3860,14 +3867,14 @@ export default function ViewModesBlock({
                       }}
                     >
                       <Ruler className="h-5 w-5" />
-                      <span className="font-medium">Measure</span>
+                      <span className="font-medium">{translateRuntime("common.view_modes.measure")}</span>
                     </button>
                   )}
                 </div>
               )}
               {activeMode === "pivot" && (
                 <div className="border-b border-base-300 pb-2 mb-2">
-                  <div className="px-2 pb-2 text-sm font-semibold">Pivot</div>
+                  <div className="px-2 pb-2 text-sm font-semibold">{translateRuntime("common.view_modes.pivot")}</div>
                   <button
                     type="button"
                     className="flex w-full items-center gap-3 rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
@@ -3877,7 +3884,7 @@ export default function ViewModesBlock({
                     }}
                   >
                     <ListFilter className="h-5 w-5" />
-                    <span className="font-medium">Rows</span>
+                    <span className="font-medium">{translateRuntime("common.view_modes.rows")}</span>
                   </button>
                   <button
                     type="button"
@@ -3888,7 +3895,7 @@ export default function ViewModesBlock({
                     }}
                   >
                     <Columns2 className="h-5 w-5" />
-                    <span className="font-medium">Columns</span>
+                    <span className="font-medium">{translateRuntime("common.view_modes.columns")}</span>
                   </button>
                   {showPivotMeasure && (
                     <button
@@ -3900,14 +3907,14 @@ export default function ViewModesBlock({
                       }}
                     >
                       <Ruler className="h-5 w-5" />
-                      <span className="font-medium">Measure</span>
+                      <span className="font-medium">{translateRuntime("common.view_modes.measure")}</span>
                     </button>
                   )}
                 </div>
               )}
               {bulkActions.length > 0 && selectedIds.length > 0 && (
                 <div className="border-b border-base-300 pb-2 mb-2">
-                  <div className="px-2 pb-2 text-sm font-semibold">Selection</div>
+                  <div className="px-2 pb-2 text-sm font-semibold">{translateRuntime("settings.selection")}</div>
                   <button
                     type="button"
                     className="flex w-full items-center gap-3 rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
@@ -3916,7 +3923,7 @@ export default function ViewModesBlock({
                       setSettingsMenuOpen(false);
                     }}
                   >
-                    <span className="font-medium">Delete Selected</span>
+                    <span className="font-medium">{translateRuntime("common.view_modes.delete_selected")}</span>
                   </button>
                   <button
                     type="button"
@@ -3926,13 +3933,13 @@ export default function ViewModesBlock({
                       setMobileMenuSheet("bulk_actions");
                     }}
                   >
-                    <span className="font-medium">Bulk Actions</span>
+                    <span className="font-medium">{translateRuntime("common.bulk_actions")}</span>
                   </button>
                 </div>
               )}
               {activeMode === "list" && selectedIds.length > 0 && bulkActions.length === 0 && (
                 <div className="border-b border-base-300 pb-2 mb-2">
-                  <div className="px-2 pb-2 text-sm font-semibold">Selection</div>
+                  <div className="px-2 pb-2 text-sm font-semibold">{translateRuntime("settings.selection")}</div>
                   <button
                     type="button"
                     className="flex w-full items-center gap-3 rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
@@ -3941,7 +3948,7 @@ export default function ViewModesBlock({
                       setSettingsMenuOpen(false);
                     }}
                   >
-                    <span className="font-medium">Delete Selected</span>
+                    <span className="font-medium">{translateRuntime("common.view_modes.delete_selected")}</span>
                   </button>
                 </div>
               )}
@@ -3955,7 +3962,7 @@ export default function ViewModesBlock({
                   }}
                 >
                   <Download className="h-5 w-5" />
-                  <span className="font-medium">Export Selected</span>
+                  <span className="font-medium">{translateRuntime("common.view_modes.export_selected")}</span>
                 </button>
               )}
               <button
@@ -3968,7 +3975,7 @@ export default function ViewModesBlock({
                 disabled={!templateFieldDefs.length}
               >
                 <Download className="h-5 w-5" />
-                <span className="font-medium">Download Import Template</span>
+                <span className="font-medium">{translateRuntime("common.view_modes.download_import_template")}</span>
               </button>
               <button
                 type="button"
@@ -3981,7 +3988,7 @@ export default function ViewModesBlock({
                 disabled={!canWriteRecords}
               >
                 <Upload className="h-5 w-5" />
-                <span className="font-medium">Import CSV</span>
+                <span className="font-medium">{translateRuntime("common.view_modes.import_csv")}</span>
               </button>
             </div>
           </div>
@@ -3993,7 +4000,7 @@ export default function ViewModesBlock({
           <button
             type="button"
             className="absolute inset-0 bg-base-content/35"
-            aria-label="Close menu"
+            aria-label={translateRuntime("common.view_modes.close_menu")}
             onClick={() => setMobileMenuSheet("")}
           />
           <div className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4">
@@ -4001,7 +4008,7 @@ export default function ViewModesBlock({
             <div className="max-h-[60vh] overflow-auto">
               {mobileMenuSheet === "filters" && (
                 <div className="space-y-2">
-                  <div className="px-2 pb-2 text-sm font-semibold">Filters</div>
+                  <div className="px-2 pb-2 text-sm font-semibold">{translateRuntime("common.filters")}</div>
                   {manifestFilterList.map((flt) => (
                     <button
                       key={flt.id}
@@ -4016,7 +4023,7 @@ export default function ViewModesBlock({
                     </button>
                   ))}
                   {filterableFields.length > 0 && (
-                    <div className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide opacity-50">Custom</div>
+                    <div className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide opacity-50">{translateRuntime("common.custom")}</div>
                   )}
                   {filterableFields.map((field) => (
                     <button
@@ -4025,7 +4032,7 @@ export default function ViewModesBlock({
                       className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
                       onClick={async () => {
                         if (!onPrompt) return;
-                        const value = await onPrompt({ title: `Filter ${field.label}`, defaultValue: "" });
+                        const value = await onPrompt({ title: `${translateRuntime("common.filter")} ${field.label}`, defaultValue: "" });
                         if (value === null || value === "") return;
                         setClientFilters((prev) => [
                           ...prev,
@@ -4045,13 +4052,13 @@ export default function ViewModesBlock({
                       setMobileMenuSheet("");
                     }}
                   >
-                    Clear
+                    {translateRuntime("common.clear")}
                   </button>
                 </div>
               )}
               {mobileMenuSheet === "group_by" && (
                 <div className="space-y-2">
-                  <div className="px-2 pb-2 text-sm font-semibold">Sort and Group</div>
+                  <div className="px-2 pb-2 text-sm font-semibold">{translateRuntime("common.view_modes.sort_and_group")}</div>
                   {filterableFields.map((field) => (
                     <button
                       key={field.id}
@@ -4073,13 +4080,13 @@ export default function ViewModesBlock({
                       setMobileMenuSheet("");
                     }}
                   >
-                    Clear
+                    {translateRuntime("common.clear")}
                   </button>
                 </div>
               )}
               {mobileMenuSheet === "saved_views" && (
                 <div className="space-y-2">
-                  <div className="px-2 pb-2 text-sm font-semibold">Saved Views</div>
+                  <div className="px-2 pb-2 text-sm font-semibold">{translateRuntime("settings.saved_views")}</div>
                   {savedFilters.map((flt) => (
                     <div key={flt.id} className="flex items-center gap-2 rounded-2xl px-2 py-1 hover:bg-base-200">
                       <button
@@ -4095,7 +4102,7 @@ export default function ViewModesBlock({
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm btn-square"
-                        aria-label={`Remove ${flt.name}`}
+                        aria-label={`${translateRuntime("common.delete")} ${flt.name}`}
                         onClick={() => handleDeleteSavedView(flt.id)}
                       >
                         ×
@@ -4110,7 +4117,7 @@ export default function ViewModesBlock({
                       setMobileMenuSheet("");
                     }}
                   >
-                    Save Current View
+                    {translateRuntime("settings.save_current_view")}
                   </button>
                   <button
                     type="button"
@@ -4121,13 +4128,13 @@ export default function ViewModesBlock({
                     }}
                     disabled={!filterParam}
                   >
-                    Set as Default
+                    {translateRuntime("settings.default_view")}
                   </button>
                 </div>
               )}
               {mobileMenuSheet === "graph_measure" && (
                 <div className="space-y-2">
-                  <div className="px-2 pb-2 text-sm font-semibold">Measure</div>
+                  <div className="px-2 pb-2 text-sm font-semibold">{translateRuntime("common.view_modes.measure")}</div>
                   {measureOptions.map((opt) => (
                     <button
                       key={opt.value}
@@ -4145,7 +4152,7 @@ export default function ViewModesBlock({
               )}
               {mobileMenuSheet === "pivot_rows" && (
                 <div className="space-y-2">
-                  <div className="px-2 pb-2 text-sm font-semibold">Pivot Rows</div>
+                  <div className="px-2 pb-2 text-sm font-semibold">{translateRuntime("common.view_modes.pivot_rows")}</div>
                   {filterableFields.map((field) => (
                     <button
                       key={field.id}
@@ -4163,7 +4170,7 @@ export default function ViewModesBlock({
               )}
               {mobileMenuSheet === "pivot_cols" && (
                 <div className="space-y-2">
-                  <div className="px-2 pb-2 text-sm font-semibold">Pivot Columns</div>
+                  <div className="px-2 pb-2 text-sm font-semibold">{translateRuntime("common.view_modes.pivot_columns")}</div>
                   {filterableFields.map((field) => (
                     <button
                       key={field.id}
@@ -4185,13 +4192,13 @@ export default function ViewModesBlock({
                       setMobileMenuSheet("");
                     }}
                   >
-                    Clear
+                    {translateRuntime("common.clear")}
                   </button>
                 </div>
               )}
               {mobileMenuSheet === "pivot_measure" && (
                 <div className="space-y-2">
-                  <div className="px-2 pb-2 text-sm font-semibold">Pivot Measure</div>
+                  <div className="px-2 pb-2 text-sm font-semibold">{translateRuntime("common.view_modes.pivot_measure")}</div>
                   {measureOptions.map((opt) => (
                     <button
                       key={opt.value}
@@ -4209,7 +4216,7 @@ export default function ViewModesBlock({
               )}
               {mobileMenuSheet === "bulk_actions" && (
                 <div className="space-y-2">
-                  <div className="px-2 pb-2 text-sm font-semibold">Bulk Actions</div>
+                  <div className="px-2 pb-2 text-sm font-semibold">{translateRuntime("common.bulk_actions")}</div>
                   {bulkActions.map((action) => (
                     <button
                       key={action.id || action.label}
@@ -4235,7 +4242,7 @@ export default function ViewModesBlock({
           <button
             type="button"
             className="absolute inset-0 bg-base-content/35"
-            aria-label="Close view mode picker"
+            aria-label={translateRuntime("common.view_modes.close_view_mode_picker")}
             onClick={() => setMobileModeSheetOpen(false)}
           />
           <div className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4">
@@ -4252,15 +4259,7 @@ export default function ViewModesBlock({
                       : m.mode === "calendar"
                         ? <IconCalendar />
                         : <IconPivot />;
-                const label = m.mode === "kanban"
-                  ? "Kanban"
-                  : m.mode === "graph"
-                    ? "Graph"
-                    : m.mode === "calendar"
-                      ? "Calendar"
-                      : m.mode === "pivot"
-                        ? "Pivot"
-                        : "List";
+                const label = viewModeLabel(m.mode);
                 return (
                   <button
                     key={m.mode}

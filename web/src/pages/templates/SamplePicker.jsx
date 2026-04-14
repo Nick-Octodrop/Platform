@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../api.js";
 import AppSelect from "../../components/AppSelect.jsx";
+import { useI18n } from "../../i18n/LocalizationProvider.jsx";
 
 function looksLikeUuid(value) {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -56,6 +57,7 @@ export default function SamplePicker({
   rightAction = null,
   size = "md", // md | sm
 }) {
+  const { t } = useI18n();
   const [searchText, setSearchText] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -148,13 +150,13 @@ export default function SamplePicker({
       <div className={`grid grid-cols-1 gap-3 items-end ${layoutClass}`}>
         {showEntitySelect && (
           <label className="form-control">
-            <span className="label-text">Entity</span>
+            <span className="label-text">{t("common.entity")}</span>
             <AppSelect
               className={`select select-bordered ${size === "sm" ? "select-sm" : ""}`}
               value={entityId}
               onChange={(e) => setSample((prev) => ({ ...(prev || {}), entity_id: e.target.value, record_id: "" }))}
             >
-              <option value="">Select entity</option>
+              <option value="">{t("settings.template_studio.select_entity")}</option>
               {entities.map((ent) => (
                 <option key={ent.id} value={ent.id}>
                   {ent.label || ent.id}
@@ -164,11 +166,11 @@ export default function SamplePicker({
           </label>
         )}
         <label className={`form-control ${showEntitySelect && !rightAction ? "md:col-span-2" : ""}`}>
-          <span className="label-text">Record search</span>
+          <span className="label-text">{t("settings.template_studio.record_search")}</span>
           <div className="relative">
             <input
               className={`input input-bordered w-full pr-10 ${size === "sm" ? "input-sm" : ""}`}
-              placeholder="Search record..."
+              placeholder={t("settings.template_studio.search_record")}
               value={opened ? searchText : (searchText || selectedLabel || "")}
               onChange={(e) => setSearchText(e.target.value)}
               disabled={!entityId}
@@ -186,8 +188,8 @@ export default function SamplePicker({
                   setSelectedLabel("");
                   setSample((prev) => ({ ...(prev || {}), entity_id: entityId, record_id: "" }));
                 }}
-                aria-label="Clear selection"
-                title="Clear"
+                aria-label={t("settings.template_studio.clear_selection")}
+                title={t("common.clear")}
               >
                 <span className="text-sm font-medium leading-none">×</span>
               </button>
@@ -195,9 +197,9 @@ export default function SamplePicker({
             {opened && (
               <div className="absolute z-[120] mt-1 w-full rounded-box border border-base-400 bg-base-100 shadow">
                 <ul className="menu menu-compact max-h-64 overflow-auto">
-                  {loading && <li className="menu-title"><span>Searching...</span></li>}
+                  {loading && <li className="menu-title"><span>{t("settings.template_studio.searching")}</span></li>}
                   {!loading && results.length === 0 && (
-                    <li className="menu-title"><span>{searchText.trim() ? "No results" : "No records found"}</span></li>
+                    <li className="menu-title"><span>{searchText.trim() ? t("empty.no_results") : t("empty.no_records_found")}</span></li>
                   )}
                   {results.map((item) => {
                     const record = item.record || {};

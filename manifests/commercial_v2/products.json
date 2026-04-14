@@ -7,11 +7,16 @@
     "version": "1.0.0",
     "description": "Product catalogue items for quoting and supplier purchasing.",
     "category": "Commercial",
-    "icon_key": "lucide:Package2"
+    "icon_key": "lucide:Package2",
+    "name_key": "products.module.name",
+    "description_key": "products.module.description"
   },
   "depends_on": {
     "required": [
-      { "module": "biz_contacts", "version": ">=1.0.0" }
+      {
+        "module": "biz_contacts",
+        "version": ">=1.0.0"
+      }
     ]
   },
   "app": {
@@ -31,7 +36,11 @@
         "group": "Commercial",
         "mode": "inline",
         "items": [
-          { "label": "Products", "to": "page:biz_product.list_page" }
+          {
+            "label": "Products",
+            "to": "page:biz_product.list_page",
+            "menu_label_key": "products.navigation.biz_product_list_page"
+          }
         ]
       }
     ]
@@ -42,25 +51,89 @@
       "label": "Product",
       "display_field": "biz_product.name",
       "fields": [
-        { "id": "biz_product.id", "type": "uuid", "label": "ID", "readonly": true },
-        { "id": "biz_product.code", "type": "string", "label": "Code", "required": true },
-        { "id": "biz_product.name", "type": "string", "label": "Name", "required": true },
-        { "id": "biz_product.description", "type": "text", "label": "Description" },
-        { "id": "biz_product.category", "type": "string", "label": "Category" },
+        {
+          "id": "biz_product.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true,
+          "label_key": "products.entities.biz_product.fields.id.label"
+        },
+        {
+          "id": "biz_product.code",
+          "type": "string",
+          "label": "Code",
+          "required": true,
+          "label_key": "products.entities.biz_product.fields.code.label"
+        },
+        {
+          "id": "biz_product.name",
+          "type": "string",
+          "label": "Name",
+          "required": true,
+          "label_key": "products.entities.biz_product.fields.name.label"
+        },
+        {
+          "id": "biz_product.description",
+          "type": "text",
+          "label": "Description",
+          "label_key": "products.entities.biz_product.fields.description.label"
+        },
+        {
+          "id": "biz_product.category",
+          "type": "string",
+          "label": "Category",
+          "label_key": "products.entities.biz_product.fields.category.label"
+        },
         {
           "id": "biz_product.uom",
           "type": "enum",
           "label": "UOM",
           "default": "EA",
           "options": [
-            { "value": "EA", "label": "Each" },
-            { "value": "SET", "label": "Set" },
-            { "value": "KIT", "label": "Kit" },
-            { "value": "LOT", "label": "Lot" },
-            { "value": "PALLET", "label": "Pallet" },
-            { "value": "CONTAINER", "label": "Container" },
-            { "value": "M", "label": "Meter" }
-          ]
+            {
+              "value": "EA",
+              "label": "Each",
+              "status_label_key": "products.entities.biz_product.fields.uom.options.ea",
+              "label_key": "products.entities.biz_product.fields.uom.options.ea"
+            },
+            {
+              "value": "SET",
+              "label": "Set",
+              "status_label_key": "products.entities.biz_product.fields.uom.options.set",
+              "label_key": "products.entities.biz_product.fields.uom.options.set"
+            },
+            {
+              "value": "KIT",
+              "label": "Kit",
+              "status_label_key": "products.entities.biz_product.fields.uom.options.kit",
+              "label_key": "products.entities.biz_product.fields.uom.options.kit"
+            },
+            {
+              "value": "LOT",
+              "label": "Lot",
+              "status_label_key": "products.entities.biz_product.fields.uom.options.lot",
+              "label_key": "products.entities.biz_product.fields.uom.options.lot"
+            },
+            {
+              "value": "PALLET",
+              "label": "Pallet",
+              "status_label_key": "products.entities.biz_product.fields.uom.options.pallet",
+              "label_key": "products.entities.biz_product.fields.uom.options.pallet"
+            },
+            {
+              "value": "CONTAINER",
+              "label": "Container",
+              "status_label_key": "products.entities.biz_product.fields.uom.options.container",
+              "label_key": "products.entities.biz_product.fields.uom.options.container"
+            },
+            {
+              "value": "M",
+              "label": "Meter",
+              "status_label_key": "products.entities.biz_product.fields.uom.options.m",
+              "label_key": "products.entities.biz_product.fields.uom.options.m"
+            }
+          ],
+          "label_key": "products.entities.biz_product.fields.uom.label"
         },
         {
           "id": "biz_product.default_sales_currency",
@@ -68,18 +141,44 @@
           "label": "Sales Currency",
           "default": "EUR",
           "options": [
-            { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" },
-            { "value": "GBP", "label": "GBP" },
-            { "value": "AED", "label": "AED" }
-          ]
+            {
+              "value": "EUR",
+              "label": "EUR",
+              "status_label_key": "products.entities.biz_product.fields.default_sales_currency.options.eur",
+              "label_key": "products.entities.biz_product.fields.default_sales_currency.options.eur"
+            },
+            {
+              "value": "USD",
+              "label": "USD",
+              "status_label_key": "products.entities.biz_product.fields.default_sales_currency.options.usd",
+              "label_key": "products.entities.biz_product.fields.default_sales_currency.options.usd"
+            },
+            {
+              "value": "GBP",
+              "label": "GBP",
+              "status_label_key": "products.entities.biz_product.fields.default_sales_currency.options.gbp",
+              "label_key": "products.entities.biz_product.fields.default_sales_currency.options.gbp"
+            },
+            {
+              "value": "AED",
+              "label": "AED",
+              "status_label_key": "products.entities.biz_product.fields.default_sales_currency.options.aed",
+              "label_key": "products.entities.biz_product.fields.default_sales_currency.options.aed"
+            }
+          ],
+          "label_key": "products.entities.biz_product.fields.default_sales_currency.label"
         },
         {
           "id": "biz_product.default_sales_price",
           "type": "number",
           "label": "Sales Price",
           "default": 0,
-          "format": { "kind": "currency", "currency_field": "biz_product.default_sales_currency", "precision": 2 }
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_product.default_sales_currency",
+            "precision": 2
+          },
+          "label_key": "products.entities.biz_product.fields.default_sales_price.label"
         },
         {
           "id": "biz_product.default_purchase_currency",
@@ -87,49 +186,113 @@
           "label": "Purchase Currency",
           "default": "USD",
           "options": [
-            { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" },
-            { "value": "GBP", "label": "GBP" },
-            { "value": "AED", "label": "AED" }
-          ]
+            {
+              "value": "EUR",
+              "label": "EUR",
+              "status_label_key": "products.entities.biz_product.fields.default_purchase_currency.options.eur",
+              "label_key": "products.entities.biz_product.fields.default_purchase_currency.options.eur"
+            },
+            {
+              "value": "USD",
+              "label": "USD",
+              "status_label_key": "products.entities.biz_product.fields.default_purchase_currency.options.usd",
+              "label_key": "products.entities.biz_product.fields.default_purchase_currency.options.usd"
+            },
+            {
+              "value": "GBP",
+              "label": "GBP",
+              "status_label_key": "products.entities.biz_product.fields.default_purchase_currency.options.gbp",
+              "label_key": "products.entities.biz_product.fields.default_purchase_currency.options.gbp"
+            },
+            {
+              "value": "AED",
+              "label": "AED",
+              "status_label_key": "products.entities.biz_product.fields.default_purchase_currency.options.aed",
+              "label_key": "products.entities.biz_product.fields.default_purchase_currency.options.aed"
+            }
+          ],
+          "label_key": "products.entities.biz_product.fields.default_purchase_currency.label"
         },
         {
           "id": "biz_product.default_buy_price",
           "type": "number",
           "label": "Buy Price",
           "default": 0,
-          "format": { "kind": "currency", "currency_field": "biz_product.default_purchase_currency", "precision": 2 }
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_product.default_purchase_currency",
+            "precision": 2
+          },
+          "label_key": "products.entities.biz_product.fields.default_buy_price.label"
         },
         {
           "id": "biz_product.preferred_supplier_id",
           "type": "lookup",
           "label": "Preferred Supplier",
           "entity": "entity.biz_contact",
-          "display_field": "biz_contact.name"
+          "display_field": "biz_contact.name",
+          "label_key": "products.entities.biz_product.fields.preferred_supplier_id.label"
         },
-        { "id": "biz_product.supplier_factory_reference", "type": "string", "label": "Supplier / Factory Ref" },
-        { "id": "biz_product.internal_notes", "type": "text", "label": "Internal Notes" },
-        { "id": "biz_product.is_active", "type": "bool", "label": "Active", "default": true }
-      ]
+        {
+          "id": "biz_product.supplier_factory_reference",
+          "type": "string",
+          "label": "Supplier / Factory Ref",
+          "label_key": "products.entities.biz_product.fields.supplier_factory_reference.label"
+        },
+        {
+          "id": "biz_product.internal_notes",
+          "type": "text",
+          "label": "Internal Notes",
+          "label_key": "products.entities.biz_product.fields.internal_notes.label"
+        },
+        {
+          "id": "biz_product.is_active",
+          "type": "bool",
+          "label": "Active",
+          "default": true,
+          "label_key": "products.entities.biz_product.fields.is_active.label"
+        }
+      ],
+      "label_key": "products.entities.biz_product.label"
     }
   ],
   "actions": [
-    { "id": "action.product_new", "kind": "open_form", "label": "New Product", "target": "biz_product.form" },
+    {
+      "id": "action.product_new",
+      "kind": "open_form",
+      "label": "New Product",
+      "target": "biz_product.form",
+      "action_label_key": "products.actions.action_product_new.label"
+    },
     {
       "id": "action.product_activate",
       "kind": "update_record",
       "entity_id": "entity.biz_product",
       "label": "Activate",
-      "patch": { "biz_product.is_active": true },
-      "visible_when": { "op": "eq", "field": "biz_product.is_active", "value": false }
+      "patch": {
+        "biz_product.is_active": true
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_product.is_active",
+        "value": false
+      },
+      "action_label_key": "products.actions.action_product_activate.label"
     },
     {
       "id": "action.product_deactivate",
       "kind": "update_record",
       "entity_id": "entity.biz_product",
       "label": "Deactivate",
-      "patch": { "biz_product.is_active": false },
-      "visible_when": { "op": "eq", "field": "biz_product.is_active", "value": true }
+      "patch": {
+        "biz_product.is_active": false
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_product.is_active",
+        "value": true
+      },
+      "action_label_key": "products.actions.action_product_deactivate.label"
     }
   ],
   "views": [
@@ -138,28 +301,89 @@
       "kind": "list",
       "entity": "entity.biz_product",
       "columns": [
-        { "field_id": "biz_product.code" },
-        { "field_id": "biz_product.name" },
-        { "field_id": "biz_product.default_sales_price" },
-        { "field_id": "biz_product.default_sales_currency" },
-        { "field_id": "biz_product.default_buy_price" },
-        { "field_id": "biz_product.default_purchase_currency" },
-        { "field_id": "biz_product.preferred_supplier_id" },
-        { "field_id": "biz_product.is_active" }
+        {
+          "field_id": "biz_product.code"
+        },
+        {
+          "field_id": "biz_product.name"
+        },
+        {
+          "field_id": "biz_product.default_sales_price"
+        },
+        {
+          "field_id": "biz_product.default_sales_currency"
+        },
+        {
+          "field_id": "biz_product.default_buy_price"
+        },
+        {
+          "field_id": "biz_product.default_purchase_currency"
+        },
+        {
+          "field_id": "biz_product.preferred_supplier_id"
+        },
+        {
+          "field_id": "biz_product.is_active"
+        }
       ],
       "header": {
-        "primary_actions": [{ "action_id": "action.product_new" }],
+        "primary_actions": [
+          {
+            "action_id": "action.product_new"
+          }
+        ],
         "open_record_target": "page:biz_product.form_page",
         "search": {
           "enabled": true,
           "placeholder": "Search products...",
-          "fields": ["biz_product.code", "biz_product.name", "biz_product.description"]
+          "fields": [
+            "biz_product.code",
+            "biz_product.name",
+            "biz_product.description"
+          ],
+          "placeholder_key": "products.views.list.search.placeholder"
         },
         "filters": [
-          { "id": "active", "label": "Active Products", "domain": { "op": "eq", "field": "biz_product.is_active", "value": true } },
-          { "id": "inactive", "label": "Inactive Products", "domain": { "op": "eq", "field": "biz_product.is_active", "value": false } },
-          { "id": "eur_sales", "label": "EUR Sales Items", "domain": { "op": "eq", "field": "biz_product.default_sales_currency", "value": "EUR" } },
-          { "id": "usd_sales", "label": "USD Sales Items", "domain": { "op": "eq", "field": "biz_product.default_sales_currency", "value": "USD" } }
+          {
+            "id": "active",
+            "label": "Active Products",
+            "domain": {
+              "op": "eq",
+              "field": "biz_product.is_active",
+              "value": true
+            },
+            "label_key": "products.views.list.filters.active.label"
+          },
+          {
+            "id": "inactive",
+            "label": "Inactive Products",
+            "domain": {
+              "op": "eq",
+              "field": "biz_product.is_active",
+              "value": false
+            },
+            "label_key": "products.views.list.filters.inactive.label"
+          },
+          {
+            "id": "eur_sales",
+            "label": "EUR Sales Items",
+            "domain": {
+              "op": "eq",
+              "field": "biz_product.default_sales_currency",
+              "value": "EUR"
+            },
+            "label_key": "products.views.list.filters.eur_sales.label"
+          },
+          {
+            "id": "usd_sales",
+            "label": "USD Sales Items",
+            "domain": {
+              "op": "eq",
+              "field": "biz_product.default_sales_currency",
+              "value": "USD"
+            },
+            "label_key": "products.views.list.filters.usd_sales.label"
+          }
         ]
       }
     },
@@ -180,7 +404,8 @@
             "biz_product.uom",
             "biz_product.description",
             "biz_product.is_active"
-          ]
+          ],
+          "section_title_key": "products.views.form.sections.core.title"
         },
         {
           "id": "pricing",
@@ -192,7 +417,8 @@
             "biz_product.default_sales_price",
             "biz_product.default_purchase_currency",
             "biz_product.default_buy_price"
-          ]
+          ],
+          "section_title_key": "products.views.form.sections.pricing.title"
         },
         {
           "id": "purchasing",
@@ -203,21 +429,47 @@
             "biz_product.preferred_supplier_id",
             "biz_product.supplier_factory_reference",
             "biz_product.internal_notes"
-          ]
+          ],
+          "section_title_key": "products.views.form.sections.purchasing.title"
         }
       ],
       "header": {
         "secondary_actions": [
-          { "action_id": "action.product_activate" },
-          { "action_id": "action.product_deactivate" }
+          {
+            "action_id": "action.product_activate"
+          },
+          {
+            "action_id": "action.product_deactivate"
+          }
         ],
         "tabs": {
           "style": "lifted",
           "default_tab": "core",
           "tabs": [
-            { "id": "core", "label": "Summary", "sections": ["core"] },
-            { "id": "pricing", "label": "Pricing", "sections": ["pricing"] },
-            { "id": "purchasing", "label": "Purchasing", "sections": ["purchasing"] }
+            {
+              "id": "core",
+              "label": "Summary",
+              "tab_label_key": "common.summary",
+              "sections": [
+                "core"
+              ]
+            },
+            {
+              "id": "pricing",
+              "label": "Pricing",
+              "tab_label_key": "common.pricing",
+              "sections": [
+                "pricing"
+              ]
+            },
+            {
+              "id": "purchasing",
+              "label": "Purchasing",
+              "tab_label_key": "common.purchasing",
+              "sections": [
+                "purchasing"
+              ]
+            }
           ]
         }
       },
@@ -275,7 +527,9 @@
       "id": "biz_product.list_page",
       "title": "Products",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none"
+      },
       "content": [
         {
           "kind": "container",
@@ -287,21 +541,38 @@
               "default_mode": "list",
               "default_filter_id": "active",
               "modes": [
-                { "mode": "list", "target": "view:biz_product.list" },
-                { "mode": "kanban", "target": "view:biz_product.kanban", "default_group_by": "biz_product.category" },
-                { "mode": "graph", "target": "view:biz_product.graph" },
-                { "mode": "pivot", "target": "view:biz_product.list", "default_group_by": "biz_product.category" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_product.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:biz_product.kanban",
+                  "default_group_by": "biz_product.category"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:biz_product.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:biz_product.list",
+                  "default_group_by": "biz_product.category"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "products.pages.list_page.title"
     },
     {
       "id": "biz_product.form_page",
       "title": "Product",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none"
+      },
       "content": [
         {
           "kind": "record",
@@ -320,7 +591,10 @@
                       "kind": "container",
                       "variant": "card",
                       "content": [
-                        { "kind": "view", "target": "view:biz_product.form" }
+                        {
+                          "kind": "view",
+                          "target": "view:biz_product.form"
+                        }
                       ]
                     }
                   ]
@@ -332,7 +606,11 @@
                       "kind": "container",
                       "variant": "card",
                       "content": [
-                        { "kind": "chatter", "entity_id": "entity.biz_product", "record_ref": "$record.id" }
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.biz_product",
+                          "record_ref": "$record.id"
+                        }
                       ]
                     }
                   ]
@@ -341,15 +619,46 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "products.pages.form_page.title"
     }
   ],
   "triggers": [
-    { "id": "biz_products.record.biz_product.created", "label": "Product created", "event": "record.created", "entity_id": "entity.biz_product" },
-    { "id": "biz_products.record.biz_product.updated", "label": "Product updated", "event": "record.updated", "entity_id": "entity.biz_product" },
-    { "id": "biz_products.action.product_new.clicked", "label": "New Product clicked", "event": "action.clicked", "action_id": "action.product_new" },
-    { "id": "biz_products.action.product_activate.clicked", "label": "Activate clicked", "event": "action.clicked", "action_id": "action.product_activate" },
-    { "id": "biz_products.action.product_deactivate.clicked", "label": "Deactivate clicked", "event": "action.clicked", "action_id": "action.product_deactivate" }
+    {
+      "id": "biz_products.record.biz_product.created",
+      "label": "Product created",
+      "label_key": "products.triggers.product_created",
+      "event": "record.created",
+      "entity_id": "entity.biz_product"
+    },
+    {
+      "id": "biz_products.record.biz_product.updated",
+      "label": "Product updated",
+      "label_key": "products.triggers.product_updated",
+      "event": "record.updated",
+      "entity_id": "entity.biz_product"
+    },
+    {
+      "id": "biz_products.action.product_new.clicked",
+      "label": "New Product clicked",
+      "label_key": "products.triggers.new_product_clicked",
+      "event": "action.clicked",
+      "action_id": "action.product_new"
+    },
+    {
+      "id": "biz_products.action.product_activate.clicked",
+      "label": "Activate clicked",
+      "label_key": "products.triggers.activate_clicked",
+      "event": "action.clicked",
+      "action_id": "action.product_activate"
+    },
+    {
+      "id": "biz_products.action.product_deactivate.clicked",
+      "label": "Deactivate clicked",
+      "label_key": "products.triggers.deactivate_clicked",
+      "event": "action.clicked",
+      "action_id": "action.product_deactivate"
+    }
   ],
   "workflows": [],
   "transformations": []

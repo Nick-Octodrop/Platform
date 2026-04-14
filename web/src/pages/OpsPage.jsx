@@ -7,10 +7,12 @@ import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 const TERMINAL_JOB_STATUSES = new Set(["succeeded", "failed", "dead"]);
 
 export default function OpsPage() {
+  const { t } = useI18n();
   const { pushToast } = useToast();
   const [jobs, setJobs] = useState([]);
   const [status, setStatus] = useState("");
@@ -34,8 +36,8 @@ export default function OpsPage() {
       const res = await apiFetch(`/ops/jobs?${params.toString()}`);
       setJobs(res.jobs || []);
     } catch (err) {
-      setError(err?.message || "Failed to load jobs");
-      pushToast("error", err?.message || "Failed to load jobs");
+      setError(err?.message || t("settings.ops.load_failed"));
+      pushToast("error", err?.message || t("settings.ops.load_failed"));
     } finally {
       setLoading(false);
     }
@@ -49,7 +51,7 @@ export default function OpsPage() {
     if (!selectedIds.length || saving) return;
     const selectedJobs = (jobs || []).filter((job) => selectedIds.includes(job.id));
     if (selectedJobs.some((job) => !TERMINAL_JOB_STATUSES.has(job.status))) {
-      setError("Only terminal jobs can be deleted. Cancel queued or running jobs first.");
+      setError(t("settings.ops.delete_terminal_only"));
       setShowDeleteModal(false);
       return;
     }
@@ -59,11 +61,11 @@ export default function OpsPage() {
       await Promise.all(selectedIds.map((id) => apiFetch(`/ops/jobs/${encodeURIComponent(id)}`, { method: "DELETE" })));
       setSelectedIds([]);
       setShowDeleteModal(false);
-      pushToast("success", selectedIds.length === 1 ? "Job deleted." : "Jobs deleted.");
+      pushToast("success", selectedIds.length === 1 ? t("settings.ops.deleted_one") : t("settings.ops.deleted_many"));
       await loadJobs();
     } catch (err) {
-      setError(err?.message || "Delete failed");
-      pushToast("error", err?.message || "Delete failed");
+      setError(err?.message || t("common.delete_failed"));
+      pushToast("error", err?.message || t("common.delete_failed"));
     } finally {
       setSaving(false);
     }
@@ -73,7 +75,7 @@ export default function OpsPage() {
     () => (jobs || []).map((j) => ({
       id: j.id,
       type: j.type || "",
-      status: j.status || "",
+      status: j.status ? t(`common.${j.status}`, {}, { defaultValue: j.status }) : "",
       attempt: j.attempt ?? 0,
       max_attempts: j.max_attempts ?? 0,
       run_at: j.run_at || "",
@@ -81,17 +83,17 @@ export default function OpsPage() {
       updated_at: j.updated_at || "",
       last_error: j.last_error || "",
     })),
-    [jobs],
+    [jobs, t],
   );
 
   const listFieldIndex = useMemo(
     () => ({
-      "job.type": { id: "job.type", label: "Type" },
-      "job.status": { id: "job.status", label: "Status" },
-      "job.attempt": { id: "job.attempt", label: "Attempts" },
-      "job.run_at": { id: "job.run_at", label: "Run At" },
+      "job.type": { id: "job.type", label: t("common.type") },
+      "job.status": { id: "job.status", label: t("common.status") },
+      "job.attempt": { id: "job.attempt", label: t("common.attempts") },
+      "job.run_at": { id: "job.run_at", label: t("settings.ops.run_at") },
     }),
-    [],
+    [t],
   );
 
   const listView = useMemo(
@@ -125,14 +127,14 @@ export default function OpsPage() {
 
   const filters = useMemo(
     () => [
-      { id: "all", label: "All", domain: null },
-      { id: "queued", label: "Queued", domain: { op: "eq", field: "job.status", value: "queued" } },
-      { id: "running", label: "Running", domain: { op: "eq", field: "job.status", value: "running" } },
-      { id: "succeeded", label: "Succeeded", domain: { op: "eq", field: "job.status", value: "succeeded" } },
-      { id: "failed", label: "Failed", domain: { op: "eq", field: "job.status", value: "failed" } },
-      { id: "dead", label: "Dead", domain: { op: "eq", field: "job.status", value: "dead" } },
+      { id: "all", label: t("common.all"), domain: null },
+      { id: "queued", label: t("common.queued"), domain: { op: "eq", field: "job.status", value: "queued" } },
+      { id: "running", label: t("common.running"), domain: { op: "eq", field: "job.status", value: "running" } },
+      { id: "succeeded", label: t("common.succeeded"), domain: { op: "eq", field: "job.status", value: "succeeded" } },
+      { id: "failed", label: t("common.failed"), domain: { op: "eq", field: "job.status", value: "failed" } },
+      { id: "dead", label: t("common.dead"), domain: { op: "eq", field: "job.status", value: "dead" } },
     ],
-    [],
+    [t],
   );
 
   const statusFilter = useMemo(() => {
@@ -149,11 +151,11 @@ export default function OpsPage() {
           <div className="space-y-4 md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {error && <div className="alert alert-error text-sm mb-4">{error}</div>}
             {loading ? (
-              <div className="text-sm opacity-70">Loading…</div>
+              <div className="text-sm opacity-70">{t("common.loading")}</div>
             ) : (
               <div className="flex flex-col gap-4 min-w-0">
                 <SystemListToolbar
-                  title="Jobs / Ops"
+                  title={t("settings.ops.title")}
                   searchValue={search}
                   onSearchChange={(v) => {
                     setSearch(v);
@@ -165,8 +167,8 @@ export default function OpsPage() {
                     setPage(0);
                   }}
                   filterableFields={[
-                    { id: "job.type", label: "Type" },
-                    { id: "job.id", label: "Job ID" },
+                    { id: "job.type", label: t("common.type") },
+                    { id: "job.id", label: t("settings.ops.job_id") },
                   ]}
                   onAddCustomFilter={(field, value) => {
                     if (!field?.id) return;
@@ -191,31 +193,31 @@ export default function OpsPage() {
                   }}
                   rightActions={
                     selectedIds.length > 0 ? (
-                      <div className="dropdown dropdown-end">
-                        <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </button>
-                        <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
-                          <li className="menu-title">
-                            <span>Selection</span>
-                          </li>
-                          {selectedIds.length === 1 ? (
-                            <li>
-                              <button onClick={() => navigate(`/ops/jobs/${selectedIds[0]}`)}>Open job</button>
+                        <div className="dropdown dropdown-end">
+                          <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label={t("settings.selection_actions")}>
+                            <MoreHorizontal className="h-4 w-4" />
+                          </button>
+                          <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
+                            <li className="menu-title">
+                              <span>{t("settings.selection")}</span>
                             </li>
-                          ) : null}
+                            {selectedIds.length === 1 ? (
+                              <li>
+                                <button onClick={() => navigate(`/ops/jobs/${selectedIds[0]}`)}>{t("settings.ops.open_job")}</button>
+                              </li>
+                            ) : null}
                           <li>
                             <button
                               className="text-error"
                               onClick={() => setShowDeleteModal(true)}
                               disabled={saving || !allSelectedTerminal}
-                              title={!allSelectedTerminal ? "Cancel queued or running jobs before deleting them." : undefined}
+                              title={!allSelectedTerminal ? t("settings.ops.delete_terminal_only") : undefined}
                             >
                               {allSelectedTerminal
                                 ? selectedIds.length === 1
-                                  ? "Delete"
-                                  : `Delete selected (${selectedIds.length})`
-                                : "Delete (terminal jobs only)"}
+                                  ? t("common.delete")
+                                  : t("settings.ops.delete_selected", { count: selectedIds.length })
+                                : t("settings.ops.delete_terminal_only_label")}
                             </button>
                           </li>
                         </ul>

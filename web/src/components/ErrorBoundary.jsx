@@ -1,4 +1,5 @@
 import React from "react";
+import { translateRuntime } from "../i18n/runtime.js";
 
 function isChunkLoadFailure(error) {
   const message = String(error?.message || error || "").toLowerCase();
@@ -18,7 +19,7 @@ export default class ErrorBoundary extends React.Component {
   }
 
   static getDerivedStateFromError(error) {
-    return { hasError: true, message: error?.message || "Unexpected error", recovering: false };
+    return { hasError: true, message: error?.message || translateRuntime("common.error_boundary.unexpected_error"), recovering: false };
   }
 
   componentDidCatch(error) {
@@ -37,10 +38,10 @@ export default class ErrorBoundary extends React.Component {
       return (
         <div className="alert alert-error">
           <div>
-            <div className="font-semibold">Something went wrong.</div>
+            <div className="font-semibold">{translateRuntime("common.error_boundary.title")}</div>
             <div className="text-sm">
               {this.state.recovering
-                ? "Refreshing the app to recover from a stale desktop install."
+                ? translateRuntime("common.error_boundary.recovering")
                 : this.state.message}
             </div>
           </div>

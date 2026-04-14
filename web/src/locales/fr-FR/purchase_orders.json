@@ -1,0 +1,426 @@
+{
+  "module": {
+    "name": "Bons de commande",
+    "description": "Achats fournisseurs liés aux commandes clients."
+  },
+  "navigation": {
+    "biz_purchase_order_list_page": "Bons de commande",
+    "biz_purchase_order_sent_page": "Envoyé",
+    "biz_purchase_order_production_page": "En production",
+    "biz_purchase_order_shipped_page": "Expédié",
+    "biz_purchase_order_received_page": "Reçu"
+  },
+  "entities": {
+    "biz_purchase_order": {
+      "label": "Bon de commande",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "po_number": {
+          "label": "Numéro de bon de commande"
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "draft": "Brouillon",
+            "sent_to_supplier": "Envoyé au fournisseur",
+            "confirmed": "Confirmé",
+            "on_hold": "En attente",
+            "in_production": "En production",
+            "shipped": "Expédié",
+            "received": "Reçu",
+            "closed": "Fermé",
+            "cancelled": "Annulé"
+          }
+        },
+        "supplier_id": {
+          "label": "Fournisseur"
+        },
+        "purchasing_entity": {
+          "label": "Entité acheteuse",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "source_customer_order_id": {
+          "label": "Ordre d'origine"
+        },
+        "source_customer_order_number": {
+          "label": "Ordre d'origine"
+        },
+        "po_date": {
+          "label": "Date du bon de commande"
+        },
+        "currency": {
+          "label": "Devise",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "supplier_reference": {
+          "label": "Référence du fournisseur"
+        },
+        "incoterm": {
+          "label": "Incoterm"
+        },
+        "expected_ship_date": {
+          "label": "Date d'expédition prévue"
+        },
+        "expected_arrival_date": {
+          "label": "Date d'arrivée prévue"
+        },
+        "notes": {
+          "label": "Remarques"
+        },
+        "hold_reason": {
+          "label": "Raison de la mise en attente"
+        },
+        "cancellation_reason": {
+          "label": "Raison de l'annulation"
+        },
+        "status_before_hold": {
+          "label": "Statut précédent"
+        },
+        "po_total": {
+          "label": "Total du bon de commande"
+        },
+        "freight_estimate": {
+          "label": "Estimation du fret"
+        },
+        "landed_cost_estimate": {
+          "label": "Estimation du coût au débarquement"
+        }
+      }
+    },
+    "biz_purchase_order_line": {
+      "label": "Ligne de bon de commande",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "purchase_order_id": {
+          "label": "Bon de commande"
+        },
+        "product_id": {
+          "label": "Produit"
+        },
+        "description": {
+          "label": "Descriptif"
+        },
+        "purchasing_entity_snapshot": {
+          "label": "Aperçu de l'entité acheteuse",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "currency_snapshot": {
+          "label": "Aperçu des devises",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "uom": {
+          "label": "UOM",
+          "options": {
+            "ea": "Chacun",
+            "set": "Ensemble",
+            "kit": "Trousse",
+            "lot": "Beaucoup",
+            "pallet": "Palette",
+            "container": "Conteneur",
+            "m": "Compteur"
+          }
+        },
+        "quantity": {
+          "label": "Quantité"
+        },
+        "unit_cost": {
+          "label": "Coût unitaire"
+        },
+        "line_total": {
+          "label": "Total de ligne"
+        },
+        "source_order_line_ref": {
+          "label": "Référence de la ligne de commande source"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_purchase_order_new": {
+      "label": "Nouveau bon de commande"
+    },
+    "action_purchase_order_mark_sent": {
+      "label": "Envoyer le bon de commande",
+      "confirm": {
+        "title": "Envoyer le bon de commande ?"
+      }
+    },
+    "action_purchase_order_confirm": {
+      "label": "Confirmer le bon de commande"
+    },
+    "action_purchase_order_open_hold_modal": {
+      "label": "Mettre en attente"
+    },
+    "action_purchase_order_resume": {
+      "label": "Reprendre le bon de commande"
+    },
+    "action_purchase_order_mark_in_production": {
+      "label": "Marque en production"
+    },
+    "action_purchase_order_mark_shipped": {
+      "label": "Marquer comme expédié"
+    },
+    "action_purchase_order_mark_received": {
+      "label": "Marque reçue"
+    },
+    "action_purchase_order_close": {
+      "label": "Fermer le bon de commande",
+      "confirm": {
+        "title": "Clôturer le bon de commande ?"
+      }
+    },
+    "action_purchase_order_open_cancel_modal": {
+      "label": "Annuler le bon de commande"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Rechercher des bons de commande..."
+      },
+      "filters": {
+        "open": {
+          "label": "PO ouverts"
+        },
+        "draft": {
+          "label": "Projets de bons de commande"
+        },
+        "sent": {
+          "label": "Bons de commande envoyés"
+        },
+        "on_hold": {
+          "label": "En attente"
+        },
+        "production": {
+          "label": "En production"
+        },
+        "shipped": {
+          "label": "Expédié"
+        },
+        "received": {
+          "label": "Reçu"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Bon de commande"
+        },
+        "financials": {
+          "title": "Coûts"
+        },
+        "notes": {
+          "title": "Remarques"
+        },
+        "lines": {
+          "title": "Lignes de commande"
+        },
+        "main": {
+          "title": "Ligne de commande"
+        }
+      }
+    }
+  },
+  "modals": {
+    "purchase_order_hold": {
+      "title": "Mettre le bon de commande en attente",
+      "description": "Identifiez pourquoi le flux côté fournisseur est interrompu.",
+      "actions": {
+        "update_record": {
+          "label": "Mettre en attente"
+        },
+        "close_modal": {
+          "label": "Fermer"
+        }
+      }
+    },
+    "purchase_order_cancel": {
+      "title": "Annuler le bon de commande",
+      "description": "Capturez pourquoi ce bon de commande est annulé.",
+      "actions": {
+        "update_record": {
+          "label": "Annuler le bon de commande"
+        },
+        "close_modal": {
+          "label": "Fermer"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Bons de commande",
+      "header": {
+        "actions": {
+          "navigate": {
+            "label": "Nouveau bon de commande"
+          }
+        }
+      },
+      "blocks": {
+        "1": {
+          "cards": {
+            "purchase_orders_draft_count": {
+              "label": "Pour envoyer",
+              "subtitle": "Rédiger les commandes fournisseurs"
+            },
+            "purchase_orders_production_count": {
+              "label": "En production",
+              "subtitle": "Confirmé auprès du fournisseur"
+            },
+            "purchase_orders_shipped_count": {
+              "label": "En transit",
+              "subtitle": "Le fournisseur a expédié"
+            },
+            "purchase_orders_received_count": {
+              "label": "Reçu",
+              "subtitle": "En attente de clôture"
+            }
+          }
+        }
+      }
+    },
+    "sent_page": {
+      "title": "Bons de commande envoyés"
+    },
+    "production_page": {
+      "title": "Bons de commande en production"
+    },
+    "shipped_page": {
+      "title": "Bons de commande expédiés"
+    },
+    "received_page": {
+      "title": "Bons de commande reçus"
+    },
+    "form_page": {
+      "title": "Bon de commande"
+    }
+  },
+  "workflows": {
+    "purchase_order_status_workflow": {
+      "states": {
+        "draft": {
+          "label": "Brouillon"
+        },
+        "sent_to_supplier": {
+          "label": "Envoyé au fournisseur"
+        },
+        "confirmed": {
+          "label": "Confirmé"
+        },
+        "on_hold": {
+          "label": "En attente"
+        },
+        "in_production": {
+          "label": "En production"
+        },
+        "shipped": {
+          "label": "Expédié"
+        },
+        "received": {
+          "label": "Reçu"
+        },
+        "closed": {
+          "label": "Fermé"
+        },
+        "cancelled": {
+          "label": "Annulé"
+        }
+      },
+      "transitions": {
+        "draft_sent_to_supplier": {
+          "label": "Envoyer le bon de commande"
+        },
+        "sent_to_supplier_confirmed": {
+          "label": "Fournisseur confirmé"
+        },
+        "confirmed_on_hold": {
+          "label": "Mettre en attente"
+        },
+        "confirmed_in_production": {
+          "label": "Démarrer la production"
+        },
+        "in_production_on_hold": {
+          "label": "Mettre en attente"
+        },
+        "in_production_shipped": {
+          "label": "Marquer comme expédié"
+        },
+        "shipped_on_hold": {
+          "label": "Mettre en attente"
+        },
+        "shipped_received": {
+          "label": "Marque reçue"
+        },
+        "received_closed": {
+          "label": "Fermer le bon de commande"
+        },
+        "on_hold_confirmed": {
+          "label": "Reprendre à Confirmé"
+        },
+        "on_hold_in_production": {
+          "label": "Reprise de la production"
+        },
+        "on_hold_shipped": {
+          "label": "Reprendre l'expédition"
+        },
+        "draft_cancelled": {
+          "label": "Annuler le bon de commande"
+        },
+        "sent_to_supplier_cancelled": {
+          "label": "Annuler le bon de commande"
+        },
+        "confirmed_cancelled": {
+          "label": "Annuler le bon de commande"
+        },
+        "in_production_cancelled": {
+          "label": "Annuler le bon de commande"
+        },
+        "on_hold_cancelled": {
+          "label": "Annuler le bon de commande"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "purchase_order_created": "Bon de commande créé",
+    "purchase_order_updated": "Bon de commande mis à jour",
+    "purchase_order_line_created": "Ligne de bon de commande créée",
+    "purchase_order_line_updated": "Ligne de bon de commande mise à jour",
+    "purchase_order_status_changed": "Statut du bon de commande modifié",
+    "new_purchase_order_clicked": "Nouveau bon de commande cliqué",
+    "send_po_clicked": "Envoyer le bon de commande cliqué",
+    "confirm_po_clicked": "Confirmer le bon de commande cliqué",
+    "put_on_hold_clicked": "Mettre en attente cliqué",
+    "resume_po_clicked": "Reprendre le bon de commande cliqué",
+    "mark_in_production_clicked": "Marquer en production cliqué",
+    "mark_shipped_clicked": "Cliquez sur Marquer l'expédition",
+    "mark_received_clicked": "Marquer comme reçu cliqué",
+    "close_po_clicked": "Fermer le bon de commande cliqué",
+    "cancel_po_clicked": "Annuler le bon de commande cliqué"
+  },
+  "dashboard": {
+    "purchase_orders_by_status": "Bons de commande par statut"
+  }
+}

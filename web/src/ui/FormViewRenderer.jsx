@@ -14,6 +14,8 @@ import useMediaQuery from "../hooks/useMediaQuery.js";
 import { useAccessContext } from "../access.js";
 import useWorkspaceProviderStatus from "../hooks/useWorkspaceProviderStatus.js";
 import ProviderSecretModal from "../components/ProviderSecretModal.jsx";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
+import { translateRuntime } from "../i18n/runtime.js";
 
 function isUuidLike(value) {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
@@ -134,7 +136,7 @@ function AddressAutocompleteField({ field, value, onChange, onRecordChange, read
       } catch (err) {
         if (!cancelled) {
           setSuggestions([]);
-          setLookupError(err?.message || "Address lookup failed. Check your Google Maps key, billing, and Places API access.");
+          setLookupError(err?.message || translateRuntime("common.address_lookup_failed"));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -158,7 +160,7 @@ function AddressAutocompleteField({ field, value, onChange, onRecordChange, read
       setOpen(false);
       sessionTokenRef.current = `gmaps-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     } catch (err) {
-      setLookupError(err?.message || "Address details lookup failed. Check your Google Maps key, billing, and Places API access.");
+      setLookupError(err?.message || translateRuntime("common.address_details_lookup_failed"));
       onChange(suggestion?.description || search);
       setOpen(false);
     } finally {
@@ -185,15 +187,15 @@ function AddressAutocompleteField({ field, value, onChange, onRecordChange, read
           <div className="absolute z-30 mt-1 w-full rounded-box border border-base-300 bg-base-100 shadow">
             {mapsConnected ? (
               <ul className="menu menu-compact menu-vertical w-full max-h-72 overflow-y-auto">
-                {loading ? <li className="menu-title"><span>Searching addresses…</span></li> : null}
+                {loading ? <li className="menu-title"><span>{translateRuntime("common.searching_addresses")}</span></li> : null}
                 {!loading && lookupError ? (
                   <li className="menu-title text-error"><span>{lookupError}</span></li>
                 ) : null}
                 {!loading && String(search || "").trim().length < 3 ? (
-                  <li className="menu-title"><span>Type at least 3 characters</span></li>
+                  <li className="menu-title"><span>{translateRuntime("common.type_at_least_characters")}</span></li>
                 ) : null}
                 {!loading && !lookupError && String(search || "").trim().length >= 3 && suggestions.length === 0 ? (
-                  <li className="menu-title"><span>No address matches</span></li>
+                  <li className="menu-title"><span>{translateRuntime("empty.no_address_matches")}</span></li>
                 ) : null}
                 {suggestions.map((item) => (
                   <li key={item.place_id}>
@@ -214,13 +216,13 @@ function AddressAutocompleteField({ field, value, onChange, onRecordChange, read
                     className="btn btn-sm btn-outline w-full justify-start"
                     onClick={() => setMapsModalOpen(true)}
                   >
-                    Create Google Maps key
+                    {translateRuntime("settings.provider_secret_modal.create_google_maps_key")}
                   </button>
                 ) : null}
                 <div className="px-1 pt-2 text-xs opacity-60">
                   {canManageSettings
-                    ? "Connect Google Maps to enable address autocomplete."
-                    : "Ask a workspace admin to connect Google Maps for address autocomplete."}
+                    ? translateRuntime("common.connect_google_maps_for_address_autocomplete")
+                    : translateRuntime("common.ask_workspace_admin_connect_google_maps_for_address_autocomplete")}
                 </div>
               </div>
             )}
@@ -276,7 +278,8 @@ export default function FormViewRenderer({
   bottomActionsMode = "inline",
   renderBlocks = null,
 }) {
-  if (!view) return <div className="alert">Missing form view</div>;
+  const { t, version: i18nVersion } = useI18n();
+  if (!view) return <div className="alert">{t("common.missing_form_view")}</div>;
   const rawSections = Array.isArray(view.sections) ? view.sections : [];
   const sections = useMemo(
     () =>
@@ -315,16 +318,16 @@ export default function FormViewRenderer({
         "workorder_line.discount_pct": 0,
       },
       columns: [
-        { field_id: "workorder_line.item_id", label: "Item", readonly: true },
-        { field_id: "workorder_line.description", label: "Description" },
-        { field_id: "workorder_line.qty", label: "Qty", type: "number" },
-        { field_id: "workorder_line.unit_price", label: "Unit Price", type: "number" },
-        { field_id: "workorder_line.discount_pct", label: "Discount %", type: "number" },
-        { field_id: "workorder_line.tax_rate", label: "Tax %", type: "number" },
-        { field_id: "workorder_line.line_total", label: "Line Total", type: "number" },
+        { field_id: "workorder_line.item_id", label: t("common.item"), readonly: true },
+        { field_id: "workorder_line.description", label: t("common.description") },
+        { field_id: "workorder_line.qty", label: t("common.qty"), type: "number" },
+        { field_id: "workorder_line.unit_price", label: t("common.unit_price"), type: "number" },
+        { field_id: "workorder_line.discount_pct", label: t("common.discount_percent"), type: "number" },
+        { field_id: "workorder_line.tax_rate", label: t("common.tax_percent"), type: "number" },
+        { field_id: "workorder_line.line_total", label: t("common.line_total"), type: "number" },
       ],
     }),
-    []
+    [i18nVersion, t]
   );
   const sectionFieldIds = useMemo(
     () => sections.flatMap((s) => (Array.isArray(s?.fields) ? s.fields : [])),
@@ -343,7 +346,7 @@ export default function FormViewRenderer({
   const tabsConfig = header?.tabs || null;
   const activityConfig = view?.activity && view.activity.enabled === true ? view.activity : null;
   const activityTabId = "__activity";
-  const activityTabLabel = (typeof activityConfig?.tab_label === "string" && activityConfig.tab_label.trim()) || "Activity";
+  const activityTabLabel = (typeof activityConfig?.tab_label === "string" && activityConfig.tab_label.trim()) || translateRuntime("common.activity");
   const visibleSectionIds = useMemo(() => new Set(sections.map((section) => section.id).filter(Boolean)), [sections]);
   const tabsForUi = useMemo(() => {
     const baseTabs = Array.isArray(tabsConfig?.tabs)
@@ -394,7 +397,7 @@ export default function FormViewRenderer({
   );
 
   if (sections.length === 0 && !activityConfig) {
-    return <div className="alert alert-info">No visible fields for this form.</div>;
+    return <div className="alert alert-info">{t("common.no_visible_fields_for_form")}</div>;
   }
 
   useEffect(() => {
@@ -458,7 +461,7 @@ export default function FormViewRenderer({
           if (!isVisible && !requiredByCondition) {
             continue;
           }
-          errors[fieldId] = "Required";
+          errors[fieldId] = translateRuntime("validation.required");
         }
       }
     }
@@ -488,7 +491,7 @@ export default function FormViewRenderer({
   const rawTitleText = String(resolvedTitleValue || "").trim();
   const sanitizedTitleText =
     rawTitleText && rawTitleText !== String(effectiveRecordId || "").trim() ? safeOpaqueLabel(rawTitleText, "") : "";
-  const titleText = sanitizedTitleText || (isNewRecord ? "New" : entityLabel || "Record");
+  const titleText = sanitizedTitleText || (isNewRecord ? translateRuntime("common.create") : entityLabel || translateRuntime("common.record"));
 
   useEffect(() => {
     if (!applyDefaults || defaultsApplied || readonly) return;
@@ -589,9 +592,9 @@ export default function FormViewRenderer({
     if (enabled) return null;
     const missing = new Set();
     collectMissingFields(cond, missing);
-    if (missing.size === 0) return "Requirements not met.";
+    if (missing.size === 0) return translateRuntime("validation.requirements_not_met");
     const labels = Array.from(missing).map((fieldId) => fieldIndex[fieldId]?.label || fieldId);
-    return `Missing: ${labels.join(", ")}`;
+    return translateRuntime("validation.missing_fields", { fields: labels.join(", ") });
   }
 
   let renderedSections = renderSections
@@ -667,7 +670,7 @@ export default function FormViewRenderer({
           <div className="flex flex-1 flex-wrap items-center gap-3 min-w-0">
             <h1 className="text-base font-semibold truncate">{titleText}</h1>
             {!autoSaveEnabled && !readonly && isDirty && (
-              <span className="text-sm opacity-60">Unsaved changes</span>
+              <span className="text-sm opacity-60">{t("common.unsaved_changes")}</span>
             )}
             {shouldShowManualSaveControls && (
               <div className="flex items-center gap-2">
@@ -676,14 +679,14 @@ export default function FormViewRenderer({
                   onClick={() => onSave(validationErrors)}
                   disabled={saveDisabled}
                 >
-                  Save
+                  {translateRuntime("common.save")}
                 </button>
                 <button
                   className={SOFT_BUTTON_SM}
                   onClick={() => onDiscard?.()}
                   disabled={previewMode || (!isDirty && !isNewRecord)}
                 >
-                  Discard
+                  {translateRuntime("common.discard")}
                 </button>
               </div>
             )}
@@ -695,7 +698,7 @@ export default function FormViewRenderer({
                   type="button"
                   className={SOFT_ICON_SM}
                   onClick={() => setMobileActionsOpen((open) => !open)}
-                  aria-label="More actions"
+                  aria-label={translateRuntime("common.more_actions")}
                 >
                   <MoreHorizontal className="h-4 w-4" />
                 </button>
@@ -704,7 +707,7 @@ export default function FormViewRenderer({
                     {mobileHeaderActions.map((item) => {
                       const disabled = !item.enabled || previewMode || readonly;
                       const reason = readonly
-                        ? "Read-only access."
+                        ? translateRuntime("common.read_only_access")
                         : item.reason || (!item.enabled ? actionDisabledReason(item.action) : null);
                       const button = (
                         <button
@@ -737,7 +740,7 @@ export default function FormViewRenderer({
             {primaryActions.map((item) => {
               const disabled = !item.enabled || previewMode || readonly;
               const reason = readonly
-                ? "Read-only access."
+                ? translateRuntime("common.read_only_access")
                 : !item.enabled
                   ? (item.reason || actionDisabledReason(item.action))
                   : null;
@@ -764,8 +767,8 @@ export default function FormViewRenderer({
             })}
             {secondaryActions.length > 0 && (
               <div className="dropdown dropdown-end">
-                <DaisyTooltip label="More actions" placement="bottom">
-                  <button type="button" className={SOFT_ICON_SM} aria-label="More actions">
+                <DaisyTooltip label={translateRuntime("common.more_actions")} placement="bottom">
+                  <button type="button" className={SOFT_ICON_SM} aria-label={translateRuntime("common.more_actions")}>
                     <MoreHorizontal className="h-4 w-4" />
                   </button>
                 </DaisyTooltip>
@@ -775,7 +778,7 @@ export default function FormViewRenderer({
                       {(() => {
                         const disabled = !item.enabled || previewMode || readonly;
                         const reason = readonly
-                          ? "Read-only access."
+                          ? translateRuntime("common.read_only_access")
                           : !item.enabled
                             ? (item.reason || actionDisabledReason(item.action))
                             : null;
@@ -900,7 +903,7 @@ export default function FormViewRenderer({
                                   fieldId,
                                   label: field.label || field.id,
                                   readonly: readonly || isDisabled,
-                                  buttonLabel: field?.ui?.button_label || field?.button_label || "Attach",
+                                  buttonLabel: field?.ui?.button_label || field?.button_label || translateRuntime("common.attach"),
                                   description: field?.ui?.description || field?.help_text || "",
                                 })}
                               >
@@ -913,7 +916,7 @@ export default function FormViewRenderer({
                                 fieldId={fieldId}
                                 readonly={readonly || isDisabled}
                                 previewMode={previewMode}
-                                buttonLabel={field?.ui?.button_label || field?.button_label || "Attach"}
+                                buttonLabel={field?.ui?.button_label || field?.button_label || translateRuntime("common.attach")}
                                 description={field?.ui?.description || field?.help_text || ""}
                               />
                             )
@@ -985,14 +988,14 @@ export default function FormViewRenderer({
             onClick={() => onSave(validationErrors)}
             disabled={saveDisabled}
           >
-            Save
+            {translateRuntime("common.save")}
           </button>
           <button
             className={SOFT_BUTTON_SM}
             onClick={() => onDiscard?.()}
             disabled={previewMode || (!isDirty && !isNewRecord)}
           >
-            Discard
+            {translateRuntime("common.discard")}
           </button>
         </div>
       )}
@@ -1001,7 +1004,7 @@ export default function FormViewRenderer({
           <button
             type="button"
             className="absolute inset-0 bg-base-content/35"
-            aria-label="Close attachments"
+            aria-label={translateRuntime("common.close_attachments")}
             onClick={() => setMobileAttachmentSheet(null)}
           />
           <div className="absolute inset-x-0 bottom-0 max-h-[86vh] rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4 flex flex-col">
@@ -1009,7 +1012,7 @@ export default function FormViewRenderer({
             <div className="px-1 pb-3 flex items-center justify-between gap-2">
               <div className="text-sm font-semibold">{mobileAttachmentSheet.label}</div>
               <button type="button" className={SOFT_BUTTON_SM} onClick={() => setMobileAttachmentSheet(null)}>
-                Done
+                {translateRuntime("common.done")}
               </button>
             </div>
             <div className="flex-1 min-h-0 overflow-auto">
@@ -1031,7 +1034,7 @@ export default function FormViewRenderer({
 }
 
 function coerceEditorValue(value, type) {
-  if (type === "number") {
+  if (type === "number" || type === "currency") {
     if (value === "" || value === null || value === undefined) return null;
     const num = Number(value);
     return Number.isFinite(num) ? num : null;
@@ -1091,11 +1094,11 @@ function InlineLineItemsTable({
     () => ({
       id: `${itemField || "line_item"}.adder`,
       type: "lookup",
-      label: "Add item",
+      label: translateRuntime("common.add_item"),
       entity: itemEntityId,
       display_field: itemDisplayField,
       domain: itemLookupDomain,
-      placeholder: "Add line item...",
+      placeholder: translateRuntime("common.add_line_item"),
     }),
     [itemDisplayField, itemEntityId, itemField, itemLookupDomain]
   );
@@ -1240,7 +1243,7 @@ function InlineLineItemsTable({
       setRows(next);
       void hydrateLookupLabels(next);
     } catch (err) {
-      setError(err?.message || "Failed to load line items.");
+      setError(err?.message || translateRuntime("common.failed_to_load_line_items"));
       setRows([]);
     } finally {
       setLoading(false);
@@ -1361,13 +1364,13 @@ function InlineLineItemsTable({
       await addParentActivity(`Line item added: ${option.label || option.value}.`);
       await onRefreshParent?.();
     } catch (err) {
-      setError(err?.message || "Failed to add line item.");
+      setError(err?.message || translateRuntime("common.failed_to_add_line_item"));
     }
   }
 
   async function createInlineCustomLine() {
     if (!parentRecordId || creatingCustomLine) return;
-    const description = "Custom line";
+    const description = translateRuntime("common.custom_line");
     const payload = {
       ...defaults,
       ...customLineDefaults,
@@ -1407,18 +1410,18 @@ function InlineLineItemsTable({
       await addParentActivity(`Custom line item added: ${description}.`);
       await onRefreshParent?.();
     } catch (err) {
-      setError(err?.message || "Failed to add custom line.");
+      setError(err?.message || translateRuntime("common.failed_to_add_custom_line"));
     } finally {
       setCreatingCustomLine(false);
     }
   }
 
   if (!childEntityId || !parentField || !itemField || !itemEntityId) {
-    return <div className="text-sm text-error">Line editor is missing configuration.</div>;
+    return <div className="text-sm text-error">{t("common.line_editor_missing_configuration")}</div>;
   }
 
   if (!parentRecordId) {
-    return <div className="text-sm opacity-70">Save this record first, then add line items.</div>;
+    return <div className="text-sm opacity-70">{translateRuntime("common.save_record_before_line_items")}</div>;
   }
 
   function columnWeight(col) {
@@ -1442,16 +1445,16 @@ function InlineLineItemsTable({
 
   function readOnlyCell(raw, col, rowRecord = null) {
     const pseudoField =
-      col?.type === "number"
+      col?.type === "number" || col?.type === "currency"
         ? {
-            type: "number",
+            type: col?.type || "number",
             format: col?.format || (col?.currency_field ? { kind: "currency", currency_field: col.currency_field, precision: col.precision ?? 2 } : null),
           }
         : null;
     const display = pseudoField ? formatFieldValue(pseudoField, raw, rowRecord) : String(raw ?? "");
     return (
       <div className={`min-h-8 flex items-center gap-2 ${col?.align === "right" ? "justify-end text-right" : ""}`}>
-        <span className={col?.type === "number" ? "tabular-nums" : ""}>{display}</span>
+        <span className={col?.type === "number" || col?.type === "currency" ? "tabular-nums" : ""}>{display}</span>
       </div>
     );
   }
@@ -1476,18 +1479,18 @@ function InlineLineItemsTable({
                   {col.label || col.field_id}
                 </th>
               ))}
-              {!readonly ? <th style={actionColumnStyle}><span className="sr-only">Actions</span></th> : null}
+              {!readonly ? <th style={actionColumnStyle}><span className="sr-only">{t("common.actions")}</span></th> : null}
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={columns.length + (readonly ? 0 : 1)} className="text-sm opacity-70">Loading line items...</td>
+                <td colSpan={columns.length + (readonly ? 0 : 1)} className="text-sm opacity-70">{translateRuntime("common.loading_line_items")}</td>
               </tr>
             )}
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={columns.length + (readonly ? 0 : 1)} className="text-sm opacity-70">No line items yet.</td>
+                <td colSpan={columns.length + (readonly ? 0 : 1)} className="text-sm opacity-70">{translateRuntime("empty.no_line_items")}</td>
               </tr>
             )}
             {!loading && rows.map((row) => (
@@ -1497,11 +1500,11 @@ function InlineLineItemsTable({
                   const raw = row.record?.[fieldId];
                   if (fieldId === itemField) {
                     const isCustomLine = !raw;
-                    const label = isCustomLine ? "Custom" : lookupCache[row.record_id] || row.record?.[descriptionField] || raw || "";
+                    const label = isCustomLine ? translateRuntime("common.custom") : lookupCache[row.record_id] || row.record?.[descriptionField] || raw || "";
                     if (readonly || col.readonly) {
                       return (
                         <td key={`${row.record_id}-${fieldId}`} style={columnStyle(col)}>
-                          {isCustomLine ? <span className="badge badge-outline badge-sm">Custom</span> : label}
+                          {isCustomLine ? <span className="badge badge-outline badge-sm">{translateRuntime("common.custom")}</span> : label}
                         </td>
                       );
                     }
@@ -1510,11 +1513,11 @@ function InlineLineItemsTable({
                         <LookupField
                           field={{
                             id: fieldId,
-                            label: col.label || "Item",
+                            label: col.label || translateRuntime("common.item"),
                             type: "lookup",
                             entity: itemEntityId,
                             display_field: itemDisplayField,
-                            placeholder: "Search items...",
+                            placeholder: translateRuntime("common.search_items"),
                           }}
                           value={raw || null}
                           onChange={async (nextItemId) => {
@@ -1593,7 +1596,7 @@ function InlineLineItemsTable({
                             void patchRow(row.record_id, fieldId, next, col.type);
                           }}
                         >
-                          <option value="">Select...</option>
+                          <option value="">{translateRuntime("common.select")}</option>
                           {col.options.map((option) => (
                             <option key={option.value ?? option.label} value={option.value ?? ""}>
                               {option.label ?? option.value}
@@ -1603,9 +1606,9 @@ function InlineLineItemsTable({
                       </td>
                     );
                   }
-                  if (col.type === "number") {
+                  if (col.type === "number" || col.type === "currency") {
                     const pseudoField = {
-                      type: "number",
+                      type: col.type,
                       format: col?.format || (col?.currency_field ? { kind: "currency", currency_field: col.currency_field, precision: col.precision ?? 2 } : null),
                     };
                     const { prefix, suffix, align } = getFieldInputAffixes(pseudoField, row.record);
@@ -1655,7 +1658,7 @@ function InlineLineItemsTable({
                     <td key={`${row.record_id}-${fieldId}`} style={columnStyle(col)}>
                       <input
                         className={`input input-bordered input-xs w-full min-w-0 ${col.align === "right" ? "text-right tabular-nums" : ""}`}
-                        type={col.type === "number" ? "number" : "text"}
+                        type={col.type === "number" || col.type === "currency" ? "number" : "text"}
                         value={raw ?? ""}
                         onChange={(e) => {
                           const next = e.target.value;
@@ -1678,8 +1681,8 @@ function InlineLineItemsTable({
                       type="button"
                       className="btn btn-ghost btn-xs text-error"
                       onClick={() => setPendingDeleteRow(row)}
-                      aria-label="Delete line item"
-                      title="Delete line item"
+                      aria-label={translateRuntime("common.delete_line_item")}
+                      title={translateRuntime("common.delete_line_item")}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -1708,8 +1711,8 @@ function InlineLineItemsTable({
                     onCreate={onLookupCreate}
                       extraActions={[
                         {
-                          label: creatingCustomLine ? "Adding custom line..." : "New custom line",
-                          help: "Add freight, service, discount, or one-off item without creating a product.",
+                          label: creatingCustomLine ? translateRuntime("common.adding_custom_line") : translateRuntime("common.new_custom_line"),
+                          help: translateRuntime("common.custom_line_help"),
                           onClick: createInlineCustomLine,
                         },
                       ]}
@@ -1724,7 +1727,7 @@ function InlineLineItemsTable({
       {pendingDeleteRow ? (
         <div className="modal modal-open">
           <div className="modal-box max-w-md">
-            <h3 className="font-semibold text-base">Delete line item?</h3>
+            <h3 className="font-semibold text-base">{translateRuntime("common.delete_line_item")}</h3>
             <p className="mt-2 text-sm opacity-70">
               This will remove{" "}
               <span className="font-medium">
@@ -1742,7 +1745,7 @@ function InlineLineItemsTable({
                 onClick={() => setPendingDeleteRow(null)}
                 disabled={!!deletingRowId}
               >
-                Cancel
+                {translateRuntime("common.cancel")}
               </button>
               <button
                 className="btn btn-sm btn-error"
@@ -1750,7 +1753,7 @@ function InlineLineItemsTable({
                 onClick={() => deleteRow(pendingDeleteRow.record_id)}
                 disabled={!!deletingRowId}
               >
-                {deletingRowId ? "Deleting..." : "Delete"}
+                {deletingRowId ? translateRuntime("common.deleting") : translateRuntime("common.delete")}
               </button>
             </div>
           </div>
@@ -1892,7 +1895,7 @@ function WorkspaceUserField({ field, value, onChange, readonly, members, loading
           className="input input-bordered w-full pr-10"
           value={displayValue}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search workspace user..."
+          placeholder={translateRuntime("common.search_workspace_user")}
           disabled={readonly || field.readonly}
           onFocus={() => {
             setOpened(true);
@@ -1909,8 +1912,8 @@ function WorkspaceUserField({ field, value, onChange, readonly, members, loading
             setOpened(false);
             onChange(null);
           }}
-          aria-label="Clear selection"
-          title="Clear"
+          aria-label={translateRuntime("common.clear_selection")}
+          title={translateRuntime("common.clear")}
           tabIndex={Boolean(selectedId) && !readonly && !field.readonly ? 0 : -1}
         >
           <span className="block leading-none">×</span>
@@ -1919,12 +1922,12 @@ function WorkspaceUserField({ field, value, onChange, readonly, members, loading
       {opened && !isMobile && (
         <div className="absolute z-30 mt-1 w-full rounded-box border border-base-400 bg-base-100 shadow">
           <ul className="menu menu-compact menu-vertical w-full max-h-[15rem] overflow-y-auto overflow-x-hidden">
-            {loadingMembers && <li className="menu-title"><span>Loading workspace users…</span></li>}
+            {loadingMembers && <li className="menu-title"><span>{translateRuntime("common.loading_workspace_users")}</span></li>}
             {!loadingMembers && normalizedMembers.length === 0 && (
-              <li className="menu-title"><span>No workspace users found</span></li>
+              <li className="menu-title"><span>{translateRuntime("empty.no_workspace_users")}</span></li>
             )}
             {!loadingMembers && normalizedMembers.length > 0 && filtered.length === 0 && (
-              <li className="menu-title"><span>No matches</span></li>
+              <li className="menu-title"><span>{translateRuntime("empty.no_matches")}</span></li>
             )}
             {!loadingMembers &&
               filtered.map((member) => (
@@ -1950,33 +1953,33 @@ function WorkspaceUserField({ field, value, onChange, readonly, members, loading
           <button
             type="button"
             className="absolute inset-0 bg-base-content/35"
-            aria-label="Close workspace user picker"
+            aria-label={translateRuntime("common.close_workspace_user_picker")}
             onClick={() => setOpened(false)}
           />
           <div className="absolute inset-x-0 bottom-0 max-h-[86vh] rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4 flex flex-col">
             <div className="mx-auto mb-4 h-1.5 w-24 rounded-full bg-base-300" />
             <div className="px-1 pb-3 flex items-center justify-between gap-2">
-              <div className="text-sm font-semibold">Select workspace user</div>
+              <div className="text-sm font-semibold">{translateRuntime("common.search_workspace_user")}</div>
               <button type="button" className={SOFT_BUTTON_SM} onClick={() => setOpened(false)}>
-                Done
+                {translateRuntime("common.done")}
               </button>
             </div>
             <input
               className="input input-bordered w-full"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search workspace user..."
+              placeholder={translateRuntime("common.search_workspace_user")}
               disabled={readonly || field.readonly}
               autoFocus
             />
             <div className="mt-3 flex-1 min-h-0 overflow-auto">
               <ul className="menu menu-compact">
-                {loadingMembers && <li className="menu-title"><span>Loading workspace users…</span></li>}
+                {loadingMembers && <li className="menu-title"><span>{translateRuntime("common.loading_workspace_users")}</span></li>}
                 {!loadingMembers && normalizedMembers.length === 0 && (
-                  <li className="menu-title"><span>No workspace users found</span></li>
+                  <li className="menu-title"><span>{translateRuntime("empty.no_workspace_users")}</span></li>
                 )}
                 {!loadingMembers && normalizedMembers.length > 0 && filtered.length === 0 && (
-                  <li className="menu-title"><span>No matches</span></li>
+                  <li className="menu-title"><span>{translateRuntime("empty.no_matches")}</span></li>
                 )}
                 {!loadingMembers &&
                   filtered.map((member) => (
@@ -2070,8 +2073,8 @@ function WorkspaceUsersField({ field, value, onChange, readonly, members, loadin
                   event.stopPropagation();
                   removeUser(member.user_id);
                 }}
-                aria-label={`Remove ${member.label}`}
-                title={`Remove ${member.label}`}
+                aria-label={translateRuntime("common.remove_named", { name: member.label })}
+                title={translateRuntime("common.remove_named", { name: member.label })}
               >
                 ✕
               </button>
@@ -2086,19 +2089,19 @@ function WorkspaceUsersField({ field, value, onChange, readonly, members, loadin
             setOpened(true);
           }}
           onFocus={() => setOpened(true)}
-          placeholder={selectedMembers.length > 0 ? "Add another user..." : "Search workspace users..."}
+          placeholder={selectedMembers.length > 0 ? translateRuntime("common.add_another_user") : translateRuntime("common.search_workspace_users")}
           disabled={readonly || field.readonly}
         />
       </div>
       {opened && !isMobile && (
         <div className="absolute z-30 mt-1 w-full rounded-box border border-base-400 bg-base-100 shadow">
           <ul className="menu menu-compact menu-vertical w-full max-h-[15rem] overflow-y-auto overflow-x-hidden">
-            {loadingMembers && <li className="menu-title"><span>Loading workspace users…</span></li>}
+            {loadingMembers && <li className="menu-title"><span>{translateRuntime("common.loading_workspace_users")}</span></li>}
             {!loadingMembers && normalizedMembers.length === 0 && (
-              <li className="menu-title"><span>No workspace users found</span></li>
+              <li className="menu-title"><span>{translateRuntime("empty.no_workspace_users")}</span></li>
             )}
             {!loadingMembers && normalizedMembers.length > 0 && filtered.length === 0 && (
-              <li className="menu-title"><span>No matches</span></li>
+              <li className="menu-title"><span>{translateRuntime("empty.no_matches")}</span></li>
             )}
             {!loadingMembers &&
               filtered.map((member) => (
@@ -2116,15 +2119,15 @@ function WorkspaceUsersField({ field, value, onChange, readonly, members, loadin
           <button
             type="button"
             className="absolute inset-0 bg-base-content/35"
-            aria-label="Close workspace users picker"
+            aria-label={translateRuntime("common.close_workspace_users_picker")}
             onClick={() => setOpened(false)}
           />
           <div className="absolute inset-x-0 bottom-0 max-h-[86vh] rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4 flex flex-col">
             <div className="mx-auto mb-4 h-1.5 w-24 rounded-full bg-base-300" />
             <div className="px-1 pb-3 flex items-center justify-between gap-2">
-              <div className="text-sm font-semibold">Select workspace users</div>
+              <div className="text-sm font-semibold">{translateRuntime("common.search_workspace_users")}</div>
               <button type="button" className={SOFT_BUTTON_SM} onClick={() => setOpened(false)}>
-                Done
+                {translateRuntime("common.done")}
               </button>
             </div>
             <input
@@ -2134,18 +2137,18 @@ function WorkspaceUsersField({ field, value, onChange, readonly, members, loadin
                 setSearch(e.target.value);
                 setOpened(true);
               }}
-              placeholder={selectedMembers.length > 0 ? "Add another user..." : "Search workspace users..."}
+              placeholder={selectedMembers.length > 0 ? translateRuntime("common.add_another_user") : translateRuntime("common.search_workspace_users")}
               disabled={readonly || field.readonly}
               autoFocus
             />
             <div className="mt-3 flex-1 min-h-0 overflow-auto">
               <ul className="menu menu-compact">
-                {loadingMembers && <li className="menu-title"><span>Loading workspace users…</span></li>}
+                {loadingMembers && <li className="menu-title"><span>{translateRuntime("common.loading_workspace_users")}</span></li>}
                 {!loadingMembers && normalizedMembers.length === 0 && (
-                  <li className="menu-title"><span>No workspace users found</span></li>
+                  <li className="menu-title"><span>{translateRuntime("empty.no_workspace_users")}</span></li>
                 )}
                 {!loadingMembers && normalizedMembers.length > 0 && filtered.length === 0 && (
-                  <li className="menu-title"><span>No matches</span></li>
+                  <li className="menu-title"><span>{translateRuntime("empty.no_matches")}</span></li>
                 )}
                 {!loadingMembers &&
                   filtered.map((member) => (
@@ -2176,7 +2179,7 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
   const cacheRef = useRef(new Map());
   const lastKeyRef = useRef(null);
   const entityId = field?.entity || null;
-  const placeholder = field?.search_placeholder || field?.placeholder || "Search...";
+  const placeholder = field?.search_placeholder || field?.placeholder || translateRuntime("common.search");
   const recordContext = useMemo(() => buildRecordContext(field?.domain || null, record), [field?.domain, record]);
   const recordContextKey = useMemo(() => JSON.stringify(recordContext), [recordContext]);
   const visibleExtraActions = Array.isArray(extraActions)
@@ -2355,8 +2358,8 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
             setSelectedLabel("");
             onChange(null);
           }}
-          aria-label="Clear selection"
-          title="Clear"
+          aria-label={translateRuntime("common.clear_selection")}
+          title={translateRuntime("common.clear")}
           tabIndex={Boolean(value) && !readonly && !field.readonly ? 0 : -1}
         >
           <span className="block leading-none">×</span>
@@ -2365,9 +2368,9 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
       {showOptions && !isMobile && (
         <div className="absolute z-30 mt-1 flex max-h-[18rem] w-full flex-col overflow-hidden rounded-box border border-base-400 bg-base-100 shadow">
           <ul className="menu menu-compact menu-vertical block w-full flex-1 overflow-y-auto overflow-x-hidden whitespace-normal">
-            {loading && <li className="menu-title"><span>Loading…</span></li>}
+            {loading && <li className="menu-title"><span>{translateRuntime("common.loading")}</span></li>}
             {!loading && options.length === 0 && (
-              <li className="menu-title"><span>{search.trim() ? "No results" : "No records found"}</span></li>
+              <li className="menu-title"><span>{search.trim() ? translateRuntime("empty.no_results") : translateRuntime("empty.no_records_found")}</span></li>
             )}
             {options.map((opt) => (
               <li key={opt.value}>
@@ -2415,7 +2418,7 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
                   <li key={action.label || "custom-action"}>
                     <button type="button" onClick={() => handleExtraAction(action)}>
                       <span className="flex flex-col items-start gap-0.5">
-                        <span>{action.label || "New custom line"}</span>
+                        <span>{action.label || translateRuntime("common.new_custom_line")}</span>
                         {action.help ? <span className="text-xs font-normal opacity-60">{action.help}</span> : null}
                       </span>
                     </button>
@@ -2431,15 +2434,15 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
           <button
             type="button"
             className="absolute inset-0 bg-base-content/35"
-            aria-label="Close lookup picker"
+            aria-label={translateRuntime("common.close_lookup_picker")}
             onClick={() => setOpened(false)}
           />
           <div className="absolute inset-x-0 bottom-0 max-h-[86vh] rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4 flex flex-col">
             <div className="mx-auto mb-4 h-1.5 w-24 rounded-full bg-base-300" />
             <div className="px-1 pb-3 flex items-center justify-between gap-2">
-              <div className="text-sm font-semibold">{field.label || "Select record"}</div>
+              <div className="text-sm font-semibold">{field.label || translateRuntime("common.select_record")}</div>
               <button type="button" className={SOFT_BUTTON_SM} onClick={() => setOpened(false)}>
-                Done
+                {translateRuntime("common.done")}
               </button>
             </div>
             <input
@@ -2452,9 +2455,9 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
             />
             <div className="mt-3 flex-1 min-h-0 overflow-auto">
               <ul className="menu menu-compact">
-                {loading && <li className="menu-title"><span>Loading…</span></li>}
+                {loading && <li className="menu-title"><span>{translateRuntime("common.loading")}</span></li>}
                 {!loading && options.length === 0 && (
-                  <li className="menu-title"><span>{search.trim() ? "No results" : "No records found"}</span></li>
+                  <li className="menu-title"><span>{search.trim() ? translateRuntime("empty.no_results") : translateRuntime("empty.no_records_found")}</span></li>
                 )}
                 {options.map((opt) => (
                   <li key={opt.value}>
@@ -2495,7 +2498,7 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
                   <li key={action.label || `extra-${index}`} className={index === 0 ? "border-t border-base-400 mt-1 pt-1" : ""}>
                     <button type="button" onClick={() => handleExtraAction(action)}>
                       <span className="flex flex-col items-start gap-0.5">
-                        <span>{action.label || "New custom line"}</span>
+                        <span>{action.label || translateRuntime("common.new_custom_line")}</span>
                         {action.help ? <span className="text-xs font-normal opacity-60">{action.help}</span> : null}
                       </span>
                     </button>

@@ -3,10 +3,11 @@ import { useParams } from "react-router-dom";
 import { apiFetch } from "../api.js";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import Tabs from "../components/Tabs.jsx";
-import { formatDateTime } from "../utils/dateTime.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 export default function EmailOutboxItemPage() {
   const { outboxId } = useParams();
+  const { t, formatDateTime } = useI18n();
   const [item, setItem] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -22,7 +23,7 @@ export default function EmailOutboxItemPage() {
       setItem(res?.outbox || null);
     } catch (err) {
       setItem(null);
-      setError(err?.message || "Failed to load email");
+      setError(err?.message || t("settings.email_outbox.load_failed"));
     } finally {
       setLoading(false);
     }
@@ -59,10 +60,10 @@ export default function EmailOutboxItemPage() {
 
   const tabs = useMemo(
     () => [
-      { id: "preview", label: "Preview" },
-      { id: "details", label: "Details" },
+      { id: "preview", label: t("common.preview") },
+      { id: "details", label: t("common.details") },
     ],
-    [],
+    [t],
   );
 
   const html = String(item?.body_html || "");
@@ -84,59 +85,59 @@ export default function EmailOutboxItemPage() {
 
       <div className="mt-4 flex-1 min-h-0 rounded-box border border-base-300 bg-base-100 overflow-hidden flex flex-col">
         {loading ? (
-          <div className="p-4 text-sm opacity-70">Loading…</div>
+          <div className="p-4 text-sm opacity-70">{t("common.loading")}</div>
         ) : !item ? (
-          <div className="p-4 text-sm opacity-60">Email not found.</div>
+          <div className="p-4 text-sm opacity-60">{t("settings.email_outbox.email_not_found")}</div>
         ) : activeTab === "preview" ? (
           html ? (
             <iframe
-              title="Email preview"
+              title={t("settings.email_outbox.email_preview")}
               className="w-full flex-1 min-h-0 bg-base-100"
               sandbox=""
               srcDoc={html}
             />
           ) : (
-            <div className="p-4 text-sm opacity-60">No HTML body.</div>
+            <div className="p-4 text-sm opacity-60">{t("settings.email_outbox.no_html_body")}</div>
           )
         ) : (
           <div className="p-4 text-sm">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <div className="text-xs opacity-70">Outbox ID</div>
+                <div className="text-xs opacity-70">{t("settings.email_outbox.outbox_id")}</div>
                 <div className="text-sm font-mono break-all">{item.id}</div>
               </div>
               <div>
-                <div className="text-xs opacity-70">From</div>
+                <div className="text-xs opacity-70">{t("common.from")}</div>
                 <div className="text-sm break-all">{detailFrom || "—"}</div>
               </div>
               <div className="md:col-span-2">
-                <div className="text-xs opacity-70">To</div>
+                <div className="text-xs opacity-70">{t("common.to")}</div>
                 <div className="text-sm break-all">{detailTo || "—"}</div>
               </div>
               <div>
-                <div className="text-xs opacity-70">Template</div>
+                <div className="text-xs opacity-70">{t("settings.email_outbox.template")}</div>
                 <div className="text-sm break-all">{templateName || item.template_id || "—"}</div>
               </div>
               <div>
-                <div className="text-xs opacity-70">Created</div>
-                <div className="text-sm">{formatDateTime(item.created_at, "—")}</div>
+                <div className="text-xs opacity-70">{t("common.created")}</div>
+                <div className="text-sm">{formatDateTime(item.created_at) || "—"}</div>
               </div>
               <div>
-                <div className="text-xs opacity-70">Sent</div>
-                <div className="text-sm">{formatDateTime(item.sent_at, "—")}</div>
+                <div className="text-xs opacity-70">{t("settings.email_outbox.sent")}</div>
+                <div className="text-sm">{formatDateTime(item.sent_at) || "—"}</div>
               </div>
               <div>
-                <div className="text-xs opacity-70">Provider Message ID</div>
+                <div className="text-xs opacity-70">{t("settings.email_outbox.provider_message_id")}</div>
                 <div className="text-sm font-mono break-all">{item.provider_message_id || "—"}</div>
               </div>
               <div>
-                <div className="text-xs opacity-70">Reply-To</div>
+                <div className="text-xs opacity-70">{t("settings.email_outbox.reply_to")}</div>
                 <div className="text-sm break-all">{item.reply_to || "—"}</div>
               </div>
               <div className="md:col-span-2">
-                <div className="text-xs opacity-70">CC / BCC</div>
+                <div className="text-xs opacity-70">{t("settings.email_outbox.cc_bcc")}</div>
                 <div className="text-sm break-all">
-                  CC: {Array.isArray(item.cc) && item.cc.length ? item.cc.join(", ") : "—"} | BCC:{" "}
+                  {t("settings.email_outbox.cc_label")}: {Array.isArray(item.cc) && item.cc.length ? item.cc.join(", ") : "—"} | {t("settings.email_outbox.bcc_label")}:{" "}
                   {Array.isArray(item.bcc) && item.bcc.length ? item.bcc.join(", ") : "—"}
                 </div>
               </div>

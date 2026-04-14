@@ -1,0 +1,382 @@
+{
+  "module": {
+    "name": "Factures",
+    "description": "Facturation client des acomptes, de l'avancement, de la finale et des notes de crédit."
+  },
+  "navigation": {
+    "biz_invoice_list_page": "Factures",
+    "biz_invoice_draft_page": "Brouillon",
+    "biz_invoice_issued_page": "Publié",
+    "biz_invoice_part_paid_page": "Partie payée",
+    "biz_invoice_paid_page": "Payé",
+    "biz_invoice_credit_notes_page": "Notes de crédit"
+  },
+  "entities": {
+    "biz_invoice": {
+      "label": "Facture",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "invoice_number": {
+          "label": "Numéro de facture"
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "draft": "Brouillon",
+            "issued": "Publié",
+            "part_paid": "Partie payée",
+            "paid": "Payé",
+            "cancelled": "Annulé",
+            "credited": "Crédité"
+          }
+        },
+        "invoice_type": {
+          "label": "Type de facture",
+          "options": {
+            "deposit": "Dépôt",
+            "progress": "Progrès",
+            "final": "Finale",
+            "credit_note": "Note de crédit"
+          }
+        },
+        "customer_id": {
+          "label": "Client"
+        },
+        "source_order_id": {
+          "label": "Ordre d'origine"
+        },
+        "source_order_number": {
+          "label": "Ordre d'origine"
+        },
+        "origin_invoice_id": {
+          "label": "Facture d'origine"
+        },
+        "credit_note_id": {
+          "label": "Note de crédit"
+        },
+        "sales_entity": {
+          "label": "Entité de vente",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "invoice_date": {
+          "label": "Date de facture"
+        },
+        "due_date": {
+          "label": "Date d'échéance"
+        },
+        "currency": {
+          "label": "Devise",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "customer_reference": {
+          "label": "Référence client"
+        },
+        "notes": {
+          "label": "Remarques"
+        },
+        "cancellation_reason": {
+          "label": "Raison de l'annulation"
+        },
+        "source_order_total_snapshot": {
+          "label": "Aperçu total de la commande"
+        },
+        "deposit_percent_snapshot": {
+          "label": "% de dépôt instantané"
+        },
+        "invoice_manual_total": {
+          "label": "Remplacement total manuel"
+        },
+        "invoice_total": {
+          "label": "Total de la facture"
+        },
+        "amount_paid": {
+          "label": "Montant payé"
+        },
+        "balance_due": {
+          "label": "Solde dû"
+        }
+      }
+    },
+    "biz_invoice_line": {
+      "label": "Ligne de facture",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "invoice_id": {
+          "label": "Facture"
+        },
+        "product_id": {
+          "label": "Produit"
+        },
+        "description": {
+          "label": "Descriptif"
+        },
+        "sales_entity_snapshot": {
+          "label": "Aperçu de l'entité de vente",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "currency_snapshot": {
+          "label": "Aperçu des devises",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "uom": {
+          "label": "UOM",
+          "options": {
+            "ea": "Chacun",
+            "set": "Ensemble",
+            "kit": "Trousse",
+            "lot": "Beaucoup",
+            "pallet": "Palette",
+            "container": "Conteneur",
+            "m": "Compteur"
+          }
+        },
+        "quantity": {
+          "label": "Quantité"
+        },
+        "unit_price": {
+          "label": "Prix unitaire"
+        },
+        "line_total": {
+          "label": "Total de ligne"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_invoice_new": {
+      "label": "Nouvelle facture"
+    },
+    "action_invoice_issue": {
+      "label": "Émettre/Envoyer une facture",
+      "confirm": {
+        "title": "Émettre une facture ?"
+      }
+    },
+    "action_invoice_mark_part_paid": {
+      "label": "Marquer le paiement partiel"
+    },
+    "action_invoice_mark_paid": {
+      "label": "Marquer comme payé"
+    },
+    "action_invoice_open_cancel_modal": {
+      "label": "Annuler"
+    },
+    "action_invoice_create_credit_note": {
+      "label": "Créer une note de crédit",
+      "confirm": {
+        "title": "Créer un avoir ?"
+      }
+    },
+    "action_invoice_mark_credited": {
+      "label": "Marquer crédité",
+      "confirm": {
+        "title": "Marquer la facture comme créditée ?"
+      }
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Rechercher des factures..."
+      },
+      "filters": {
+        "open_receivables": {
+          "label": "Créances ouvertes"
+        },
+        "draft": {
+          "label": "Projets de factures"
+        },
+        "issued": {
+          "label": "Factures émises"
+        },
+        "part_paid": {
+          "label": "Partie payée"
+        },
+        "paid": {
+          "label": "Payé"
+        },
+        "credit_notes": {
+          "label": "Notes de crédit"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Facture"
+        },
+        "notes": {
+          "title": "Remarques"
+        },
+        "financials": {
+          "title": "Récapitulatif des paiements"
+        },
+        "related": {
+          "title": "Enregistrements associés"
+        },
+        "lines": {
+          "title": "Lignes de facture"
+        },
+        "main": {
+          "title": "Ligne de facture"
+        }
+      }
+    }
+  },
+  "modals": {
+    "invoice_cancel": {
+      "title": "Annuler la facture",
+      "description": "Enregistrez le motif de l'annulation avant de supprimer cette facture du flux de créances actif.",
+      "actions": {
+        "update_record": {
+          "label": "Annuler la facture"
+        },
+        "close_modal": {
+          "label": "Rester ouvert"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Factures",
+      "header": {
+        "actions": {
+          "navigate": {
+            "label": "Nouvelle facture"
+          }
+        }
+      },
+      "blocks": {
+        "1": {
+          "cards": {
+            "invoice_open_receivables_count": {
+              "label": "Créances ouvertes",
+              "subtitle": "Effet, émis et partiellement payé"
+            },
+            "invoice_part_paid_count": {
+              "label": "Partie payée",
+              "subtitle": "Collectes toujours en cours"
+            },
+            "invoice_paid_count": {
+              "label": "Payé",
+              "subtitle": "Factures entièrement réglées"
+            },
+            "invoice_credit_note_count": {
+              "label": "Notes de crédit",
+              "subtitle": "Revirements commerciaux"
+            }
+          }
+        }
+      }
+    },
+    "draft_page": {
+      "title": "Projets de factures"
+    },
+    "issued_page": {
+      "title": "Factures émises"
+    },
+    "part_paid_page": {
+      "title": "Factures partiellement payées"
+    },
+    "paid_page": {
+      "title": "Factures payées"
+    },
+    "credit_notes_page": {
+      "title": "Notes de crédit"
+    },
+    "form_page": {
+      "title": "Facture"
+    }
+  },
+  "workflows": {
+    "invoice_status_workflow": {
+      "states": {
+        "draft": {
+          "label": "Brouillon"
+        },
+        "issued": {
+          "label": "Publié"
+        },
+        "part_paid": {
+          "label": "Partie payée"
+        },
+        "paid": {
+          "label": "Payé"
+        },
+        "cancelled": {
+          "label": "Annulé"
+        },
+        "credited": {
+          "label": "Crédité"
+        }
+      },
+      "transitions": {
+        "draft_issued": {
+          "label": "Émettre une facture"
+        },
+        "issued_part_paid": {
+          "label": "Marquer le paiement partiel"
+        },
+        "issued_paid": {
+          "label": "Marquer comme payé"
+        },
+        "part_paid_paid": {
+          "label": "Marquer comme payé"
+        },
+        "draft_cancelled": {
+          "label": "Annuler la facture"
+        },
+        "issued_cancelled": {
+          "label": "Annuler la facture"
+        },
+        "issued_credited": {
+          "label": "Marquer crédité"
+        },
+        "part_paid_credited": {
+          "label": "Marquer crédité"
+        },
+        "paid_credited": {
+          "label": "Marquer crédité"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "invoice_created": "Facture créée",
+    "invoice_updated": "Facture mise à jour",
+    "invoice_line_created": "Ligne de facture créée",
+    "invoice_line_updated": "Ligne de facture mise à jour",
+    "invoice_status_changed": "Statut de la facture modifié",
+    "new_invoice_clicked": "Nouvelle facture cliqué",
+    "issue_send_clicked": "Émettre/Envoyer la facture cliqué",
+    "mark_part_paid_clicked": "Marquer le paiement partiel cliqué",
+    "mark_paid_clicked": "Marquer le paiement cliqué",
+    "cancel_clicked": "Annuler cliqué",
+    "create_credit_note_clicked": "Cliquez sur Créer une note de crédit",
+    "mark_credited_clicked": "Marquer le crédit comme clic"
+  },
+  "dashboard": {
+    "invoices_by_status": "Factures par statut"
+  }
+}

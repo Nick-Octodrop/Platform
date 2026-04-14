@@ -5,7 +5,7 @@
     "key": "te_catalog",
     "name": "Catalog",
     "version": "1.0.0",
-    "description": "Product master records for the True Essentials catalog.",
+    "description": "Product master records for True Essentials with retail pricing, buy-side cost visibility, and stock controls.",
     "category": "True Essentials",
     "icon_key": "lucide:Package2"
   },
@@ -68,7 +68,7 @@
             { "value": "PACK", "label": "Pack" },
             { "value": "CASE", "label": "Case" }
           ],
-          "help_text": "Use an explicit unit of measure so pricing, purchasing, and future stock logic stay consistent."
+          "help_text": "Use an explicit unit of measure so pricing, purchasing, and stock logic stay consistent."
         },
         {
           "id": "te_product.status",
@@ -91,22 +91,319 @@
           "options": [
             { "value": "NZD", "label": "NZD" }
           ],
-          "help_text": "True Essentials sells in NZD."
+          "help_text": "True Essentials retail pricing is maintained in NZD."
         },
         {
           "id": "te_product.retail_price",
           "type": "number",
-          "label": "Retail Price",
+          "label": "Retail Sell Price",
           "default": 0,
           "format": { "kind": "currency", "currency_field": "te_product.sales_currency", "precision": 2 }
         },
         {
+          "id": "te_product.buy_currency",
+          "type": "enum",
+          "label": "Buy Currency",
+          "default": "USD",
+          "options": [
+            { "value": "USD", "label": "USD" },
+            { "value": "NZD", "label": "NZD" }
+          ],
+          "help_text": "Keep buy-side currency separate from retail currency. Most supplier buying will be recorded in USD."
+        },
+        {
+          "id": "te_product.buy_price",
+          "type": "number",
+          "label": "Buy Price",
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "te_product.buy_currency", "precision": 2 },
+          "help_text": "Use this as the current supplier buy price before NZD conversion."
+        },
+        {
+          "id": "te_product.buy_fx_rate_to_nzd",
+          "type": "number",
+          "label": "FX Rate To NZD",
+          "default": 1,
+          "help_text": "Use 1 when the buy price is already NZD. Otherwise record the FX rate being used to convert supplier cost into NZD."
+        },
+        {
+          "id": "te_product.converted_buy_price_nzd",
+          "type": "number",
+          "label": "Converted Buy Price (NZD)",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency": "NZD", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "if",
+              "condition": {
+                "op": "eq",
+                "field": "te_product.buy_currency",
+                "value": "NZD"
+              },
+              "then": {
+                "ref": "$current.te_product.buy_price"
+              },
+              "else": {
+                "op": "round",
+                "args": [
+                  {
+                    "op": "mul",
+                    "args": [
+                      { "ref": "$current.te_product.buy_price" },
+                      { "ref": "$current.te_product.buy_fx_rate_to_nzd" }
+                    ]
+                  },
+                  2
+                ]
+              }
+            }
+          },
+          "help_text": "Operational NZD equivalent of the current buy price."
+        },
+        {
           "id": "te_product.standard_cost_nzd",
           "type": "number",
-          "label": "Standard Cost (NZD)",
+          "label": "Landed Cost Override (NZD)",
           "default": 0,
-          "format": { "kind": "currency", "currency_field": "te_product.sales_currency", "precision": 2 },
-          "help_text": "Use an internal NZD cost reference for margin and replenishment decisions."
+          "format": { "kind": "currency", "currency": "NZD", "precision": 2 },
+          "help_text": "Use this only when freight, duties, or packaging mean the FX-converted buy price is not the true landed NZD cost."
+        },
+        {
+          "id": "te_product.effective_cost_nzd",
+          "type": "number",
+          "label": "Effective Cost (NZD)",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency": "NZD", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "if",
+              "condition": {
+                "op": "gt",
+                "field": "te_product.standard_cost_nzd",
+                "value": 0
+              },
+              "then": {
+                "ref": "$current.te_product.standard_cost_nzd"
+              },
+              "else": {
+                "ref": "$current.te_product.converted_buy_price_nzd"
+              }
+            }
+          },
+          "help_text": "This is the NZD cost used for margin and stock value."
+        },
+        {
+          "id": "te_product.gross_margin_nzd",
+          "type": "number",
+          "label": "Gross Margin (NZD)",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency": "NZD", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "sub",
+                  "args": [
+                    { "ref": "$current.te_product.retail_price" },
+                    { "ref": "$current.te_product.effective_cost_nzd" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "te_product.gross_margin_percent",
+          "type": "number",
+          "label": "Gross Margin %",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "percent", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "if",
+              "condition": {
+                "op": "gt",
+                "field": "te_product.retail_price",
+                "value": 0
+              },
+              "then": {
+                "op": "round",
+                "args": [
+                  {
+                    "op": "mul",
+                    "args": [
+                      {
+                        "op": "div",
+                        "args": [
+                          { "ref": "$current.te_product.gross_margin_nzd" },
+                          { "ref": "$current.te_product.retail_price" }
+                        ]
+                      },
+                      100
+                    ]
+                  },
+                  2
+                ]
+              },
+              "else": 0
+            }
+          }
+        },
+        {
+          "id": "te_product.track_stock",
+          "type": "bool",
+          "label": "Track Stock",
+          "default": true,
+          "help_text": "Turn this off only for non-stocked, virtual, or bundle-only items."
+        },
+        {
+          "id": "te_product.stock_on_hand",
+          "type": "number",
+          "label": "Stock On Hand",
+          "default": 0,
+          "format": { "kind": "measurement", "unit_field": "te_product.uom", "precision": 0 }
+        },
+        {
+          "id": "te_product.stock_reserved",
+          "type": "number",
+          "label": "Stock Reserved",
+          "default": 0,
+          "format": { "kind": "measurement", "unit_field": "te_product.uom", "precision": 0 },
+          "help_text": "Use this for quantities already committed to sales or channel demand."
+        },
+        {
+          "id": "te_product.stock_available",
+          "type": "number",
+          "label": "Available Stock",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "measurement", "unit_field": "te_product.uom", "precision": 0 },
+          "compute": {
+            "expression": {
+              "op": "sub",
+              "args": [
+                { "ref": "$current.te_product.stock_on_hand" },
+                { "ref": "$current.te_product.stock_reserved" }
+              ]
+            }
+          }
+        },
+        {
+          "id": "te_product.reorder_point",
+          "type": "number",
+          "label": "Reorder Point",
+          "default": 5,
+          "format": { "kind": "measurement", "unit_field": "te_product.uom", "precision": 0 },
+          "help_text": "When available stock falls to or below this level, the SKU should be reviewed for replenishment."
+        },
+        {
+          "id": "te_product.reorder_qty",
+          "type": "number",
+          "label": "Suggested Reorder Qty",
+          "default": 0,
+          "format": { "kind": "measurement", "unit_field": "te_product.uom", "precision": 0 }
+        },
+        {
+          "id": "te_product.inventory_value_nzd",
+          "type": "number",
+          "label": "Inventory Value (NZD)",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency": "NZD", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    { "ref": "$current.te_product.stock_on_hand" },
+                    { "ref": "$current.te_product.effective_cost_nzd" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "te_product.is_in_stock",
+          "type": "bool",
+          "label": "In Stock",
+          "readonly": true,
+          "default": false,
+          "compute": {
+            "expression": {
+              "op": "and",
+              "args": [
+                { "ref": "$current.te_product.track_stock" },
+                {
+                  "op": "gt",
+                  "args": [
+                    { "ref": "$current.te_product.stock_available" },
+                    0
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "te_product.is_low_stock",
+          "type": "bool",
+          "label": "Low Stock",
+          "readonly": true,
+          "default": false,
+          "compute": {
+            "expression": {
+              "op": "and",
+              "args": [
+                { "ref": "$current.te_product.track_stock" },
+                {
+                  "op": "gt",
+                  "args": [
+                    { "ref": "$current.te_product.stock_available" },
+                    0
+                  ]
+                },
+                {
+                  "op": "lte",
+                  "args": [
+                    { "ref": "$current.te_product.stock_available" },
+                    { "ref": "$current.te_product.reorder_point" }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "te_product.is_out_of_stock",
+          "type": "bool",
+          "label": "Out Of Stock",
+          "readonly": true,
+          "default": false,
+          "compute": {
+            "expression": {
+              "op": "and",
+              "args": [
+                { "ref": "$current.te_product.track_stock" },
+                {
+                  "op": "lte",
+                  "args": [
+                    { "ref": "$current.te_product.stock_available" },
+                    0
+                  ]
+                }
+              ]
+            }
+          }
         },
         { "id": "te_product.shopify_handle", "type": "string", "label": "Shopify Handle" },
         { "id": "te_product.shopify_product_url", "type": "string", "label": "Shopify URL" },
@@ -127,12 +424,14 @@
         "enabled": true,
         "scope": "module_and_global",
         "measures": [
-          "count"
+          "count",
+          "sum:te_product.inventory_value_nzd"
         ],
         "group_bys": [
           "te_product.status",
           "te_product.uom_category",
-          "te_product.sales_currency"
+          "te_product.buy_currency",
+          "te_product.track_stock"
         ]
       }
     ]
@@ -196,22 +495,45 @@
       "columns": [
         { "field_id": "te_product.sku" },
         { "field_id": "te_product.title" },
-        { "field_id": "te_product.uom" },
         { "field_id": "te_product.status" },
         { "field_id": "te_product.retail_price" },
-        { "field_id": "te_product.standard_cost_nzd" }
+        { "field_id": "te_product.effective_cost_nzd" },
+        { "field_id": "te_product.gross_margin_percent" },
+        { "field_id": "te_product.stock_available" }
       ],
       "header": {
         "primary_actions": [{ "action_id": "action.te_product_new" }],
         "open_record_target": "page:te_product.form_page",
         "search": {
           "enabled": true,
-          "placeholder": "Search products...",
+          "placeholder": "Search products, SKUs, or Shopify handles...",
           "fields": ["te_product.sku", "te_product.title", "te_product.variant_name", "te_product.shopify_handle"]
         },
         "filters": [
           { "id": "active", "label": "Active", "domain": { "op": "eq", "field": "te_product.status", "value": "active" } },
           { "id": "draft", "label": "Draft", "domain": { "op": "eq", "field": "te_product.status", "value": "draft" } },
+          {
+            "id": "low_stock",
+            "label": "Low Stock",
+            "domain": {
+              "op": "and",
+              "conditions": [
+                { "op": "eq", "field": "te_product.status", "value": "active" },
+                { "op": "eq", "field": "te_product.is_low_stock", "value": true }
+              ]
+            }
+          },
+          {
+            "id": "out_of_stock",
+            "label": "Out Of Stock",
+            "domain": {
+              "op": "and",
+              "conditions": [
+                { "op": "eq", "field": "te_product.status", "value": "active" },
+                { "op": "eq", "field": "te_product.is_out_of_stock", "value": true }
+              ]
+            }
+          },
           { "id": "discontinued", "label": "Discontinued", "domain": { "op": "eq", "field": "te_product.status", "value": "discontinued" } },
           { "id": "archived", "label": "Archived", "domain": { "op": "eq", "field": "te_product.status", "value": "archived" } }
         ]
@@ -231,20 +553,50 @@
             "te_product.sku",
             "te_product.status",
             "te_product.title",
-            "te_product.variant_name"
+            "te_product.variant_name",
+            "te_product.uom_category",
+            "te_product.uom"
           ]
         },
         {
-          "id": "pricing",
-          "title": "Pricing",
+          "id": "retail_pricing",
+          "title": "Retail Pricing",
           "layout": "columns",
           "columns": 2,
           "fields": [
             "te_product.sales_currency",
-            "te_product.uom",
-            "te_product.retail_price",
+            "te_product.retail_price"
+          ]
+        },
+        {
+          "id": "buy_side",
+          "title": "Buy-Side and Margin",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_product.buy_currency",
+            "te_product.buy_price",
+            "te_product.buy_fx_rate_to_nzd",
+            "te_product.converted_buy_price_nzd",
             "te_product.standard_cost_nzd",
-            "te_product.uom_category"
+            "te_product.effective_cost_nzd",
+            "te_product.gross_margin_nzd",
+            "te_product.gross_margin_percent"
+          ]
+        },
+        {
+          "id": "inventory",
+          "title": "Inventory",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_product.track_stock",
+            "te_product.stock_on_hand",
+            "te_product.stock_reserved",
+            "te_product.stock_available",
+            "te_product.reorder_point",
+            "te_product.reorder_qty",
+            "te_product.inventory_value_nzd"
           ]
         },
         {
@@ -274,7 +626,8 @@
           "default_tab": "summary",
           "tabs": [
             { "id": "summary", "label": "Summary", "sections": ["summary"] },
-            { "id": "pricing", "label": "Pricing", "sections": ["pricing"] },
+            { "id": "pricing", "label": "Pricing", "sections": ["retail_pricing", "buy_side"] },
+            { "id": "inventory", "label": "Inventory", "sections": ["inventory"] },
             { "id": "commerce", "label": "Shopify", "sections": ["commerce"] },
             { "id": "notes", "label": "Notes", "sections": ["notes"] }
           ]
@@ -291,7 +644,14 @@
           "te_product.uom",
           "te_product.status",
           "te_product.retail_price",
-          "te_product.standard_cost_nzd"
+          "te_product.buy_currency",
+          "te_product.buy_price",
+          "te_product.buy_fx_rate_to_nzd",
+          "te_product.standard_cost_nzd",
+          "te_product.stock_on_hand",
+          "te_product.stock_reserved",
+          "te_product.reorder_point",
+          "te_product.reorder_qty"
         ]
       }
     },
@@ -300,13 +660,15 @@
       "kind": "kanban",
       "entity": "entity.te_product",
       "card": {
-        "title_field": "te_product.sku",
+        "title_field": "te_product.title",
         "subtitle_fields": [
-          "te_product.title"
+          "te_product.sku",
+          "te_product.variant_name"
         ],
         "badge_fields": [
           "te_product.status",
-          "te_product.retail_price"
+          "te_product.retail_price",
+          "te_product.stock_available"
         ]
       }
     }
@@ -328,9 +690,48 @@
           "columns": 4,
           "cards": [
             { "id": "active_products", "label": "Active Products", "entity_id": "entity.te_product", "measure": "count", "domain": { "op": "eq", "field": "te_product.status", "value": "active" }, "format": "number" },
-            { "id": "draft_products", "label": "Draft Products", "entity_id": "entity.te_product", "measure": "count", "domain": { "op": "eq", "field": "te_product.status", "value": "draft" }, "format": "number" },
-            { "id": "discontinued_products", "label": "Discontinued", "entity_id": "entity.te_product", "measure": "count", "domain": { "op": "eq", "field": "te_product.status", "value": "discontinued" }, "format": "number" },
-            { "id": "archived_products", "label": "Archived", "entity_id": "entity.te_product", "measure": "count", "domain": { "op": "eq", "field": "te_product.status", "value": "archived" }, "format": "number" }
+            {
+              "id": "in_stock_products",
+              "label": "In Stock",
+              "entity_id": "entity.te_product",
+              "measure": "count",
+              "domain": {
+                "op": "and",
+                "conditions": [
+                  { "op": "eq", "field": "te_product.status", "value": "active" },
+                  { "op": "eq", "field": "te_product.is_in_stock", "value": true }
+                ]
+              },
+              "format": "number"
+            },
+            {
+              "id": "low_stock_products",
+              "label": "Low Stock",
+              "entity_id": "entity.te_product",
+              "measure": "count",
+              "domain": {
+                "op": "and",
+                "conditions": [
+                  { "op": "eq", "field": "te_product.status", "value": "active" },
+                  { "op": "eq", "field": "te_product.is_low_stock", "value": true }
+                ]
+              },
+              "format": "number"
+            },
+            {
+              "id": "out_of_stock_products",
+              "label": "Out Of Stock",
+              "entity_id": "entity.te_product",
+              "measure": "count",
+              "domain": {
+                "op": "and",
+                "conditions": [
+                  { "op": "eq", "field": "te_product.status", "value": "active" },
+                  { "op": "eq", "field": "te_product.is_out_of_stock", "value": true }
+                ]
+              },
+              "format": "number"
+            }
           ]
         },
         {

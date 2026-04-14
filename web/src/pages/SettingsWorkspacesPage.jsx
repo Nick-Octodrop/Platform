@@ -7,8 +7,10 @@ import PaginationControls from "../components/PaginationControls.jsx";
 import { applyBrandColors, DEFAULT_BRAND_COLORS, setBrandColors } from "../theme/theme.js";
 import { supabase } from "../supabase.js";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
+import AppSelect from "../components/AppSelect.jsx";
 
-const TAB_IDS = ["workspaces", "branding"];
+const TAB_IDS = ["workspaces", "branding", "regional"];
 
 function normalizeTabId(value) {
   const raw = String(value || "").trim().toLowerCase();
@@ -26,6 +28,7 @@ function Section({ title, description, children }) {
 }
 
 export default function SettingsWorkspacesPage() {
+  const { t, reload: reloadI18n, availableLocales, availableTimezones, availableCurrencies, workspaceKey } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = normalizeTabId(searchParams.get("tab"));
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -35,12 +38,16 @@ export default function SettingsWorkspacesPage() {
   const [workspacePrefs, setWorkspacePrefs] = useState({ logo_url: "", colors: { ...DEFAULT_BRAND_COLORS } });
   const [workspaceName, setWorkspaceName] = useState("");
   const [brandingSaving, setBrandingSaving] = useState(false);
+  const [regionalSaving, setRegionalSaving] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoPreviewError, setLogoPreviewError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeWorkspaceId, setActive] = useState(getActiveWorkspaceId());
   const [deleteBusyId, setDeleteBusyId] = useState("");
+  const [defaultLocale, setDefaultLocale] = useState("en-NZ");
+  const [defaultTimezone, setDefaultTimezone] = useState("UTC");
+  const [defaultCurrency, setDefaultCurrency] = useState("NZD");
   const logoFileRef = useRef(null);
   const { pushToast } = useToast();
   const { context, loading: accessLoading } = useAccessContext();
@@ -59,6 +66,9 @@ export default function SettingsWorkspacesPage() {
           accent: prefsRes?.workspace?.colors?.accent || DEFAULT_BRAND_COLORS.accent,
         },
       });
+      setDefaultLocale(String(prefsRes?.workspace?.default_locale || "en-NZ"));
+      setDefaultTimezone(String(prefsRes?.workspace?.default_timezone || "UTC"));
+      setDefaultCurrency(String(prefsRes?.workspace?.default_currency || "NZD"));
       if (!activeWorkspaceId && context?.actor?.workspace_id) {
         setActive(context.actor.workspace_id);
       }
@@ -72,7 +82,7 @@ export default function SettingsWorkspacesPage() {
   useEffect(() => {
     if (accessLoading || !context) return;
     load();
-  }, [accessLoading, context]);
+  }, [accessLoading, context, workspaceKey]);
 
   useEffect(() => {
     setActiveTab(normalizeTabId(searchParams.get("tab")));
@@ -125,16 +135,16 @@ export default function SettingsWorkspacesPage() {
 
   async function deleteWorkspace(workspaceId, workspaceName) {
     if (!workspaceId || deleteBusyId) return;
-    if (!window.confirm(`Delete workspace "${workspaceName || workspaceId}"? This cannot be undone.`)) return;
+    if (!window.confirm(t("common.delete_workspace_body", { name: workspaceName || workspaceId }))) return;
     setDeleteBusyId(workspaceId);
     try {
       await apiFetch(`/access/workspaces/${encodeURIComponent(workspaceId)}`, {
         method: "DELETE",
       });
       setWorkspaces((prev) => prev.filter((item) => (item.workspace_id || item.id) !== workspaceId));
-      pushToast("success", "Workspace deleted");
+      pushToast("success", t("common.deleted_workspace"));
     } catch (err) {
-      pushToast("error", err?.message || "Failed to delete workspace");
+      pushToast("error", err?.message || t("common.delete_failed"));
     } finally {
       setDeleteBusyId("");
     }
@@ -157,8 +167,10 @@ export default function SettingsWorkspacesPage() {
         setBrandColors(next.colors);
         applyBrandColors(next.colors);
       }
-    } catch {
-      pushToast("error", "Failed to save workspace settings");
+      await reloadI18n();
+    } catch (err) {
+      pushToast("error", t("settings.workspace_save_failed"));
+      throw err;
     }
   }
 
@@ -179,13 +191,13 @@ export default function SettingsWorkspacesPage() {
       });
       const data = await res.json();
       if (!res.ok || !data?.logo_url) {
-        throw new Error(data?.errors?.[0]?.message || "Logo upload failed");
+        throw new Error(data?.errors?.[0]?.message || t("settings.logo_upload_failed"));
       }
       setWorkspacePrefs((prev) => ({ ...prev, logo_url: data.logo_url }));
       setLogoPreviewError(false);
-      pushToast("success", "Logo uploaded");
+      pushToast("success", t("settings.logo_uploaded"));
     } catch (err) {
-      pushToast("error", err?.message || "Logo upload failed");
+      pushToast("error", err?.message || t("settings.logo_upload_failed"));
     } finally {
       setLogoUploading(false);
     }
@@ -208,19 +220,37 @@ export default function SettingsWorkspacesPage() {
         await load();
       }
       setWorkspaceName(trimmedName);
-      pushToast("success", "Workspace name updated");
+      pushToast("success", t("settings.workspace_name_updated"));
     } catch (err) {
-      pushToast("error", err?.message || "Failed to update workspace name");
+      pushToast("error", err?.message || t("settings.workspace_name_update_failed"));
     } finally {
       setBrandingSaving(false);
+    }
+  }
+
+  async function saveRegionalDefaults() {
+    if (!canEditWorkspaceSettings) return;
+    setRegionalSaving(true);
+    try {
+      await persistWorkspacePrefs({
+        default_locale: defaultLocale,
+        default_timezone: defaultTimezone,
+        default_currency: defaultCurrency,
+      });
+      pushToast("success", t("settings.workspace_regional_saved"));
+    } catch {
+      // toast already emitted in persistWorkspacePrefs
+    } finally {
+      setRegionalSaving(false);
     }
   }
 
   return (
     <TabbedPaneShell
       tabs={[
-        { id: "workspaces", label: "Workspaces" },
-        { id: "branding", label: "Branding" },
+        { id: "workspaces", label: t("settings.workspaces_tab") },
+        { id: "branding", label: t("settings.branding_tab") },
+        { id: "regional", label: t("settings.regional_tab") },
       ]}
       activeTabId={activeTab}
       onTabChange={goTab}
@@ -230,11 +260,11 @@ export default function SettingsWorkspacesPage() {
         {error && <div className="alert alert-error text-sm">{error}</div>}
 
         {activeTab === "workspaces" && (
-          <Section title="Workspaces" description="Switch your active workspace.">
+          <Section title={t("settings.workspaces_title")} description={t("settings.workspaces_description")}>
             {loading ? (
-              <div className="text-sm opacity-60">Loading workspaces…</div>
+              <div className="text-sm opacity-60">{t("common.loading")}</div>
             ) : displayWorkspaces.length === 0 ? (
-              <div className="text-sm opacity-60">No workspaces available.</div>
+              <div className="text-sm opacity-60">{t("empty.no_workspaces")}</div>
             ) : (
               <div className="space-y-2">
                 <div className="flex items-center justify-end">
@@ -250,11 +280,11 @@ export default function SettingsWorkspacesPage() {
                   <table className="table table-sm">
                   <thead>
                     <tr>
-                      <th>Name</th>
-                      <th>Role</th>
-                      <th>Type</th>
-                      <th>Members</th>
-                      <th className="w-48">Actions</th>
+                      <th>{t("settings.workspace_name")}</th>
+                      <th>{t("settings.role")}</th>
+                      <th>{t("settings.type")}</th>
+                      <th>{t("settings.members")}</th>
+                      <th className="w-48">{t("settings.actions")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -266,7 +296,7 @@ export default function SettingsWorkspacesPage() {
                           {workspace.is_sandbox ? (
                             <span className="badge badge-outline">Sandbox</span>
                           ) : (
-                            <span className="badge badge-ghost">Workspace</span>
+                            <span className="badge badge-ghost">{t("settings.workspace_badge")}</span>
                           )}
                         </td>
                         <td className="whitespace-nowrap">{workspace.member_count ?? "—"}</td>
@@ -276,7 +306,7 @@ export default function SettingsWorkspacesPage() {
                             onClick={() => switchWorkspace(workspace.workspace_id)}
                             type="button"
                           >
-                            {activeWorkspaceId === workspace.workspace_id ? "Active" : "Switch"}
+                            {activeWorkspaceId === workspace.workspace_id ? t("common.active") : t("common.switch")}
                           </button>
                           {actor.platform_role === "superadmin" ? (
                             <button
@@ -285,7 +315,7 @@ export default function SettingsWorkspacesPage() {
                               disabled={deleteBusyId === workspace.workspace_id || activeWorkspaceId === workspace.workspace_id}
                               onClick={() => deleteWorkspace(workspace.workspace_id, workspace.workspace_name)}
                             >
-                              {deleteBusyId === workspace.workspace_id ? "Deleting..." : "Delete"}
+                              {deleteBusyId === workspace.workspace_id ? t("common.deleting") : t("common.delete")}
                             </button>
                           ) : null}
                         </td>
@@ -300,27 +330,27 @@ export default function SettingsWorkspacesPage() {
         )}
 
         {activeTab === "branding" && (
-          <Section title="Branding" description="Applies to the active workspace only.">
+          <Section title={t("settings.branding_title")} description={t("settings.branding_description")}>
             {!canEditWorkspaceSettings ? (
-              <div className="alert alert-warning text-sm">Only workspace admins can edit these settings.</div>
+              <div className="alert alert-warning text-sm">{t("settings.workspace_admin_only")}</div>
             ) : (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div className="space-y-4 md:col-start-1">
                     <label className="form-control">
-                      <span className="label-text text-sm">Workspace name</span>
+                      <span className="label-text text-sm">{t("settings.workspace_name")}</span>
                       <input
                         type="text"
                         className="input input-bordered input-sm w-full"
                         value={workspaceName}
-                        placeholder="Workspace name"
+                        placeholder={t("settings.workspace_name")}
                         onChange={(e) => setWorkspaceName(e.target.value)}
                         disabled={brandingSaving}
                       />
                     </label>
 
                     <label className="form-control">
-                      <span className="label-text text-sm">Logo URL</span>
+                      <span className="label-text text-sm">{t("settings.logo_url")}</span>
                       <input
                         type="url"
                         className="input input-bordered input-sm"
@@ -336,7 +366,7 @@ export default function SettingsWorkspacesPage() {
 
                     <div className="space-y-3">
                       <div>
-                        <div className="text-sm opacity-70">Logo preview</div>
+                        <div className="text-sm opacity-70">{t("settings.logo_preview")}</div>
                         <div className="mt-2 w-40 h-16 rounded-box border border-base-300 bg-base-200 flex items-center justify-center overflow-hidden">
                           {workspacePrefs.logo_url && !logoPreviewError ? (
                             <img
@@ -347,7 +377,7 @@ export default function SettingsWorkspacesPage() {
                             />
                           ) : (
                             <div className="text-xs opacity-60 px-3 text-center">
-                              {workspacePrefs.logo_url ? "Unable to load logo" : "No logo"}
+                              {workspacePrefs.logo_url ? t("settings.logo_unavailable") : t("settings.no_logo")}
                             </div>
                           )}
                         </div>
@@ -359,7 +389,7 @@ export default function SettingsWorkspacesPage() {
                           onClick={() => logoFileRef.current?.click()}
                           disabled={logoUploading || brandingSaving}
                         >
-                          {logoUploading ? "Uploading..." : "Upload logo"}
+                          {logoUploading ? t("common.uploading") : t("settings.upload_logo")}
                         </button>
                         <input
                           ref={logoFileRef}
@@ -378,7 +408,7 @@ export default function SettingsWorkspacesPage() {
                             }}
                             disabled={brandingSaving}
                           >
-                            Clear logo
+                            {t("settings.clear_logo")}
                           </button>
                         ) : null}
                       </div>
@@ -386,7 +416,7 @@ export default function SettingsWorkspacesPage() {
 
                     <div>
                       <label className="form-control">
-                        <span className="label-text text-sm">Primary</span>
+                        <span className="label-text text-sm">{t("settings.primary_colour")}</span>
                         <input
                           type="color"
                           className="input input-bordered h-10"
@@ -410,7 +440,68 @@ export default function SettingsWorkspacesPage() {
                     disabled={brandingSaving || logoUploading || !workspaceName.trim()}
                     onClick={saveBranding}
                   >
-                    {brandingSaving ? "Saving..." : "Save"}
+                    {brandingSaving ? t("common.saving") : t("common.save")}
+                  </button>
+                </div>
+              </div>
+            )}
+          </Section>
+        )}
+
+        {activeTab === "regional" && (
+          <Section title={t("settings.regional_title")} description={t("settings.regional_description")}>
+            {!canEditWorkspaceSettings ? (
+              <div className="alert alert-warning text-sm">{t("settings.workspace_admin_only")}</div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <label className="form-control">
+                    <span className="label-text text-sm">{t("settings.default_language_label")}</span>
+                    <AppSelect
+                      className="select select-bordered select-sm"
+                      value={defaultLocale}
+                      onChange={(e) => setDefaultLocale(e.target.value)}
+                      aria-label={t("settings.default_language_label")}
+                      disabled={regionalSaving}
+                    >
+                      {availableLocales.map((locale) => (
+                        <option key={locale.code} value={locale.code}>{locale.label}</option>
+                      ))}
+                    </AppSelect>
+                  </label>
+                  <label className="form-control">
+                    <span className="label-text text-sm">{t("settings.default_timezone_label")}</span>
+                    <AppSelect
+                      className="select select-bordered select-sm"
+                      value={defaultTimezone}
+                      onChange={(e) => setDefaultTimezone(e.target.value)}
+                      aria-label={t("settings.default_timezone_label")}
+                      disabled={regionalSaving}
+                    >
+                      {availableTimezones.map((timezone) => (
+                        <option key={timezone} value={timezone}>{timezone}</option>
+                      ))}
+                    </AppSelect>
+                  </label>
+                  <label className="form-control">
+                    <span className="label-text text-sm">{t("settings.default_currency_label")}</span>
+                    <AppSelect
+                      className="select select-bordered select-sm"
+                      value={defaultCurrency}
+                      onChange={(e) => setDefaultCurrency(e.target.value)}
+                      aria-label={t("settings.default_currency_label")}
+                      disabled={regionalSaving}
+                    >
+                      {availableCurrencies.map((currency) => (
+                        <option key={currency} value={currency}>{currency}</option>
+                      ))}
+                    </AppSelect>
+                  </label>
+                </div>
+                <div className="text-sm opacity-70">{t("settings.currency_not_from_locale")}</div>
+                <div>
+                  <button type="button" className="btn btn-primary btn-sm" disabled={regionalSaving} onClick={saveRegionalDefaults}>
+                    {regionalSaving ? t("common.saving") : t("common.save")}
                   </button>
                 </div>
               </div>

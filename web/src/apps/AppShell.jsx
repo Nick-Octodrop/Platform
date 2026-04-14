@@ -14,8 +14,17 @@ import { PRIMARY_BUTTON, PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_BUTTON_XS } fro
 import { buildRouteWithQuery, buildTargetRoute, deriveAppHomeRoute, resolveAppTarget, resolveRouteTarget } from "./appShellUtils.js";
 import { evalCondition } from "../utils/conditions.js";
 import { applyComputedFields } from "../utils/computedFields.js";
+import {
+  buildFormDraftStorageKey,
+  clearFormDraftSnapshot,
+  loadFormDraftSnapshot,
+  saveFormDraftSnapshot,
+} from "../utils/formDraftPersistence.js";
+import { normalizeManifestRecordPayload } from "../utils/formPayload.js";
 import { useAccessContext } from "../access.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
+import { translateRuntime } from "../i18n/runtime.js";
 
 function deriveRecordEntityId(entityId) {
   if (!entityId) return "";
@@ -153,12 +162,12 @@ function buildMaterialLogDefaultsFromTimeEntry(record = {}) {
 }
 
 function resolveActionLabel(action, manifest, views) {
-  if (!action || typeof action !== "object") return "Action";
+  if (!action || typeof action !== "object") return translateRuntime("common.action");
   if (action.label) return action.label;
   const kind = action.kind;
-  if (kind === "create_record" || kind === "open_form") return "New";
-  if (kind === "update_record") return "Save";
-  if (kind === "refresh") return "Refresh";
+  if (kind === "create_record" || kind === "open_form") return translateRuntime("common.create");
+  if (kind === "update_record") return translateRuntime("common.save");
+  if (kind === "refresh") return translateRuntime("common.refresh");
   if (kind === "navigate") {
     const target = action.target;
     const pages = Array.isArray(manifest?.pages) ? manifest.pages : [];
@@ -176,9 +185,9 @@ function resolveActionLabel(action, manifest, views) {
       const page = pages.find((p) => p?.id === target);
       if (page?.title) return page.title;
     }
-    return "Open";
+    return translateRuntime("common.open");
   }
-  return "Action";
+  return translateRuntime("common.action");
 }
 
 function collectConditionMissingFields(condition, record, missing) {
@@ -204,17 +213,17 @@ function collectConditionMissingFields(condition, record, missing) {
 }
 
 function explainActionDisabled(action, record, fieldIndex, { missingRecord = false, missingSelection = false } = {}) {
-  if (missingRecord) return "Save this record first.";
-  if (missingSelection) return "Select one or more records.";
+  if (missingRecord) return translateRuntime("common.save_record_first");
+  if (missingSelection) return translateRuntime("common.select_records_first");
   const cond = action?.enabled_when;
   if (!cond) return null;
   const enabled = evalCondition(cond, { record: record || {} });
   if (enabled) return null;
   const missing = new Set();
   collectConditionMissingFields(cond, record || {}, missing);
-  if (missing.size === 0) return "Requirements not met.";
+  if (missing.size === 0) return translateRuntime("validation.requirements_not_met");
   const labels = Array.from(missing).map((fieldId) => fieldIndex?.[fieldId]?.label || fieldId);
-  return `Missing: ${labels.join(", ")}`;
+  return translateRuntime("validation.missing_fields", { fields: labels.join(", ") });
 }
 
 function isWriteActionKind(kind) {
@@ -347,6 +356,7 @@ export default function AppShell({
 
   const recordId = (previewMode ? previewSearchParams : searchParams).get("record");
   const { hasCapability, isSuperadmin } = useAccessContext();
+  const { version: i18nVersion } = useI18n();
   // Respect both platform/workspace permissions and optional per-page bootstrap overrides.
   const canWriteRecords = hasCapability("records.write") && bootstrap?.permissions?.records_write !== false;
 
@@ -370,7 +380,7 @@ export default function AppShell({
     setError(null);
     setSelectedIds([]);
     setRecordDraft({});
-  }, [moduleId, pageId, viewId, recordId, workspaceKey, manifestOverride]);
+  }, [moduleId, pageId, viewId, recordId, workspaceKey, manifestOverride, i18nVersion]);
 
   const handlePageSectionLoadingChange = useCallback((key, isLoading) => {
     const safeKey = String(key || "").trim();
@@ -414,13 +424,13 @@ export default function AppShell({
         setCompiled(res.compiled);
         setError(null);
       } catch (err) {
-        setError(err.message || "Failed to load manifest");
+        setError(err.message || translateRuntime("common.load_failed"));
       } finally {
         setLoading(false);
       }
     }
     loadManifest();
-  }, [moduleId, manifestOverride, pageId, viewId, workspaceKey]);
+  }, [moduleId, manifestOverride, pageId, viewId, workspaceKey, i18nVersion]);
 
   useEffect(() => {
     if (!error) return;
@@ -519,7 +529,7 @@ export default function AppShell({
     return () => {
       cancelled = true;
     };
-  }, [moduleId, pageId, viewId, recordId, manifestOverride, workspaceKey]);
+  }, [moduleId, pageId, viewId, recordId, manifestOverride, workspaceKey, i18nVersion]);
 
   const appDef = manifest?.app || null;
   const formPageIds = useMemo(() => collectFormPageIds(appDef?.defaults), [appDef?.defaults]);
@@ -579,10 +589,10 @@ export default function AppShell({
       modalResolveRef.current = resolve;
       setModal({
         type: "confirm",
-        title: options.title || "Confirm",
-        body: options.body || "Are you sure?",
-        confirmLabel: options.confirmLabel || "OK",
-        cancelLabel: options.cancelLabel || "Cancel",
+        title: options.title || translateRuntime("common.confirm"),
+        body: options.body || translateRuntime("common.are_you_sure"),
+        confirmLabel: options.confirmLabel || translateRuntime("common.ok"),
+        cancelLabel: options.cancelLabel || translateRuntime("common.cancel"),
       });
     });
   }, []);
@@ -595,12 +605,12 @@ export default function AppShell({
       setModalInput(options.defaultValue ?? "");
       setModal({
         type: "prompt",
-        title: options.title || "Input required",
+        title: options.title || translateRuntime("common.input_required"),
         body: options.body || "",
         label: options.label || "",
         placeholder: options.placeholder || "",
-        confirmLabel: options.confirmLabel || "OK",
-        cancelLabel: options.cancelLabel || "Cancel",
+        confirmLabel: options.confirmLabel || translateRuntime("common.ok"),
+        cancelLabel: options.cancelLabel || translateRuntime("common.cancel"),
       });
     });
   }, []);
@@ -691,7 +701,7 @@ export default function AppShell({
     }
 
     if (!formViewId) {
-      pushToast("error", "No form view for this entity.");
+      pushToast("error", translateRuntime("common.app_shell.no_form_view_for_entity"));
       return null;
     }
 
@@ -827,7 +837,7 @@ export default function AppShell({
       const target = typeof next === "string" ? next : "";
       const pageId = target.startsWith("page:") ? target.slice("page:".length) : target;
       if (pageId && formPageIds.has(pageId)) {
-        pushToast("error", "Write access required");
+        pushToast("error", translateRuntime("common.app_shell.write_access_required"));
         return;
       }
     }
@@ -977,16 +987,16 @@ export default function AppShell({
 
   async function runAction(action, runtimeContext = {}) {
     if (isWriteActionKind(action?.kind) && !canWriteRecords) {
-      pushToast("error", "Write access required");
+      pushToast("error", translateRuntime("common.app_shell.write_access_required"));
       return null;
     }
     if (previewMode && !previewAllowNav) {
-      pushToast("info", "Preview mode: actions are disabled");
+      pushToast("info", translateRuntime("common.app_shell.preview_mode_actions_disabled"));
       return null;
     }
     const inlineAction = Boolean(runtimeContext?.inlineAction);
     if (!action?.id && !inlineAction) {
-      pushToast("error", "Action missing id");
+      pushToast("error", translateRuntime("common.app_shell.action_missing_id"));
       return null;
     }
     const contextRecordId = runtimeContext?.recordId || recordId;
@@ -1015,7 +1025,7 @@ export default function AppShell({
           timeEntryDraft: contextRecordDraft || {},
           materialDraft: buildMaterialLogDefaultsFromTimeEntry(contextRecordDraft || {}),
         });
-        pushToast("info", "Log material before clocking out");
+        pushToast("info", translateRuntime("common.app_shell.log_material_before_clocking_out"));
         setTarget(materialLogForm, { preserveParams: true });
         return { kind: "navigate", target: materialLogForm, gated: true };
       }
@@ -1036,7 +1046,7 @@ export default function AppShell({
             if (defaultForm) {
               setTarget(defaultForm, { recordId: created.record_id });
             }
-            pushToast("success", "Created (local preview)");
+            pushToast("success", translateRuntime("common.created_local_preview"));
             return { record_id: created.record_id, record: created.record };
           }
         }
@@ -1045,7 +1055,7 @@ export default function AppShell({
           const current = previewGet(entityFullId, contextRecordId);
           const updated = previewUpsert(entityFullId, contextRecordId, { ...(current?.record || {}), ...resolvedPatch });
           if (updated) {
-            pushToast("success", "Updated (local preview)");
+            pushToast("success", translateRuntime("common.saved_local_preview"));
             return { record_id: updated.record_id, record: updated.record };
           }
         }
@@ -1056,7 +1066,7 @@ export default function AppShell({
             const current = previewGet(entityFullId, id);
             previewUpsert(entityFullId, id, { ...(current?.record || {}), ...resolvedPatch });
           }
-          pushToast("success", "Updated (local preview)");
+          pushToast("success", translateRuntime("common.saved_local_preview"));
           return { updated: true };
         }
       }
@@ -1064,7 +1074,7 @@ export default function AppShell({
         if (action.kind === "update_record" && resolvedPatch && typeof resolvedPatch === "object") {
           const entityFullId = resolveEntityFullId(manifest, action.entity_id);
           if (!entityFullId || !contextRecordId) {
-            pushToast("error", "Action missing record context");
+            pushToast("error", translateRuntime("common.app_shell.action_missing_record_context"));
             return null;
           }
           const payload = { ...(contextRecordDraft || {}), ...resolvedPatch };
@@ -1074,10 +1084,10 @@ export default function AppShell({
           });
           setRecordDraft(res?.record || payload);
           setRefreshTick((v) => v + 1);
-          pushToast("success", "Action complete");
+          pushToast("success", translateRuntime("common.app_shell.action_complete"));
           return { updated: true, record_id: contextRecordId, record: res?.record || payload };
         }
-        pushToast("error", "Inline action kind not supported");
+        pushToast("error", translateRuntime("common.app_shell.inline_action_kind_not_supported"));
         return null;
       }
       const res = await runManifestAction(moduleId, action.id, {
@@ -1111,7 +1121,7 @@ export default function AppShell({
           } else {
             setRefreshTick((v) => v + 1);
           }
-          pushToast("success", "Action complete");
+          pushToast("success", translateRuntime("common.app_shell.action_complete"));
           return result;
         }
         if (actionKind === "update_record" || actionKind === "bulk_update") {
@@ -1137,10 +1147,10 @@ export default function AppShell({
       if (result.updated) {
         setRefreshTick((v) => v + 1);
       }
-      pushToast("success", "Action complete");
+      pushToast("success", translateRuntime("common.app_shell.action_complete"));
       return result;
     } catch (err) {
-      pushToast("error", err.message || "Action failed");
+      pushToast("error", err.message || translateRuntime("common.app_shell.action_failed"));
       return null;
     }
   }
@@ -1383,33 +1393,7 @@ export default function AppShell({
     if (createSaving) return;
     setCreateSaving(true);
     try {
-      let payload = createDraft;
-      if (payload && typeof payload === "object" && createFieldIndex) {
-        payload = { ...payload };
-        for (const [fieldId, field] of Object.entries(createFieldIndex)) {
-          if (field?.type === "number" && typeof payload[fieldId] === "string") {
-            const normalized = payload[fieldId].replace(/,/g, "").trim();
-            if (normalized === "" || normalized === "-" || normalized === "." || normalized === "-.") {
-              payload[fieldId] = null;
-            } else {
-              const parsed = Number(normalized);
-              if (Number.isFinite(parsed)) payload[fieldId] = parsed;
-            }
-          }
-          if (field?.type === "tags" && typeof payload[fieldId] === "string") {
-            payload[fieldId] = payload[fieldId]
-              .split(",")
-              .map((t) => t.trim())
-              .filter(Boolean);
-          }
-          if (field?.type === "users" && typeof payload[fieldId] === "string") {
-            payload[fieldId] = payload[fieldId]
-              .split(",")
-              .map((t) => t.trim())
-              .filter(Boolean);
-          }
-        }
-      }
+      const payload = normalizeManifestRecordPayload(createFieldIndex, createDraft);
       const res = await apiFetch(`/records/${createEntityId}`, {
         method: "POST",
         body: JSON.stringify(payload),
@@ -1420,10 +1404,10 @@ export default function AppShell({
         (createModal?.displayField && record?.[createModal.displayField]) ||
         recordId ||
         "";
-      pushToast("success", "Created");
+      pushToast("success", translateRuntime("common.created"));
       closeCreateModal({ record_id: recordId, record, label });
     } catch (err) {
-      pushToast("error", err?.message || "Create failed");
+      pushToast("error", err?.message || translateRuntime("common.create_failed"));
     } finally {
       setCreateSaving(false);
     }
@@ -1888,7 +1872,7 @@ function AppView({
   function openManifestModal(modalId, contextRecord = draft || {}) {
     const def = modalById.get(modalId);
     if (!def) {
-      pushToast("error", `Modal not found: ${modalId}`);
+      pushToast("error", translateRuntime("common.app_shell.modal_not_found", { id: modalId }));
       return;
     }
     const modalEntity = def.entity_id || recordEntityId || entityFullId;
@@ -1956,7 +1940,7 @@ function AppView({
           setDraft(prevDraft);
           setInitialDraft(prevInitial);
           setActiveManifestModal((prev) =>
-            prev ? { ...prev, busy: false, error: err?.message || "Action failed." } : prev
+            prev ? { ...prev, busy: false, error: err?.message || translateRuntime("common.app_shell.action_failed") } : prev
           );
         });
       return;
@@ -2070,7 +2054,7 @@ function AppView({
       });
     } catch (err) {
       console.warn("action_run_failed", err);
-      pushToast("error", err?.message || "Action failed");
+      pushToast("error", err?.message || translateRuntime("common.app_shell.action_failed"));
       return null;
     }
   }
@@ -2168,6 +2152,31 @@ function AppView({
   }, [kind, previewMode, recordEntityId]);
 
   const effectiveRecordId = recordContext?.recordId || recordId;
+  const formDraftStorageKey = useMemo(
+    () =>
+      kind === "form" && !previewMode
+        ? buildFormDraftStorageKey({
+            scope: "app-shell",
+            entityId: recordEntityId || "",
+            recordId: effectiveRecordId || "new",
+            viewId: view?.id || "",
+            routeKey: `module:${moduleId || ""}`,
+          })
+        : null,
+    [effectiveRecordId, kind, moduleId, previewMode, recordEntityId, view?.id]
+  );
+  const isDirty = useMemo(() => {
+    try {
+      return JSON.stringify(draft || {}) !== JSON.stringify(initialDraft || {});
+    } catch {
+      return true;
+    }
+  }, [draft, initialDraft]);
+  const isDirtyRef = useRef(false);
+
+  useEffect(() => {
+    isDirtyRef.current = isDirty;
+  }, [isDirty]);
 
   useEffect(() => {
     setActiveManifestModal(null);
@@ -2179,10 +2188,19 @@ function AppView({
 
   useEffect(() => {
     if (kind === "form") {
+      if (isDirtyRef.current && formDraftStorageKey) return;
       setShowValidation(false);
       if (!effectiveRecordId) {
-        setDraft({});
-        setInitialDraft({});
+        const persisted = loadFormDraftSnapshot(formDraftStorageKey);
+        const nextDraft = applyDraftComputed(
+          persisted?.dirty && persisted?.draft && typeof persisted.draft === "object" ? persisted.draft : {}
+        );
+        setDraft(nextDraft);
+        setInitialDraft(
+          persisted?.dirty && persisted?.initialDraft && typeof persisted.initialDraft === "object"
+            ? applyDraftComputed(persisted.initialDraft)
+            : {}
+        );
         setState({ status: "ok", error: null });
         return;
       }
@@ -2209,9 +2227,18 @@ function AppView({
         bootstrapRecord?.record_id === effectiveRecordId &&
         bootstrapUsedRef.current.form !== bootstrapVersion;
       if (bootstrapMatches) {
-        const next = applyDraftComputed(bootstrapRecord?.record || {});
+        const persisted = loadFormDraftSnapshot(formDraftStorageKey);
+        const next = applyDraftComputed(
+          persisted?.dirty && persisted?.draft && typeof persisted.draft === "object"
+            ? persisted.draft
+            : bootstrapRecord?.record || {}
+        );
         setDraft(next);
-        setInitialDraft(next);
+        setInitialDraft(
+          persisted?.dirty && persisted?.initialDraft && typeof persisted.initialDraft === "object"
+            ? applyDraftComputed(persisted.initialDraft)
+            : applyDraftComputed(bootstrapRecord?.record || {})
+        );
         setState({ status: "ok", error: null });
         bootstrapUsedRef.current.form = bootstrapVersion;
         return;
@@ -2230,18 +2257,36 @@ function AppView({
           setState({ status: "error", error: contextRecordError });
           return;
         }
-        const next = applyDraftComputed(recordContext?.record || {});
+        const persisted = loadFormDraftSnapshot(formDraftStorageKey);
+        const next = applyDraftComputed(
+          persisted?.dirty && persisted?.draft && typeof persisted.draft === "object"
+            ? persisted.draft
+            : recordContext?.record || {}
+        );
         setDraft(next);
-        setInitialDraft(next);
+        setInitialDraft(
+          persisted?.dirty && persisted?.initialDraft && typeof persisted.initialDraft === "object"
+            ? applyDraftComputed(persisted.initialDraft)
+            : applyDraftComputed(recordContext?.record || {})
+        );
         setState({ status: "ok", error: null });
         return;
       }
       setState({ status: "running", error: null });
       apiFetch(`/records/${recordEntityId}/${effectiveRecordId}`)
         .then((res) => {
-          const next = applyDraftComputed(res.record || {});
+          const persisted = loadFormDraftSnapshot(formDraftStorageKey);
+          const next = applyDraftComputed(
+            persisted?.dirty && persisted?.draft && typeof persisted.draft === "object"
+              ? persisted.draft
+              : res.record || {}
+          );
           setDraft(next);
-          setInitialDraft(next);
+          setInitialDraft(
+            persisted?.dirty && persisted?.initialDraft && typeof persisted.initialDraft === "object"
+              ? applyDraftComputed(persisted.initialDraft)
+              : applyDraftComputed(res.record || {})
+          );
           setState({ status: "ok", error: null });
         })
         .catch((err) => {
@@ -2250,7 +2295,7 @@ function AppView({
           setState({ status: "error", error: msg });
         });
     }
-  }, [kind, recordEntityId, effectiveRecordId, contextEntityId, contextRecordLoading, contextRecordError, previewMode, previewStore?.version, bootstrapVersion, bootstrap, view?.id, bootstrapLoading, applyDraftComputed]);
+  }, [kind, recordEntityId, effectiveRecordId, contextEntityId, contextRecordLoading, contextRecordError, previewMode, previewStore?.version, bootstrapVersion, bootstrap, view?.id, bootstrapLoading, applyDraftComputed, formDraftStorageKey]);
 
   useEffect(() => {
     if (kind !== "form" || effectiveRecordId || recordEntityId !== "entity.material_log") return;
@@ -2309,38 +2354,13 @@ function AppView({
     }
     try {
       saveInFlightRef.current = true;
-      let payload = draft;
-      if (payload && typeof payload === "object") {
-        payload = { ...payload };
-        for (const [fieldId, field] of Object.entries(fieldIndex || {})) {
-          if (field?.type === "number" && typeof payload[fieldId] === "string") {
-            const normalized = payload[fieldId].replace(/,/g, "").trim();
-            if (normalized === "" || normalized === "-" || normalized === "." || normalized === "-.") {
-              payload[fieldId] = null;
-            } else {
-              const parsed = Number(normalized);
-              if (Number.isFinite(parsed)) payload[fieldId] = parsed;
-            }
-          }
-          if (field?.type === "tags" && typeof payload[fieldId] === "string") {
-            payload[fieldId] = payload[fieldId]
-              .split(",")
-              .map((t) => t.trim())
-              .filter(Boolean);
-          }
-          if (field?.type === "users" && typeof payload[fieldId] === "string") {
-            payload[fieldId] = payload[fieldId]
-              .split(",")
-              .map((t) => t.trim())
-              .filter(Boolean);
-          }
-        }
-      }
+      const payload = normalizeManifestRecordPayload(fieldIndex, draft);
       if (previewMode && previewStore) {
         if (effectiveRecordId) {
           const updated = previewStore.upsert(recordEntityId, effectiveRecordId, payload);
           setInitialDraft(updated?.record || payload);
-          pushToast("success", "Saved (local preview)");
+          clearFormDraftSnapshot(formDraftStorageKey);
+          pushToast("success", translateRuntime("common.saved_local_preview"));
         } else {
           const created = previewStore.upsert(recordEntityId, null, payload);
           const newId = created?.record_id;
@@ -2353,7 +2373,8 @@ function AppView({
             }
           }
           setInitialDraft(created?.record || payload);
-          pushToast("success", "Created (local preview)");
+          clearFormDraftSnapshot(formDraftStorageKey);
+          pushToast("success", translateRuntime("common.created_local_preview"));
         }
       } else if (effectiveRecordId) {
         const res = await apiFetch(`/records/${recordEntityId}/${effectiveRecordId}`, {
@@ -2363,7 +2384,8 @@ function AppView({
         const savedRecord = applyDraftComputed(res?.record || payload);
         setDraft(savedRecord);
         setInitialDraft(savedRecord);
-        pushToast("success", "Saved");
+        clearFormDraftSnapshot(formDraftStorageKey);
+        pushToast("success", translateRuntime("common.saved"));
       } else {
         const res = await apiFetch(`/records/${recordEntityId}`, {
           method: "POST",
@@ -2384,14 +2406,15 @@ function AppView({
             });
           }
           clearPendingMaterialGate();
+          clearFormDraftSnapshot(formDraftStorageKey);
           const timeEntryFormTarget = normalizeTarget(resolveEntityDefaultFormPage(appDefaults, "entity.time_entry"));
           if (timeEntryFormTarget) {
             onNavigate(timeEntryFormTarget, { recordId: pendingMaterialGate.timeEntryId, preserveParams: true });
           }
           if (closeResult) {
-            pushToast("success", "Material logged and time entry closed");
+            pushToast("success", translateRuntime("common.material_logged_and_closed"));
           } else {
-            pushToast("success", "Material logged. Finish clock-out on the time entry.");
+            pushToast("success", translateRuntime("common.material_logged_finish_clockout"));
           }
           setInitialDraft(payload);
           return;
@@ -2404,11 +2427,12 @@ function AppView({
             onNavigate(`view:${view.id}`, { recordId: newId });
           }
         }
-        pushToast("success", "Created");
+        clearFormDraftSnapshot(formDraftStorageKey);
+        pushToast("success", translateRuntime("common.created"));
         setInitialDraft(payload);
       }
     } catch (err) {
-      pushToast("error", err.message || "Save failed");
+      pushToast("error", err.message || translateRuntime("common.save_failed"));
     } finally {
       saveInFlightRef.current = false;
       if (pendingAutoSaveRef.current) {
@@ -2423,14 +2447,6 @@ function AppView({
     }
   }
 
-  const isDirty = useMemo(() => {
-    try {
-      return JSON.stringify(draft || {}) !== JSON.stringify(initialDraft || {});
-    } catch {
-      return true;
-    }
-  }, [draft, initialDraft]);
-
   const refreshCurrentRecord = useCallback(async () => {
     if (!recordEntityId || !effectiveRecordId || previewMode) return;
     try {
@@ -2443,20 +2459,49 @@ function AppView({
     }
   }, [recordEntityId, effectiveRecordId, previewMode, applyDraftComputed]);
 
+  useEffect(() => {
+    if (kind !== "form" || previewMode || !formDraftStorageKey) return;
+    if (!isDirty) {
+      clearFormDraftSnapshot(formDraftStorageKey);
+      return;
+    }
+    saveFormDraftSnapshot(formDraftStorageKey, {
+      dirty: true,
+      draft,
+      initialDraft,
+      updatedAt: Date.now(),
+    });
+  }, [kind, previewMode, formDraftStorageKey, isDirty, draft, initialDraft]);
+
+  useEffect(() => {
+    if (kind !== "form" || previewMode || !isDirty) return undefined;
+    const onBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [kind, previewMode, isDirty]);
+
   async function handleDiscard() {
     if (!effectiveRecordId) {
       if (isDirty) {
         if (!onConfirm) return;
-        const ok = await onConfirm({ title: "Discard new record?", body: "This will lose any unsaved changes." });
+        const ok = await onConfirm({
+          title: translateRuntime("common.discard_new_record"),
+          body: translateRuntime("common.discard_new_record_body"),
+        });
         if (!ok) return;
       }
       const listTarget = resolveEntityDefaultHomePage(appDefaults, entityFullId) || (listViewId ? `view:${listViewId}` : null);
       if (listTarget) {
+        clearFormDraftSnapshot(formDraftStorageKey);
         onNavigate?.(listTarget, { preserveParams: true });
         return;
       }
     }
     setDraft(initialDraft || {});
+    clearFormDraftSnapshot(formDraftStorageKey);
     setShowValidation(false);
   }
 
@@ -2584,7 +2629,7 @@ function AppView({
     if (state.status === "running") {
       return (
         <div className="space-y-2">
-          <div className="text-xs opacity-60">Loading list…</div>
+          <div className="text-xs opacity-60">{translateRuntime("common.loading_list")}</div>
           <ListViewRenderer
             view={view}
             fieldIndex={fieldIndex}
@@ -2653,7 +2698,10 @@ function AppView({
     async function handleBulkDelete() {
       if (!recordEntityId || selectedIds.length === 0) return;
       if (!onConfirm) return;
-      const ok = await onConfirm({ title: "Delete records", body: `Delete ${selectedIds.length} record(s)?` });
+      const ok = await onConfirm({
+        title: translateRuntime("common.delete_records"),
+        body: translateRuntime("common.delete_records_body", { count: selectedIds.length }),
+      });
       if (!ok) return;
       const deletingIds = [...selectedIds];
       setRecords((prev) => prev.filter((row) => !deletingIds.includes(row.record_id)));
@@ -2662,11 +2710,11 @@ function AppView({
         await Promise.all(
           deletingIds.map((rid) => deleteRecord(recordEntityId, rid))
         );
-        pushToast({ type: "success", message: `Deleted ${deletingIds.length} record(s)` });
+        pushToast({ type: "success", message: translateRuntime("common.app_shell.deleted_records_count", { count: deletingIds.length }) });
         onRefresh?.();
       } catch (err) {
         onRefresh?.();
-        pushToast({ type: "error", message: err?.message || "Bulk delete failed" });
+        pushToast({ type: "error", message: err?.message || translateRuntime("common.app_shell.bulk_delete_failed") });
       }
     }
 
@@ -2812,7 +2860,7 @@ function AppView({
             <div className="flex items-center gap-2 min-w-[10rem] justify-end">
               {canWriteRecords && selectedIds.length > 0 && (
                 <button className={SOFT_BUTTON_SM} onClick={handleBulkDelete}>
-                  Delete ({selectedIds.length})
+                  {translateRuntime("common.delete_count", { count: selectedIds.length })}
                 </button>
               )}
               {bulkActions.length > 0 && selectedIds.length > 0 && (

@@ -1,0 +1,415 @@
+{
+  "module": {
+    "name": "Citaten",
+    "description": "Offerteworkflow van prijsstelling en klantgoedkeuring tot orderconversie."
+  },
+  "navigation": {
+    "biz_quote_list_page": "Citaten",
+    "biz_quote_draft_page": "Diepgang",
+    "biz_quote_sent_page": "Verzonden",
+    "biz_quote_ready_to_convert_page": "Klaar om te converteren"
+  },
+  "entities": {
+    "biz_quote": {
+      "label": "Citaat",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "quote_number": {
+          "label": "Citaatnummer"
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "draft": "Diepgang",
+            "sent": "Verzonden",
+            "accepted": "Geaccepteerd",
+            "lost": "Verloren",
+            "expired": "Verlopen"
+          }
+        },
+        "quote_date": {
+          "label": "Offertedatum"
+        },
+        "expiry_date": {
+          "label": "Vervaldatum"
+        },
+        "sales_entity": {
+          "label": "Verkoopentiteit",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "customer_id": {
+          "label": "Klant"
+        },
+        "customer_contact_name": {
+          "label": "Klantcontact"
+        },
+        "customer_reference": {
+          "label": "Klantreferentie"
+        },
+        "currency": {
+          "label": "Valuta",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "sales_owner": {
+          "label": "Verkoop eigenaar"
+        },
+        "follow_up_date": {
+          "label": "Vervolgdatum"
+        },
+        "payment_terms": {
+          "label": "Betalingsvoorwaarden"
+        },
+        "incoterm": {
+          "label": "Incoterm"
+        },
+        "shipping_terms": {
+          "label": "Verzendvoorwaarden"
+        },
+        "validity_notes": {
+          "label": "Geldigheid opmerkingen"
+        },
+        "loss_reason": {
+          "label": "Reden van verlies/vervaldatum"
+        },
+        "internal_notes": {
+          "label": "Interne opmerkingen"
+        },
+        "customer_notes": {
+          "label": "Klantnotities"
+        },
+        "pdf_template_name": {
+          "label": "Naam van PDF-sjabloon"
+        },
+        "linked_customer_order_id": {
+          "label": "Gekoppelde bestelling"
+        },
+        "linked_customer_order_number": {
+          "label": "Gekoppelde bestelling"
+        },
+        "subtotal": {
+          "label": "Subtotaal"
+        },
+        "discount_total": {
+          "label": "Korting Totaal"
+        },
+        "tax_total": {
+          "label": "Belasting Totaal"
+        },
+        "grand_total": {
+          "label": "Algemeen totaal"
+        },
+        "estimated_buy_total": {
+          "label": "Geschat aankooptotaal"
+        },
+        "estimated_margin_amount": {
+          "label": "Geschat margebedrag"
+        },
+        "estimated_margin_percent": {
+          "label": "Geschatte marge%"
+        }
+      }
+    },
+    "biz_quote_line": {
+      "label": "Citaatregel",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "quote_id": {
+          "label": "Citaat"
+        },
+        "line_type": {
+          "label": "Lijntype",
+          "options": {
+            "catalogue": "Catalogus",
+            "custom": "Aangepast"
+          }
+        },
+        "product_id": {
+          "label": "Product"
+        },
+        "description": {
+          "label": "Beschrijving"
+        },
+        "sales_entity_snapshot": {
+          "label": "Momentopname van de verkoopentiteit",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "currency_snapshot": {
+          "label": "Valutamomentopname",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "uom": {
+          "label": "UOM",
+          "options": {
+            "ea": "Elk",
+            "set": "Instellen",
+            "kit": "Kit",
+            "lot": "Veel",
+            "pallet": "Pallet",
+            "container": "Houder",
+            "m": "Meter"
+          }
+        },
+        "quantity": {
+          "label": "Aantal"
+        },
+        "unit_price": {
+          "label": "Eenheidsprijs"
+        },
+        "line_discount_percent": {
+          "label": "Korting %"
+        },
+        "line_total": {
+          "label": "Lijntotaal"
+        },
+        "default_buy_price_snapshot": {
+          "label": "Koop prijsmomentopname"
+        },
+        "buy_currency_snapshot": {
+          "label": "Koop valutamomentopname",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "buy_total": {
+          "label": "Koop Totaal"
+        },
+        "estimated_margin_amount": {
+          "label": "Geschat margebedrag"
+        },
+        "estimated_margin_percent": {
+          "label": "Geschatte marge%"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_quote_new": {
+      "label": "Nieuw citaat"
+    },
+    "action_quote_mark_sent": {
+      "label": "Markeer verzonden",
+      "confirm": {
+        "title": "Offerte markeren als verzonden?"
+      }
+    },
+    "action_quote_mark_accepted": {
+      "label": "Markeer geaccepteerd",
+      "confirm": {
+        "title": "Offerte als geaccepteerd markeren?"
+      }
+    },
+    "action_quote_convert_to_order": {
+      "label": "Orde creëren",
+      "confirm": {
+        "title": "Bestelling maken vanuit offerte?"
+      }
+    },
+    "action_quote_open_lost_modal": {
+      "label": "Merk verloren"
+    },
+    "action_quote_open_expired_modal": {
+      "label": "Markeer verlopen"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Zoek citaten..."
+      },
+      "filters": {
+        "open": {
+          "label": "Citaten openen"
+        },
+        "draft": {
+          "label": "Concept-offertes"
+        },
+        "sent": {
+          "label": "Verzonden offertes"
+        },
+        "accepted": {
+          "label": "Geaccepteerde offertes"
+        },
+        "ready_to_convert": {
+          "label": "Klaar om te converteren"
+        },
+        "expired": {
+          "label": "Verlopen offertes"
+        },
+        "lost": {
+          "label": "Verloren citaten"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Citaat"
+        },
+        "lines": {
+          "title": "Lijnen"
+        },
+        "totals": {
+          "title": "Totalen"
+        },
+        "profitability": {
+          "title": "Winstgevendheid"
+        },
+        "notes": {
+          "title": "Opmerkingen en voorwaarden"
+        },
+        "main": {
+          "title": "Citaatregel"
+        }
+      }
+    }
+  },
+  "modals": {
+    "quote_mark_lost": {
+      "title": "Markeer citaat verloren",
+      "description": "Leg vast waarom de offerte verloren is gegaan voordat u deze uit de actieve pijplijn verwijdert.",
+      "actions": {
+        "update_record": {
+          "label": "Merk verloren"
+        },
+        "close_modal": {
+          "label": "Sluiten"
+        }
+      }
+    },
+    "quote_mark_expired": {
+      "title": "Citaat als verlopen markeren",
+      "description": "Leg de vervaldatum vast voordat u deze koers uit de live pijplijn sluit.",
+      "actions": {
+        "update_record": {
+          "label": "Markeer verlopen"
+        },
+        "close_modal": {
+          "label": "Sluiten"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Citaten",
+      "header": {
+        "actions": {
+          "navigate": {
+            "label": "Nieuw citaat"
+          }
+        }
+      },
+      "blocks": {
+        "1": {
+          "cards": {
+            "quote_open_count": {
+              "label": "Citaten openen",
+              "subtitle": "Pijplijn opstellen en verzenden"
+            },
+            "quote_ready_to_convert_count": {
+              "label": "Klaar om te converteren",
+              "subtitle": "Nog zonder bestelling geaccepteerd"
+            },
+            "quote_sent_count": {
+              "label": "In afwachting van besluit",
+              "subtitle": "Verzonden naar klant"
+            },
+            "quote_exception_count": {
+              "label": "Uitzonderingen",
+              "subtitle": "Verloren en verlopen"
+            }
+          }
+        }
+      }
+    },
+    "draft_page": {
+      "title": "Concept-offertes"
+    },
+    "sent_page": {
+      "title": "Verzonden offertes"
+    },
+    "ready_to_convert_page": {
+      "title": "Klaar om te converteren"
+    },
+    "form_page": {
+      "title": "Citaat"
+    }
+  },
+  "workflows": {
+    "quote_status_workflow": {
+      "states": {
+        "draft": {
+          "label": "Diepgang"
+        },
+        "sent": {
+          "label": "Verzonden"
+        },
+        "accepted": {
+          "label": "Geaccepteerd"
+        },
+        "lost": {
+          "label": "Verloren"
+        },
+        "expired": {
+          "label": "Verlopen"
+        }
+      },
+      "transitions": {
+        "draft_sent": {
+          "label": "Offerte verzenden"
+        },
+        "sent_accepted": {
+          "label": "Markeer geaccepteerd"
+        },
+        "draft_lost": {
+          "label": "Merk verloren"
+        },
+        "sent_lost": {
+          "label": "Merk verloren"
+        },
+        "sent_expired": {
+          "label": "Markeer verlopen"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "quote_created": "Offerte gemaakt",
+    "quote_updated": "Citaat bijgewerkt",
+    "quote_line_created": "Offerteregel gemaakt",
+    "quote_line_updated": "Offerteregel bijgewerkt",
+    "quote_status_changed": "Offertestatus gewijzigd",
+    "new_quote_clicked": "Er is op Nieuwe offerte geklikt",
+    "mark_sent_clicked": "Markeer verzonden klikte",
+    "mark_accepted_clicked": "Markeren als geaccepteerd heeft geklikt",
+    "create_order_clicked": "Bestelling maken klikte",
+    "mark_lost_clicked": "Mark Lost klikte",
+    "mark_expired_clicked": "Markeer Verlopen klikte"
+  },
+  "dashboard": {
+    "quotes_by_status": "Citaten op status"
+  }
+}

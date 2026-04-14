@@ -1,13 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import useMediaQuery from "../hooks/useMediaQuery.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 export default function UserMenu({ user, onSignOut }) {
+  const { t } = useI18n();
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [open, setOpen] = useState(false);
   const panelRef = useRef(null);
-  const email = user?.email || "Account";
-  const compact = user?.email ? user.email.split("@")[0] : "Account";
+  const email = user?.email || t("settings.account_title");
+  const compact = user?.email ? user.email.split("@")[0] : t("settings.account_title");
 
   useEffect(() => {
     if (!open || isMobile) return undefined;
@@ -46,8 +48,8 @@ export default function UserMenu({ user, onSignOut }) {
       </button>
       {open && !isMobile && (
         <ul className="absolute right-0 mt-2 menu p-2 shadow bg-base-100 rounded-box w-56 z-50">
-          <li><Link to="/settings" onClick={() => setOpen(false)}>Settings</Link></li>
-          <li><button onClick={onSignOut}>Sign out</button></li>
+          <li><Link to="/settings" onClick={() => setOpen(false)}>{t("navigation.settings")}</Link></li>
+          <li><button onClick={onSignOut}>{t("settings.sign_out")}</button></li>
         </ul>
       )}
       {open && isMobile && (
@@ -55,7 +57,7 @@ export default function UserMenu({ user, onSignOut }) {
           <button
             type="button"
             className="absolute inset-0 bg-base-content/35"
-            aria-label="Close account menu"
+            aria-label={t("common.close")}
             onClick={() => setOpen(false)}
           />
           <div className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4">
@@ -70,14 +72,14 @@ export default function UserMenu({ user, onSignOut }) {
                 className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
                 onClick={() => setOpen(false)}
               >
-                Settings
+                {t("navigation.settings")}
               </Link>
               <button
                 type="button"
                 className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200"
                 onClick={onSignOut}
               >
-                Sign out
+                {t("settings.sign_out")}
               </button>
             </div>
           </div>

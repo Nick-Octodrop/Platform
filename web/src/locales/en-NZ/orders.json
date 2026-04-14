@@ -1,0 +1,458 @@
+{
+  "module": {
+    "name": "Orders",
+    "description": "Accepted customer orders after quote approval, with procurement and invoice links."
+  },
+  "navigation": {
+    "biz_order_list_page": "Orders",
+    "biz_order_in_production_page": "In Production",
+    "biz_order_ready_to_invoice_page": "Ready To Invoice",
+    "biz_order_on_hold_page": "On Hold",
+    "biz_order_completed_page": "Completed"
+  },
+  "entities": {
+    "biz_order": {
+      "label": "Order",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "order_number": {
+          "label": "Order Number"
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "draft": "Draft",
+            "confirmed": "Confirmed",
+            "on_hold": "On Hold",
+            "in_production": "In Production",
+            "shipped": "Shipped",
+            "completed": "Completed",
+            "cancelled": "Cancelled"
+          }
+        },
+        "customer_id": {
+          "label": "Customer"
+        },
+        "source_quote_id": {
+          "label": "Source Quote"
+        },
+        "source_quote_number": {
+          "label": "Source Quote"
+        },
+        "sales_entity": {
+          "label": "Sales Entity",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "order_date": {
+          "label": "Order Date"
+        },
+        "currency": {
+          "label": "Currency",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "customer_reference": {
+          "label": "Customer Reference"
+        },
+        "delivery_terms": {
+          "label": "Delivery Terms"
+        },
+        "shipping_destination": {
+          "label": "Shipping Destination"
+        },
+        "requested_delivery_date": {
+          "label": "Requested Delivery Date"
+        },
+        "notes": {
+          "label": "Notes"
+        },
+        "hold_reason": {
+          "label": "On Hold Reason"
+        },
+        "cancellation_reason": {
+          "label": "Cancellation Reason"
+        },
+        "status_before_hold": {
+          "label": "Previous Status"
+        },
+        "primary_purchase_order_id": {
+          "label": "Primary Purchase Order"
+        },
+        "preferred_supplier_id": {
+          "label": "Preferred Supplier"
+        },
+        "deposit_percent": {
+          "label": "Deposit %"
+        },
+        "deposit_invoice_id": {
+          "label": "Deposit Invoice"
+        },
+        "final_invoice_id": {
+          "label": "Final Invoice"
+        },
+        "order_total": {
+          "label": "Order Total"
+        },
+        "invoiced_total": {
+          "label": "Invoiced Total"
+        },
+        "balance_to_invoice": {
+          "label": "Balance to Invoice"
+        },
+        "estimated_buy_total": {
+          "label": "Estimated Buy Total"
+        },
+        "estimated_margin_amount": {
+          "label": "Estimated Margin Amount"
+        },
+        "estimated_margin_percent": {
+          "label": "Estimated Margin %"
+        }
+      }
+    },
+    "biz_order_line": {
+      "label": "Order Line",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "customer_order_id": {
+          "label": "Order"
+        },
+        "product_id": {
+          "label": "Product"
+        },
+        "description": {
+          "label": "Description"
+        },
+        "sales_entity_snapshot": {
+          "label": "Sales Entity Snapshot",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "currency_snapshot": {
+          "label": "Currency Snapshot",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "uom": {
+          "label": "UOM",
+          "options": {
+            "ea": "Each",
+            "set": "Set",
+            "kit": "Kit",
+            "lot": "Lot",
+            "pallet": "Pallet",
+            "container": "Container",
+            "m": "Meter"
+          }
+        },
+        "quantity": {
+          "label": "Qty"
+        },
+        "unit_price": {
+          "label": "Unit Price"
+        },
+        "line_total": {
+          "label": "Line Total"
+        },
+        "unit_cost_snapshot": {
+          "label": "Unit Cost Snapshot"
+        },
+        "buy_total": {
+          "label": "Buy Total"
+        },
+        "source_quote_line_ref": {
+          "label": "Source Quote Line Ref"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_customer_order_new": {
+      "label": "New Order"
+    },
+    "action_customer_order_confirm": {
+      "label": "Confirm Order",
+      "confirm": {
+        "title": "Confirm order?"
+      }
+    },
+    "action_customer_order_open_hold_modal": {
+      "label": "Put On Hold"
+    },
+    "action_customer_order_resume": {
+      "label": "Resume Order"
+    },
+    "action_customer_order_mark_in_production": {
+      "label": "Mark In Production"
+    },
+    "action_customer_order_mark_shipped": {
+      "label": "Mark Shipped"
+    },
+    "action_customer_order_mark_completed": {
+      "label": "Mark Completed"
+    },
+    "action_customer_order_open_cancel_modal": {
+      "label": "Cancel Order"
+    },
+    "action_customer_order_create_purchase_order": {
+      "label": "Raise Purchase Order",
+      "confirm": {
+        "title": "Raise purchase order?"
+      }
+    },
+    "action_customer_order_create_deposit_invoice": {
+      "label": "Raise Deposit Invoice",
+      "confirm": {
+        "title": "Raise deposit invoice?"
+      }
+    },
+    "action_customer_order_create_final_invoice": {
+      "label": "Raise Final Invoice",
+      "confirm": {
+        "title": "Raise final invoice?"
+      }
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Search orders..."
+      },
+      "filters": {
+        "active": {
+          "label": "Active Orders"
+        },
+        "draft": {
+          "label": "Draft Orders"
+        },
+        "confirmed": {
+          "label": "Confirmed Orders"
+        },
+        "in_production": {
+          "label": "In Production"
+        },
+        "on_hold": {
+          "label": "On Hold"
+        },
+        "shipped": {
+          "label": "Shipped Orders"
+        },
+        "completed": {
+          "label": "Completed Orders"
+        },
+        "ready_to_invoice": {
+          "label": "Ready To Invoice"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Order"
+        },
+        "commercials": {
+          "title": "Commercials"
+        },
+        "related": {
+          "title": "Related Records"
+        },
+        "profitability": {
+          "title": "Profitability"
+        },
+        "notes": {
+          "title": "Notes"
+        },
+        "lines": {
+          "title": "Order Lines"
+        },
+        "main": {
+          "title": "Order Line"
+        }
+      }
+    }
+  },
+  "modals": {
+    "customer_order_hold": {
+      "title": "Put Order On Hold",
+      "description": "Capture why execution is being paused.",
+      "actions": {
+        "update_record": {
+          "label": "Put On Hold"
+        },
+        "close_modal": {
+          "label": "Close"
+        }
+      }
+    },
+    "customer_order_cancel": {
+      "title": "Cancel Order",
+      "description": "Capture why this order is being cancelled.",
+      "actions": {
+        "update_record": {
+          "label": "Cancel Order"
+        },
+        "close_modal": {
+          "label": "Close"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Orders",
+      "header": {
+        "actions": {
+          "navigate": {
+            "label": "New Order"
+          }
+        }
+      },
+      "blocks": {
+        "1": {
+          "cards": {
+            "customer_orders_confirmed_count": {
+              "label": "Confirmed",
+              "subtitle": "Ready for fulfilment"
+            },
+            "customer_orders_in_production_count": {
+              "label": "In Production",
+              "subtitle": "Being prepared with suppliers"
+            },
+            "customer_orders_ready_to_invoice_count": {
+              "label": "Ready To Invoice",
+              "subtitle": "Shipped or completed without final invoice"
+            },
+            "customer_orders_completed_count": {
+              "label": "Completed",
+              "subtitle": "Closed orders"
+            }
+          }
+        }
+      }
+    },
+    "in_production_page": {
+      "title": "Orders In Production"
+    },
+    "ready_to_invoice_page": {
+      "title": "Orders Ready To Invoice"
+    },
+    "on_hold_page": {
+      "title": "Orders On Hold"
+    },
+    "completed_page": {
+      "title": "Completed Orders"
+    },
+    "form_page": {
+      "title": "Order"
+    }
+  },
+  "workflows": {
+    "customer_order_status_workflow": {
+      "states": {
+        "draft": {
+          "label": "Draft"
+        },
+        "confirmed": {
+          "label": "Confirmed"
+        },
+        "on_hold": {
+          "label": "On Hold"
+        },
+        "in_production": {
+          "label": "In Production"
+        },
+        "shipped": {
+          "label": "Shipped"
+        },
+        "completed": {
+          "label": "Completed"
+        },
+        "cancelled": {
+          "label": "Cancelled"
+        }
+      },
+      "transitions": {
+        "draft_confirmed": {
+          "label": "Confirm Order"
+        },
+        "confirmed_on_hold": {
+          "label": "Put On Hold"
+        },
+        "confirmed_in_production": {
+          "label": "Start Production"
+        },
+        "in_production_on_hold": {
+          "label": "Put On Hold"
+        },
+        "in_production_shipped": {
+          "label": "Mark Shipped"
+        },
+        "shipped_on_hold": {
+          "label": "Put On Hold"
+        },
+        "shipped_completed": {
+          "label": "Complete Order"
+        },
+        "on_hold_confirmed": {
+          "label": "Resume to Confirmed"
+        },
+        "on_hold_in_production": {
+          "label": "Resume to Production"
+        },
+        "on_hold_shipped": {
+          "label": "Resume to Shipped"
+        },
+        "draft_cancelled": {
+          "label": "Cancel Order"
+        },
+        "confirmed_cancelled": {
+          "label": "Cancel Order"
+        },
+        "in_production_cancelled": {
+          "label": "Cancel Order"
+        },
+        "on_hold_cancelled": {
+          "label": "Cancel Order"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "order_created": "Order created",
+    "order_updated": "Order updated",
+    "order_line_created": "Order Line created",
+    "order_line_updated": "Order Line updated",
+    "order_status_changed": "Order status changed",
+    "new_order_clicked": "New Order clicked",
+    "confirm_order_clicked": "Confirm Order clicked",
+    "put_on_hold_clicked": "Put On Hold clicked",
+    "resume_order_clicked": "Resume Order clicked",
+    "mark_in_production_clicked": "Mark In Production clicked",
+    "mark_shipped_clicked": "Mark Shipped clicked",
+    "mark_completed_clicked": "Mark Completed clicked",
+    "cancel_order_clicked": "Cancel Order clicked",
+    "raise_purchase_order_clicked": "Raise Purchase Order clicked",
+    "raise_deposit_invoice_clicked": "Raise Deposit Invoice clicked",
+    "raise_final_invoice_clicked": "Raise Final Invoice clicked"
+  },
+  "dashboard": {
+    "orders_by_status": "Orders by Status"
+  }
+}

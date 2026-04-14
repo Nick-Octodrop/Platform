@@ -1,0 +1,139 @@
+{
+  "module": {
+    "name": "Produits",
+    "description": "Articles du catalogue de produits pour les devis et les achats fournisseurs."
+  },
+  "navigation": {
+    "biz_product_list_page": "Produits"
+  },
+  "entities": {
+    "biz_product": {
+      "label": "Produit",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "code": {
+          "label": "Coder"
+        },
+        "name": {
+          "label": "Nom"
+        },
+        "description": {
+          "label": "Descriptif"
+        },
+        "category": {
+          "label": "Catégorie"
+        },
+        "uom": {
+          "label": "UOM",
+          "options": {
+            "ea": "Chacun",
+            "set": "Ensemble",
+            "kit": "Trousse",
+            "lot": "Beaucoup",
+            "pallet": "Palette",
+            "container": "Conteneur",
+            "m": "Compteur"
+          }
+        },
+        "default_sales_currency": {
+          "label": "Devise de vente",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "default_sales_price": {
+          "label": "Prix de vente"
+        },
+        "default_purchase_currency": {
+          "label": "Devise d'achat",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "default_buy_price": {
+          "label": "Prix d'achat"
+        },
+        "preferred_supplier_id": {
+          "label": "Fournisseur préféré"
+        },
+        "supplier_factory_reference": {
+          "label": "Fournisseur / Réf. Usine"
+        },
+        "internal_notes": {
+          "label": "Notes internes"
+        },
+        "is_active": {
+          "label": "Actif"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_product_new": {
+      "label": "Nouveau produit"
+    },
+    "action_product_activate": {
+      "label": "Activer"
+    },
+    "action_product_deactivate": {
+      "label": "Désactiver"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Rechercher des produits..."
+      },
+      "filters": {
+        "active": {
+          "label": "Produits actifs"
+        },
+        "inactive": {
+          "label": "Produits inactifs"
+        },
+        "eur_sales": {
+          "label": "Articles de vente en EUR"
+        },
+        "usd_sales": {
+          "label": "Articles de vente en USD"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "core": {
+          "title": "Catalogue de produits"
+        },
+        "pricing": {
+          "title": "Tarifs"
+        },
+        "purchasing": {
+          "title": "Notes d'achat"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Produits"
+    },
+    "form_page": {
+      "title": "Produit"
+    }
+  },
+  "triggers": {
+    "product_created": "Produit créé",
+    "product_updated": "Produit mis à jour",
+    "new_product_clicked": "Nouveau produit cliqué",
+    "activate_clicked": "Activer cliqué",
+    "deactivate_clicked": "Désactiver cliqué"
+  }
+}

@@ -5,6 +5,7 @@
 ### `te_catalog.json`
 - Product master records for the Shopify-facing catalog
 - Product forms designed as operational work surfaces with clean pricing, Shopify, notes, and activity structure
+- Products now support retail sell pricing in NZD alongside separate buy-side pricing, FX conversion into NZD, landed-cost overrides, gross margin visibility, and manual stock controls
 - Supplier-linked product pricing now lives in `te_sourcing` to keep module installs clean and avoid circular dependencies
 
 ### `te_suppliers.json`
@@ -13,12 +14,14 @@
 
 ### `te_sourcing.json`
 - Supplier-linked product offers with structured supplier SKU, URL, lead time, currency, and cost
+- Supplier offers now support FX-to-NZD conversion so USD supplier quotes can be compared more cleanly against NZD retail pricing
 - Dedicated sourcing boundary between products and suppliers
 - Created as a small support module to avoid circular dependencies between `te_catalog` and `te_suppliers`
 
 ### `te_purchasing.json`
 - Purchase orders with a real statusbar workflow: `draft -> placed -> received / cancelled`
 - Supplier-aware purchase order lines filtered to compatible supplier-linked products
+- Purchase order lines now support ordered, received, and open quantity tracking for a cleaner operational bridge into stock control
 - Line items in their own tab, notes/documents in their own tab, activity enabled, cancellation modal included
 - Currency-aware totals and landed-cost estimate
 
@@ -49,7 +52,7 @@
 - `te_sales`
   - Shopify order operations, customer orders, fulfilment state, margin visibility
 - `te_inventory`
-  - Receiving, stock on hand, adjustments, and simple inventory movement history
+  - Receiving, stock on hand automation, adjustments, and simple inventory movement history
 - `te_documents`
   - More formal document templates and generation flows if purchase/supplier paperwork needs to become structured
 - `te_sync`

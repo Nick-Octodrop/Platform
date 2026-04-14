@@ -8,16 +8,11 @@ import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
-
-const AVAILABLE_SCOPES = [
-  { id: "meta.read", label: "Metadata Read", help: "List entities and field metadata." },
-  { id: "records.read", label: "Records Read", help: "Read records through the external API." },
-  { id: "records.write", label: "Records Write", help: "Create and update records through the external API." },
-  { id: "automations.read", label: "Automations Read", help: "List published automations." },
-  { id: "automations.write", label: "Automations Write", help: "Trigger published automations." },
-];
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 function CredentialModal({
+  t,
+  availableScopes,
   name,
   setName,
   scopes,
@@ -35,39 +30,37 @@ function CredentialModal({
   return (
     <div className="modal modal-open">
       <div className="modal-box max-w-2xl">
-        <h3 className="text-lg font-semibold">Create API Credential</h3>
-        <p className="mt-1 text-sm opacity-70">
-          Create a scoped API key for a third-party system. The raw token is shown once after creation.
-        </p>
+        <h3 className="text-lg font-semibold">{t("settings.api_credentials.create_title")}</h3>
+        <p className="mt-1 text-sm opacity-70">{t("settings.api_credentials.create_description")}</p>
 
         <div className="mt-5 space-y-4">
           <label className="form-control">
-            <span className="label-text text-sm">Name</span>
+            <span className="label-text text-sm">{t("settings.api_credentials.name")}</span>
             <input
               className="input input-bordered"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="Shopify sync worker"
+              placeholder={t("settings.api_credentials.name_placeholder")}
               disabled={saving}
             />
           </label>
 
           <label className="form-control">
-            <span className="label-text text-sm">Expires In Days</span>
+            <span className="label-text text-sm">{t("settings.api_credentials.expires_in_days")}</span>
             <input
               className="input input-bordered"
               value={expiresInDays}
               onChange={(event) => setExpiresInDays(event.target.value)}
-              placeholder="Leave blank for no expiry"
+              placeholder={t("settings.api_credentials.no_expiry_placeholder")}
               disabled={saving}
             />
-            <span className="label-text-alt mt-1 opacity-70">Optional. Use this for vendor keys or short-lived rollout credentials.</span>
+            <span className="label-text-alt mt-1 opacity-70">{t("settings.api_credentials.expires_help")}</span>
           </label>
 
           <div className="space-y-2">
-            <div className="text-sm font-medium">Scopes</div>
+            <div className="text-sm font-medium">{t("settings.api_credentials.scopes_title")}</div>
             <div className="space-y-2">
-              {AVAILABLE_SCOPES.map((scope) => (
+              {availableScopes.map((scope) => (
                 <label key={scope.id} className="flex items-start gap-3 rounded-box border border-base-300 p-3">
                   <input
                     type="checkbox"
@@ -88,10 +81,10 @@ function CredentialModal({
 
         <div className="modal-action">
           <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={saving}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button type="button" className="btn btn-primary" onClick={onConfirm} disabled={saving || !name.trim()}>
-            {saving ? "Creating..." : "Create Key"}
+            {saving ? t("settings.api_credentials.creating") : t("settings.api_credentials.create_key")}
           </button>
         </div>
       </div>
@@ -99,12 +92,12 @@ function CredentialModal({
   );
 }
 
-function TokenModal({ token, onClose }) {
+function TokenModal({ t, token, onClose }) {
   return (
     <div className="modal modal-open">
       <div className="modal-box max-w-2xl">
-        <h3 className="text-lg font-semibold">Copy API Key Now</h3>
-        <p className="mt-1 text-sm opacity-70">This is the only time the full token is shown. Store it now.</p>
+        <h3 className="text-lg font-semibold">{t("settings.api_credentials.copy_title")}</h3>
+        <p className="mt-1 text-sm opacity-70">{t("settings.api_credentials.copy_description")}</p>
         <textarea className="textarea textarea-bordered mt-4 min-h-[8rem] w-full font-mono text-sm" readOnly value={token} />
         <div className="modal-action">
           <button
@@ -118,10 +111,10 @@ function TokenModal({ token, onClose }) {
               }
             }}
           >
-            Copy
+            {t("common.copy")}
           </button>
           <button type="button" className="btn btn-primary" onClick={onClose}>
-            Done
+            {t("common.done")}
           </button>
         </div>
       </div>
@@ -130,6 +123,7 @@ function TokenModal({ token, onClose }) {
 }
 
 export default function SettingsApiCredentialsPage() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const { pushToast } = useToast();
   const [items, setItems] = useState([]);
@@ -150,6 +144,17 @@ export default function SettingsApiCredentialsPage() {
   const [createdToken, setCreatedToken] = useState("");
   const [createdCredentialId, setCreatedCredentialId] = useState("");
 
+  const availableScopes = useMemo(
+    () => [
+      { id: "meta.read", label: t("settings.api_credentials.scopes.meta_read.label"), help: t("settings.api_credentials.scopes.meta_read.help") },
+      { id: "records.read", label: t("settings.api_credentials.scopes.records_read.label"), help: t("settings.api_credentials.scopes.records_read.help") },
+      { id: "records.write", label: t("settings.api_credentials.scopes.records_write.label"), help: t("settings.api_credentials.scopes.records_write.help") },
+      { id: "automations.read", label: t("settings.api_credentials.scopes.automations_read.label"), help: t("settings.api_credentials.scopes.automations_read.help") },
+      { id: "automations.write", label: t("settings.api_credentials.scopes.automations_write.label"), help: t("settings.api_credentials.scopes.automations_write.help") },
+    ],
+    [t],
+  );
+
   async function load() {
     setLoading(true);
     setError("");
@@ -158,7 +163,7 @@ export default function SettingsApiCredentialsPage() {
       setItems(Array.isArray(response?.api_credentials) ? response.api_credentials : []);
     } catch (err) {
       setItems([]);
-      setError(err?.message || "Failed to load API credentials");
+      setError(err?.message || t("settings.api_credentials.load_failed"));
     } finally {
       setLoading(false);
     }
@@ -189,7 +194,7 @@ export default function SettingsApiCredentialsPage() {
       setCreatedCredentialId(response?.api_credential?.id || "");
       await load();
     } catch (err) {
-      setError(err?.message || "Failed to create API credential");
+      setError(err?.message || t("settings.api_credentials.create_failed"));
     } finally {
       setCreating(false);
     }
@@ -198,20 +203,21 @@ export default function SettingsApiCredentialsPage() {
   const rows = useMemo(
     () => (items || []).map((item) => ({
       id: item.id,
-      name: item.name || "Untitled",
+      name: item.name || t("settings.untitled"),
       status: item.status || "active",
       key_prefix: item.key_prefix || "—",
       scopes: Array.isArray(item.scopes) ? item.scopes.join(", ") : "",
-      last_used_at: formatDateTime(item.last_used_at) || "Never",
-      expires_at: formatDateTime(item.expires_at) || "No expiry",
+      last_used_at: formatDateTime(item.last_used_at) || t("settings.api_credentials.never"),
+      expires_at: formatDateTime(item.expires_at) || t("settings.api_credentials.no_expiry"),
     })),
-    [items],
+    [items, t],
   );
 
   const selectedRows = useMemo(() => {
     const byId = new Map(rows.map((row) => [row.id, row]));
     return selectedIds.map((id) => byId.get(id)).filter(Boolean);
   }, [rows, selectedIds]);
+
   const singleSelected = selectedRows.length === 1 ? selectedRows[0] : null;
   const selectedActiveRows = selectedRows.filter((row) => row.status === "active");
   const allSelectedRevoked = selectedRows.length > 0 && selectedRows.every((row) => row.status === "revoked");
@@ -222,10 +228,10 @@ export default function SettingsApiCredentialsPage() {
     setError("");
     try {
       await Promise.all(selectedActiveRows.map((row) => apiFetch(`/settings/api-credentials/${encodeURIComponent(row.id)}/revoke`, { method: "POST" })));
-      pushToast("success", selectedActiveRows.length === 1 ? "API credential revoked." : "API credentials revoked.");
+      pushToast("success", selectedActiveRows.length === 1 ? t("settings.api_credentials.revoked_one") : t("settings.api_credentials.revoked_many"));
       await load();
     } catch (err) {
-      setError(err?.message || "Failed to revoke API credential(s)");
+      setError(err?.message || t("settings.api_credentials.revoke_failed"));
     } finally {
       setSaving(false);
     }
@@ -239,10 +245,10 @@ export default function SettingsApiCredentialsPage() {
       await Promise.all(selectedIds.map((id) => apiFetch(`/settings/api-credentials/${encodeURIComponent(id)}`, { method: "DELETE" })));
       setShowDeleteModal(false);
       setSelectedIds([]);
-      pushToast("success", selectedIds.length === 1 ? "API credential deleted." : "API credentials deleted.");
+      pushToast("success", selectedIds.length === 1 ? t("settings.api_credentials.deleted_one") : t("settings.api_credentials.deleted_many"));
       await load();
     } catch (err) {
-      setError(err?.message || "Failed to delete API credential(s)");
+      setError(err?.message || t("settings.api_credentials.delete_failed"));
     } finally {
       setSaving(false);
     }
@@ -250,14 +256,14 @@ export default function SettingsApiCredentialsPage() {
 
   const listFieldIndex = useMemo(
     () => ({
-      "cred.name": { id: "cred.name", label: "Name" },
-      "cred.status": { id: "cred.status", label: "Status" },
-      "cred.key_prefix": { id: "cred.key_prefix", label: "Key Prefix" },
-      "cred.scopes": { id: "cred.scopes", label: "Scopes" },
-      "cred.last_used_at": { id: "cred.last_used_at", label: "Last Used" },
-      "cred.expires_at": { id: "cred.expires_at", label: "Expiry" },
+      "cred.name": { id: "cred.name", label: t("settings.api_credentials.name") },
+      "cred.status": { id: "cred.status", label: t("settings.api_credentials.status") },
+      "cred.key_prefix": { id: "cred.key_prefix", label: t("settings.api_credentials.key_prefix") },
+      "cred.scopes": { id: "cred.scopes", label: t("settings.api_credentials.scopes_title") },
+      "cred.last_used_at": { id: "cred.last_used_at", label: t("settings.api_credentials.last_used") },
+      "cred.expires_at": { id: "cred.expires_at", label: t("settings.api_credentials.expiry") },
     }),
-    [],
+    [t],
   );
 
   const listView = useMemo(
@@ -293,11 +299,11 @@ export default function SettingsApiCredentialsPage() {
 
   const filters = useMemo(
     () => [
-      { id: "all", label: "All", domain: null },
-      { id: "active", label: "Active", domain: { op: "eq", field: "cred.status", value: "active" } },
-      { id: "revoked", label: "Revoked", domain: { op: "eq", field: "cred.status", value: "revoked" } },
+      { id: "all", label: t("common.all"), domain: null },
+      { id: "active", label: t("common.active"), domain: { op: "eq", field: "cred.status", value: "active" } },
+      { id: "revoked", label: t("common.revoked"), domain: { op: "eq", field: "cred.status", value: "revoked" } },
     ],
-    [],
+    [t],
   );
 
   const activeFilter = useMemo(() => filters.find((filter) => filter.id === statusFilter) || null, [filters, statusFilter]);
@@ -309,8 +315,8 @@ export default function SettingsApiCredentialsPage() {
           <div className="space-y-4 md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
             <SystemListToolbar
-              title="API Credentials"
-              createTooltip="Create API key"
+              title={t("settings.api_credentials.title")}
+              createTooltip={t("settings.api_credentials.create_key")}
               onCreate={() => setShowCreateModal(true)}
               searchValue={search}
               onSearchChange={(value) => {
@@ -337,24 +343,26 @@ export default function SettingsApiCredentialsPage() {
               rightActions={
                 selectedIds.length > 0 ? (
                   <div className="dropdown dropdown-end">
-                    <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                    <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label={t("settings.selection_actions")}>
                       <MoreHorizontal className="h-4 w-4" />
                     </button>
                     <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
                       <li className="menu-title">
-                        <span>Selection</span>
+                        <span>{t("settings.selection")}</span>
                       </li>
                       {singleSelected ? (
                         <li>
                           <button onClick={() => navigate(`/settings/api-credentials/${singleSelected.id}`)}>
-                            Open credential
+                            {t("settings.api_credentials.open_credential")}
                           </button>
                         </li>
                       ) : null}
                       {selectedActiveRows.length > 0 ? (
                         <li>
                           <button onClick={revokeSelectedCredentials} disabled={saving}>
-                            {selectedActiveRows.length === 1 ? "Revoke" : `Revoke active (${selectedActiveRows.length})`}
+                            {selectedActiveRows.length === 1
+                              ? t("settings.api_credentials.revoke")
+                              : t("settings.api_credentials.revoke_active_count", { count: selectedActiveRows.length })}
                           </button>
                         </li>
                       ) : null}
@@ -363,11 +371,13 @@ export default function SettingsApiCredentialsPage() {
                           className="text-error"
                           onClick={() => setShowDeleteModal(true)}
                           disabled={!allSelectedRevoked || saving}
-                          title={allSelectedRevoked ? "Delete revoked credential(s)" : "Revoke credentials before deleting them"}
+                          title={allSelectedRevoked ? t("settings.api_credentials.delete_revoked_title") : t("settings.api_credentials.revoke_before_delete")}
                         >
                           {allSelectedRevoked
-                            ? selectedIds.length === 1 ? "Delete" : `Delete selected (${selectedIds.length})`
-                            : "Delete (revoke first)"}
+                            ? selectedIds.length === 1
+                              ? t("common.delete")
+                              : t("common.delete_count", { count: selectedIds.length })
+                            : t("settings.api_credentials.delete_revoke_first")}
                         </button>
                       </li>
                     </ul>
@@ -378,7 +388,7 @@ export default function SettingsApiCredentialsPage() {
 
             <div className="md:mt-4">
               {loading ? (
-                <div className="text-sm opacity-70">Loading…</div>
+                <div className="text-sm opacity-70">{t("common.loading")}</div>
               ) : (
                 <ListViewRenderer
                   view={listView}
@@ -424,6 +434,8 @@ export default function SettingsApiCredentialsPage() {
 
       {showCreateModal ? (
         <CredentialModal
+          t={t}
+          availableScopes={availableScopes}
           name={name}
           setName={setName}
           scopes={scopes}
@@ -438,6 +450,7 @@ export default function SettingsApiCredentialsPage() {
 
       {createdToken ? (
         <TokenModal
+          t={t}
           token={createdToken}
           onClose={() => {
             setCreatedToken("");
@@ -451,26 +464,24 @@ export default function SettingsApiCredentialsPage() {
       {showDeleteModal ? (
         <div className="modal modal-open">
           <div className="modal-box max-w-md">
-            <h3 className="font-semibold text-lg">Delete API Credential{selectedIds.length > 1 ? "s" : ""}</h3>
-            <div className="mt-3 text-sm">
-              This will permanently remove {selectedIds.length} revoked API credential{selectedIds.length > 1 ? "s" : ""}. Request logs will remain for audit history.
-            </div>
+            <h3 className="font-semibold text-lg">
+              {selectedIds.length > 1 ? t("settings.api_credentials.delete_title_many") : t("settings.api_credentials.delete_title_one")}
+            </h3>
+            <div className="mt-3 text-sm">{t("settings.api_credentials.delete_body", { count: selectedIds.length })}</div>
             {!allSelectedRevoked ? (
-              <div className="alert alert-warning mt-4 text-sm">
-                Active API credentials must be revoked before they can be deleted.
-              </div>
+              <div className="alert alert-warning mt-4 text-sm">{t("settings.api_credentials.active_must_revoke")}</div>
             ) : null}
             <div className="modal-action">
               <button className="btn btn-ghost btn-sm" type="button" onClick={() => !saving && setShowDeleteModal(false)} disabled={saving}>
-                Cancel
+                {t("common.cancel")}
               </button>
               <button className="btn btn-error btn-sm" type="button" onClick={deleteSelectedCredentials} disabled={saving || !allSelectedRevoked}>
-                {saving ? "Deleting..." : "Delete"}
+                {saving ? t("common.deleting") : t("common.delete")}
               </button>
             </div>
           </div>
           <button className="modal-backdrop" type="button" onClick={() => !saving && setShowDeleteModal(false)}>
-            close
+            {t("common.close")}
           </button>
         </div>
       ) : null}

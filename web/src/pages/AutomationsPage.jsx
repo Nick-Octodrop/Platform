@@ -6,6 +6,7 @@ import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import CodeTextarea from "../components/CodeTextarea.jsx";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import { buildSavedViewDomain } from "../utils/savedViews.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 
@@ -20,6 +21,7 @@ const DEFAULT_STEPS = [
 ];
 
 export default function AutomationsPage() {
+  const { t } = useI18n();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -43,7 +45,7 @@ export default function AutomationsPage() {
       const data = await apiFetch("/automations");
       setItems(data?.automations || []);
     } catch (err) {
-      setError(err?.message || "Failed to load automations");
+      setError(err?.message || t("settings.automations.load_failed"));
     }
     setLoading(false);
   }
@@ -52,25 +54,33 @@ export default function AutomationsPage() {
     try {
       const data = await apiFetch("/automations", {
         method: "POST",
-        body: { name: "New Automation", description: "", status: "draft", trigger: DEFAULT_TRIGGER, steps: DEFAULT_STEPS },
+        body: {
+          name: t("settings.automations.new_automation"),
+          description: "",
+          status: "draft",
+          trigger: DEFAULT_TRIGGER,
+          steps: DEFAULT_STEPS.map((step) => step.id === "step_notify"
+            ? { ...step, inputs: { ...step.inputs, title: t("settings.automations.title") } }
+            : step),
+        },
       });
       navigate(`/automations/${data.automation.id}`);
     } catch (err) {
-      setError(err?.message || "Failed to create automation");
+      setError(err?.message || t("settings.automations.create_failed"));
     }
   }
 
   async function importAutomation() {
     const text = importJsonText.trim();
     if (!text) {
-      setImportError("Paste automation JSON to import.");
+      setImportError(t("settings.automations.import_empty"));
       return;
     }
     let parsed;
     try {
       parsed = JSON.parse(text);
     } catch {
-      setImportError("Invalid JSON");
+      setImportError(t("settings.automations.invalid_json"));
       return;
     }
     setImporting(true);
@@ -82,7 +92,7 @@ export default function AutomationsPage() {
       setImportError("");
       navigate(`/automations/${data.automation.id}`);
     } catch (err) {
-      setImportError(err?.message || "Import failed");
+      setImportError(err?.message || t("settings.automations.import_failed"));
     }
     setImporting(false);
   }
@@ -92,7 +102,7 @@ export default function AutomationsPage() {
       await apiFetch(`/automations/${id}/publish`, { method: "POST" });
       load();
     } catch (err) {
-      setError(err?.message || "Publish failed");
+      setError(err?.message || t("settings.automations.publish_failed"));
     }
   }
 
@@ -101,19 +111,19 @@ export default function AutomationsPage() {
       await apiFetch(`/automations/${id}/disable`, { method: "POST" });
       load();
     } catch (err) {
-      setError(err?.message || "Disable failed");
+      setError(err?.message || t("settings.automations.disable_failed"));
     }
   }
 
   async function removeAutomation(id) {
-    const ok = window.confirm("Delete this automation? This cannot be undone.");
+    const ok = window.confirm(t("settings.automations.delete_one_confirm"));
     if (!ok) return;
     try {
       await apiFetch(`/automations/${id}`, { method: "DELETE" });
       setSelectedIds((prev) => prev.filter((selectedId) => selectedId !== id));
       load();
     } catch (err) {
-      setError(err?.message || "Delete failed");
+      setError(err?.message || t("common.delete_failed"));
     }
   }
 
@@ -127,14 +137,14 @@ export default function AutomationsPage() {
       setSelectedIds([]);
       await load();
     } catch (err) {
-      setError(err?.message || "Disable failed");
+      setError(err?.message || t("settings.automations.disable_failed"));
     }
     setSelectionActionBusy("");
   }
 
   async function deleteSelectedAutomations() {
     if (!selectedIds.length || selectionActionBusy) return;
-    const ok = window.confirm(`Delete ${selectedIds.length} automation(s)? This cannot be undone.`);
+    const ok = window.confirm(t("settings.automations.delete_many_confirm", { count: selectedIds.length }));
     if (!ok) return;
     setSelectionActionBusy("delete");
     setError("");
@@ -143,7 +153,7 @@ export default function AutomationsPage() {
       setSelectedIds([]);
       await load();
     } catch (err) {
-      setError(err?.message || "Delete failed");
+      setError(err?.message || t("common.delete_failed"));
     }
     setSelectionActionBusy("");
   }
@@ -152,21 +162,21 @@ export default function AutomationsPage() {
     () => items.map((item) => ({
       id: item.id,
       name: item.name || "",
-      status: item.status || "draft",
+      status: item.status ? t(`common.${item.status}`, {}, { defaultValue: item.status }) : t("common.draft"),
       updated_at: item.updated_at || "—",
       description: item.description || "",
     })),
-    [items]
+    [items, t]
   );
 
   const listFieldIndex = useMemo(
     () => ({
-      "automation.name": { id: "automation.name", label: "Name" },
-      "automation.status": { id: "automation.status", label: "Status" },
-      "automation.updated_at": { id: "automation.updated_at", label: "Updated" },
-      "automation.description": { id: "automation.description", label: "Description" },
+      "automation.name": { id: "automation.name", label: t("common.name") },
+      "automation.status": { id: "automation.status", label: t("common.status") },
+      "automation.updated_at": { id: "automation.updated_at", label: t("common.updated") },
+      "automation.description": { id: "automation.description", label: t("common.description") },
     }),
-    []
+    [t]
   );
 
   const listView = useMemo(
@@ -195,12 +205,12 @@ export default function AutomationsPage() {
 
   const listFilters = useMemo(
     () => [
-      { id: "all", label: "All", domain: null },
-      { id: "draft", label: "Draft", domain: { op: "eq", field: "automation.status", value: "draft" } },
-      { id: "published", label: "Published", domain: { op: "eq", field: "automation.status", value: "published" } },
-      { id: "disabled", label: "Disabled", domain: { op: "eq", field: "automation.status", value: "disabled" } },
+      { id: "all", label: t("common.all"), domain: null },
+      { id: "draft", label: t("common.draft"), domain: { op: "eq", field: "automation.status", value: "draft" } },
+      { id: "published", label: t("common.published"), domain: { op: "eq", field: "automation.status", value: "published" } },
+      { id: "disabled", label: t("common.disabled"), domain: { op: "eq", field: "automation.status", value: "disabled" } },
     ],
-    []
+    [t]
   );
 
   const activeListFilter = useMemo(
@@ -214,11 +224,11 @@ export default function AutomationsPage() {
 
   const filterableFields = useMemo(
     () => [
-      { id: "automation.name", label: "Name" },
-      { id: "automation.status", label: "Status" },
-      { id: "automation.updated_at", label: "Updated" },
+      { id: "automation.name", label: t("common.name") },
+      { id: "automation.status", label: t("common.status") },
+      { id: "automation.updated_at", label: t("common.updated") },
     ],
-    []
+    [t]
   );
 
   const selectedRows = useMemo(() => {
@@ -243,12 +253,12 @@ export default function AutomationsPage() {
           <div className="md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {error && <div className="alert alert-error">{error}</div>}
             {loading ? (
-              <div className="text-sm opacity-70">Loading…</div>
+              <div className="text-sm opacity-70">{t("common.loading")}</div>
             ) : (
               <div className="flex flex-col gap-4 min-w-0">
                 <SystemListToolbar
-                  title="Automation"
-                  createTooltip="New Automation"
+                  title={t("settings.automations.title")}
+                  createTooltip={t("settings.automations.new_automation")}
                   onCreate={createAutomation}
                   searchValue={search}
                   onSearchChange={(v) => {
@@ -294,29 +304,29 @@ export default function AutomationsPage() {
                     <>
                       {selectedIds.length > 0 && (
                         <div className="dropdown dropdown-end">
-                          <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                          <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label={t("settings.selection_actions")}>
                             <MoreHorizontal className="h-4 w-4" />
                           </button>
                           <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
                             <li className="menu-title">
-                              <span>Selection</span>
+                              <span>{t("settings.selection")}</span>
                             </li>
                             {selectedIds.length === 1 && singleSelected && (
                               <>
                                 <li>
                                   <button onClick={() => navigate(`/automations/${singleSelected.id}`)}>
-                                    Open automation
+                                    {t("settings.automations.open_automation")}
                                   </button>
                                 </li>
                                 <li>
                                   <button onClick={() => navigate(`/automations/${singleSelected.id}/runs`)}>
-                                    View runs
+                                    {t("settings.automations.view_runs")}
                                   </button>
                                 </li>
                                 {singleSelected.status !== "published" && (
                                   <li>
                                     <button onClick={() => publish(singleSelected.id)}>
-                                      Publish
+                                      {t("common.published")}
                                     </button>
                                   </li>
                                 )}
@@ -327,7 +337,9 @@ export default function AutomationsPage() {
                                 onClick={disableSelectedAutomations}
                                 disabled={!selectedPublishedCount || selectionActionBusy === "disable"}
                               >
-                                {selectedIds.length === 1 ? "Disable" : `Disable selected${selectedPublishedCount ? ` (${selectedPublishedCount})` : ""}`}
+                                {selectedIds.length === 1
+                                  ? t("settings.automations.disable")
+                                  : t("settings.automations.disable_selected", { count: selectedPublishedCount })}
                               </button>
                             </li>
                             <li>
@@ -338,7 +350,7 @@ export default function AutomationsPage() {
                                   : deleteSelectedAutomations}
                                 disabled={selectionActionBusy === "delete"}
                               >
-                                {selectedIds.length === 1 ? "Delete" : `Delete selected (${selectedIds.length})`}
+                                {selectedIds.length === 1 ? t("common.delete") : t("settings.automations.delete_selected", { count: selectedIds.length })}
                               </button>
                             </li>
                           </ul>
@@ -351,7 +363,7 @@ export default function AutomationsPage() {
                           setImportError("");
                         }}
                       >
-                        Import
+                        {t("common.import")}
                       </button>
                     </>
                   }
@@ -400,8 +412,8 @@ export default function AutomationsPage() {
           <div className="modal-box max-w-3xl">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold">Import automation</h3>
-                <p className="mt-1 text-sm opacity-70">Paste an automation JSON definition to create a new automation.</p>
+                <h3 className="text-lg font-semibold">{t("settings.automations.import_title")}</h3>
+                <p className="mt-1 text-sm opacity-70">{t("settings.automations.import_description")}</p>
               </div>
               <button
                 type="button"
@@ -412,18 +424,18 @@ export default function AutomationsPage() {
                   setImportError("");
                 }}
               >
-                Close
+                {t("common.close")}
               </button>
             </div>
             <div className="mt-4 space-y-4">
               {importError ? <div className="alert alert-error text-sm">{importError}</div> : null}
               <label className="form-control">
-                <span className="label-text">Automation JSON</span>
+                <span className="label-text">{t("settings.automations.json_label")}</span>
                 <CodeTextarea
                   value={importJsonText}
                   onChange={(e) => setImportJsonText(e.target.value)}
                   minHeight="360px"
-                  placeholder={`{\n  "name": "Imported automation",\n  "description": "",\n  "trigger": {\n    "kind": "event",\n    "event_types": ["record.created"],\n    "filters": []\n  },\n  "steps": []\n}`}
+                  placeholder={t("settings.automations.json_placeholder")}
                 />
               </label>
               <div className="flex justify-end gap-2">
@@ -437,10 +449,10 @@ export default function AutomationsPage() {
                   }}
                   disabled={importing}
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </button>
                 <button type="button" className="btn btn-primary" onClick={importAutomation} disabled={importing}>
-                  {importing ? "Importing..." : "Import"}
+                  {importing ? t("common.importing") : t("common.import")}
                 </button>
               </div>
             </div>

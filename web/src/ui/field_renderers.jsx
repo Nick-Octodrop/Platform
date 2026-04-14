@@ -1,5 +1,6 @@
 import React from "react";
 import { formatFieldValue, getFieldInputAffixes } from "../utils/fieldFormatting.js";
+import { translateRuntime } from "../i18n/runtime.js";
 
 const FIELD_TEXT_STYLE = {
   fontSize: "var(--octo-field-font-size, 0.95rem)",
@@ -137,7 +138,7 @@ export function renderField(field, value, onChange, readonly, record = null) {
       }
       const options = normalizeEnumOptions(field.options);
       const selected = options.find((opt) => opt.value === value);
-      const selectedLabel = selected?.label ?? selected?.value ?? "Select";
+      const selectedLabel = selected?.label ?? selected?.value ?? translateRuntime("common.select");
       const isDisabled = readonly || field.readonly;
       return (
         <div className={`dropdown dropdown-bottom w-full ${isDisabled ? "pointer-events-none opacity-60" : ""}`}>
@@ -194,6 +195,7 @@ export function renderField(field, value, onChange, readonly, record = null) {
       );
     }
     case "number":
+    case "currency":
       {
         const isReadOnlyNumber = readonly || field.readonly;
         if (isReadOnlyNumber) {
@@ -255,7 +257,7 @@ export function renderField(field, value, onChange, readonly, record = null) {
           {...common}
           value={Array.isArray(value) ? value.join(", ") : value || ""}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="comma separated"
+          placeholder={translateRuntime("common.comma_separated")}
         />
       );
     case "user":
@@ -264,7 +266,7 @@ export function renderField(field, value, onChange, readonly, record = null) {
           {...common}
           value={value || ""}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="user id"
+          placeholder={translateRuntime("common.user_id")}
         />
       );
     case "users":
@@ -273,7 +275,7 @@ export function renderField(field, value, onChange, readonly, record = null) {
           {...common}
           value={Array.isArray(value) ? value.join(", ") : value || ""}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="comma separated user ids"
+          placeholder={translateRuntime("common.comma_separated_user_ids")}
         />
       );
     case "bool":
@@ -296,6 +298,6 @@ export function renderField(field, value, onChange, readonly, record = null) {
         />
       );
     default:
-      return <div className="text-sm text-error">Unknown field type: {field.type}</div>;
+      return <div className="text-sm text-error">{translateRuntime("common.unknown_field_type", { type: field.type })}</div>;
   }
 }

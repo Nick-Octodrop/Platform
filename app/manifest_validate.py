@@ -11,9 +11,9 @@ from app.module_dependencies import validate_depends_on_shape
 Issue = Dict[str, Any]
 
 
-ALLOWED_FIELD_TYPES = {"string", "text", "number", "bool", "date", "datetime", "enum", "uuid", "lookup", "tags", "attachments", "user", "users"}
+ALLOWED_FIELD_TYPES = {"string", "text", "number", "currency", "bool", "date", "datetime", "enum", "uuid", "lookup", "tags", "attachments", "user", "users"}
 ALLOWED_FIELD_FORMAT_KINDS = {"plain", "currency", "percent", "measurement", "duration"}
-ALLOWED_FIELD_FORMAT_KEYS = {"kind", "currency", "currency_field", "unit", "unit_field", "precision"}
+ALLOWED_FIELD_FORMAT_KEYS = {"kind", "currency", "currency_code", "currency_field", "currency_source", "unit", "unit_field", "precision"}
 ALLOWED_V1_TOP_KEYS = {
     "manifest_version",
     "module",
@@ -33,10 +33,10 @@ ALLOWED_V1_TOP_KEYS = {
 }
 ALLOWED_V1_APP_KEYS = {"home", "nav", "defaults"}
 ALLOWED_V1_NAV_GROUP_KEYS = {"group", "items", "mode", "inline", "as_link"}
-ALLOWED_V1_NAV_ITEM_KEYS = {"label", "to"}
-ALLOWED_V1_PAGE_KEYS = {"id", "title", "layout", "header", "content", "breadcrumbs"}
+ALLOWED_V1_NAV_ITEM_KEYS = {"label", "label_key", "menu_label_key", "to"}
+ALLOWED_V1_PAGE_KEYS = {"id", "title", "title_key", "layout", "header", "content", "breadcrumbs"}
 ALLOWED_V1_PAGE_HEADER_KEYS = {"actions", "variant"}
-ALLOWED_V1_PAGE_ACTION_KEYS = {"kind", "label", "target", "action_id", "enabled_when", "visible_when", "confirm", "modal_id"}
+ALLOWED_V1_PAGE_ACTION_KEYS = {"kind", "label", "label_key", "action_label_key", "target", "action_id", "enabled_when", "visible_when", "confirm", "modal_id"}
 ALLOWED_V1_BLOCK_KEYS = {
     "kind",
     "target",
@@ -77,12 +77,12 @@ ALLOWED_V1_STACK_KEYS = {"kind", "gap", "content"}
 ALLOWED_V1_GRID_KEYS = {"kind", "columns", "gap", "items"}
 ALLOWED_V1_GRID_ITEM_KEYS = {"span", "content"}
 ALLOWED_V1_TABS_KEYS = {"kind", "style", "tabs", "default_tab"}
-ALLOWED_V1_TAB_KEYS = {"id", "label", "content"}
-ALLOWED_V1_TEXT_KEYS = {"kind", "text"}
+ALLOWED_V1_TAB_KEYS = {"id", "label", "label_key", "tab_label_key", "content"}
+ALLOWED_V1_TEXT_KEYS = {"kind", "text", "text_key"}
 ALLOWED_V1_CHATTER_KEYS = {"kind", "entity_id", "record_ref"}
 ALLOWED_V1_CONTAINER_KEYS = {"kind", "variant", "title", "content"}
 ALLOWED_V1_STAT_CARDS_KEYS = {"kind", "title", "columns", "cards"}
-ALLOWED_V1_STAT_CARD_KEYS = {"id", "label", "subtitle", "entity_id", "measure", "domain", "icon", "tone", "target", "date_field", "format"}
+ALLOWED_V1_STAT_CARD_KEYS = {"id", "label", "label_key", "title_key", "subtitle", "subtitle_key", "entity_id", "measure", "domain", "icon", "tone", "target", "date_field", "format"}
 ALLOWED_V1_TOOLBAR_KEYS = {"kind", "align", "actions"}
 ALLOWED_V1_STATUSBAR_KEYS = {"kind", "entity_id", "record_ref", "field_id", "mode"}
 ALLOWED_V1_RECORD_KEYS = {"kind", "entity_id", "record_id_query", "content"}
@@ -103,21 +103,23 @@ ALLOWED_V1_VIEW_MODE_ITEM_KEYS = {"mode", "target", "default_group_by"}
 MAX_BLOCK_DEPTH = 6
 MAX_CONDITION_DEPTH = 6
 ALLOWED_WORKFLOW_KEYS = {"id", "entity", "status_field", "states", "transitions", "required_fields_by_state"}
-ALLOWED_WORKFLOW_STATE_KEYS = {"id", "label", "order", "required_fields"}
-ALLOWED_WORKFLOW_TRANSITION_KEYS = {"from", "to", "label"}
+ALLOWED_WORKFLOW_STATE_KEYS = {"id", "label", "label_key", "status_label_key", "order", "required_fields"}
+ALLOWED_WORKFLOW_TRANSITION_KEYS = {"from", "to", "label", "label_key", "action_label_key"}
 ALLOWED_CONDITION_OPS = {"eq", "neq", "gt", "gte", "lt", "lte", "in", "contains", "exists", "and", "or", "not"}
 ALLOWED_CONDITION_KEYS = {"op", "field", "value", "left", "right", "conditions", "condition"}
 ALLOWED_COMPUTE_KEYS = {"expression", "aggregate", "persist"}
 ALLOWED_COMPUTE_AGGREGATE_KEYS = {"op", "measure", "entity", "field", "where"}
 ALLOWED_COMPUTE_AGGREGATE_OPS = {"sum", "count", "min", "max", "avg"}
-ALLOWED_V1_ACTION_KEYS = {"id", "kind", "label", "target", "entity_id", "defaults", "patch", "transformation_key", "selection_mode", "enabled_when", "visible_when", "confirm", "modal_id"}
+ALLOWED_V1_ACTION_KEYS = {"id", "kind", "label", "label_key", "action_label_key", "target", "entity_id", "defaults", "patch", "transformation_key", "selection_mode", "enabled_when", "visible_when", "confirm", "modal_id"}
 ALLOWED_V1_VIEW_HEADER_KEYS = {"title_field", "primary_actions", "secondary_actions", "search", "filters", "bulk_actions", "save_mode", "open_record_target", "auto_save", "auto_save_debounce_ms", "auto_state_actions", "statusbar", "tabs"}
-ALLOWED_V1_VIEW_HEADER_ACTION_KEYS = {"action_id", "kind", "label", "target", "enabled_when", "visible_when", "confirm", "modal_id"}
-ALLOWED_V1_MODAL_KEYS = {"id", "title", "description", "entity_id", "fields", "defaults", "actions"}
+ALLOWED_V1_VIEW_HEADER_ACTION_KEYS = {"action_id", "kind", "label", "label_key", "action_label_key", "target", "enabled_when", "visible_when", "confirm", "modal_id"}
+ALLOWED_V1_MODAL_KEYS = {"id", "title", "title_key", "description", "description_key", "entity_id", "fields", "defaults", "actions"}
 ALLOWED_V1_MODAL_ACTION_KEYS = {
     "action_id",
     "kind",
     "label",
+    "label_key",
+    "action_label_key",
     "target",
     "entity_id",
     "defaults",
@@ -128,9 +130,9 @@ ALLOWED_V1_MODAL_ACTION_KEYS = {
     "close_on_success",
     "variant",
 }
-ALLOWED_V1_VIEW_HEADER_SEARCH_KEYS = {"enabled", "placeholder", "fields"}
-ALLOWED_V1_VIEW_HEADER_FILTER_KEYS = {"id", "label", "domain"}
-ALLOWED_V1_VIEW_ACTIVITY_KEYS = {"enabled", "mode", "tab_label", "allow_comments", "allow_attachments", "show_changes", "tracked_fields"}
+ALLOWED_V1_VIEW_HEADER_SEARCH_KEYS = {"enabled", "placeholder", "placeholder_key", "fields"}
+ALLOWED_V1_VIEW_HEADER_FILTER_KEYS = {"id", "label", "label_key", "domain"}
+ALLOWED_V1_VIEW_ACTIVITY_KEYS = {"enabled", "mode", "tab_label", "tab_label_key", "allow_comments", "allow_attachments", "show_changes", "tracked_fields"}
 ALLOWED_V1_VIEW_CARD_KEYS = {"title_field", "subtitle_fields", "badge_fields"}
 ALLOWED_V1_VIEW_GRAPH_KEYS = {"default"}
 ALLOWED_V1_GRAPH_DEFAULT_KEYS = {"type", "group_by", "measure"}
@@ -263,15 +265,19 @@ def _validate_condition_operand(value: Any, path: str, errors: list[Issue]) -> N
 
 def _validate_field_format(field: dict, path: str, errors: list[Issue]) -> None:
     fmt = _get(field, "format")
-    if fmt is None:
+    if fmt is None and _get(field, "type") != "currency":
         return
     if not isinstance(fmt, dict):
-        errors.append(_issue("MANIFEST_FIELD_FORMAT_INVALID", "field.format must be an object", path))
-        return
-    _reject_unknown_keys(errors, fmt, ALLOWED_FIELD_FORMAT_KEYS, path)
+        if _get(field, "type") == "currency":
+            fmt = {}
+        else:
+            errors.append(_issue("MANIFEST_FIELD_FORMAT_INVALID", "field.format must be an object", path))
+            return
+    else:
+        _reject_unknown_keys(errors, fmt, ALLOWED_FIELD_FORMAT_KEYS, path)
     ftype = _get(field, "type")
-    if ftype != "number":
-        errors.append(_issue("MANIFEST_FIELD_FORMAT_INVALID", "field.format is only supported on number fields", path))
+    if ftype not in {"number", "currency"}:
+        errors.append(_issue("MANIFEST_FIELD_FORMAT_INVALID", "field.format is only supported on number and currency fields", path))
         return
 
     kind = _get(fmt, "kind")
@@ -759,7 +765,7 @@ def _default_type_valid(field_type: str, value) -> bool:
         return isinstance(value, str)
     if field_type == "users":
         return isinstance(value, list) and all(isinstance(item, str) for item in value)
-    if field_type == "number":
+    if field_type in {"number", "currency"}:
         return isinstance(value, (int, float)) and not isinstance(value, bool)
     if field_type in {"bool", "boolean"}:
         return isinstance(value, bool)

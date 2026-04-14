@@ -109,6 +109,15 @@ from app.records_validation import (
 from app.conditions import ALLOWED_OPS, eval_condition
 from app.computed_fields import has_computed_fields, recompute_record, depends_on_aggregate_entity
 from app.field_formatting import build_formatted_record, expand_dotted_fields
+from app.localization import (
+    DEFAULT_CURRENCY,
+    DEFAULT_LOCALE,
+    DEFAULT_TIMEZONE,
+    build_locale_context,
+    normalize_currency_code,
+    normalize_locale,
+    normalize_timezone,
+)
 from app.module_delete import collect_entity_record_ids, delete_module_memory, SYSTEM_MODULE_IDS
 from app.stores import (
     InMemoryActionCaller,
@@ -3008,7 +3017,7 @@ def _validate_patch_payload(entity: dict, patch: dict, existing: dict, workflow:
         if ftype in ("string", "text"):
             if not isinstance(val, str):
                 _add_error("TYPE_MISMATCH", f"{field_id} must be a string", path=field_id)
-        elif ftype == "number":
+        elif ftype in {"number", "currency"}:
             if not isinstance(val, (int, float)) or isinstance(val, bool):
                 _add_error("TYPE_MISMATCH", f"{field_id} must be a number", path=field_id)
         elif ftype == "boolean" or ftype == "bool":
@@ -3181,7 +3190,9 @@ def _module_home_route_from_manifest(module_id: str, manifest: dict) -> str:
 def _module_registry_meta_from_manifest(module_id: str, manifest: dict) -> dict[str, str | None]:
     module_def = manifest.get("module") if isinstance(manifest.get("module"), dict) else {}
     description = module_def.get("description") if isinstance(module_def.get("description"), str) and module_def.get("description").strip() else None
+    description_key = module_def.get("description_key") if isinstance(module_def.get("description_key"), str) and module_def.get("description_key").strip() else None
     category = module_def.get("category") if isinstance(module_def.get("category"), str) and module_def.get("category").strip() else None
+    name_key = module_def.get("name_key") if isinstance(module_def.get("name_key"), str) and module_def.get("name_key").strip() else None
     version = module_version_from_manifest(manifest)
     module_key = module_key_from_manifest(manifest) or module_id
     home_route = _module_home_route_from_manifest(module_id, manifest)
@@ -3192,7 +3203,9 @@ def _module_registry_meta_from_manifest(module_id: str, manifest: dict) -> dict[
         icon_key = None
     return {
         "name": _module_name_from_manifest(manifest),
+        "name_key": name_key,
         "description": description,
+        "description_key": description_key,
         "category": category,
         "module_version": version if isinstance(version, str) and version.strip() else None,
         "module_key": module_key.strip() if isinstance(module_key, str) and module_key.strip() else None,
@@ -3270,7 +3283,7 @@ def _get_registry_list_with_meta(request: Request) -> list[dict]:
     if isinstance(cached_req, list):
         return cached_req
     modules = _get_registry_list(request)
-    fingerprint = f"{get_org_id()}:{_registry_meta_fingerprint(modules)}"
+    fingerprint = f"i18n-v2:{get_org_id()}:{_registry_meta_fingerprint(modules)}"
     cached = _cache_get("registry_list_meta", fingerprint)
     if isinstance(cached, list):
         _req_cache_set(request, cache_key, cached)
@@ -3287,6 +3300,10 @@ def _get_registry_list_with_meta(request: Request) -> list[dict]:
             and (isinstance(mod.get("module_key"), str) and mod.get("module_key").strip())
             and (isinstance(mod.get("home_route"), str) and mod.get("home_route").strip())
         )
+        need_meta = need_meta or not (
+            (isinstance(mod.get("name_key"), str) and mod.get("name_key").strip())
+            and (isinstance(mod.get("description_key"), str) and mod.get("description_key").strip())
+        )
         if not need_meta:
             continue
         module_id = mod.get("module_id")
@@ -3299,7 +3316,7 @@ def _get_registry_list_with_meta(request: Request) -> list[dict]:
             continue
         meta = _module_registry_meta_from_manifest(module_id, manifest)
         changed = False
-        for key in ("name", "description", "category", "module_version", "icon_key", "module_key", "home_route"):
+        for key in ("name", "name_key", "description", "description_key", "category", "module_version", "icon_key", "module_key", "home_route"):
             current = mod.get(key)
             if isinstance(current, str) and current.strip():
                 continue
@@ -33561,26 +33578,14 @@ async def get_ui_prefs(request: Request) -> dict:
         return actor
     org_id = get_org_id()
     user_id = actor.get("user_id")
-    with get_conn() as conn:
-        workspace = fetch_one(
-            conn,
-            "select org_id, theme, colors, logo_url, ui_density, layout_prefs from workspace_ui_prefs where org_id=%s",
-            [org_id],
-            query_name="workspace_ui_prefs.get",
-        )
-        user = None
-        if user_id:
-            user = fetch_one(
-                conn,
-                """
-                select org_id, user_id, theme, ui_density, first_name, last_name, phone
-                from user_ui_prefs
-                where org_id=%s and user_id=%s
-                """,
-                [org_id, user_id],
-                query_name="user_ui_prefs.get",
-            )
-    return _ok_response({"workspace": workspace or {}, "user": user or {}})
+    workspace, user = _load_ui_pref_settings(org_id, user_id if isinstance(user_id, str) else None)
+    return _ok_response(
+        {
+            "workspace": workspace or {},
+            "user": user or {},
+            "resolved": build_locale_context(workspace=workspace, user=user),
+        }
+    )
 
 
 def _branding_context_for_org(org_id: str) -> dict:
@@ -33799,16 +33804,59 @@ def _build_template_record_context(record: dict, entity_def: dict | None) -> dic
     return enriched
 
 
-def _build_template_render_context(record: dict, entity_def: dict | None, entity_id: str | None, branding: dict | None) -> dict:
+def _load_ui_pref_settings(org_id: str, user_id: str | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+    with get_conn() as conn:
+        workspace = fetch_one(
+            conn,
+            """
+            select org_id, theme, colors, logo_url, ui_density, layout_prefs, default_locale, default_timezone, default_currency
+            from workspace_ui_prefs
+            where org_id=%s
+            """,
+            [org_id],
+            query_name="workspace_ui_prefs.localization_get",
+        ) or {}
+        user = {}
+        if user_id:
+            user = fetch_one(
+                conn,
+                """
+                select org_id, user_id, theme, ui_density, first_name, last_name, phone, locale, timezone
+                from user_ui_prefs
+                where org_id=%s and user_id=%s
+                """,
+                [org_id, user_id],
+                query_name="user_ui_prefs.localization_get",
+            ) or {}
+    return workspace, user
+
+
+def _localization_context_for_actor(actor: dict | None = None) -> dict[str, Any]:
+    user_id = actor.get("user_id") if isinstance(actor, dict) else None
+    workspace_prefs, user_prefs = _load_ui_pref_settings(get_org_id(), user_id if isinstance(user_id, str) else None)
+    return build_locale_context(workspace=workspace_prefs, user=user_prefs)
+
+
+def _build_template_render_context(
+    record: dict,
+    entity_def: dict | None,
+    entity_id: str | None,
+    branding: dict | None,
+    localization: dict[str, Any] | None = None,
+) -> dict:
     raw_record = _build_template_record_context(record, entity_def)
-    formatted_record = build_formatted_record(raw_record, entity_def)
+    formatted_record = build_formatted_record(raw_record, entity_def, locale_context=localization)
     entity_name = entity_def.get("id") if isinstance(entity_def, dict) else entity_id
     formatted_line_items: list[dict] = []
     if _template_entity_matches(entity_name, "entity.billing_invoice"):
         line_entity_def = _find_entity_def_global("entity.billing_invoice_line")
         raw_lines = raw_record.get("billing_invoice.lines")
         if isinstance(raw_lines, list):
-            formatted_line_items = [build_formatted_record(item, line_entity_def) for item in raw_lines if isinstance(item, dict)]
+            formatted_line_items = [
+                build_formatted_record(item, line_entity_def, locale_context=localization)
+                for item in raw_lines
+                if isinstance(item, dict)
+            ]
             formatted_record["billing_invoice.lines"] = formatted_line_items
             formatted_record["billing_invoice_line_items"] = formatted_line_items
     return {
@@ -33817,6 +33865,7 @@ def _build_template_render_context(record: dict, entity_def: dict | None, entity
         "formatted_nested": expand_dotted_fields(formatted_record),
         "formatted_line_items": formatted_line_items,
         "entity_id": entity_id,
+        "localization": localization or build_locale_context(),
         **(branding or {}),
     }
 
@@ -33872,7 +33921,11 @@ async def set_ui_prefs(request: Request) -> dict:
         if workspace_data is not None:
             current = fetch_one(
                 conn,
-                "select theme, colors, logo_url, ui_density, layout_prefs from workspace_ui_prefs where org_id=%s",
+                """
+                select theme, colors, logo_url, ui_density, layout_prefs, default_locale, default_timezone, default_currency
+                from workspace_ui_prefs
+                where org_id=%s
+                """,
                 [org_id],
                 query_name="workspace_ui_prefs.current",
             ) or {}
@@ -33881,13 +33934,39 @@ async def set_ui_prefs(request: Request) -> dict:
             logo_url = workspace_data.get("logo_url") if "logo_url" in workspace_data else current.get("logo_url")
             ui_density = workspace_data.get("ui_density") if "ui_density" in workspace_data else current.get("ui_density")
             layout_prefs = workspace_data.get("layout_prefs") if "layout_prefs" in workspace_data else current.get("layout_prefs")
+            default_locale = (
+                normalize_locale(workspace_data.get("default_locale"))
+                if "default_locale" in workspace_data
+                else normalize_locale(current.get("default_locale"))
+            ) or DEFAULT_LOCALE
+            default_timezone = (
+                normalize_timezone(workspace_data.get("default_timezone"))
+                if "default_timezone" in workspace_data
+                else normalize_timezone(current.get("default_timezone"))
+            ) or DEFAULT_TIMEZONE
+            default_currency = (
+                normalize_currency_code(workspace_data.get("default_currency"))
+                if "default_currency" in workspace_data
+                else normalize_currency_code(current.get("default_currency"))
+            ) or DEFAULT_CURRENCY
             execute(
                 conn,
                 """
-                insert into workspace_ui_prefs (org_id, theme, colors, logo_url, ui_density, layout_prefs, updated_at)
-                values (%s, %s, %s, %s, %s, %s, %s)
+                insert into workspace_ui_prefs (
+                    org_id, theme, colors, logo_url, ui_density, layout_prefs, default_locale, default_timezone, default_currency, updated_at
+                )
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 on conflict (org_id)
-                do update set theme=excluded.theme, colors=excluded.colors, logo_url=excluded.logo_url, ui_density=excluded.ui_density, layout_prefs=excluded.layout_prefs, updated_at=excluded.updated_at
+                do update set
+                    theme=excluded.theme,
+                    colors=excluded.colors,
+                    logo_url=excluded.logo_url,
+                    ui_density=excluded.ui_density,
+                    layout_prefs=excluded.layout_prefs,
+                    default_locale=excluded.default_locale,
+                    default_timezone=excluded.default_timezone,
+                    default_currency=excluded.default_currency,
+                    updated_at=excluded.updated_at
                 """,
                 [
                     org_id,
@@ -33896,6 +33975,9 @@ async def set_ui_prefs(request: Request) -> dict:
                     logo_url,
                     ui_density,
                     json.dumps(layout_prefs) if layout_prefs is not None else None,
+                    default_locale,
+                    default_timezone,
+                    default_currency,
                     _now(),
                 ],
                 query_name="workspace_ui_prefs.upsert",
@@ -33903,7 +33985,11 @@ async def set_ui_prefs(request: Request) -> dict:
         if user_data is not None and user_id:
             current_user = fetch_one(
                 conn,
-                "select theme, ui_density, first_name, last_name, phone from user_ui_prefs where org_id=%s and user_id=%s",
+                """
+                select theme, ui_density, first_name, last_name, phone, locale, timezone
+                from user_ui_prefs
+                where org_id=%s and user_id=%s
+                """,
                 [org_id, user_id],
                 query_name="user_ui_prefs.current",
             ) or {}
@@ -33912,11 +33998,17 @@ async def set_ui_prefs(request: Request) -> dict:
             first_name = user_data.get("first_name") if "first_name" in user_data else current_user.get("first_name")
             last_name = user_data.get("last_name") if "last_name" in user_data else current_user.get("last_name")
             phone = user_data.get("phone") if "phone" in user_data else current_user.get("phone")
+            locale = normalize_locale(user_data.get("locale")) if "locale" in user_data else normalize_locale(current_user.get("locale"))
+            timezone_name = (
+                normalize_timezone(user_data.get("timezone"))
+                if "timezone" in user_data
+                else normalize_timezone(current_user.get("timezone"))
+            )
             execute(
                 conn,
                 """
-                insert into user_ui_prefs (org_id, user_id, theme, ui_density, first_name, last_name, phone, updated_at)
-                values (%s, %s, %s, %s, %s, %s, %s, %s)
+                insert into user_ui_prefs (org_id, user_id, theme, ui_density, first_name, last_name, phone, locale, timezone, updated_at)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 on conflict (org_id, user_id)
                 do update set
                     theme=excluded.theme,
@@ -33924,9 +34016,11 @@ async def set_ui_prefs(request: Request) -> dict:
                     first_name=excluded.first_name,
                     last_name=excluded.last_name,
                     phone=excluded.phone,
+                    locale=excluded.locale,
+                    timezone=excluded.timezone,
                     updated_at=excluded.updated_at
                 """,
-                [org_id, user_id, theme, ui_density, first_name, last_name, phone, _now()],
+                [org_id, user_id, theme, ui_density, first_name, last_name, phone, locale, timezone_name, _now()],
                 query_name="user_ui_prefs.upsert",
             )
     return _ok_response({"ok": True})
@@ -37598,7 +37692,13 @@ async def send_email(request: Request) -> dict:
     if not subject:
         return _error_response("SUBJECT_REQUIRED", "subject is required", "subject", status=400)
     branding = _branding_context_for_org(get_org_id())
-    context = _build_template_render_context(record_context, entity_def, entity_id, branding)
+    context = _build_template_render_context(
+        record_context,
+        entity_def,
+        entity_id,
+        branding,
+        localization=_localization_context_for_actor(actor),
+    )
     if isinstance(subject, str) and "{{" in subject:
         try:
             subject = render_template(subject, context, strict=False)
@@ -37728,7 +37828,13 @@ async def validate_doc_template(request: Request, template_id: str) -> dict:
                 found = _find_entity_def(request, entity_id)
                 entity_def = found[1] if found else None
                 record_data = record_context.get("record") or {}
-                context = _build_template_render_context(record_data, entity_def, entity_id, _branding_context_for_org(get_org_id()))
+                context = _build_template_render_context(
+                    record_data,
+                    entity_def,
+                    entity_id,
+                    _branding_context_for_org(get_org_id()),
+                    localization=_localization_context_for_actor(actor),
+                )
     html = template.get("html")
     filename_pattern = template.get("filename_pattern") or template.get("name")
     header_html = template.get("header_html")
@@ -37786,7 +37892,13 @@ async def preview_doc_template(request: Request, template_id: str) -> dict:
             if isinstance(field_id, str) and field_id:
                 record_placeholder[field_id] = f"{{{{ {field_id} }}}}"
         record_placeholder["id"] = "{{ id }}"
-        context = _build_template_render_context(record_placeholder, entity_def, entity_id, _branding_context_for_org(get_org_id()))
+        context = _build_template_render_context(
+            record_placeholder,
+            entity_def,
+            entity_id,
+            _branding_context_for_org(get_org_id()),
+            localization=_localization_context_for_actor(actor),
+        )
     else:
         record_context = generic_records.get(entity_id, record_id)
         if not record_context:
@@ -37794,7 +37906,13 @@ async def preview_doc_template(request: Request, template_id: str) -> dict:
         found = _find_entity_def(request, entity_id)
         entity_def = found[1] if found else None
         record_data = record_context.get("record") or {}
-        context = _build_template_render_context(record_data, entity_def, entity_id, _branding_context_for_org(get_org_id()))
+        context = _build_template_render_context(
+            record_data,
+            entity_def,
+            entity_id,
+            _branding_context_for_org(get_org_id()),
+            localization=_localization_context_for_actor(actor),
+        )
     try:
         html = render_template(template.get("html") or "", context, strict=True)
         filename_pattern = template.get("filename_pattern") or template.get("name") or "document"

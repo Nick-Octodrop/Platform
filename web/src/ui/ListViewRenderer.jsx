@@ -10,6 +10,7 @@ import { apiFetch } from "../api.js";
 import PaginationControls from "../components/PaginationControls.jsx";
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
 import useMediaQuery from "../hooks/useMediaQuery.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 const DEFAULT_PAGE_SIZE = 25;
 
@@ -75,7 +76,8 @@ export default function ListViewRenderer({
   enableSelection = true,
   emptyLabel = null,
 }) {
-  if (!view) return <div className="alert">Missing list view</div>;
+  const { t } = useI18n();
+  if (!view) return <div className="alert">{t("common.missing_list_view")}</div>;
   const columns = useMemo(
     () => (Array.isArray(view.columns) ? view.columns.filter((c) => c?.field_id && fieldIndex[c.field_id]) : []),
     [view.columns, fieldIndex]
@@ -92,7 +94,7 @@ export default function ListViewRenderer({
   const safePageSize = Number.isFinite(pageSize) && pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE;
 
   if (columns.length === 0) {
-    return <div className="alert alert-info">No visible columns for this view.</div>;
+    return <div className="alert alert-info">{t("empty.no_visible_columns")}</div>;
   }
 
   useEffect(() => {
@@ -208,7 +210,7 @@ export default function ListViewRenderer({
       }
       return values.map((userId) => memberLabels[userId] || (isUuidLike(userId) ? "" : userId)).filter(Boolean).join(", ");
     }
-    if (field?.type === "number") {
+    if (field?.type === "number" || field?.type === "currency") {
       return formatFieldValue(field, rawValue, row.record || {});
     }
     return String(formatDateLike(rawValue, { fieldType: field?.type, fieldId: col.field_id }));
@@ -306,8 +308,8 @@ export default function ListViewRenderer({
             ))}
             {secondaryActions.length > 0 && (
               <div className="dropdown">
-                <DaisyTooltip label="More actions" placement="bottom">
-                  <button className={SOFT_BUTTON_SM}>More</button>
+                <DaisyTooltip label={t("common.more_actions")} placement="bottom">
+                  <button className={SOFT_BUTTON_SM}>{t("common.more")}</button>
                 </DaisyTooltip>
                 <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-48 z-50">
                   {secondaryActions.map((item) => (
@@ -325,7 +327,7 @@ export default function ListViewRenderer({
           {header?.search?.enabled && (
             <input
               className="input input-bordered input-sm w-full max-w-xs"
-              placeholder={header.search?.placeholder || "Search..."}
+              placeholder={header.search?.placeholder || t("common.search")}
               value={searchQuery}
               onChange={(e) => onSearchChange?.(e.target.value)}
             />
@@ -334,9 +336,9 @@ export default function ListViewRenderer({
           <div className="flex items-center gap-2">
             {filters.length > 0 && (
               <div className="dropdown dropdown-end">
-                <DaisyTooltip label="Filters" placement="bottom">
+                <DaisyTooltip label={t("common.filters")} placement="bottom">
                   <button className={SOFT_BUTTON_SM}>
-                    {activeFilter?.label || "Filter"}
+                    {activeFilter?.label || t("common.filter")}
                   </button>
                 </DaisyTooltip>
                 <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-50">
@@ -346,15 +348,15 @@ export default function ListViewRenderer({
                     </li>
                   ))}
                   <li>
-                    <button onClick={() => onFilterChange?.("")}>Clear</button>
+                    <button onClick={() => onFilterChange?.("")}>{t("common.clear")}</button>
                   </li>
                 </ul>
               </div>
             )}
             {bulkActions.length > 0 && selectedIds.length > 0 && (
               <div className="dropdown dropdown-end">
-                <DaisyTooltip label="Bulk actions" placement="bottom">
-                  <button className={SOFT_BUTTON_SM}>Bulk actions</button>
+                <DaisyTooltip label={t("common.bulk_actions")} placement="bottom">
+                  <button className={SOFT_BUTTON_SM}>{t("common.bulk_actions")}</button>
                 </DaisyTooltip>
                 <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-50">
                   {bulkActions.map((item) => (

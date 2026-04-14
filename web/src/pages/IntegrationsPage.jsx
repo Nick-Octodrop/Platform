@@ -7,6 +7,7 @@ import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import AppSelect from "../components/AppSelect.jsx";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 function providerKeyFromType(type) {
   const raw = String(type || "");
@@ -14,16 +15,17 @@ function providerKeyFromType(type) {
   return raw.split(".", 2)[1] || "—";
 }
 
-function providerLabel(provider) {
-  return provider?.name || provider?.key || "Provider";
+function providerLabel(provider, t) {
+  return provider?.name || provider?.key || t("settings.integrations.provider");
 }
 
-function providerDescription(provider) {
-  const authType = provider?.auth_type ? `Auth: ${provider.auth_type}` : null;
+function providerDescription(provider, t) {
+  const authType = provider?.auth_type ? t("settings.integrations.auth_value", { value: provider.auth_type }) : null;
   return [provider?.description, authType].filter(Boolean).join(" • ");
 }
 
 export default function IntegrationsPage() {
+  const { t } = useI18n();
   const navigate = useNavigate();
 
   const [items, setItems] = useState([]);
@@ -62,7 +64,7 @@ export default function IntegrationsPage() {
     } catch (err) {
       setItems([]);
       setProviders([]);
-      setError(err?.message || "Failed to load integrations");
+      setError(err?.message || t("settings.integrations.load_failed"));
     } finally {
       setLoading(false);
     }
@@ -96,7 +98,7 @@ export default function IntegrationsPage() {
   async function createConnection() {
     if (creating) return;
     const provider = String(createForm.provider || "").trim().toLowerCase();
-    const name = createForm.name.trim() || providerLabel(providerIndex.get(provider));
+    const name = createForm.name.trim() || providerLabel(providerIndex.get(provider), t);
     if (!provider || !name) return;
     try {
       setCreating(true);
@@ -109,7 +111,7 @@ export default function IntegrationsPage() {
       if (id) navigate(`/integrations/connections/${id}`);
       else await load();
     } catch (err) {
-      setError(err?.message || "Failed to create connection");
+      setError(err?.message || t("settings.integrations.create_failed"));
     } finally {
       setCreating(false);
     }
@@ -119,7 +121,7 @@ export default function IntegrationsPage() {
     if (!selectedIds.length || saving) return;
     const selectedConnections = (items || []).filter((item) => selectedIds.includes(item.id));
     if (selectedConnections.some((item) => item.status !== "disabled")) {
-      setError("Disable integration connections before deleting them.");
+      setError(t("settings.integrations.disable_before_delete"));
       setShowDeleteModal(false);
       return;
     }
@@ -131,7 +133,7 @@ export default function IntegrationsPage() {
       setShowDeleteModal(false);
       await load();
     } catch (err) {
-      setError(err?.message || "Delete failed");
+      setError(err?.message || t("common.delete_failed"));
     } finally {
       setSaving(false);
     }
@@ -152,7 +154,7 @@ export default function IntegrationsPage() {
       );
       await load();
     } catch (err) {
-      setError(err?.message || "Disable failed");
+      setError(err?.message || t("settings.integrations.disable_failed"));
     } finally {
       setSaving(false);
     }
@@ -167,24 +169,24 @@ export default function IntegrationsPage() {
           id: c.id,
           name: c.name || c.id,
           provider: provider?.name || providerKey || "—",
-          status: c.status || "active",
+          status: c.status ? t(`common.${c.status}`, {}, { defaultValue: c.status }) : t("common.active"),
           health: c.health_status || "unknown",
           updated_at: c.updated_at || c.created_at || "",
           type: c.type || "",
         };
       }),
-    [items, providerIndex],
+    [items, providerIndex, t],
   );
 
   const listFieldIndex = useMemo(
     () => ({
-      "conn.name": { id: "conn.name", label: "Name" },
-      "conn.provider": { id: "conn.provider", label: "Provider" },
-      "conn.status": { id: "conn.status", label: "Status" },
-      "conn.health": { id: "conn.health", label: "Health" },
-      "conn.updated_at": { id: "conn.updated_at", label: "Updated" },
+      "conn.name": { id: "conn.name", label: t("common.name") },
+      "conn.provider": { id: "conn.provider", label: t("settings.integrations.provider") },
+      "conn.status": { id: "conn.status", label: t("common.status") },
+      "conn.health": { id: "conn.health", label: t("settings.integrations.health") },
+      "conn.updated_at": { id: "conn.updated_at", label: t("common.updated") },
     }),
-    [],
+    [t],
   );
 
   const listView = useMemo(
@@ -219,12 +221,12 @@ export default function IntegrationsPage() {
 
   const filters = useMemo(
     () => [
-      { id: "all", label: "All", domain: null },
-      { id: "active", label: "Active", domain: { op: "eq", field: "conn.status", value: "active" } },
-      { id: "disabled", label: "Disabled", domain: { op: "eq", field: "conn.status", value: "disabled" } },
-      { id: "error", label: "Errors", domain: { op: "eq", field: "conn.health", value: "error" } },
+      { id: "all", label: t("common.all"), domain: null },
+      { id: "active", label: t("common.active"), domain: { op: "eq", field: "conn.status", value: "active" } },
+      { id: "disabled", label: t("common.disabled"), domain: { op: "eq", field: "conn.status", value: "disabled" } },
+      { id: "error", label: t("common.error"), domain: { op: "eq", field: "conn.health", value: "error" } },
     ],
-    [],
+    [t],
   );
 
   const activeFilter = useMemo(() => filters.find((f) => f.id === statusFilter) || null, [filters, statusFilter]);
@@ -242,8 +244,8 @@ export default function IntegrationsPage() {
           <div className="md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
             <SystemListToolbar
-              title="Integrations"
-              createTooltip="New connection"
+              title={t("navigation.integrations")}
+              createTooltip={t("settings.integrations.new_connection")}
               onCreate={openCreateModal}
               searchValue={search}
               onSearchChange={(v) => {
@@ -271,24 +273,24 @@ export default function IntegrationsPage() {
               rightActions={
                 selectedIds.length > 0 ? (
                   <div className="dropdown dropdown-end">
-                    <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                    <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label={t("settings.selection_actions")}>
                       <MoreHorizontal className="h-4 w-4" />
                     </button>
                     <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
                       <li className="menu-title">
-                        <span>Selection</span>
+                        <span>{t("settings.selection")}</span>
                       </li>
                       {selectedIds.length === 1 ? (
                         <li>
                           <button onClick={() => navigate(`/integrations/connections/${selectedIds[0]}`)}>
-                            Open connection
+                            {t("settings.integrations.open_connection")}
                           </button>
                         </li>
                       ) : null}
                       {hasSelectedEnabled ? (
                         <li>
                           <button onClick={disableSelected} disabled={saving}>
-                            {selectedIds.length === 1 ? "Disable" : `Disable selected (${selectedIds.length})`}
+                            {selectedIds.length === 1 ? t("settings.integrations.disable") : t("settings.integrations.disable_selected", { count: selectedIds.length })}
                           </button>
                         </li>
                       ) : null}
@@ -297,13 +299,13 @@ export default function IntegrationsPage() {
                           className="text-error"
                           onClick={() => setShowDeleteModal(true)}
                           disabled={creating || saving || !allSelectedDisabled}
-                          title={!allSelectedDisabled ? "Disable selected connections before deleting them." : undefined}
+                          title={!allSelectedDisabled ? t("settings.integrations.disable_before_delete") : undefined}
                         >
                           {allSelectedDisabled
                             ? selectedIds.length === 1
-                              ? "Delete"
-                              : `Delete selected (${selectedIds.length})`
-                            : "Delete (disable first)"}
+                              ? t("common.delete")
+                              : t("settings.integrations.delete_selected", { count: selectedIds.length })
+                            : t("settings.integrations.delete_disable_first")}
                         </button>
                       </li>
                     </ul>
@@ -314,7 +316,7 @@ export default function IntegrationsPage() {
 
             <div className="mt-4">
               {loading ? (
-                <div className="text-sm opacity-70">Loading…</div>
+                <div className="text-sm opacity-70">{t("common.loading")}</div>
               ) : (
                 <ListViewRenderer
                   view={listView}
@@ -360,17 +362,17 @@ export default function IntegrationsPage() {
       {showCreateModal ? (
         <div className="modal modal-open">
           <div className="modal-box max-w-xl">
-            <h3 className="font-semibold text-lg">New Integration Connection</h3>
+            <h3 className="font-semibold text-lg">{t("settings.integrations.new_connection_title")}</h3>
             <div className="mt-4 space-y-4">
               <div className="rounded-box border border-base-300 bg-base-200/40 p-3 text-sm">
-                <div className="font-medium">How this works</div>
+                <div className="font-medium">{t("settings.integrations.how_it_works_title")}</div>
                 <div className="mt-1 opacity-75">
-                  Choose the provider template first. After creation you will land on the connection page to fill setup fields, attach secrets, and run a connection test.
+                  {t("settings.integrations.how_it_works_body")}
                 </div>
               </div>
 
               <label className="form-control">
-                <span className="label-text text-sm">Provider</span>
+                <span className="label-text text-sm">{t("settings.integrations.provider")}</span>
                 <AppSelect
                   className="select select-bordered"
                   value={createForm.provider}
@@ -379,7 +381,7 @@ export default function IntegrationsPage() {
                 >
                   {(providers || []).map((provider) => (
                     <option key={provider.key} value={provider.key}>
-                      {providerLabel(provider)}
+                      {providerLabel(provider, t)}
                     </option>
                   ))}
                 </AppSelect>
@@ -387,8 +389,8 @@ export default function IntegrationsPage() {
 
               {createProvider ? (
                 <div className="space-y-3 rounded-box border border-base-300 bg-base-200/40 p-3 text-sm">
-                  <div className="font-medium">{providerLabel(createProvider)}</div>
-                  <div className="mt-1 opacity-75">{providerDescription(createProvider) || "No provider description."}</div>
+                  <div className="font-medium">{providerLabel(createProvider, t)}</div>
+                  <div className="mt-1 opacity-75">{providerDescription(createProvider, t) || t("settings.integrations.no_provider_description")}</div>
                   {createProviderCapabilities.length ? (
                     <div className="flex flex-wrap gap-2">
                       {createProviderCapabilities.map((capability) => (
@@ -400,34 +402,34 @@ export default function IntegrationsPage() {
                   ) : null}
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <div className="rounded-box bg-base-200/60 px-3 py-2">
-                      <div className="text-xs uppercase tracking-wide opacity-60">Secrets expected</div>
-                      <div className="mt-1">{createProviderSecretKeys.length ? createProviderSecretKeys.join(", ") : "No named secrets declared"}</div>
+                      <div className="text-xs uppercase tracking-wide opacity-60">{t("settings.integrations.secrets_expected")}</div>
+                      <div className="mt-1">{createProviderSecretKeys.length ? createProviderSecretKeys.join(", ") : t("settings.integrations.no_named_secrets")}</div>
                     </div>
                     <div className="rounded-box bg-base-200/60 px-3 py-2">
-                      <div className="text-xs uppercase tracking-wide opacity-60">Next step after create</div>
-                      <div className="mt-1">Configure setup, attach secrets, then test the connection.</div>
+                      <div className="text-xs uppercase tracking-wide opacity-60">{t("settings.integrations.next_step")}</div>
+                      <div className="mt-1">{t("settings.integrations.next_step_body")}</div>
                     </div>
                   </div>
                 </div>
               ) : null}
 
               <label className="form-control">
-                <span className="label-text text-sm">Connection Name</span>
+                <span className="label-text text-sm">{t("settings.integrations.connection_name")}</span>
                 <input
                   className="input input-bordered"
                   value={createForm.name}
                   onChange={(e) => setCreateForm((prev) => ({ ...prev, name: e.target.value }))}
-                  placeholder={createProvider ? providerLabel(createProvider) : "Connection name"}
+                  placeholder={createProvider ? providerLabel(createProvider, t) : t("settings.integrations.connection_name_placeholder")}
                   disabled={creating}
                 />
               </label>
             </div>
             <div className="modal-action">
               <button className="btn btn-ghost" type="button" onClick={() => !creating && setShowCreateModal(false)} disabled={creating}>
-                Cancel
+                {t("common.cancel")}
               </button>
               <button className="btn btn-primary" type="button" onClick={createConnection} disabled={creating || !createForm.provider}>
-                Create
+                {t("common.create")}
               </button>
             </div>
           </div>
@@ -437,16 +439,16 @@ export default function IntegrationsPage() {
       {showDeleteModal ? (
         <div className="modal modal-open">
           <div className="modal-box max-w-md">
-            <h3 className="text-lg font-semibold">Delete integration connection{selectedIds.length > 1 ? "s" : ""}?</h3>
+            <h3 className="text-lg font-semibold">{selectedIds.length > 1 ? t("settings.integrations.delete_title_many") : t("settings.integrations.delete_title_one")}</h3>
             <p className="mt-2 text-sm opacity-70">
-              This will permanently remove {selectedIds.length} disabled integration connection{selectedIds.length > 1 ? "s" : ""}. This cannot be undone.
+              {t("settings.integrations.delete_body", { count: selectedIds.length })}
             </p>
             <div className="modal-action">
               <button className="btn btn-ghost" type="button" onClick={() => setShowDeleteModal(false)} disabled={saving}>
-                Cancel
+                {t("common.cancel")}
               </button>
               <button className="btn btn-error" type="button" onClick={deleteSelected} disabled={saving || !allSelectedDisabled}>
-                {saving ? "Deleting..." : "Delete"}
+                {saving ? t("common.deleting") : t("common.delete")}
               </button>
             </div>
           </div>

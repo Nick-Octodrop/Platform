@@ -1,0 +1,1482 @@
+{
+  "module": {
+    "name": "Construction",
+    "description": "Gestion de construction unifiée pour les projets, la main-d'œuvre, les matériaux, les coûts et les opérations quotidiennes du chantier."
+  },
+  "navigation": {
+    "construction_dashboard_page": "Tableau de bord",
+    "construction_project_list_page": "Projets",
+    "construction_site_list_page": "Sites",
+    "construction_worker_list_page": "Travailleurs",
+    "time_entry_list_page": "Entrées de temps",
+    "material_log_list_page": "Journaux de matériaux",
+    "construction_expense_list_page": "Dépenses / Coûts",
+    "construction_daily_report_list_page": "Rapports quotidiens",
+    "construction_issue_list_page": "Problèmes"
+  },
+  "entities": {
+    "construction_site": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "name": {
+          "label": "Nom du site"
+        },
+        "code": {
+          "label": "Code du site"
+        },
+        "address": {
+          "label": "Adresse"
+        },
+        "city": {
+          "label": "Ville"
+        },
+        "region": {
+          "label": "Région / État"
+        },
+        "country": {
+          "label": "Pays"
+        },
+        "supervisor_id": {
+          "label": "Superviseur de chantier"
+        },
+        "phone": {
+          "label": "Téléphone"
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "active": "Actif",
+            "inactive": "Inactif"
+          }
+        },
+        "notes": {
+          "label": "Remarques"
+        },
+        "created_at": {
+          "label": "Créé à"
+        }
+      }
+    },
+    "construction_crew": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "name": {
+          "label": "Nom de l'équipage"
+        },
+        "code": {
+          "label": "Code d'équipage"
+        },
+        "foreman_user_id": {
+          "label": "Contremaître"
+        },
+        "default_site_id": {
+          "label": "Site par défaut"
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "active": "Actif",
+            "inactive": "Inactif"
+          }
+        },
+        "notes": {
+          "label": "Remarques"
+        },
+        "created_at": {
+          "label": "Créé à"
+        }
+      }
+    },
+    "construction_cost_code": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "code": {
+          "label": "Coder"
+        },
+        "name": {
+          "label": "Nom"
+        },
+        "category": {
+          "label": "Catégorie",
+          "options": {
+            "labor": "Travail",
+            "materials": "Matériaux",
+            "subcontract": "Sous-traitance",
+            "equipment": "Équipement",
+            "other": "Autre"
+          }
+        },
+        "active": {
+          "label": "Actif"
+        },
+        "notes": {
+          "label": "Remarques"
+        },
+        "created_at": {
+          "label": "Créé à"
+        }
+      }
+    },
+    "construction_project": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "name": {
+          "label": "Nom du projet"
+        },
+        "code": {
+          "label": "Code du projet"
+        },
+        "client_contact_id": {
+          "label": "Client"
+        },
+        "site_id": {
+          "label": "Site principal"
+        },
+        "site_location": {
+          "label": "Emplacement du site"
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "planned": "Prévu",
+            "active": "Actif",
+            "on_hold": "En attente",
+            "completed": "Terminé",
+            "cancelled": "Annulé"
+          }
+        },
+        "project_type": {
+          "label": "Type de projet",
+          "options": {
+            "building": "Bâtiment",
+            "renovation": "Rénovation",
+            "fitout": "Aménagement",
+            "maintenance": "Entretien",
+            "other": "Autre"
+          }
+        },
+        "priority": {
+          "label": "Priorité",
+          "options": {
+            "low": "Faible",
+            "medium": "Moyen",
+            "high": "Élevé"
+          }
+        },
+        "project_manager_id": {
+          "label": "Chef de projet"
+        },
+        "site_manager_id": {
+          "label": "Gestionnaire de sites"
+        },
+        "start_date": {
+          "label": "Date de début"
+        },
+        "target_end_date": {
+          "label": "Date de fin cible"
+        },
+        "contract_value": {
+          "label": "Valeur du contrat"
+        },
+        "labor_budget": {
+          "label": "Budget du travail"
+        },
+        "material_budget": {
+          "label": "Budget matériel"
+        },
+        "other_budget": {
+          "label": "Autre budget"
+        },
+        "notes": {
+          "label": "Remarques"
+        },
+        "attachments": {
+          "label": "Pièces jointes"
+        },
+        "created_at": {
+          "label": "Créé à"
+        },
+        "total_hours": {
+          "label": "Heures totales"
+        },
+        "total_labour_cost": {
+          "label": "Coût de la main d'œuvre"
+        },
+        "total_material_cost": {
+          "label": "Coût du matériel"
+        },
+        "total_other_cost": {
+          "label": "Autres coûts"
+        },
+        "total_cost": {
+          "label": "Coût total à ce jour"
+        }
+      }
+    },
+    "construction_work_item": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "project_id": {
+          "label": "Projet"
+        },
+        "site_id": {
+          "label": "Site"
+        },
+        "title": {
+          "label": "Titre"
+        },
+        "sequence_code": {
+          "label": "Séquence / Code"
+        },
+        "phase": {
+          "label": "Phase",
+          "options": {
+            "preliminaries": "Préliminaires",
+            "foundation": "Fondation",
+            "structure": "Structure",
+            "mep": "MEP",
+            "finishing": "Finition",
+            "handover": "Remise de transfert",
+            "other": "Autre"
+          }
+        },
+        "cost_code_id": {
+          "label": "Code de coût"
+        },
+        "assigned_crew_id": {
+          "label": "Équipage assigné"
+        },
+        "owner_id": {
+          "label": "Propriétaire"
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "pending": "En attente",
+            "in_progress": "En cours",
+            "blocked": "Bloqué",
+            "done": "Terminé",
+            "cancelled": "Annulé"
+          }
+        },
+        "progress_percent": {
+          "label": "% de progression"
+        },
+        "planned_start_date": {
+          "label": "Début prévu"
+        },
+        "planned_end_date": {
+          "label": "Fin prévue"
+        },
+        "notes": {
+          "label": "Remarques"
+        },
+        "created_at": {
+          "label": "Créé à"
+        }
+      }
+    },
+    "construction_worker": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "full_name": {
+          "label": "Nom complet"
+        },
+        "worker_code": {
+          "label": "Code des travailleurs"
+        },
+        "phone": {
+          "label": "Téléphone"
+        },
+        "role": {
+          "label": "Rôle",
+          "options": {
+            "worker": "Ouvrier",
+            "supervisor": "Superviseur",
+            "foreman": "Contremaître",
+            "manager": "Gestionnaire"
+          }
+        },
+        "crew_id": {
+          "label": "Équipage"
+        },
+        "crew_name": {
+          "label": "Nom de l'équipage"
+        },
+        "portal_user_id": {
+          "label": "Utilisateur du portail"
+        },
+        "active": {
+          "label": "Actif"
+        },
+        "default_project_id": {
+          "label": "Projet par défaut"
+        },
+        "default_site_id": {
+          "label": "Site par défaut"
+        },
+        "hourly_cost_rate": {
+          "label": "Taux de coût horaire"
+        },
+        "notes": {
+          "label": "Remarques"
+        },
+        "created_at": {
+          "label": "Créé à"
+        }
+      }
+    },
+    "construction_worker_assignment": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "worker_id": {
+          "label": "Ouvrier"
+        },
+        "project_id": {
+          "label": "Projet"
+        },
+        "site_id": {
+          "label": "Site"
+        },
+        "assignment_role": {
+          "label": "Rôle d'affectation",
+          "options": {
+            "worker": "Ouvrier",
+            "supervisor": "Superviseur",
+            "foreman": "Contremaître",
+            "manager": "Gestionnaire"
+          }
+        },
+        "start_date": {
+          "label": "Date de début"
+        },
+        "end_date": {
+          "label": "Date de fin"
+        },
+        "active": {
+          "label": "Actif"
+        },
+        "notes": {
+          "label": "Remarques"
+        },
+        "created_at": {
+          "label": "Créé à"
+        }
+      }
+    },
+    "time_entry": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "project_id": {
+          "label": "Projet"
+        },
+        "site_id": {
+          "label": "Site"
+        },
+        "worker_id": {
+          "label": "Ouvrier"
+        },
+        "crew_id": {
+          "label": "Équipage"
+        },
+        "work_item_id": {
+          "label": "Élément de travail"
+        },
+        "entry_date": {
+          "label": "Date d'entrée"
+        },
+        "check_in_at": {
+          "label": "Enregistrement"
+        },
+        "check_out_at": {
+          "label": "Vérifier"
+        },
+        "break_minutes": {
+          "label": "Minutes de pause"
+        },
+        "hours_worked": {
+          "label": "Heures travaillées"
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "open": "Ouvert",
+            "closed": "Fermé",
+            "approved": "Approuvé"
+          }
+        },
+        "source": {
+          "label": "Origine",
+          "options": {
+            "pwa": "PWA",
+            "portal": "Portail",
+            "manual": "Manuel"
+          }
+        },
+        "approved_by": {
+          "label": "Approuvé par"
+        },
+        "notes": {
+          "label": "Remarques"
+        },
+        "created_at": {
+          "label": "Créé à"
+        }
+      }
+    },
+    "construction_daily_report": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "project_id": {
+          "label": "Projet"
+        },
+        "site_id": {
+          "label": "Site"
+        },
+        "report_date": {
+          "label": "Date du rapport"
+        },
+        "supervisor_id": {
+          "label": "Superviseur"
+        },
+        "weather": {
+          "label": "Météo",
+          "options": {
+            "clear": "Effacer",
+            "cloudy": "Nuageux",
+            "rain": "Pluie",
+            "storm": "Tempête",
+            "other": "Autre"
+          }
+        },
+        "summary": {
+          "label": "Résumé"
+        },
+        "blockers": {
+          "label": "Bloqueurs / Retards"
+        },
+        "safety_notes": {
+          "label": "Notes de sécurité"
+        },
+        "photos": {
+          "label": "Photos"
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "draft": "Brouillon",
+            "submitted": "Soumis",
+            "approved": "Approuvé"
+          }
+        },
+        "created_at": {
+          "label": "Créé à"
+        }
+      }
+    },
+    "construction_issue": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "project_id": {
+          "label": "Projet"
+        },
+        "site_id": {
+          "label": "Site"
+        },
+        "work_item_id": {
+          "label": "Élément de travail"
+        },
+        "title": {
+          "label": "Titre"
+        },
+        "issue_type": {
+          "label": "Type de problème",
+          "options": {
+            "delay": "Retard",
+            "quality": "Qualité",
+            "safety": "Sécurité",
+            "materials": "Matériaux",
+            "coordination": "Coordination",
+            "other": "Autre"
+          }
+        },
+        "priority": {
+          "label": "Priorité",
+          "options": {
+            "low": "Faible",
+            "medium": "Moyen",
+            "high": "Élevé",
+            "critical": "Critique"
+          }
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "open": "Ouvert",
+            "in_progress": "En cours",
+            "resolved": "Résolu",
+            "closed": "Fermé"
+          }
+        },
+        "owner_id": {
+          "label": "Propriétaire"
+        },
+        "reported_by_worker_id": {
+          "label": "Signalé par le travailleur"
+        },
+        "due_date": {
+          "label": "Date d'échéance"
+        },
+        "description": {
+          "label": "Descriptif"
+        },
+        "photos": {
+          "label": "Photos"
+        },
+        "created_at": {
+          "label": "Créé à"
+        }
+      }
+    },
+    "material_request": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "project_id": {
+          "label": "Projet"
+        },
+        "site_id": {
+          "label": "Site"
+        },
+        "request_date": {
+          "label": "Date de la demande"
+        },
+        "item_id": {
+          "label": "Article du catalogue"
+        },
+        "description": {
+          "label": "Descriptif"
+        },
+        "quantity": {
+          "label": "Quantité"
+        },
+        "unit": {
+          "label": "Unité",
+          "options": {
+            "bag": "Sac",
+            "kg": "kilos",
+            "ton": "Tonne",
+            "m3": "m3",
+            "piece": "Morceau"
+          }
+        },
+        "requested_by_worker_id": {
+          "label": "Demandé par"
+        },
+        "needed_by_date": {
+          "label": "Nécessaire par"
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "draft": "Brouillon",
+            "requested": "Demandé",
+            "approved": "Approuvé",
+            "fulfilled": "Réalisé",
+            "cancelled": "Annulé"
+          }
+        },
+        "approved_by": {
+          "label": "Approuvé par"
+        },
+        "notes": {
+          "label": "Remarques"
+        },
+        "created_at": {
+          "label": "Créé à"
+        }
+      }
+    },
+    "material_receipt": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "project_id": {
+          "label": "Projet"
+        },
+        "site_id": {
+          "label": "Site"
+        },
+        "receipt_date": {
+          "label": "Date de réception"
+        },
+        "item_id": {
+          "label": "Article du catalogue"
+        },
+        "supplier_contact_id": {
+          "label": "Fournisseur"
+        },
+        "quantity": {
+          "label": "Quantité"
+        },
+        "unit": {
+          "label": "Unité",
+          "options": {
+            "bag": "Sac",
+            "kg": "kilos",
+            "ton": "Tonne",
+            "m3": "m3",
+            "piece": "Morceau"
+          }
+        },
+        "unit_cost": {
+          "label": "Coût unitaire"
+        },
+        "total_cost": {
+          "label": "Coût total"
+        },
+        "received_by": {
+          "label": "Reçu par"
+        },
+        "invoice_ref": {
+          "label": "Réf Facture / Livraison"
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "draft": "Brouillon",
+            "received": "Reçu",
+            "posted": "Publié"
+          }
+        },
+        "notes": {
+          "label": "Remarques"
+        },
+        "attachments": {
+          "label": "Pièces jointes"
+        },
+        "created_at": {
+          "label": "Créé à"
+        }
+      }
+    },
+    "material_log": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "project_id": {
+          "label": "Projet"
+        },
+        "site_id": {
+          "label": "Site"
+        },
+        "work_item_id": {
+          "label": "Élément de travail"
+        },
+        "log_date": {
+          "label": "Date du journal"
+        },
+        "item_id": {
+          "label": "Article du catalogue"
+        },
+        "material_type": {
+          "label": "Type de matériau",
+          "options": {
+            "cement": "Ciment",
+            "sand": "Sable",
+            "steel": "Acier",
+            "blocks": "Blocs",
+            "gravel": "Gravier",
+            "other": "Autre"
+          }
+        },
+        "quantity": {
+          "label": "Quantité"
+        },
+        "unit": {
+          "label": "Unité",
+          "options": {
+            "bag": "Sac",
+            "kg": "kilos",
+            "ton": "Tonne",
+            "m3": "m3",
+            "piece": "Morceau"
+          }
+        },
+        "unit_cost": {
+          "label": "Coût unitaire"
+        },
+        "total_cost": {
+          "label": "Coût total"
+        },
+        "entered_by_worker_id": {
+          "label": "Entré par le travailleur"
+        },
+        "supervisor_id": {
+          "label": "Superviseur"
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "draft": "Brouillon",
+            "submitted": "Soumis",
+            "approved": "Approuvé"
+          }
+        },
+        "notes": {
+          "label": "Remarques"
+        },
+        "photo": {
+          "label": "Photos"
+        },
+        "created_at": {
+          "label": "Créé à"
+        }
+      }
+    },
+    "construction_budget_line": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "project_id": {
+          "label": "Projet"
+        },
+        "cost_code_id": {
+          "label": "Code de coût"
+        },
+        "category": {
+          "label": "Catégorie",
+          "options": {
+            "labor": "Travail",
+            "materials": "Matériaux",
+            "subcontract": "Sous-traitance",
+            "equipment": "Équipement",
+            "other": "Autre"
+          }
+        },
+        "description": {
+          "label": "Descriptif"
+        },
+        "planned_amount": {
+          "label": "Montant prévu"
+        },
+        "committed_amount": {
+          "label": "Montant engagé"
+        },
+        "actual_amount": {
+          "label": "Montant réel"
+        },
+        "variance_amount": {
+          "label": "Écart"
+        },
+        "notes": {
+          "label": "Remarques"
+        },
+        "created_at": {
+          "label": "Créé à"
+        }
+      }
+    },
+    "construction_expense": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "project_id": {
+          "label": "Projet"
+        },
+        "site_id": {
+          "label": "Site"
+        },
+        "cost_code_id": {
+          "label": "Code de coût"
+        },
+        "title": {
+          "label": "Titre"
+        },
+        "expense_date": {
+          "label": "Date de dépense"
+        },
+        "expense_type": {
+          "label": "Type de dépense",
+          "options": {
+            "labor": "Travail",
+            "materials": "Matériaux",
+            "subcontract": "Sous-traitance",
+            "equipment": "Équipement",
+            "other": "Autre"
+          }
+        },
+        "supplier_contact_id": {
+          "label": "Fournisseur / Vendeur"
+        },
+        "reference": {
+          "label": "Référence"
+        },
+        "amount": {
+          "label": "Montant"
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "draft": "Brouillon",
+            "posted": "Publié",
+            "void": "Vide"
+          }
+        },
+        "notes": {
+          "label": "Remarques"
+        },
+        "attachments": {
+          "label": "Pièces jointes"
+        },
+        "created_at": {
+          "label": "Créé à"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_construction_site_new": {
+      "label": "+ Nouveau site"
+    },
+    "action_construction_crew_new": {
+      "label": "+ Nouvel équipage"
+    },
+    "action_construction_cost_code_new": {
+      "label": "+ Nouveau code de coût"
+    },
+    "action_construction_site_deactivate": {
+      "label": "Désactiver le site"
+    },
+    "action_construction_site_activate": {
+      "label": "Activer le site"
+    },
+    "action_construction_crew_deactivate": {
+      "label": "Désactiver l'équipage"
+    },
+    "action_construction_crew_activate": {
+      "label": "Activer l'équipage"
+    },
+    "action_construction_project_new": {
+      "label": "+ Nouveau projet"
+    },
+    "action_construction_work_item_new": {
+      "label": "+ Nouvel élément de travail"
+    },
+    "action_construction_project_activate": {
+      "label": "Démarrer le projet"
+    },
+    "action_construction_project_hold": {
+      "label": "Mettre en attente"
+    },
+    "action_construction_project_resume": {
+      "label": "Reprendre le projet"
+    },
+    "action_construction_project_complete": {
+      "label": "Terminé"
+    },
+    "action_construction_project_cancel": {
+      "label": "Annuler le projet"
+    },
+    "action_construction_work_item_start": {
+      "label": "Commencer"
+    },
+    "action_construction_work_item_block": {
+      "label": "Bloquer"
+    },
+    "action_construction_work_item_resume": {
+      "label": "CV"
+    },
+    "action_construction_work_item_done": {
+      "label": "Marquer terminé"
+    },
+    "action_construction_work_item_cancel": {
+      "label": "Annuler"
+    },
+    "action_construction_worker_new": {
+      "label": "+ Nouveau travailleur"
+    },
+    "action_construction_worker_assignment_new": {
+      "label": "+ Nouvelle mission"
+    },
+    "action_time_entry_new": {
+      "label": "+ Nouvelle entrée de temps"
+    },
+    "action_construction_worker_activate": {
+      "label": "Activer"
+    },
+    "action_construction_worker_deactivate": {
+      "label": "Désactiver"
+    },
+    "action_time_entry_close": {
+      "label": "Fermer l'entrée"
+    },
+    "action_time_entry_approve": {
+      "label": "Approuver"
+    },
+    "action_time_entry_reopen": {
+      "label": "Réouvrir"
+    },
+    "action_construction_worker_assignment_activate": {
+      "label": "Activer"
+    },
+    "action_construction_worker_assignment_deactivate": {
+      "label": "Désactiver"
+    },
+    "action_daily_report_new": {
+      "label": "+ Nouveau rapport"
+    },
+    "action_issue_new": {
+      "label": "+ Nouveau numéro"
+    },
+    "action_daily_report_submit": {
+      "label": "Soumettre"
+    },
+    "action_daily_report_approve": {
+      "label": "Approuver"
+    },
+    "action_daily_report_reopen": {
+      "label": "Réouvrir"
+    },
+    "action_issue_start": {
+      "label": "Commencer"
+    },
+    "action_issue_resolve": {
+      "label": "Résoudre"
+    },
+    "action_issue_close": {
+      "label": "Fermer"
+    },
+    "action_issue_reopen": {
+      "label": "Réouvrir"
+    },
+    "action_material_request_new": {
+      "label": "+ Nouvelle demande"
+    },
+    "action_material_receipt_new": {
+      "label": "+ Nouveau reçu"
+    },
+    "action_material_log_new": {
+      "label": "+ Nouveau journal d'utilisation"
+    },
+    "action_material_request_send": {
+      "label": "Demande"
+    },
+    "action_material_request_approve": {
+      "label": "Approuver"
+    },
+    "action_material_request_fulfill": {
+      "label": "Remplir"
+    },
+    "action_material_receipt_receive": {
+      "label": "Recevoir"
+    },
+    "action_material_receipt_post": {
+      "label": "Publier"
+    },
+    "action_material_log_submit": {
+      "label": "Soumettre"
+    },
+    "action_material_log_approve": {
+      "label": "Approuver"
+    },
+    "action_construction_budget_line_new": {
+      "label": "+ Nouvelle ligne budgétaire"
+    },
+    "action_construction_expense_new": {
+      "label": "+ Nouvelle dépense"
+    },
+    "action_construction_expense_post": {
+      "label": "Publier"
+    },
+    "action_construction_expense_void": {
+      "label": "Vide"
+    },
+    "action_construction_open_dashboard": {
+      "label": "Tableau de bord des opérations"
+    },
+    "action_construction_open_projects": {
+      "label": "Projets"
+    },
+    "action_construction_open_time_report": {
+      "label": "Rapport sur les entrées de temps"
+    },
+    "action_construction_open_material_report": {
+      "label": "Rapport d'utilisation des matériaux"
+    },
+    "action_construction_open_cost_report": {
+      "label": "Résumé des coûts du projet"
+    },
+    "action_construction_open_daily_summary": {
+      "label": "Résumé quotidien du site"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Rechercher des sites..."
+      },
+      "filters": {
+        "active": {
+          "label": "Actif"
+        },
+        "inactive": {
+          "label": "Inactif"
+        },
+        "open": {
+          "label": "Ouvert"
+        },
+        "completed": {
+          "label": "Terminé"
+        },
+        "done": {
+          "label": "Terminé"
+        },
+        "supervisors": {
+          "label": "Superviseurs"
+        },
+        "closed": {
+          "label": "Fermé"
+        },
+        "approved": {
+          "label": "Approuvé"
+        },
+        "draft": {
+          "label": "Brouillon"
+        },
+        "submitted": {
+          "label": "Soumis"
+        },
+        "resolved": {
+          "label": "Résolu"
+        },
+        "critical": {
+          "label": "Critique"
+        },
+        "requested": {
+          "label": "Demandé"
+        },
+        "posted": {
+          "label": "Publié"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "general": {
+          "title": "Général"
+        },
+        "notes": {
+          "title": "Remarques"
+        },
+        "overview": {
+          "title": "Aperçu"
+        },
+        "summary": {
+          "title": "Tableau de bord du projet"
+        },
+        "crew": {
+          "title": "Ouvriers / équipage"
+        },
+        "time_entries": {
+          "title": "Entrées de temps"
+        },
+        "materials": {
+          "title": "Matériaux"
+        },
+        "costs": {
+          "title": "Coûts / Dépenses"
+        },
+        "daily_reports": {
+          "title": "Rapports quotidiens"
+        },
+        "issues": {
+          "title": "Problèmes"
+        },
+        "main": {
+          "title": "Élément de travail"
+        },
+        "worker": {
+          "title": "Ouvrier"
+        },
+        "assignments_related": {
+          "title": "Missions"
+        },
+        "time_entries_related": {
+          "title": "Entrées de temps"
+        },
+        "assignment": {
+          "title": "Affectation"
+        },
+        "entry": {
+          "title": "Entrée"
+        },
+        "report": {
+          "title": "Rapport"
+        },
+        "photos": {
+          "title": "Photos"
+        },
+        "issue": {
+          "title": "Problème"
+        },
+        "request": {
+          "title": "Demande"
+        },
+        "receipt": {
+          "title": "Reçu"
+        },
+        "supporting": {
+          "title": "Soutenir"
+        },
+        "usage": {
+          "title": "Utilisation"
+        },
+        "budget": {
+          "title": "Budget"
+        },
+        "expense": {
+          "title": "Dépense"
+        }
+      }
+    },
+    "report": {
+      "search": {
+        "placeholder": "Rechercher des entrées de travail..."
+      },
+      "filters": {
+        "open": {
+          "label": "Ouvert"
+        },
+        "closed": {
+          "label": "Fermé"
+        },
+        "approved": {
+          "label": "Approuvé"
+        },
+        "draft": {
+          "label": "Brouillon"
+        },
+        "submitted": {
+          "label": "Soumis"
+        },
+        "posted": {
+          "label": "Publié"
+        }
+      }
+    },
+    "summary_list": {
+      "search": {
+        "placeholder": "Rechercher des résumés quotidiens du site..."
+      },
+      "filters": {
+        "draft": {
+          "label": "Brouillon"
+        },
+        "submitted": {
+          "label": "Soumis"
+        },
+        "approved": {
+          "label": "Approuvé"
+        }
+      }
+    }
+  },
+  "pages": {
+    "dashboard_page": {
+      "title": "Tableau de bord des opérations",
+      "blocks": {
+        "1": {
+          "cards": {
+            "workers_on_site_today": {
+              "label": "Travailleurs sur place aujourd'hui",
+              "subtitle": "Aujourd'hui seulement"
+            },
+            "labour_hours_today": {
+              "label": "Nombre total d'heures de travail aujourd'hui",
+              "subtitle": "Aujourd'hui seulement"
+            },
+            "materials_logged_today": {
+              "label": "Matériaux enregistrés aujourd'hui",
+              "subtitle": "Aujourd'hui seulement"
+            },
+            "cost_today": {
+              "label": "Coût total aujourd'hui",
+              "subtitle": "Aujourd'hui seulement"
+            }
+          }
+        },
+        "2": {
+          "title": "Répartition des coûts"
+        },
+        "3": {
+          "items": {
+            "1": {
+              "content": {
+                "1": {
+                  "title": "Entrées de temps récentes"
+                }
+              }
+            },
+            "2": {
+              "content": {
+                "1": {
+                  "title": "Matériaux enregistrés aujourd'hui"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "list_page": {
+      "title": "Sites",
+      "blocks": {
+        "1": {
+          "cards": {
+            "active_projects": {
+              "label": "Projets actifs"
+            },
+            "project_hours_total": {
+              "label": "Heures totales du projet"
+            },
+            "project_cost_total": {
+              "label": "Coût total à ce jour"
+            },
+            "open_project_issues": {
+              "label": "Problèmes ouverts"
+            }
+          }
+        }
+      }
+    },
+    "form_page": {
+      "title": "Site"
+    },
+    "time_report_page": {
+      "title": "Rapport sur les entrées de temps"
+    },
+    "material_report_page": {
+      "title": "Rapport d'utilisation des matériaux"
+    },
+    "cost_report_page": {
+      "title": "Résumé des coûts du projet",
+      "blocks": {
+        "1": {
+          "items": {
+            "1": {
+              "content": {
+                "1": {
+                  "title": "Coûts par type"
+                }
+              }
+            },
+            "2": {
+              "content": {
+                "1": {
+                  "title": "Coûts par projet"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "daily_summary_page": {
+      "title": "Résumé quotidien du site"
+    }
+  },
+  "dashboard": {
+    "projects_by_status": "Projets par statut",
+    "project_cost_to_date": "Coût à ce jour par projet",
+    "labour_hours_by_project": "Heures de travail par projet",
+    "daily_reports_by_project": "Rapports quotidiens par projet",
+    "materials_by_type": "Utilisation des matériaux par type",
+    "costs_by_project": "Coûts par projet"
+  },
+  "workflows": {
+    "workflow_construction_site_status": {
+      "states": {
+        "active": {
+          "label": "Actif"
+        },
+        "inactive": {
+          "label": "Inactif"
+        }
+      }
+    },
+    "workflow_construction_crew_status": {
+      "states": {
+        "active": {
+          "label": "Actif"
+        },
+        "inactive": {
+          "label": "Inactif"
+        }
+      }
+    },
+    "workflow_construction_project_status": {
+      "states": {
+        "planned": {
+          "label": "Prévu"
+        },
+        "active": {
+          "label": "Actif"
+        },
+        "on_hold": {
+          "label": "En attente"
+        },
+        "completed": {
+          "label": "Terminé"
+        },
+        "cancelled": {
+          "label": "Annulé"
+        }
+      }
+    },
+    "workflow_construction_work_item_status": {
+      "states": {
+        "pending": {
+          "label": "En attente"
+        },
+        "in_progress": {
+          "label": "En cours"
+        },
+        "blocked": {
+          "label": "Bloqué"
+        },
+        "done": {
+          "label": "Terminé"
+        },
+        "cancelled": {
+          "label": "Annulé"
+        }
+      }
+    },
+    "workflow_time_entry_status": {
+      "states": {
+        "open": {
+          "label": "Ouvert"
+        },
+        "closed": {
+          "label": "Fermé"
+        },
+        "approved": {
+          "label": "Approuvé"
+        }
+      }
+    },
+    "workflow_construction_daily_report_status": {
+      "states": {
+        "draft": {
+          "label": "Brouillon"
+        },
+        "submitted": {
+          "label": "Soumis"
+        },
+        "approved": {
+          "label": "Approuvé"
+        }
+      }
+    },
+    "workflow_construction_issue_status": {
+      "states": {
+        "open": {
+          "label": "Ouvert"
+        },
+        "in_progress": {
+          "label": "En cours"
+        },
+        "resolved": {
+          "label": "Résolu"
+        },
+        "closed": {
+          "label": "Fermé"
+        }
+      }
+    },
+    "workflow_material_request_status": {
+      "states": {
+        "draft": {
+          "label": "Brouillon"
+        },
+        "requested": {
+          "label": "Demandé"
+        },
+        "approved": {
+          "label": "Approuvé"
+        },
+        "fulfilled": {
+          "label": "Réalisé"
+        },
+        "cancelled": {
+          "label": "Annulé"
+        }
+      }
+    },
+    "workflow_material_receipt_status": {
+      "states": {
+        "draft": {
+          "label": "Brouillon"
+        },
+        "received": {
+          "label": "Reçu"
+        },
+        "posted": {
+          "label": "Publié"
+        }
+      }
+    },
+    "workflow_material_log_status": {
+      "states": {
+        "draft": {
+          "label": "Brouillon"
+        },
+        "submitted": {
+          "label": "Soumis"
+        },
+        "approved": {
+          "label": "Approuvé"
+        }
+      }
+    },
+    "workflow_construction_expense_status": {
+      "states": {
+        "draft": {
+          "label": "Brouillon"
+        },
+        "posted": {
+          "label": "Publié"
+        },
+        "void": {
+          "label": "Vide"
+        }
+      }
+    }
+  }
+}

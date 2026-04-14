@@ -5,6 +5,7 @@ import PaginationControls from "../components/PaginationControls.jsx";
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
 import { apiFetch } from "../api.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 function normalizeSavedView(view) {
   if (!view || typeof view !== "object") return null;
@@ -33,7 +34,7 @@ function normalizeSavedView(view) {
 
 export default function SystemListToolbar({
   title,
-  createTooltip = "New",
+  createTooltip = null,
   onCreate,
   searchValue = "",
   onSearchChange,
@@ -52,6 +53,8 @@ export default function SystemListToolbar({
   savedViewState = null,
   onApplySavedViewState,
 }) {
+  const { t } = useI18n();
+  const resolvedCreateTooltip = createTooltip || t("common.new");
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [filterPrompt, setFilterPrompt] = useState(null);
   const [filterPromptValue, setFilterPromptValue] = useState("");
@@ -88,7 +91,7 @@ export default function SystemListToolbar({
       .catch((err) => {
         if (cancelled) return;
         setSavedViews([]);
-        setSavedViewsError(err?.message || "Failed to load saved views");
+        setSavedViewsError(err?.message || t("settings.saved_views_load_failed"));
       });
     return () => {
       cancelled = true;
@@ -125,7 +128,7 @@ export default function SystemListToolbar({
       }
       setSavedViewsError("");
     } catch (err) {
-      setSavedViewsError(err?.message || "Failed to save view");
+      setSavedViewsError(err?.message || t("settings.saved_views_save_failed"));
     } finally {
       setSavePromptOpen(false);
       setSavePromptValue("");
@@ -140,7 +143,7 @@ export default function SystemListToolbar({
       await reloadSavedViews();
       setSavedViewsError("");
     } catch (err) {
-      setSavedViewsError(err?.message || "Failed to delete saved view");
+      setSavedViewsError(err?.message || t("settings.saved_views_delete_failed"));
     }
   }
 
@@ -162,7 +165,7 @@ export default function SystemListToolbar({
       await reloadSavedViews();
       setSavedViewsError("");
     } catch (err) {
-      setSavedViewsError(err?.message || "Failed to set default view");
+      setSavedViewsError(err?.message || t("settings.saved_views_default_failed"));
     }
   }
 
@@ -171,7 +174,7 @@ export default function SystemListToolbar({
       <div className="flex flex-wrap items-center justify-between gap-3 relative z-30 shrink-0 w-full min-w-0">
         <div className="flex items-center gap-2 min-w-[12rem]">
           {onCreate && (
-            <DaisyTooltip label={createTooltip} placement="bottom">
+            <DaisyTooltip label={resolvedCreateTooltip} placement="bottom">
               <button className={PRIMARY_BUTTON_SM} onClick={onCreate}>
                 <Plus className="h-4 w-4" />
               </button>
@@ -182,19 +185,19 @@ export default function SystemListToolbar({
 
         <div className={`flex items-center justify-center flex-1 min-w-0 ${isMobile ? "hidden" : ""}`}>
           <div className="join items-center overflow-visible">
-            <DaisyTooltip label="Search" className="join-item" placement="bottom">
+            <DaisyTooltip label={t("common.search")} className="join-item" placement="bottom">
               <button className={SOFT_ICON_SM}>
                 <SearchIcon className="h-4 w-4" />
               </button>
             </DaisyTooltip>
             <input
               className="input input-bordered input-sm join-item toolbar-search-input w-full max-w-xs py-0 leading-none"
-              placeholder="Search…"
+              placeholder={t("common.search")}
               value={searchValue}
               onChange={(e) => onSearchChange?.(e.target.value)}
             />
             <div className="dropdown dropdown-end dropdown-bottom join-item">
-              <DaisyTooltip label="Filters" className="join-item" placement="bottom">
+              <DaisyTooltip label={t("common.filters")} className="join-item" placement="bottom">
                 <button className={SOFT_ICON_SM} type="button" tabIndex={0}>
                   <Filter className="h-4 w-4" />
                 </button>
@@ -206,7 +209,7 @@ export default function SystemListToolbar({
                       <button onClick={() => onFilterChange?.(flt.id)}>{flt.label}</button>
                     </li>
                   ))}
-                  {filterableFields.length > 0 && <li className="menu-title">Custom</li>}
+                  {filterableFields.length > 0 && <li className="menu-title">{t("common.custom")}</li>}
                   {filterableFields.map((field) => (
                     <li key={field.id}>
                       <button
@@ -220,14 +223,14 @@ export default function SystemListToolbar({
                     </li>
                   ))}
                   <li>
-                    <button onClick={() => onClearFilters?.()}>Clear</button>
+                    <button onClick={() => onClearFilters?.()}>{t("common.clear")}</button>
                   </li>
                 </ul>
               </div>
             </div>
             {showSavedViews && (
               <div className="dropdown dropdown-end dropdown-bottom join-item">
-                <DaisyTooltip label="Saved views" className="join-item" placement="bottom">
+                <DaisyTooltip label={t("settings.saved_views")} className="join-item" placement="bottom">
                   <button className={SOFT_ICON_SM} type="button" tabIndex={0}>
                     <Bookmark className="h-4 w-4" />
                   </button>
@@ -243,26 +246,26 @@ export default function SystemListToolbar({
                             onClick={() => onApplySavedViewState?.(view?.state || {}, view)}
                           >
                             {view.name}
-                            {view?.is_default ? " (Default)" : ""}
+                            {view?.is_default ? ` (${t("settings.default_view")})` : ""}
                           </button>
                           <button
                             className="btn btn-ghost btn-xs"
                             onClick={() => handleSetDefaultSavedView(view.id)}
                             type="button"
                           >
-                            Default
+                            {t("settings.default_view")}
                           </button>
                           <button
                             className="btn btn-ghost btn-xs text-error"
                             onClick={() => handleDeleteSavedView(view.id)}
                             type="button"
                           >
-                            Delete
+                            {t("common.delete")}
                           </button>
                         </div>
                       </li>
                     ))}
-                    {canManageSavedViews && savedViews.length === 0 ? <li><span className="text-xs opacity-60">No saved views yet.</span></li> : null}
+                    {canManageSavedViews && savedViews.length === 0 ? <li><span className="text-xs opacity-60">{t("settings.no_saved_views")}</span></li> : null}
                     <li>
                       <button
                         onClick={() => {
@@ -272,15 +275,15 @@ export default function SystemListToolbar({
                         }}
                         disabled={!canSaveCurrentView}
                       >
-                        Save current view
+                        {t("settings.save_current_view")}
                       </button>
                     </li>
-                    {defaultSavedView ? <li><span className="text-xs opacity-60">Default: {defaultSavedView.name}</span></li> : null}
+                    {defaultSavedView ? <li><span className="text-xs opacity-60">{t("settings.default_named", { name: defaultSavedView.name })}</span></li> : null}
                   </ul>
                 </div>
               </div>
             )}
-            <DaisyTooltip label="Refresh" className="join-item" placement="bottom">
+            <DaisyTooltip label={t("common.refresh")} className="join-item" placement="bottom">
               <button className={SOFT_ICON_SM} onClick={onRefresh}>
                 <RefreshCw className="h-4 w-4" />
               </button>
@@ -292,7 +295,7 @@ export default function SystemListToolbar({
           {rightActions}
           {showListToggle && (
             <div className="join">
-              <DaisyTooltip label="List" className="join-item" placement="top">
+              <DaisyTooltip label={t("common.record")} className="join-item" placement="top">
                 <button className={`${SOFT_ICON_SM} bg-base-300`} disabled>
                   <ListIcon className="h-4 w-4" />
                 </button>
@@ -311,34 +314,34 @@ export default function SystemListToolbar({
 
         {isMobile && (
           <div className="order-4 flex w-full items-center gap-2 min-w-0">
-            <DaisyTooltip label="Search" placement="top">
+            <DaisyTooltip label={t("common.search")} placement="top">
               <button
                 className={`${SOFT_ICON_SM} shrink-0`}
                 type="button"
-                aria-label="Search"
+                aria-label={t("common.search")}
                 onClick={() => setMobileSearchOpen((open) => !open)}
               >
                 <SearchIcon className="h-4 w-4" />
               </button>
             </DaisyTooltip>
             {onRefresh && (
-              <DaisyTooltip label="Refresh" placement="top">
+              <DaisyTooltip label={t("common.refresh")} placement="top">
                 <button
                   className={`${SOFT_ICON_SM} shrink-0`}
                   type="button"
                   onClick={onRefresh}
-                  aria-label="Refresh"
+                  aria-label={t("common.refresh")}
                 >
                   <RefreshCw className="h-4 w-4" />
                 </button>
               </DaisyTooltip>
             )}
             {hasMobileMenuOptions && (
-              <DaisyTooltip label="More actions" placement="top">
+              <DaisyTooltip label={t("common.more_actions")} placement="top">
                 <button
                   className={`${SOFT_ICON_SM} shrink-0`}
                   type="button"
-                  aria-label="More actions"
+                  aria-label={t("common.more_actions")}
                   onClick={() => setMobileMenuOpen(true)}
                 >
                   <MoreHorizontal className="h-4 w-4" />
@@ -352,7 +355,7 @@ export default function SystemListToolbar({
           <div className="order-5 w-full shrink-0">
             <input
               className="input input-bordered w-full"
-              placeholder="Search…"
+              placeholder={t("common.search")}
               value={searchValue}
               onChange={(e) => onSearchChange?.(e.target.value)}
               autoFocus
@@ -366,7 +369,7 @@ export default function SystemListToolbar({
           <button
             type="button"
             className="absolute inset-0 bg-base-content/35"
-            aria-label="Close menu"
+            aria-label={t("common.close")}
             onClick={() => setMobileMenuOpen(false)}
           />
           <div className="absolute inset-x-0 bottom-0 rounded-t-3xl border-t border-base-300 bg-base-100 p-4 shadow-2xl">
@@ -374,7 +377,7 @@ export default function SystemListToolbar({
             <div className="max-h-[60vh] overflow-auto space-y-2">
               {(filters.length > 0 || filterableFields.length > 0) && (
                 <div className="border-b border-base-300 pb-2 mb-2">
-                  <div className="px-2 pb-2 text-sm font-semibold">Filters</div>
+                  <div className="px-2 pb-2 text-sm font-semibold">{t("common.filters")}</div>
                   {filters.map((flt) => (
                     <button
                       key={flt.id}
@@ -389,7 +392,7 @@ export default function SystemListToolbar({
                     </button>
                   ))}
                   {filterableFields.length > 0 ? (
-                    <div className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide opacity-50">Custom</div>
+                    <div className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide opacity-50">{t("common.custom")}</div>
                   ) : null}
                   {filterableFields.map((field) => (
                     <button
@@ -413,14 +416,14 @@ export default function SystemListToolbar({
                       setMobileMenuOpen(false);
                     }}
                   >
-                    Clear
+                    {t("common.clear")}
                   </button>
                 </div>
               )}
 
               {showSavedViews && (
                 <div className="space-y-2">
-                  <div className="px-2 pb-2 text-sm font-semibold">Saved Views</div>
+                  <div className="px-2 pb-2 text-sm font-semibold">{t("settings.saved_views")}</div>
                   {savedViewsError ? <div className="px-4 text-sm text-error">{savedViewsError}</div> : null}
                   {canManageSavedViews && savedViews.map((view) => (
                     <div key={view.id} className="flex items-center gap-2 rounded-2xl px-2 py-1 hover:bg-base-200">
@@ -433,25 +436,25 @@ export default function SystemListToolbar({
                         }}
                       >
                         {view.name}
-                        {view?.is_default ? " (Default)" : ""}
+                        {view?.is_default ? ` (${t("settings.default_view")})` : ""}
                       </button>
                       <button
                         className="btn btn-ghost btn-sm"
                         onClick={() => handleSetDefaultSavedView(view.id)}
                         type="button"
                       >
-                        Default
+                        {t("settings.default_view")}
                       </button>
                       <button
                         className="btn btn-ghost btn-sm text-error"
                         onClick={() => handleDeleteSavedView(view.id)}
                         type="button"
                       >
-                        Delete
+                        {t("common.delete")}
                       </button>
                     </div>
                   ))}
-                  {canManageSavedViews && savedViews.length === 0 ? <div className="px-4 text-sm opacity-60">No saved views yet.</div> : null}
+                  {canManageSavedViews && savedViews.length === 0 ? <div className="px-4 text-sm opacity-60">{t("settings.no_saved_views")}</div> : null}
                   <button
                     type="button"
                     className="flex w-full items-center rounded-2xl px-4 py-4 text-left text-base hover:bg-base-200 disabled:opacity-50"
@@ -463,9 +466,9 @@ export default function SystemListToolbar({
                     }}
                     disabled={!canSaveCurrentView}
                   >
-                    Save current view
+                    {t("settings.save_current_view")}
                   </button>
-                  {defaultSavedView ? <div className="px-4 text-xs opacity-60">Default: {defaultSavedView.name}</div> : null}
+                  {defaultSavedView ? <div className="px-4 text-xs opacity-60">{t("settings.default_named", { name: defaultSavedView.name })}</div> : null}
                 </div>
               )}
             </div>
@@ -477,12 +480,12 @@ export default function SystemListToolbar({
         <div className="modal modal-open">
           <div className="modal-box">
             <h3 className="font-bold text-lg">
-              Filter {filterPrompt.field?.label || filterPrompt.field?.id || "Field"}
+              {t("common.filter")} {filterPrompt.field?.label || filterPrompt.field?.id || t("common.field")}
             </h3>
-            <div className="py-2 text-sm opacity-70">Enter a value to filter by.</div>
+            <div className="py-2 text-sm opacity-70">{t("settings.enter_filter_value")}</div>
             <input
               className="input input-bordered input-sm w-full"
-              placeholder="Value"
+              placeholder={t("settings.value")}
               value={filterPromptValue}
               onChange={(e) => setFilterPromptValue(e.target.value)}
               autoFocus
@@ -495,7 +498,7 @@ export default function SystemListToolbar({
                   setFilterPromptValue("");
                 }}
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 className="btn btn-primary"
@@ -511,7 +514,7 @@ export default function SystemListToolbar({
                   setFilterPromptValue("");
                 }}
               >
-                Apply
+                {t("settings.apply")}
               </button>
             </div>
           </div>
@@ -521,11 +524,11 @@ export default function SystemListToolbar({
       {savePromptOpen && (
         <div className="modal modal-open">
           <div className="modal-box">
-            <h3 className="font-bold text-lg">Save current view</h3>
-            <div className="py-2 text-sm opacity-70">Give this saved view a name.</div>
+            <h3 className="font-bold text-lg">{t("common.save_current_view")}</h3>
+            <div className="py-2 text-sm opacity-70">{t("common.give_saved_view_name")}</div>
             <input
               className="input input-bordered input-sm w-full"
-              placeholder="View name"
+              placeholder={t("common.view_name")}
               value={savePromptValue}
               onChange={(e) => setSavePromptValue(e.target.value)}
               autoFocus
@@ -538,7 +541,7 @@ export default function SystemListToolbar({
                   setSavePromptValue("");
                 }}
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button className="btn btn-primary" onClick={handleSaveCurrentView}>
                 Save

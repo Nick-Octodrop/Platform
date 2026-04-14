@@ -238,6 +238,37 @@
           "format": { "kind": "measurement", "unit_field": "te_purchase_order_line.order_uom", "precision": 0 }
         },
         {
+          "id": "te_purchase_order_line.received_quantity",
+          "type": "number",
+          "label": "Received Quantity",
+          "default": 0,
+          "format": { "kind": "measurement", "unit_field": "te_purchase_order_line.order_uom", "precision": 0 },
+          "help_text": "Use this to track what has physically arrived against the ordered quantity."
+        },
+        {
+          "id": "te_purchase_order_line.open_quantity",
+          "type": "number",
+          "label": "Open Quantity",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "measurement", "unit_field": "te_purchase_order_line.order_uom", "precision": 0 },
+          "compute": {
+            "expression": {
+              "op": "max",
+              "args": [
+                {
+                  "op": "sub",
+                  "args": [
+                    { "ref": "$current.te_purchase_order_line.quantity" },
+                    { "ref": "$current.te_purchase_order_line.received_quantity" }
+                  ]
+                },
+                0
+              ]
+            }
+          }
+        },
+        {
           "id": "te_purchase_order_line.unit_cost",
           "type": "number",
           "label": "Unit Cost",
@@ -487,6 +518,8 @@
                 ]
               },
               { "field_id": "te_purchase_order_line.quantity", "label": "Qty", "type": "number", "width": 120, "align": "right", "format": { "kind": "measurement", "unit_field": "te_purchase_order_line.order_uom", "precision": 0 } },
+              { "field_id": "te_purchase_order_line.received_quantity", "label": "Received", "type": "number", "width": 120, "align": "right", "format": { "kind": "measurement", "unit_field": "te_purchase_order_line.order_uom", "precision": 0 } },
+              { "field_id": "te_purchase_order_line.open_quantity", "label": "Open Qty", "type": "number", "readonly": true, "width": 120, "align": "right", "format": { "kind": "measurement", "unit_field": "te_purchase_order_line.order_uom", "precision": 0 } },
               { "field_id": "te_purchase_order_line.unit_cost", "label": "Unit Cost", "type": "number", "width": 150, "align": "right", "currency_field": "te_purchase_order_line.currency_snapshot" },
               { "field_id": "te_purchase_order_line.line_total", "label": "Line Total", "type": "number", "readonly": true, "width": 150, "align": "right", "currency_field": "te_purchase_order_line.currency_snapshot" }
             ]
@@ -584,6 +617,8 @@
         { "field_id": "te_purchase_order_line.description" },
         { "field_id": "te_purchase_order_line.order_uom" },
         { "field_id": "te_purchase_order_line.quantity" },
+        { "field_id": "te_purchase_order_line.received_quantity" },
+        { "field_id": "te_purchase_order_line.open_quantity" },
         { "field_id": "te_purchase_order_line.unit_cost" },
         { "field_id": "te_purchase_order_line.line_total" },
         { "field_id": "te_purchase_order_line.purchase_order_id" }
@@ -615,6 +650,8 @@
             "te_purchase_order_line.description",
             "te_purchase_order_line.order_uom",
             "te_purchase_order_line.quantity",
+            "te_purchase_order_line.received_quantity",
+            "te_purchase_order_line.open_quantity",
             "te_purchase_order_line.unit_cost",
             "te_purchase_order_line.line_total"
           ]

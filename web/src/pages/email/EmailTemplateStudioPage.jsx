@@ -2,21 +2,23 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { apiFetch } from "../../api.js";
 import TemplateStudioShell from "../templates/TemplateStudioShell.jsx";
-import { emailTemplateProfile } from "../templates/templateProfiles.jsx";
+import { getEmailTemplateProfile } from "../templates/templateProfiles.jsx";
 import useMediaQuery from "../../hooks/useMediaQuery.js";
+import { useI18n } from "../../i18n/LocalizationProvider.jsx";
 
 export default function EmailTemplateStudioPage({ user }) {
   const { id } = useParams();
   const isMobile = useMediaQuery("(max-width: 768px)");
+  const { t } = useI18n();
   const [connections, setConnections] = useState([]);
-  const [pageTitle, setPageTitle] = useState("Email Template");
+  const [pageTitle, setPageTitle] = useState("");
 
-  const profile = useMemo(() => emailTemplateProfile, []);
+  const profile = useMemo(() => getEmailTemplateProfile(t), [t]);
 
   const loadRecord = useCallback(async (recordId) => {
     const res = await apiFetch(`/email/templates/${recordId}`);
     const template = res?.template || null;
-    setPageTitle(template?.name || "Email Template");
+    setPageTitle(template?.name || "");
     return template;
   }, []);
 
@@ -26,7 +28,7 @@ export default function EmailTemplateStudioPage({ user }) {
       body: patch,
     });
     const template = res?.template || null;
-    setPageTitle(template?.name || "Email Template");
+    setPageTitle(template?.name || "");
     return template;
   }, []);
 
@@ -65,7 +67,7 @@ export default function EmailTemplateStudioPage({ user }) {
   return (
     <div className={isMobile ? "min-h-full bg-base-100 flex flex-col" : "h-full min-h-0 flex flex-col overflow-hidden"}>
       <TemplateStudioShell
-        title={pageTitle}
+        title={pageTitle || t("settings.email_template")}
         recordId={id}
         user={user}
         profile={profile}

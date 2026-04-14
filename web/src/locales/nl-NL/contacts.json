@@ -1,0 +1,96 @@
+{
+  "module": {
+    "name": "Contacten",
+    "description": "Klanten, leveranciers en fabriekspartners voor de commerciële workflow."
+  },
+  "navigation": {
+    "contacts": "Contacten"
+  },
+  "entity": {
+    "contact": "Contacteer"
+  },
+  "fields": {
+    "id": "ID",
+    "name": "Naam",
+    "contact_type": "Typ",
+    "company_entity_scope": "Reikwijdte van de entiteit",
+    "email": "E-mail",
+    "phone": "Telefoon",
+    "website": "Website",
+    "country": "Land",
+    "currency_preference": "Valutavoorkeur",
+    "billing_street": "Facturatie straat",
+    "billing_street2": "Factuurstraat 2",
+    "billing_city": "Factureringsstad",
+    "billing_state": "Factureringsstaat/regio",
+    "billing_postcode": "Postcode factuur",
+    "billing_country": "Factureringsland",
+    "shipping_street": "Scheepvaart straat",
+    "shipping_street2": "Scheepvaartstraat 2",
+    "shipping_city": "Verzending stad",
+    "shipping_state": "Verzendstaat/regio",
+    "shipping_postcode": "Postcode verzending",
+    "shipping_country": "Land van verzending",
+    "notes": "Opmerkingen",
+    "is_active": "Actief"
+  },
+  "sections": {
+    "main": "Contacteer",
+    "addresses": "Adressen",
+    "notes": "Opmerkingen"
+  },
+  "actions": {
+    "new": "Nieuw contact",
+    "deactivate": "Deactiveren",
+    "activate": "Activeer"
+  },
+  "search": {
+    "placeholder": "Contacten zoeken..."
+  },
+  "filters": {
+    "all": "Alle contacten",
+    "customers": "Klanten",
+    "suppliers": "Leveranciers",
+    "factory_partners": "Fabriekspartners",
+    "active": "Actief"
+  },
+  "pages": {
+    "list": "Contacten",
+    "form": "Contacteer"
+  },
+  "options": {
+    "contact_type": {
+      "customer": "Klant",
+      "supplier": "Leverancier",
+      "factory_partner": "Fabriekspartner"
+    }
+  },
+  "entities": {
+    "biz_contact": {
+      "fields": {
+        "contact_type": {
+          "options": {
+            "customer": "Klant",
+            "supplier": "Leverancier",
+            "factory_partner": "Fabriekspartner"
+          }
+        },
+        "currency_preference": {
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        }
+      }
+    }
+  },
+  "triggers": {
+    "contact_created": "Contact aangemaakt",
+    "contact_updated": "Contactpersoon bijgewerkt",
+    "new_contact_clicked": "Er is op Nieuw contact geklikt",
+    "deactivate_clicked": "Deactiveren geklikt",
+    "activate_clicked": "Activeren geklikt"
+  }
+}

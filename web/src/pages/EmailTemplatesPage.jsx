@@ -8,10 +8,12 @@ import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import { buildSavedViewDomain } from "../utils/savedViews.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 export default function EmailTemplatesPage() {
   const { pushToast } = useToast();
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -29,7 +31,7 @@ export default function EmailTemplatesPage() {
       const res = await apiFetch("/email/templates");
       setItems(res.templates || []);
     } catch (err) {
-      pushToast("error", err.message || "Failed to load templates");
+      pushToast("error", err.message || t("settings.email_templates.load_failed"));
     } finally {
       setLoading(false);
     }
@@ -38,8 +40,8 @@ export default function EmailTemplatesPage() {
   async function createTemplate() {
     try {
       const payload = {
-        subject: "New Template",
-        name: "Untitled Template",
+        subject: t("settings.email_templates.new_template"),
+        name: t("settings.email_templates.untitled_template"),
         description: "",
         body_html: "<p>Hello</p>",
       };
@@ -49,7 +51,7 @@ export default function EmailTemplatesPage() {
         navigate(`/email/templates/${res.template.id}`);
       }
     } catch (err) {
-      pushToast("error", err.message || "Failed to create template");
+      pushToast("error", err.message || t("settings.email_templates.create_failed"));
     }
   }
 
@@ -69,12 +71,12 @@ export default function EmailTemplatesPage() {
       pushToast(
         "success",
         selectedIds.length === 1
-          ? `Template ${nextActive ? "activated" : "disabled"}.`
-          : `Templates ${nextActive ? "activated" : "disabled"}.`
+          ? (nextActive ? t("settings.email_templates.activated_one") : t("settings.email_templates.disabled_one"))
+          : (nextActive ? t("settings.email_templates.activated_many") : t("settings.email_templates.disabled_many"))
       );
       await load();
     } catch (err) {
-      pushToast("error", err.message || `Failed to ${actionLabel} templates`);
+      pushToast("error", err.message || (nextActive ? t("settings.email_templates.activate_failed") : t("settings.email_templates.disable_failed")));
     } finally {
       setSelectionActionBusy("");
     }
@@ -87,12 +89,12 @@ export default function EmailTemplatesPage() {
       await Promise.all(selectedIds.map((id) => apiFetch(`/email/templates/${id}`, { method: "DELETE" })));
       setSelectedIds([]);
       setShowDeleteModal(false);
-      pushToast("success", selectedIds.length === 1 ? "Template deleted." : "Templates deleted.");
+      pushToast("success", selectedIds.length === 1 ? t("settings.email_templates.deleted_one") : t("settings.email_templates.deleted_many"));
       await load();
     } catch (err) {
-      const detail = err?.message || "Failed to delete templates";
+      const detail = err?.message || t("settings.email_templates.delete_failed");
       if (err?.status === 404 || err?.status === 405) {
-        pushToast("error", `${detail}. If this endpoint was just added, restart the API server.`);
+        pushToast("error", `${detail}. ${t("settings.email_templates.restart_api_hint")}`);
       } else {
         pushToast("error", detail);
       }
@@ -102,23 +104,23 @@ export default function EmailTemplatesPage() {
   }
 
   const templateRows = useMemo(() => {
-    return items.map((t) => ({
-      id: t.id,
-      name: t.name || t.id,
-      description: t.description || "",
-      status: t.is_active === false ? "Disabled" : "Active",
-      updated_at: t.updated_at || t.created_at || "—",
+    return items.map((template) => ({
+      id: template.id,
+      name: template.name || template.id,
+      description: template.description || "",
+      status: template.is_active === false ? t("common.disabled") : t("common.active"),
+      updated_at: template.updated_at || template.created_at || "—",
     }));
-  }, [items]);
+  }, [items, t]);
 
   const listFieldIndex = useMemo(
     () => ({
-      "email.name": { id: "email.name", label: "Name" },
-      "email.description": { id: "email.description", label: "Description" },
-      "email.status": { id: "email.status", label: "Status" },
-      "email.updated_at": { id: "email.updated_at", label: "Updated" },
+      "email.name": { id: "email.name", label: t("common.name") },
+      "email.description": { id: "email.description", label: t("common.description") },
+      "email.status": { id: "email.status", label: t("common.status") },
+      "email.updated_at": { id: "email.updated_at", label: t("common.updated") },
     }),
-    []
+    [t]
   );
 
   const listView = useMemo(
@@ -149,11 +151,11 @@ export default function EmailTemplatesPage() {
 
   const listFilters = useMemo(
     () => [
-      { id: "all", label: "All", domain: null },
-      { id: "active", label: "Active", domain: { op: "eq", field: "email.status", value: "Active" } },
-      { id: "disabled", label: "Disabled", domain: { op: "eq", field: "email.status", value: "Disabled" } },
+      { id: "all", label: t("common.all"), domain: null },
+      { id: "active", label: t("common.active"), domain: { op: "eq", field: "email.status", value: t("common.active") } },
+      { id: "disabled", label: t("common.disabled"), domain: { op: "eq", field: "email.status", value: t("common.disabled") } },
     ],
-    []
+    [t]
   );
 
   const activeListFilter = useMemo(
@@ -167,12 +169,12 @@ export default function EmailTemplatesPage() {
 
   const filterableFields = useMemo(
     () => [
-      { id: "email.name", label: "Name" },
-      { id: "email.description", label: "Description" },
-      { id: "email.status", label: "Status" },
-      { id: "email.updated_at", label: "Updated" },
+      { id: "email.name", label: t("common.name") },
+      { id: "email.description", label: t("common.description") },
+      { id: "email.status", label: t("common.status") },
+      { id: "email.updated_at", label: t("common.updated") },
     ],
-    []
+    [t]
   );
 
   useEffect(() => {
@@ -200,12 +202,12 @@ export default function EmailTemplatesPage() {
         <div className={DESKTOP_PAGE_SHELL_BODY}>
           <div className="space-y-4 md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {loading ? (
-              <div className="text-sm opacity-70">Loading…</div>
+              <div className="text-sm opacity-70">{t("common.loading")}</div>
             ) : (
               <div className="flex flex-col gap-4 min-w-0">
                 <SystemListToolbar
-                  title="Email Templates"
-                  createTooltip="New Template"
+                  title={t("settings.email_templates.title")}
+                  createTooltip={t("settings.email_templates.new_template")}
                   onCreate={createTemplate}
                   searchValue={search}
                   onSearchChange={(v) => {
@@ -250,17 +252,17 @@ export default function EmailTemplatesPage() {
                   rightActions={
                     selectedIds.length > 0 ? (
                       <div className="dropdown dropdown-end">
-                        <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                        <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label={t("settings.selection_actions")}>
                           <MoreHorizontal className="h-4 w-4" />
                         </button>
                         <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
                           <li className="menu-title">
-                            <span>Selection</span>
+                            <span>{t("settings.selection")}</span>
                           </li>
                           {selectedIds.length === 1 ? (
                             <li>
                               <button onClick={() => navigate(`/email/templates/${selectedIds[0]}`)}>
-                                Open template
+                                {t("settings.email_templates.open_template")}
                               </button>
                             </li>
                           ) : null}
@@ -269,7 +271,7 @@ export default function EmailTemplatesPage() {
                               onClick={() => updateSelectedTemplates(true)}
                               disabled={!selectedDisabledCount || selectionActionBusy === "activate"}
                             >
-                              {selectedIds.length === 1 ? "Activate" : `Activate selected${selectedDisabledCount ? ` (${selectedDisabledCount})` : ""}`}
+                              {selectedIds.length === 1 ? t("settings.email_templates.activate") : t("settings.email_templates.activate_selected", { count: selectedDisabledCount ? ` (${selectedDisabledCount})` : "" })}
                             </button>
                           </li>
                           <li>
@@ -277,7 +279,7 @@ export default function EmailTemplatesPage() {
                               onClick={() => updateSelectedTemplates(false)}
                               disabled={!selectedActiveCount || selectionActionBusy === "disable"}
                             >
-                              {selectedIds.length === 1 ? "Disable" : `Disable selected${selectedActiveCount ? ` (${selectedActiveCount})` : ""}`}
+                              {selectedIds.length === 1 ? t("settings.email_templates.disable") : t("settings.email_templates.disable_selected", { count: selectedActiveCount ? ` (${selectedActiveCount})` : "" })}
                             </button>
                           </li>
                           <li>
@@ -286,7 +288,7 @@ export default function EmailTemplatesPage() {
                               onClick={() => setShowDeleteModal(true)}
                               disabled={selectionActionBusy === "delete"}
                             >
-                              {selectedIds.length === 1 ? "Delete" : `Delete selected (${selectedIds.length})`}
+                              {selectedIds.length === 1 ? t("common.delete") : t("settings.email_templates.delete_selected", { count: selectedIds.length })}
                             </button>
                           </li>
                         </ul>
@@ -337,10 +339,10 @@ export default function EmailTemplatesPage() {
         <div className="modal modal-open">
           <div className="modal-box max-w-lg">
             <h3 className="font-semibold text-lg">
-              {selectedIds.length === 1 ? "Delete template" : `Delete ${selectedIds.length} templates`}
+              {selectedIds.length === 1 ? t("settings.email_templates.delete_title_one") : t("settings.email_templates.delete_title_many", { count: selectedIds.length })}
             </h3>
             <p className="mt-2 text-sm opacity-70">
-              This permanently deletes {selectedIds.length === 1 ? "the selected email template" : "the selected email templates"}.
+              {selectedIds.length === 1 ? t("settings.email_templates.delete_body_one") : t("settings.email_templates.delete_body_many")}
             </p>
             <div className="modal-action">
               <button
@@ -349,7 +351,7 @@ export default function EmailTemplatesPage() {
                 onClick={() => setShowDeleteModal(false)}
                 disabled={selectionActionBusy === "delete"}
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 type="button"
@@ -358,8 +360,8 @@ export default function EmailTemplatesPage() {
                 disabled={selectionActionBusy === "delete"}
               >
                 {selectionActionBusy === "delete"
-                  ? (selectedIds.length === 1 ? "Deleting..." : "Deleting...")
-                  : (selectedIds.length === 1 ? "Delete template" : `Delete ${selectedIds.length}`)}
+                  ? t("common.deleting")
+                  : (selectedIds.length === 1 ? t("settings.email_templates.delete_title_one") : t("common.delete_count", { count: selectedIds.length }))}
               </button>
             </div>
           </div>
@@ -369,7 +371,7 @@ export default function EmailTemplatesPage() {
             onClick={() => {
               if (selectionActionBusy !== "delete") setShowDeleteModal(false);
             }}
-            aria-label="Close"
+            aria-label={t("common.close")}
           />
         </div>
       ) : null}

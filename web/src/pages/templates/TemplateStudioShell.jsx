@@ -8,6 +8,7 @@ import { apiFetch } from "../../api.js";
 import useMediaQuery from "../../hooks/useMediaQuery.js";
 import useWorkspaceProviderStatus from "../../hooks/useWorkspaceProviderStatus.js";
 import ResponsiveDrawer from "../../ui/ResponsiveDrawer.jsx";
+import { useI18n } from "../../i18n/LocalizationProvider.jsx";
 
 const DEFAULT_SAMPLE = { entity_id: "", record_id: "" };
 
@@ -32,6 +33,7 @@ export default function TemplateStudioShell({
   desktopContentClass = "",
   desktopFrameClass = "",
 }) {
+  const { t } = useI18n();
   const isMobile = useMediaQuery("(max-width: 768px)");
   const { providers: aiProviders } = useWorkspaceProviderStatus(["openai"]);
   const openAiConnected = Boolean(aiProviders?.openai?.connected);
@@ -129,7 +131,7 @@ export default function TemplateStudioShell({
       if (!mounted) return;
       setRecord(res);
       setDraft(res);
-      setSaveStatus("Saved");
+      setSaveStatus("saved");
       setValidationState(null);
       setPreviewState(null);
     }
@@ -152,25 +154,25 @@ export default function TemplateStudioShell({
     const draftStr = JSON.stringify(draft);
     const recordStr = JSON.stringify(record);
     if (draftStr === recordStr) {
-      if (saveStatus !== "Saved") {
-        setSaveStatus("Saved");
+      if (saveStatus !== "saved") {
+        setSaveStatus("saved");
       }
       return;
     }
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
     }
-    setSaveStatus("Unsaved");
+    setSaveStatus("unsaved");
     debounceRef.current = setTimeout(async () => {
       setSaving(true);
-      setSaveStatus("Saving…");
+      setSaveStatus("saving");
       try {
         const updated = await saveRecord(recordId, draft);
         setRecord(updated);
         setDraft(updated);
-        setSaveStatus("Saved");
+        setSaveStatus("saved");
       } catch {
-        setSaveStatus("Save failed");
+        setSaveStatus("save_failed");
       }
       setSaving(false);
     }, 800);
@@ -184,14 +186,14 @@ export default function TemplateStudioShell({
   async function saveNow() {
     if (!saveRecord || !draft) return;
     setSaving(true);
-    setSaveStatus("Saving…");
+    setSaveStatus("saving");
     try {
       const updated = await saveRecord(recordId, draft);
       setRecord(updated);
       setDraft(updated);
-      setSaveStatus("Saved");
+      setSaveStatus("saved");
     } catch {
-      setSaveStatus("Save failed");
+      setSaveStatus("save_failed");
     }
     setSaving(false);
   }
@@ -199,12 +201,12 @@ export default function TemplateStudioShell({
   async function runValidate() {
     if (!validate) return;
     try {
-      const res = await validate(recordId, { sample });
-      setValidationState(res);
+        const res = await validate(recordId, { sample });
+        setValidationState(res);
     } catch (err) {
       setValidationState({
         compiled_ok: false,
-        errors: [{ message: err?.message || "Validation failed", line: 1, col: 1 }],
+        errors: [{ message: err?.message || t("settings.template_studio.validation_failed"), line: 1, col: 1 }],
         undefined: [],
         warnings: [],
         validated_at: null,
@@ -222,10 +224,10 @@ export default function TemplateStudioShell({
         errors: [],
       }));
     } catch (err) {
-      setPreviewState({ error: err?.message || "Preview failed" });
+      setPreviewState({ error: err?.message || t("settings.template_studio.preview_failed") });
       setValidationState({
         compiled_ok: false,
-        errors: [{ message: err?.message || "Preview failed", line: 1, col: 1 }],
+        errors: [{ message: err?.message || t("settings.template_studio.preview_failed"), line: 1, col: 1 }],
         undefined: [],
         warnings: [],
         validated_at: null,
@@ -245,7 +247,7 @@ export default function TemplateStudioShell({
     } catch (err) {
       setValidationState({
         compiled_ok: false,
-        errors: [{ message: err?.message || "Preview failed", line: 1, col: 1 }],
+        errors: [{ message: err?.message || t("settings.template_studio.preview_failed"), line: 1, col: 1 }],
         undefined: [],
         warnings: [],
         validated_at: null,
@@ -310,7 +312,7 @@ export default function TemplateStudioShell({
       title=""
       errors={validationState?.errors || []}
       warnings={mergedWarnings}
-      idleMessage="Validation runs automatically while you edit."
+      idleMessage={t("settings.template_studio.validation_idle")}
       showSuccess={true}
       showFix={showFixWithAi && openAiConnected}
       fixDisabled
@@ -334,20 +336,20 @@ export default function TemplateStudioShell({
         ? "btn btn-outline btn-sm btn-error"
         : SOFT_BUTTON_SM;
   const validationButtonLabel = validationStatus === "success"
-    ? "Validated"
+    ? t("settings.template_studio.validated")
     : validationStatus === "warning"
-      ? "Warning"
+      ? t("settings.template_studio.warning")
       : validationStatus === "error"
-        ? "Error"
-        : "Validation";
+        ? t("common.error")
+        : t("settings.template_studio.validation");
   const utilityButtons = [
-    { id: "agent", label: "AI", icon: MessageSquare },
+    { id: "agent", label: t("common.ai"), icon: MessageSquare },
     { id: "validation", label: validationButtonLabel, icon: ShieldCheck },
   ];
-  const utilityDrawerTitle = utilityDrawer === "agent" ? "AI Assistant" : "Validation";
+  const utilityDrawerTitle = utilityDrawer === "agent" ? t("settings.template_studio.ai_assistant") : t("settings.template_studio.validation");
   const utilityDrawerDescription = utilityDrawer === "agent"
-    ? "Use the assistant to draft and refine changes in this editor."
-    : "Review validation results and warnings while you work.";
+    ? t("settings.template_studio.ai_assistant_description")
+    : t("settings.template_studio.validation_description");
   const utilityDrawerContent = utilityDrawer === "agent" ? leftPaneContent : validationContent;
 
   useEffect(() => {
@@ -440,7 +442,7 @@ export default function TemplateStudioShell({
                   <button
                     type="button"
                     className={SOFT_BUTTON_SM}
-                    aria-label="More actions"
+                    aria-label={t("common.more_actions")}
                     onClick={() => setMobileActionsOpen((open) => !open)}
                   >
                     <MoreHorizontal className="h-4 w-4" />

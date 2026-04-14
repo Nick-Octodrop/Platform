@@ -1,0 +1,415 @@
+{
+  "module": {
+    "name": "Quotes",
+    "description": "Quote workflow from pricing and customer approval through order conversion."
+  },
+  "navigation": {
+    "biz_quote_list_page": "Quotes",
+    "biz_quote_draft_page": "Draft",
+    "biz_quote_sent_page": "Sent",
+    "biz_quote_ready_to_convert_page": "Ready To Convert"
+  },
+  "entities": {
+    "biz_quote": {
+      "label": "Quote",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "quote_number": {
+          "label": "Quote Number"
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "draft": "Draft",
+            "sent": "Sent",
+            "accepted": "Accepted",
+            "lost": "Lost",
+            "expired": "Expired"
+          }
+        },
+        "quote_date": {
+          "label": "Quote Date"
+        },
+        "expiry_date": {
+          "label": "Expiry Date"
+        },
+        "sales_entity": {
+          "label": "Sales Entity",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "customer_id": {
+          "label": "Customer"
+        },
+        "customer_contact_name": {
+          "label": "Customer Contact"
+        },
+        "customer_reference": {
+          "label": "Customer Reference"
+        },
+        "currency": {
+          "label": "Currency",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "sales_owner": {
+          "label": "Sales Owner"
+        },
+        "follow_up_date": {
+          "label": "Follow Up Date"
+        },
+        "payment_terms": {
+          "label": "Payment Terms"
+        },
+        "incoterm": {
+          "label": "Incoterm"
+        },
+        "shipping_terms": {
+          "label": "Shipping Terms"
+        },
+        "validity_notes": {
+          "label": "Validity Notes"
+        },
+        "loss_reason": {
+          "label": "Loss / Expiry Reason"
+        },
+        "internal_notes": {
+          "label": "Internal Notes"
+        },
+        "customer_notes": {
+          "label": "Customer Notes"
+        },
+        "pdf_template_name": {
+          "label": "PDF Template Name"
+        },
+        "linked_customer_order_id": {
+          "label": "Linked Order"
+        },
+        "linked_customer_order_number": {
+          "label": "Linked Order"
+        },
+        "subtotal": {
+          "label": "Subtotal"
+        },
+        "discount_total": {
+          "label": "Discount Total"
+        },
+        "tax_total": {
+          "label": "Tax Total"
+        },
+        "grand_total": {
+          "label": "Grand Total"
+        },
+        "estimated_buy_total": {
+          "label": "Estimated Buy Total"
+        },
+        "estimated_margin_amount": {
+          "label": "Estimated Margin Amount"
+        },
+        "estimated_margin_percent": {
+          "label": "Estimated Margin %"
+        }
+      }
+    },
+    "biz_quote_line": {
+      "label": "Quote Line",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "quote_id": {
+          "label": "Quote"
+        },
+        "line_type": {
+          "label": "Line Type",
+          "options": {
+            "catalogue": "Catalogue",
+            "custom": "Custom"
+          }
+        },
+        "product_id": {
+          "label": "Product"
+        },
+        "description": {
+          "label": "Description"
+        },
+        "sales_entity_snapshot": {
+          "label": "Sales Entity Snapshot",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "currency_snapshot": {
+          "label": "Currency Snapshot",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "uom": {
+          "label": "UOM",
+          "options": {
+            "ea": "Each",
+            "set": "Set",
+            "kit": "Kit",
+            "lot": "Lot",
+            "pallet": "Pallet",
+            "container": "Container",
+            "m": "Meter"
+          }
+        },
+        "quantity": {
+          "label": "Qty"
+        },
+        "unit_price": {
+          "label": "Unit Price"
+        },
+        "line_discount_percent": {
+          "label": "Discount %"
+        },
+        "line_total": {
+          "label": "Line Total"
+        },
+        "default_buy_price_snapshot": {
+          "label": "Buy Price Snapshot"
+        },
+        "buy_currency_snapshot": {
+          "label": "Buy Currency Snapshot",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "buy_total": {
+          "label": "Buy Total"
+        },
+        "estimated_margin_amount": {
+          "label": "Estimated Margin Amount"
+        },
+        "estimated_margin_percent": {
+          "label": "Estimated Margin %"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_quote_new": {
+      "label": "New Quote"
+    },
+    "action_quote_mark_sent": {
+      "label": "Mark Sent",
+      "confirm": {
+        "title": "Mark quote as sent?"
+      }
+    },
+    "action_quote_mark_accepted": {
+      "label": "Mark Accepted",
+      "confirm": {
+        "title": "Mark quote as accepted?"
+      }
+    },
+    "action_quote_convert_to_order": {
+      "label": "Create Order",
+      "confirm": {
+        "title": "Create order from quote?"
+      }
+    },
+    "action_quote_open_lost_modal": {
+      "label": "Mark Lost"
+    },
+    "action_quote_open_expired_modal": {
+      "label": "Mark Expired"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Search quotes..."
+      },
+      "filters": {
+        "open": {
+          "label": "Open Quotes"
+        },
+        "draft": {
+          "label": "Draft Quotes"
+        },
+        "sent": {
+          "label": "Sent Quotes"
+        },
+        "accepted": {
+          "label": "Accepted Quotes"
+        },
+        "ready_to_convert": {
+          "label": "Ready To Convert"
+        },
+        "expired": {
+          "label": "Expired Quotes"
+        },
+        "lost": {
+          "label": "Lost Quotes"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Quote"
+        },
+        "lines": {
+          "title": "Lines"
+        },
+        "totals": {
+          "title": "Totals"
+        },
+        "profitability": {
+          "title": "Profitability"
+        },
+        "notes": {
+          "title": "Notes & Terms"
+        },
+        "main": {
+          "title": "Quote Line"
+        }
+      }
+    }
+  },
+  "modals": {
+    "quote_mark_lost": {
+      "title": "Mark Quote Lost",
+      "description": "Capture why the quote was lost before moving it out of the active pipeline.",
+      "actions": {
+        "update_record": {
+          "label": "Mark Lost"
+        },
+        "close_modal": {
+          "label": "Close"
+        }
+      }
+    },
+    "quote_mark_expired": {
+      "title": "Mark Quote Expired",
+      "description": "Capture the expiry note before closing this quote out of the live pipeline.",
+      "actions": {
+        "update_record": {
+          "label": "Mark Expired"
+        },
+        "close_modal": {
+          "label": "Close"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Quotes",
+      "header": {
+        "actions": {
+          "navigate": {
+            "label": "New Quote"
+          }
+        }
+      },
+      "blocks": {
+        "1": {
+          "cards": {
+            "quote_open_count": {
+              "label": "Open Quotes",
+              "subtitle": "Draft and sent pipeline"
+            },
+            "quote_ready_to_convert_count": {
+              "label": "Ready To Convert",
+              "subtitle": "Accepted without an order yet"
+            },
+            "quote_sent_count": {
+              "label": "Awaiting Decision",
+              "subtitle": "Sent to customer"
+            },
+            "quote_exception_count": {
+              "label": "Exceptions",
+              "subtitle": "Lost and expired"
+            }
+          }
+        }
+      }
+    },
+    "draft_page": {
+      "title": "Draft Quotes"
+    },
+    "sent_page": {
+      "title": "Sent Quotes"
+    },
+    "ready_to_convert_page": {
+      "title": "Ready To Convert"
+    },
+    "form_page": {
+      "title": "Quote"
+    }
+  },
+  "workflows": {
+    "quote_status_workflow": {
+      "states": {
+        "draft": {
+          "label": "Draft"
+        },
+        "sent": {
+          "label": "Sent"
+        },
+        "accepted": {
+          "label": "Accepted"
+        },
+        "lost": {
+          "label": "Lost"
+        },
+        "expired": {
+          "label": "Expired"
+        }
+      },
+      "transitions": {
+        "draft_sent": {
+          "label": "Send Quote"
+        },
+        "sent_accepted": {
+          "label": "Mark Accepted"
+        },
+        "draft_lost": {
+          "label": "Mark Lost"
+        },
+        "sent_lost": {
+          "label": "Mark Lost"
+        },
+        "sent_expired": {
+          "label": "Mark Expired"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "quote_created": "Quote created",
+    "quote_updated": "Quote updated",
+    "quote_line_created": "Quote Line created",
+    "quote_line_updated": "Quote Line updated",
+    "quote_status_changed": "Quote status changed",
+    "new_quote_clicked": "New Quote clicked",
+    "mark_sent_clicked": "Mark Sent clicked",
+    "mark_accepted_clicked": "Mark Accepted clicked",
+    "create_order_clicked": "Create Order clicked",
+    "mark_lost_clicked": "Mark Lost clicked",
+    "mark_expired_clicked": "Mark Expired clicked"
+  },
+  "dashboard": {
+    "quotes_by_status": "Quotes by Status"
+  }
+}

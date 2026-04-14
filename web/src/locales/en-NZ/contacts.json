@@ -1,0 +1,96 @@
+{
+  "module": {
+    "name": "Contacts",
+    "description": "Customers, suppliers, and factory partners for the commercial workflow."
+  },
+  "navigation": {
+    "contacts": "Contacts"
+  },
+  "entity": {
+    "contact": "Contact"
+  },
+  "fields": {
+    "id": "ID",
+    "name": "Name",
+    "contact_type": "Type",
+    "company_entity_scope": "Entity scope",
+    "email": "Email",
+    "phone": "Phone",
+    "website": "Website",
+    "country": "Country",
+    "currency_preference": "Currency preference",
+    "billing_street": "Billing street",
+    "billing_street2": "Billing street 2",
+    "billing_city": "Billing city",
+    "billing_state": "Billing state / region",
+    "billing_postcode": "Billing postcode",
+    "billing_country": "Billing country",
+    "shipping_street": "Shipping street",
+    "shipping_street2": "Shipping street 2",
+    "shipping_city": "Shipping city",
+    "shipping_state": "Shipping state / region",
+    "shipping_postcode": "Shipping postcode",
+    "shipping_country": "Shipping country",
+    "notes": "Notes",
+    "is_active": "Active"
+  },
+  "sections": {
+    "main": "Contact",
+    "addresses": "Addresses",
+    "notes": "Notes"
+  },
+  "actions": {
+    "new": "New contact",
+    "deactivate": "Deactivate",
+    "activate": "Activate"
+  },
+  "search": {
+    "placeholder": "Search contacts..."
+  },
+  "filters": {
+    "all": "All contacts",
+    "customers": "Customers",
+    "suppliers": "Suppliers",
+    "factory_partners": "Factory partners",
+    "active": "Active"
+  },
+  "pages": {
+    "list": "Contacts",
+    "form": "Contact"
+  },
+  "options": {
+    "contact_type": {
+      "customer": "Customer",
+      "supplier": "Supplier",
+      "factory_partner": "Factory partner"
+    }
+  },
+  "entities": {
+    "biz_contact": {
+      "fields": {
+        "contact_type": {
+          "options": {
+            "customer": "Customer",
+            "supplier": "Supplier",
+            "factory_partner": "Factory Partner"
+          }
+        },
+        "currency_preference": {
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        }
+      }
+    }
+  },
+  "triggers": {
+    "contact_created": "Contact created",
+    "contact_updated": "Contact updated",
+    "new_contact_clicked": "New Contact clicked",
+    "deactivate_clicked": "Deactivate clicked",
+    "activate_clicked": "Activate clicked"
+  }
+}

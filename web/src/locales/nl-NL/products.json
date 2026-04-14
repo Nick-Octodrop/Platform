@@ -1,0 +1,139 @@
+{
+  "module": {
+    "name": "Producten",
+    "description": "Productcatalogusitems voor offertes en inkoop van leveranciers."
+  },
+  "navigation": {
+    "biz_product_list_page": "Producten"
+  },
+  "entities": {
+    "biz_product": {
+      "label": "Product",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "code": {
+          "label": "Codeer"
+        },
+        "name": {
+          "label": "Naam"
+        },
+        "description": {
+          "label": "Beschrijving"
+        },
+        "category": {
+          "label": "Categorie"
+        },
+        "uom": {
+          "label": "UOM",
+          "options": {
+            "ea": "Elk",
+            "set": "Instellen",
+            "kit": "Kit",
+            "lot": "Veel",
+            "pallet": "Pallet",
+            "container": "Houder",
+            "m": "Meter"
+          }
+        },
+        "default_sales_currency": {
+          "label": "Verkoopvaluta",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "default_sales_price": {
+          "label": "Verkoopprijs"
+        },
+        "default_purchase_currency": {
+          "label": "Aankoopvaluta",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "default_buy_price": {
+          "label": "Koop prijs"
+        },
+        "preferred_supplier_id": {
+          "label": "Voorkeursleverancier"
+        },
+        "supplier_factory_reference": {
+          "label": "Leverancier / Fabrieksref"
+        },
+        "internal_notes": {
+          "label": "Interne opmerkingen"
+        },
+        "is_active": {
+          "label": "Actief"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_product_new": {
+      "label": "Nieuw product"
+    },
+    "action_product_activate": {
+      "label": "Activeer"
+    },
+    "action_product_deactivate": {
+      "label": "Deactiveren"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Producten zoeken..."
+      },
+      "filters": {
+        "active": {
+          "label": "Actieve producten"
+        },
+        "inactive": {
+          "label": "Inactieve producten"
+        },
+        "eur_sales": {
+          "label": "EUR Verkoopartikelen"
+        },
+        "usd_sales": {
+          "label": "USD-verkoopartikelen"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "core": {
+          "title": "Productcatalogus"
+        },
+        "pricing": {
+          "title": "Prijzen"
+        },
+        "purchasing": {
+          "title": "Aankoopnotities"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Producten"
+    },
+    "form_page": {
+      "title": "Product"
+    }
+  },
+  "triggers": {
+    "product_created": "Product gemaakt",
+    "product_updated": "Product bijgewerkt",
+    "new_product_clicked": "Nieuw product geklikt",
+    "activate_clicked": "Activeren geklikt",
+    "deactivate_clicked": "Deactiveren geklikt"
+  }
+}

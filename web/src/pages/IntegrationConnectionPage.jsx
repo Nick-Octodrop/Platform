@@ -5,6 +5,7 @@ import { apiFetch } from "../api.js";
 import AppSelect from "../components/AppSelect.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 function providerKeyFromType(type) {
   const raw = String(type || "");
@@ -181,6 +182,8 @@ function TableList({ emptyLabel, columns, rows }) {
 export default function IntegrationConnectionPage() {
   const { connectionId } = useParams();
   const navigate = useNavigate();
+  const { t } = useI18n();
+  const detailT = (key, values) => t(`settings.integrations.detail.${key}`, values);
   const [item, setItem] = useState(null);
   const [providers, setProviders] = useState([]);
   const [secrets, setSecrets] = useState([]);
@@ -292,7 +295,7 @@ export default function IntegrationConnectionPage() {
       }));
     } catch (err) {
       setItem(null);
-      setError(err?.message || "Failed to load connection");
+      setError(err?.message || detailT("errors.load_connection"));
     } finally {
       setLoading(false);
     }
@@ -344,15 +347,15 @@ export default function IntegrationConnectionPage() {
 
   const tabs = useMemo(
     () => [
-      { id: "setup", label: "Setup" },
-      { id: "secrets", label: "Secrets" },
-      { id: "request", label: "Request" },
-      ...(providerSupportsSync ? [{ id: "sync", label: "Sync" }] : []),
-      { id: "webhooks", label: "Webhooks" },
-      { id: "mappings", label: "Mappings" },
-      { id: "logs", label: "Logs" },
+      { id: "setup", label: t("settings.integrations.detail.tabs.setup") },
+      { id: "secrets", label: t("settings.integrations.detail.tabs.secrets") },
+      { id: "request", label: t("settings.integrations.detail.tabs.request") },
+      ...(providerSupportsSync ? [{ id: "sync", label: t("settings.integrations.detail.tabs.sync") }] : []),
+      { id: "webhooks", label: t("settings.integrations.detail.tabs.webhooks") },
+      { id: "mappings", label: t("settings.integrations.detail.tabs.mappings") },
+      { id: "logs", label: t("settings.integrations.detail.tabs.logs") },
     ],
-    [providerSupportsSync],
+    [providerSupportsSync, t],
   );
 
   function updateConfigField(key, value) {
@@ -432,7 +435,7 @@ export default function IntegrationConnectionPage() {
         },
       });
       const created = res?.secret || null;
-      setNotice("Secret created.");
+      setNotice(detailT("notices.secret_created"));
       setShowCreateSecretModal(false);
       setCreateSecretForm({
         name: "",
@@ -449,7 +452,7 @@ export default function IntegrationConnectionPage() {
       }
       await load();
     } catch (err) {
-      setError(err?.message || "Failed to create secret");
+      setError(err?.message || detailT("errors.create_secret"));
     } finally {
       setCreatingSecret(false);
     }
@@ -474,10 +477,10 @@ export default function IntegrationConnectionPage() {
       setItem(res?.connection || null);
       setConfig(res?.connection?.config || nextConfig);
       setConfigText(prettyJson(res?.connection?.config || nextConfig));
-      setNotice("Connection saved.");
+      setNotice(detailT("notices.connection_saved"));
       await load();
     } catch (err) {
-      setError(err?.message || "Save failed");
+      setError(err?.message || detailT("errors.save_failed"));
     } finally {
       setSaving(false);
     }
@@ -491,11 +494,11 @@ export default function IntegrationConnectionPage() {
     try {
       const res = await apiFetch(`/integrations/connections/${encodeURIComponent(item.id)}/test`, { method: "POST" });
       setTestResult(res?.result || null);
-      setNotice("Connection test completed.");
+      setNotice(detailT("notices.connection_test_completed"));
       await load();
     } catch (err) {
       setTestResult(null);
-      setError(err?.message || "Connection test failed");
+      setError(err?.message || detailT("errors.connection_test_failed"));
       await load();
     } finally {
       setTesting(false);
@@ -522,11 +525,11 @@ export default function IntegrationConnectionPage() {
         body: payload,
       });
       setRequestResult(res?.result || null);
-      setNotice("Request completed.");
+      setNotice(detailT("notices.request_completed"));
       await load();
     } catch (err) {
       setRequestResult(null);
-      setError(err?.message || "Request failed");
+      setError(err?.message || detailT("errors.request_failed"));
       await load();
     } finally {
       setRunningRequest(false);
@@ -546,11 +549,11 @@ export default function IntegrationConnectionPage() {
         },
       });
       setSyncResult(res?.result || null);
-      setNotice("Sync completed.");
+      setNotice(detailT("notices.sync_completed"));
       await load();
     } catch (err) {
       setSyncResult(null);
-      setError(err?.message || "Sync failed");
+      setError(err?.message || detailT("errors.sync_failed"));
       await load();
     } finally {
       setRunningSync(false);
@@ -568,10 +571,10 @@ export default function IntegrationConnectionPage() {
         body: { redirect_uri: oauthRedirectUri.trim() },
       });
       setOauthAuthorizeResult(res?.result || null);
-      setNotice("Authorize URL generated.");
+      setNotice(detailT("notices.authorize_url_generated"));
     } catch (err) {
       setOauthAuthorizeResult(null);
-      setError(err?.message || "Failed to generate authorize URL");
+      setError(err?.message || detailT("errors.generate_authorize_url"));
     } finally {
       setAuthorizingOAuth(false);
     }
@@ -587,7 +590,7 @@ export default function IntegrationConnectionPage() {
         method: "POST",
         body: { redirect_uri: oauthRedirectUri.trim(), code: oauthCode.trim() },
       });
-      setNotice("OAuth tokens stored.");
+      setNotice(detailT("notices.oauth_tokens_stored"));
       setOauthAuthorizeResult(null);
       await load();
       if (res?.result?.connection) {
@@ -596,7 +599,7 @@ export default function IntegrationConnectionPage() {
         setConfigText(prettyJson(res.result.connection.config || {}));
       }
     } catch (err) {
-      setError(err?.message || "Failed to exchange OAuth code");
+      setError(err?.message || detailT("errors.exchange_oauth_code"));
     } finally {
       setExchangingOAuth(false);
     }
@@ -609,7 +612,7 @@ export default function IntegrationConnectionPage() {
     setNotice("");
     try {
       const res = await apiFetch(`/integrations/connections/${encodeURIComponent(item.id)}/oauth/refresh`, { method: "POST" });
-      setNotice("OAuth tokens refreshed.");
+      setNotice(detailT("notices.oauth_tokens_refreshed"));
       await load();
       if (res?.result?.connection) {
         setItem(res.result.connection);
@@ -617,7 +620,7 @@ export default function IntegrationConnectionPage() {
         setConfigText(prettyJson(res.result.connection.config || {}));
       }
     } catch (err) {
-      setError(err?.message || "Failed to refresh OAuth tokens");
+      setError(err?.message || detailT("errors.refresh_oauth_tokens"));
     } finally {
       setRefreshingOAuth(false);
     }
@@ -642,10 +645,10 @@ export default function IntegrationConnectionPage() {
       });
       setNewMapping(defaultNewMappingState());
       setMappingPreview(null);
-      setNotice("Mapping added.");
+      setNotice(detailT("notices.mapping_added"));
       await load();
     } catch (err) {
-      setError(err?.message || "Failed to create mapping");
+      setError(err?.message || detailT("errors.create_mapping"));
     } finally {
       setCreatingMapping(false);
     }
@@ -671,7 +674,7 @@ export default function IntegrationConnectionPage() {
       setMappingPreview(res?.preview || null);
     } catch (err) {
       setMappingPreview(null);
-      setError(err?.message || "Failed to preview mapping");
+      setError(err?.message || detailT("errors.preview_mapping"));
     } finally {
       setPreviewingMapping(false);
     }
@@ -721,10 +724,10 @@ export default function IntegrationConnectionPage() {
         signing_secret_id: "",
         config_json_text: "{}",
       });
-      setNotice("Webhook added.");
+      setNotice(detailT("notices.webhook_added"));
       await load();
     } catch (err) {
-      setError(err?.message || "Failed to create webhook");
+      setError(err?.message || detailT("errors.create_webhook"));
     } finally {
       setCreatingWebhook(false);
     }
@@ -735,7 +738,7 @@ export default function IntegrationConnectionPage() {
       await apiFetch(`/integrations/webhooks/${encodeURIComponent(webhookId)}`, { method: "DELETE" });
       await load();
     } catch (err) {
-      setError(err?.message || "Failed to delete webhook");
+      setError(err?.message || detailT("errors.delete_webhook"));
     }
   }
 
@@ -744,7 +747,7 @@ export default function IntegrationConnectionPage() {
       await apiFetch(`/integrations/mappings/${encodeURIComponent(mappingId)}`, { method: "DELETE" });
       await load();
     } catch (err) {
-      setError(err?.message || "Failed to delete mapping");
+      setError(err?.message || detailT("errors.delete_mapping"));
     }
   }
 
@@ -858,10 +861,10 @@ export default function IntegrationConnectionPage() {
     const syncRequest = syncConfig?.request || {};
     if (fieldType === "request_builder") {
       return (
-        <Section key={fieldId} title={label} help={help || "Define the request used for each poll."}>
+        <Section key={fieldId} title={label} help={help || detailT("sync.request_builder_help")}>
           <div className="space-y-3">
             <label className="form-control">
-              <span className="label-text text-sm">Method</span>
+              <span className="label-text text-sm">{detailT("request.method")}</span>
               <AppSelect className="select select-bordered" value={syncRequest.method || "GET"} onChange={(e) => updateSyncRequestField("method", e.target.value)}>
                 {["GET", "POST", "PUT", "PATCH", "DELETE"].map((method) => (
                   <option key={method} value={method}>
@@ -871,19 +874,19 @@ export default function IntegrationConnectionPage() {
               </AppSelect>
             </label>
             <label className="form-control">
-              <span className="label-text text-sm">Path</span>
-              <input className="input input-bordered" value={syncRequest.path || ""} onChange={(e) => updateSyncRequestField("path", e.target.value)} placeholder="/contacts" />
-              <span className="label-text-alt opacity-70 mt-1">Use path for Generic REST base URLs. Use full URL only when you need to override the whole endpoint.</span>
+              <span className="label-text text-sm">{detailT("request.path")}</span>
+              <input className="input input-bordered" value={syncRequest.path || ""} onChange={(e) => updateSyncRequestField("path", e.target.value)} placeholder={detailT("sync.path_placeholder")} />
+              <span className="label-text-alt opacity-70 mt-1">{detailT("sync.path_help")}</span>
             </label>
             <label className="form-control">
-              <span className="label-text text-sm">Full URL override</span>
-              <input className="input input-bordered" value={syncRequest.url || ""} onChange={(e) => updateSyncRequestField("url", e.target.value)} placeholder="https://api.example.com/custom/path" />
+              <span className="label-text text-sm">{detailT("request.url_override")}</span>
+              <input className="input input-bordered" value={syncRequest.url || ""} onChange={(e) => updateSyncRequestField("url", e.target.value)} placeholder={detailT("request.url_placeholder")} />
             </label>
-            <JsonField label="Headers" value={prettyJson(syncRequest.headers || {})} onChange={(text) => updateSyncRequestField("headers", safeJsonParse(text, {}))} minHeight="7rem" />
-            <JsonField label="Query" value={prettyJson(syncRequest.query || {})} onChange={(text) => updateSyncRequestField("query", safeJsonParse(text, {}))} minHeight="7rem" />
-            <JsonField label="JSON body" value={prettyJson(syncRequest.json || {})} onChange={(text) => updateSyncRequestField("json", safeJsonParse(text, {}))} minHeight="8rem" help="Leave empty unless the polling endpoint expects a JSON payload." />
+            <JsonField label={detailT("request.headers")} value={prettyJson(syncRequest.headers || {})} onChange={(text) => updateSyncRequestField("headers", safeJsonParse(text, {}))} minHeight="7rem" />
+            <JsonField label={detailT("request.query")} value={prettyJson(syncRequest.query || {})} onChange={(text) => updateSyncRequestField("query", safeJsonParse(text, {}))} minHeight="7rem" />
+            <JsonField label={detailT("request.json_body")} value={prettyJson(syncRequest.json || {})} onChange={(text) => updateSyncRequestField("json", safeJsonParse(text, {}))} minHeight="8rem" help={detailT("sync.json_help")} />
             <label className="form-control">
-              <span className="label-text text-sm">Raw body</span>
+              <span className="label-text text-sm">{detailT("request.raw_body")}</span>
               <textarea className="textarea textarea-bordered min-h-[7rem]" value={syncRequest.body || ""} onChange={(e) => updateSyncRequestField("body", e.target.value)} />
             </label>
           </div>
@@ -935,34 +938,34 @@ export default function IntegrationConnectionPage() {
     () => [
       {
         icon: ShieldCheck,
-        title: "Review connection settings",
-        description: "Fill in the provider-specific fields below. Most integrations only need the basic connection settings plus the right auth mode.",
+        title: detailT("setup.guide.review_title"),
+        description: detailT("setup.guide.review_description"),
         actionLabel: "",
         onAction: null,
         complete: Boolean((name || "").trim()) && setupFields.length > 0 ? true : Boolean((name || "").trim() && Object.keys(config || {}).length > 0),
       },
       {
         icon: KeyRound,
-        title: "Attach required secrets",
+        title: detailT("setup.guide.attach_secrets_title"),
         description: secretKeys.length
-          ? `${linkedSecretCount} of ${secretKeys.length} required secret slots are linked. Open the Secrets tab to attach or create them.`
-          : "This provider does not declare any named secret slots.",
-        actionLabel: secretKeys.length ? "Open secrets" : "",
+          ? detailT("setup.guide.attach_secrets_progress", { linked: linkedSecretCount, total: secretKeys.length })
+          : detailT("secrets.none_declared"),
+        actionLabel: secretKeys.length ? detailT("setup.guide.open_secrets") : "",
         onAction: secretKeys.length ? () => setActiveTab("secrets") : null,
         complete: secretKeys.length === 0 || linkedSecretCount === secretKeys.length,
       },
       {
         icon: TestTube2,
-        title: "Run a connection test",
+        title: detailT("setup.guide.test_title"),
         description: hasTestedConnection
-          ? `Last tested ${formatDateTime(item?.last_tested_at, "recently")}. Use this after changing setup fields or secrets.`
-          : "Use Test connection once setup and secrets are ready. This confirms the runtime can actually authenticate.",
-        actionLabel: "Test now",
+          ? detailT("setup.guide.last_tested", { value: formatDateTime(item?.last_tested_at, detailT("setup.guide.recently")) })
+          : detailT("setup.guide.test_description"),
+        actionLabel: detailT("setup.guide.test_now"),
         onAction: runTest,
         complete: Boolean(item?.health_status && item.health_status !== "error" && hasTestedConnection),
       },
     ],
-    [config, hasTestedConnection, item?.health_status, item?.last_tested_at, linkedSecretCount, name, secretKeys, setupFields.length],
+    [config, hasTestedConnection, item?.health_status, item?.last_tested_at, linkedSecretCount, name, secretKeys, setupFields.length, t],
   );
 
   function secretsForSlot(secretKey) {
@@ -994,28 +997,28 @@ export default function IntegrationConnectionPage() {
 
       <div className="space-y-4">
         {loading ? (
-          <div className="text-sm opacity-70">Loading…</div>
+          <div className="text-sm opacity-70">{t("common.loading")}</div>
         ) : !item ? (
-          <div className="text-sm opacity-60">Connection not found.</div>
+          <div className="text-sm opacity-60">{t("settings.integrations.detail.connection_not_found")}</div>
         ) : activeTab === "secrets" ? (
           <div className="space-y-4">
-            <Section title="Connection secrets" help="Link the named secret slots this provider expects. Secrets stay reusable and encrypted, and the worker resolves them only at runtime.">
+            <Section title={t("settings.integrations.detail.secrets.title")} help={t("settings.integrations.detail.secrets.help")}>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                <SummaryStat label="Required slots" value={String(secretKeys.length)} />
-                <SummaryStat label="Linked" value={`${linkedSecretCount}/${secretKeys.length || 0}`} />
-                <SummaryStat label="Reusable secrets" value={String(secrets.length)} />
+                <SummaryStat label={t("settings.integrations.detail.secrets.required_slots")} value={String(secretKeys.length)} />
+                <SummaryStat label={t("settings.integrations.detail.secrets.linked")} value={`${linkedSecretCount}/${secretKeys.length || 0}`} />
+                <SummaryStat label={t("settings.integrations.detail.secrets.reusable_secrets")} value={String(secrets.length)} />
               </div>
               <div className="flex flex-wrap gap-2">
                 <button className="btn btn-sm btn-primary" type="button" onClick={() => openCreateSecretModal("")}>
                   <Plus className="h-4 w-4" />
-                  New secret
+                  {t("settings.integrations.detail.secrets.new_secret")}
                 </button>
                 <button className="btn btn-sm btn-outline" type="button" onClick={() => navigate("/settings/secrets")}>
-                  Manage all secrets
+                  {t("settings.integrations.detail.secrets.manage_all")}
                 </button>
               </div>
               {secretKeys.length === 0 ? (
-                <div className="text-sm opacity-60">This provider does not declare any named secrets.</div>
+                <div className="text-sm opacity-60">{t("settings.integrations.detail.secrets.none_declared")}</div>
               ) : (
                 <div className="space-y-4">
                   {secretKeys.map((secretKey) => {
@@ -1027,25 +1030,25 @@ export default function IntegrationConnectionPage() {
                             <div className="font-medium">{titleCase(secretKey)}</div>
                             <div className="mt-1 text-sm opacity-70">
                               {selectedSecret
-                                ? `Currently linked to ${selectedSecret.name || selectedSecret.id}.`
-                                : `No secret linked yet. Add or select a ${titleCase(secretKey).toLowerCase()} secret for this connection.`}
+                                ? t("settings.integrations.detail.secrets.currently_linked", { name: selectedSecret.name || selectedSecret.id })
+                                : t("settings.integrations.detail.secrets.not_linked", { slot: titleCase(secretKey).toLowerCase() })}
                             </div>
                           </div>
                           <button className="btn btn-ghost btn-sm" type="button" onClick={() => openCreateSecretModal(secretKey)}>
                             <Plus className="h-4 w-4" />
-                            Create for this slot
+                            {t("settings.integrations.detail.secrets.create_for_slot")}
                           </button>
                         </div>
 
                         <label className="form-control mt-3">
-                          <span className="label-text text-sm">Select stored secret</span>
+                          <span className="label-text text-sm">{t("settings.integrations.detail.secrets.select_stored_secret")}</span>
                           <AppSelect
                             className="select select-bordered"
                             value={secretRefs?.[secretKey] || ""}
                             onChange={(e) => updateSecretRef(secretKey, e.target.value)}
                             disabled={saving}
                           >
-                            <option value="">No secret selected</option>
+                            <option value="">{t("settings.integrations.detail.secrets.no_secret_selected")}</option>
                             {secretsForSlot(secretKey).map((secret) => (
                               <option key={secret.id} value={secret.id}>
                                 {secret.name || secret.id}
@@ -1056,16 +1059,16 @@ export default function IntegrationConnectionPage() {
                             ))}
                           </AppSelect>
                           <span className="label-text-alt opacity-70 mt-1">
-                            Matching provider and secret-key pairs are shown first so setup stays predictable.
+                            {t("settings.integrations.detail.secrets.matching_pairs_help")}
                           </span>
                         </label>
 
                         {selectedSecret ? (
                           <div className="mt-3 rounded-box bg-base-200 px-3 py-2 text-sm">
-                            Linked secret: {selectedSecret.name || selectedSecret.id}
-                            {selectedSecret.provider_key ? ` • Provider ${selectedSecret.provider_key}` : ""}
-                            {selectedSecret.secret_key ? ` • Slot ${selectedSecret.secret_key}` : ""}
-                            {selectedSecret.version ? ` • Version ${selectedSecret.version}` : ""}
+                            {t("settings.integrations.detail.secrets.linked_secret", { name: selectedSecret.name || selectedSecret.id })}
+                            {selectedSecret.provider_key ? ` • ${t("settings.integrations.detail.secrets.provider_value", { value: selectedSecret.provider_key })}` : ""}
+                            {selectedSecret.secret_key ? ` • ${t("settings.integrations.detail.secrets.slot_value", { value: selectedSecret.secret_key })}` : ""}
+                            {selectedSecret.version ? ` • ${t("settings.integrations.detail.secrets.version_value", { value: selectedSecret.version })}` : ""}
                           </div>
                         ) : null}
                       </div>
@@ -1075,17 +1078,17 @@ export default function IntegrationConnectionPage() {
               )}
               <div className="flex flex-wrap gap-2">
                 <button className="btn btn-primary btn-sm" type="button" onClick={save} disabled={loading || saving || !item?.id}>
-                  {saving ? "Saving..." : "Save"}
+                  {saving ? t("common.saving") : t("common.save")}
                 </button>
               </div>
             </Section>
           </div>
         ) : activeTab === "request" ? (
           <div className="space-y-4">
-            <Section title="Manual request" help="Use this to test the connection against a real endpoint. This is especially useful while setting up Generic REST and Generic Webhook providers.">
+            <Section title={detailT("request.title")} help={detailT("request.help")}>
               <div className="space-y-3">
                 <label className="form-control">
-                  <span className="label-text text-sm">Method</span>
+                  <span className="label-text text-sm">{detailT("request.method")}</span>
                   <AppSelect className="select select-bordered" value={requestForm.method} onChange={(e) => setRequestForm((prev) => ({ ...prev, method: e.target.value }))}>
                     {["GET", "POST", "PUT", "PATCH", "DELETE"].map((method) => (
                       <option key={method} value={method}>
@@ -1095,84 +1098,81 @@ export default function IntegrationConnectionPage() {
                   </AppSelect>
                 </label>
                 <label className="form-control">
-                  <span className="label-text text-sm">Path</span>
-                  <input className="input input-bordered" value={requestForm.path} onChange={(e) => setRequestForm((prev) => ({ ...prev, path: e.target.value }))} placeholder="/health" />
-                  <span className="label-text-alt opacity-70 mt-1">Use path for Generic REST. Use URL only if you need to override the full endpoint.</span>
+                  <span className="label-text text-sm">{detailT("request.path")}</span>
+                  <input className="input input-bordered" value={requestForm.path} onChange={(e) => setRequestForm((prev) => ({ ...prev, path: e.target.value }))} placeholder={detailT("request.path_placeholder")} />
+                  <span className="label-text-alt opacity-70 mt-1">{detailT("request.path_help")}</span>
                 </label>
                 <label className="form-control">
-                  <span className="label-text text-sm">Full URL override</span>
-                  <input className="input input-bordered" value={requestForm.url} onChange={(e) => setRequestForm((prev) => ({ ...prev, url: e.target.value }))} placeholder="https://api.example.com/custom/path" />
+                  <span className="label-text text-sm">{detailT("request.url_override")}</span>
+                  <input className="input input-bordered" value={requestForm.url} onChange={(e) => setRequestForm((prev) => ({ ...prev, url: e.target.value }))} placeholder={detailT("request.url_placeholder")} />
                 </label>
-                <JsonField label="Headers" value={requestForm.headersText} onChange={(text) => setRequestForm((prev) => ({ ...prev, headersText: text }))} minHeight="7rem" />
-                <JsonField label="Query" value={requestForm.queryText} onChange={(text) => setRequestForm((prev) => ({ ...prev, queryText: text }))} minHeight="7rem" />
-                <JsonField label="JSON body" value={requestForm.jsonText} onChange={(text) => setRequestForm((prev) => ({ ...prev, jsonText: text }))} minHeight="8rem" help="Leave empty and use raw body below if the endpoint does not expect JSON." />
+                <JsonField label={detailT("request.headers")} value={requestForm.headersText} onChange={(text) => setRequestForm((prev) => ({ ...prev, headersText: text }))} minHeight="7rem" />
+                <JsonField label={detailT("request.query")} value={requestForm.queryText} onChange={(text) => setRequestForm((prev) => ({ ...prev, queryText: text }))} minHeight="7rem" />
+                <JsonField label={detailT("request.json_body")} value={requestForm.jsonText} onChange={(text) => setRequestForm((prev) => ({ ...prev, jsonText: text }))} minHeight="8rem" help={detailT("request.json_help")} />
                 <label className="form-control">
-                  <span className="label-text text-sm">Raw body</span>
+                  <span className="label-text text-sm">{detailT("request.raw_body")}</span>
                   <textarea className="textarea textarea-bordered min-h-[7rem]" value={requestForm.bodyText} onChange={(e) => setRequestForm((prev) => ({ ...prev, bodyText: e.target.value }))} />
                 </label>
                 <div>
                   <button className="btn btn-primary btn-sm" type="button" onClick={runRequest} disabled={runningRequest}>
-                    {runningRequest ? "Running…" : "Run request"}
+                    {runningRequest ? detailT("request.running") : detailT("request.run")}
                   </button>
                 </div>
               </div>
             </Section>
 
-            <Section title="Latest response" help="The request result is shown here immediately after execution. Full history is kept in Logs." tone="muted">
-              {requestResult ? <pre className="rounded-box bg-base-200 p-3 text-xs overflow-auto">{JSON.stringify(requestResult, null, 2)}</pre> : <div className="text-sm opacity-60">No request executed yet.</div>}
+            <Section title={detailT("request.latest_response_title")} help={detailT("request.latest_response_help")} tone="muted">
+              {requestResult ? <pre className="rounded-box bg-base-200 p-3 text-xs overflow-auto">{JSON.stringify(requestResult, null, 2)}</pre> : <div className="text-sm opacity-60">{detailT("request.no_response")}</div>}
             </Section>
           </div>
         ) : activeTab === "sync" ? (
           <div className="space-y-4">
-            <Section title="Polling sync" help="Use this when the provider does not push changes to Octodrop. The saved sync config defines how the next batch is fetched and where the checkpoint cursor is stored.">
+            <Section title={detailT("sync.title")} help={detailT("sync.help")}>
               <div className="space-y-3">
                 {syncFields.length === 0 ? (
-                  <div className="text-sm opacity-60">This provider does not define a sync schema.</div>
+                  <div className="text-sm opacity-60">{detailT("sync.no_schema")}</div>
                 ) : (
                   syncFields.map((field) => renderSyncField(field))
                 )}
                 <div>
                   <button className="btn btn-primary btn-sm" type="button" onClick={runSync} disabled={runningSync}>
-                    {runningSync ? "Running…" : "Run sync now"}
+                    {runningSync ? detailT("sync.running") : detailT("sync.run_now")}
                   </button>
                 </div>
               </div>
             </Section>
 
-            <Section title="Latest sync result" help="This shows the last manual sync run from this page. Background runs and history are visible in Logs and Sync checkpoints." tone="muted">
-              {syncResult ? <pre className="rounded-box bg-base-200 p-3 text-xs overflow-auto">{JSON.stringify(syncResult, null, 2)}</pre> : <div className="text-sm opacity-60">No sync run yet.</div>}
+            <Section title={detailT("sync.latest_result_title")} help={detailT("sync.latest_result_help")} tone="muted">
+              {syncResult ? <pre className="rounded-box bg-base-200 p-3 text-xs overflow-auto">{JSON.stringify(syncResult, null, 2)}</pre> : <div className="text-sm opacity-60">{detailT("sync.no_result")}</div>}
             </Section>
           </div>
         ) : activeTab === "webhooks" ? (
           <div className="space-y-4">
-            <Section title="Webhook definitions" help="Inbound webhooks store raw events and process them asynchronously. Outbound webhooks can be called through automation actions or manual requests.">
+            <Section title={detailT("webhooks.title")} help={detailT("webhooks.help")}>
               <div className="rounded-box border border-base-300 bg-base-200 p-3 text-sm">
-                <div className="font-medium">Signing model</div>
-                <div className="mt-1 opacity-80">
-                  Signed outbound webhooks now include `X-Octo-Timestamp` and `X-Octo-Signature`. The signature is an HMAC SHA-256 over `timestamp.payload`.
-                  Inbound verification accepts that format and still supports the older body-only `sha256=` signature for compatibility.
-                </div>
+                <div className="font-medium">{detailT("webhooks.signing_model_title")}</div>
+                <div className="mt-1 opacity-80">{detailT("webhooks.signing_model_help")}</div>
               </div>
               <div className="space-y-3">
                 <label className="form-control">
-                  <span className="label-text text-sm">Direction</span>
+                  <span className="label-text text-sm">{detailT("webhooks.direction")}</span>
                   <AppSelect className="select select-bordered" value={newWebhook.direction} onChange={(e) => setNewWebhook((prev) => ({ ...prev, direction: e.target.value }))}>
-                    <option value="inbound">Inbound</option>
-                    <option value="outbound">Outbound</option>
+                    <option value="inbound">{detailT("webhooks.direction_inbound")}</option>
+                    <option value="outbound">{detailT("webhooks.direction_outbound")}</option>
                   </AppSelect>
                 </label>
                 <label className="form-control">
-                  <span className="label-text text-sm">Event key</span>
-                  <input className="input input-bordered" value={newWebhook.event_key} onChange={(e) => setNewWebhook((prev) => ({ ...prev, event_key: e.target.value }))} placeholder="contact.updated" />
+                  <span className="label-text text-sm">{detailT("webhooks.event_key")}</span>
+                  <input className="input input-bordered" value={newWebhook.event_key} onChange={(e) => setNewWebhook((prev) => ({ ...prev, event_key: e.target.value }))} placeholder={detailT("webhooks.event_key_placeholder")} />
                 </label>
                 <label className="form-control">
-                  <span className="label-text text-sm">Endpoint path</span>
-                  <input className="input input-bordered" value={newWebhook.endpoint_path} onChange={(e) => setNewWebhook((prev) => ({ ...prev, endpoint_path: e.target.value }))} placeholder="/webhooks/client-crm" />
+                  <span className="label-text text-sm">{detailT("webhooks.endpoint_path")}</span>
+                  <input className="input input-bordered" value={newWebhook.endpoint_path} onChange={(e) => setNewWebhook((prev) => ({ ...prev, endpoint_path: e.target.value }))} placeholder={detailT("webhooks.endpoint_path_placeholder")} />
                 </label>
                 <label className="form-control">
-                  <span className="label-text text-sm">Signing secret</span>
+                  <span className="label-text text-sm">{detailT("webhooks.signing_secret")}</span>
                   <AppSelect className="select select-bordered" value={newWebhook.signing_secret_id} onChange={(e) => setNewWebhook((prev) => ({ ...prev, signing_secret_id: e.target.value }))}>
-                    <option value="">No signing secret</option>
+                    <option value="">{detailT("webhooks.no_signing_secret")}</option>
                     {(secrets || []).map((secret) => (
                       <option key={secret.id} value={secret.id}>
                         {secret.name || secret.id}
@@ -1180,28 +1180,28 @@ export default function IntegrationConnectionPage() {
                     ))}
                   </AppSelect>
                 </label>
-                <JsonField label="Webhook config" value={newWebhook.config_json_text} onChange={(text) => setNewWebhook((prev) => ({ ...prev, config_json_text: text }))} minHeight="8rem" />
+                <JsonField label={detailT("webhooks.config")} value={newWebhook.config_json_text} onChange={(text) => setNewWebhook((prev) => ({ ...prev, config_json_text: text }))} minHeight="8rem" />
                 <div>
                   <button className="btn btn-primary btn-sm" type="button" onClick={createWebhook} disabled={creatingWebhook || !newWebhook.event_key.trim()}>
-                    {creatingWebhook ? "Adding…" : "Add webhook"}
+                    {creatingWebhook ? detailT("webhooks.adding") : detailT("webhooks.add")}
                   </button>
                 </div>
               </div>
             </Section>
 
             <TableList
-              emptyLabel="No webhooks configured yet."
+              emptyLabel={detailT("webhooks.none")}
               columns={[
-                { key: "direction", label: "Direction" },
-                { key: "event_key", label: "Event key" },
-                { key: "status", label: "Status" },
-                { key: "endpoint_path", label: "Endpoint" },
+                { key: "direction", label: detailT("webhooks.direction") },
+                { key: "event_key", label: detailT("webhooks.event_key") },
+                { key: "status", label: t("common.status") },
+                { key: "endpoint_path", label: detailT("webhooks.endpoint") },
                 {
                   key: "actions",
                   label: "",
                   render: (row) => (
                     <button className="btn btn-ghost btn-xs text-error" type="button" onClick={() => deleteWebhook(row.id)}>
-                      Delete
+                      {t("common.delete")}
                     </button>
                   ),
                 },
@@ -1211,162 +1211,162 @@ export default function IntegrationConnectionPage() {
           </div>
         ) : activeTab === "mappings" ? (
           <div className="space-y-4">
-            <Section title="Mapping profiles" help="Mappings stay declarative. Use them to turn inbound sync items into OCTO records without writing runtime code. Start with the guided fields, then only use raw JSON for advanced cases.">
+            <Section title={detailT("mappings.title")} help={detailT("mappings.help")}>
               <div className="space-y-3">
                 <label className="form-control">
-                  <span className="label-text text-sm">Name</span>
-                  <input className="input input-bordered" value={newMapping.name} onChange={(e) => setNewMapping((prev) => ({ ...prev, name: e.target.value }))} placeholder="Contacts import mapping" />
+                  <span className="label-text text-sm">{t("common.name")}</span>
+                  <input className="input input-bordered" value={newMapping.name} onChange={(e) => setNewMapping((prev) => ({ ...prev, name: e.target.value }))} placeholder={detailT("mappings.name_placeholder")} />
                 </label>
                 <label className="form-control">
-                  <span className="label-text text-sm">Source entity</span>
-                  <input className="input input-bordered" value={newMapping.source_entity} onChange={(e) => setNewMapping((prev) => ({ ...prev, source_entity: e.target.value }))} placeholder="external.contact" />
-                  <span className="label-text-alt opacity-70 mt-1">This is the external/source shape label for humans. It does not need to exist as an OCTO entity.</span>
+                  <span className="label-text text-sm">{detailT("mappings.source_entity")}</span>
+                  <input className="input input-bordered" value={newMapping.source_entity} onChange={(e) => setNewMapping((prev) => ({ ...prev, source_entity: e.target.value }))} placeholder={detailT("mappings.source_entity_placeholder")} />
+                  <span className="label-text-alt opacity-70 mt-1">{detailT("mappings.source_entity_help")}</span>
                 </label>
                 <label className="form-control">
-                  <span className="label-text text-sm">Target entity</span>
-                  <input className="input input-bordered" value={newMapping.target_entity} onChange={(e) => setNewMapping((prev) => ({ ...prev, target_entity: e.target.value }))} placeholder="entity.contact" />
-                  <span className="label-text-alt opacity-70 mt-1">Use the OCTO entity id you want this mapping to create or update.</span>
+                  <span className="label-text text-sm">{detailT("mappings.target_entity")}</span>
+                  <input className="input input-bordered" value={newMapping.target_entity} onChange={(e) => setNewMapping((prev) => ({ ...prev, target_entity: e.target.value }))} placeholder={detailT("mappings.target_entity_placeholder")} />
+                  <span className="label-text-alt opacity-70 mt-1">{detailT("mappings.target_entity_help")}</span>
                 </label>
                 <label className="form-control">
-                  <span className="label-text text-sm">Resource key</span>
-                  <input className="input input-bordered" value={newMapping.resource_key} onChange={(e) => setNewMapping((prev) => ({ ...prev, resource_key: e.target.value }))} placeholder="contacts" />
-                  <span className="label-text-alt opacity-70 mt-1">Optional. Use this to target only sync items from one resource, such as `contacts` or `invoices`.</span>
+                  <span className="label-text text-sm">{detailT("mappings.resource_key")}</span>
+                  <input className="input input-bordered" value={newMapping.resource_key} onChange={(e) => setNewMapping((prev) => ({ ...prev, resource_key: e.target.value }))} placeholder={detailT("mappings.resource_key_placeholder")} />
+                  <span className="label-text-alt opacity-70 mt-1">{detailT("mappings.resource_key_help")}</span>
                 </label>
                 <label className="form-control">
-                  <span className="label-text text-sm">Record mode</span>
+                  <span className="label-text text-sm">{detailT("mappings.record_mode")}</span>
                   <AppSelect className="select select-bordered" value={newMapping.record_mode} onChange={(e) => setNewMapping((prev) => ({ ...prev, record_mode: e.target.value }))}>
-                    <option value="upsert">Upsert existing or create new</option>
-                    <option value="create">Always create a new record</option>
+                    <option value="upsert">{detailT("mappings.record_mode_upsert")}</option>
+                    <option value="create">{detailT("mappings.record_mode_create")}</option>
                   </AppSelect>
                 </label>
                 {newMapping.record_mode === "upsert" ? (
                   <label className="form-control">
-                    <span className="label-text text-sm">Match on target fields</span>
-                    <input className="input input-bordered" value={newMapping.match_on_text} onChange={(e) => setNewMapping((prev) => ({ ...prev, match_on_text: e.target.value }))} placeholder="contact.email" />
-                    <span className="label-text-alt opacity-70 mt-1">Comma-separated target fields used to find an existing OCTO record before updating it.</span>
+                    <span className="label-text text-sm">{detailT("mappings.match_on")}</span>
+                    <input className="input input-bordered" value={newMapping.match_on_text} onChange={(e) => setNewMapping((prev) => ({ ...prev, match_on_text: e.target.value }))} placeholder={detailT("mappings.match_on_placeholder")} />
+                    <span className="label-text-alt opacity-70 mt-1">{detailT("mappings.match_on_help")}</span>
                   </label>
                 ) : null}
 
-                <Section title="Field mappings" help="Each row maps one source value into one OCTO target field.">
+                <Section title={detailT("mappings.field_mappings_title")} help={detailT("mappings.field_mappings_help")}>
                   <div className="space-y-3">
                     {(newMapping.field_mappings || []).map((row, index) => (
                       <div key={index} className="rounded-box border border-base-300 bg-base-100 p-3 space-y-3">
                         <label className="form-control">
-                          <span className="label-text text-sm">Target field</span>
+                          <span className="label-text text-sm">{detailT("mappings.target_field")}</span>
                           <input
                             className="input input-bordered"
                             value={row.to}
                             onChange={(e) => updateFieldMappingRow(index, { to: e.target.value })}
-                            placeholder="contact.email"
+                            placeholder={detailT("mappings.target_field_placeholder")}
                           />
                         </label>
                         <label className="form-control">
-                          <span className="label-text text-sm">Value source</span>
+                          <span className="label-text text-sm">{detailT("mappings.value_source")}</span>
                           <AppSelect
                             className="select select-bordered"
                             value={row.value_type}
                             onChange={(e) => updateFieldMappingRow(index, { value_type: e.target.value })}
                           >
-                            <option value="path">Source path</option>
-                            <option value="constant">Constant value</option>
-                            <option value="ref">System reference</option>
+                            <option value="path">{detailT("mappings.value_source_path")}</option>
+                            <option value="constant">{detailT("mappings.value_source_constant")}</option>
+                            <option value="ref">{detailT("mappings.value_source_ref")}</option>
                           </AppSelect>
                         </label>
                         <label className="form-control">
-                          <span className="label-text text-sm">{row.value_type === "constant" ? "Constant value" : row.value_type === "ref" ? "Reference" : "Source path"}</span>
+                          <span className="label-text text-sm">{row.value_type === "constant" ? detailT("mappings.value_source_constant") : row.value_type === "ref" ? detailT("mappings.reference") : detailT("mappings.source_path")}</span>
                           <input
                             className="input input-bordered"
                             value={row.source}
                             onChange={(e) => updateFieldMappingRow(index, { source: e.target.value })}
-                            placeholder={row.value_type === "constant" ? "active" : row.value_type === "ref" ? "$now" : "email"}
+                            placeholder={row.value_type === "constant" ? detailT("mappings.constant_placeholder") : row.value_type === "ref" ? detailT("mappings.reference_placeholder") : detailT("mappings.source_path_placeholder")}
                           />
                         </label>
                         <label className="form-control">
-                          <span className="label-text text-sm">Transform</span>
+                          <span className="label-text text-sm">{detailT("mappings.transform")}</span>
                           <AppSelect
                             className="select select-bordered"
                             value={row.transform || ""}
                             onChange={(e) => updateFieldMappingRow(index, { transform: e.target.value })}
                           >
-                            <option value="">No transform</option>
-                            <option value="trim">Trim whitespace</option>
-                            <option value="lower">Lowercase</option>
-                            <option value="upper">Uppercase</option>
-                            <option value="string">Convert to text</option>
-                            <option value="number">Convert to number</option>
-                            <option value="integer">Convert to integer</option>
-                            <option value="boolean">Convert to boolean</option>
-                            <option value="null_if_empty">Null if empty</option>
+                            <option value="">{detailT("mappings.no_transform")}</option>
+                            <option value="trim">{detailT("mappings.transform_trim")}</option>
+                            <option value="lower">{detailT("mappings.transform_lower")}</option>
+                            <option value="upper">{detailT("mappings.transform_upper")}</option>
+                            <option value="string">{detailT("mappings.transform_string")}</option>
+                            <option value="number">{detailT("mappings.transform_number")}</option>
+                            <option value="integer">{detailT("mappings.transform_integer")}</option>
+                            <option value="boolean">{detailT("mappings.transform_boolean")}</option>
+                            <option value="null_if_empty">{detailT("mappings.transform_null_if_empty")}</option>
                           </AppSelect>
                         </label>
                         <div className="flex justify-end">
                           <button className="btn btn-ghost btn-sm text-error" type="button" onClick={() => removeFieldMappingRow(index)} disabled={(newMapping.field_mappings || []).length <= 1}>
-                            Remove row
+                            {detailT("mappings.remove_row")}
                           </button>
                         </div>
                       </div>
                     ))}
                     <button className="btn btn-sm btn-outline" type="button" onClick={addFieldMappingRow}>
                       <Plus className="h-4 w-4" />
-                      Add field mapping
+                      {detailT("mappings.add_field_mapping")}
                     </button>
                   </div>
                 </Section>
 
-                <Section title="Preview mapping" help="Paste one sample source record here to see the mapped OCTO field values before you save the profile.">
+                <Section title={detailT("mappings.preview_title")} help={detailT("mappings.preview_help")}>
                   <div className="space-y-3">
-                    <JsonField label="Sample source record" value={newMapping.sample_source_text} onChange={(text) => setNewMapping((prev) => ({ ...prev, sample_source_text: text }))} minHeight="10rem" />
+                    <JsonField label={detailT("mappings.sample_source_record")} value={newMapping.sample_source_text} onChange={(text) => setNewMapping((prev) => ({ ...prev, sample_source_text: text }))} minHeight="10rem" />
                     <div className="flex flex-wrap gap-2">
                       <button className="btn btn-sm btn-outline" type="button" onClick={previewMapping} disabled={previewingMapping}>
-                        {previewingMapping ? "Previewing..." : "Preview mapping"}
+                        {previewingMapping ? detailT("mappings.previewing") : detailT("mappings.preview_action")}
                       </button>
                     </div>
                     {mappingPreview ? (
                       <pre className="rounded-box bg-base-200 p-3 text-xs overflow-auto">{JSON.stringify(mappingPreview, null, 2)}</pre>
                     ) : (
-                      <div className="text-sm opacity-60">No preview yet.</div>
+                      <div className="text-sm opacity-60">{detailT("mappings.no_preview")}</div>
                     )}
                   </div>
                 </Section>
 
                 <details className="collapse collapse-arrow border border-base-300 bg-base-100">
-                  <summary className="collapse-title text-sm font-medium">Advanced mapping JSON</summary>
+                  <summary className="collapse-title text-sm font-medium">{detailT("mappings.advanced_json_title")}</summary>
                   <div className="collapse-content">
                     <JsonField
-                      label="Advanced overrides"
+                      label={detailT("mappings.advanced_overrides")}
                       value={newMapping.mapping_json_text}
                       onChange={(text) => setNewMapping((prev) => ({ ...prev, mapping_json_text: text }))}
                       minHeight="10rem"
-                      help="These fields are merged on top of the guided builder output. Use this only for advanced conditions or future mapping options."
+                      help={detailT("mappings.advanced_overrides_help")}
                     />
                   </div>
                 </details>
 
                 <div className="flex flex-wrap gap-2">
                   <button className="btn btn-primary btn-sm" type="button" onClick={createMapping} disabled={creatingMapping || !newMapping.name.trim() || !newMapping.source_entity.trim() || !newMapping.target_entity.trim()}>
-                    {creatingMapping ? "Adding…" : "Add mapping"}
+                    {creatingMapping ? detailT("mappings.adding") : detailT("mappings.add")}
                   </button>
                   <button className="btn btn-ghost btn-sm" type="button" onClick={() => { setNewMapping(defaultNewMappingState()); setMappingPreview(null); }}>
-                    Reset
+                    {detailT("mappings.reset")}
                   </button>
                 </div>
               </div>
             </Section>
 
             <TableList
-              emptyLabel="No mappings configured yet."
+              emptyLabel={detailT("mappings.none")}
               columns={[
-                { key: "name", label: "Name" },
-                { key: "resource", label: "Resource", render: (row) => row.mapping_json?.resource_key || "—" },
-                { key: "source_entity", label: "Source" },
-                { key: "target_entity", label: "Target" },
-                { key: "mode", label: "Mode", render: (row) => row.mapping_json?.record_mode || row.mapping_json?.mode || "create" },
+                { key: "name", label: t("common.name") },
+                { key: "resource", label: detailT("mappings.resource"), render: (row) => row.mapping_json?.resource_key || "—" },
+                { key: "source_entity", label: detailT("mappings.source") },
+                { key: "target_entity", label: detailT("mappings.target") },
+                { key: "mode", label: detailT("mappings.mode"), render: (row) => row.mapping_json?.record_mode || row.mapping_json?.mode || "create" },
                 {
                   key: "actions",
                   label: "",
                   render: (row) => (
                     <button className="btn btn-ghost btn-xs text-error" type="button" onClick={() => deleteMapping(row.id)}>
-                      Delete
+                      {t("common.delete")}
                     </button>
                   ),
                 },
@@ -1376,41 +1376,41 @@ export default function IntegrationConnectionPage() {
           </div>
         ) : activeTab === "logs" ? (
           <div className="space-y-4">
-            <Section title="Request logs" help="Outbound test calls and automation-driven provider calls are stored here for troubleshooting." tone="muted">
+            <Section title={detailT("logs.request_title")} help={detailT("logs.request_help")} tone="muted">
               <TableList
-                emptyLabel="No request logs yet."
+                emptyLabel={detailT("logs.request_none")}
                 columns={[
-                  { key: "created_at", label: "When", render: (row) => formatDateTime(row.created_at, "—") },
-                  { key: "source", label: "Source" },
-                  { key: "method", label: "Method" },
-                  { key: "url", label: "URL" },
-                  { key: "response_status", label: "Status" },
+                  { key: "created_at", label: detailT("logs.when"), render: (row) => formatDateTime(row.created_at, "—") },
+                  { key: "source", label: detailT("logs.source") },
+                  { key: "method", label: detailT("logs.method") },
+                  { key: "url", label: detailT("logs.url") },
+                  { key: "response_status", label: t("common.status") },
                 ]}
                 rows={requestLogs}
               />
             </Section>
 
-            <Section title="Webhook events" help="Inbound webhook payloads are always stored first, then processed asynchronously by workers." tone="muted">
+            <Section title={detailT("logs.webhook_events_title")} help={detailT("logs.webhook_events_help")} tone="muted">
               <TableList
-                emptyLabel="No webhook events yet."
+                emptyLabel={detailT("logs.webhook_events_none")}
                 columns={[
-                  { key: "received_at", label: "Received", render: (row) => formatDateTime(row.received_at, "—") },
-                  { key: "event_key", label: "Event key" },
-                  { key: "status", label: "Status" },
-                  { key: "provider_event_id", label: "Provider event ID" },
+                  { key: "received_at", label: detailT("logs.received"), render: (row) => formatDateTime(row.received_at, "—") },
+                  { key: "event_key", label: detailT("webhooks.event_key") },
+                  { key: "status", label: t("common.status") },
+                  { key: "provider_event_id", label: detailT("logs.provider_event_id") },
                 ]}
                 rows={webhookEvents}
               />
             </Section>
 
-            <Section title="Sync checkpoints" help="Polling integrations use checkpoints so later sync runs only process new or changed records." tone="muted">
+            <Section title={detailT("logs.sync_checkpoints_title")} help={detailT("logs.sync_checkpoints_help")} tone="muted">
               <TableList
-                emptyLabel="No checkpoints yet."
+                emptyLabel={detailT("logs.sync_checkpoints_none")}
                 columns={[
-                  { key: "scope_key", label: "Scope" },
-                  { key: "cursor_value", label: "Cursor" },
-                  { key: "status", label: "Status" },
-                  { key: "updated_at", label: "Updated", render: (row) => formatDateTime(row.updated_at, "—") },
+                  { key: "scope_key", label: detailT("logs.scope") },
+                  { key: "cursor_value", label: detailT("logs.cursor") },
+                  { key: "status", label: t("common.status") },
+                  { key: "updated_at", label: t("common.updated"), render: (row) => formatDateTime(row.updated_at, "—") },
                 ]}
                 rows={checkpoints}
               />
@@ -1418,7 +1418,7 @@ export default function IntegrationConnectionPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            <Section title="Setup guide" help="Use this as the linear path for getting a connection ready. You usually only need the connection settings, the correct secrets, and a successful test run." tone="muted">
+            <Section title={detailT("setup.guide.title")} help={detailT("setup.guide.help")} tone="muted">
               <div className="space-y-3">
                 {setupGuideSteps.map((step) => (
                   <SetupGuideStep key={step.title} {...step} />
@@ -1426,18 +1426,18 @@ export default function IntegrationConnectionPage() {
               </div>
             </Section>
 
-            <Section title="Connection setup" help="Keep this section focused on provider settings. Secrets are linked separately so credentials stay reusable and isolated from business logic.">
+            <Section title={detailT("setup.connection_setup_title")} help={detailT("setup.connection_setup_help")}>
               <div className="space-y-3">
                 <label className="form-control">
-                  <span className="label-text text-sm">Connection name</span>
+                  <span className="label-text text-sm">{detailT("setup.connection_name")}</span>
                   <input className="input input-bordered" value={name} onChange={(e) => setName(e.target.value)} disabled={saving} />
                 </label>
 
                 <label className="form-control">
-                  <span className="label-text text-sm">Status</span>
+                  <span className="label-text text-sm">{t("common.status")}</span>
                   <AppSelect className="select select-bordered" value={status} onChange={(e) => setStatus(e.target.value)} disabled={saving}>
-                    <option value="active">Active</option>
-                    <option value="disabled">Disabled</option>
+                    <option value="active">{detailT("setup.status_active")}</option>
+                    <option value="disabled">{detailT("setup.status_disabled")}</option>
                   </AppSelect>
                 </label>
 
@@ -1446,11 +1446,11 @@ export default function IntegrationConnectionPage() {
                   .map(([groupKey, fields]) => (
                     <Section
                       key={groupKey}
-                      title={groupKey === "connection" ? "Provider settings" : titleCase(groupKey)}
+                      title={groupKey === "connection" ? detailT("setup.provider_settings") : titleCase(groupKey)}
                       help={
                         groupKey === "connection"
-                          ? "These are the main provider fields your team will usually configure first."
-                          : "These fields belong together and are part of this provider's setup schema."
+                          ? detailT("setup.provider_settings_help")
+                          : detailT("setup.group_help")
                       }
                     >
                       <div className="space-y-3">{fields.map((field) => renderSetupField(field))}</div>
@@ -1458,64 +1458,64 @@ export default function IntegrationConnectionPage() {
                   ))}
 
                 {authMode === "oauth2" ? (
-                  <Section title="OAuth2 connection flow" help="Use this when the provider authenticates through an OAuth2 browser flow. Generate the authorize URL, complete the provider login, then exchange the returned code so Octodrop can store and refresh the tokens safely.">
+                  <Section title={detailT("setup.oauth_title")} help={detailT("setup.oauth_help")}>
                     <div className="space-y-3">
                       <label className="form-control">
-                        <span className="label-text text-sm">Redirect URI</span>
+                        <span className="label-text text-sm">{detailT("setup.redirect_uri")}</span>
                         <input
                           className="input input-bordered"
                           value={oauthRedirectUri}
                           onChange={(e) => setOauthRedirectUri(e.target.value)}
-                          placeholder="https://app.example.com/integrations/connections/..."
+                          placeholder={detailT("setup.redirect_uri_placeholder")}
                         />
-                        <span className="label-text-alt opacity-70 mt-1">Register this exact URL with the provider. If the provider redirects back with `?code=...`, this page will prefill the code field automatically.</span>
+                        <span className="label-text-alt opacity-70 mt-1">{detailT("setup.redirect_uri_help")}</span>
                       </label>
 
                       <div className="flex flex-wrap gap-2">
                         <button className="btn btn-sm btn-outline" type="button" onClick={generateOauthAuthorizeUrl} disabled={authorizingOAuth || !oauthRedirectUri.trim()}>
-                          {authorizingOAuth ? "Generating..." : "Generate authorize URL"}
+                          {authorizingOAuth ? detailT("setup.generating") : detailT("setup.generate_authorize_url")}
                         </button>
                         <button className="btn btn-sm btn-outline" type="button" onClick={refreshOauthTokens} disabled={refreshingOAuth}>
-                          {refreshingOAuth ? "Refreshing..." : "Refresh tokens now"}
+                          {refreshingOAuth ? detailT("setup.refreshing") : detailT("setup.refresh_tokens")}
                         </button>
                       </div>
 
                       {oauthAuthorizeResult?.authorize_url ? (
                         <div className="space-y-2 rounded-box border border-base-300 bg-base-200/60 p-3">
-                          <div className="text-sm font-medium">Authorize URL</div>
+                          <div className="text-sm font-medium">{detailT("setup.authorize_url")}</div>
                           <textarea className="textarea textarea-bordered min-h-[7rem] text-xs" readOnly value={oauthAuthorizeResult.authorize_url} />
                           <div className="flex flex-wrap gap-2">
                             <a className="btn btn-sm btn-primary" href={oauthAuthorizeResult.authorize_url} target="_blank" rel="noreferrer">
-                              Open provider login
+                              {detailT("setup.open_provider_login")}
                             </a>
                           </div>
                         </div>
                       ) : null}
 
                       <label className="form-control">
-                        <span className="label-text text-sm">Authorization code</span>
+                        <span className="label-text text-sm">{detailT("setup.authorization_code")}</span>
                         <input
                           className="input input-bordered"
                           value={oauthCode}
                           onChange={(e) => setOauthCode(e.target.value)}
-                          placeholder="Paste the returned code here"
+                          placeholder={detailT("setup.authorization_code_placeholder")}
                         />
-                        <span className="label-text-alt opacity-70 mt-1">After completing the provider login, paste the returned `code` parameter here if it was not auto-filled.</span>
+                        <span className="label-text-alt opacity-70 mt-1">{detailT("setup.authorization_code_help")}</span>
                       </label>
 
                       <div className="flex flex-wrap gap-2">
                         <button className="btn btn-sm btn-primary" type="button" onClick={exchangeOauthCode} disabled={exchangingOAuth || !oauthRedirectUri.trim() || !oauthCode.trim()}>
-                          {exchangingOAuth ? "Exchanging..." : "Exchange code for tokens"}
+                          {exchangingOAuth ? detailT("setup.exchanging") : detailT("setup.exchange_code")}
                         </button>
                       </div>
 
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                         <div className="rounded-box bg-base-200 px-3 py-2 text-sm">
-                          <div className="text-xs uppercase tracking-wide opacity-60">Access token expiry</div>
+                          <div className="text-xs uppercase tracking-wide opacity-60">{detailT("setup.access_token_expiry")}</div>
                           <div className="mt-1">{formatDateTime(config?.oauth_access_token_expires_at, "—")}</div>
                         </div>
                         <div className="rounded-box bg-base-200 px-3 py-2 text-sm">
-                          <div className="text-xs uppercase tracking-wide opacity-60">Last token refresh</div>
+                          <div className="text-xs uppercase tracking-wide opacity-60">{detailT("setup.last_token_refresh")}</div>
                           <div className="mt-1">{formatDateTime(config?.oauth_last_token_refresh_at, "—")}</div>
                         </div>
                       </div>
@@ -1524,11 +1524,11 @@ export default function IntegrationConnectionPage() {
                 ) : null}
 
                 <details className="collapse collapse-arrow border border-base-300 bg-base-100">
-                  <summary className="collapse-title text-sm font-medium">Advanced config JSON</summary>
+                  <summary className="collapse-title text-sm font-medium">{detailT("setup.advanced_config_title")}</summary>
                   <div className="collapse-content">
                     {groupedSetupFields.some(([groupKey]) => groupKey === "advanced") ? (
                       <div className="mb-4 space-y-3">
-                        <div className="text-sm opacity-70">These advanced provider fields are still driven by the provider schema, but are tucked away because most connections will not need them.</div>
+                        <div className="text-sm opacity-70">{detailT("setup.advanced_config_help")}</div>
                         {groupedSetupFields
                           .filter(([groupKey]) => groupKey === "advanced")
                           .flatMap(([, fields]) => fields)
@@ -1536,44 +1536,44 @@ export default function IntegrationConnectionPage() {
                       </div>
                     ) : null}
                     <JsonField
-                      label="Full config"
+                      label={detailT("setup.full_config")}
                       value={configText}
                       onChange={(text) => {
                         setConfigText(text);
                         setConfig(safeJsonParse(text, config));
                       }}
                       minHeight="16rem"
-                      help="This is the raw stored config. Use it for fields not yet modeled in the guided form."
+                      help={detailT("setup.full_config_help")}
                     />
                   </div>
                 </details>
 
                 <div className="flex flex-wrap gap-2">
                   <button className="btn btn-outline btn-sm" type="button" onClick={runTest} disabled={loading || testing || !item?.id}>
-                    {testing ? "Testing..." : "Test connection"}
+                    {testing ? detailT("setup.testing") : detailT("setup.test_connection")}
                   </button>
                   <button className="btn btn-primary btn-sm" type="button" onClick={save} disabled={loading || saving || !name.trim()}>
-                    {saving ? "Saving..." : "Save"}
+                    {saving ? t("common.saving") : t("common.save")}
                   </button>
                 </div>
               </div>
             </Section>
 
-            <Section title="Connection summary" help="This is the current runtime state of the connection, including provider, health, and audit timestamps." tone="muted">
+            <Section title={detailT("setup.summary_title")} help={detailT("setup.summary_help")} tone="muted">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <SummaryStat label="Provider" value={provider?.name || providerKey} />
-                <SummaryStat label="Auth type" value={provider?.auth_type || config?.provider_auth_type} />
-                <SummaryStat label="Health" value={item.health_status || "unknown"} />
-                <SummaryStat label="Status" value={item.status} />
-                <SummaryStat label="Last tested" value={formatDateTime(item.last_tested_at, "—")} />
-                <SummaryStat label="Last success" value={formatDateTime(item.last_success_at, "—")} />
-                <SummaryStat label="Last error" value={item.last_error || "—"} />
-                <SummaryStat label="Updated" value={formatDateTime(item.updated_at, "—")} />
+                <SummaryStat label={detailT("setup.summary_provider")} value={provider?.name || providerKey} />
+                <SummaryStat label={detailT("setup.summary_auth_type")} value={provider?.auth_type || config?.provider_auth_type} />
+                <SummaryStat label={detailT("setup.summary_health")} value={item.health_status || detailT("setup.unknown")} />
+                <SummaryStat label={t("common.status")} value={item.status} />
+                <SummaryStat label={detailT("setup.summary_last_tested")} value={formatDateTime(item.last_tested_at, "—")} />
+                <SummaryStat label={detailT("setup.summary_last_success")} value={formatDateTime(item.last_success_at, "—")} />
+                <SummaryStat label={detailT("setup.summary_last_error")} value={item.last_error || "—"} />
+                <SummaryStat label={t("common.updated")} value={formatDateTime(item.updated_at, "—")} />
               </div>
             </Section>
 
-            <Section title="Latest test result" help="Use Test connection after changing config or secrets. The result here is only the latest run; full request history is in Logs." tone="muted">
-              {testResult ? <pre className="rounded-box bg-base-200 p-3 text-xs overflow-auto">{JSON.stringify(testResult, null, 2)}</pre> : <div className="text-sm opacity-60">No test run yet.</div>}
+            <Section title={detailT("setup.latest_test_result_title")} help={detailT("setup.latest_test_result_help")} tone="muted">
+              {testResult ? <pre className="rounded-box bg-base-200 p-3 text-xs overflow-auto">{JSON.stringify(testResult, null, 2)}</pre> : <div className="text-sm opacity-60">{detailT("setup.no_test_result")}</div>}
             </Section>
           </div>
         )}
@@ -1581,79 +1581,79 @@ export default function IntegrationConnectionPage() {
 
       {showCreateSecretModal ? (
         <SimpleModal
-          title={createSecretTargetKey ? `Create ${titleCase(createSecretTargetKey)} secret` : "Create secret"}
-          subtitle="Secrets are encrypted, reusable, and resolved only at runtime by the worker."
+          title={createSecretTargetKey ? detailT("modal.create_secret_for_slot", { slot: titleCase(createSecretTargetKey) }) : detailT("modal.create_secret")}
+          subtitle={detailT("modal.create_secret_help")}
           onClose={() => {
             if (!creatingSecret) setShowCreateSecretModal(false);
           }}
         >
           <div className="space-y-4">
             <label className="form-control">
-              <span className="label-text text-sm">Name</span>
+              <span className="label-text text-sm">{t("common.name")}</span>
               <input
                 className="input input-bordered"
                 value={createSecretForm.name}
                 onChange={(e) => setCreateSecretForm((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder="Xero refresh token"
+                placeholder={detailT("modal.secret_name_placeholder")}
                 disabled={creatingSecret}
               />
-              <span className="label-text-alt opacity-70 mt-1">Use a name your team will recognize when linking this secret to connections.</span>
+              <span className="label-text-alt opacity-70 mt-1">{detailT("modal.secret_name_help")}</span>
             </label>
 
             <label className="form-control">
-              <span className="label-text text-sm">Provider key</span>
+              <span className="label-text text-sm">{detailT("modal.provider_key")}</span>
               <input
                 className="input input-bordered"
                 value={createSecretForm.provider_key}
                 onChange={(e) => setCreateSecretForm((prev) => ({ ...prev, provider_key: e.target.value }))}
-                placeholder="generic_rest"
+                placeholder={detailT("modal.provider_key_placeholder")}
                 disabled={creatingSecret}
               />
             </label>
 
             <label className="form-control">
-              <span className="label-text text-sm">Secret slot</span>
+              <span className="label-text text-sm">{detailT("modal.secret_slot")}</span>
               <input
                 className="input input-bordered"
                 value={createSecretForm.secret_key}
                 onChange={(e) => setCreateSecretForm((prev) => ({ ...prev, secret_key: e.target.value }))}
-                placeholder="api_key"
+                placeholder={detailT("modal.secret_slot_placeholder")}
                 disabled={creatingSecret}
               />
-              <span className="label-text-alt opacity-70 mt-1">The slot should match the named secret this provider expects, such as `api_key`, `bearer_token`, or `signing_secret`.</span>
+              <span className="label-text-alt opacity-70 mt-1">{detailT("modal.secret_slot_help")}</span>
             </label>
 
             <label className="form-control">
-              <span className="label-text text-sm">Status</span>
+              <span className="label-text text-sm">{t("common.status")}</span>
               <AppSelect
                 className="select select-bordered"
                 value={createSecretForm.status}
                 onChange={(e) => setCreateSecretForm((prev) => ({ ...prev, status: e.target.value }))}
                 disabled={creatingSecret}
               >
-                <option value="active">Active</option>
-                <option value="disabled">Disabled</option>
+                <option value="active">{detailT("setup.status_active")}</option>
+                <option value="disabled">{detailT("setup.status_disabled")}</option>
               </AppSelect>
             </label>
 
             <label className="form-control">
-              <span className="label-text text-sm">Secret value</span>
+              <span className="label-text text-sm">{detailT("modal.secret_value")}</span>
               <textarea
                 className="textarea textarea-bordered min-h-[8rem]"
                 value={createSecretForm.value}
                 onChange={(e) => setCreateSecretForm((prev) => ({ ...prev, value: e.target.value }))}
-                placeholder="Paste the credential value"
+                placeholder={detailT("modal.secret_value_placeholder")}
                 disabled={creatingSecret}
               />
-              <span className="label-text-alt opacity-70 mt-1">The value is stored encrypted and will not be shown again after save.</span>
+              <span className="label-text-alt opacity-70 mt-1">{detailT("modal.secret_value_help")}</span>
             </label>
 
             <div className="flex items-center justify-end gap-2">
               <button className="btn btn-ghost" type="button" onClick={() => setShowCreateSecretModal(false)} disabled={creatingSecret}>
-                Cancel
+                {t("common.cancel")}
               </button>
               <button className="btn btn-primary" type="button" onClick={createSecretForConnection} disabled={creatingSecret || !createSecretForm.value.trim()}>
-                {creatingSecret ? "Creating..." : "Create secret"}
+                {creatingSecret ? detailT("modal.creating") : detailT("modal.create_secret")}
               </button>
             </div>
           </div>

@@ -3,27 +3,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import { apiFetch } from "../api.js";
 import AppSelect from "../components/AppSelect.jsx";
 import { useToast } from "../components/Toast.jsx";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
-
-const SCOPE_OPTIONS = [
-  { value: "global", label: "Global" },
-  { value: "entity", label: "Entity" },
-  { value: "workspace", label: "Workspace" },
-];
-
-const RESET_OPTIONS = [
-  { value: "never", label: "Never" },
-  { value: "yearly", label: "Yearly" },
-  { value: "monthly", label: "Monthly" },
-];
-
-const ASSIGN_OPTIONS = [
-  { value: "create", label: "On Create" },
-  { value: "save", label: "On Save" },
-  { value: "confirm", label: "On Confirm Status" },
-  { value: "issue", label: "On Issue Status" },
-  { value: "custom", label: "Custom / Manual Later" },
-];
 
 function emptyDraft() {
   return {
@@ -58,6 +39,7 @@ function SectionGroup({ title, description, children, className = "" }) {
 }
 
 export default function SettingsDocumentNumberingDetailPage() {
+  const { t } = useI18n();
   const { sequenceId } = useParams();
   const navigate = useNavigate();
   const { pushToast } = useToast();
@@ -72,6 +54,35 @@ export default function SettingsDocumentNumberingDetailPage() {
   const [previewError, setPreviewError] = useState("");
   const [activeTabId, setActiveTabId] = useState("details");
 
+  const scopeOptions = useMemo(
+    () => [
+      { value: "global", label: t("settings.document_numbering.detail.scope_options.global") },
+      { value: "entity", label: t("settings.document_numbering.detail.scope_options.entity") },
+      { value: "workspace", label: t("settings.document_numbering.detail.scope_options.workspace") },
+    ],
+    [t],
+  );
+
+  const resetOptions = useMemo(
+    () => [
+      { value: "never", label: t("settings.document_numbering.detail.reset_options.never") },
+      { value: "yearly", label: t("settings.document_numbering.detail.reset_options.yearly") },
+      { value: "monthly", label: t("settings.document_numbering.detail.reset_options.monthly") },
+    ],
+    [t],
+  );
+
+  const assignOptions = useMemo(
+    () => [
+      { value: "create", label: t("settings.document_numbering.detail.assign_options.create") },
+      { value: "save", label: t("settings.document_numbering.detail.assign_options.save") },
+      { value: "confirm", label: t("settings.document_numbering.detail.assign_options.confirm") },
+      { value: "issue", label: t("settings.document_numbering.detail.assign_options.issue") },
+      { value: "custom", label: t("settings.document_numbering.detail.assign_options.custom") },
+    ],
+    [t],
+  );
+
   async function load() {
     setLoading(true);
     setError("");
@@ -85,7 +96,7 @@ export default function SettingsDocumentNumberingDetailPage() {
     } catch (err) {
       setItems([]);
       setEntities([]);
-      setError(err?.message || "Failed to load document numbering settings");
+      setError(err?.message || t("settings.document_numbering.load_failed"));
     } finally {
       setLoading(false);
     }
@@ -144,7 +155,7 @@ export default function SettingsDocumentNumberingDetailPage() {
       } catch (err) {
         if (!alive) return;
         setPreview("");
-        setPreviewError(err?.message || "Preview unavailable");
+        setPreviewError(err?.message || t("settings.document_numbering.preview_unavailable"));
       }
     }, 200);
     return () => {
@@ -167,13 +178,13 @@ export default function SettingsDocumentNumberingDetailPage() {
           body: draft,
         });
       const saved = response?.sequence || null;
-      pushToast("success", draft.id ? "Sequence updated." : "Sequence created.");
+      pushToast("success", draft.id ? t("settings.document_numbering.detail.updated") : t("settings.document_numbering.detail.created"));
       await load();
       if (!draft.id && saved?.id) {
         navigate(`/settings/document-numbering/${saved.id}`, { replace: true });
       }
     } catch (err) {
-      setError(err?.message || "Failed to save sequence");
+      setError(err?.message || t("settings.document_numbering.detail.save_failed"));
     } finally {
       setSaving(false);
     }
@@ -195,9 +206,9 @@ export default function SettingsDocumentNumberingDetailPage() {
       title=""
       subtitle=""
       tabs={[
-        { id: "details", label: "Details" },
-        { id: "preview", label: "Preview" },
-        { id: "help", label: "Token Help" },
+        { id: "details", label: t("settings.document_numbering.detail.tabs.details") },
+        { id: "preview", label: t("settings.document_numbering.detail.tabs.preview") },
+        { id: "help", label: t("settings.document_numbering.detail.tabs.help") },
       ]}
       activeTabId={activeTabId}
       onTabChange={setActiveTabId}
@@ -206,150 +217,149 @@ export default function SettingsDocumentNumberingDetailPage() {
       {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
 
       {loading ? (
-        <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-70">Loading…</div>
+        <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-70">{t("common.loading")}</div>
       ) : !isNew && !item ? (
-        <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-60">Sequence not found.</div>
+        <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm opacity-60">{t("settings.document_numbering.detail.not_found")}</div>
       ) : activeTabId === "details" ? (
         <div className="space-y-4">
-          <SectionGroup title="Sequence details" description="Use stable internal codes and business-friendly names. Changes only affect future records.">
+          <SectionGroup title={t("settings.document_numbering.detail.sequence_title")} description={t("settings.document_numbering.detail.sequence_description")}>
             {draft.id && Number(draft.assignment_count || 0) > 0 ? (
               <div className="mb-4 rounded-box border border-warning/30 bg-warning/10 px-4 py-3 text-sm">
-                This sequence is already in use on <span className="font-semibold">{draft.assignment_count}</span> record{Number(draft.assignment_count) === 1 ? "" : "s"}.
-                Changes here only apply to future assignments. Historical document numbers are not renumbered.
+                {t("settings.document_numbering.detail.assignment_warning", { count: Number(draft.assignment_count || 0) })}
               </div>
             ) : null}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <label className="form-control">
-                <span className="label-text text-sm">Name</span>
+                <span className="label-text text-sm">{t("settings.document_numbering.name")}</span>
                 <input className="input input-bordered" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} disabled={saving} />
-                <span className="label label-text-alt opacity-50">Required. Use a clear business name like Quotes, Invoices, or Purchase Orders.</span>
+                <span className="label label-text-alt opacity-50">{t("settings.document_numbering.detail.name_help")}</span>
               </label>
               <label className="form-control">
-                <span className="label-text text-sm">Code</span>
+                <span className="label-text text-sm">{t("settings.document_numbering.code")}</span>
                 <input className="input input-bordered" value={draft.code} onChange={(event) => setDraft((current) => ({ ...current, code: event.target.value }))} placeholder="sales.quote" disabled={saving} />
-                <span className="label label-text-alt opacity-50">Required. Use a stable internal key. This is for admins, not end users.</span>
+                <span className="label label-text-alt opacity-50">{t("settings.document_numbering.detail.code_help")}</span>
               </label>
               <label className="form-control">
-                <span className="label-text text-sm">Target entity</span>
+                <span className="label-text text-sm">{t("settings.document_numbering.detail.target_entity")}</span>
                 <AppSelect
                   className="select select-bordered"
                   value={draft.target_entity_id}
                   onChange={(event) => setDraft((current) => ({ ...current, target_entity_id: event.target.value, number_field_id: "", scope_field_id: "", trigger_status_values: [] }))}
                   disabled={saving}
                 >
-                  <option value="">Select entity</option>
+                  <option value="">{t("settings.document_numbering.detail.select_entity")}</option>
                   {entities.map((entity) => (
                     <option key={entity.entity_id} value={entity.entity_id}>
                       {entity.label || entity.entity_id}
                     </option>
                     ))}
                   </AppSelect>
-                <span className="label label-text-alt opacity-50">Required. Choose the record type that should receive this number.</span>
+                <span className="label label-text-alt opacity-50">{t("settings.document_numbering.detail.target_entity_help")}</span>
               </label>
               <label className="form-control">
-                <span className="label-text text-sm">Number field</span>
+                <span className="label-text text-sm">{t("settings.document_numbering.detail.number_field")}</span>
                 <AppSelect
                   className="select select-bordered"
                   value={draft.number_field_id}
                   onChange={(event) => setDraft((current) => ({ ...current, number_field_id: event.target.value }))}
                   disabled={saving || !draft.target_entity_id}
                 >
-                  <option value="">Select field</option>
+                  <option value="">{t("settings.document_numbering.detail.select_field")}</option>
                   {numberFields.map((field) => (
                     <option key={field.id} value={field.id}>
                       {field.label}
                     </option>
                     ))}
                   </AppSelect>
-                <span className="label label-text-alt opacity-50">Required. This field will store the generated document number on the record.</span>
+                <span className="label label-text-alt opacity-50">{t("settings.document_numbering.detail.number_field_help")}</span>
               </label>
               <label className="form-control">
-                <span className="label-text text-sm">Pattern</span>
+                <span className="label-text text-sm">{t("settings.document_numbering.detail.pattern")}</span>
                 <input className="input input-bordered font-mono" value={draft.pattern} onChange={(event) => setDraft((current) => ({ ...current, pattern: event.target.value }))} disabled={saving} />
-                <span className="label label-text-alt opacity-50">Required. Combine text and tokens like {"{YYYY}"} or {"{SEQ:4}"} to control the final format.</span>
+                <span className="label label-text-alt opacity-50">{t("settings.document_numbering.detail.pattern_help")}</span>
               </label>
               <label className="form-control">
-                <span className="label-text text-sm">Sort order</span>
+                <span className="label-text text-sm">{t("settings.document_numbering.detail.sort_order")}</span>
                 <input className="input input-bordered" type="number" value={draft.sort_order} onChange={(event) => setDraft((current) => ({ ...current, sort_order: event.target.value }))} disabled={saving} />
-                <span className="label label-text-alt opacity-50">Optional. Lower numbers sort earlier when admins view these sequences.</span>
+                <span className="label label-text-alt opacity-50">{t("settings.document_numbering.detail.sort_order_help")}</span>
               </label>
               <label className="form-control">
-                <span className="label-text text-sm">Scope</span>
+                <span className="label-text text-sm">{t("settings.document_numbering.detail.scope")}</span>
                 <AppSelect className="select select-bordered" value={draft.scope_type} onChange={(event) => setDraft((current) => ({ ...current, scope_type: event.target.value, scope_field_id: event.target.value === "entity" ? current.scope_field_id : "" }))} disabled={saving}>
-                  {SCOPE_OPTIONS.map((item) => (
+                  {scopeOptions.map((item) => (
                     <option key={item.value} value={item.value}>{item.label}</option>
                   ))}
                 </AppSelect>
-                <span className="label label-text-alt opacity-50">Choose whether one counter is shared globally, per entity value, or per workspace.</span>
+                <span className="label label-text-alt opacity-50">{t("settings.document_numbering.detail.scope_help")}</span>
               </label>
               <label className="form-control">
-                <span className="label-text text-sm">Reset policy</span>
+                <span className="label-text text-sm">{t("settings.document_numbering.detail.reset_policy")}</span>
                 <AppSelect className="select select-bordered" value={draft.reset_policy} onChange={(event) => setDraft((current) => ({ ...current, reset_policy: event.target.value }))} disabled={saving}>
-                  {RESET_OPTIONS.map((item) => (
+                  {resetOptions.map((item) => (
                     <option key={item.value} value={item.value}>{item.label}</option>
                   ))}
                 </AppSelect>
-                <span className="label label-text-alt opacity-50">Choose how often the sequence counter starts again.</span>
+                <span className="label label-text-alt opacity-50">{t("settings.document_numbering.detail.reset_policy_help")}</span>
               </label>
               <label className="form-control">
-                <span className="label-text text-sm">Assign on</span>
+                <span className="label-text text-sm">{t("settings.document_numbering.assign_on")}</span>
                 <AppSelect className="select select-bordered" value={draft.assign_on} onChange={(event) => setDraft((current) => ({ ...current, assign_on: event.target.value, trigger_status_values: ["confirm", "issue"].includes(event.target.value) ? current.trigger_status_values : [] }))} disabled={saving}>
-                  {ASSIGN_OPTIONS.map((item) => (
+                  {assignOptions.map((item) => (
                     <option key={item.value} value={item.value}>{item.label}</option>
                   ))}
                 </AppSelect>
-                <span className="label label-text-alt opacity-50">Choose when the number should be assigned during the record lifecycle.</span>
+                <span className="label label-text-alt opacity-50">{t("settings.document_numbering.detail.assign_on_help")}</span>
               </label>
               {draft.scope_type === "entity" ? (
                 <label className="form-control">
-                  <span className="label-text text-sm">Scope field</span>
+                  <span className="label-text text-sm">{t("settings.document_numbering.detail.scope_field")}</span>
                   <AppSelect
                     className="select select-bordered"
                     value={draft.scope_field_id}
                     onChange={(event) => setDraft((current) => ({ ...current, scope_field_id: event.target.value }))}
                     disabled={saving || !draft.target_entity_id}
                   >
-                    <option value="">Select field</option>
+                    <option value="">{t("settings.document_numbering.detail.select_field")}</option>
                     {scopeFields.map((field) => (
                       <option key={field.id} value={field.id}>
                         {field.label}
                       </option>
                     ))}
                   </AppSelect>
-                  <span className="label label-text-alt opacity-50">Required for entity scope. Records with different values in this field get separate counters.</span>
+                  <span className="label label-text-alt opacity-50">{t("settings.document_numbering.detail.scope_field_help")}</span>
                 </label>
               ) : null}
               <label className="form-control">
-                <span className="label-text text-sm">Description</span>
+                <span className="label-text text-sm">{t("settings.access_policies.description")}</span>
                 <input className="input input-bordered" value={draft.description || ""} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} disabled={saving} />
-                <span className="label label-text-alt opacity-50">Optional. Add a short admin note about when this sequence should be used.</span>
+                <span className="label label-text-alt opacity-50">{t("settings.document_numbering.detail.description_help")}</span>
               </label>
               <label className="form-control md:col-span-2">
-                <span className="label-text text-sm">Notes</span>
+                <span className="label-text text-sm">{t("settings.document_numbering.detail.notes")}</span>
                 <textarea className="textarea textarea-bordered min-h-[6rem]" value={draft.notes || ""} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} disabled={saving} />
-                <span className="label label-text-alt opacity-50">Optional. Use this for implementation notes, migration details, or edge-case handling.</span>
+                <span className="label label-text-alt opacity-50">{t("settings.document_numbering.detail.notes_help")}</span>
               </label>
             </div>
 
             <div className="mt-4 grid gap-3 md:grid-cols-3">
               <label className="flex items-center gap-3 rounded-box border border-base-300 bg-base-200/40 px-3 py-3 text-sm">
                 <input type="checkbox" className="checkbox checkbox-sm" checked={draft.is_active} onChange={(event) => setDraft((current) => ({ ...current, is_active: event.target.checked }))} disabled={saving} />
-                Active
+                {t("common.active")}
               </label>
               <label className="flex items-center gap-3 rounded-box border border-base-300 bg-base-200/40 px-3 py-3 text-sm">
                 <input type="checkbox" className="checkbox checkbox-sm" checked={draft.lock_after_assignment} onChange={(event) => setDraft((current) => ({ ...current, lock_after_assignment: event.target.checked }))} disabled={saving} />
-                Lock after assignment
+                {t("settings.document_numbering.detail.lock_after_assignment")}
               </label>
               <label className="flex items-center gap-3 rounded-box border border-base-300 bg-base-200/40 px-3 py-3 text-sm">
                 <input type="checkbox" className="checkbox checkbox-sm" checked={draft.allow_admin_override} onChange={(event) => setDraft((current) => ({ ...current, allow_admin_override: event.target.checked }))} disabled={saving} />
-                Allow admin override
+                {t("settings.document_numbering.detail.allow_admin_override")}
               </label>
             </div>
 
             {assignNeedsStatuses ? (
               <div className="mt-4 rounded-box border border-base-300 bg-base-100 p-4">
-                <div className="text-sm font-medium">Trigger statuses</div>
-                <div className="mt-1 text-xs opacity-70">Choose the workflow statuses that should assign the number.</div>
+                <div className="text-sm font-medium">{t("settings.document_numbering.detail.trigger_statuses")}</div>
+                <div className="mt-1 text-xs opacity-70">{t("settings.document_numbering.detail.trigger_statuses_help")}</div>
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
                   {(selectedEntity?.status_values || []).map((status) => (
                     <label key={status.id} className="flex items-center gap-3 rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm">
@@ -369,19 +379,19 @@ export default function SettingsDocumentNumberingDetailPage() {
 
             <div className="mt-4 flex flex-wrap gap-2">
               <button className="btn btn-primary btn-sm" type="button" disabled={saving} onClick={saveDraft}>
-                {saving ? "Saving..." : "Save"}
+                {saving ? t("common.saving") : t("common.save")}
               </button>
             </div>
           </SectionGroup>
         </div>
       ) : activeTabId === "preview" ? (
-        <SectionGroup title="Live preview" description="Preview uses the current counter bucket and your current workspace context.">
+        <SectionGroup title={t("settings.document_numbering.detail.live_preview")} description={t("settings.document_numbering.detail.live_preview_description")}>
           {preview ? <div className="rounded-box bg-base-100 px-4 py-3 font-mono text-sm">{preview}</div> : null}
           {previewError ? <div className="mt-2 text-sm text-warning">{previewError}</div> : null}
-          {!preview && !previewError ? <div className="text-sm opacity-70">Complete the core fields to see a preview.</div> : null}
+          {!preview && !previewError ? <div className="text-sm opacity-70">{t("settings.document_numbering.detail.preview_hint")}</div> : null}
         </SectionGroup>
       ) : (
-        <SectionGroup title="Token help" description="Keep patterns simple and stable. These tokens are supported in v1.">
+        <SectionGroup title={t("settings.document_numbering.detail.token_help")} description={t("settings.document_numbering.detail.token_help_description")}>
           <div className="grid gap-2 md:grid-cols-2">
             {[
               "{YYYY} = 2026",

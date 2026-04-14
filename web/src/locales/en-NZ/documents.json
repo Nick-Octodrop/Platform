@@ -1,0 +1,264 @@
+{
+  "module": {
+    "name": "Documents",
+    "description": "Document control for commercial records, including quote PDFs, order packs, supplier documents, invoice files, and signed customer documents."
+  },
+  "navigation": {
+    "biz_document_list_page": "Documents",
+    "biz_document_quote_docs_page": "Quote Docs",
+    "biz_document_invoice_docs_page": "Invoice Docs",
+    "biz_document_supplier_docs_page": "Supplier Docs",
+    "biz_document_archived_page": "Archived"
+  },
+  "entities": {
+    "biz_document": {
+      "label": "Document",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "name": {
+          "label": "Document Name"
+        },
+        "document_type": {
+          "label": "Type",
+          "options": {
+            "quote_pdf": "Quote PDF",
+            "order_confirmation": "Order Confirmation",
+            "purchase_order_pdf": "Purchase Order PDF",
+            "invoice_pdf": "Invoice PDF",
+            "supplier_document": "Supplier Document",
+            "shipping_document": "Shipping Document",
+            "compliance_document": "Compliance Document",
+            "signed_customer_document": "Signed Customer Document",
+            "xero_export": "Xero Export",
+            "other": "Other"
+          }
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "draft": "Draft",
+            "approved": "Approved",
+            "sent": "Sent",
+            "signed": "Signed",
+            "archived": "Archived"
+          }
+        },
+        "related_contact_id": {
+          "label": "Contact"
+        },
+        "related_quote_id": {
+          "label": "Quote"
+        },
+        "related_order_id": {
+          "label": "Order"
+        },
+        "related_purchase_order_id": {
+          "label": "Purchase Order"
+        },
+        "related_invoice_id": {
+          "label": "Invoice"
+        },
+        "sales_entity": {
+          "label": "Entity",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "owner_user_id": {
+          "label": "Owner"
+        },
+        "document_date": {
+          "label": "Document Date"
+        },
+        "expiry_date": {
+          "label": "Expiry Date"
+        },
+        "external_system": {
+          "label": "External System",
+          "options": {
+            "none": "None",
+            "pipedrive": "Pipedrive",
+            "xero": "Xero",
+            "clickup": "ClickUp",
+            "email": "Email"
+          }
+        },
+        "external_reference": {
+          "label": "External Reference"
+        },
+        "attachments": {
+          "label": "Files"
+        },
+        "archive_reason": {
+          "label": "Archive Reason"
+        },
+        "notes": {
+          "label": "Notes"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_document_new": {
+      "label": "New Document"
+    },
+    "action_document_approve": {
+      "label": "Approve"
+    },
+    "action_document_mark_sent": {
+      "label": "Mark Sent"
+    },
+    "action_document_mark_signed": {
+      "label": "Mark Signed"
+    },
+    "action_document_open_archive_modal": {
+      "label": "Archive"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Search documents..."
+      },
+      "filters": {
+        "active": {
+          "label": "Active Documents"
+        },
+        "draft": {
+          "label": "Draft"
+        },
+        "approved": {
+          "label": "Approved"
+        },
+        "sent": {
+          "label": "Sent"
+        },
+        "signed": {
+          "label": "Signed"
+        },
+        "archived": {
+          "label": "Archived"
+        },
+        "quote_docs": {
+          "label": "Quote PDFs"
+        },
+        "invoice_docs": {
+          "label": "Invoice PDFs"
+        },
+        "supplier_docs": {
+          "label": "Supplier Documents"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Document"
+        },
+        "links": {
+          "title": "Linked Records"
+        },
+        "external": {
+          "title": "External System"
+        },
+        "files": {
+          "title": "Files"
+        },
+        "notes": {
+          "title": "Notes"
+        }
+      }
+    }
+  },
+  "modals": {
+    "document_archive": {
+      "title": "Archive Document",
+      "description": "Capture why this document is being archived.",
+      "actions": {
+        "update_record": {
+          "label": "Archive Document"
+        },
+        "close_modal": {
+          "label": "Keep Open"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Documents"
+    },
+    "quote_docs_page": {
+      "title": "Quote Documents"
+    },
+    "invoice_docs_page": {
+      "title": "Invoice Documents"
+    },
+    "supplier_docs_page": {
+      "title": "Supplier Documents"
+    },
+    "archived_page": {
+      "title": "Archived Documents"
+    },
+    "form_page": {
+      "title": "Document"
+    }
+  },
+  "workflows": {
+    "document_status_workflow": {
+      "states": {
+        "draft": {
+          "label": "Draft"
+        },
+        "approved": {
+          "label": "Approved"
+        },
+        "sent": {
+          "label": "Sent"
+        },
+        "signed": {
+          "label": "Signed"
+        },
+        "archived": {
+          "label": "Archived"
+        }
+      },
+      "transitions": {
+        "draft_approved": {
+          "label": "Approve"
+        },
+        "approved_sent": {
+          "label": "Mark Sent"
+        },
+        "sent_signed": {
+          "label": "Mark Signed"
+        },
+        "draft_archived": {
+          "label": "Archive"
+        },
+        "approved_archived": {
+          "label": "Archive"
+        },
+        "sent_archived": {
+          "label": "Archive"
+        },
+        "signed_archived": {
+          "label": "Archive"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "document_created": "Document created",
+    "document_updated": "Document updated",
+    "document_status_changed": "Document status changed",
+    "new_document_clicked": "New Document clicked",
+    "approve_clicked": "Approve clicked",
+    "mark_sent_clicked": "Mark Sent clicked",
+    "mark_signed_clicked": "Mark Signed clicked",
+    "archive_clicked": "Archive clicked"
+  }
+}

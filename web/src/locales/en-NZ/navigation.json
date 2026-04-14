@@ -1,0 +1,17 @@
+{
+  "core": "Core",
+  "home": "Home",
+  "apps": "Apps",
+  "app_manager": "App Manager",
+  "ops": "Ops",
+  "octo_ai": "Octo AI",
+  "notifications": "Notifications",
+  "automations": "Automations",
+  "integrations": "Integrations",
+  "studio": "Studio",
+  "audit": "Audit",
+  "settings": "Settings",
+  "security": "Security",
+  "enabled_apps": "Enabled Apps",
+  "open_app": "Open App"
+}

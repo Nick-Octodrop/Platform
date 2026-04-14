@@ -1,0 +1,250 @@
+{
+  "module": {
+    "name": "Calendar",
+    "description": "Team calendar for sales follow-ups, site visits, order handoffs, procurement calls, and finance milestones."
+  },
+  "navigation": {
+    "biz_calendar_event_calendar_page": "Calendar",
+    "biz_calendar_event_mine_page": "My Calendar",
+    "biz_calendar_event_site_visits_page": "Site Visits",
+    "biz_calendar_event_operations_page": "Operations",
+    "biz_calendar_event_finance_page": "Finance"
+  },
+  "entities": {
+    "biz_calendar_event": {
+      "label": "Calendar Event",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "title": {
+          "label": "Event"
+        },
+        "event_type": {
+          "label": "Type",
+          "options": {
+            "call": "Call",
+            "meeting": "Meeting",
+            "site_visit": "Site Visit",
+            "quote_follow_up": "Quote Follow-Up",
+            "order_handoff": "Order Handoff",
+            "supplier_check_in": "Supplier Check-In",
+            "finance_review": "Finance Review",
+            "internal": "Internal"
+          }
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "planned": "Planned",
+            "confirmed": "Confirmed",
+            "done": "Done",
+            "cancelled": "Cancelled"
+          }
+        },
+        "start_at": {
+          "label": "Start"
+        },
+        "end_at": {
+          "label": "End"
+        },
+        "all_day": {
+          "label": "All Day"
+        },
+        "owner_user_id": {
+          "label": "Owner"
+        },
+        "participant_user_ids": {
+          "label": "Participants"
+        },
+        "visibility": {
+          "label": "Visibility",
+          "options": {
+            "private": "Private",
+            "team": "Team",
+            "directors": "Directors"
+          }
+        },
+        "location": {
+          "label": "Location"
+        },
+        "company_id": {
+          "label": "Company"
+        },
+        "lead_id": {
+          "label": "Lead"
+        },
+        "opportunity_id": {
+          "label": "Opportunity"
+        },
+        "site_id": {
+          "label": "Site"
+        },
+        "task_id": {
+          "label": "Task"
+        },
+        "quote_id": {
+          "label": "Quote"
+        },
+        "order_id": {
+          "label": "Order"
+        },
+        "purchase_order_id": {
+          "label": "Purchase Order"
+        },
+        "invoice_id": {
+          "label": "Invoice"
+        },
+        "description": {
+          "label": "Description"
+        },
+        "cancel_reason": {
+          "label": "Cancel Reason"
+        },
+        "attachments": {
+          "label": "Attachments"
+        },
+        "created_at": {
+          "label": "Created At"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_biz_calendar_event_new": {
+      "label": "New Event"
+    },
+    "action_biz_calendar_event_confirm": {
+      "label": "Confirm"
+    },
+    "action_biz_calendar_event_done": {
+      "label": "Mark Done"
+    },
+    "action_biz_calendar_event_cancel": {
+      "label": "Cancel"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Search calendar..."
+      },
+      "filters": {
+        "planned": {
+          "label": "Planned"
+        },
+        "mine": {
+          "label": "My Calendar"
+        },
+        "crm": {
+          "label": "CRM Events"
+        },
+        "site_visits": {
+          "label": "Site Visits"
+        },
+        "operations": {
+          "label": "Operations"
+        },
+        "finance": {
+          "label": "Finance"
+        },
+        "done": {
+          "label": "Done"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Event"
+        },
+        "links": {
+          "title": "Related Records"
+        },
+        "details": {
+          "title": "Details"
+        }
+      }
+    }
+  },
+  "modals": {
+    "biz_calendar_event_cancel": {
+      "title": "Cancel Event",
+      "actions": {
+        "update_record": {
+          "label": "Cancel Event"
+        },
+        "close_modal": {
+          "label": "Keep Planned"
+        }
+      }
+    }
+  },
+  "pages": {
+    "calendar_page": {
+      "title": "Calendar"
+    },
+    "list_page": {
+      "title": "Calendar Events"
+    },
+    "mine_page": {
+      "title": "My Calendar"
+    },
+    "site_visits_page": {
+      "title": "Site Visits"
+    },
+    "operations_page": {
+      "title": "Operations Calendar"
+    },
+    "finance_page": {
+      "title": "Finance Calendar"
+    },
+    "form_page": {
+      "title": "Calendar Event"
+    }
+  },
+  "workflows": {
+    "biz_calendar_event_status_workflow": {
+      "states": {
+        "planned": {
+          "label": "Planned"
+        },
+        "confirmed": {
+          "label": "Confirmed"
+        },
+        "done": {
+          "label": "Done"
+        },
+        "cancelled": {
+          "label": "Cancelled"
+        }
+      },
+      "transitions": {
+        "planned_confirmed": {
+          "label": "Confirm"
+        },
+        "planned_done": {
+          "label": "Mark Done"
+        },
+        "confirmed_done": {
+          "label": "Mark Done"
+        },
+        "planned_cancelled": {
+          "label": "Cancel"
+        },
+        "confirmed_cancelled": {
+          "label": "Cancel"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "event_created": "Calendar Event created",
+    "event_updated": "Calendar Event updated",
+    "event_status_changed": "Calendar Event status changed",
+    "new_event_clicked": "New Event clicked",
+    "confirm_clicked": "Confirm clicked",
+    "mark_done_clicked": "Mark Done clicked",
+    "cancel_clicked": "Cancel clicked"
+  }
+}

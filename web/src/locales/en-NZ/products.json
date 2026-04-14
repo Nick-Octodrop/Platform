@@ -1,0 +1,139 @@
+{
+  "module": {
+    "name": "Products",
+    "description": "Product catalogue items for quoting and supplier purchasing."
+  },
+  "navigation": {
+    "biz_product_list_page": "Products"
+  },
+  "entities": {
+    "biz_product": {
+      "label": "Product",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "code": {
+          "label": "Code"
+        },
+        "name": {
+          "label": "Name"
+        },
+        "description": {
+          "label": "Description"
+        },
+        "category": {
+          "label": "Category"
+        },
+        "uom": {
+          "label": "UOM",
+          "options": {
+            "ea": "Each",
+            "set": "Set",
+            "kit": "Kit",
+            "lot": "Lot",
+            "pallet": "Pallet",
+            "container": "Container",
+            "m": "Meter"
+          }
+        },
+        "default_sales_currency": {
+          "label": "Sales Currency",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "default_sales_price": {
+          "label": "Sales Price"
+        },
+        "default_purchase_currency": {
+          "label": "Purchase Currency",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "default_buy_price": {
+          "label": "Buy Price"
+        },
+        "preferred_supplier_id": {
+          "label": "Preferred Supplier"
+        },
+        "supplier_factory_reference": {
+          "label": "Supplier / Factory Ref"
+        },
+        "internal_notes": {
+          "label": "Internal Notes"
+        },
+        "is_active": {
+          "label": "Active"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_product_new": {
+      "label": "New Product"
+    },
+    "action_product_activate": {
+      "label": "Activate"
+    },
+    "action_product_deactivate": {
+      "label": "Deactivate"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Search products..."
+      },
+      "filters": {
+        "active": {
+          "label": "Active Products"
+        },
+        "inactive": {
+          "label": "Inactive Products"
+        },
+        "eur_sales": {
+          "label": "EUR Sales Items"
+        },
+        "usd_sales": {
+          "label": "USD Sales Items"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "core": {
+          "title": "Product Catalogue"
+        },
+        "pricing": {
+          "title": "Pricing"
+        },
+        "purchasing": {
+          "title": "Purchasing Notes"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Products"
+    },
+    "form_page": {
+      "title": "Product"
+    }
+  },
+  "triggers": {
+    "product_created": "Product created",
+    "product_updated": "Product updated",
+    "new_product_clicked": "New Product clicked",
+    "activate_clicked": "Activate clicked",
+    "deactivate_clicked": "Deactivate clicked"
+  }
+}

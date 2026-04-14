@@ -1,4 +1,5 @@
 import React from "react";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 function formatItem(item) {
   if (!item) return "";
@@ -9,35 +10,39 @@ function formatItem(item) {
 }
 
 export default function ValidationPanel({
-  title = "Validation",
+  title,
   errors = [],
   warnings = [],
   idleMessage,
-  successMessage = "Draft valid",
+  successMessage,
   showSuccess = true,
   showFix = false,
-  fixLabel = "Fix with AI",
+  fixLabel,
   fixDisabled = false,
   onFix,
 }) {
+  const { t } = useI18n();
+  const resolvedTitle = title ?? t("validation.title", {}, { defaultValue: "Validation" });
+  const resolvedSuccessMessage = successMessage ?? t("validation.draft_valid", {}, { defaultValue: "Draft valid" });
+  const resolvedFixLabel = fixLabel ?? t("validation.fix_with_ai", {}, { defaultValue: "Fix with AI" });
   const hasErrors = errors.length > 0;
   const hasWarnings = warnings.length > 0;
   const hasIssues = hasErrors || hasWarnings;
   const showIdle = !hasIssues && !showSuccess && idleMessage;
-  const showOk = !hasIssues && showSuccess && successMessage;
+  const showOk = !hasIssues && showSuccess && resolvedSuccessMessage;
 
   return (
     <div className="mb-3">
-      {(title || (showFix && hasIssues)) && (
+      {(resolvedTitle || (showFix && hasIssues)) && (
         <div className="flex items-center justify-between">
-          {title ? <div className="text-sm font-semibold">{title}</div> : <div />}
+          {resolvedTitle ? <div className="text-sm font-semibold">{resolvedTitle}</div> : <div />}
           {showFix && hasIssues && (
             <button
               className="btn btn-sm btn-primary"
               onClick={onFix}
               disabled={fixDisabled}
             >
-              {fixLabel}
+              {resolvedFixLabel}
             </button>
           )}
         </div>
@@ -61,7 +66,7 @@ export default function ValidationPanel({
           </div>
         </div>
       )}
-      {showOk && <div className="alert alert-success text-xs mt-2">{successMessage}</div>}
+      {showOk && <div className="alert alert-success text-xs mt-2">{resolvedSuccessMessage}</div>}
     </div>
   );
 }

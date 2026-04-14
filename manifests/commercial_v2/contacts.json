@@ -3,8 +3,10 @@
   "module": {
     "id": "biz_contacts",
     "key": "biz_contacts",
+    "name_key": "contacts.module.name",
     "name": "Contacts",
     "version": "1.0.0",
+    "description_key": "contacts.module.description",
     "description": "Customers, suppliers, and factory partners for the commercial workflow.",
     "category": "Commercial",
     "icon_key": "lucide:Users"
@@ -26,7 +28,11 @@
         "group": "Commercial",
         "mode": "inline",
         "items": [
-          { "label": "Contacts", "to": "page:biz_contact.list_page" }
+          {
+            "menu_label_key": "contacts.navigation.contacts",
+            "label": "Contacts",
+            "to": "page:biz_contact.list_page"
+          }
         ]
       }
     ]
@@ -34,74 +40,240 @@
   "entities": [
     {
       "id": "entity.biz_contact",
+      "label_key": "contacts.entity.contact",
       "label": "Contact",
       "display_field": "biz_contact.name",
       "fields": [
-        { "id": "biz_contact.id", "type": "uuid", "label": "ID", "readonly": true },
-        { "id": "biz_contact.name", "type": "string", "label": "Name", "required": true },
+        {
+          "id": "biz_contact.id",
+          "type": "uuid",
+          "label_key": "contacts.fields.id",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "biz_contact.name",
+          "type": "string",
+          "label_key": "contacts.fields.name",
+          "label": "Name",
+          "required": true
+        },
         {
           "id": "biz_contact.contact_type",
           "type": "enum",
+          "label_key": "contacts.fields.contact_type",
           "label": "Type",
           "required": true,
           "default": "customer",
           "options": [
-            { "value": "customer", "label": "Customer" },
-            { "value": "supplier", "label": "Supplier" },
-            { "value": "factory_partner", "label": "Factory Partner" }
+            {
+              "value": "customer",
+              "label_key": "contacts.options.contact_type.customer",
+              "label": "Customer",
+              "status_label_key": "contacts.entities.biz_contact.fields.contact_type.options.customer"
+            },
+            {
+              "value": "supplier",
+              "label_key": "contacts.options.contact_type.supplier",
+              "label": "Supplier",
+              "status_label_key": "contacts.entities.biz_contact.fields.contact_type.options.supplier"
+            },
+            {
+              "value": "factory_partner",
+              "label_key": "contacts.options.contact_type.factory_partner",
+              "label": "Factory Partner",
+              "status_label_key": "contacts.entities.biz_contact.fields.contact_type.options.factory_partner"
+            }
           ]
         },
-        { "id": "biz_contact.company_entity_scope", "type": "tags", "label": "Entity Scope" },
-        { "id": "biz_contact.email", "type": "string", "label": "Email" },
-        { "id": "biz_contact.phone", "type": "string", "label": "Phone" },
-        { "id": "biz_contact.website", "type": "string", "label": "Website" },
-        { "id": "biz_contact.country", "type": "string", "label": "Country" },
+        {
+          "id": "biz_contact.company_entity_scope",
+          "type": "tags",
+          "label_key": "contacts.fields.company_entity_scope",
+          "label": "Entity Scope"
+        },
+        {
+          "id": "biz_contact.email",
+          "type": "string",
+          "label_key": "contacts.fields.email",
+          "label": "Email"
+        },
+        {
+          "id": "biz_contact.phone",
+          "type": "string",
+          "label_key": "contacts.fields.phone",
+          "label": "Phone"
+        },
+        {
+          "id": "biz_contact.website",
+          "type": "string",
+          "label_key": "contacts.fields.website",
+          "label": "Website"
+        },
+        {
+          "id": "biz_contact.country",
+          "type": "string",
+          "label_key": "contacts.fields.country",
+          "label": "Country"
+        },
         {
           "id": "biz_contact.currency_preference",
           "type": "enum",
+          "label_key": "contacts.fields.currency_preference",
           "label": "Currency Preference",
           "default": "EUR",
           "options": [
-            { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" },
-            { "value": "GBP", "label": "GBP" },
-            { "value": "AED", "label": "AED" }
+            {
+              "value": "EUR",
+              "label": "EUR",
+              "status_label_key": "contacts.entities.biz_contact.fields.currency_preference.options.eur",
+              "label_key": "contacts.entities.biz_contact.fields.currency_preference.options.eur"
+            },
+            {
+              "value": "USD",
+              "label": "USD",
+              "status_label_key": "contacts.entities.biz_contact.fields.currency_preference.options.usd",
+              "label_key": "contacts.entities.biz_contact.fields.currency_preference.options.usd"
+            },
+            {
+              "value": "GBP",
+              "label": "GBP",
+              "status_label_key": "contacts.entities.biz_contact.fields.currency_preference.options.gbp",
+              "label_key": "contacts.entities.biz_contact.fields.currency_preference.options.gbp"
+            },
+            {
+              "value": "AED",
+              "label": "AED",
+              "status_label_key": "contacts.entities.biz_contact.fields.currency_preference.options.aed",
+              "label_key": "contacts.entities.biz_contact.fields.currency_preference.options.aed"
+            }
           ]
         },
-        { "id": "biz_contact.billing_street", "type": "string", "label": "Billing Street" },
-        { "id": "biz_contact.billing_street2", "type": "string", "label": "Billing Street 2" },
-        { "id": "biz_contact.billing_city", "type": "string", "label": "Billing City" },
-        { "id": "biz_contact.billing_state", "type": "string", "label": "Billing State / Region" },
-        { "id": "biz_contact.billing_postcode", "type": "string", "label": "Billing Postcode" },
-        { "id": "biz_contact.billing_country", "type": "string", "label": "Billing Country" },
-        { "id": "biz_contact.shipping_street", "type": "string", "label": "Shipping Street" },
-        { "id": "biz_contact.shipping_street2", "type": "string", "label": "Shipping Street 2" },
-        { "id": "biz_contact.shipping_city", "type": "string", "label": "Shipping City" },
-        { "id": "biz_contact.shipping_state", "type": "string", "label": "Shipping State / Region" },
-        { "id": "biz_contact.shipping_postcode", "type": "string", "label": "Shipping Postcode" },
-        { "id": "biz_contact.shipping_country", "type": "string", "label": "Shipping Country" },
-        { "id": "biz_contact.notes", "type": "text", "label": "Notes" },
-        { "id": "biz_contact.is_active", "type": "bool", "label": "Active", "default": true }
+        {
+          "id": "biz_contact.billing_street",
+          "type": "string",
+          "label_key": "contacts.fields.billing_street",
+          "label": "Billing Street"
+        },
+        {
+          "id": "biz_contact.billing_street2",
+          "type": "string",
+          "label_key": "contacts.fields.billing_street2",
+          "label": "Billing Street 2"
+        },
+        {
+          "id": "biz_contact.billing_city",
+          "type": "string",
+          "label_key": "contacts.fields.billing_city",
+          "label": "Billing City"
+        },
+        {
+          "id": "biz_contact.billing_state",
+          "type": "string",
+          "label_key": "contacts.fields.billing_state",
+          "label": "Billing State / Region"
+        },
+        {
+          "id": "biz_contact.billing_postcode",
+          "type": "string",
+          "label_key": "contacts.fields.billing_postcode",
+          "label": "Billing Postcode"
+        },
+        {
+          "id": "biz_contact.billing_country",
+          "type": "string",
+          "label_key": "contacts.fields.billing_country",
+          "label": "Billing Country"
+        },
+        {
+          "id": "biz_contact.shipping_street",
+          "type": "string",
+          "label_key": "contacts.fields.shipping_street",
+          "label": "Shipping Street"
+        },
+        {
+          "id": "biz_contact.shipping_street2",
+          "type": "string",
+          "label_key": "contacts.fields.shipping_street2",
+          "label": "Shipping Street 2"
+        },
+        {
+          "id": "biz_contact.shipping_city",
+          "type": "string",
+          "label_key": "contacts.fields.shipping_city",
+          "label": "Shipping City"
+        },
+        {
+          "id": "biz_contact.shipping_state",
+          "type": "string",
+          "label_key": "contacts.fields.shipping_state",
+          "label": "Shipping State / Region"
+        },
+        {
+          "id": "biz_contact.shipping_postcode",
+          "type": "string",
+          "label_key": "contacts.fields.shipping_postcode",
+          "label": "Shipping Postcode"
+        },
+        {
+          "id": "biz_contact.shipping_country",
+          "type": "string",
+          "label_key": "contacts.fields.shipping_country",
+          "label": "Shipping Country"
+        },
+        {
+          "id": "biz_contact.notes",
+          "type": "text",
+          "label_key": "contacts.fields.notes",
+          "label": "Notes"
+        },
+        {
+          "id": "biz_contact.is_active",
+          "type": "bool",
+          "label_key": "contacts.fields.is_active",
+          "label": "Active",
+          "default": true
+        }
       ]
     }
   ],
   "actions": [
-    { "id": "action.contact_new", "kind": "open_form", "label": "New Contact", "target": "biz_contact.form" },
+    {
+      "id": "action.contact_new",
+      "kind": "open_form",
+      "action_label_key": "contacts.actions.new",
+      "label": "New Contact",
+      "target": "biz_contact.form"
+    },
     {
       "id": "action.contact_deactivate",
       "kind": "update_record",
       "entity_id": "entity.biz_contact",
+      "action_label_key": "contacts.actions.deactivate",
       "label": "Deactivate",
-      "patch": { "biz_contact.is_active": false },
-      "visible_when": { "op": "eq", "field": "biz_contact.is_active", "value": true }
+      "patch": {
+        "biz_contact.is_active": false
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_contact.is_active",
+        "value": true
+      }
     },
     {
       "id": "action.contact_activate",
       "kind": "update_record",
       "entity_id": "entity.biz_contact",
+      "action_label_key": "contacts.actions.activate",
       "label": "Activate",
-      "patch": { "biz_contact.is_active": true },
-      "visible_when": { "op": "eq", "field": "biz_contact.is_active", "value": false }
+      "patch": {
+        "biz_contact.is_active": true
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_contact.is_active",
+        "value": false
+      }
     }
   ],
   "views": [
@@ -110,27 +282,94 @@
       "kind": "list",
       "entity": "entity.biz_contact",
       "columns": [
-        { "field_id": "biz_contact.name" },
-        { "field_id": "biz_contact.contact_type" },
-        { "field_id": "biz_contact.country" },
-        { "field_id": "biz_contact.email" },
-        { "field_id": "biz_contact.phone" },
-        { "field_id": "biz_contact.is_active" }
+        {
+          "field_id": "biz_contact.name"
+        },
+        {
+          "field_id": "biz_contact.contact_type"
+        },
+        {
+          "field_id": "biz_contact.country"
+        },
+        {
+          "field_id": "biz_contact.email"
+        },
+        {
+          "field_id": "biz_contact.phone"
+        },
+        {
+          "field_id": "biz_contact.is_active"
+        }
       ],
       "header": {
-        "primary_actions": [{ "action_id": "action.contact_new" }],
+        "primary_actions": [
+          {
+            "action_id": "action.contact_new"
+          }
+        ],
         "open_record_target": "page:biz_contact.form_page",
         "search": {
           "enabled": true,
+          "placeholder_key": "contacts.search.placeholder",
           "placeholder": "Search contacts...",
-          "fields": ["biz_contact.name", "biz_contact.email", "biz_contact.country", "biz_contact.billing_city", "biz_contact.shipping_city"]
+          "fields": [
+            "biz_contact.name",
+            "biz_contact.email",
+            "biz_contact.country",
+            "biz_contact.billing_city",
+            "biz_contact.shipping_city"
+          ]
         },
         "filters": [
-          { "id": "all", "label": "All Contacts", "domain": { "op": "exists", "field": "biz_contact.name" } },
-          { "id": "customers", "label": "Customers", "domain": { "op": "eq", "field": "biz_contact.contact_type", "value": "customer" } },
-          { "id": "suppliers", "label": "Suppliers", "domain": { "op": "eq", "field": "biz_contact.contact_type", "value": "supplier" } },
-          { "id": "factory_partners", "label": "Factory Partners", "domain": { "op": "eq", "field": "biz_contact.contact_type", "value": "factory_partner" } },
-          { "id": "active", "label": "Active", "domain": { "op": "eq", "field": "biz_contact.is_active", "value": true } }
+          {
+            "id": "all",
+            "label_key": "contacts.filters.all",
+            "label": "All Contacts",
+            "domain": {
+              "op": "exists",
+              "field": "biz_contact.name"
+            }
+          },
+          {
+            "id": "customers",
+            "label_key": "contacts.filters.customers",
+            "label": "Customers",
+            "domain": {
+              "op": "eq",
+              "field": "biz_contact.contact_type",
+              "value": "customer"
+            }
+          },
+          {
+            "id": "suppliers",
+            "label_key": "contacts.filters.suppliers",
+            "label": "Suppliers",
+            "domain": {
+              "op": "eq",
+              "field": "biz_contact.contact_type",
+              "value": "supplier"
+            }
+          },
+          {
+            "id": "factory_partners",
+            "label_key": "contacts.filters.factory_partners",
+            "label": "Factory Partners",
+            "domain": {
+              "op": "eq",
+              "field": "biz_contact.contact_type",
+              "value": "factory_partner"
+            }
+          },
+          {
+            "id": "active",
+            "label_key": "contacts.filters.active",
+            "label": "Active",
+            "domain": {
+              "op": "eq",
+              "field": "biz_contact.is_active",
+              "value": true
+            }
+          }
         ]
       }
     },
@@ -141,6 +380,7 @@
       "sections": [
         {
           "id": "main",
+          "section_title_key": "contacts.sections.main",
           "title": "Contact",
           "layout": "columns",
           "columns": 2,
@@ -157,6 +397,7 @@
         },
         {
           "id": "addresses",
+          "section_title_key": "contacts.sections.addresses",
           "title": "Addresses",
           "layout": "columns",
           "columns": 2,
@@ -177,6 +418,7 @@
         },
         {
           "id": "notes",
+          "section_title_key": "contacts.sections.notes",
           "title": "Notes",
           "fields": [
             "biz_contact.company_entity_scope",
@@ -186,8 +428,12 @@
       ],
       "header": {
         "secondary_actions": [
-          { "action_id": "action.contact_activate" },
-          { "action_id": "action.contact_deactivate" }
+          {
+            "action_id": "action.contact_activate"
+          },
+          {
+            "action_id": "action.contact_deactivate"
+          }
         ]
       },
       "activity": {
@@ -251,9 +497,12 @@
   "pages": [
     {
       "id": "biz_contact.list_page",
+      "title_key": "contacts.pages.list",
       "title": "Contacts",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none"
+      },
       "content": [
         {
           "kind": "container",
@@ -265,10 +514,24 @@
               "default_mode": "list",
               "default_filter_id": "active",
               "modes": [
-                { "mode": "list", "target": "view:biz_contact.list" },
-                { "mode": "kanban", "target": "view:biz_contact.kanban", "default_group_by": "biz_contact.contact_type" },
-                { "mode": "graph", "target": "view:biz_contact.graph" },
-                { "mode": "pivot", "target": "view:biz_contact.list", "default_group_by": "biz_contact.contact_type" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_contact.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:biz_contact.kanban",
+                  "default_group_by": "biz_contact.contact_type"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:biz_contact.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:biz_contact.list",
+                  "default_group_by": "biz_contact.contact_type"
+                }
               ]
             }
           ]
@@ -277,9 +540,12 @@
     },
     {
       "id": "biz_contact.form_page",
+      "title_key": "contacts.pages.form",
       "title": "Contact",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none"
+      },
       "content": [
         {
           "kind": "record",
@@ -298,7 +564,10 @@
                       "kind": "container",
                       "variant": "card",
                       "content": [
-                        { "kind": "view", "target": "view:biz_contact.form" }
+                        {
+                          "kind": "view",
+                          "target": "view:biz_contact.form"
+                        }
                       ]
                     }
                   ]
@@ -310,7 +579,11 @@
                       "kind": "container",
                       "variant": "card",
                       "content": [
-                        { "kind": "chatter", "entity_id": "entity.biz_contact", "record_ref": "$record.id" }
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.biz_contact",
+                          "record_ref": "$record.id"
+                        }
                       ]
                     }
                   ]
@@ -323,11 +596,41 @@
     }
   ],
   "triggers": [
-    { "id": "biz_contacts.record.biz_contact.created", "label": "Contact created", "event": "record.created", "entity_id": "entity.biz_contact" },
-    { "id": "biz_contacts.record.biz_contact.updated", "label": "Contact updated", "event": "record.updated", "entity_id": "entity.biz_contact" },
-    { "id": "biz_contacts.action.contact_new.clicked", "label": "New Contact clicked", "event": "action.clicked", "action_id": "action.contact_new" },
-    { "id": "biz_contacts.action.contact_deactivate.clicked", "label": "Deactivate clicked", "event": "action.clicked", "action_id": "action.contact_deactivate" },
-    { "id": "biz_contacts.action.contact_activate.clicked", "label": "Activate clicked", "event": "action.clicked", "action_id": "action.contact_activate" }
+    {
+      "id": "biz_contacts.record.biz_contact.created",
+      "label": "Contact created",
+      "label_key": "contacts.triggers.contact_created",
+      "event": "record.created",
+      "entity_id": "entity.biz_contact"
+    },
+    {
+      "id": "biz_contacts.record.biz_contact.updated",
+      "label": "Contact updated",
+      "label_key": "contacts.triggers.contact_updated",
+      "event": "record.updated",
+      "entity_id": "entity.biz_contact"
+    },
+    {
+      "id": "biz_contacts.action.contact_new.clicked",
+      "label": "New Contact clicked",
+      "label_key": "contacts.triggers.new_contact_clicked",
+      "event": "action.clicked",
+      "action_id": "action.contact_new"
+    },
+    {
+      "id": "biz_contacts.action.contact_deactivate.clicked",
+      "label": "Deactivate clicked",
+      "label_key": "contacts.triggers.deactivate_clicked",
+      "event": "action.clicked",
+      "action_id": "action.contact_deactivate"
+    },
+    {
+      "id": "biz_contacts.action.contact_activate.clicked",
+      "label": "Activate clicked",
+      "label_key": "contacts.triggers.activate_clicked",
+      "event": "action.clicked",
+      "action_id": "action.contact_activate"
+    }
   ],
   "workflows": [],
   "transformations": []

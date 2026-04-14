@@ -1,0 +1,13 @@
+{
+  "no_results": "Geen resultaten",
+  "no_records_found": "Geen records gevonden",
+  "no_visible_columns": "Geen zichtbare kolommen voor deze weergave.",
+  "no_workspaces": "Geen werkruimtes beschikbaar.",
+  "no_workspace_users": "Geen werkruimtegebruikers gevonden",
+  "no_matches": "Geen overeenkomsten",
+  "no_settings_match_search": "Geen instellingen komen overeen met je zoekopdracht.",
+  "no_address_matches": "Geen adresovereenkomsten",
+  "no_line_items": "Nog geen regels.",
+  "install_app": "Installeer een app",
+  "no_apps_installed": "Nog geen apps geïnstalleerd."
+}

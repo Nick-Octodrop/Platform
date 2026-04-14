@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useModuleStore } from "../state/moduleStore.jsx";
-import { getAppDisplayName } from "../state/appCatalog.js";
+import { getAppDisplayName, getAppTranslationNamespaces } from "../state/appCatalog.js";
 import { getAppIcon, subscribeAppIcons } from "../state/appIcons.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { Package } from "lucide-react";
@@ -11,6 +11,8 @@ import { appendOctoAiFrameParams, deriveAppHomeRoute } from "../apps/appShellUti
 import AppModuleIcon from "../components/AppModuleIcon.jsx";
 import { getUiPrefs, peekUiPrefsCache, setUiPrefs } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
+import { ensureRuntimeNamespaces } from "../i18n/runtime.js";
 
 function swapIds(ids, sourceId, targetId) {
   if (!sourceId || !targetId || sourceId === targetId) return ids;
@@ -81,6 +83,7 @@ function AppTile({
 }
 
 export default function HomePage({ user }) {
+  const { t, locale, version, workspaceKey } = useI18n();
   const { modules, loading } = useModuleStore();
   const navigate = useNavigate();
   const location = useLocation();
@@ -110,11 +113,11 @@ export default function HomePage({ user }) {
   }, []);
 
   const systemApps = [
-    { id: "apps", name: "App Manager", route: "/apps", system: true, icon_url: getAppIcon("apps") || "lucide:layout-grid" },
+    { id: "apps", name: t("navigation.app_manager"), route: "/apps", system: true, icon_url: getAppIcon("apps") || "lucide:layout-grid" },
     ...(canSeeOctoAi
-      ? [{ id: "octo_ai", name: "Octo AI", route: "/octo-ai", system: true, icon_url: getAppIcon("octo_ai") || "lucide:sparkles" }]
+      ? [{ id: "octo_ai", name: t("navigation.octo_ai"), route: "/octo-ai", system: true, icon_url: getAppIcon("octo_ai") || "lucide:sparkles" }]
       : []),
-    { id: "settings", name: "Settings", route: "/settings", system: true, icon_url: getAppIcon("settings") || "lucide:settings" },
+    { id: "settings", name: t("navigation.settings"), route: "/settings", system: true, icon_url: getAppIcon("settings") || "lucide:settings" },
   ];
 
   const installedApps = useMemo(() => {
@@ -135,7 +138,13 @@ export default function HomePage({ user }) {
         icon: <Package size={44} strokeWidth={1.4} className="text-primary" />,
         icon_url: m.icon_key || "lucide:package",
       }));
-  }, [iconVersion, isSuperadmin, modules, user]);
+  }, [iconVersion, isSuperadmin, locale, modules, version]);
+
+  useEffect(() => {
+    const namespaces = getAppTranslationNamespaces(modules);
+    if (namespaces.length === 0) return;
+    ensureRuntimeNamespaces(namespaces).catch(() => {});
+  }, [locale, modules]);
 
   useEffect(() => {
     let active = true;
@@ -174,6 +183,17 @@ export default function HomePage({ user }) {
     return () => {
       active = false;
     };
+  }, [user, workspaceKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    function handleWorkspaceChanged() {
+      setHomeOrderIds([]);
+      setSavedHomeOrderIds([]);
+      setLayoutLoading(Boolean(user));
+    }
+    window.addEventListener("octo:workspace-changed", handleWorkspaceChanged);
+    return () => window.removeEventListener("octo:workspace-changed", handleWorkspaceChanged);
   }, [user]);
 
   const allBaseApps = useMemo(() => [...installedApps, ...systemApps], [installedApps, systemApps]);
@@ -219,7 +239,7 @@ export default function HomePage({ user }) {
       setHomeOrderIds(normalizedNextOrder);
     } catch (err) {
       setHomeOrderIds(baseOrderedIds);
-      pushToast("error", err?.message || "Failed to save app order");
+      pushToast("error", err?.message || t("common.save_failed"));
     } finally {
       setReorderBusy(false);
       setDraggingAppId("");
@@ -292,9 +312,9 @@ export default function HomePage({ user }) {
         <div className="w-full flex justify-center items-start pt-4 sm:pt-[12vh] pb-6 sm:pb-0">
           {allApps.length === 0 ? (
             <div className="card bg-base-100 shadow p-6">
-              <div className="text-sm opacity-70 mb-3">No apps installed yet.</div>
+              <div className="text-sm opacity-70 mb-3">{t("empty.no_apps_installed")}</div>
               <button className="btn btn-primary w-fit" onClick={() => navigate(appendOctoAiFrameParams("/apps"))}>
-                Open Modules
+                {t("navigation.apps")}
               </button>
             </div>
           ) : (

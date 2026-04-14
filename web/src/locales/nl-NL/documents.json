@@ -1,0 +1,264 @@
+{
+  "module": {
+    "name": "Documenten",
+    "description": "Documentbeheer voor commerciële documenten, inclusief offerte-pdf's, orderpakketten, leveranciersdocumenten, factuurbestanden en ondertekende klantdocumenten."
+  },
+  "navigation": {
+    "biz_document_list_page": "Documenten",
+    "biz_document_quote_docs_page": "Citeer documenten",
+    "biz_document_invoice_docs_page": "Factuurdocumenten",
+    "biz_document_supplier_docs_page": "Documenten van leveranciers",
+    "biz_document_archived_page": "Gearchiveerd"
+  },
+  "entities": {
+    "biz_document": {
+      "label": "Documenteren",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "name": {
+          "label": "Documentnaam"
+        },
+        "document_type": {
+          "label": "Typ",
+          "options": {
+            "quote_pdf": "Offerte-pdf",
+            "order_confirmation": "Orderbevestiging",
+            "purchase_order_pdf": "Inkooporder-pdf",
+            "invoice_pdf": "Factuur-pdf",
+            "supplier_document": "Leveranciersdocument",
+            "shipping_document": "Verzenddocument",
+            "compliance_document": "Nalevingsdocument",
+            "signed_customer_document": "Ondertekend klantdocument",
+            "xero_export": "Xero-export",
+            "other": "Anders"
+          }
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "draft": "Diepgang",
+            "approved": "Goedgekeurd",
+            "sent": "Verzonden",
+            "signed": "Ondertekend",
+            "archived": "Gearchiveerd"
+          }
+        },
+        "related_contact_id": {
+          "label": "Contacteer"
+        },
+        "related_quote_id": {
+          "label": "Citaat"
+        },
+        "related_order_id": {
+          "label": "Bestel"
+        },
+        "related_purchase_order_id": {
+          "label": "Aankooporder"
+        },
+        "related_invoice_id": {
+          "label": "Factuur"
+        },
+        "sales_entity": {
+          "label": "Entiteit",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "owner_user_id": {
+          "label": "Eigenaar"
+        },
+        "document_date": {
+          "label": "Documentdatum"
+        },
+        "expiry_date": {
+          "label": "Vervaldatum"
+        },
+        "external_system": {
+          "label": "Extern systeem",
+          "options": {
+            "none": "Geen",
+            "pipedrive": "Pijpaandrijving",
+            "xero": "Xero",
+            "clickup": "Klik omhoog",
+            "email": "E-mail"
+          }
+        },
+        "external_reference": {
+          "label": "Externe referentie"
+        },
+        "attachments": {
+          "label": "Bestanden"
+        },
+        "archive_reason": {
+          "label": "Archiefreden"
+        },
+        "notes": {
+          "label": "Opmerkingen"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_document_new": {
+      "label": "Nieuw document"
+    },
+    "action_document_approve": {
+      "label": "Goedkeuren"
+    },
+    "action_document_mark_sent": {
+      "label": "Markeer verzonden"
+    },
+    "action_document_mark_signed": {
+      "label": "Mark ondertekend"
+    },
+    "action_document_open_archive_modal": {
+      "label": "Archief"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Documenten zoeken..."
+      },
+      "filters": {
+        "active": {
+          "label": "Actieve documenten"
+        },
+        "draft": {
+          "label": "Diepgang"
+        },
+        "approved": {
+          "label": "Goedgekeurd"
+        },
+        "sent": {
+          "label": "Verzonden"
+        },
+        "signed": {
+          "label": "Ondertekend"
+        },
+        "archived": {
+          "label": "Gearchiveerd"
+        },
+        "quote_docs": {
+          "label": "Offerte-PDF's"
+        },
+        "invoice_docs": {
+          "label": "Factuur-pdf's"
+        },
+        "supplier_docs": {
+          "label": "Leveranciersdocumenten"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Documenteren"
+        },
+        "links": {
+          "title": "Gekoppelde records"
+        },
+        "external": {
+          "title": "Extern systeem"
+        },
+        "files": {
+          "title": "Bestanden"
+        },
+        "notes": {
+          "title": "Opmerkingen"
+        }
+      }
+    }
+  },
+  "modals": {
+    "document_archive": {
+      "title": "Archiefdocument",
+      "description": "Leg vast waarom dit document wordt gearchiveerd.",
+      "actions": {
+        "update_record": {
+          "label": "Archiefdocument"
+        },
+        "close_modal": {
+          "label": "Blijf open"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Documenten"
+    },
+    "quote_docs_page": {
+      "title": "Offertedocumenten"
+    },
+    "invoice_docs_page": {
+      "title": "Factuurdocumenten"
+    },
+    "supplier_docs_page": {
+      "title": "Leveranciersdocumenten"
+    },
+    "archived_page": {
+      "title": "Gearchiveerde documenten"
+    },
+    "form_page": {
+      "title": "Documenteren"
+    }
+  },
+  "workflows": {
+    "document_status_workflow": {
+      "states": {
+        "draft": {
+          "label": "Diepgang"
+        },
+        "approved": {
+          "label": "Goedgekeurd"
+        },
+        "sent": {
+          "label": "Verzonden"
+        },
+        "signed": {
+          "label": "Ondertekend"
+        },
+        "archived": {
+          "label": "Gearchiveerd"
+        }
+      },
+      "transitions": {
+        "draft_approved": {
+          "label": "Goedkeuren"
+        },
+        "approved_sent": {
+          "label": "Markeer verzonden"
+        },
+        "sent_signed": {
+          "label": "Mark ondertekend"
+        },
+        "draft_archived": {
+          "label": "Archief"
+        },
+        "approved_archived": {
+          "label": "Archief"
+        },
+        "sent_archived": {
+          "label": "Archief"
+        },
+        "signed_archived": {
+          "label": "Archief"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "document_created": "Document gemaakt",
+    "document_updated": "Document bijgewerkt",
+    "document_status_changed": "Documentstatus gewijzigd",
+    "new_document_clicked": "Er is op Nieuw document geklikt",
+    "approve_clicked": "Goedkeuren heeft geklikt",
+    "mark_sent_clicked": "Markeer verzonden klikte",
+    "mark_signed_clicked": "Mark Ondertekend klikte",
+    "archive_clicked": "Archief geklikt"
+  }
+}

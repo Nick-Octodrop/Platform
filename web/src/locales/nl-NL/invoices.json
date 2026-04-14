@@ -1,0 +1,382 @@
+{
+  "module": {
+    "name": "Facturen",
+    "description": "Stortings-, voortgangs-, eind- en creditnotafacturering aan klanten."
+  },
+  "navigation": {
+    "biz_invoice_list_page": "Facturen",
+    "biz_invoice_draft_page": "Diepgang",
+    "biz_invoice_issued_page": "Uitgegeven",
+    "biz_invoice_part_paid_page": "Gedeeltelijk betaald",
+    "biz_invoice_paid_page": "Betaald",
+    "biz_invoice_credit_notes_page": "Creditnota's"
+  },
+  "entities": {
+    "biz_invoice": {
+      "label": "Factuur",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "invoice_number": {
+          "label": "Factuurnummer"
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "draft": "Diepgang",
+            "issued": "Uitgegeven",
+            "part_paid": "Gedeeltelijk betaald",
+            "paid": "Betaald",
+            "cancelled": "Geannuleerd",
+            "credited": "Gecrediteerd"
+          }
+        },
+        "invoice_type": {
+          "label": "Factuurtype",
+          "options": {
+            "deposit": "Borg",
+            "progress": "Vooruitgang",
+            "final": "Finale",
+            "credit_note": "Creditnota"
+          }
+        },
+        "customer_id": {
+          "label": "Klant"
+        },
+        "source_order_id": {
+          "label": "Bronvolgorde"
+        },
+        "source_order_number": {
+          "label": "Bronvolgorde"
+        },
+        "origin_invoice_id": {
+          "label": "Herkomst factuur"
+        },
+        "credit_note_id": {
+          "label": "Creditnota"
+        },
+        "sales_entity": {
+          "label": "Verkoopentiteit",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "invoice_date": {
+          "label": "Factuurdatum"
+        },
+        "due_date": {
+          "label": "Vervaldatum"
+        },
+        "currency": {
+          "label": "Valuta",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "customer_reference": {
+          "label": "Klantreferentie"
+        },
+        "notes": {
+          "label": "Opmerkingen"
+        },
+        "cancellation_reason": {
+          "label": "Reden van annulering"
+        },
+        "source_order_total_snapshot": {
+          "label": "Bestel Totaalmomentopname"
+        },
+        "deposit_percent_snapshot": {
+          "label": "Stortingspercentage Momentopname"
+        },
+        "invoice_manual_total": {
+          "label": "Handmatige totaaloverschrijving"
+        },
+        "invoice_total": {
+          "label": "Factuur Totaal"
+        },
+        "amount_paid": {
+          "label": "Bedrag betaald"
+        },
+        "balance_due": {
+          "label": "Saldo verschuldigd"
+        }
+      }
+    },
+    "biz_invoice_line": {
+      "label": "Factuurregel",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "invoice_id": {
+          "label": "Factuur"
+        },
+        "product_id": {
+          "label": "Product"
+        },
+        "description": {
+          "label": "Beschrijving"
+        },
+        "sales_entity_snapshot": {
+          "label": "Momentopname van de verkoopentiteit",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "currency_snapshot": {
+          "label": "Valutamomentopname",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "uom": {
+          "label": "UOM",
+          "options": {
+            "ea": "Elk",
+            "set": "Instellen",
+            "kit": "Kit",
+            "lot": "Veel",
+            "pallet": "Pallet",
+            "container": "Houder",
+            "m": "Meter"
+          }
+        },
+        "quantity": {
+          "label": "Aantal"
+        },
+        "unit_price": {
+          "label": "Eenheidsprijs"
+        },
+        "line_total": {
+          "label": "Lijntotaal"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_invoice_new": {
+      "label": "Nieuwe factuur"
+    },
+    "action_invoice_issue": {
+      "label": "Factuur uitgeven/verzenden",
+      "confirm": {
+        "title": "Factuur uitreiken?"
+      }
+    },
+    "action_invoice_mark_part_paid": {
+      "label": "Markeer een deel betaald"
+    },
+    "action_invoice_mark_paid": {
+      "label": "Markeer betaald"
+    },
+    "action_invoice_open_cancel_modal": {
+      "label": "Annuleer"
+    },
+    "action_invoice_create_credit_note": {
+      "label": "Creditnota maken",
+      "confirm": {
+        "title": "Creditnota aanmaken?"
+      }
+    },
+    "action_invoice_mark_credited": {
+      "label": "Mark gecrediteerd",
+      "confirm": {
+        "title": "Factuur als gecrediteerd markeren?"
+      }
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Facturen zoeken..."
+      },
+      "filters": {
+        "open_receivables": {
+          "label": "Openstaande vorderingen"
+        },
+        "draft": {
+          "label": "Conceptfacturen"
+        },
+        "issued": {
+          "label": "Uitgegeven facturen"
+        },
+        "part_paid": {
+          "label": "Gedeeltelijk betaald"
+        },
+        "paid": {
+          "label": "Betaald"
+        },
+        "credit_notes": {
+          "label": "Creditnota's"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Factuur"
+        },
+        "notes": {
+          "title": "Opmerkingen"
+        },
+        "financials": {
+          "title": "Betalingsoverzicht"
+        },
+        "related": {
+          "title": "Gerelateerde gegevens"
+        },
+        "lines": {
+          "title": "Factuurregels"
+        },
+        "main": {
+          "title": "Factuurregel"
+        }
+      }
+    }
+  },
+  "modals": {
+    "invoice_cancel": {
+      "title": "Factuur annuleren",
+      "description": "Leg de annuleringsreden vast voordat u deze factuur uit de actieve debiteurenstroom verwijdert.",
+      "actions": {
+        "update_record": {
+          "label": "Factuur annuleren"
+        },
+        "close_modal": {
+          "label": "Blijf open"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Facturen",
+      "header": {
+        "actions": {
+          "navigate": {
+            "label": "Nieuwe factuur"
+          }
+        }
+      },
+      "blocks": {
+        "1": {
+          "cards": {
+            "invoice_open_receivables_count": {
+              "label": "Openstaande vorderingen",
+              "subtitle": "Concept, uitgegeven en gedeeltelijk betaald"
+            },
+            "invoice_part_paid_count": {
+              "label": "Gedeeltelijk betaald",
+              "subtitle": "Er worden nog steeds collecties verzameld"
+            },
+            "invoice_paid_count": {
+              "label": "Betaald",
+              "subtitle": "Volledig vereffende facturen"
+            },
+            "invoice_credit_note_count": {
+              "label": "Creditnota's",
+              "subtitle": "Commerciële tegenslagen"
+            }
+          }
+        }
+      }
+    },
+    "draft_page": {
+      "title": "Conceptfacturen"
+    },
+    "issued_page": {
+      "title": "Uitgegeven facturen"
+    },
+    "part_paid_page": {
+      "title": "Gedeeltelijk betaalde facturen"
+    },
+    "paid_page": {
+      "title": "Betaalde facturen"
+    },
+    "credit_notes_page": {
+      "title": "Creditnota's"
+    },
+    "form_page": {
+      "title": "Factuur"
+    }
+  },
+  "workflows": {
+    "invoice_status_workflow": {
+      "states": {
+        "draft": {
+          "label": "Diepgang"
+        },
+        "issued": {
+          "label": "Uitgegeven"
+        },
+        "part_paid": {
+          "label": "Gedeeltelijk betaald"
+        },
+        "paid": {
+          "label": "Betaald"
+        },
+        "cancelled": {
+          "label": "Geannuleerd"
+        },
+        "credited": {
+          "label": "Gecrediteerd"
+        }
+      },
+      "transitions": {
+        "draft_issued": {
+          "label": "Factuur uitgeven"
+        },
+        "issued_part_paid": {
+          "label": "Markeer een deel betaald"
+        },
+        "issued_paid": {
+          "label": "Markeer betaald"
+        },
+        "part_paid_paid": {
+          "label": "Markeer betaald"
+        },
+        "draft_cancelled": {
+          "label": "Factuur annuleren"
+        },
+        "issued_cancelled": {
+          "label": "Factuur annuleren"
+        },
+        "issued_credited": {
+          "label": "Mark gecrediteerd"
+        },
+        "part_paid_credited": {
+          "label": "Mark gecrediteerd"
+        },
+        "paid_credited": {
+          "label": "Mark gecrediteerd"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "invoice_created": "Factuur gemaakt",
+    "invoice_updated": "Factuur bijgewerkt",
+    "invoice_line_created": "Factuurregel aangemaakt",
+    "invoice_line_updated": "Factuurregel bijgewerkt",
+    "invoice_status_changed": "Factuurstatus gewijzigd",
+    "new_invoice_clicked": "Nieuwe factuur geklikt",
+    "issue_send_clicked": "Uitgifte / Factuur verzenden geklikt",
+    "mark_part_paid_clicked": "Markeer gedeeltelijk betaald. Klik op",
+    "mark_paid_clicked": "Markeer betaald klikte",
+    "cancel_clicked": "Annuleren heeft geklikt",
+    "create_credit_note_clicked": "Creditnota maken klikte",
+    "mark_credited_clicked": "Markeren als gecrediteerd heeft geklikt"
+  },
+  "dashboard": {
+    "invoices_by_status": "Facturen op status"
+  }
+}

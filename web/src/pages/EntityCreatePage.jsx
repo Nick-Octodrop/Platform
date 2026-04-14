@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { apiFetch, getManifest } from "../api";
 import FormViewRenderer from "../ui/FormViewRenderer.jsx";
@@ -7,9 +7,18 @@ import { useToast } from "../components/Toast.jsx";
 import { loadEntityIndex } from "../data/entityIndex.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { applyComputedFields } from "../utils/computedFields.js";
+import { normalizeManifestRecordPayload } from "../utils/formPayload.js";
+import {
+  buildFormDraftStorageKey,
+  clearFormDraftSnapshot,
+  loadFormDraftSnapshot,
+  saveFormDraftSnapshot,
+} from "../utils/formDraftPersistence.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 export default function EntityCreatePage({ entityId }) {
+  const { t, version } = useI18n();
   const params = useParams();
   const location = useLocation();
   const routeEntity = params.entity;
@@ -25,6 +34,24 @@ export default function EntityCreatePage({ entityId }) {
   const [showValidation, setShowValidation] = useState(false);
   const [error, setError] = useState(null);
   const [indexEntry, setIndexEntry] = useState(null);
+  const draftStorageKey = useMemo(
+    () =>
+      buildFormDraftStorageKey({
+        scope: "entity-create",
+        entityId: routeEntity || entityId || "",
+        recordId: "new",
+        viewId: indexEntry?.formViewId || "",
+        routeKey: location.pathname || "",
+      }),
+    [entityId, indexEntry?.formViewId, location.pathname, routeEntity]
+  );
+  const isDirty = useMemo(() => {
+    try {
+      return JSON.stringify(draft || {}) !== JSON.stringify({});
+    } catch {
+      return true;
+    }
+  }, [draft]);
 
   useEffect(() => {
     async function buildIndex() {
@@ -55,6 +82,10 @@ export default function EntityCreatePage({ entityId }) {
           for (const f of entity?.fields || []) index[f.id] = f;
         }
         setFieldIndex(index);
+        const persisted = loadFormDraftSnapshot(draftStorageKey);
+        if (persisted?.dirty && persisted?.draft && typeof persisted.draft === "object") {
+          setDraft(applyComputedFields(index, persisted.draft));
+        }
         setError(null);
       } catch (err) {
         setError(err.message || "Failed to load form");
@@ -63,7 +94,34 @@ export default function EntityCreatePage({ entityId }) {
       }
     }
     load();
-  }, [indexEntry, isDataRoute]);
+  }, [draftStorageKey, indexEntry, isDataRoute, version]);
+
+  useEffect(() => {
+    if (!draftStorageKey) return;
+    const hasMeaningfulDraft =
+      draft &&
+      typeof draft === "object" &&
+      Object.entries(draft).some(([, value]) => value !== null && value !== undefined && value !== "");
+    if (!hasMeaningfulDraft) {
+      clearFormDraftSnapshot(draftStorageKey);
+      return;
+    }
+    saveFormDraftSnapshot(draftStorageKey, {
+      dirty: true,
+      draft,
+      updatedAt: Date.now(),
+    });
+  }, [draftStorageKey, draft]);
+
+  useEffect(() => {
+    if (!isDirty) return undefined;
+    const onBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isDirty]);
 
   async function handleSave() {
     if (!(isDataRoute && indexEntry)) return;
@@ -71,30 +129,14 @@ export default function EntityCreatePage({ entityId }) {
     setLoading(true);
     try {
       const endpoint = `/records/${routeEntity}`;
-      let payload = draft;
-      if (payload && typeof payload === "object") {
-        payload = { ...payload };
-        for (const [fieldId, field] of Object.entries(fieldIndex || {})) {
-          if (field?.type === "tags" && typeof payload[fieldId] === "string") {
-            payload[fieldId] = payload[fieldId]
-              .split(",")
-              .map((t) => t.trim())
-              .filter(Boolean);
-          }
-          if (field?.type === "users" && typeof payload[fieldId] === "string") {
-            payload[fieldId] = payload[fieldId]
-              .split(",")
-              .map((t) => t.trim())
-              .filter(Boolean);
-          }
-        }
-      }
+      const payload = normalizeManifestRecordPayload(fieldIndex, draft);
       const res = await apiFetch(endpoint, {
         method: "POST",
         body: JSON.stringify(payload),
       });
       const newId = res.record_id || res.job_id;
-      pushToast("success", "Created");
+      clearFormDraftSnapshot(draftStorageKey);
+      pushToast("success", t("common.created"));
       if (newId) {
         if (isDataRoute && routeEntity) {
           navigate(`/data/${routeEntity}/${newId}`);
@@ -109,15 +151,15 @@ export default function EntityCreatePage({ entityId }) {
         }
       }
     } catch (err) {
-      setError(err.message || "Create failed");
-      pushToast("error", err.message || "Create failed");
+      setError(err.message || t("common.create_failed"));
+      pushToast("error", err.message || t("common.create_failed"));
     } finally {
       setLoading(false);
     }
   }
 
   if (isDataRoute && routeEntity && !indexEntry) {
-    return <div className="alert alert-error">Entity unavailable or disabled.</div>;
+    return <div className="alert alert-error">{t("common.entity_unavailable")}</div>;
   }
 
   const displayName = indexEntry?.displayName || routeEntity;
@@ -127,9 +169,9 @@ export default function EntityCreatePage({ entityId }) {
       <div className={DESKTOP_PAGE_SHELL_BODY}>
         <div className="md:mt-4 flex flex-col gap-4 min-w-0">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-2xl font-semibold">New {displayName}</h2>
+            <h2 className="text-2xl font-semibold">{t("common.new_record_named", { name: displayName })}</h2>
             <button className="btn btn-sm" type="button" onClick={() => navigate(`/data/${routeEntity}`)}>
-              Back
+              {t("common.back")}
             </button>
           </div>
           {error && <div className="alert alert-error">{error}</div>}

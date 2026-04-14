@@ -1,0 +1,13 @@
+{
+  "no_results": "Aucun resultat",
+  "no_records_found": "Aucun enregistrement trouve",
+  "no_visible_columns": "Aucune colonne visible pour cette vue.",
+  "no_workspaces": "Aucun espace de travail disponible.",
+  "no_workspace_users": "Aucun utilisateur trouve",
+  "no_matches": "Aucune correspondance",
+  "no_settings_match_search": "Aucun parametre ne correspond a votre recherche.",
+  "no_address_matches": "Aucune adresse correspondante",
+  "no_line_items": "Aucune ligne pour le moment.",
+  "install_app": "Installer une application",
+  "no_apps_installed": "Aucune application installee pour le moment."
+}

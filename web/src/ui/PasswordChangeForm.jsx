@@ -1,7 +1,9 @@
 import React, { useState } from "react";
 import { supabase } from "../supabase";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 export default function PasswordChangeForm({ user, showCurrentPassword = true, onSuccess }) {
+  const { t } = useI18n();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -14,11 +16,11 @@ export default function PasswordChangeForm({ user, showCurrentPassword = true, o
     setError("");
     setNotice("");
     if (!newPassword || newPassword.length < 8) {
-      setError("New password must be at least 8 characters.");
+      setError(t("settings.password_min_length"));
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError("New password and confirm password must match.");
+      setError(t("settings.passwords_must_match"));
       return;
     }
     setSaving(true);
@@ -29,17 +31,17 @@ export default function PasswordChangeForm({ user, showCurrentPassword = true, o
           email: user.email,
           password: currentPassword,
         });
-        if (signInError) throw new Error("Current password is incorrect.");
+        if (signInError) throw new Error(t("settings.current_password_incorrect"));
       }
       const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
       if (updateError) throw updateError;
-      setNotice("Password updated successfully.");
+      setNotice(t("settings.password_updated"));
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
       onSuccess?.();
     } catch (err) {
-      setError(err?.message || "Failed to update password.");
+      setError(err?.message || t("settings.password_update_failed"));
     } finally {
       setSaving(false);
     }
@@ -57,7 +59,7 @@ export default function PasswordChangeForm({ user, showCurrentPassword = true, o
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
             disabled={saving}
-            placeholder="Current password"
+            placeholder={t("settings.current_password")}
           />
         )}
         <input
@@ -67,7 +69,7 @@ export default function PasswordChangeForm({ user, showCurrentPassword = true, o
           onChange={(e) => setNewPassword(e.target.value)}
           disabled={saving}
           required
-          placeholder="New password (min 8 chars)"
+          placeholder={t("settings.new_password")}
         />
         <input
           className="input input-bordered input-sm w-full"
@@ -76,13 +78,12 @@ export default function PasswordChangeForm({ user, showCurrentPassword = true, o
           onChange={(e) => setConfirmPassword(e.target.value)}
           disabled={saving}
           required
-          placeholder="Confirm new password"
+          placeholder={t("settings.confirm_new_password")}
         />
         <button className="btn btn-primary btn-sm w-full" type="submit" disabled={saving}>
-          {saving ? "Updating..." : "Update password"}
+          {saving ? t("settings.updating_password") : t("settings.update_password")}
         </button>
       </form>
     </div>
   );
 }
-

@@ -26,6 +26,7 @@ import useWorkspaceProviderStatus from "../hooks/useWorkspaceProviderStatus.js";
 import ProviderSecretModal from "../components/ProviderSecretModal.jsx";
 import ProviderUnavailableState from "../components/ProviderUnavailableState.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 function JsonBlock({ value }) {
   return (
@@ -87,27 +88,27 @@ function InfoList({ title, items, emptyText }) {
   );
 }
 
-function summarizePatchsetRevision(patchset) {
-  if (!patchset || typeof patchset !== "object") return "Revision";
+function summarizePatchsetRevision(patchset, t) {
+  if (!patchset || typeof patchset !== "object") return t("revision.default");
   const ops = Array.isArray(patchset?.patch_json?.operations) ? patchset.patch_json.operations.filter((op) => op && typeof op === "object") : [];
-  if (!ops.length) return "No-op revision";
+  if (!ops.length) return t("revision.noop");
   const labels = [];
   for (const op of ops) {
     if (op.op === "add_field") {
       const field = op.field && typeof op.field === "object" ? op.field : {};
-      if (typeof field.label === "string" && field.label.trim()) labels.push(`Add ${field.label}`);
+      if (typeof field.label === "string" && field.label.trim()) labels.push(t("revision.add_field", { field: field.label }));
       continue;
     }
     if (op.op === "insert_section_field") {
-      if (typeof op.placement_label === "string" && op.placement_label.trim()) labels.push(`Place in ${op.placement_label}`);
+      if (typeof op.placement_label === "string" && op.placement_label.trim()) labels.push(t("revision.place_in", { placement: op.placement_label }));
       continue;
     }
     if (op.op === "create_module" && typeof op.artifact_id === "string" && op.artifact_id.trim()) {
-      labels.push(`Create ${op.artifact_id}`);
+      labels.push(t("revision.create_module", { module: op.artifact_id }));
       continue;
     }
   }
-  return labels.slice(0, 2).join(" • ") || `${ops.length} change${ops.length === 1 ? "" : "s"}`;
+  return labels.slice(0, 2).join(" • ") || t("revision.change_count", { count: ops.length });
 }
 
 function patchsetActivityTimestamp(patchset) {
@@ -153,24 +154,24 @@ function latestPatchsetFromList(patchsets, planId = "") {
   return [...candidates].sort(comparePatchsetsNewestFirst)[0] || null;
 }
 
-function DetailsDrawer({ open, onClose, activeTab, onTabChange, sections }) {
+function DetailsDrawer({ open, onClose, activeTab, onTabChange, sections, t }) {
   if (!open) return null;
   const tabs = [
-    { id: "changes", label: "What Changed" },
-    { id: "validation", label: "Validation" },
-    { id: "technical", label: "Technical Details" },
-    { id: "history", label: "History" },
+    { id: "changes", label: t("details.tabs.changes") },
+    { id: "validation", label: t("details.tabs.validation") },
+    { id: "technical", label: t("details.tabs.technical") },
+    { id: "history", label: t("details.tabs.history") },
   ];
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/20">
-      <button type="button" className="flex-1 cursor-default" aria-label="Close details" onClick={onClose} />
+      <button type="button" className="flex-1 cursor-default" aria-label={t("details.close_aria")} onClick={onClose} />
       <div className="h-full w-[min(720px,92vw)] border-l border-base-300 bg-base-100 shadow-2xl flex flex-col">
         <div className="flex items-center justify-between gap-3 border-b border-base-200 px-4 py-3">
           <div>
-            <div className="text-sm font-semibold">Request Details</div>
-            <div className="text-xs opacity-60">Technical information is secondary to the main change-request flow.</div>
+            <div className="text-sm font-semibold">{t("details.title")}</div>
+            <div className="text-xs opacity-60">{t("details.description")}</div>
           </div>
-          <button type="button" className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={onClose}>{t("details.close")}</button>
         </div>
         <div className="border-b border-base-200 p-3">
           <Tabs tabs={tabs} activeId={activeTab} onChange={onTabChange} fullWidth />
@@ -206,43 +207,43 @@ function chatTextLooksLikeNewRequest(text) {
   return hasRequestFrame || hasRevisionMarker || normalized.split(/\s+/).length >= 5;
 }
 
-function summarizeAnswer(msg) {
+function summarizeAnswer(msg, t) {
   if (!msg || typeof msg !== "object") return "";
   const answer = msg.answer_json && typeof msg.answer_json === "object" ? msg.answer_json : null;
   const body = typeof msg.body === "string" ? msg.body.trim() : "";
   if (!answer) return body;
   if (typeof answer.field_label === "string" && answer.field_label.trim() && typeof answer.field_type === "string" && answer.field_type.trim()) {
-    return `${body || "Saved details."}\nField: ${answer.field_label.trim()} (${answer.field_type.trim()})`;
+    return `${body || t("answers.saved_details")}\n${t("answers.field_value", { field: answer.field_label.trim(), type: answer.field_type.trim() })}`;
   }
   if (typeof answer.include_form === "boolean" || typeof answer.include_list === "boolean") {
     const placement =
       answer.include_form && answer.include_list
-        ? "Form + list"
+        ? t("answers.placement.form_and_list")
         : answer.include_form
-          ? "Form only"
+          ? t("answers.placement.form_only")
           : answer.include_list
-            ? "List only"
-            : "Schema only";
-    return `${body || "Answered."}\nDecision: ${placement}`;
+            ? t("answers.placement.list_only")
+            : t("answers.placement.schema_only");
+    return `${body || t("answers.answered")}\n${t("answers.decision_value", { value: placement })}`;
   }
   if (typeof answer.deduplicate_existing === "boolean") {
-    return `${body || "Answered."}\nDecision: ${answer.deduplicate_existing ? "Deduplicate existing entries" : "Keep duplicates as-is"}`;
+    return `${body || t("answers.answered")}\n${t("answers.decision_value", { value: answer.deduplicate_existing ? t("answers.deduplicate") : t("answers.keep_duplicates") })}`;
   }
   if (typeof answer.confirm_plan === "boolean") {
-    return answer.confirm_plan ? "Approved." : body || "Needs changes.";
+    return answer.confirm_plan ? t("answers.approved") : body || t("answers.needs_changes");
   }
   if (typeof answer.tab_target === "string" && answer.tab_target.trim()) {
-    return `${body || "Answered."}\nTab: ${answer.tab_target.trim()}`;
+    return `${body || t("answers.answered")}\n${t("answers.tab_value", { value: answer.tab_target.trim() })}`;
   }
   if (typeof answer.field_target === "string" && answer.field_target.trim()) {
-    return `${body || "Answered."}\nField: ${answer.field_target.trim()}`;
+    return `${body || t("answers.answered")}\n${t("answers.field_target_value", { value: answer.field_target.trim() })}`;
   }
   return body;
 }
 
-function chatMessageText(msg) {
+function chatMessageText(msg, t) {
   if (!msg || typeof msg !== "object") return "";
-  if (msg.message_type === "answer") return summarizeAnswer(msg);
+  if (msg.message_type === "answer") return summarizeAnswer(msg, t);
   if (msg.role === "assistant" && typeof msg.body === "string" && msg.body.includes("I understand this as:")) {
     const lines = msg.body.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     const sections = { understanding: [], changes: [], checks: [], next: [] };
@@ -276,18 +277,18 @@ function chatMessageText(msg) {
       }
     }
     const compact = [];
-    if (sections.understanding[0]) compact.push(`Plan\n${sections.understanding[0]}`);
+    if (sections.understanding[0]) compact.push(`${t("chat.summary.plan")}\n${sections.understanding[0]}`);
     if (sections.changes.length) {
-      compact.push(`Changes\n${sections.changes.slice(0, 3).map((line) => `- ${line}`).join("\n")}`);
+      compact.push(`${t("chat.summary.changes")}\n${sections.changes.slice(0, 3).map((line) => `- ${line}`).join("\n")}`);
     }
     if (sections.checks.length) {
-      compact.push(`Check in sandbox\n${sections.checks.slice(0, 2).map((line) => `- ${line}`).join("\n")}`);
+      compact.push(`${t("chat.summary.check_sandbox")}\n${sections.checks.slice(0, 2).map((line) => `- ${line}`).join("\n")}`);
     }
     if (sections.next[0]) {
       const nextText = /^Plan confirmed\./i.test(sections.next[0])
-        ? "Plan approved. I prepared a validated revision. Next: Apply to Sandbox."
+        ? t("chat.summary.plan_approved_next")
         : sections.next[0];
-      compact.push(`Next\n${nextText}`);
+      compact.push(`${t("chat.summary.next")}\n${nextText}`);
     }
     return compact.join("\n\n") || msg.body;
   }
@@ -326,9 +327,9 @@ function messageBubbleClass(msg) {
   return "chat-bubble max-w-[85%] bg-base-200 text-base-content text-sm leading-5";
 }
 
-function messageRoleLabel(msg) {
-  if (msg?.role === "user") return "you";
-  return msg?.role || "assistant";
+function messageRoleLabel(msg, t) {
+  if (msg?.role === "user") return t("chat.roles.you");
+  return msg?.role === "assistant" ? t("chat.roles.assistant") : (msg?.role || t("chat.roles.assistant"));
 }
 
 function buildWorkspaceFrameSrc({ sessionId, sandboxWorkspaceId }) {
@@ -353,14 +354,14 @@ function isActiveSession(status) {
 }
 
 function resolveChangeRequestStage({ hasStarted, hasPendingQuestion, latestPatchset, latestRelease, releaseStatus, applying, publishing }) {
-  if (!hasStarted) return "Idle";
-  if (publishing) return "Publishing";
-  if (releaseStatus === "promoted" || latestRelease?.status === "promoted") return "Published";
-  if (applying) return "Applying to Sandbox";
-  if (latestPatchset?.status === "applied" || latestRelease?.status === "draft") return "Sandbox Ready";
-  if (hasPendingQuestion || !latestPatchset) return "Planning";
-  if (["validated", "approved", "draft"].includes(String(latestPatchset?.status || ""))) return "Ready to Apply";
-  return "Planning";
+  if (!hasStarted) return "idle";
+  if (publishing) return "publishing";
+  if (releaseStatus === "promoted" || latestRelease?.status === "promoted") return "published";
+  if (applying) return "applying";
+  if (latestPatchset?.status === "applied" || latestRelease?.status === "draft") return "sandbox_ready";
+  if (hasPendingQuestion || !latestPatchset) return "planning";
+  if (["validated", "approved", "draft"].includes(String(latestPatchset?.status || ""))) return "ready_to_apply";
+  return "planning";
 }
 
 function questionSupersededByAppliedRevision(latestPlan, latestPatchset) {
@@ -379,6 +380,7 @@ function questionSupersededByAppliedRevision(latestPlan, latestPatchset) {
 export default function OctoAiWorkspacePage() {
   const navigate = useNavigate();
   const { sessionId } = useParams();
+  const { t } = useI18n();
   const isMobile = useMediaQuery("(max-width: 768px)");
   const { hasCapability } = useAccessContext();
   const { providers: aiProviders, loading: providerStatusLoading, reload: reloadProviderStatus } = useWorkspaceProviderStatus(["openai"]);
@@ -408,6 +410,7 @@ export default function OctoAiWorkspacePage() {
   const [data, setData] = useState({ session: null, messages: [], plans: [], patchsets: [], releases: [], validation_runs: [], sandboxes: [], event_logs: [] });
   const openAiConnected = Boolean(aiProviders?.openai?.connected);
   const canManageSettings = hasCapability("workspace.manage_settings");
+  const octoT = (key, values) => t(`settings.octo_ai.workspace.${key}`, values);
 
   const latestPlan = useMemo(() => (Array.isArray(data.plans) && data.plans.length > 0 ? data.plans[0] : null), [data.plans]);
   const latestPatchset = useMemo(() => latestPatchsetFromList(data.patchsets, latestPlan?.id || ""), [data.patchsets, latestPlan?.id]);
@@ -471,8 +474,8 @@ export default function OctoAiWorkspacePage() {
     return !questionSupersededByAppliedRevision(latestPlan, latestPatchset);
   }, [activeQuestion, latestPatchset, latestPlan]);
   const hasConversationStarted = useMemo(
-    () => Array.isArray(data.messages) && data.messages.some((msg) => typeof chatMessageText(msg) === "string" && chatMessageText(msg).trim()),
-    [data.messages],
+    () => Array.isArray(data.messages) && data.messages.some((msg) => typeof chatMessageText(msg, octoT) === "string" && chatMessageText(msg, octoT).trim()),
+    [data.messages, t],
   );
   const latestPlanOps = useMemo(() => {
     const direct = Array.isArray(latestPlan?.plan_json?.plan?.candidate_operations) ? latestPlan.plan_json.plan.candidate_operations : [];
@@ -537,19 +540,19 @@ export default function OctoAiWorkspacePage() {
     if (Array.isArray(structuredPlan?.changes) && structuredPlan.changes.length > 0) {
       return structuredPlan.changes.map((item) => item?.summary).filter((item) => typeof item === "string" && item.trim());
     }
-    return latestPlanOps.map((item) => `${item.op} in ${item.artifact_id || "workspace"}`);
-  }, [structuredPlan, latestPlanOps]);
+    return latestPlanOps.map((item) => octoT("plan.op_in_artifact", { op: item.op, artifact: item.artifact_id || octoT("plan.workspace") }));
+  }, [structuredPlan, latestPlanOps, t]);
 
   const moduleSummaries = useMemo(() => {
     if (Array.isArray(structuredPlan?.modules) && structuredPlan.modules.length > 0) {
       return structuredPlan.modules.map((item) => {
-        const label = item?.module_label || item?.module_id || "Unknown module";
-        const status = item?.status === "missing_from_workspace" ? "missing from workspace" : "planned";
-        return `${label} (${status})`;
+        const label = item?.module_label || item?.module_id || octoT("plan.unknown_module");
+        const status = item?.status === "missing_from_workspace" ? octoT("plan.missing_from_workspace") : octoT("plan.planned");
+        return octoT("plan.module_status", { label, status });
       });
     }
     return [];
-  }, [structuredPlan]);
+  }, [structuredPlan, t]);
 
   async function refreshSession(options = {}) {
     if (!sessionId) return;
@@ -569,7 +572,7 @@ export default function OctoAiWorkspacePage() {
         event_logs: Array.isArray(sessionRes?.event_logs) ? sessionRes.event_logs : [],
       });
     } catch (err) {
-      setError(err?.message || "Failed to load session workspace");
+      setError(err?.message || octoT("errors.load_session"));
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -588,7 +591,7 @@ export default function OctoAiWorkspacePage() {
     if (text) {
       setPendingChatMessage({ id: `pending-user:${Date.now()}`, body: text });
     }
-    setPendingAssistantState("Updating the request...");
+    setPendingAssistantState(octoT("pending.updating_request"));
     try {
       await answerOctoAiQuestion(sessionId, {
         action,
@@ -598,7 +601,7 @@ export default function OctoAiWorkspacePage() {
       });
       await refreshSession({ showLoading: false });
     } catch (err) {
-      setError(err?.message || "Failed to submit answer");
+      setError(err?.message || octoT("errors.submit_answer"));
     } finally {
       setPendingChatMessage(null);
       setPendingAssistantState("");
@@ -613,7 +616,7 @@ export default function OctoAiWorkspacePage() {
       if (canManageSettings) {
         setOpenAiModalOpen(true);
       } else {
-        setError("OpenAI is not connected for this workspace.");
+        setError(octoT("errors.openai_not_connected"));
       }
       return;
     }
@@ -633,7 +636,7 @@ export default function OctoAiWorkspacePage() {
     setStreaming(true);
     setError("");
     setPendingChatMessage({ id: `pending-user:${Date.now()}`, body: text });
-    setPendingAssistantState("Planning the change...");
+    setPendingAssistantState(octoT("pending.planning_change"));
     try {
       await sendOctoAiChatMessage(sessionId, { message: text });
       setMessage("");
@@ -643,10 +646,10 @@ export default function OctoAiWorkspacePage() {
         if (canManageSettings) {
           setOpenAiModalOpen(true);
         } else {
-          setError("OpenAI is not connected for this workspace.");
+          setError(octoT("errors.openai_not_connected"));
         }
       } else {
-      setError(err?.message || "Failed to send AI message");
+      setError(err?.message || octoT("errors.send_message"));
       }
     } finally {
       setPendingChatMessage(null);
@@ -663,7 +666,7 @@ export default function OctoAiWorkspacePage() {
       await ensureOctoAiSandbox(sessionId);
       await refreshSession({ showLoading: false });
     } catch (err) {
-      setError(err?.message || "Failed to prepare sandbox");
+      setError(err?.message || octoT("errors.prepare_sandbox"));
     } finally {
       setBusy(false);
     }
@@ -677,7 +680,7 @@ export default function OctoAiWorkspacePage() {
       await discardOctoAiSandbox(sessionId);
       navigate("/octo-ai");
     } catch (err) {
-      setError(err?.message || "Failed to discard sandbox");
+      setError(err?.message || octoT("errors.discard_sandbox"));
     } finally {
       setBusy(false);
     }
@@ -697,16 +700,16 @@ export default function OctoAiWorkspacePage() {
     const generated = await getOctoAiSession(sessionId);
     const patchset = latestPatchsetFromList(generated?.patchsets, latestPlan?.id || "");
     if (!patchset?.id) {
-      throw new Error("No patchset was generated for this request.");
+      throw new Error(octoT("errors.no_patchset_generated"));
     }
     await validateOctoAiPatchset(patchset.id);
     const refreshed = await refreshSession({ showLoading: false });
     const validatedPatchset = latestPatchsetFromList(refreshed?.patchsets, patchset.plan_id || latestPlan?.id || "");
     if (!validatedPatchset?.id) {
-      throw new Error("No validated revision was available after validation.");
+      throw new Error(octoT("errors.no_validated_revision"));
     }
     if (!["validated", "approved", "applied"].includes(String(validatedPatchset.status || ""))) {
-      throw new Error(`Patchset must be validated before apply: ${String(validatedPatchset.status || "unknown")}`);
+      throw new Error(octoT("errors.patchset_not_validated", { status: String(validatedPatchset.status || octoT("plan.unknown_status")) }));
     }
     return validatedPatchset.id;
   }
@@ -718,7 +721,7 @@ export default function OctoAiWorkspacePage() {
     try {
       await ensureValidatedRevision();
     } catch (err) {
-      setError(err?.message || "Failed to prepare the latest revision");
+      setError(err?.message || octoT("errors.prepare_latest_revision"));
     } finally {
       setBusy(false);
     }
@@ -729,7 +732,7 @@ export default function OctoAiWorkspacePage() {
     setApplyingRevision(true);
     setBusy(true);
     setError("");
-    setPreviewNotice("Applying approved plan to sandbox...");
+    setPreviewNotice(octoT("preview.applying_approved_plan"));
     try {
       await answerOctoAiQuestion(sessionId, {
         action: "approve",
@@ -738,14 +741,14 @@ export default function OctoAiWorkspacePage() {
       await refreshSession({ showLoading: false });
       const patchsetId = await ensureValidatedRevision();
       if (!patchsetId) {
-        throw new Error("No validated revision was available to apply.");
+        throw new Error(octoT("errors.no_validated_revision_apply"));
       }
       await applyOctoAiPatchset(patchsetId, true);
       await refreshSession({ showLoading: false });
       setPreviewNonce((value) => value + 1);
-      setPreviewNotice("Sandbox updated");
+      setPreviewNotice(octoT("preview.sandbox_updated"));
     } catch (err) {
-      setError(err?.message || "Failed to confirm the plan");
+      setError(err?.message || octoT("errors.confirm_plan"));
       setPreviewNotice("");
     } finally {
       setApplyingRevision(false);
@@ -758,7 +761,7 @@ export default function OctoAiWorkspacePage() {
     setApplyingRevision(true);
     setBusy(true);
     setError("");
-    setPreviewNotice("Applying revision to sandbox...");
+    setPreviewNotice(octoT("preview.applying_revision"));
     try {
       const patchsetId = ["validated", "approved", "applied"].includes(String(latestPatchset.status || ""))
         ? latestPatchset.id
@@ -766,9 +769,9 @@ export default function OctoAiWorkspacePage() {
       await applyOctoAiPatchset(patchsetId, true);
       await refreshSession({ showLoading: false });
       setPreviewNonce((value) => value + 1);
-      setPreviewNotice("Sandbox updated");
+      setPreviewNotice(octoT("preview.sandbox_updated"));
     } catch (err) {
-      setError(err?.message || "Failed to apply the revision to sandbox");
+      setError(err?.message || octoT("errors.apply_revision"));
       setPreviewNotice("");
     } finally {
       setApplyingRevision(false);
@@ -786,11 +789,11 @@ export default function OctoAiWorkspacePage() {
         const created = await createOctoAiRelease(sessionId, selectedRevision?.id ? { patchset_id: selectedRevision.id } : {});
         releaseId = typeof created?.release?.id === "string" ? created.release.id : "";
       }
-      if (!releaseId) throw new Error("No release was available to publish.");
+      if (!releaseId) throw new Error(octoT("errors.no_release_available"));
       await promoteOctoAiRelease(releaseId);
       await refreshSession({ showLoading: false });
     } catch (err) {
-      setError(err?.message || "Failed to promote release");
+      setError(err?.message || octoT("errors.promote_release"));
     } finally {
       setPublishingRevision(false);
       setBusy(false);
@@ -806,16 +809,16 @@ export default function OctoAiWorkspacePage() {
     setRestoringRevision(true);
     setBusy(true);
     setError("");
-    setPreviewNotice("Restoring selected sandbox revision...");
+    setPreviewNotice(octoT("preview.restoring_revision"));
     try {
       for (const patchsetId of rollbackIds) {
         await rollbackOctoAiPatchset(patchsetId);
       }
       await refreshSession({ showLoading: false });
       setPreviewNonce((value) => value + 1);
-      setPreviewNotice("Sandbox restored");
+      setPreviewNotice(octoT("preview.sandbox_restored"));
     } catch (err) {
-      setError(err?.message || "Failed to restore the selected revision");
+      setError(err?.message || octoT("errors.restore_revision"));
       setPreviewNotice("");
     } finally {
       setRestoringRevision(false);
@@ -833,7 +836,7 @@ export default function OctoAiWorkspacePage() {
       setDetailsTab("history");
       setDetailsOpen(true);
     } catch (err) {
-      setError(err?.message || "Failed to roll back the published release");
+      setError(err?.message || octoT("errors.rollback_release"));
     } finally {
       setBusy(false);
     }
@@ -853,15 +856,16 @@ export default function OctoAiWorkspacePage() {
     [applyingRevision, data.session?.release_status, hasConversationStarted, hasPendingQuestion, latestPatchset, latestRelease, publishingRevision],
   );
   const stageTone =
-    requestStage === "Idle"
+    requestStage === "idle"
       ? "ghost"
-      : requestStage === "Published"
+      : requestStage === "published"
       ? "success"
-      : requestStage === "Sandbox Ready" || requestStage === "Ready to Apply"
+      : requestStage === "sandbox_ready" || requestStage === "ready_to_apply"
         ? "primary"
-        : requestStage === "Applying to Sandbox" || requestStage === "Publishing"
+        : requestStage === "applying" || requestStage === "publishing"
           ? "warning"
           : "ghost";
+  const requestStageLabel = octoT(`stages.${requestStage}`);
   const detailsPayload = useMemo(
     () => ({
       changes: {
@@ -887,16 +891,16 @@ export default function OctoAiWorkspacePage() {
   const planSummaryText = structuredPlan?.summary
     || changeSummaries[0]
     || data.session?.summary
-    || "Describe the change, confirm the plan, test it in sandbox, then publish when ready.";
+    || octoT("plan.default_summary");
   const composerPlaceholder = useMemo(() => {
-    if (requestStage === "Idle") return "Describe the change you want to make...";
-    if (requestStage === "Planning") return "Describe what you want changed, or refine the plan...";
-    if (requestStage === "Ready to Apply") return "Review the validated revision, request changes, or add more instructions...";
-    if (requestStage === "Applying to Sandbox") return "Applying revision to sandbox...";
-    if (requestStage === "Sandbox Ready") return "Test the result, report issues, or request another revision...";
-    if (requestStage === "Publishing") return "Publishing changes to live...";
-    return "Describe a follow-up change...";
-  }, [requestStage]);
+    if (requestStage === "idle") return octoT("placeholders.idle");
+    if (requestStage === "planning") return octoT("placeholders.planning");
+    if (requestStage === "ready_to_apply") return octoT("placeholders.ready_to_apply");
+    if (requestStage === "applying") return octoT("placeholders.applying");
+    if (requestStage === "sandbox_ready") return octoT("placeholders.sandbox_ready");
+    if (requestStage === "publishing") return octoT("placeholders.publishing");
+    return octoT("placeholders.follow_up");
+  }, [requestStage, t]);
   const openChangesView = useMemo(
     () => () => {
       if (isMobile) {
@@ -909,69 +913,69 @@ export default function OctoAiWorkspacePage() {
     [isMobile],
   );
   const actionStripActions = useMemo(() => {
-    if (requestStage === "Idle" && !selectedRevision) {
+    if (requestStage === "idle" && !selectedRevision) {
       return [];
     }
     if (hasPendingQuestion) {
       if (activeQuestionMeta?.kind === "confirm_plan") {
         return [
-          { label: "Apply to Sandbox", primary: true, onClick: doConfirmPlan, hint: "Approve the plan, validate the revision, and apply it to sandbox." },
-          { label: "View Scope", onClick: openChangesView },
+          { label: octoT("actions.apply_to_sandbox"), primary: true, onClick: doConfirmPlan, hint: octoT("hints.confirm_plan") },
+          { label: octoT("actions.view_scope"), onClick: openChangesView },
         ];
       }
       return [
-        { label: "Answer in Chat", primary: true, onClick: () => composerRef.current?.focus(), hint: "This request needs one more detail before it can be applied." },
-        { label: "View Scope", onClick: openChangesView },
+        { label: octoT("actions.answer_in_chat"), primary: true, onClick: () => composerRef.current?.focus(), hint: octoT("hints.answer_in_chat") },
+        { label: octoT("actions.view_scope"), onClick: openChangesView },
       ];
     }
     if (selectedRevision) {
       const publishingSelectedRevision = Boolean(currentSandboxRevision?.id && selectedRevision.id !== currentSandboxRevision.id);
       const actions = [
         {
-          label: selectedRevisionRelease?.status === "promoted" ? "Published" : publishingSelectedRevision ? "Publish Selected Revision" : "Publish to Live",
+          label: selectedRevisionRelease?.status === "promoted" ? octoT("actions.published") : publishingSelectedRevision ? octoT("actions.publish_selected_revision") : octoT("actions.publish_to_live"),
           primary: true,
           onClick: doPromoteRelease,
           disabled: publishingRevision || selectedRevisionRelease?.status === "promoted",
         },
-        { label: "View Changes", onClick: openChangesView },
+        { label: octoT("actions.view_changes"), onClick: openChangesView },
       ];
       if (currentSandboxRevision?.id && selectedRevision.id !== currentSandboxRevision.id) {
-        actions.push({ label: "Restore to Sandbox", onClick: doRestoreRevision, disabled: restoringRevision });
+        actions.push({ label: octoT("actions.restore_to_sandbox"), onClick: doRestoreRevision, disabled: restoringRevision });
       } else if (appliedRevisions.length > 1) {
-        actions.push({ label: "Revisions", onClick: () => setAgentTab("revisions") });
+        actions.push({ label: octoT("actions.revisions"), onClick: () => setAgentTab("revisions") });
       }
       return actions;
     }
-    if (requestStage === "Planning" || requestStage === "Idle") {
+    if (requestStage === "planning" || requestStage === "idle") {
       return [
-        { label: "View Scope", primary: true, onClick: openChangesView, hint: "Review the current scope while you keep refining the request in chat." },
+        { label: octoT("actions.view_scope"), primary: true, onClick: openChangesView, hint: octoT("hints.view_scope") },
       ];
     }
-    if (requestStage === "Ready to Apply") {
+    if (requestStage === "ready_to_apply") {
       return [
-        { label: "Apply to Sandbox", primary: true, onClick: doApplyRevision, hint: "Apply the validated revision and refresh the preview automatically." },
-        { label: "View Changes", onClick: openChangesView },
+        { label: octoT("actions.apply_to_sandbox"), primary: true, onClick: doApplyRevision, hint: octoT("hints.apply_revision") },
+        { label: octoT("actions.view_changes"), onClick: openChangesView },
       ];
     }
-    if (requestStage === "Applying to Sandbox") {
+    if (requestStage === "applying") {
       return [
-        { label: "Applying to Sandbox", primary: true, onClick: () => {}, disabled: true, hint: "The preview will refresh automatically when the apply completes." },
+        { label: octoT("actions.applying_to_sandbox"), primary: true, onClick: () => {}, disabled: true, hint: octoT("hints.applying") },
       ];
     }
-    if (requestStage === "Publishing") {
+    if (requestStage === "publishing") {
       return [
-        { label: "Publishing", primary: true, onClick: () => {}, disabled: true, hint: "Publishing this request to live now." },
+        { label: octoT("actions.publishing"), primary: true, onClick: () => {}, disabled: true, hint: octoT("hints.publishing") },
       ];
     }
-    if (requestStage === "Published") {
+    if (requestStage === "published") {
       return [
-        { label: "View Live", primary: true, onClick: doOpenLiveReference, hint: "Open the live workspace to confirm the published result." },
-        { label: "Roll Back", onClick: doRollbackRelease, disabled: !latestPromotedRelease?.id },
-        { label: "New Change Request", onClick: () => navigate("/octo-ai") },
+        { label: octoT("actions.view_live"), primary: true, onClick: doOpenLiveReference, hint: octoT("hints.view_live") },
+        { label: octoT("actions.roll_back"), onClick: doRollbackRelease, disabled: !latestPromotedRelease?.id },
+        { label: octoT("actions.new_change_request"), onClick: () => navigate("/octo-ai") },
       ];
     }
     return [];
-  }, [activeQuestionMeta?.kind, agentTab, appliedRevisions.length, currentSandboxRevision?.id, doPromoteRelease, hasPendingQuestion, latestPromotedRelease?.id, openChangesView, publishingRevision, requestStage, restoringRevision, selectedRevision, selectedRevisionRelease?.status, navigate]);
+  }, [activeQuestionMeta?.kind, appliedRevisions.length, currentSandboxRevision?.id, hasPendingQuestion, latestPromotedRelease?.id, openChangesView, publishingRevision, requestStage, restoringRevision, selectedRevision, selectedRevisionRelease?.status, navigate, t]);
 
   const previewPane = (
     <div className={`relative h-full min-h-0 overflow-hidden ${isMobile ? "bg-base-100" : DESKTOP_PANEL_SHELL}`}>
@@ -982,15 +986,15 @@ export default function OctoAiWorkspacePage() {
       ) : null}
       {applyingRevision || publishingRevision ? (
         <div className="absolute right-3 top-3 z-10 rounded-full border border-base-200 bg-base-100/95 px-3 py-1 text-xs shadow-sm">
-          {applyingRevision ? "Applying revision..." : "Publishing..."}
+          {applyingRevision ? octoT("preview.applying_revision_short") : octoT("preview.publishing_short")}
         </div>
       ) : null}
       {!data.session?.sandbox_workspace_id ? (
-        <div className="flex h-full items-center justify-center p-4 text-sm opacity-60">No sandbox workspace is attached to this session yet.</div>
+        <div className="flex h-full items-center justify-center p-4 text-sm opacity-60">{octoT("preview.no_sandbox_workspace")}</div>
       ) : (
         <iframe
           key={`${workspaceFrameSrc}:${previewNonce}`}
-          title="Sandbox workspace preview"
+          title={octoT("preview.title")}
           src={workspaceFrameSrc}
           className="h-full w-full border-0 bg-base-100"
         />
@@ -1012,13 +1016,13 @@ export default function OctoAiWorkspacePage() {
             className={`w-full rounded-lg border p-3 text-left ${isSelected ? "border-primary bg-primary/5" : "border-base-300 bg-base-100"}`}
           >
             <div className="flex items-center justify-between gap-3">
-              <div className="text-sm font-medium">Revision {appliedRevisions.length - index}</div>
+              <div className="text-sm font-medium">{octoT("revision.list_item", { number: appliedRevisions.length - index })}</div>
               <div className="flex items-center gap-2">
-                {isCurrent ? <StatusChip label="Current" tone="primary" /> : null}
-                {release?.status === "promoted" ? <StatusChip label="Published" tone="success" /> : null}
+                {isCurrent ? <StatusChip label={octoT("revision.current")} tone="primary" /> : null}
+                {release?.status === "promoted" ? <StatusChip label={octoT("revision.published")} tone="success" /> : null}
               </div>
             </div>
-            <div className="mt-2 text-sm opacity-80">{summarizePatchsetRevision(patchset)}</div>
+            <div className="mt-2 text-sm opacity-80">{summarizePatchsetRevision(patchset, octoT)}</div>
           </button>
         );
       })}
@@ -1033,7 +1037,7 @@ export default function OctoAiWorkspacePage() {
             {renderedMessages.length > 0 ? (
               renderedMessages.map((msg) => (
                 <div key={msg.id} className={`chat ${messageRoleClass(msg)}`}>
-                  <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{messageRoleLabel(msg)}</div>
+                  <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{messageRoleLabel(msg, octoT)}</div>
                   <div className={`${messageBubbleClass(msg)} whitespace-pre-wrap`}>
                     {msg.pending ? (
                       <div className="flex items-center gap-2">
@@ -1041,16 +1045,16 @@ export default function OctoAiWorkspacePage() {
                         <span>{msg.body}</span>
                       </div>
                     ) : (
-                      chatMessageText(msg)
+                      chatMessageText(msg, octoT)
                     )}
                   </div>
                 </div>
               ))
             ) : (
               <div className="chat chat-start">
-                <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">assistant</div>
+                <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{octoT("chat.roles.assistant")}</div>
                 <div className={`${messageBubbleClass({ role: "assistant" })} whitespace-pre-wrap`}>
-                  Describe the change you want to make. I will plan it first, then show the right workflow actions when there is something real to act on.
+                  {octoT("chat.empty")}
                 </div>
               </div>
             )}
@@ -1059,7 +1063,7 @@ export default function OctoAiWorkspacePage() {
           <div className="border-t border-base-200 pt-3 space-y-2">
             {hasPendingQuestion && activeQuestion ? (
               <div className="rounded-lg border border-base-300 bg-base-50 px-3 py-2 text-sm">
-                <div className="text-xs font-medium uppercase tracking-wide opacity-60">Needs input</div>
+                <div className="text-xs font-medium uppercase tracking-wide opacity-60">{octoT("chat.needs_input")}</div>
                 <div className="mt-1 whitespace-pre-wrap">{activeQuestion}</div>
               </div>
             ) : null}
@@ -1071,7 +1075,7 @@ export default function OctoAiWorkspacePage() {
                 <input
                   type="text"
                   className="input input-bordered input-sm w-full"
-                  placeholder="Field label"
+                  placeholder={octoT("field_spec.label_placeholder")}
                   value={fieldSpecLabel}
                   onChange={(e) => setFieldSpecLabel(e.target.value)}
                 />
@@ -1087,7 +1091,7 @@ export default function OctoAiWorkspacePage() {
               value={message}
               onChange={setMessage}
               onSend={sendMessage}
-              placeholder={hasPendingQuestion ? (questionNeedsTypedReply(activeQuestionMeta) ? "Type the missing detail or correction here..." : "Reply with clarification or extra instructions...") : composerPlaceholder}
+              placeholder={hasPendingQuestion ? (questionNeedsTypedReply(activeQuestionMeta) ? octoT("placeholders.question_reply") : octoT("placeholders.question_clarification")) : composerPlaceholder}
               disabled={streaming || busy || applyingRevision || publishingRevision || restoringRevision}
               minRows={4}
             />
@@ -1097,9 +1101,9 @@ export default function OctoAiWorkspacePage() {
         <LoadingSpinner className="min-h-0 h-full" />
       ) : (
         <ProviderUnavailableState
-          title="OpenAI not connected"
-          description="Connect an OpenAI key for this workspace to use Octo AI."
-          actionLabel="Connect OpenAI"
+          title={octoT("provider_unavailable.title")}
+          description={octoT("provider_unavailable.description")}
+          actionLabel={octoT("provider_unavailable.action")}
           canManageSettings={canManageSettings}
           loading={providerStatusLoading}
           onAction={() => setOpenAiModalOpen(true)}
@@ -1110,10 +1114,10 @@ export default function OctoAiWorkspacePage() {
 
   const mobileDetailsPane = (
     <div className="space-y-3">
-      <InfoList title="Plan Summary" items={planSummaryText ? [planSummaryText] : []} emptyText="No summary yet." />
-      <InfoList title="Changes" items={changeSummaries} emptyText="Describe the change in chat to generate a scoped plan." />
-      <InfoList title="Modules" items={moduleSummaries} emptyText="Modules will appear here once the plan is scoped." />
-      <InfoList title="Advisories" items={latestAdvisories} emptyText="No advisories for this draft." />
+      <InfoList title={octoT("lists.plan_summary")} items={planSummaryText ? [planSummaryText] : []} emptyText={octoT("lists.no_summary")} />
+      <InfoList title={octoT("lists.changes")} items={changeSummaries} emptyText={octoT("lists.no_changes")} />
+      <InfoList title={octoT("lists.modules")} items={moduleSummaries} emptyText={octoT("lists.no_modules")} />
+      <InfoList title={octoT("lists.advisories")} items={latestAdvisories} emptyText={octoT("lists.no_advisories")} />
     </div>
   );
 
@@ -1122,8 +1126,8 @@ export default function OctoAiWorkspacePage() {
       {appliedRevisions.length > 0 ? (
         <Tabs
           tabs={[
-            { id: "chat", label: "Chat" },
-            { id: "revisions", label: `Revisions (${appliedRevisions.length})` },
+            { id: "chat", label: octoT("tabs.chat") },
+            { id: "revisions", label: octoT("tabs.revisions_count", { count: appliedRevisions.length }) },
           ]}
           activeId={agentTab}
           onChange={setAgentTab}
@@ -1142,21 +1146,21 @@ export default function OctoAiWorkspacePage() {
         {error ? <div className="alert alert-error text-sm rounded-none">{error}</div> : null}
         <div className="flex-1 min-h-0 flex flex-col bg-base-100 overflow-hidden">
           {loading ? (
-            <div className="flex-1 min-h-0 flex items-center justify-center px-4 text-sm opacity-70">Loading workspace...</div>
+            <div className="flex-1 min-h-0 flex items-center justify-center px-4 text-sm opacity-70">{octoT("loading_workspace")}</div>
           ) : !data.session?.sandbox_workspace_id || data.session?.sandbox_status === "discarded" ? (
             <div className="flex-1 min-h-0 flex flex-col px-4 py-5">
               <div className="rounded-none text-center gap-4 flex flex-col">
-                <h2 className="text-lg font-semibold">Sandbox not ready</h2>
+                <h2 className="text-lg font-semibold">{octoT("sandbox_not_ready.title")}</h2>
                 <p className="text-sm opacity-75">
                   {activeSession
-                    ? "Create the sandbox for this request, then keep working here with the live sandbox preview."
-                    : "This session no longer has an active sandbox. Historical sessions stay readable, but only active sessions can launch a sandbox."}
+                    ? octoT("sandbox_not_ready.active_description")
+                    : octoT("sandbox_not_ready.inactive_description")}
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-2">
-                  <button className={SOFT_BUTTON_SM} onClick={() => navigate("/octo-ai")}>Back to sessions</button>
-                  <button className={SOFT_BUTTON_SM} onClick={() => navigate(`/octo-ai/sessions/${sessionId}`)}>View history</button>
+                  <button className={SOFT_BUTTON_SM} onClick={() => navigate("/octo-ai")}>{octoT("actions.back_to_sessions")}</button>
+                  <button className={SOFT_BUTTON_SM} onClick={() => navigate(`/octo-ai/sessions/${sessionId}`)}>{octoT("actions.view_history")}</button>
                   {activeSession ? (
-                    <button className={PRIMARY_BUTTON_SM} disabled={busy} onClick={doEnsureSandbox}>Create Sandbox</button>
+                    <button className={PRIMARY_BUTTON_SM} disabled={busy} onClick={doEnsureSandbox}>{octoT("actions.create_sandbox")}</button>
                   ) : null}
                 </div>
               </div>
@@ -1166,12 +1170,12 @@ export default function OctoAiWorkspacePage() {
               <div className="shrink-0 border-b border-base-200 bg-base-100 px-4 py-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-lg font-semibold truncate">{data.session?.title || "Change Request"}</div>
+                    <div className="text-lg font-semibold truncate">{data.session?.title || t("settings.octo_ai.change_request")}</div>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <StatusChip label={requestStage} tone={stageTone} />
+                      <StatusChip label={requestStageLabel} tone={stageTone} />
                       {selectedRevision ? (
                         <span className="text-xs opacity-60">
-                          {selectedRevision.id === currentSandboxRevision?.id ? "Current revision" : `Selected revision ${selectedRevision.id.slice(0, 8)}`}
+                          {selectedRevision.id === currentSandboxRevision?.id ? octoT("revision.current") : octoT("revision.selected_short", { id: selectedRevision.id.slice(0, 8) })}
                         </span>
                       ) : null}
                     </div>
@@ -1186,11 +1190,11 @@ export default function OctoAiWorkspacePage() {
                           setMobileUtilitySheet("agent");
                         }}
                       >
-                        Revisions
+                        {octoT("actions.revisions")}
                       </button>
                     ) : null}
                     <button type="button" className={PRIMARY_BUTTON_SM} onClick={() => setMobileUtilitySheet("agent")}>
-                      AI
+                      {octoT("actions.ai")}
                     </button>
                   </div>
                 </div>
@@ -1208,16 +1212,16 @@ export default function OctoAiWorkspacePage() {
             <button
               type="button"
               className="absolute inset-0 bg-base-content/35"
-              aria-label="Close panel"
+              aria-label={octoT("mobile.close_panel")}
               onClick={() => setMobileUtilitySheet("")}
             />
             <div className="absolute inset-x-0 bottom-0 max-h-[85vh] rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4 flex flex-col">
               <div className="mx-auto mb-4 h-1.5 w-24 rounded-full bg-base-300" />
               <div className="flex items-center justify-between gap-2 pb-3">
                 <div className="text-sm font-semibold">
-                  {mobileUtilitySheet === "agent" ? "Octo AI" : mobileUtilitySheet === "preview" ? "Sandbox Preview" : "Plan Details"}
+                  {mobileUtilitySheet === "agent" ? octoT("mobile.agent") : mobileUtilitySheet === "preview" ? octoT("mobile.preview") : octoT("mobile.details")}
                 </div>
-                <button type="button" className={SOFT_BUTTON_SM} onClick={() => setMobileUtilitySheet("")}>Done</button>
+                <button type="button" className={SOFT_BUTTON_SM} onClick={() => setMobileUtilitySheet("")}>{t("common.done")}</button>
               </div>
               <div className="flex-1 min-h-0 overflow-auto">
                 {mobileUtilitySheet === "preview"
@@ -1240,22 +1244,22 @@ export default function OctoAiWorkspacePage() {
       <div className="flex-1 min-h-0">
         {loading ? (
           <div className="card bg-base-100 shadow h-full min-h-0 flex items-center justify-center overflow-hidden">
-            <div className="opacity-70">Loading workspace...</div>
+            <div className="opacity-70">{octoT("loading_workspace")}</div>
           </div>
         ) : !data.session?.sandbox_workspace_id || data.session?.sandbox_status === "discarded" ? (
           <div className="card bg-base-100 shadow h-full min-h-0 flex items-center justify-center overflow-hidden">
             <div className="max-w-xl space-y-4 p-6 text-center">
-              <h2 className="text-xl font-semibold">Sandbox not ready</h2>
+              <h2 className="text-xl font-semibold">{octoT("sandbox_not_ready.title")}</h2>
               <p className="text-sm opacity-75">
                 {activeSession
-                  ? "Create the sandbox for this request, then keep working here with the live sandbox preview."
-                  : "This session no longer has an active sandbox. Historical sessions stay readable, but only active sessions can launch a sandbox."}
+                  ? octoT("sandbox_not_ready.active_description")
+                  : octoT("sandbox_not_ready.inactive_description")}
               </p>
               <div className="flex items-center justify-center gap-2">
-                <button className={SOFT_BUTTON_SM} onClick={() => navigate("/octo-ai")}>Back to sessions</button>
-                <button className={SOFT_BUTTON_SM} onClick={() => navigate(`/octo-ai/sessions/${sessionId}`)}>View history</button>
+                <button className={SOFT_BUTTON_SM} onClick={() => navigate("/octo-ai")}>{octoT("actions.back_to_sessions")}</button>
+                <button className={SOFT_BUTTON_SM} onClick={() => navigate(`/octo-ai/sessions/${sessionId}`)}>{octoT("actions.view_history")}</button>
                 {activeSession ? (
-                  <button className={PRIMARY_BUTTON_SM} disabled={busy} onClick={doEnsureSandbox}>Create Sandbox</button>
+                  <button className={PRIMARY_BUTTON_SM} disabled={busy} onClick={doEnsureSandbox}>{octoT("actions.create_sandbox")}</button>
                 ) : null}
               </div>
             </div>
@@ -1275,12 +1279,12 @@ export default function OctoAiWorkspacePage() {
                 <div className="border-b border-base-200 px-4 py-4">
                   <div className="space-y-3">
                     <div>
-                      <div className="text-sm font-semibold">{data.session?.title || "Change Request"}</div>
+                      <div className="text-sm font-semibold">{data.session?.title || t("settings.octo_ai.change_request")}</div>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <StatusChip label={requestStage} tone={stageTone} />
+                        <StatusChip label={requestStageLabel} tone={stageTone} />
                         {selectedRevision ? (
                           <span className="text-xs opacity-60">
-                            {selectedRevision.id === currentSandboxRevision?.id ? "Current revision" : `Selected revision ${selectedRevision.id.slice(0, 8)}`}
+                            {selectedRevision.id === currentSandboxRevision?.id ? octoT("revision.current") : octoT("revision.selected_short", { id: selectedRevision.id.slice(0, 8) })}
                           </span>
                         ) : null}
                       </div>
@@ -1290,8 +1294,8 @@ export default function OctoAiWorkspacePage() {
                     <div className="mt-3">
                       <Tabs
                         tabs={[
-                          { id: "chat", label: "Chat" },
-                          { id: "revisions", label: `Revisions (${appliedRevisions.length})` },
+                          { id: "chat", label: octoT("tabs.chat") },
+                          { id: "revisions", label: octoT("tabs.revisions_count", { count: appliedRevisions.length }) },
                         ]}
                         activeId={agentTab}
                         onChange={setAgentTab}
@@ -1312,7 +1316,7 @@ export default function OctoAiWorkspacePage() {
           </PanelGroup>
         )}
       </div>
-      <DetailsDrawer open={detailsOpen} onClose={() => setDetailsOpen(false)} activeTab={detailsTab} onTabChange={setDetailsTab} sections={detailsPayload} />
+      <DetailsDrawer open={detailsOpen} onClose={() => setDetailsOpen(false)} activeTab={detailsTab} onTabChange={setDetailsTab} sections={detailsPayload} t={octoT} />
       <ProviderSecretModal
         open={openAiModalOpen}
         providerKey="openai"

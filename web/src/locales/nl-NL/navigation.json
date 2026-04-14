@@ -1,0 +1,17 @@
+{
+  "core": "Kern",
+  "home": "Start",
+  "apps": "Apps",
+  "app_manager": "Appbeheer",
+  "ops": "Ops",
+  "octo_ai": "Octo AI",
+  "notifications": "Meldingen",
+  "automations": "Automatiseringen",
+  "integrations": "Integraties",
+  "studio": "Studio",
+  "audit": "Controle",
+  "settings": "Instellingen",
+  "security": "Beveiliging",
+  "enabled_apps": "Ingeschakelde apps",
+  "open_app": "App openen"
+}

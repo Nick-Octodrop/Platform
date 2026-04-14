@@ -3,6 +3,7 @@ import { MoreHorizontal } from "lucide-react";
 import Tabs from "../components/Tabs.jsx";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "./pageShell.js";
+import { translateRuntime } from "../i18n/runtime.js";
 
 // A reusable "studio-like" shell: title + tabs + a single scrollable pane.
 // Used for settings/reference pages that should feel like the studio tab pane (no side panels).
@@ -73,7 +74,7 @@ export default function TabbedPaneShell({
                   <button
                     type="button"
                     className="btn btn-sm btn-ghost"
-                    aria-label="More actions"
+                    aria-label={translateRuntime("common.more_actions")}
                     onClick={() => setMobileActionsOpen((open) => !open)}
                   >
                     <MoreHorizontal className="h-4 w-4" />

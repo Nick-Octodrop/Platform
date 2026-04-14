@@ -1,0 +1,250 @@
+{
+  "module": {
+    "name": "Calendrier",
+    "description": "Calendrier d'équipe pour le suivi des ventes, les visites de sites, les transferts de commandes, les appels d'approvisionnement et les étapes financières."
+  },
+  "navigation": {
+    "biz_calendar_event_calendar_page": "Calendrier",
+    "biz_calendar_event_mine_page": "Mon calendrier",
+    "biz_calendar_event_site_visits_page": "Visites de sites",
+    "biz_calendar_event_operations_page": "Opérations",
+    "biz_calendar_event_finance_page": "Finances"
+  },
+  "entities": {
+    "biz_calendar_event": {
+      "label": "Événement du calendrier",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "title": {
+          "label": "Événement"
+        },
+        "event_type": {
+          "label": "Tapez",
+          "options": {
+            "call": "Appeler",
+            "meeting": "Réunion",
+            "site_visit": "Visite du site",
+            "quote_follow_up": "Suivi des devis",
+            "order_handoff": "Transfert de commande",
+            "supplier_check_in": "Enregistrement des fournisseurs",
+            "finance_review": "Examen des finances",
+            "internal": "Interne"
+          }
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "planned": "Prévu",
+            "confirmed": "Confirmé",
+            "done": "Terminé",
+            "cancelled": "Annulé"
+          }
+        },
+        "start_at": {
+          "label": "Commencer"
+        },
+        "end_at": {
+          "label": "Fin"
+        },
+        "all_day": {
+          "label": "Toute la journée"
+        },
+        "owner_user_id": {
+          "label": "Propriétaire"
+        },
+        "participant_user_ids": {
+          "label": "Participants"
+        },
+        "visibility": {
+          "label": "Visibilité",
+          "options": {
+            "private": "Privé",
+            "team": "Équipe",
+            "directors": "Directeurs"
+          }
+        },
+        "location": {
+          "label": "Emplacement"
+        },
+        "company_id": {
+          "label": "Entreprise"
+        },
+        "lead_id": {
+          "label": "Diriger"
+        },
+        "opportunity_id": {
+          "label": "Opportunité"
+        },
+        "site_id": {
+          "label": "Site"
+        },
+        "task_id": {
+          "label": "Tâche"
+        },
+        "quote_id": {
+          "label": "Citation"
+        },
+        "order_id": {
+          "label": "Commande"
+        },
+        "purchase_order_id": {
+          "label": "Bon de commande"
+        },
+        "invoice_id": {
+          "label": "Facture"
+        },
+        "description": {
+          "label": "Descriptif"
+        },
+        "cancel_reason": {
+          "label": "Raison de l'annulation"
+        },
+        "attachments": {
+          "label": "Pièces jointes"
+        },
+        "created_at": {
+          "label": "Créé à"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_biz_calendar_event_new": {
+      "label": "Nouvel événement"
+    },
+    "action_biz_calendar_event_confirm": {
+      "label": "Confirmer"
+    },
+    "action_biz_calendar_event_done": {
+      "label": "Marquer terminé"
+    },
+    "action_biz_calendar_event_cancel": {
+      "label": "Annuler"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Rechercher un calendrier..."
+      },
+      "filters": {
+        "planned": {
+          "label": "Prévu"
+        },
+        "mine": {
+          "label": "Mon calendrier"
+        },
+        "crm": {
+          "label": "Événements CRM"
+        },
+        "site_visits": {
+          "label": "Visites de sites"
+        },
+        "operations": {
+          "label": "Opérations"
+        },
+        "finance": {
+          "label": "Finances"
+        },
+        "done": {
+          "label": "Terminé"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Événement"
+        },
+        "links": {
+          "title": "Enregistrements associés"
+        },
+        "details": {
+          "title": "Détails"
+        }
+      }
+    }
+  },
+  "modals": {
+    "biz_calendar_event_cancel": {
+      "title": "Annuler l'événement",
+      "actions": {
+        "update_record": {
+          "label": "Annuler l'événement"
+        },
+        "close_modal": {
+          "label": "Restez planifié"
+        }
+      }
+    }
+  },
+  "pages": {
+    "calendar_page": {
+      "title": "Calendrier"
+    },
+    "list_page": {
+      "title": "Événements du calendrier"
+    },
+    "mine_page": {
+      "title": "Mon calendrier"
+    },
+    "site_visits_page": {
+      "title": "Visites de sites"
+    },
+    "operations_page": {
+      "title": "Calendrier des opérations"
+    },
+    "finance_page": {
+      "title": "Calendrier financier"
+    },
+    "form_page": {
+      "title": "Événement du calendrier"
+    }
+  },
+  "workflows": {
+    "biz_calendar_event_status_workflow": {
+      "states": {
+        "planned": {
+          "label": "Prévu"
+        },
+        "confirmed": {
+          "label": "Confirmé"
+        },
+        "done": {
+          "label": "Terminé"
+        },
+        "cancelled": {
+          "label": "Annulé"
+        }
+      },
+      "transitions": {
+        "planned_confirmed": {
+          "label": "Confirmer"
+        },
+        "planned_done": {
+          "label": "Marquer terminé"
+        },
+        "confirmed_done": {
+          "label": "Marquer terminé"
+        },
+        "planned_cancelled": {
+          "label": "Annuler"
+        },
+        "confirmed_cancelled": {
+          "label": "Annuler"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "event_created": "Événement de calendrier créé",
+    "event_updated": "Calendrier des événements mis à jour",
+    "event_status_changed": "Le statut de l'événement du calendrier a été modifié",
+    "new_event_clicked": "Nouvel événement cliqué",
+    "confirm_clicked": "Confirmer le clic",
+    "mark_done_clicked": "Mark Terminé a cliqué",
+    "cancel_clicked": "Annuler cliqué"
+  }
+}

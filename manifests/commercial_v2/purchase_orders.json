@@ -7,12 +7,20 @@
     "version": "1.0.0",
     "description": "Supplier purchasing linked back to customer orders.",
     "category": "Commercial",
-    "icon_key": "lucide:Truck"
+    "icon_key": "lucide:Truck",
+    "name_key": "purchase_orders.module.name",
+    "description_key": "purchase_orders.module.description"
   },
   "depends_on": {
     "required": [
-      { "module": "biz_contacts", "version": ">=1.0.0" },
-      { "module": "biz_products", "version": ">=1.0.0" }
+      {
+        "module": "biz_contacts",
+        "version": ">=1.0.0"
+      },
+      {
+        "module": "biz_products",
+        "version": ">=1.0.0"
+      }
     ]
   },
   "app": {
@@ -36,11 +44,31 @@
         "group": "Commercial",
         "mode": "inline",
         "items": [
-          { "label": "Purchase Orders", "to": "page:biz_purchase_order.list_page" },
-          { "label": "Sent", "to": "page:biz_purchase_order.sent_page" },
-          { "label": "In Production", "to": "page:biz_purchase_order.production_page" },
-          { "label": "Shipped", "to": "page:biz_purchase_order.shipped_page" },
-          { "label": "Received", "to": "page:biz_purchase_order.received_page" }
+          {
+            "label": "Purchase Orders",
+            "to": "page:biz_purchase_order.list_page",
+            "menu_label_key": "purchase_orders.navigation.biz_purchase_order_list_page"
+          },
+          {
+            "label": "Sent",
+            "to": "page:biz_purchase_order.sent_page",
+            "menu_label_key": "purchase_orders.navigation.biz_purchase_order_sent_page"
+          },
+          {
+            "label": "In Production",
+            "to": "page:biz_purchase_order.production_page",
+            "menu_label_key": "purchase_orders.navigation.biz_purchase_order_production_page"
+          },
+          {
+            "label": "Shipped",
+            "to": "page:biz_purchase_order.shipped_page",
+            "menu_label_key": "purchase_orders.navigation.biz_purchase_order_shipped_page"
+          },
+          {
+            "label": "Received",
+            "to": "page:biz_purchase_order.received_page",
+            "menu_label_key": "purchase_orders.navigation.biz_purchase_order_received_page"
+          }
         ]
       }
     ]
@@ -51,26 +79,86 @@
       "label": "Purchase Order",
       "display_field": "biz_purchase_order.po_number",
       "fields": [
-        { "id": "biz_purchase_order.id", "type": "uuid", "label": "ID", "readonly": true },
-        { "id": "biz_purchase_order.po_number", "type": "string", "label": "PO Number", "readonly": true },
+        {
+          "id": "biz_purchase_order.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true,
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.id.label"
+        },
+        {
+          "id": "biz_purchase_order.po_number",
+          "type": "string",
+          "label": "PO Number",
+          "readonly": true,
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.po_number.label"
+        },
         {
           "id": "biz_purchase_order.status",
           "type": "enum",
           "label": "Status",
-          "ui": { "widget": "steps" },
+          "ui": {
+            "widget": "steps"
+          },
           "required": true,
           "default": "draft",
           "options": [
-            { "value": "draft", "label": "Draft" },
-            { "value": "sent_to_supplier", "label": "Sent to Supplier" },
-            { "value": "confirmed", "label": "Confirmed" },
-            { "value": "on_hold", "label": "On Hold" },
-            { "value": "in_production", "label": "In Production" },
-            { "value": "shipped", "label": "Shipped" },
-            { "value": "received", "label": "Received" },
-            { "value": "closed", "label": "Closed" },
-            { "value": "cancelled", "label": "Cancelled" }
-          ]
+            {
+              "value": "draft",
+              "label": "Draft",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order.fields.status.options.draft",
+              "label_key": "purchase_orders.entities.biz_purchase_order.fields.status.options.draft"
+            },
+            {
+              "value": "sent_to_supplier",
+              "label": "Sent to Supplier",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order.fields.status.options.sent_to_supplier",
+              "label_key": "purchase_orders.entities.biz_purchase_order.fields.status.options.sent_to_supplier"
+            },
+            {
+              "value": "confirmed",
+              "label": "Confirmed",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order.fields.status.options.confirmed",
+              "label_key": "purchase_orders.entities.biz_purchase_order.fields.status.options.confirmed"
+            },
+            {
+              "value": "on_hold",
+              "label": "On Hold",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order.fields.status.options.on_hold",
+              "label_key": "purchase_orders.entities.biz_purchase_order.fields.status.options.on_hold"
+            },
+            {
+              "value": "in_production",
+              "label": "In Production",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order.fields.status.options.in_production",
+              "label_key": "purchase_orders.entities.biz_purchase_order.fields.status.options.in_production"
+            },
+            {
+              "value": "shipped",
+              "label": "Shipped",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order.fields.status.options.shipped",
+              "label_key": "purchase_orders.entities.biz_purchase_order.fields.status.options.shipped"
+            },
+            {
+              "value": "received",
+              "label": "Received",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order.fields.status.options.received",
+              "label_key": "purchase_orders.entities.biz_purchase_order.fields.status.options.received"
+            },
+            {
+              "value": "closed",
+              "label": "Closed",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order.fields.status.options.closed",
+              "label_key": "purchase_orders.entities.biz_purchase_order.fields.status.options.closed"
+            },
+            {
+              "value": "cancelled",
+              "label": "Cancelled",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order.fields.status.options.cancelled",
+              "label_key": "purchase_orders.entities.biz_purchase_order.fields.status.options.cancelled"
+            }
+          ],
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.status.label"
         },
         {
           "id": "biz_purchase_order.supplier_id",
@@ -78,7 +166,8 @@
           "label": "Supplier",
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
-          "required": true
+          "required": true,
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.supplier_id.label"
         },
         {
           "id": "biz_purchase_order.purchasing_entity",
@@ -86,9 +175,20 @@
           "label": "Purchasing Entity",
           "default": "EcoTech FZCO",
           "options": [
-            { "value": "NLight BV", "label": "NLight BV" },
-            { "value": "EcoTech FZCO", "label": "EcoTech FZCO" }
-          ]
+            {
+              "value": "NLight BV",
+              "label": "NLight BV",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order.fields.purchasing_entity.options.nlight_bv",
+              "label_key": "purchase_orders.entities.biz_purchase_order.fields.purchasing_entity.options.nlight_bv"
+            },
+            {
+              "value": "EcoTech FZCO",
+              "label": "EcoTech FZCO",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order.fields.purchasing_entity.options.ecotech_fzco",
+              "label_key": "purchase_orders.entities.biz_purchase_order.fields.purchasing_entity.options.ecotech_fzco"
+            }
+          ],
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.purchasing_entity.label"
         },
         {
           "id": "biz_purchase_order.source_customer_order_id",
@@ -97,47 +197,128 @@
           "entity": "entity.biz_order",
           "display_field": "biz_order.order_number",
           "readonly": true,
-          "visible_when": { "op": "exists", "field": "biz_purchase_order.source_customer_order_id" }
+          "visible_when": {
+            "op": "exists",
+            "field": "biz_purchase_order.source_customer_order_id"
+          },
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.source_customer_order_id.label"
         },
-        { "id": "biz_purchase_order.source_customer_order_number", "type": "string", "label": "Source Order", "readonly": true },
-        { "id": "biz_purchase_order.po_date", "type": "date", "label": "PO Date" },
+        {
+          "id": "biz_purchase_order.source_customer_order_number",
+          "type": "string",
+          "label": "Source Order",
+          "readonly": true,
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.source_customer_order_number.label"
+        },
+        {
+          "id": "biz_purchase_order.po_date",
+          "type": "date",
+          "label": "PO Date",
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.po_date.label"
+        },
         {
           "id": "biz_purchase_order.currency",
           "type": "enum",
           "label": "Currency",
           "default": "USD",
           "options": [
-            { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" },
-            { "value": "GBP", "label": "GBP" },
-            { "value": "AED", "label": "AED" }
-          ]
+            {
+              "value": "EUR",
+              "label": "EUR",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order.fields.currency.options.eur",
+              "label_key": "purchase_orders.entities.biz_purchase_order.fields.currency.options.eur"
+            },
+            {
+              "value": "USD",
+              "label": "USD",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order.fields.currency.options.usd",
+              "label_key": "purchase_orders.entities.biz_purchase_order.fields.currency.options.usd"
+            },
+            {
+              "value": "GBP",
+              "label": "GBP",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order.fields.currency.options.gbp",
+              "label_key": "purchase_orders.entities.biz_purchase_order.fields.currency.options.gbp"
+            },
+            {
+              "value": "AED",
+              "label": "AED",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order.fields.currency.options.aed",
+              "label_key": "purchase_orders.entities.biz_purchase_order.fields.currency.options.aed"
+            }
+          ],
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.currency.label"
         },
-        { "id": "biz_purchase_order.supplier_reference", "type": "string", "label": "Supplier Reference" },
-        { "id": "biz_purchase_order.incoterm", "type": "string", "label": "Incoterm" },
-        { "id": "biz_purchase_order.expected_ship_date", "type": "date", "label": "Expected Ship Date" },
-        { "id": "biz_purchase_order.expected_arrival_date", "type": "date", "label": "Expected Arrival Date" },
-        { "id": "biz_purchase_order.notes", "type": "text", "label": "Notes" },
+        {
+          "id": "biz_purchase_order.supplier_reference",
+          "type": "string",
+          "label": "Supplier Reference",
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.supplier_reference.label"
+        },
+        {
+          "id": "biz_purchase_order.incoterm",
+          "type": "string",
+          "label": "Incoterm",
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.incoterm.label"
+        },
+        {
+          "id": "biz_purchase_order.expected_ship_date",
+          "type": "date",
+          "label": "Expected Ship Date",
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.expected_ship_date.label"
+        },
+        {
+          "id": "biz_purchase_order.expected_arrival_date",
+          "type": "date",
+          "label": "Expected Arrival Date",
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.expected_arrival_date.label"
+        },
+        {
+          "id": "biz_purchase_order.notes",
+          "type": "text",
+          "label": "Notes",
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.notes.label"
+        },
         {
           "id": "biz_purchase_order.hold_reason",
           "type": "text",
           "label": "On Hold Reason",
-          "required_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "on_hold" }
+          "required_when": {
+            "op": "eq",
+            "field": "biz_purchase_order.status",
+            "value": "on_hold"
+          },
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.hold_reason.label"
         },
         {
           "id": "biz_purchase_order.cancellation_reason",
           "type": "text",
           "label": "Cancellation Reason",
-          "required_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "cancelled" }
+          "required_when": {
+            "op": "eq",
+            "field": "biz_purchase_order.status",
+            "value": "cancelled"
+          },
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.cancellation_reason.label"
         },
-        { "id": "biz_purchase_order.status_before_hold", "type": "string", "label": "Previous Status", "readonly": true },
+        {
+          "id": "biz_purchase_order.status_before_hold",
+          "type": "string",
+          "label": "Previous Status",
+          "readonly": true,
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.status_before_hold.label"
+        },
         {
           "id": "biz_purchase_order.po_total",
           "type": "number",
           "label": "PO Total",
           "readonly": true,
           "default": 0,
-          "format": { "kind": "currency", "currency_field": "biz_purchase_order.currency", "precision": 2 },
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_purchase_order.currency",
+            "precision": 2
+          },
           "compute": {
             "aggregate": {
               "op": "sum",
@@ -146,17 +327,25 @@
               "where": {
                 "op": "eq",
                 "field": "biz_purchase_order_line.purchase_order_id",
-                "value": { "ref": "$parent.id" }
+                "value": {
+                  "ref": "$parent.id"
+                }
               }
             }
-          }
+          },
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.po_total.label"
         },
         {
           "id": "biz_purchase_order.freight_estimate",
           "type": "number",
           "label": "Freight Estimate",
           "default": 0,
-          "format": { "kind": "currency", "currency_field": "biz_purchase_order.currency", "precision": 2 }
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_purchase_order.currency",
+            "precision": 2
+          },
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.freight_estimate.label"
         },
         {
           "id": "biz_purchase_order.landed_cost_estimate",
@@ -164,7 +353,11 @@
           "label": "Landed Cost Estimate",
           "readonly": true,
           "default": 0,
-          "format": { "kind": "currency", "currency_field": "biz_purchase_order.currency", "precision": 2 },
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_purchase_order.currency",
+            "precision": 2
+          },
           "compute": {
             "expression": {
               "op": "round",
@@ -172,48 +365,79 @@
                 {
                   "op": "add",
                   "args": [
-                    { "ref": "$current.biz_purchase_order.po_total" },
-                    { "ref": "$current.biz_purchase_order.freight_estimate" }
+                    {
+                      "ref": "$current.biz_purchase_order.po_total"
+                    },
+                    {
+                      "ref": "$current.biz_purchase_order.freight_estimate"
+                    }
                   ]
                 },
                 2
               ]
             }
-          }
+          },
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.landed_cost_estimate.label"
         }
-      ]
+      ],
+      "label_key": "purchase_orders.entities.biz_purchase_order.label"
     },
     {
       "id": "entity.biz_purchase_order_line",
       "label": "Purchase Order Line",
       "display_field": "biz_purchase_order_line.description",
       "fields": [
-        { "id": "biz_purchase_order_line.id", "type": "uuid", "label": "ID", "readonly": true },
+        {
+          "id": "biz_purchase_order_line.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true,
+          "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.id.label"
+        },
         {
           "id": "biz_purchase_order_line.purchase_order_id",
           "type": "lookup",
           "label": "Purchase Order",
           "entity": "entity.biz_purchase_order",
           "display_field": "biz_purchase_order.po_number",
-          "required": true
+          "required": true,
+          "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.purchase_order_id.label"
         },
         {
           "id": "biz_purchase_order_line.product_id",
           "type": "lookup",
           "label": "Product",
           "entity": "entity.biz_product",
-          "display_field": "biz_product.name"
+          "display_field": "biz_product.name",
+          "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.product_id.label"
         },
-        { "id": "biz_purchase_order_line.description", "type": "string", "label": "Description", "required": true },
+        {
+          "id": "biz_purchase_order_line.description",
+          "type": "string",
+          "label": "Description",
+          "required": true,
+          "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.description.label"
+        },
         {
           "id": "biz_purchase_order_line.purchasing_entity_snapshot",
           "type": "enum",
           "label": "Purchasing Entity Snapshot",
           "default": "EcoTech FZCO",
           "options": [
-            { "value": "NLight BV", "label": "NLight BV" },
-            { "value": "EcoTech FZCO", "label": "EcoTech FZCO" }
-          ]
+            {
+              "value": "NLight BV",
+              "label": "NLight BV",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order_line.fields.purchasing_entity_snapshot.options.nlight_bv",
+              "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.purchasing_entity_snapshot.options.nlight_bv"
+            },
+            {
+              "value": "EcoTech FZCO",
+              "label": "EcoTech FZCO",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order_line.fields.purchasing_entity_snapshot.options.ecotech_fzco",
+              "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.purchasing_entity_snapshot.options.ecotech_fzco"
+            }
+          ],
+          "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.purchasing_entity_snapshot.label"
         },
         {
           "id": "biz_purchase_order_line.currency_snapshot",
@@ -221,11 +445,32 @@
           "label": "Currency Snapshot",
           "default": "USD",
           "options": [
-            { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" },
-            { "value": "GBP", "label": "GBP" },
-            { "value": "AED", "label": "AED" }
-          ]
+            {
+              "value": "EUR",
+              "label": "EUR",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order_line.fields.currency_snapshot.options.eur",
+              "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.currency_snapshot.options.eur"
+            },
+            {
+              "value": "USD",
+              "label": "USD",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order_line.fields.currency_snapshot.options.usd",
+              "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.currency_snapshot.options.usd"
+            },
+            {
+              "value": "GBP",
+              "label": "GBP",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order_line.fields.currency_snapshot.options.gbp",
+              "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.currency_snapshot.options.gbp"
+            },
+            {
+              "value": "AED",
+              "label": "AED",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order_line.fields.currency_snapshot.options.aed",
+              "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.currency_snapshot.options.aed"
+            }
+          ],
+          "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.currency_snapshot.label"
         },
         {
           "id": "biz_purchase_order_line.uom",
@@ -233,17 +478,65 @@
           "label": "UOM",
           "default": "EA",
           "options": [
-            { "value": "EA", "label": "Each" },
-            { "value": "SET", "label": "Set" },
-            { "value": "KIT", "label": "Kit" },
-            { "value": "LOT", "label": "Lot" },
-            { "value": "PALLET", "label": "Pallet" },
-            { "value": "CONTAINER", "label": "Container" },
-            { "value": "M", "label": "Meter" }
-          ]
+            {
+              "value": "EA",
+              "label": "Each",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order_line.fields.uom.options.ea",
+              "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.uom.options.ea"
+            },
+            {
+              "value": "SET",
+              "label": "Set",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order_line.fields.uom.options.set",
+              "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.uom.options.set"
+            },
+            {
+              "value": "KIT",
+              "label": "Kit",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order_line.fields.uom.options.kit",
+              "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.uom.options.kit"
+            },
+            {
+              "value": "LOT",
+              "label": "Lot",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order_line.fields.uom.options.lot",
+              "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.uom.options.lot"
+            },
+            {
+              "value": "PALLET",
+              "label": "Pallet",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order_line.fields.uom.options.pallet",
+              "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.uom.options.pallet"
+            },
+            {
+              "value": "CONTAINER",
+              "label": "Container",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order_line.fields.uom.options.container",
+              "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.uom.options.container"
+            },
+            {
+              "value": "M",
+              "label": "Meter",
+              "status_label_key": "purchase_orders.entities.biz_purchase_order_line.fields.uom.options.m",
+              "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.uom.options.m"
+            }
+          ],
+          "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.uom.label"
         },
-        { "id": "biz_purchase_order_line.quantity", "type": "number", "label": "Qty", "default": 1 },
-        { "id": "biz_purchase_order_line.unit_cost", "type": "number", "label": "Unit Cost", "default": 0 },
+        {
+          "id": "biz_purchase_order_line.quantity",
+          "type": "number",
+          "label": "Qty",
+          "default": 1,
+          "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.quantity.label"
+        },
+        {
+          "id": "biz_purchase_order_line.unit_cost",
+          "type": "number",
+          "label": "Unit Cost",
+          "default": 0,
+          "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.unit_cost.label"
+        },
         {
           "id": "biz_purchase_order_line.line_total",
           "type": "number",
@@ -257,17 +550,29 @@
                 {
                   "op": "mul",
                   "args": [
-                    { "ref": "$current.biz_purchase_order_line.quantity" },
-                    { "ref": "$current.biz_purchase_order_line.unit_cost" }
+                    {
+                      "ref": "$current.biz_purchase_order_line.quantity"
+                    },
+                    {
+                      "ref": "$current.biz_purchase_order_line.unit_cost"
+                    }
                   ]
                 },
                 2
               ]
             }
-          }
+          },
+          "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.line_total.label"
         },
-        { "id": "biz_purchase_order_line.source_order_line_ref", "type": "string", "label": "Source Order Line Ref", "readonly": true }
-      ]
+        {
+          "id": "biz_purchase_order_line.source_order_line_ref",
+          "type": "string",
+          "label": "Source Order Line Ref",
+          "readonly": true,
+          "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.source_order_line_ref.label"
+        }
+      ],
+      "label_key": "purchase_orders.entities.biz_purchase_order_line.label"
     }
   ],
   "workflows": [
@@ -276,95 +581,390 @@
       "entity": "entity.biz_purchase_order",
       "status_field": "biz_purchase_order.status",
       "states": [
-        { "id": "draft", "label": "Draft", "required_fields": ["biz_purchase_order.supplier_id", "biz_purchase_order.currency"] },
-        { "id": "sent_to_supplier", "label": "Sent to Supplier", "required_fields": ["biz_purchase_order.supplier_id", "biz_purchase_order.po_date"] },
-        { "id": "confirmed", "label": "Confirmed", "required_fields": ["biz_purchase_order.supplier_id", "biz_purchase_order.po_date"] },
-        { "id": "on_hold", "label": "On Hold" },
-        { "id": "in_production", "label": "In Production" },
-        { "id": "shipped", "label": "Shipped" },
-        { "id": "received", "label": "Received" },
-        { "id": "closed", "label": "Closed" },
-        { "id": "cancelled", "label": "Cancelled" }
+        {
+          "id": "draft",
+          "label": "Draft",
+          "required_fields": [
+            "biz_purchase_order.supplier_id",
+            "biz_purchase_order.currency"
+          ],
+          "status_label_key": "purchase_orders.workflows.purchase_order_status_workflow.states.draft.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.states.draft.label"
+        },
+        {
+          "id": "sent_to_supplier",
+          "label": "Sent to Supplier",
+          "required_fields": [
+            "biz_purchase_order.supplier_id",
+            "biz_purchase_order.po_date"
+          ],
+          "status_label_key": "purchase_orders.workflows.purchase_order_status_workflow.states.sent_to_supplier.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.states.sent_to_supplier.label"
+        },
+        {
+          "id": "confirmed",
+          "label": "Confirmed",
+          "required_fields": [
+            "biz_purchase_order.supplier_id",
+            "biz_purchase_order.po_date"
+          ],
+          "status_label_key": "purchase_orders.workflows.purchase_order_status_workflow.states.confirmed.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.states.confirmed.label"
+        },
+        {
+          "id": "on_hold",
+          "label": "On Hold",
+          "status_label_key": "purchase_orders.workflows.purchase_order_status_workflow.states.on_hold.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.states.on_hold.label"
+        },
+        {
+          "id": "in_production",
+          "label": "In Production",
+          "status_label_key": "purchase_orders.workflows.purchase_order_status_workflow.states.in_production.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.states.in_production.label"
+        },
+        {
+          "id": "shipped",
+          "label": "Shipped",
+          "status_label_key": "purchase_orders.workflows.purchase_order_status_workflow.states.shipped.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.states.shipped.label"
+        },
+        {
+          "id": "received",
+          "label": "Received",
+          "status_label_key": "purchase_orders.workflows.purchase_order_status_workflow.states.received.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.states.received.label"
+        },
+        {
+          "id": "closed",
+          "label": "Closed",
+          "status_label_key": "purchase_orders.workflows.purchase_order_status_workflow.states.closed.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.states.closed.label"
+        },
+        {
+          "id": "cancelled",
+          "label": "Cancelled",
+          "status_label_key": "purchase_orders.workflows.purchase_order_status_workflow.states.cancelled.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.states.cancelled.label"
+        }
       ],
       "transitions": [
-        { "from": "draft", "to": "sent_to_supplier", "label": "Send PO" },
-        { "from": "sent_to_supplier", "to": "confirmed", "label": "Supplier Confirmed" },
-        { "from": "confirmed", "to": "on_hold", "label": "Put On Hold" },
-        { "from": "confirmed", "to": "in_production", "label": "Start Production" },
-        { "from": "in_production", "to": "on_hold", "label": "Put On Hold" },
-        { "from": "in_production", "to": "shipped", "label": "Mark Shipped" },
-        { "from": "shipped", "to": "on_hold", "label": "Put On Hold" },
-        { "from": "shipped", "to": "received", "label": "Mark Received" },
-        { "from": "received", "to": "closed", "label": "Close PO" },
-        { "from": "on_hold", "to": "confirmed", "label": "Resume to Confirmed" },
-        { "from": "on_hold", "to": "in_production", "label": "Resume to Production" },
-        { "from": "on_hold", "to": "shipped", "label": "Resume to Shipped" },
-        { "from": "draft", "to": "cancelled", "label": "Cancel PO" },
-        { "from": "sent_to_supplier", "to": "cancelled", "label": "Cancel PO" },
-        { "from": "confirmed", "to": "cancelled", "label": "Cancel PO" },
-        { "from": "in_production", "to": "cancelled", "label": "Cancel PO" },
-        { "from": "on_hold", "to": "cancelled", "label": "Cancel PO" }
+        {
+          "from": "draft",
+          "to": "sent_to_supplier",
+          "label": "Send PO",
+          "action_label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.draft_sent_to_supplier.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.draft_sent_to_supplier.label"
+        },
+        {
+          "from": "sent_to_supplier",
+          "to": "confirmed",
+          "label": "Supplier Confirmed",
+          "action_label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.sent_to_supplier_confirmed.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.sent_to_supplier_confirmed.label"
+        },
+        {
+          "from": "confirmed",
+          "to": "on_hold",
+          "label": "Put On Hold",
+          "action_label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.confirmed_on_hold.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.confirmed_on_hold.label"
+        },
+        {
+          "from": "confirmed",
+          "to": "in_production",
+          "label": "Start Production",
+          "action_label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.confirmed_in_production.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.confirmed_in_production.label"
+        },
+        {
+          "from": "in_production",
+          "to": "on_hold",
+          "label": "Put On Hold",
+          "action_label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.in_production_on_hold.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.in_production_on_hold.label"
+        },
+        {
+          "from": "in_production",
+          "to": "shipped",
+          "label": "Mark Shipped",
+          "action_label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.in_production_shipped.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.in_production_shipped.label"
+        },
+        {
+          "from": "shipped",
+          "to": "on_hold",
+          "label": "Put On Hold",
+          "action_label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.shipped_on_hold.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.shipped_on_hold.label"
+        },
+        {
+          "from": "shipped",
+          "to": "received",
+          "label": "Mark Received",
+          "action_label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.shipped_received.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.shipped_received.label"
+        },
+        {
+          "from": "received",
+          "to": "closed",
+          "label": "Close PO",
+          "action_label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.received_closed.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.received_closed.label"
+        },
+        {
+          "from": "on_hold",
+          "to": "confirmed",
+          "label": "Resume to Confirmed",
+          "action_label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.on_hold_confirmed.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.on_hold_confirmed.label"
+        },
+        {
+          "from": "on_hold",
+          "to": "in_production",
+          "label": "Resume to Production",
+          "action_label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.on_hold_in_production.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.on_hold_in_production.label"
+        },
+        {
+          "from": "on_hold",
+          "to": "shipped",
+          "label": "Resume to Shipped",
+          "action_label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.on_hold_shipped.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.on_hold_shipped.label"
+        },
+        {
+          "from": "draft",
+          "to": "cancelled",
+          "label": "Cancel PO",
+          "action_label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.draft_cancelled.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.draft_cancelled.label"
+        },
+        {
+          "from": "sent_to_supplier",
+          "to": "cancelled",
+          "label": "Cancel PO",
+          "action_label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.sent_to_supplier_cancelled.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.sent_to_supplier_cancelled.label"
+        },
+        {
+          "from": "confirmed",
+          "to": "cancelled",
+          "label": "Cancel PO",
+          "action_label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.confirmed_cancelled.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.confirmed_cancelled.label"
+        },
+        {
+          "from": "in_production",
+          "to": "cancelled",
+          "label": "Cancel PO",
+          "action_label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.in_production_cancelled.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.in_production_cancelled.label"
+        },
+        {
+          "from": "on_hold",
+          "to": "cancelled",
+          "label": "Cancel PO",
+          "action_label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.on_hold_cancelled.label",
+          "label_key": "purchase_orders.workflows.purchase_order_status_workflow.transitions.on_hold_cancelled.label"
+        }
       ],
       "required_fields_by_state": {
-        "sent_to_supplier": ["biz_purchase_order.supplier_id", "biz_purchase_order.po_date"],
-        "confirmed": ["biz_purchase_order.supplier_id", "biz_purchase_order.po_date"],
-        "on_hold": ["biz_purchase_order.hold_reason"],
-        "cancelled": ["biz_purchase_order.cancellation_reason"]
+        "sent_to_supplier": [
+          "biz_purchase_order.supplier_id",
+          "biz_purchase_order.po_date"
+        ],
+        "confirmed": [
+          "biz_purchase_order.supplier_id",
+          "biz_purchase_order.po_date"
+        ],
+        "on_hold": [
+          "biz_purchase_order.hold_reason"
+        ],
+        "cancelled": [
+          "biz_purchase_order.cancellation_reason"
+        ]
       }
     }
   ],
   "triggers": [
-    { "id": "biz_purchase_orders.record.biz_purchase_order.created", "label": "Purchase Order created", "event": "record.created", "entity_id": "entity.biz_purchase_order" },
-    { "id": "biz_purchase_orders.record.biz_purchase_order.updated", "label": "Purchase Order updated", "event": "record.updated", "entity_id": "entity.biz_purchase_order" },
-    { "id": "biz_purchase_orders.record.biz_purchase_order_line.created", "label": "Purchase Order Line created", "event": "record.created", "entity_id": "entity.biz_purchase_order_line" },
-    { "id": "biz_purchase_orders.record.biz_purchase_order_line.updated", "label": "Purchase Order Line updated", "event": "record.updated", "entity_id": "entity.biz_purchase_order_line" },
-    { "id": "biz_purchase_orders.workflow.biz_purchase_order.status_changed", "label": "Purchase Order status changed", "event": "workflow.status_changed", "entity_id": "entity.biz_purchase_order", "status_field": "biz_purchase_order.status" },
-    { "id": "biz_purchase_orders.action.purchase_order_new.clicked", "label": "New Purchase Order clicked", "event": "action.clicked", "action_id": "action.purchase_order_new" },
-    { "id": "biz_purchase_orders.action.purchase_order_mark_sent.clicked", "label": "Send PO clicked", "event": "action.clicked", "action_id": "action.purchase_order_mark_sent" },
-    { "id": "biz_purchase_orders.action.purchase_order_confirm.clicked", "label": "Confirm PO clicked", "event": "action.clicked", "action_id": "action.purchase_order_confirm" },
-    { "id": "biz_purchase_orders.action.purchase_order_open_hold_modal.clicked", "label": "Put On Hold clicked", "event": "action.clicked", "action_id": "action.purchase_order_open_hold_modal" },
-    { "id": "biz_purchase_orders.action.purchase_order_resume.clicked", "label": "Resume PO clicked", "event": "action.clicked", "action_id": "action.purchase_order_resume" },
-    { "id": "biz_purchase_orders.action.purchase_order_mark_in_production.clicked", "label": "Mark In Production clicked", "event": "action.clicked", "action_id": "action.purchase_order_mark_in_production" },
-    { "id": "biz_purchase_orders.action.purchase_order_mark_shipped.clicked", "label": "Mark Shipped clicked", "event": "action.clicked", "action_id": "action.purchase_order_mark_shipped" },
-    { "id": "biz_purchase_orders.action.purchase_order_mark_received.clicked", "label": "Mark Received clicked", "event": "action.clicked", "action_id": "action.purchase_order_mark_received" },
-    { "id": "biz_purchase_orders.action.purchase_order_close.clicked", "label": "Close PO clicked", "event": "action.clicked", "action_id": "action.purchase_order_close" },
-    { "id": "biz_purchase_orders.action.purchase_order_open_cancel_modal.clicked", "label": "Cancel PO clicked", "event": "action.clicked", "action_id": "action.purchase_order_open_cancel_modal" }
+    {
+      "id": "biz_purchase_orders.record.biz_purchase_order.created",
+      "label": "Purchase Order created",
+      "label_key": "purchase_orders.triggers.purchase_order_created",
+      "event": "record.created",
+      "entity_id": "entity.biz_purchase_order"
+    },
+    {
+      "id": "biz_purchase_orders.record.biz_purchase_order.updated",
+      "label": "Purchase Order updated",
+      "label_key": "purchase_orders.triggers.purchase_order_updated",
+      "event": "record.updated",
+      "entity_id": "entity.biz_purchase_order"
+    },
+    {
+      "id": "biz_purchase_orders.record.biz_purchase_order_line.created",
+      "label": "Purchase Order Line created",
+      "label_key": "purchase_orders.triggers.purchase_order_line_created",
+      "event": "record.created",
+      "entity_id": "entity.biz_purchase_order_line"
+    },
+    {
+      "id": "biz_purchase_orders.record.biz_purchase_order_line.updated",
+      "label": "Purchase Order Line updated",
+      "label_key": "purchase_orders.triggers.purchase_order_line_updated",
+      "event": "record.updated",
+      "entity_id": "entity.biz_purchase_order_line"
+    },
+    {
+      "id": "biz_purchase_orders.workflow.biz_purchase_order.status_changed",
+      "label": "Purchase Order status changed",
+      "label_key": "purchase_orders.triggers.purchase_order_status_changed",
+      "event": "workflow.status_changed",
+      "entity_id": "entity.biz_purchase_order",
+      "status_field": "biz_purchase_order.status"
+    },
+    {
+      "id": "biz_purchase_orders.action.purchase_order_new.clicked",
+      "label": "New Purchase Order clicked",
+      "label_key": "purchase_orders.triggers.new_purchase_order_clicked",
+      "event": "action.clicked",
+      "action_id": "action.purchase_order_new"
+    },
+    {
+      "id": "biz_purchase_orders.action.purchase_order_mark_sent.clicked",
+      "label": "Send PO clicked",
+      "label_key": "purchase_orders.triggers.send_po_clicked",
+      "event": "action.clicked",
+      "action_id": "action.purchase_order_mark_sent"
+    },
+    {
+      "id": "biz_purchase_orders.action.purchase_order_confirm.clicked",
+      "label": "Confirm PO clicked",
+      "label_key": "purchase_orders.triggers.confirm_po_clicked",
+      "event": "action.clicked",
+      "action_id": "action.purchase_order_confirm"
+    },
+    {
+      "id": "biz_purchase_orders.action.purchase_order_open_hold_modal.clicked",
+      "label": "Put On Hold clicked",
+      "label_key": "purchase_orders.triggers.put_on_hold_clicked",
+      "event": "action.clicked",
+      "action_id": "action.purchase_order_open_hold_modal"
+    },
+    {
+      "id": "biz_purchase_orders.action.purchase_order_resume.clicked",
+      "label": "Resume PO clicked",
+      "label_key": "purchase_orders.triggers.resume_po_clicked",
+      "event": "action.clicked",
+      "action_id": "action.purchase_order_resume"
+    },
+    {
+      "id": "biz_purchase_orders.action.purchase_order_mark_in_production.clicked",
+      "label": "Mark In Production clicked",
+      "label_key": "purchase_orders.triggers.mark_in_production_clicked",
+      "event": "action.clicked",
+      "action_id": "action.purchase_order_mark_in_production"
+    },
+    {
+      "id": "biz_purchase_orders.action.purchase_order_mark_shipped.clicked",
+      "label": "Mark Shipped clicked",
+      "label_key": "purchase_orders.triggers.mark_shipped_clicked",
+      "event": "action.clicked",
+      "action_id": "action.purchase_order_mark_shipped"
+    },
+    {
+      "id": "biz_purchase_orders.action.purchase_order_mark_received.clicked",
+      "label": "Mark Received clicked",
+      "label_key": "purchase_orders.triggers.mark_received_clicked",
+      "event": "action.clicked",
+      "action_id": "action.purchase_order_mark_received"
+    },
+    {
+      "id": "biz_purchase_orders.action.purchase_order_close.clicked",
+      "label": "Close PO clicked",
+      "label_key": "purchase_orders.triggers.close_po_clicked",
+      "event": "action.clicked",
+      "action_id": "action.purchase_order_close"
+    },
+    {
+      "id": "biz_purchase_orders.action.purchase_order_open_cancel_modal.clicked",
+      "label": "Cancel PO clicked",
+      "label_key": "purchase_orders.triggers.cancel_po_clicked",
+      "event": "action.clicked",
+      "action_id": "action.purchase_order_open_cancel_modal"
+    }
   ],
   "actions": [
-    { "id": "action.purchase_order_new", "kind": "open_form", "label": "New Purchase Order", "target": "biz_purchase_order.form" },
+    {
+      "id": "action.purchase_order_new",
+      "kind": "open_form",
+      "label": "New Purchase Order",
+      "target": "biz_purchase_order.form",
+      "action_label_key": "purchase_orders.actions.action_purchase_order_new.label"
+    },
     {
       "id": "action.purchase_order_mark_sent",
       "kind": "update_record",
       "entity_id": "entity.biz_purchase_order",
       "label": "Send PO",
-      "patch": { "biz_purchase_order.status": "sent_to_supplier" },
+      "patch": {
+        "biz_purchase_order.status": "sent_to_supplier"
+      },
       "confirm": {
         "title": "Send purchase order?",
-        "body": "Use this when the supplier-facing PO has been issued."
+        "body": "Use this when the supplier-facing PO has been issued.",
+        "title_key": "purchase_orders.actions.action_purchase_order_mark_sent.confirm.title"
       },
-      "visible_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "draft" },
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_purchase_order.status",
+        "value": "draft"
+      },
       "enabled_when": {
         "op": "and",
         "conditions": [
-          { "op": "exists", "field": "biz_purchase_order.supplier_id" },
-          { "op": "gt", "field": "biz_purchase_order.po_total", "value": 0 }
+          {
+            "op": "exists",
+            "field": "biz_purchase_order.supplier_id"
+          },
+          {
+            "op": "gt",
+            "field": "biz_purchase_order.po_total",
+            "value": 0
+          }
         ]
-      }
+      },
+      "action_label_key": "purchase_orders.actions.action_purchase_order_mark_sent.label"
     },
     {
       "id": "action.purchase_order_confirm",
       "kind": "update_record",
       "entity_id": "entity.biz_purchase_order",
       "label": "Confirm PO",
-      "patch": { "biz_purchase_order.status": "confirmed" },
-      "visible_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "sent_to_supplier" },
+      "patch": {
+        "biz_purchase_order.status": "confirmed"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_purchase_order.status",
+        "value": "sent_to_supplier"
+      },
       "enabled_when": {
         "op": "and",
         "conditions": [
-          { "op": "exists", "field": "biz_purchase_order.supplier_id" },
-          { "op": "gt", "field": "biz_purchase_order.po_total", "value": 0 }
+          {
+            "op": "exists",
+            "field": "biz_purchase_order.supplier_id"
+          },
+          {
+            "op": "gt",
+            "field": "biz_purchase_order.po_total",
+            "value": 0
+          }
         ]
-      }
+      },
+      "action_label_key": "purchase_orders.actions.action_purchase_order_confirm.label"
     },
     {
       "id": "action.purchase_order_open_hold_modal",
@@ -375,8 +975,13 @@
       "visible_when": {
         "op": "in",
         "field": "biz_purchase_order.status",
-        "value": ["confirmed", "in_production", "shipped"]
-      }
+        "value": [
+          "confirmed",
+          "in_production",
+          "shipped"
+        ]
+      },
+      "action_label_key": "purchase_orders.actions.action_purchase_order_open_hold_modal.label"
     },
     {
       "id": "action.purchase_order_resume",
@@ -384,50 +989,99 @@
       "entity_id": "entity.biz_purchase_order",
       "label": "Resume PO",
       "patch": {
-        "biz_purchase_order.status": { "ref": "$record.biz_purchase_order.status_before_hold" },
+        "biz_purchase_order.status": {
+          "ref": "$record.biz_purchase_order.status_before_hold"
+        },
         "biz_purchase_order.hold_reason": ""
       },
-      "visible_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "on_hold" },
-      "enabled_when": { "op": "exists", "field": "biz_purchase_order.status_before_hold" }
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_purchase_order.status",
+        "value": "on_hold"
+      },
+      "enabled_when": {
+        "op": "exists",
+        "field": "biz_purchase_order.status_before_hold"
+      },
+      "action_label_key": "purchase_orders.actions.action_purchase_order_resume.label"
     },
     {
       "id": "action.purchase_order_mark_in_production",
       "kind": "update_record",
       "entity_id": "entity.biz_purchase_order",
       "label": "Mark In Production",
-      "patch": { "biz_purchase_order.status": "in_production" },
-      "visible_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "confirmed" },
-      "enabled_when": { "op": "gt", "field": "biz_purchase_order.po_total", "value": 0 }
+      "patch": {
+        "biz_purchase_order.status": "in_production"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_purchase_order.status",
+        "value": "confirmed"
+      },
+      "enabled_when": {
+        "op": "gt",
+        "field": "biz_purchase_order.po_total",
+        "value": 0
+      },
+      "action_label_key": "purchase_orders.actions.action_purchase_order_mark_in_production.label"
     },
     {
       "id": "action.purchase_order_mark_shipped",
       "kind": "update_record",
       "entity_id": "entity.biz_purchase_order",
       "label": "Mark Shipped",
-      "patch": { "biz_purchase_order.status": "shipped" },
-      "visible_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "in_production" },
-      "enabled_when": { "op": "exists", "field": "biz_purchase_order.expected_ship_date" }
+      "patch": {
+        "biz_purchase_order.status": "shipped"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_purchase_order.status",
+        "value": "in_production"
+      },
+      "enabled_when": {
+        "op": "exists",
+        "field": "biz_purchase_order.expected_ship_date"
+      },
+      "action_label_key": "purchase_orders.actions.action_purchase_order_mark_shipped.label"
     },
     {
       "id": "action.purchase_order_mark_received",
       "kind": "update_record",
       "entity_id": "entity.biz_purchase_order",
       "label": "Mark Received",
-      "patch": { "biz_purchase_order.status": "received" },
-      "visible_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "shipped" },
-      "enabled_when": { "op": "exists", "field": "biz_purchase_order.expected_arrival_date" }
+      "patch": {
+        "biz_purchase_order.status": "received"
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_purchase_order.status",
+        "value": "shipped"
+      },
+      "enabled_when": {
+        "op": "exists",
+        "field": "biz_purchase_order.expected_arrival_date"
+      },
+      "action_label_key": "purchase_orders.actions.action_purchase_order_mark_received.label"
     },
     {
       "id": "action.purchase_order_close",
       "kind": "update_record",
       "entity_id": "entity.biz_purchase_order",
       "label": "Close PO",
-      "patch": { "biz_purchase_order.status": "closed" },
+      "patch": {
+        "biz_purchase_order.status": "closed"
+      },
       "confirm": {
         "title": "Close purchase order?",
-        "body": "Use this when goods have been received and the buying side is operationally complete."
+        "body": "Use this when goods have been received and the buying side is operationally complete.",
+        "title_key": "purchase_orders.actions.action_purchase_order_close.confirm.title"
       },
-      "visible_when": { "op": "eq", "field": "biz_purchase_order.status", "value": "received" }
+      "visible_when": {
+        "op": "eq",
+        "field": "biz_purchase_order.status",
+        "value": "received"
+      },
+      "action_label_key": "purchase_orders.actions.action_purchase_order_close.label"
     },
     {
       "id": "action.purchase_order_open_cancel_modal",
@@ -438,13 +1092,34 @@
       "visible_when": {
         "op": "or",
         "conditions": [
-          { "op": "eq", "field": "biz_purchase_order.status", "value": "draft" },
-          { "op": "eq", "field": "biz_purchase_order.status", "value": "sent_to_supplier" },
-          { "op": "eq", "field": "biz_purchase_order.status", "value": "confirmed" },
-          { "op": "eq", "field": "biz_purchase_order.status", "value": "in_production" },
-          { "op": "eq", "field": "biz_purchase_order.status", "value": "on_hold" }
+          {
+            "op": "eq",
+            "field": "biz_purchase_order.status",
+            "value": "draft"
+          },
+          {
+            "op": "eq",
+            "field": "biz_purchase_order.status",
+            "value": "sent_to_supplier"
+          },
+          {
+            "op": "eq",
+            "field": "biz_purchase_order.status",
+            "value": "confirmed"
+          },
+          {
+            "op": "eq",
+            "field": "biz_purchase_order.status",
+            "value": "in_production"
+          },
+          {
+            "op": "eq",
+            "field": "biz_purchase_order.status",
+            "value": "on_hold"
+          }
         ]
-      }
+      },
+      "action_label_key": "purchase_orders.actions.action_purchase_order_open_cancel_modal.label"
     }
   ],
   "views": [
@@ -453,22 +1128,47 @@
       "kind": "list",
       "entity": "entity.biz_purchase_order",
       "columns": [
-        { "field_id": "biz_purchase_order.po_number" },
-        { "field_id": "biz_purchase_order.po_date" },
-        { "field_id": "biz_purchase_order.supplier_id" },
-        { "field_id": "biz_purchase_order.source_customer_order_number" },
-        { "field_id": "biz_purchase_order.purchasing_entity" },
-        { "field_id": "biz_purchase_order.currency" },
-        { "field_id": "biz_purchase_order.po_total" },
-        { "field_id": "biz_purchase_order.status" }
+        {
+          "field_id": "biz_purchase_order.po_number"
+        },
+        {
+          "field_id": "biz_purchase_order.po_date"
+        },
+        {
+          "field_id": "biz_purchase_order.supplier_id"
+        },
+        {
+          "field_id": "biz_purchase_order.source_customer_order_number"
+        },
+        {
+          "field_id": "biz_purchase_order.purchasing_entity"
+        },
+        {
+          "field_id": "biz_purchase_order.currency"
+        },
+        {
+          "field_id": "biz_purchase_order.po_total"
+        },
+        {
+          "field_id": "biz_purchase_order.status"
+        }
       ],
       "header": {
-        "primary_actions": [{ "action_id": "action.purchase_order_new" }],
+        "primary_actions": [
+          {
+            "action_id": "action.purchase_order_new"
+          }
+        ],
         "open_record_target": "page:biz_purchase_order.form_page",
         "search": {
           "enabled": true,
           "placeholder": "Search purchase orders...",
-          "fields": ["biz_purchase_order.po_number", "biz_purchase_order.supplier_reference", "biz_purchase_order.source_customer_order_number"]
+          "fields": [
+            "biz_purchase_order.po_number",
+            "biz_purchase_order.supplier_reference",
+            "biz_purchase_order.source_customer_order_number"
+          ],
+          "placeholder_key": "purchase_orders.views.list.search.placeholder"
         },
         "filters": [
           {
@@ -477,15 +1177,78 @@
             "domain": {
               "op": "in",
               "field": "biz_purchase_order.status",
-              "value": ["draft", "sent_to_supplier", "confirmed", "on_hold", "in_production", "shipped", "received"]
-            }
+              "value": [
+                "draft",
+                "sent_to_supplier",
+                "confirmed",
+                "on_hold",
+                "in_production",
+                "shipped",
+                "received"
+              ]
+            },
+            "label_key": "purchase_orders.views.list.filters.open.label"
           },
-          { "id": "draft", "label": "Draft POs", "domain": { "op": "eq", "field": "biz_purchase_order.status", "value": "draft" } },
-          { "id": "sent", "label": "Sent POs", "domain": { "op": "eq", "field": "biz_purchase_order.status", "value": "sent_to_supplier" } },
-          { "id": "on_hold", "label": "On Hold", "domain": { "op": "eq", "field": "biz_purchase_order.status", "value": "on_hold" } },
-          { "id": "production", "label": "In Production", "domain": { "op": "eq", "field": "biz_purchase_order.status", "value": "in_production" } },
-          { "id": "shipped", "label": "Shipped", "domain": { "op": "eq", "field": "biz_purchase_order.status", "value": "shipped" } },
-          { "id": "received", "label": "Received", "domain": { "op": "eq", "field": "biz_purchase_order.status", "value": "received" } }
+          {
+            "id": "draft",
+            "label": "Draft POs",
+            "domain": {
+              "op": "eq",
+              "field": "biz_purchase_order.status",
+              "value": "draft"
+            },
+            "label_key": "purchase_orders.views.list.filters.draft.label"
+          },
+          {
+            "id": "sent",
+            "label": "Sent POs",
+            "domain": {
+              "op": "eq",
+              "field": "biz_purchase_order.status",
+              "value": "sent_to_supplier"
+            },
+            "label_key": "purchase_orders.views.list.filters.sent.label"
+          },
+          {
+            "id": "on_hold",
+            "label": "On Hold",
+            "domain": {
+              "op": "eq",
+              "field": "biz_purchase_order.status",
+              "value": "on_hold"
+            },
+            "label_key": "purchase_orders.views.list.filters.on_hold.label"
+          },
+          {
+            "id": "production",
+            "label": "In Production",
+            "domain": {
+              "op": "eq",
+              "field": "biz_purchase_order.status",
+              "value": "in_production"
+            },
+            "label_key": "purchase_orders.views.list.filters.production.label"
+          },
+          {
+            "id": "shipped",
+            "label": "Shipped",
+            "domain": {
+              "op": "eq",
+              "field": "biz_purchase_order.status",
+              "value": "shipped"
+            },
+            "label_key": "purchase_orders.views.list.filters.shipped.label"
+          },
+          {
+            "id": "received",
+            "label": "Received",
+            "domain": {
+              "op": "eq",
+              "field": "biz_purchase_order.status",
+              "value": "received"
+            },
+            "label_key": "purchase_orders.views.list.filters.received.label"
+          }
         ]
       }
     },
@@ -511,7 +1274,8 @@
             "biz_purchase_order.incoterm",
             "biz_purchase_order.expected_ship_date",
             "biz_purchase_order.expected_arrival_date"
-          ]
+          ],
+          "section_title_key": "purchase_orders.views.form.sections.summary.title"
         },
         {
           "id": "financials",
@@ -522,7 +1286,8 @@
             "biz_purchase_order.po_total",
             "biz_purchase_order.freight_estimate",
             "biz_purchase_order.landed_cost_estimate"
-          ]
+          ],
+          "section_title_key": "purchase_orders.views.form.sections.financials.title"
         },
         {
           "id": "notes",
@@ -531,7 +1296,8 @@
             "biz_purchase_order.notes",
             "biz_purchase_order.hold_reason",
             "biz_purchase_order.cancellation_reason"
-          ]
+          ],
+          "section_title_key": "purchase_orders.views.form.sections.notes.title"
         },
         {
           "id": "lines",
@@ -560,40 +1326,167 @@
             },
             "description_field": "biz_purchase_order_line.description",
             "columns": [
-              { "field_id": "biz_purchase_order_line.product_id", "label": "Product", "readonly": true, "width": 220 },
-              { "field_id": "biz_purchase_order_line.description", "label": "Description", "width": 500 },
-              { "field_id": "biz_purchase_order_line.uom", "label": "UOM", "type": "enum", "width": 105, "options": [{ "value": "EA", "label": "Each" }, { "value": "SET", "label": "Set" }, { "value": "KIT", "label": "Kit" }, { "value": "LOT", "label": "Lot" }, { "value": "PALLET", "label": "Pallet" }, { "value": "CONTAINER", "label": "Container" }, { "value": "M", "label": "Meter" }] },
-              { "field_id": "biz_purchase_order_line.quantity", "label": "Qty", "type": "number", "width": 90, "align": "right" },
-              { "field_id": "biz_purchase_order_line.unit_cost", "label": "Unit Cost", "type": "number", "width": 155, "align": "right", "currency_field": "biz_purchase_order_line.currency_snapshot" },
-              { "field_id": "biz_purchase_order_line.line_total", "label": "Line Total", "type": "number", "readonly": true, "width": 155, "align": "right", "currency_field": "biz_purchase_order_line.currency_snapshot" }
+              {
+                "field_id": "biz_purchase_order_line.product_id",
+                "label": "Product",
+                "label_key": "common.product",
+                "readonly": true,
+                "width": 220
+              },
+              {
+                "field_id": "biz_purchase_order_line.description",
+                "label": "Description",
+                "label_key": "common.description",
+                "width": 500
+              },
+              {
+                "field_id": "biz_purchase_order_line.uom",
+                "label": "UOM",
+                "label_key": "common.uom",
+                "type": "enum",
+                "width": 105,
+                "options": [
+                  {
+                    "value": "EA",
+                    "label": "Each",
+                    "label_key": "common.each"
+                  },
+                  {
+                    "value": "SET",
+                    "label": "Set",
+                    "label_key": "common.set"
+                  },
+                  {
+                    "value": "KIT",
+                    "label": "Kit",
+                    "label_key": "common.kit"
+                  },
+                  {
+                    "value": "LOT",
+                    "label": "Lot",
+                    "label_key": "common.lot"
+                  },
+                  {
+                    "value": "PALLET",
+                    "label": "Pallet",
+                    "label_key": "common.pallet"
+                  },
+                  {
+                    "value": "CONTAINER",
+                    "label": "Container",
+                    "label_key": "common.container"
+                  },
+                  {
+                    "value": "M",
+                    "label": "Meter",
+                    "label_key": "common.meter"
+                  }
+                ]
+              },
+              {
+                "field_id": "biz_purchase_order_line.quantity",
+                "label": "Qty",
+                "label_key": "common.qty",
+                "type": "number",
+                "width": 90,
+                "align": "right"
+              },
+              {
+                "field_id": "biz_purchase_order_line.unit_cost",
+                "label": "Unit Cost",
+                "label_key": "common.unit_cost",
+                "type": "number",
+                "width": 155,
+                "align": "right",
+                "currency_field": "biz_purchase_order_line.currency_snapshot"
+              },
+              {
+                "field_id": "biz_purchase_order_line.line_total",
+                "label": "Line Total",
+                "label_key": "common.line_total",
+                "type": "number",
+                "readonly": true,
+                "width": 155,
+                "align": "right",
+                "currency_field": "biz_purchase_order_line.currency_snapshot"
+              }
             ]
-          }
+          },
+          "section_title_key": "purchase_orders.views.form.sections.lines.title"
         }
       ],
       "header": {
-        "statusbar": { "field_id": "biz_purchase_order.status" },
+        "statusbar": {
+          "field_id": "biz_purchase_order.status"
+        },
         "auto_state_actions": false,
         "primary_actions": [
-          { "action_id": "action.purchase_order_mark_sent" },
-          { "action_id": "action.purchase_order_confirm" },
-          { "action_id": "action.purchase_order_resume" },
-          { "action_id": "action.purchase_order_mark_in_production" },
-          { "action_id": "action.purchase_order_mark_shipped" },
-          { "action_id": "action.purchase_order_mark_received" },
-          { "action_id": "action.purchase_order_close" }
+          {
+            "action_id": "action.purchase_order_mark_sent"
+          },
+          {
+            "action_id": "action.purchase_order_confirm"
+          },
+          {
+            "action_id": "action.purchase_order_resume"
+          },
+          {
+            "action_id": "action.purchase_order_mark_in_production"
+          },
+          {
+            "action_id": "action.purchase_order_mark_shipped"
+          },
+          {
+            "action_id": "action.purchase_order_mark_received"
+          },
+          {
+            "action_id": "action.purchase_order_close"
+          }
         ],
         "secondary_actions": [
-          { "action_id": "action.purchase_order_open_hold_modal" },
-          { "action_id": "action.purchase_order_open_cancel_modal" }
+          {
+            "action_id": "action.purchase_order_open_hold_modal"
+          },
+          {
+            "action_id": "action.purchase_order_open_cancel_modal"
+          }
         ],
         "tabs": {
           "style": "lifted",
           "default_tab": "summary",
           "tabs": [
-            { "id": "summary", "label": "Summary", "sections": ["summary"] },
-            { "id": "lines", "label": "Line Items", "sections": ["lines"] },
-            { "id": "financials", "label": "Status / Logistics", "sections": ["financials"] },
-            { "id": "notes", "label": "Notes", "sections": ["notes"] }
+            {
+              "id": "summary",
+              "label": "Summary",
+              "tab_label_key": "common.summary",
+              "sections": [
+                "summary"
+              ]
+            },
+            {
+              "id": "lines",
+              "label": "Line Items",
+              "tab_label_key": "common.line_items",
+              "sections": [
+                "lines"
+              ]
+            },
+            {
+              "id": "financials",
+              "label": "Status / Logistics",
+              "tab_label_key": "common.status_logistics",
+              "sections": [
+                "financials"
+              ]
+            },
+            {
+              "id": "notes",
+              "label": "Notes",
+              "tab_label_key": "common.notes",
+              "sections": [
+                "notes"
+              ]
+            }
           ]
         }
       },
@@ -664,20 +1557,38 @@
       "kind": "list",
       "entity": "entity.biz_purchase_order_line",
       "columns": [
-        { "field_id": "biz_purchase_order_line.purchase_order_id" },
-        { "field_id": "biz_purchase_order_line.product_id" },
-        { "field_id": "biz_purchase_order_line.description" },
-        { "field_id": "biz_purchase_order_line.uom" },
-        { "field_id": "biz_purchase_order_line.quantity" },
-        { "field_id": "biz_purchase_order_line.unit_cost" },
-        { "field_id": "biz_purchase_order_line.line_total" }
+        {
+          "field_id": "biz_purchase_order_line.purchase_order_id"
+        },
+        {
+          "field_id": "biz_purchase_order_line.product_id"
+        },
+        {
+          "field_id": "biz_purchase_order_line.description"
+        },
+        {
+          "field_id": "biz_purchase_order_line.uom"
+        },
+        {
+          "field_id": "biz_purchase_order_line.quantity"
+        },
+        {
+          "field_id": "biz_purchase_order_line.unit_cost"
+        },
+        {
+          "field_id": "biz_purchase_order_line.line_total"
+        }
       ],
       "header": {
         "open_record_target": "page:biz_purchase_order_line.form_page",
         "search": {
           "enabled": true,
           "placeholder": "Search PO lines...",
-          "fields": ["biz_purchase_order_line.description", "biz_purchase_order_line.source_order_line_ref"]
+          "fields": [
+            "biz_purchase_order_line.description",
+            "biz_purchase_order_line.source_order_line_ref"
+          ],
+          "placeholder_key": "purchase_orders.views.list.search.placeholder"
         }
       }
     },
@@ -700,7 +1611,8 @@
             "biz_purchase_order_line.unit_cost",
             "biz_purchase_order_line.line_total",
             "biz_purchase_order_line.source_order_line_ref"
-          ]
+          ],
+          "section_title_key": "purchase_orders.views.form.sections.main.title"
         }
       ],
       "activity": {
@@ -728,7 +1640,12 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "kind": "navigate", "label": "New Purchase Order", "target": "page:biz_purchase_order.form_page" }
+          {
+            "kind": "navigate",
+            "label": "New Purchase Order",
+            "target": "page:biz_purchase_order.form_page",
+            "action_label_key": "purchase_orders.pages.list_page.header.actions.navigate.label"
+          }
         ]
       },
       "content": [
@@ -742,10 +1659,16 @@
               "subtitle": "Draft supplier orders",
               "entity_id": "entity.biz_purchase_order",
               "measure": "count",
-              "domain": { "op": "eq", "field": "biz_purchase_order.status", "value": "draft" },
+              "domain": {
+                "op": "eq",
+                "field": "biz_purchase_order.status",
+                "value": "draft"
+              },
               "icon": "lucide:FileClock",
               "tone": "primary",
-              "format": "number"
+              "format": "number",
+              "label_key": "purchase_orders.pages.list_page.blocks.1.cards.purchase_orders_draft_count.label",
+              "subtitle_key": "purchase_orders.pages.list_page.blocks.1.cards.purchase_orders_draft_count.subtitle"
             },
             {
               "id": "purchase_orders_production_count",
@@ -753,10 +1676,16 @@
               "subtitle": "Confirmed with supplier",
               "entity_id": "entity.biz_purchase_order",
               "measure": "count",
-              "domain": { "op": "eq", "field": "biz_purchase_order.status", "value": "in_production" },
+              "domain": {
+                "op": "eq",
+                "field": "biz_purchase_order.status",
+                "value": "in_production"
+              },
               "icon": "lucide:Factory",
               "tone": "warning",
-              "format": "number"
+              "format": "number",
+              "label_key": "purchase_orders.pages.list_page.blocks.1.cards.purchase_orders_production_count.label",
+              "subtitle_key": "purchase_orders.pages.list_page.blocks.1.cards.purchase_orders_production_count.subtitle"
             },
             {
               "id": "purchase_orders_shipped_count",
@@ -764,10 +1693,16 @@
               "subtitle": "Supplier has shipped",
               "entity_id": "entity.biz_purchase_order",
               "measure": "count",
-              "domain": { "op": "eq", "field": "biz_purchase_order.status", "value": "shipped" },
+              "domain": {
+                "op": "eq",
+                "field": "biz_purchase_order.status",
+                "value": "shipped"
+              },
               "icon": "lucide:Truck",
               "tone": "success",
-              "format": "number"
+              "format": "number",
+              "label_key": "purchase_orders.pages.list_page.blocks.1.cards.purchase_orders_shipped_count.label",
+              "subtitle_key": "purchase_orders.pages.list_page.blocks.1.cards.purchase_orders_shipped_count.subtitle"
             },
             {
               "id": "purchase_orders_received_count",
@@ -775,10 +1710,16 @@
               "subtitle": "Awaiting closeout",
               "entity_id": "entity.biz_purchase_order",
               "measure": "count",
-              "domain": { "op": "eq", "field": "biz_purchase_order.status", "value": "received" },
+              "domain": {
+                "op": "eq",
+                "field": "biz_purchase_order.status",
+                "value": "received"
+              },
               "icon": "lucide:PackageCheck",
               "tone": "accent",
-              "format": "number"
+              "format": "number",
+              "label_key": "purchase_orders.pages.list_page.blocks.1.cards.purchase_orders_received_count.label",
+              "subtitle_key": "purchase_orders.pages.list_page.blocks.1.cards.purchase_orders_received_count.subtitle"
             }
           ]
         },
@@ -792,16 +1733,34 @@
               "default_mode": "kanban",
               "default_filter_id": "open",
               "modes": [
-                { "mode": "list", "target": "view:biz_purchase_order.list" },
-                { "mode": "kanban", "target": "view:biz_purchase_order.kanban", "default_group_by": "biz_purchase_order.status" },
-                { "mode": "calendar", "target": "view:biz_purchase_order.calendar" },
-                { "mode": "graph", "target": "view:biz_purchase_order.graph" },
-                { "mode": "pivot", "target": "view:biz_purchase_order.list", "default_group_by": "biz_purchase_order.status" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_purchase_order.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:biz_purchase_order.kanban",
+                  "default_group_by": "biz_purchase_order.status"
+                },
+                {
+                  "mode": "calendar",
+                  "target": "view:biz_purchase_order.calendar"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:biz_purchase_order.graph"
+                },
+                {
+                  "mode": "pivot",
+                  "target": "view:biz_purchase_order.list",
+                  "default_group_by": "biz_purchase_order.status"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "purchase_orders.pages.list_page.title"
     },
     {
       "id": "biz_purchase_order.sent_page",
@@ -810,7 +1769,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.purchase_order_new" }
+          {
+            "action_id": "action.purchase_order_new"
+          }
         ]
       },
       "content": [
@@ -824,12 +1785,16 @@
               "default_mode": "list",
               "default_filter_id": "sent",
               "modes": [
-                { "mode": "list", "target": "view:biz_purchase_order.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_purchase_order.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "purchase_orders.pages.sent_page.title"
     },
     {
       "id": "biz_purchase_order.production_page",
@@ -838,7 +1803,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.purchase_order_new" }
+          {
+            "action_id": "action.purchase_order_new"
+          }
         ]
       },
       "content": [
@@ -852,13 +1819,21 @@
               "default_mode": "list",
               "default_filter_id": "production",
               "modes": [
-                { "mode": "list", "target": "view:biz_purchase_order.list" },
-                { "mode": "kanban", "target": "view:biz_purchase_order.kanban", "default_group_by": "biz_purchase_order.status" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_purchase_order.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:biz_purchase_order.kanban",
+                  "default_group_by": "biz_purchase_order.status"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "purchase_orders.pages.production_page.title"
     },
     {
       "id": "biz_purchase_order.shipped_page",
@@ -867,7 +1842,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.purchase_order_new" }
+          {
+            "action_id": "action.purchase_order_new"
+          }
         ]
       },
       "content": [
@@ -881,12 +1858,16 @@
               "default_mode": "list",
               "default_filter_id": "shipped",
               "modes": [
-                { "mode": "list", "target": "view:biz_purchase_order.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_purchase_order.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "purchase_orders.pages.shipped_page.title"
     },
     {
       "id": "biz_purchase_order.received_page",
@@ -895,7 +1876,9 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "action_id": "action.purchase_order_new" }
+          {
+            "action_id": "action.purchase_order_new"
+          }
         ]
       },
       "content": [
@@ -909,18 +1892,24 @@
               "default_mode": "list",
               "default_filter_id": "received",
               "modes": [
-                { "mode": "list", "target": "view:biz_purchase_order.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_purchase_order.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "purchase_orders.pages.received_page.title"
     },
     {
       "id": "biz_purchase_order.form_page",
       "title": "Purchase Order",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none"
+      },
       "content": [
         {
           "kind": "record",
@@ -939,7 +1928,10 @@
                       "kind": "container",
                       "variant": "card",
                       "content": [
-                        { "kind": "view", "target": "view:biz_purchase_order.form" }
+                        {
+                          "kind": "view",
+                          "target": "view:biz_purchase_order.form"
+                        }
                       ]
                     }
                   ]
@@ -951,7 +1943,11 @@
                       "kind": "container",
                       "variant": "card",
                       "content": [
-                        { "kind": "chatter", "entity_id": "entity.biz_purchase_order", "record_ref": "$record.id" }
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.biz_purchase_order",
+                          "record_ref": "$record.id"
+                        }
                       ]
                     }
                   ]
@@ -960,13 +1956,16 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "purchase_orders.pages.form_page.title"
     },
     {
       "id": "biz_purchase_order_line.list_page",
       "title": "PO Lines",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none"
+      },
       "content": [
         {
           "kind": "container",
@@ -977,18 +1976,24 @@
               "entity_id": "entity.biz_purchase_order_line",
               "default_mode": "list",
               "modes": [
-                { "mode": "list", "target": "view:biz_purchase_order_line.list" }
+                {
+                  "mode": "list",
+                  "target": "view:biz_purchase_order_line.list"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "purchase_orders.pages.list_page.title"
     },
     {
       "id": "biz_purchase_order_line.form_page",
       "title": "PO Line",
       "layout": "single",
-      "header": { "variant": "none" },
+      "header": {
+        "variant": "none"
+      },
       "content": [
         {
           "kind": "record",
@@ -999,12 +2004,16 @@
               "kind": "container",
               "variant": "card",
               "content": [
-                { "kind": "view", "target": "view:biz_purchase_order_line.form" }
+                {
+                  "kind": "view",
+                  "target": "view:biz_purchase_order_line.form"
+                }
               ]
             }
           ]
         }
-      ]
+      ],
+      "title_key": "purchase_orders.pages.form_page.title"
     }
   ],
   "modals": [
@@ -1022,17 +2031,25 @@
           "entity_id": "entity.biz_purchase_order",
           "label": "Put On Hold",
           "patch": {
-            "biz_purchase_order.status_before_hold": { "ref": "$record.biz_purchase_order.status" },
+            "biz_purchase_order.status_before_hold": {
+              "ref": "$record.biz_purchase_order.status"
+            },
             "biz_purchase_order.status": "on_hold",
-            "biz_purchase_order.hold_reason": { "ref": "$record.biz_purchase_order.hold_reason" }
-          }
+            "biz_purchase_order.hold_reason": {
+              "ref": "$record.biz_purchase_order.hold_reason"
+            }
+          },
+          "action_label_key": "purchase_orders.modals.purchase_order_hold.actions.update_record.label"
         },
         {
           "kind": "close_modal",
           "label": "Close",
-          "variant": "ghost"
+          "variant": "ghost",
+          "action_label_key": "purchase_orders.modals.purchase_order_hold.actions.close_modal.label"
         }
-      ]
+      ],
+      "title_key": "purchase_orders.modals.purchase_order_hold.title",
+      "description_key": "purchase_orders.modals.purchase_order_hold.description"
     },
     {
       "id": "modal.purchase_order_cancel",
@@ -1049,15 +2066,21 @@
           "label": "Cancel Purchase Order",
           "patch": {
             "biz_purchase_order.status": "cancelled",
-            "biz_purchase_order.cancellation_reason": { "ref": "$record.biz_purchase_order.cancellation_reason" }
-          }
+            "biz_purchase_order.cancellation_reason": {
+              "ref": "$record.biz_purchase_order.cancellation_reason"
+            }
+          },
+          "action_label_key": "purchase_orders.modals.purchase_order_cancel.actions.update_record.label"
         },
         {
           "kind": "close_modal",
           "label": "Close",
-          "variant": "ghost"
+          "variant": "ghost",
+          "action_label_key": "purchase_orders.modals.purchase_order_cancel.actions.close_modal.label"
         }
-      ]
+      ],
+      "title_key": "purchase_orders.modals.purchase_order_cancel.title",
+      "description_key": "purchase_orders.modals.purchase_order_cancel.description"
     }
   ],
   "interfaces": {
@@ -1081,6 +2104,7 @@
             "id": "purchase_orders_by_status",
             "type": "group",
             "title": "Purchase Orders by Status",
+            "title_key": "purchase_orders.dashboard.purchase_orders_by_status",
             "group_by": "biz_purchase_order.status",
             "measure": "count"
           }

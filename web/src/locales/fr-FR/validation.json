@@ -1,0 +1,8 @@
+{
+  "required": "Obligatoire",
+  "missing_fields": "Champs manquants : {{fields}}",
+  "requirements_not_met": "Les conditions ne sont pas remplies.",
+  "title": "Validation",
+  "draft_valid": "Brouillon valide",
+  "fix_with_ai": "Corriger avec l'IA"
+}

@@ -19,6 +19,7 @@ import { supabase } from "../supabase.js";
 import { formatDateTime } from "../utils/dateTime.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 function formatSize(bytes) {
   const value = Number(bytes);
@@ -99,11 +100,11 @@ async function fetchAttachmentBlob(attachmentId) {
       ...(workspaceId ? { "X-Workspace-Id": workspaceId } : {}),
     },
   });
-  if (!response.ok) throw new Error("Download failed");
+  if (!response.ok) throw new Error("DOWNLOAD_FAILED");
   return response.blob();
 }
 
-function AttachmentPreviewModal({ preview, onClose, onDownload }) {
+function AttachmentPreviewModal({ preview, onClose, onDownload, t }) {
   const attachment = preview?.attachment || null;
   const kind = preview?.kind || "file";
   const blobUrl = preview?.blobUrl || "";
@@ -119,11 +120,11 @@ function AttachmentPreviewModal({ preview, onClose, onDownload }) {
       >
         <div className="flex items-start justify-between gap-3 border-b border-base-300 px-4 py-3">
           <div className="min-w-0">
-            <div className="truncate text-sm font-semibold" title={attachment.filename || "Attachment"}>
-              {attachment.filename || "Attachment"}
+            <div className="truncate text-sm font-semibold" title={attachment.filename || t("common.attachments.attachment")}>
+              {attachment.filename || t("common.attachments.attachment")}
             </div>
             <div className="mt-1 text-xs text-base-content/60">
-              {attachment.mime_type || "file"}
+              {attachment.mime_type || t("common.attachments.file")}
               {attachment.size ? ` · ${formatSize(attachment.size)}` : ""}
               {attachment.created_at ? ` · ${formatDateTime(attachment.created_at)}` : ""}
             </div>
@@ -131,24 +132,24 @@ function AttachmentPreviewModal({ preview, onClose, onDownload }) {
           <div className="flex items-center gap-2">
             <button type="button" className="btn btn-sm btn-ghost" onClick={onDownload}>
               <Download className="h-4 w-4" />
-              Download
+              {t("common.download")}
             </button>
-            <button type="button" className="btn btn-sm btn-ghost" onClick={onClose} aria-label="Close preview">
+            <button type="button" className="btn btn-sm btn-ghost" onClick={onClose} aria-label={t("common.attachments.close_preview")}>
               <X className="h-4 w-4" />
             </button>
           </div>
         </div>
 
         <div className="flex-1 min-h-0 overflow-auto p-3 md:p-4 bg-base-200/40">
-          {preview?.loading ? <div className="text-sm opacity-70">Loading preview...</div> : null}
+          {preview?.loading ? <div className="text-sm opacity-70">{t("common.attachments.preview_loading")}</div> : null}
           {preview?.error ? <div className="alert alert-error text-sm">{preview.error}</div> : null}
 
           {!preview?.loading && !preview?.error && kind === "image" && blobUrl ? (
-            <img src={blobUrl} alt={attachment.filename || "Attachment"} className="mx-auto max-h-full w-auto rounded-box border border-base-300 bg-base-100" />
+            <img src={blobUrl} alt={attachment.filename || t("common.attachments.attachment")} className="mx-auto max-h-full w-auto rounded-box border border-base-300 bg-base-100" />
           ) : null}
 
           {!preview?.loading && !preview?.error && kind === "pdf" && blobUrl ? (
-            <iframe title={attachment.filename || "Attachment PDF preview"} src={blobUrl} className="h-full min-h-[65vh] w-full rounded-box border border-base-300 bg-base-100" />
+            <iframe title={attachment.filename || t("common.attachments.pdf_preview")} src={blobUrl} className="h-full min-h-[65vh] w-full rounded-box border border-base-300 bg-base-100" />
           ) : null}
 
           {!preview?.loading && !preview?.error && kind === "video" && blobUrl ? (
@@ -162,13 +163,13 @@ function AttachmentPreviewModal({ preview, onClose, onDownload }) {
           ) : null}
 
           {!preview?.loading && !preview?.error && kind === "text" && (
-            <pre className="rounded-box border border-base-300 bg-base-100 p-4 text-xs whitespace-pre-wrap break-words">{textPreview || "(No preview content)"}</pre>
+            <pre className="rounded-box border border-base-300 bg-base-100 p-4 text-xs whitespace-pre-wrap break-words">{textPreview || t("common.attachments.no_preview_content")}</pre>
           )}
 
           {!preview?.loading && !preview?.error && !["image", "pdf", "video", "audio", "text"].includes(kind) ? (
             <div className="rounded-box border border-base-300 bg-base-100 p-8 text-center">
               <File className="mx-auto mb-3 h-10 w-10 opacity-60" />
-              <div className="text-sm opacity-70">Preview not available for this file type.</div>
+              <div className="text-sm opacity-70">{t("common.attachments.preview_unavailable")}</div>
             </div>
           ) : null}
         </div>
@@ -185,11 +186,12 @@ export default function AttachmentGallery({
   canDelete,
   onUpload,
   onDelete,
-  buttonLabel = "Attach",
+  buttonLabel = "",
   showUploadButton = true,
   showCount = true,
   className = "",
 }) {
+  const { t } = useI18n();
   const rows = Array.isArray(attachments) ? attachments : [];
   const [thumbUrls, setThumbUrls] = useState({});
   const thumbUrlsRef = useRef({});
@@ -272,7 +274,7 @@ export default function AttachmentGallery({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = attachment.filename || "attachment";
+    a.download = attachment.filename || t("common.attachments.download_default_filename");
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -305,7 +307,9 @@ export default function AttachmentGallery({
         loading: false,
         blobUrl: "",
         text: "",
-        error: err?.message || "Failed to load preview",
+        error: err?.message === "DOWNLOAD_FAILED"
+          ? t("common.activity_panel.download_failed")
+          : (err?.message || t("common.attachments.preview_load_failed")),
       });
     }
   }
@@ -317,14 +321,14 @@ export default function AttachmentGallery({
           {showUploadButton ? (
             <label className={`${SOFT_BUTTON_SM} gap-2 cursor-pointer`} aria-disabled={!canUpload || uploading}>
               <Paperclip className="h-4 w-4" />
-              {uploading ? "Uploading..." : buttonLabel}
+              {uploading ? t("common.uploading") : (buttonLabel || t("common.attach"))}
               <input type="file" multiple className="hidden" onChange={onUpload} disabled={!canUpload || uploading} />
             </label>
           ) : (
             <span />
           )}
           {showCount ? (
-            <div className="text-xs text-base-content/60">{rows.length} file{rows.length === 1 ? "" : "s"}</div>
+            <div className="text-xs text-base-content/60">{t("common.attachments.count", { count: rows.length })}</div>
           ) : null}
         </div>
       ) : null}
@@ -335,7 +339,7 @@ export default function AttachmentGallery({
           const Icon = iconForType(kind);
           const thumb = attachment?.id ? thumbUrls[attachment.id] : "";
           const ext = fileExtensionLabel(attachment?.filename);
-          const tip = `${attachment?.filename || "Attachment"}${ext ? ` (${ext})` : ""}`;
+          const tip = `${attachment?.filename || t("common.attachments.attachment")}${ext ? ` (${ext})` : ""}`;
           return (
             <DaisyTooltip key={attachment.id} label={previewOpen ? "" : tip} className="w-full" placement="bottom">
               <div className="group aspect-square rounded-box border border-base-300 bg-base-100 hover:border-primary/40 transition-colors flex flex-col overflow-hidden">
@@ -345,7 +349,7 @@ export default function AttachmentGallery({
                 onClick={() => handleOpenPreview(attachment)}
               >
                 {kind === "image" && thumb ? (
-                  <img src={thumb} alt={attachment.filename || "Attachment"} className="h-full w-full object-cover" />
+                  <img src={thumb} alt={attachment.filename || t("common.attachments.attachment")} className="h-full w-full object-cover" />
                 ) : (
                   <div className="h-full w-full flex flex-col items-center justify-center gap-2 text-base-content/60">
                     <Icon className="h-8 w-8" />
@@ -354,7 +358,7 @@ export default function AttachmentGallery({
 
                 <div className="absolute inset-x-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
                   <div className={`grid ${canDelete ? "grid-cols-3" : "grid-cols-2"} items-center justify-items-center rounded-2xl border border-base-300 bg-base-100 px-2 py-1.5 shadow-md`}>
-                    <DaisyTooltip label="Preview" placement="top">
+                    <DaisyTooltip label={t("common.attachments.preview")} placement="top">
                       <button
                         type="button"
                         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-base-content transition-colors hover:bg-base-200"
@@ -366,7 +370,7 @@ export default function AttachmentGallery({
                         <Eye className="h-3.5 w-3.5" />
                       </button>
                     </DaisyTooltip>
-                    <DaisyTooltip label="Download" placement="top">
+                    <DaisyTooltip label={t("common.download")} placement="top">
                       <button
                         type="button"
                         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-base-content transition-colors hover:bg-base-200"
@@ -379,7 +383,7 @@ export default function AttachmentGallery({
                       </button>
                     </DaisyTooltip>
                     {canDelete ? (
-                      <DaisyTooltip label="Delete" placement="top">
+                      <DaisyTooltip label={t("common.delete")} placement="top">
                         <button
                           type="button"
                           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-error transition-colors hover:bg-error/10"
@@ -404,6 +408,7 @@ export default function AttachmentGallery({
 
       <AttachmentPreviewModal
         preview={preview}
+        t={t}
         onClose={() => {
           if (preview?.blobUrl) URL.revokeObjectURL(preview.blobUrl);
           setPreview({ attachment: null, kind: "file", loading: false, blobUrl: "", text: "", error: "" });

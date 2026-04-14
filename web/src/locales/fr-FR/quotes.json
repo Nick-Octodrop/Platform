@@ -1,0 +1,415 @@
+{
+  "module": {
+    "name": "Citations",
+    "description": "Flux de travail de devis, depuis la tarification et l'approbation du client jusqu'à la conversion des commandes."
+  },
+  "navigation": {
+    "biz_quote_list_page": "Citations",
+    "biz_quote_draft_page": "Brouillon",
+    "biz_quote_sent_page": "Envoyé",
+    "biz_quote_ready_to_convert_page": "Prêt à convertir"
+  },
+  "entities": {
+    "biz_quote": {
+      "label": "Citation",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "quote_number": {
+          "label": "Numéro de devis"
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "draft": "Brouillon",
+            "sent": "Envoyé",
+            "accepted": "Accepté",
+            "lost": "Perdu",
+            "expired": "Expiré"
+          }
+        },
+        "quote_date": {
+          "label": "Date du devis"
+        },
+        "expiry_date": {
+          "label": "Date d'expiration"
+        },
+        "sales_entity": {
+          "label": "Entité de vente",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "customer_id": {
+          "label": "Client"
+        },
+        "customer_contact_name": {
+          "label": "Contact client"
+        },
+        "customer_reference": {
+          "label": "Référence client"
+        },
+        "currency": {
+          "label": "Devise",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "sales_owner": {
+          "label": "Propriétaire des ventes"
+        },
+        "follow_up_date": {
+          "label": "Date de suivi"
+        },
+        "payment_terms": {
+          "label": "Conditions de paiement"
+        },
+        "incoterm": {
+          "label": "Incoterm"
+        },
+        "shipping_terms": {
+          "label": "Conditions d'expédition"
+        },
+        "validity_notes": {
+          "label": "Notes de validité"
+        },
+        "loss_reason": {
+          "label": "Raison de perte/expiration"
+        },
+        "internal_notes": {
+          "label": "Notes internes"
+        },
+        "customer_notes": {
+          "label": "Notes client"
+        },
+        "pdf_template_name": {
+          "label": "Nom du modèle PDF"
+        },
+        "linked_customer_order_id": {
+          "label": "Commande liée"
+        },
+        "linked_customer_order_number": {
+          "label": "Commande liée"
+        },
+        "subtotal": {
+          "label": "Sous-total"
+        },
+        "discount_total": {
+          "label": "Remise totale"
+        },
+        "tax_total": {
+          "label": "Total des taxes"
+        },
+        "grand_total": {
+          "label": "Total général"
+        },
+        "estimated_buy_total": {
+          "label": "Total d'achat estimé"
+        },
+        "estimated_margin_amount": {
+          "label": "Montant de la marge estimée"
+        },
+        "estimated_margin_percent": {
+          "label": "Marge estimée %"
+        }
+      }
+    },
+    "biz_quote_line": {
+      "label": "Ligne de devis",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "quote_id": {
+          "label": "Citation"
+        },
+        "line_type": {
+          "label": "Type de ligne",
+          "options": {
+            "catalogue": "Catalogue",
+            "custom": "Personnalisé"
+          }
+        },
+        "product_id": {
+          "label": "Produit"
+        },
+        "description": {
+          "label": "Descriptif"
+        },
+        "sales_entity_snapshot": {
+          "label": "Aperçu de l'entité de vente",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "currency_snapshot": {
+          "label": "Aperçu des devises",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "uom": {
+          "label": "UOM",
+          "options": {
+            "ea": "Chacun",
+            "set": "Ensemble",
+            "kit": "Trousse",
+            "lot": "Beaucoup",
+            "pallet": "Palette",
+            "container": "Conteneur",
+            "m": "Compteur"
+          }
+        },
+        "quantity": {
+          "label": "Quantité"
+        },
+        "unit_price": {
+          "label": "Prix unitaire"
+        },
+        "line_discount_percent": {
+          "label": "% de réduction"
+        },
+        "line_total": {
+          "label": "Total de ligne"
+        },
+        "default_buy_price_snapshot": {
+          "label": "Aperçu du prix d’achat"
+        },
+        "buy_currency_snapshot": {
+          "label": "Acheter un aperçu des devises",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "buy_total": {
+          "label": "Acheter Total"
+        },
+        "estimated_margin_amount": {
+          "label": "Montant de la marge estimée"
+        },
+        "estimated_margin_percent": {
+          "label": "Marge estimée %"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_quote_new": {
+      "label": "Nouveau devis"
+    },
+    "action_quote_mark_sent": {
+      "label": "Marquer comme envoyé",
+      "confirm": {
+        "title": "Marquer le devis comme envoyé ?"
+      }
+    },
+    "action_quote_mark_accepted": {
+      "label": "Marquer comme accepté",
+      "confirm": {
+        "title": "Marquer le devis comme accepté ?"
+      }
+    },
+    "action_quote_convert_to_order": {
+      "label": "Créer une commande",
+      "confirm": {
+        "title": "Créer une commande à partir d'un devis ?"
+      }
+    },
+    "action_quote_open_lost_modal": {
+      "label": "Marque perdue"
+    },
+    "action_quote_open_expired_modal": {
+      "label": "Marquer expiré"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Rechercher des citations..."
+      },
+      "filters": {
+        "open": {
+          "label": "Devis ouverts"
+        },
+        "draft": {
+          "label": "Projets de devis"
+        },
+        "sent": {
+          "label": "Devis envoyés"
+        },
+        "accepted": {
+          "label": "Devis acceptés"
+        },
+        "ready_to_convert": {
+          "label": "Prêt à convertir"
+        },
+        "expired": {
+          "label": "Devis expirés"
+        },
+        "lost": {
+          "label": "Citations perdues"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Citation"
+        },
+        "lines": {
+          "title": "Lignes"
+        },
+        "totals": {
+          "title": "Totaux"
+        },
+        "profitability": {
+          "title": "Rentabilité"
+        },
+        "notes": {
+          "title": "Remarques et conditions"
+        },
+        "main": {
+          "title": "Ligne de devis"
+        }
+      }
+    }
+  },
+  "modals": {
+    "quote_mark_lost": {
+      "title": "Marquer la citation perdue",
+      "description": "Découvrez pourquoi le devis a été perdu avant de le retirer du pipeline actif.",
+      "actions": {
+        "update_record": {
+          "label": "Marque perdue"
+        },
+        "close_modal": {
+          "label": "Fermer"
+        }
+      }
+    },
+    "quote_mark_expired": {
+      "title": "Marquer le devis comme expiré",
+      "description": "Capturez la note d'expiration avant de clôturer cette cotation hors du pipeline en direct.",
+      "actions": {
+        "update_record": {
+          "label": "Marquer expiré"
+        },
+        "close_modal": {
+          "label": "Fermer"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Citations",
+      "header": {
+        "actions": {
+          "navigate": {
+            "label": "Nouveau devis"
+          }
+        }
+      },
+      "blocks": {
+        "1": {
+          "cards": {
+            "quote_open_count": {
+              "label": "Devis ouverts",
+              "subtitle": "Pipeline brouillon et envoyé"
+            },
+            "quote_ready_to_convert_count": {
+              "label": "Prêt à convertir",
+              "subtitle": "Accepté sans commande pour le moment"
+            },
+            "quote_sent_count": {
+              "label": "En attente de décision",
+              "subtitle": "Envoyé au client"
+            },
+            "quote_exception_count": {
+              "label": "Exceptions",
+              "subtitle": "Perdu et expiré"
+            }
+          }
+        }
+      }
+    },
+    "draft_page": {
+      "title": "Projets de devis"
+    },
+    "sent_page": {
+      "title": "Devis envoyés"
+    },
+    "ready_to_convert_page": {
+      "title": "Prêt à convertir"
+    },
+    "form_page": {
+      "title": "Citation"
+    }
+  },
+  "workflows": {
+    "quote_status_workflow": {
+      "states": {
+        "draft": {
+          "label": "Brouillon"
+        },
+        "sent": {
+          "label": "Envoyé"
+        },
+        "accepted": {
+          "label": "Accepté"
+        },
+        "lost": {
+          "label": "Perdu"
+        },
+        "expired": {
+          "label": "Expiré"
+        }
+      },
+      "transitions": {
+        "draft_sent": {
+          "label": "Envoyer un devis"
+        },
+        "sent_accepted": {
+          "label": "Marquer comme accepté"
+        },
+        "draft_lost": {
+          "label": "Marque perdue"
+        },
+        "sent_lost": {
+          "label": "Marque perdue"
+        },
+        "sent_expired": {
+          "label": "Marquer expiré"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "quote_created": "Devis créé",
+    "quote_updated": "Devis mis à jour",
+    "quote_line_created": "Ligne de devis créée",
+    "quote_line_updated": "Ligne de devis mise à jour",
+    "quote_status_changed": "Statut du devis modifié",
+    "new_quote_clicked": "Nouveau devis cliqué",
+    "mark_sent_clicked": "Marquer Envoyé cliqué",
+    "mark_accepted_clicked": "Marquer comme accepté cliqué",
+    "create_order_clicked": "Cliquez sur Créer une commande",
+    "mark_lost_clicked": "Mark Lost a cliqué",
+    "mark_expired_clicked": "Marquer le clic sur Expiré"
+  },
+  "dashboard": {
+    "quotes_by_status": "Citations par statut"
+  }
+}

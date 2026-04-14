@@ -18,6 +18,8 @@ import useWorkspaceProviderStatus from "../hooks/useWorkspaceProviderStatus.js";
 import ProviderSecretModal from "../components/ProviderSecretModal.jsx";
 import ProviderUnavailableState from "../components/ProviderUnavailableState.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
+import { translateRuntime } from "../i18n/runtime.js";
 
 function AutomationLookupValueInput({ fieldDef, value, onChange, placeholder = "" }) {
   const [options, setOptions] = useState([]);
@@ -136,7 +138,7 @@ function AutomationLookupValueInput({ fieldDef, value, onChange, placeholder = "
             setOpened(true);
             setSearch("");
           }}
-          placeholder={placeholder || "Search records..."}
+          placeholder={placeholder || translateRuntime("settings.automation_editor.search_records")}
         />
         {Boolean(value) && (
           <button
@@ -156,8 +158,8 @@ function AutomationLookupValueInput({ fieldDef, value, onChange, placeholder = "
       {opened && (
         <div className="absolute z-30 mt-1 flex max-h-64 w-full flex-col overflow-hidden rounded-box border border-base-300 bg-base-100 shadow">
           <ul className="menu menu-compact menu-vertical block w-full flex-1 overflow-y-auto">
-            {loading && <li className="menu-title"><span>Loading…</span></li>}
-            {!loading && options.length === 0 && <li className="menu-title"><span>No results</span></li>}
+            {loading && <li className="menu-title"><span>{translateRuntime("common.loading")}</span></li>}
+            {!loading && options.length === 0 && <li className="menu-title"><span>{translateRuntime("empty.no_results")}</span></li>}
             {options.map((option) => (
               <li key={option.value}>
                 <button type="button" className={option.value === value ? "active" : ""} onClick={() => handleSelect(option)}>
@@ -180,7 +182,7 @@ function AutomationUsersValueInput({ members = [], value, onChange, placeholder 
   const normalizedMembers = useMemo(
     () => (Array.isArray(members) ? members : []).map((member) => ({
       user_id: member?.user_id,
-      label: member?.name || member?.email || member?.user_email || member?.user_id || "Unknown user",
+      label: member?.name || member?.email || member?.user_email || member?.user_id || translateRuntime("settings.automation_editor.unknown_user"),
       search: `${member?.name || ""} ${member?.email || ""} ${member?.user_email || ""} ${member?.user_id || ""}`.trim().toLowerCase(),
     })).filter((member) => member.user_id),
     [members]
@@ -243,8 +245,8 @@ function AutomationUsersValueInput({ members = [], value, onChange, placeholder 
                 event.stopPropagation();
                 writeIds(selectedIds.filter((id) => id !== member.user_id));
               }}
-              aria-label={`Remove ${member.label}`}
-              title={`Remove ${member.label}`}
+              aria-label={`${translateRuntime("common.remove")} ${member.label}`}
+              title={`${translateRuntime("common.remove")} ${member.label}`}
             >
               ×
             </button>
@@ -258,13 +260,13 @@ function AutomationUsersValueInput({ members = [], value, onChange, placeholder 
             setOpened(true);
           }}
           onFocus={() => setOpened(true)}
-          placeholder={selectedMembers.length > 0 ? "Add another user..." : (placeholder || "Search workspace users...")}
+          placeholder={selectedMembers.length > 0 ? translateRuntime("common.add_another_user") : (placeholder || translateRuntime("common.search_workspace_users"))}
         />
       </div>
       {opened && (
         <div className="absolute z-30 mt-1 w-full rounded-box border border-base-300 bg-base-100 shadow">
           <ul className="menu menu-compact menu-vertical w-full max-h-60 overflow-y-auto">
-            {filtered.length === 0 && <li className="menu-title"><span>No matches</span></li>}
+            {filtered.length === 0 && <li className="menu-title"><span>{translateRuntime("empty.no_matches")}</span></li>}
             {filtered.map((member) => (
               <li key={member.user_id}>
                 <button
@@ -289,6 +291,7 @@ function AutomationUsersValueInput({ members = [], value, onChange, placeholder 
 export default function AutomationEditorPage({ user }) {
   const { automationId } = useParams();
   const navigate = useNavigate();
+  const { t } = useI18n();
   const { hasCapability } = useAccessContext();
   const { pushToast } = useToast();
   const isMobile = useMediaQuery("(max-width: 768px)");
@@ -386,7 +389,7 @@ export default function AutomationEditorPage({ user }) {
 
   function applyAutomationDefinition(rawDefinition) {
     if (!rawDefinition || typeof rawDefinition !== "object" || Array.isArray(rawDefinition)) {
-      throw new Error("Automation JSON must be an object.");
+      throw new Error(t("settings.automation_editor.json_must_be_object"));
     }
     const nextName = typeof rawDefinition.name === "string" ? rawDefinition.name : "";
     const nextDescription = typeof rawDefinition.description === "string" ? rawDefinition.description : "";
@@ -434,7 +437,7 @@ export default function AutomationEditorPage({ user }) {
       const metaRes = await apiFetch("/automations/meta");
       setMeta(metaRes || {});
     } catch (err) {
-      setError(err?.message || "Failed to load automation metadata");
+      setError(err?.message || t("settings.automation_editor.load_metadata_failed"));
     }
   }, []);
 
@@ -444,7 +447,7 @@ export default function AutomationEditorPage({ user }) {
       const res = await apiFetch(`/automations/${id}`);
       const automation = res?.automation;
       if (!automation) {
-        setError("Failed to load automation");
+        setError(t("settings.automation_editor.load_failed"));
         return null;
       }
       setItem(automation);
@@ -463,7 +466,7 @@ export default function AutomationEditorPage({ user }) {
       setSelectedStepPath([0]);
       return automation;
     } catch (err) {
-      setError(err?.message || "Failed to load automation");
+      setError(err?.message || t("settings.automation_editor.load_failed"));
       return null;
     }
   }, []);
@@ -483,7 +486,7 @@ export default function AutomationEditorPage({ user }) {
       });
       setItem(res?.automation || null);
     } catch (err) {
-      setError(err?.message || "Failed to save automation");
+      setError(err?.message || t("settings.automation_editor.save_failed"));
     }
     setSaving(false);
   }, [automationId, name, description, trigger, triggerExprText, steps]);
@@ -497,7 +500,7 @@ export default function AutomationEditorPage({ user }) {
       setRuns(res?.runs || []);
     } catch (err) {
       setRuns([]);
-      setRunsError(err?.message || "Failed to load runs");
+      setRunsError(err?.message || t("settings.automation_editor.load_runs_failed"));
     }
     setRunsLoading(false);
   }, [automationId]);
@@ -508,16 +511,16 @@ export default function AutomationEditorPage({ user }) {
       const res = await apiFetch(`/automations/${automationId}/publish`, { method: "POST" });
       setItem(res?.automation || null);
     } catch (err) {
-      setError(err?.message || "Failed to publish");
+      setError(err?.message || t("settings.automation_editor.publish_failed"));
     }
-  }, [automationId]);
+  }, [automationId, t]);
 
   async function disable() {
     try {
       const res = await apiFetch(`/automations/${automationId}/disable`, { method: "POST" });
       setItem(res?.automation || null);
     } catch (err) {
-      setError(err?.message || "Failed to disable");
+      setError(err?.message || t("settings.automation_editor.disable_failed"));
     }
   }
 
@@ -526,9 +529,9 @@ export default function AutomationEditorPage({ user }) {
       const res = await apiFetch(`/automations/${automationId}/export`);
       const payload = res?.automation || {};
       await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
-      pushToast("success", "Automation JSON copied");
+      pushToast("success", t("settings.automation_editor.automation_json_copied"));
     } catch (err) {
-      setError(err?.message || "Failed to export");
+      setError(err?.message || t("settings.automation_editor.export_failed"));
     }
   }
 
@@ -549,13 +552,13 @@ export default function AutomationEditorPage({ user }) {
   }
 
   async function deleteAutomation() {
-    const ok = window.confirm("Delete this automation? This cannot be undone.");
+    const ok = window.confirm(t("settings.automation_editor.delete_confirmation"));
     if (!ok) return;
     try {
       await apiFetch(`/automations/${automationId}`, { method: "DELETE" });
       navigate("/automations");
     } catch (err) {
-      setError(err?.message || "Failed to delete");
+      setError(err?.message || t("settings.automation_editor.delete_failed"));
     }
   }
 
@@ -862,7 +865,7 @@ export default function AutomationEditorPage({ user }) {
     const newStepId = `step_${steps.length + 1}`;
     setSteps((prev) => [
       ...prev,
-      { id: newStepId, kind: "action", action_id: "system.notify", inputs: { title: "Automation", body: "" } },
+      { id: newStepId, kind: "action", action_id: "system.notify", inputs: { title: t("settings.automation_editor.automation"), body: "" } },
     ]);
     setSelectedStepIndex(steps.length);
     setSelectedStepPath([steps.length]);
@@ -872,7 +875,7 @@ export default function AutomationEditorPage({ user }) {
 
   function insertStepAfter(listPath, afterIndex) {
     const newStepId = `step_${Date.now()}`;
-    const nextStep = { id: newStepId, kind: "action", action_id: "system.notify", inputs: { title: "Automation", body: "" } };
+    const nextStep = { id: newStepId, kind: "action", action_id: "system.notify", inputs: { title: t("settings.automation_editor.automation"), body: "" } };
     const insertIndex = afterIndex + 1;
     setSteps((prev) => insertStepAtListPath(prev, listPath, insertIndex, nextStep));
     const nextPath = [...normalizeStepPath(listPath), insertIndex];
@@ -883,7 +886,7 @@ export default function AutomationEditorPage({ user }) {
 
   function addNestedStep(containerPath, branchKey) {
     const newStepId = `step_${Date.now()}`;
-    const nextStep = { id: newStepId, kind: "action", action_id: "system.notify", inputs: { title: "Automation", body: "" } };
+    const nextStep = { id: newStepId, kind: "action", action_id: "system.notify", inputs: { title: t("settings.automation_editor.automation"), body: "" } };
     setSteps((prev) => insertStepIntoBranch(prev, containerPath, branchKey, nextStep));
     const nextPath = [...normalizeStepPath(containerPath), branchKey];
     const container = getStepAtPath(containerPath);
@@ -934,7 +937,7 @@ export default function AutomationEditorPage({ user }) {
   const actionOptions = useMemo(() => {
     const groups = [];
     if (Array.isArray(meta.system_actions)) {
-      groups.push({ label: "System actions", options: meta.system_actions });
+      groups.push({ label: t("settings.automation_editor.system_actions"), options: meta.system_actions });
     }
     if (Array.isArray(meta.module_actions)) {
       for (const mod of meta.module_actions) {
@@ -947,16 +950,16 @@ export default function AutomationEditorPage({ user }) {
   const triggerOptions = useMemo(() => {
     const catalog = Array.isArray(meta.event_catalog) ? meta.event_catalog : [];
     if (catalog.length === 0) {
-      return [{ label: "Events", options: meta.event_types || [] }];
+      return [{ label: t("settings.automation_editor.events"), options: meta.event_types || [] }];
     }
     const grouped = new Map();
     for (const evt of catalog) {
-      const label = evt.source_module_name || evt.source_module_id || "Events";
+      const label = evt.source_module_name || evt.source_module_id || t("settings.automation_editor.events");
       if (!grouped.has(label)) grouped.set(label, []);
       grouped.get(label).push(evt);
     }
     return Array.from(grouped.entries()).map(([label, options]) => ({ label, options }));
-  }, [meta]);
+  }, [meta, t]);
 
   const selectedTriggerEventId = (trigger?.event_types || [])[0] || "";
   const triggerMode = useMemo(() => {
@@ -991,23 +994,23 @@ export default function AutomationEditorPage({ user }) {
   const triggerFieldOptions = useMemo(() => {
     const fields = [];
     const add = (value, label, type = "string", options = []) => fields.push({ value, label, type, options });
-    add("entity_id", "Entity");
-    add("record_id", "Record ID");
-    add("user_id", "User ID");
-    add("timestamp", "Timestamp", "datetime");
-    add("changed_fields", "Changed fields", "text");
-    add("from", "From status/value");
-    add("to", "To status/value");
+    add("entity_id", t("common.entity"));
+    add("record_id", t("settings.automation_editor.record_id"));
+    add("user_id", t("common.user_id"));
+    add("timestamp", t("settings.automation_editor.timestamp"), "datetime");
+    add("changed_fields", t("settings.automation_editor.changed_fields"), "text");
+    add("from", t("common.from"));
+    add("to", t("common.to"));
     if (triggerMode === "webhook") {
-      add("connection_id", "Webhook: Connection ID");
-      add("webhook_id", "Webhook: Webhook ID");
-      add("provider_event_id", "Webhook: Provider Event ID");
-      add("event_key", "Webhook: Event Key");
-      add("signature_valid", "Webhook: Signature Valid", "boolean");
-      add("payload", "Webhook: Payload object", "text");
-      add("payload.customer.email", "Webhook: Payload field example");
-      add("headers", "Webhook: Headers object", "text");
-      add("headers.x-request-id", "Webhook: Header example");
+      add("connection_id", t("settings.automation_editor.webhook_connection_id"));
+      add("webhook_id", t("settings.automation_editor.webhook_id"));
+      add("provider_event_id", t("settings.automation_editor.webhook_provider_event_id"));
+      add("event_key", t("settings.automation_editor.webhook_event_key"));
+      add("signature_valid", t("settings.automation_editor.webhook_signature_valid"), "boolean");
+      add("payload", t("settings.automation_editor.webhook_payload_object"), "text");
+      add("payload.customer.email", t("settings.automation_editor.webhook_payload_field_example"));
+      add("headers", t("settings.automation_editor.webhook_headers_object"), "text");
+      add("headers.x-request-id", t("settings.automation_editor.webhook_header_example"));
     }
     if (defaultConditionEntityId) {
       const entity = entityById.get(defaultConditionEntityId);
@@ -1016,14 +1019,14 @@ export default function AutomationEditorPage({ user }) {
         const shortId = typeof field?.id === "string" ? field.id.split(".").pop() : "";
         const label = field?.label || field?.id;
         if (shortId) {
-          add(`record.fields.${shortId}`, `Record: ${label}`, field?.type || "string", field?.options || []);
-          add(`before.fields.${shortId}`, `Before: ${label}`, field?.type || "string", field?.options || []);
-          add(`after.fields.${shortId}`, `After: ${label}`, field?.type || "string", field?.options || []);
+          add(`record.fields.${shortId}`, t("settings.automation_editor.record_field_label", { label }), field?.type || "string", field?.options || []);
+          add(`before.fields.${shortId}`, t("settings.automation_editor.before_field_label", { label }), field?.type || "string", field?.options || []);
+          add(`after.fields.${shortId}`, t("settings.automation_editor.after_field_label", { label }), field?.type || "string", field?.options || []);
         }
       });
     }
     return fields;
-  }, [defaultConditionEntityId, entityById, triggerMode]);
+  }, [defaultConditionEntityId, entityById, triggerMode, t]);
 
   const triggerFieldOptionByValue = useMemo(() => {
     const map = new Map();
@@ -1318,7 +1321,7 @@ export default function AutomationEditorPage({ user }) {
     if (fieldType === "enum" && !dynamicText) {
       return (
         <AppSelect className="select select-bordered" value={rawValue} onChange={(e) => onChange(e.target.value)}>
-          <option value="">Select value…</option>
+          <option value="">{t("settings.automation_editor.select_value")}</option>
           {enumOptions.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
@@ -1331,9 +1334,9 @@ export default function AutomationEditorPage({ user }) {
     if ((fieldType === "bool" || fieldType === "boolean") && !dynamicText) {
       return (
         <AppSelect className="select select-bordered" value={rawValue} onChange={(e) => onChange(e.target.value)}>
-          <option value="">Select value…</option>
-          <option value="true">True</option>
-          <option value="false">False</option>
+          <option value="">{t("settings.automation_editor.select_value")}</option>
+          <option value="true">{t("settings.automation_editor.true_label")}</option>
+          <option value="false">{t("settings.automation_editor.false_label")}</option>
         </AppSelect>
       );
     }
@@ -1341,7 +1344,7 @@ export default function AutomationEditorPage({ user }) {
     if (fieldType === "user" && !dynamicText) {
       return (
         <AppSelect className="select select-bordered" value={rawValue} onChange={(e) => onChange(e.target.value)}>
-          <option value="">Select user…</option>
+          <option value="">{t("settings.automation_editor.select_user")}</option>
           {memberOptions.map((member) => (
             <option key={member.user_id} value={member.user_id}>
               {member.name || member.email || member.user_email || member.user_id}
@@ -1357,7 +1360,7 @@ export default function AutomationEditorPage({ user }) {
           members={memberOptions}
           value={rawValue}
           onChange={onChange}
-          placeholder={placeholder || "Search workspace users..."}
+          placeholder={placeholder || t("common.search_workspace_users")}
         />
       );
     }
@@ -1368,7 +1371,7 @@ export default function AutomationEditorPage({ user }) {
           fieldDef={fieldDef}
           value={rawValue}
           onChange={onChange}
-          placeholder={placeholder || "Search records..."}
+          placeholder={placeholder || t("settings.automation_editor.search_records")}
         />
       );
     }
@@ -1564,15 +1567,15 @@ export default function AutomationEditorPage({ user }) {
 
   const validationErrors = useMemo(() => {
     const errs = [];
-    if (!name.trim()) errs.push("Name is required.");
+    if (!name.trim()) errs.push(t("settings.automation_editor.name_required"));
     if (trigger?.kind === "schedule") {
-      if (!(Number(trigger?.every_minutes) > 0)) errs.push("Schedule interval must be greater than 0 minutes.");
+      if (!(Number(trigger?.every_minutes) > 0)) errs.push(t("settings.automation_editor.schedule_interval_required"));
     } else if (!trigger?.event_types || trigger.event_types.length === 0) {
-      errs.push("Trigger event is required.");
+      errs.push(t("settings.automation_editor.trigger_event_required"));
     }
-    if (!steps || steps.length === 0) errs.push("At least one step is required.");
+    if (!steps || steps.length === 0) errs.push(t("settings.automation_editor.at_least_one_step_required"));
     return errs;
-  }, [name, trigger, steps]);
+  }, [name, steps, t, trigger]);
 
   const validationPanelErrors = useMemo(() => {
     const next = [...validationErrors];
@@ -1584,19 +1587,19 @@ export default function AutomationEditorPage({ user }) {
   const triggerSummaryText = useMemo(() => {
     if (trigger?.kind === "schedule") {
       const everyMinutes = Number(trigger?.every_minutes) > 0 ? Number(trigger.every_minutes) : null;
-      return everyMinutes ? `Every ${everyMinutes} minute${everyMinutes === 1 ? "" : "s"}` : "Scheduled";
+      return everyMinutes ? t("settings.automation_editor.every_minutes", { count: everyMinutes }) : t("settings.automation_editor.scheduled");
     }
     if (triggerMode === "webhook") {
       const connectionName =
-        webhookConnectionOptions.find((conn) => conn.id === webhookTriggerConnectionId)?.name || webhookTriggerConnectionId || "any connection";
-      const eventKey = webhookTriggerEventKey || "any webhook event";
+        webhookConnectionOptions.find((conn) => conn.id === webhookTriggerConnectionId)?.name || webhookTriggerConnectionId || t("settings.automation_editor.any_connection");
+      const eventKey = webhookTriggerEventKey || t("settings.automation_editor.any_webhook_event");
       return `${connectionName} • ${eventKey}`;
     }
-    return triggerOptions.flatMap((group) => group.options || []).find((evt) => (typeof evt === "string" ? evt : evt.id) === selectedTriggerEventId)?.label || selectedTriggerEventId || "Select event";
-  }, [trigger, triggerMode, triggerOptions, selectedTriggerEventId, webhookConnectionOptions, webhookTriggerConnectionId, webhookTriggerEventKey]);
+    return triggerOptions.flatMap((group) => group.options || []).find((evt) => (typeof evt === "string" ? evt : evt.id) === selectedTriggerEventId)?.label || selectedTriggerEventId || t("settings.automation_editor.select_event");
+  }, [t, trigger, triggerMode, triggerOptions, selectedTriggerEventId, webhookConnectionOptions, webhookTriggerConnectionId, webhookTriggerEventKey]);
 
   const bubbleBase = "chat-bubble text-sm leading-5 max-w-[85%]";
-  const userLabel = user?.email || "User";
+  const userLabel = user?.email || t("settings.automation_editor.user");
 
   const renderLeftPane = useCallback(() => (
     <div className="h-full min-h-0 flex flex-col overflow-hidden">
@@ -1605,9 +1608,9 @@ export default function AutomationEditorPage({ user }) {
           <div className="flex-1 min-h-0 overflow-auto space-y-4">
             {chatMessages.length === 0 && (
               <div className="chat chat-start">
-                <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">assistant</div>
+                <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{t("settings.template_studio.assistant")}</div>
                 <div className={`${bubbleBase} bg-base-200 text-base-content`}>
-                  Describe the automation change you want and I will draft an update.
+                  {t("settings.automation_editor.default_agent_message")}
                 </div>
               </div>
             )}
@@ -1621,7 +1624,7 @@ export default function AutomationEditorPage({ user }) {
                 </div>
               </div>
             ))}
-            {chatLoading && <div className="text-xs opacity-60">Agent is thinking…</div>}
+            {chatLoading && <div className="text-xs opacity-60">{t("settings.automation_editor.agent_thinking")}</div>}
           </div>
           <div className="shrink-0 border-t border-base-200 pt-3">
             <AgentChatInput
@@ -1634,12 +1637,12 @@ export default function AutomationEditorPage({ user }) {
                 setChatInput("");
                 setChatLoading(true);
                 setTimeout(() => {
-                  setChatMessages((prev) => [...prev, { role: "assistant", text: "Agent wiring coming soon." }]);
+                  setChatMessages((prev) => [...prev, { role: "assistant", text: t("settings.automation_editor.agent_wiring_soon") }]);
                   setChatLoading(false);
                 }, 500);
               }}
               disabled={chatLoading}
-              placeholder="Describe an automation change..."
+              placeholder={t("settings.automation_editor.describe_change")}
               minRows={4}
             />
           </div>
@@ -1649,9 +1652,9 @@ export default function AutomationEditorPage({ user }) {
           <LoadingSpinner className="min-h-0 h-full" />
         ) : (
           <ProviderUnavailableState
-            title="OpenAI not connected"
-            description="Connect an OpenAI key for this workspace to use Automation AI."
-            actionLabel="Connect OpenAI"
+            title={t("settings.template_studio.openai_not_connected")}
+            description={t("settings.automation_editor.openai_not_connected_description")}
+            actionLabel={t("settings.template_studio.connect_openai")}
             canManageSettings={canManageSettings}
             loading={providerStatusLoading}
             onAction={() => setOpenAiModalOpen(true)}
@@ -1659,19 +1662,19 @@ export default function AutomationEditorPage({ user }) {
         )
       )}
     </div>
-  ), [automationAiEnabled, bubbleBase, canManageSettings, chatInput, chatLoading, chatMessages, providerStatusLoading, userLabel]);
+  ), [automationAiEnabled, bubbleBase, canManageSettings, chatInput, chatLoading, chatMessages, providerStatusLoading, t, userLabel]);
 
   const renderValidationPanel = useCallback(() => (
     <ValidationPanel
       title=""
       errors={validationPanelErrors}
       warnings={[]}
-      idleMessage="Validation runs automatically while you edit."
+      idleMessage={t("settings.automation_editor.validation_idle")}
       showSuccess={true}
       showFix={automationAiEnabled}
       fixDisabled
     />
-  ), [automationAiEnabled, validationPanelErrors]);
+  ), [automationAiEnabled, t, validationPanelErrors]);
 
   const validateRecord = useCallback(async () => ({
     compiled_ok: validationPanelErrors.length === 0,
@@ -1698,78 +1701,82 @@ export default function AutomationEditorPage({ user }) {
   }, [actionOptions]);
 
   function stepSummaryText(step) {
-    if (!step) return "Select a step";
-    if (step.kind === "condition") return "Condition";
-    if (step.kind === "delay") return step.target_time ? "Wait until time" : "Wait for a period";
+    if (!step) return t("settings.automation_editor.select_step");
+    if (step.kind === "condition") return t("settings.automation_editor.condition");
+    if (step.kind === "delay") return step.target_time ? t("settings.automation_editor.wait_until_time") : t("settings.automation_editor.wait_for_period");
     const actionValue = step.module_id ? `${step.module_id}::${step.action_id}` : step.action_id || "";
-    const actionLabel = actionLabelByValue.get(actionValue) || step.action_id || "action";
-    if (step.kind === "foreach") return `Repeat ${actionLabel} over a list`;
-    return actionLabel || "Select action";
+    const actionLabel = actionLabelByValue.get(actionValue) || step.action_id || t("settings.automation_editor.action");
+    if (step.kind === "foreach") return t("settings.automation_editor.repeat_action_over_list", { action: actionLabel });
+    return actionLabel || t("settings.automation_editor.select_action");
   }
 
   function stepHelpText(step) {
-    if (!step) return "Select a step from the flow to edit it.";
-    if (step.kind === "foreach") return "Run the selected action once for each item in a list, such as query results or selected records.";
-    if (step.kind === "condition") return "Only continue if this rule matches the trigger or prior-step data.";
+    if (!step) return t("settings.automation_editor.select_step_to_edit");
+    if (step.kind === "foreach") return t("settings.automation_editor.foreach_help");
+    if (step.kind === "condition") return t("settings.automation_editor.condition_help");
     if (step.kind === "delay") return step.target_time
-      ? "Pause this automation until a specific date and time."
-      : "Pause this automation for a relative amount of time.";
-    if (step.action_id === "system.notify") return "Send an in-app notification to one or more workspace users.";
-    if (step.action_id === "system.send_email") return "Send an email using direct addresses, record fields, related records, or a template.";
-    if (step.action_id === "system.generate_document") return "Generate a document from a template and attach it to a record.";
-    if (step.action_id === "system.create_record") return "Create a new record in any entity using dynamic values from the trigger or earlier steps.";
-    if (step.action_id === "system.update_record") return "Update an existing record by applying a patch of field changes.";
-    if (step.action_id === "system.query_records") return "Find records from an entity so later steps can branch, loop, or update them.";
-    if (step.action_id === "system.add_chatter") return "Post an activity note or comment onto a record.";
-    if (step.action_id === "system.integration_request") return "Call a configured integration connection using its provider settings and authentication.";
-    if (step.action_id === "system.integration_sync") return "Run a polling sync against a configured integration connection and optionally emit item events.";
-    if (step.action_id && !step.action_id.startsWith("system.")) return "Run a module action against a target record or selection.";
-    return "Configure what this step should do and what later steps can reuse.";
+      ? t("settings.automation_editor.delay_until_help")
+      : t("settings.automation_editor.delay_for_help");
+    if (step.action_id === "system.notify") return t("settings.automation_editor.notify_help");
+    if (step.action_id === "system.send_email") return t("settings.automation_editor.send_email_help");
+    if (step.action_id === "system.generate_document") return t("settings.automation_editor.generate_document_help");
+    if (step.action_id === "system.create_record") return t("settings.automation_editor.create_record_help");
+    if (step.action_id === "system.update_record") return t("settings.automation_editor.update_record_help");
+    if (step.action_id === "system.query_records") return t("settings.automation_editor.query_records_help");
+    if (step.action_id === "system.add_chatter") return t("settings.automation_editor.add_chatter_help");
+    if (step.action_id === "system.integration_request") return t("settings.automation_editor.integration_request_help");
+    if (step.action_id === "system.integration_sync") return t("settings.automation_editor.integration_sync_help");
+    if (step.action_id && !step.action_id.startsWith("system.")) return t("settings.automation_editor.module_action_help");
+    return t("settings.automation_editor.configure_step_help");
   }
 
   function stepDetailText(step) {
     if (!step) return "";
     if (step.kind === "condition") {
-      const left = step?.expr?.left?.var || "a field";
+      const left = step?.expr?.left?.var || t("settings.automation_editor.a_field");
       const op = step?.expr?.op || "eq";
       const right = step?.expr?.right?.literal;
-      return `If ${left} ${op}${right !== undefined && right !== "" ? ` ${Array.isArray(right) ? right.join(", ") : right}` : ""}`;
+      return t("settings.automation_editor.if_expression", {
+        left,
+        op,
+        right: right !== undefined && right !== "" ? ` ${Array.isArray(right) ? right.join(", ") : right}` : "",
+      });
     }
     if (step.kind === "delay") {
-      if (step.target_time) return `Until ${step.target_time}`;
+      if (step.target_time) return t("settings.automation_editor.until_value", { value: step.target_time });
       if (step.delay_value && step.delay_unit) return `${step.delay_value} ${step.delay_unit}`;
-      if (step.seconds) return `${step.seconds} seconds`;
+      if (step.seconds) return t("settings.automation_editor.seconds_value", { count: step.seconds });
     }
     if (step.kind === "foreach") {
-      return step.over ? `Over ${typeof step.over === "string" ? step.over : "selected list"}` : "Choose a list";
+      return step.over ? t("settings.automation_editor.over_value", { value: typeof step.over === "string" ? step.over : t("settings.automation_editor.selected_list") }) : t("settings.automation_editor.choose_list");
     }
     if (step.action_id === "system.notify") {
       const count = Array.isArray(step.inputs?.recipient_user_ids)
         ? step.inputs.recipient_user_ids.length
         : step.inputs?.recipient_user_id ? 1 : 0;
-      return count ? `To ${count} workspace user${count === 1 ? "" : "s"}` : "Choose recipients";
+      return count ? t("settings.automation_editor.to_workspace_users", { count }) : t("settings.automation_editor.choose_recipients");
     }
     if (step.action_id === "system.send_email") {
-      return step.inputs?.subject || (step.inputs?.template_id ? "Uses email template" : "Set recipients and message");
+      return step.inputs?.subject || (step.inputs?.template_id ? t("settings.automation_editor.uses_email_template") : t("settings.automation_editor.set_recipients_and_message"));
     }
     if (step.action_id === "system.query_records") {
-      return `${step.inputs?.entity_id || "Trigger entity"}${step.inputs?.limit ? `, up to ${step.inputs.limit}` : ""}`;
+      return `${step.inputs?.entity_id || t("settings.automation_editor.trigger_entity")}${step.inputs?.limit ? t("settings.automation_editor.up_to_limit", { count: step.inputs.limit }) : ""}`;
     }
     if (step.action_id === "system.integration_request") {
-      const connectionName = connectionOptions.find((conn) => conn.id === step.inputs?.connection_id)?.name || step.inputs?.connection_id || "Choose connection";
+      const connectionName = connectionOptions.find((conn) => conn.id === step.inputs?.connection_id)?.name || step.inputs?.connection_id || t("settings.automation_editor.choose_connection");
       const method = step.inputs?.method || "GET";
       const target = step.inputs?.path || step.inputs?.url || "/";
       return `${connectionName} • ${method} ${target}`;
     }
     if (step.action_id === "system.integration_sync") {
-      const connectionName = connectionOptions.find((conn) => conn.id === step.inputs?.connection_id)?.name || step.inputs?.connection_id || "Choose connection";
-      return `${connectionName} • ${step.inputs?.scope_key || step.inputs?.resource_key || "default scope"}`;
+      const connectionName = connectionOptions.find((conn) => conn.id === step.inputs?.connection_id)?.name || step.inputs?.connection_id || t("settings.automation_editor.choose_connection");
+      return `${connectionName} • ${step.inputs?.scope_key || step.inputs?.resource_key || t("settings.automation_editor.default_scope")}`;
     }
     if (step.action_id === "system.create_record") {
-      return step.inputs?.entity_id || "Choose target entity";
+      return step.inputs?.entity_id || t("settings.automation_editor.choose_target_entity");
     }
     if (step.action_id === "system.update_record") {
-      return step.inputs?.entity_id || "Trigger entity";
+      return step.inputs?.entity_id || t("settings.automation_editor.trigger_entity");
     }
     return "";
   }
@@ -1788,10 +1795,10 @@ export default function AutomationEditorPage({ user }) {
   function stepListLabel(listPath) {
     const normalized = normalizeStepPath(listPath);
     const branchKey = normalized[normalized.length - 1];
-    if (branchKey === "then_steps") return "Then";
-    if (branchKey === "else_steps") return "Else";
-    if (branchKey === "steps") return "Repeat steps";
-    return "Flow";
+    if (branchKey === "then_steps") return t("settings.automation_editor.then");
+    if (branchKey === "else_steps") return t("settings.automation_editor.else");
+    if (branchKey === "steps") return t("settings.automation_editor.repeat_steps");
+    return t("settings.automation_editor.flow");
   }
 
   function renderStepCards(items, pathPrefix = []) {
@@ -1817,14 +1824,14 @@ export default function AutomationEditorPage({ user }) {
         >
           <div className="flex items-center justify-between gap-3">
             <div className="text-xs opacity-60">
-              {draggedStepPath ? `Drop a step here to start ${listLabel.toLowerCase()}` : "No steps yet."}
+              {draggedStepPath ? t("settings.automation_editor.drop_step_to_start", { name: listLabel.toLowerCase() }) : t("settings.automation_editor.no_steps_yet")}
             </div>
             <button
               type="button"
               className="btn btn-sm btn-ghost"
               onClick={() => insertStepAfter(pathPrefix, -1)}
             >
-              Add step
+              {t("settings.automation_editor.add_step")}
             </button>
           </div>
         </div>
@@ -1851,7 +1858,7 @@ export default function AutomationEditorPage({ user }) {
                 handleDropIntoList(pathPrefix, 0);
               }}
             >
-              <div className="text-xs opacity-60">{`Drop here to place it first in ${listLabel.toLowerCase()}`}</div>
+              <div className="text-xs opacity-60">{t("settings.automation_editor.drop_here_first", { name: listLabel.toLowerCase() })}</div>
             </div>
           );
         })()}
@@ -1884,11 +1891,11 @@ export default function AutomationEditorPage({ user }) {
                       setStepModalOpen(true);
                     }}
                   >
-                    <div className="text-xs uppercase tracking-wide opacity-60">Step {index + 1}</div>
+                    <div className="text-xs uppercase tracking-wide opacity-60">{t("settings.automation_editor.step_number", { count: index + 1 })}</div>
                     <div className="font-semibold truncate text-base-content">{stepSummaryText(step)}</div>
                     <div className="text-xs opacity-75 mt-1">{stepDetailText(step) || stepHelpText(step)}</div>
                     {step.kind === "condition" && (
-                      <div className="text-[11px] opacity-50 mt-1">This step can branch into `Then` and `Else` steps.</div>
+                      <div className="text-[11px] opacity-50 mt-1">{t("settings.automation_editor.condition_branch_help")}</div>
                     )}
                   </button>
                   <div className="shrink-0 flex flex-col items-end gap-2">
@@ -1896,8 +1903,8 @@ export default function AutomationEditorPage({ user }) {
                       <button
                         type="button"
                         className="btn btn-ghost btn-xs"
-                        title="Drag step"
-                        aria-label="Drag step"
+                        title={t("settings.automation_editor.drag_step")}
+                        aria-label={t("settings.automation_editor.drag_step")}
                         onMouseDown={(event) => event.stopPropagation()}
                       >
                         <GripVertical className="h-3.5 w-3.5" />
@@ -1907,8 +1914,8 @@ export default function AutomationEditorPage({ user }) {
                         className="btn btn-ghost btn-xs"
                         disabled={!canMoveUp}
                         onClick={() => moveStep(path, -1)}
-                        title="Move up"
-                        aria-label="Move step up"
+                        title={t("settings.automation_editor.move_up")}
+                        aria-label={t("settings.automation_editor.move_step_up")}
                       >
                         <ArrowUp className="h-3.5 w-3.5" />
                       </button>
@@ -1917,8 +1924,8 @@ export default function AutomationEditorPage({ user }) {
                         className="btn btn-ghost btn-xs"
                         disabled={!canMoveDown}
                         onClick={() => moveStep(path, 1)}
-                        title="Move down"
-                        aria-label="Move step down"
+                        title={t("settings.automation_editor.move_down")}
+                        aria-label={t("settings.automation_editor.move_step_down")}
                       >
                         <ArrowDown className="h-3.5 w-3.5" />
                       </button>
@@ -1926,13 +1933,13 @@ export default function AutomationEditorPage({ user }) {
                         type="button"
                         className="btn btn-ghost btn-xs text-error"
                         onClick={() => removeStep(path)}
-                        title="Remove step"
-                        aria-label="Remove step"
+                        title={t("settings.automation_editor.remove_step")}
+                        aria-label={t("settings.automation_editor.remove_step")}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                    {step.store_as ? <div className="text-[10px] opacity-60">var: {step.store_as}</div> : null}
+                    {step.store_as ? <div className="text-[10px] opacity-60">{t("settings.automation_editor.variable_short", { value: step.store_as })}</div> : null}
                   </div>
                 </div>
               </div>
@@ -1956,8 +1963,8 @@ export default function AutomationEditorPage({ user }) {
                           handleDropIntoList([...path, "then_steps"], nestedThen.length);
                         }}
                       >
-                        <div className="text-xs uppercase tracking-wide opacity-60">Then</div>
-                        <button type="button" className="btn btn-xs btn-ghost" onClick={() => addNestedStep(path, "then_steps")}>Add step</button>
+                        <div className="text-xs uppercase tracking-wide opacity-60">{t("settings.automation_editor.then")}</div>
+                        <button type="button" className="btn btn-xs btn-ghost" onClick={() => addNestedStep(path, "then_steps")}>{t("settings.automation_editor.add_step")}</button>
                       </div>
                       {renderStepCards(nestedThen, [...path, "then_steps"])}
                     </div>
@@ -1979,10 +1986,10 @@ export default function AutomationEditorPage({ user }) {
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <div className="text-[11px] uppercase tracking-wide opacity-50">Then</div>
-                          <div className="text-xs opacity-60">{draggedStepPath ? "Drop a step here to run it when true." : "These steps run when the condition is true."}</div>
+                          <div className="text-[11px] uppercase tracking-wide opacity-50">{t("settings.automation_editor.then")}</div>
+                          <div className="text-xs opacity-60">{draggedStepPath ? t("settings.automation_editor.drop_step_when_true") : t("settings.automation_editor.steps_run_when_true")}</div>
                         </div>
-                        <button type="button" className="btn btn-xs btn-ghost" onClick={() => addNestedStep(path, "then_steps")}>Add then step</button>
+                        <button type="button" className="btn btn-xs btn-ghost" onClick={() => addNestedStep(path, "then_steps")}>{t("settings.automation_editor.add_then_step")}</button>
                       </div>
                     </div>
                   )}
@@ -2003,8 +2010,8 @@ export default function AutomationEditorPage({ user }) {
                           handleDropIntoList([...path, "else_steps"], nestedElse.length);
                         }}
                       >
-                        <div className="text-xs uppercase tracking-wide opacity-60">Else</div>
-                        <button type="button" className="btn btn-xs btn-ghost" onClick={() => addNestedStep(path, "else_steps")}>Add step</button>
+                        <div className="text-xs uppercase tracking-wide opacity-60">{t("settings.automation_editor.else")}</div>
+                        <button type="button" className="btn btn-xs btn-ghost" onClick={() => addNestedStep(path, "else_steps")}>{t("settings.automation_editor.add_step")}</button>
                       </div>
                       {renderStepCards(nestedElse, [...path, "else_steps"])}
                     </div>
@@ -2026,10 +2033,10 @@ export default function AutomationEditorPage({ user }) {
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <div className="text-[11px] uppercase tracking-wide opacity-50">Else</div>
-                          <div className="text-xs opacity-60">{draggedStepPath ? "Drop a step here to run it when false." : "These steps run when the condition is false."}</div>
+                          <div className="text-[11px] uppercase tracking-wide opacity-50">{t("settings.automation_editor.else")}</div>
+                          <div className="text-xs opacity-60">{draggedStepPath ? t("settings.automation_editor.drop_step_when_false") : t("settings.automation_editor.steps_run_when_false")}</div>
                         </div>
-                        <button type="button" className="btn btn-xs btn-ghost" onClick={() => addNestedStep(path, "else_steps")}>Add else step</button>
+                        <button type="button" className="btn btn-xs btn-ghost" onClick={() => addNestedStep(path, "else_steps")}>{t("settings.automation_editor.add_else_step")}</button>
                       </div>
                     </div>
                   )}
@@ -2053,8 +2060,8 @@ export default function AutomationEditorPage({ user }) {
                       handleDropIntoList([...path, "steps"], nestedLoop.length);
                     }}
                   >
-                    <div className="text-xs uppercase tracking-wide opacity-60">Repeat Steps</div>
-                    <button type="button" className="btn btn-xs btn-ghost" onClick={() => addNestedStep(path, "steps")}>Add step</button>
+                    <div className="text-xs uppercase tracking-wide opacity-60">{t("settings.automation_editor.repeat_steps")}</div>
+                    <button type="button" className="btn btn-xs btn-ghost" onClick={() => addNestedStep(path, "steps")}>{t("settings.automation_editor.add_step")}</button>
                   </div>
                   {nestedLoop.length ? renderStepCards(nestedLoop, [...path, "steps"]) : (
                     <div
@@ -2072,7 +2079,7 @@ export default function AutomationEditorPage({ user }) {
                         handleDropIntoList([...path, "steps"], 0);
                       }}
                     >
-                      {draggedStepPath ? "Drop a step here to repeat it for each item." : "No repeat steps yet."}
+                      {draggedStepPath ? t("settings.automation_editor.drop_step_repeat_each_item") : t("settings.automation_editor.no_repeat_steps_yet")}
                     </div>
                   )}
                 </div>
@@ -2094,14 +2101,14 @@ export default function AutomationEditorPage({ user }) {
                 }}
               >
                 {draggedStepPath ? (
-                  <div className="text-xs opacity-60">Drop here to place this step between items</div>
+                  <div className="text-xs opacity-60">{t("settings.automation_editor.drop_between_items")}</div>
                 ) : (
                   <button
                     type="button"
                     className="btn btn-xs btn-ghost"
                     onClick={() => insertStepAfter(pathPrefix, index)}
                   >
-                    Add step after
+                    {t("settings.automation_editor.add_step_after")}
                   </button>
                 )}
               </div>
@@ -2114,7 +2121,7 @@ export default function AutomationEditorPage({ user }) {
 
   function renderStepEditor(step, stepPath, options = {}) {
     if (!step) {
-      return <div className="text-sm opacity-60">Select a step from the flow to edit it.</div>;
+      return <div className="text-sm opacity-60">{t("settings.automation_editor.select_step_to_edit")}</div>;
     }
     const showHeader = options.showHeader !== false;
     const linear = options.linear !== false;
@@ -2137,39 +2144,39 @@ export default function AutomationEditorPage({ user }) {
         {showHeader && (
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-xs uppercase tracking-wide opacity-60">Step {displayIndex + 1}</div>
+              <div className="text-xs uppercase tracking-wide opacity-60">{t("settings.automation_editor.step_number", { count: displayIndex + 1 })}</div>
               <div className="text-base font-semibold">{stepSummaryText(step)}</div>
               <div className="text-xs opacity-60">{stepHelpText(step)}</div>
             </div>
             <div className="flex items-center gap-1">
-              <button type="button" className="btn btn-ghost btn-xs" disabled={displayIndex === 0} onClick={() => moveStep(normalizedPath, -1)}>Up</button>
-              <button type="button" className="btn btn-ghost btn-xs" onClick={() => moveStep(normalizedPath, 1)}>Down</button>
-              <button type="button" className="btn btn-ghost btn-xs text-error" onClick={() => removeStep(normalizedPath)}>Remove</button>
+              <button type="button" className="btn btn-ghost btn-xs" disabled={displayIndex === 0} onClick={() => moveStep(normalizedPath, -1)}>{t("settings.automation_editor.up")}</button>
+              <button type="button" className="btn btn-ghost btn-xs" onClick={() => moveStep(normalizedPath, 1)}>{t("settings.automation_editor.down")}</button>
+              <button type="button" className="btn btn-ghost btn-xs text-error" onClick={() => removeStep(normalizedPath)}>{t("common.remove")}</button>
             </div>
           </div>
         )}
 
         <div className={sectionCardClass}>
-          <div className="font-medium text-sm">Step setup</div>
-          <div className="text-xs opacity-60 mt-1">Start by choosing what kind of step this is and, for actions, what it should do.</div>
+          <div className="font-medium text-sm">{t("settings.automation_editor.step_setup")}</div>
+          <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.step_setup_help")}</div>
           <div className={`mt-3 ${wideGridClass}`}>
             <label className="form-control md:col-span-4">
-              <span className="label-text">Kind</span>
+              <span className="label-text">{t("settings.automation_editor.kind")}</span>
               <AppSelect
                 className="select select-bordered"
                 value={step.kind || "action"}
                 onChange={(e) => updateStep(index, { kind: e.target.value })}
               >
-                <option value="action">Action</option>
-                <option value="foreach">Repeat action</option>
-                <option value="condition">Condition</option>
-                <option value="delay">Delay</option>
+                <option value="action">{t("settings.automation_editor.action")}</option>
+                <option value="foreach">{t("settings.automation_editor.repeat_action")}</option>
+                <option value="condition">{t("settings.automation_editor.condition")}</option>
+                <option value="delay">{t("settings.automation_editor.delay")}</option>
               </AppSelect>
             </label>
 
             {isActionLike && (
               <label className="form-control md:col-span-8">
-                <span className="label-text">Action</span>
+                <span className="label-text">{t("settings.automation_editor.action")}</span>
                 <AppSelect
                   className="select select-bordered"
                   value={actionValue}
@@ -2198,7 +2205,7 @@ export default function AutomationEditorPage({ user }) {
                     }
                   }}
                 >
-                  <option value="">Select action…</option>
+                  <option value="">{t("settings.automation_editor.select_action")}</option>
                   {actionOptions.map((group) => (
                     <optgroup key={group.label} label={group.label}>
                       {(group.options || []).map((action) => (
@@ -2219,11 +2226,11 @@ export default function AutomationEditorPage({ user }) {
 
         {step.kind === "foreach" && (
           <div className={sectionCardClass}>
-            <div className="font-medium text-sm">Repeat settings</div>
-            <div className="text-xs opacity-60 mt-1">Choose the list to loop over and how each repeated item should be referenced.</div>
+            <div className="font-medium text-sm">{t("settings.automation_editor.repeat_settings")}</div>
+            <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.repeat_settings_help")}</div>
             <div className={`mt-3 ${wideGridClass}`}>
               <label className="form-control md:col-span-6">
-                <span className="label-text">Repeat over</span>
+                <span className="label-text">{t("settings.automation_editor.repeat_over")}</span>
                 <input
                   className="input input-bordered"
                   list="automation-loop-hints"
@@ -2231,24 +2238,24 @@ export default function AutomationEditorPage({ user }) {
                   onChange={(e) => updateStep(index, { over: e.target.value })}
                   placeholder="{{steps.query_records.records}}"
                 />
-                <span className="label-text-alt mt-1 block opacity-50">Use a trigger list, query results, or stored variable.</span>
+                <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.repeat_over_help")}</span>
               </label>
               <label className="form-control md:col-span-3">
-                <span className="label-text">Item name</span>
+                <span className="label-text">{t("settings.automation_editor.item_name")}</span>
                 <input
                   className="input input-bordered"
                   value={step.item_name || "item"}
                   onChange={(e) => updateStep(index, { item_name: e.target.value })}
-                  placeholder="item"
+                  placeholder={t("settings.automation_editor.item_placeholder")}
                 />
               </label>
               <label className="form-control md:col-span-3">
-                <span className="label-text">Store output as</span>
+                <span className="label-text">{t("settings.automation_editor.store_output_as")}</span>
                 <input
                   className="input input-bordered"
                   value={step.store_as || ""}
                   onChange={(e) => updateStep(index, { store_as: e.target.value })}
-                  placeholder="loop_results"
+                  placeholder={t("settings.automation_editor.loop_results_placeholder")}
                 />
               </label>
             </div>
@@ -2268,11 +2275,11 @@ export default function AutomationEditorPage({ user }) {
               return (
                 <div className="space-y-4">
                   <div className={sectionCardClass}>
-                    <div className="font-medium text-sm">Recipients</div>
-                    <div className="text-xs opacity-60 mt-1">Choose which workspace users should receive this notification.</div>
+                    <div className="font-medium text-sm">{t("settings.automation_editor.recipients")}</div>
+                    <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.recipients_help")}</div>
                     <div className="mt-3 space-y-3">
                       <label className="form-control">
-                        <span className="label-text">Recipient</span>
+                        <span className="label-text">{t("settings.automation_editor.recipient")}</span>
                         <AppSelect
                           className="select select-bordered"
                           value=""
@@ -2284,23 +2291,23 @@ export default function AutomationEditorPage({ user }) {
                             updateStepInput(index, "recipient_user_id", next[0] || "");
                           }}
                         >
-                          <option value="">Select workspace user…</option>
+                          <option value="">{t("settings.automation_editor.select_workspace_user")}</option>
                           {memberOptions.map((member) => (
                             <option key={member.user_id} value={member.user_id}>
                               {member.name || member.email || member.user_email || member.user_id}
                             </option>
                           ))}
                         </AppSelect>
-                        <span className="label-text-alt mt-1 block opacity-50">Add one or more workspace users to notify.</span>
+                        <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.add_workspace_users_help")}</span>
                       </label>
 
                       {selectedIds.length > 0 && (
                         <div className={insetCardClass}>
-                          <span className="label-text">Selected recipients</span>
+                          <span className="label-text">{t("settings.automation_editor.selected_recipients")}</span>
                           <div className="mt-2 flex flex-wrap gap-2">
                             {selectedIds.map((userId) => {
                               const member = memberById.get(userId);
-                              const label = member?.name || member?.email || member?.user_email || "Unknown user";
+                              const label = member?.name || member?.email || member?.user_email || t("settings.automation_editor.unknown_user");
                               return (
                                 <span key={userId} className="badge badge-outline badge-dismissible">
                                   {label}
@@ -2330,44 +2337,44 @@ export default function AutomationEditorPage({ user }) {
                   </div>
 
                   <div className={sectionCardClass}>
-                    <div className="font-medium text-sm">Notification content</div>
-                    <div className="text-xs opacity-60 mt-1">Write the message and choose the visual severity.</div>
+                    <div className="font-medium text-sm">{t("settings.automation_editor.notification_content")}</div>
+                    <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.notification_content_help")}</div>
                     <div className="mt-3 space-y-3">
                       <label className="form-control">
-                        <span className="label-text">Title</span>
+                        <span className="label-text">{t("settings.automation_editor.title")}</span>
                         <input className="input input-bordered" value={step.inputs?.title || ""} onChange={(e) => updateStepInput(index, "title", e.target.value)} />
-                        <span className="label-text-alt mt-1 block opacity-50">What the user sees as the notification heading.</span>
+                        <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.notification_title_help")}</span>
                       </label>
 
                       <label className="form-control">
-                        <span className="label-text">Body</span>
+                        <span className="label-text">{t("settings.automation_editor.body")}</span>
                         <CodeTextarea
                           value={step.inputs?.body || ""}
                           onChange={(e) => updateStepInput(index, "body", e.target.value)}
                           minHeight="140px"
                         />
-                        <span className="label-text-alt mt-1 block opacity-50">Main message text. You can still use refs like {"{{trigger.record_id}}"}.</span>
+                        <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.notification_body_help")}</span>
                       </label>
 
                       <label className="form-control">
-                        <span className="label-text">Severity</span>
+                        <span className="label-text">{t("settings.automation_editor.severity")}</span>
                         <AppSelect className="select select-bordered" value={step.inputs?.severity || "info"} onChange={(e) => updateStepInput(index, "severity", e.target.value)}>
-                          <option value="info">Info</option>
-                          <option value="success">Success</option>
-                          <option value="warning">Warning</option>
-                          <option value="danger">Danger</option>
+                          <option value="info">{t("settings.automation_editor.info")}</option>
+                          <option value="success">{t("settings.automation_editor.success")}</option>
+                          <option value="warning">{t("settings.automation_editor.warning")}</option>
+                          <option value="danger">{t("settings.automation_editor.danger")}</option>
                         </AppSelect>
-                        <span className="label-text-alt mt-1 block opacity-50">Optional. This changes the visual style only. Default is Info.</span>
+                        <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.severity_help")}</span>
                       </label>
                     </div>
                   </div>
 
                   <div className={sectionCardClass}>
-                    <div className="font-medium text-sm">Link</div>
-                    <div className="text-xs opacity-60 mt-1">Choose what should open when someone clicks the notification.</div>
+                    <div className="font-medium text-sm">{t("settings.automation_editor.link")}</div>
+                    <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.link_help")}</div>
                     <div className="mt-3 space-y-3">
                       <label className="form-control">
-                        <span className="label-text">Link target</span>
+                        <span className="label-text">{t("settings.automation_editor.link_target")}</span>
                         <AppSelect
                           className="select select-bordered"
                           value={linkMode}
@@ -2408,43 +2415,43 @@ export default function AutomationEditorPage({ user }) {
                             });
                           }}
                         >
-                          <option value="none">No link</option>
-                          <option value="trigger_record">Current trigger record</option>
-                          <option value="record">Specific record</option>
-                          <option value="custom">Custom URL</option>
+                          <option value="none">{t("settings.automation_editor.no_link")}</option>
+                          <option value="trigger_record">{t("settings.automation_editor.current_trigger_record")}</option>
+                          <option value="record">{t("settings.automation_editor.specific_record")}</option>
+                          <option value="custom">{t("settings.automation_editor.custom_url")}</option>
                         </AppSelect>
                         <span className="label-text-alt mt-1 block opacity-50">
                           {linkMode === "trigger_record"
-                            ? "Optional. Opens the record from the trigger event."
+                            ? t("settings.automation_editor.trigger_record_link_help")
                             : linkMode === "record"
-                              ? `Optional. Opens a specific record. The record ID starts with {{trigger.record_id}} but you can change it.`
+                              ? t("settings.automation_editor.specific_record_link_help")
                               : linkMode === "custom"
-                                ? "Optional. Opens an internal route or external website."
-                                : "Optional. Choose what should open when someone clicks the notification."}
+                                ? t("settings.automation_editor.custom_url_link_help")
+                                : t("settings.automation_editor.no_link_help")}
                         </span>
                       </label>
 
                       {linkMode === "record" && (
                         <div className="space-y-3">
                           <label className="form-control">
-                            <span className="label-text">Record entity</span>
+                            <span className="label-text">{t("settings.automation_editor.record_entity")}</span>
                             <AppSelect
                               className="select select-bordered"
                               value={linkConfig.entityId || ""}
                               onChange={(e) => updateNotificationLink(index, { link_entity_id: e.target.value })}
                             >
-                              <option value="">Select entity…</option>
+                              <option value="">{t("settings.automation_editor.select_entity")}</option>
                               {entityOptions.map((ent) => (
                                 <option key={ent.id} value={ent.id}>
                                   {ent.label || ent.id}
                                 </option>
                               ))}
                             </AppSelect>
-                            <span className="label-text-alt mt-1 block opacity-50">Choose the entity that should open from the notification.</span>
+                            <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.record_entity_help")}</span>
                           </label>
 
                           <label className="form-control">
-                            <span className="label-text">Record ID</span>
+                            <span className="label-text">{t("settings.automation_editor.record_id")}</span>
                             <input
                               className="input input-bordered"
                               list="automation-record-hints"
@@ -2452,21 +2459,21 @@ export default function AutomationEditorPage({ user }) {
                               onChange={(e) => updateNotificationLink(index, { link_record_id: e.target.value })}
                               placeholder="{{trigger.record_id}}"
                             />
-                            <span className="label-text-alt mt-1 block opacity-50">Defaults to {"{{trigger.record_id}}"}. Change it if this notification should open a different record.</span>
+                            <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.record_id_help")}</span>
                           </label>
                         </div>
                       )}
 
                       {linkMode === "custom" && (
                         <label className="form-control">
-                          <span className="label-text">Custom URL</span>
+                          <span className="label-text">{t("settings.automation_editor.custom_url")}</span>
                           <input
                             className="input input-bordered"
                             value={linkConfig.customUrl || ""}
                             onChange={(e) => updateNotificationLink(index, { link_custom_url: e.target.value })}
                             placeholder="https://example.com"
                           />
-                          <span className="label-text-alt mt-1 block opacity-50">Use an internal route like /home or an external URL like https://example.com.</span>
+                          <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.custom_url_help")}</span>
                         </label>
                       )}
                     </div>
@@ -2526,18 +2533,18 @@ export default function AutomationEditorPage({ user }) {
               return (
                 <div className="space-y-4">
                   <div className={sectionCardClass}>
-                    <div className="font-medium text-sm">Recipients</div>
-                    <div className="text-xs opacity-60 mt-1">Choose who should receive this email, whether that comes from direct addresses, record fields, related records, or expressions.</div>
+                    <div className="font-medium text-sm">{t("settings.automation_editor.email_recipients_title")}</div>
+                    <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.email_recipients_help")}</div>
                     <div className="mt-3 space-y-3">
                       <label className="form-control">
-                        <span className="label-text">Direct email addresses</span>
+                        <span className="label-text">{t("settings.automation_editor.direct_email_addresses")}</span>
                         <input className="input input-bordered" value={(step.inputs?.to || []).join(", ")} onChange={(e) => updateStepInput(index, "to", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
-                        <span className="label-text-alt mt-1 block opacity-50">Optional comma-separated addresses. Leave blank if you only want to use recipients from fields or related records.</span>
+                        <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.direct_email_addresses_help")}</span>
                       </label>
 
                       <div className="grid gap-3 md:grid-cols-2">
                         <label className="form-control">
-                          <span className="label-text">Add internal recipient</span>
+                          <span className="label-text">{t("settings.automation_editor.add_internal_recipient")}</span>
                           <AppSelect
                             className="select select-bordered"
                             value=""
@@ -2548,7 +2555,7 @@ export default function AutomationEditorPage({ user }) {
                               updateStepInput(index, "to_internal_emails", next);
                             }}
                           >
-                            <option value="">Select workspace member…</option>
+                            <option value="">{t("settings.automation_editor.select_workspace_member")}</option>
                             {memberOptions.map((member) => {
                               const memberEmail = member.email || member.user_email || "";
                               return (
@@ -2562,7 +2569,7 @@ export default function AutomationEditorPage({ user }) {
 
                         {emailFields.length > 0 && (
                           <label className="form-control">
-                            <span className="label-text">Add record email field</span>
+                            <span className="label-text">{t("settings.automation_editor.add_record_email_field")}</span>
                             <AppSelect
                               className="select select-bordered"
                               value=""
@@ -2574,7 +2581,7 @@ export default function AutomationEditorPage({ user }) {
                                 updateStepInput(index, "to_field_id", next[0] || "");
                               }}
                             >
-                              <option value="">Select email field…</option>
+                              <option value="">{t("settings.automation_editor.select_email_field")}</option>
                               {emailFields.map((field) => (
                                 <option key={field.id} value={field.id}>
                                   {field.label || field.id}
@@ -2588,7 +2595,7 @@ export default function AutomationEditorPage({ user }) {
                       <div className="grid gap-3 md:grid-cols-2">
                         {lookupFields.length > 0 && (
                           <label className="form-control">
-                            <span className="label-text">Add lookup recipient field</span>
+                            <span className="label-text">{t("settings.automation_editor.add_lookup_recipient_field")}</span>
                             <AppSelect
                               className="select select-bordered"
                               value=""
@@ -2600,7 +2607,7 @@ export default function AutomationEditorPage({ user }) {
                                 updateStepInput(index, "to_lookup_field_id", next[0] || "");
                               }}
                             >
-                              <option value="">Select lookup field…</option>
+                              <option value="">{t("settings.automation_editor.select_lookup_field")}</option>
                               {lookupFields.map((field) => (
                                 <option key={field.id} value={field.id}>
                                   {field.label || field.id}
@@ -2612,26 +2619,26 @@ export default function AutomationEditorPage({ user }) {
 
                         {selectedLookupIds.length > 0 && targetEmailFields.length > 0 && (
                           <label className="form-control">
-                            <span className="label-text">Target email field</span>
+                            <span className="label-text">{t("settings.automation_editor.target_email_field")}</span>
                             <AppSelect
                               className="select select-bordered"
                               value={step.inputs?.to_lookup_email_field || ""}
                               onChange={(e) => updateStepInput(index, "to_lookup_email_field", e.target.value)}
                             >
-                              <option value="">Auto-detect email</option>
+                              <option value="">{t("settings.automation_editor.auto_detect_email")}</option>
                               {targetEmailFields.map((field) => (
                                 <option key={field.id} value={field.id}>
                                   {field.label || field.id}
                                 </option>
                               ))}
                             </AppSelect>
-                            <span className="label-text-alt mt-1 block opacity-50">Only needed if the related record has more than one email field.</span>
+                            <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.target_email_field_help")}</span>
                           </label>
                         )}
                       </div>
 
                       <label className="form-control">
-                        <span className="label-text">Recipient expression</span>
+                        <span className="label-text">{t("settings.automation_editor.recipient_expression")}</span>
                         <input
                           className="input input-bordered"
                           list="automation-trigger-fields"
@@ -2639,19 +2646,19 @@ export default function AutomationEditorPage({ user }) {
                           onChange={(e) => updateStepInput(index, "to_expr", e.target.value)}
                           placeholder="{{ record['contact_email'] }}, ops@example.com"
                         />
-                        <span className="label-text-alt mt-1 block opacity-50">Optional. Add extra addresses, refs, or expressions in addition to the selected recipient sources.</span>
+                        <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.recipient_expression_help")}</span>
                       </label>
 
                       {(selectedInternalEmails.length || selectedRecordEmailFieldIds.length || selectedLookupIds.length) > 0 && (
                         <div className={insetCardClass}>
-                          <span className="label-text">Selected recipient sources</span>
+                          <span className="label-text">{t("settings.automation_editor.selected_recipient_sources")}</span>
                           <div className="mt-2 flex flex-wrap gap-2">
                             {selectedInternalEmails.map((email) => {
                               const match = memberOptions.find((m) => (m.email || m.user_email) === email);
                               const label = match?.name ? `${match.name} (${email})` : email;
                               return (
                                 <span key={`internal:${email}`} className="badge badge-outline badge-dismissible">
-                                  Internal: {label}
+                                  {t("settings.automation_editor.internal_recipient_badge", { label })}
                                   <button
                                     type="button"
                                     className="badge-remove"
@@ -2666,7 +2673,7 @@ export default function AutomationEditorPage({ user }) {
                               const field = emailFields.find((f) => f.id === fieldId);
                               return (
                                 <span key={`record:${fieldId}`} className="badge badge-outline badge-dismissible">
-                                  Record field: {field?.label || fieldId}
+                                  {t("settings.automation_editor.record_field_badge", { label: field?.label || fieldId })}
                                   <button
                                     type="button"
                                     className="badge-remove"
@@ -2685,7 +2692,7 @@ export default function AutomationEditorPage({ user }) {
                               const field = lookupFields.find((f) => f.id === fieldId);
                               return (
                                 <span key={`lookup:${fieldId}`} className="badge badge-outline badge-dismissible">
-                                  Lookup: {field?.label || fieldId}
+                                  {t("settings.automation_editor.lookup_badge", { label: field?.label || fieldId })}
                                   <button
                                     type="button"
                                     className="badge-remove"
@@ -2707,63 +2714,63 @@ export default function AutomationEditorPage({ user }) {
                   </div>
 
                   <div className={sectionCardClass}>
-                    <div className="font-medium text-sm">Email content</div>
-                    <div className="text-xs opacity-60 mt-1">Set how this email is sent, where merge fields should read from, and what the message should contain.</div>
+                    <div className="font-medium text-sm">{t("settings.automation_editor.email_content_title")}</div>
+                    <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.email_content_help")}</div>
                     <div className="mt-3 space-y-3">
                       <div className="grid gap-3 md:grid-cols-2">
                         <label className="form-control">
-                          <span className="label-text">Connection</span>
+                          <span className="label-text">{t("common.connection")}</span>
                           <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.connection_id || ""}
                             onChange={(e) => updateStepInput(index, "connection_id", e.target.value)}
                           >
-                            <option value="">Use default connection</option>
+                            <option value="">{t("settings.automation_editor.use_default_connection")}</option>
                             {emailConnectionOptions.map((conn) => (
                               <option key={conn.id} value={conn.id}>
                                 {conn.name || conn.id}
                               </option>
                             ))}
                           </AppSelect>
-                          <span className="label-text-alt mt-1 block opacity-50">Optional. Leave blank to use the workspace default.</span>
+                          <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.default_connection_help")}</span>
                         </label>
                         <label className="form-control">
-                          <span className="label-text">Template</span>
+                          <span className="label-text">{t("settings.automation_editor.template")}</span>
                           <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.template_id || ""}
                             onChange={(e) => updateStepInput(index, "template_id", e.target.value)}
                           >
-                            <option value="">No template</option>
+                            <option value="">{t("settings.automation_editor.no_template")}</option>
                             {emailTemplateOptions.map((tpl) => (
                               <option key={tpl.id} value={tpl.id}>
                                 {tpl.name || tpl.id}
                               </option>
                             ))}
                           </AppSelect>
-                          <span className="label-text-alt mt-1 block opacity-50">Optional. Leave blank to write the subject and body here instead.</span>
+                          <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.email_template_help")}</span>
                         </label>
                       </div>
 
                       <div className="grid gap-3 md:grid-cols-2">
                         <label className="form-control">
-                          <span className="label-text">Entity for merge fields</span>
+                          <span className="label-text">{t("settings.automation_editor.entity_for_merge_fields")}</span>
                           <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.entity_id || ""}
                             onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
                           >
-                            <option value="">Use trigger entity</option>
+                            <option value="">{t("settings.automation_editor.use_trigger_entity")}</option>
                             {entityOptions.map((ent) => (
                               <option key={ent.id} value={ent.id}>
                                 {ent.label || ent.id}
                               </option>
                             ))}
                           </AppSelect>
-                          <span className="label-text-alt mt-1 block opacity-50">Optional. Pick the entity whose fields should be available in this email.</span>
+                          <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.entity_for_merge_fields_help")}</span>
                         </label>
                         <label className="form-control">
-                          <span className="label-text">Record for merge fields</span>
+                          <span className="label-text">{t("settings.automation_editor.record_for_merge_fields")}</span>
                           <input
                             className="input input-bordered"
                             list="automation-record-hints"
@@ -2772,36 +2779,36 @@ export default function AutomationEditorPage({ user }) {
                             placeholder="{{trigger.record_id}}"
                           />
                           <span className="label-text-alt mt-1 block opacity-50">
-                            Optional. Use a record ID, a ref like <code>{'{{trigger.record_id}}'}</code>, or leave blank to follow the trigger context.
+                            {t("settings.automation_editor.record_for_merge_fields_help")}
                           </span>
                         </label>
                       </div>
 
                       <label className="form-control">
-                        <span className="label-text">{hasTemplate ? "Subject override" : "Subject"}</span>
+                        <span className="label-text">{hasTemplate ? t("settings.automation_editor.subject_override") : t("common.subject")}</span>
                         <input className="input input-bordered" value={step.inputs?.subject || ""} onChange={(e) => updateStepInput(index, "subject", e.target.value)} />
                         <span className="label-text-alt mt-1 block opacity-50">
-                          {hasTemplate ? "Optional. Leave blank to use the template subject." : "Required when no template is selected."}
+                          {hasTemplate ? t("settings.automation_editor.subject_override_help") : t("settings.automation_editor.subject_required_without_template")}
                         </span>
                       </label>
 
                       {!hasTemplate && (
                         <label className="form-control">
-                          <span className="label-text">Email body</span>
+                          <span className="label-text">{t("settings.automation_editor.email_body")}</span>
                           <CodeTextarea
                             value={step.inputs?.body_text || ""}
                             onChange={(e) => updateStepInput(index, "body_text", e.target.value)}
                             minHeight="160px"
                           />
-                          <span className="label-text-alt mt-1 block opacity-50">Required when no template is selected. Write the plain-text body here.</span>
+                          <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.email_body_help")}</span>
                         </label>
                       )}
                     </div>
                   </div>
 
                   <div className={sectionCardClass}>
-                    <div className="font-medium text-sm">Attachments</div>
-                    <div className="text-xs opacity-60 mt-1">Choose whether this email should include generated files or attachments from a record.</div>
+                    <div className="font-medium text-sm">{t("settings.automation_editor.attachments_title")}</div>
+                    <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.attachments_help")}</div>
                     <div className="mt-3 space-y-3">
                       <label className="form-control">
                         <label className="label cursor-pointer justify-start gap-3">
@@ -2820,41 +2827,41 @@ export default function AutomationEditorPage({ user }) {
                               }
                             }}
                           />
-                          <span className="label-text">Include attachments</span>
+                          <span className="label-text">{t("settings.automation_editor.include_attachments")}</span>
                         </label>
-                        <span className="label-text-alt mt-1 block opacity-50">Turn this on only if the email should include generated files or attachments from a record.</span>
+                        <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.include_attachments_help")}</span>
                       </label>
 
                       {includeAttachments && (
                         <div className="grid gap-3 md:grid-cols-2">
                           <label className="form-control">
-                            <span className="label-text">Attachment purpose</span>
+                            <span className="label-text">{t("settings.automation_editor.attachment_purpose")}</span>
                             <input
                               className="input input-bordered"
                               value={step.inputs?.attachment_purpose || ""}
                               onChange={(e) => updateStepInput(index, "attachment_purpose", e.target.value)}
                               placeholder="invoice_pdf"
                             />
-                            <span className="label-text-alt mt-1 block opacity-50">Optional. Attach linked files with this purpose from the selected record.</span>
+                            <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.attachment_purpose_help")}</span>
                           </label>
                           <label className="form-control">
-                            <span className="label-text">Attachment entity</span>
+                            <span className="label-text">{t("settings.automation_editor.attachment_entity")}</span>
                             <AppSelect
                               className="select select-bordered"
                               value={step.inputs?.attachment_entity_id || ""}
                               onChange={(e) => updateStepInput(index, "attachment_entity_id", e.target.value)}
                             >
-                              <option value="">Use email entity</option>
+                              <option value="">{t("settings.automation_editor.use_email_entity")}</option>
                               {entityOptions.map((ent) => (
                                 <option key={ent.id} value={ent.id}>
                                   {ent.label || ent.id}
                                 </option>
                               ))}
                             </AppSelect>
-                            <span className="label-text-alt mt-1 block opacity-50">Optional. Leave blank to reuse the email merge entity above.</span>
+                            <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.attachment_entity_help")}</span>
                           </label>
                           <label className="form-control">
-                            <span className="label-text">Attachment record</span>
+                            <span className="label-text">{t("settings.automation_editor.attachment_record")}</span>
                             <input
                               className="input input-bordered"
                               list="automation-record-hints"
@@ -2862,23 +2869,23 @@ export default function AutomationEditorPage({ user }) {
                               onChange={(e) => updateStepInput(index, "attachment_record_id", e.target.value)}
                               placeholder="{{trigger.record_id}}"
                             />
-                            <span className="label-text-alt mt-1 block opacity-50">Optional. Use a record ID or a ref if the files live on a different record.</span>
+                            <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.attachment_record_help")}</span>
                           </label>
                           <label className="form-control">
-                            <span className="label-text">Attachment field</span>
+                            <span className="label-text">{t("settings.automation_editor.attachment_field")}</span>
                             <AppSelect
                               className="select select-bordered"
                               value={step.inputs?.attachment_field_id || ""}
                               onChange={(e) => updateStepInput(index, "attachment_field_id", e.target.value)}
                             >
-                              <option value="">No record attachment field</option>
+                              <option value="">{t("settings.automation_editor.no_record_attachment_field")}</option>
                               {attachmentFields.map((field) => (
                                 <option key={field.id} value={field.id}>
                                   {field.label || field.id}
                                 </option>
                               ))}
                             </AppSelect>
-                            <span className="label-text-alt mt-1 block opacity-50">Optional extra source if files already live in an attachments field on the record.</span>
+                            <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.attachment_field_help")}</span>
                           </label>
                         </div>
                       )}
@@ -2892,17 +2899,17 @@ export default function AutomationEditorPage({ user }) {
 
         {isActionLike && step.action_id === "system.generate_document" && (
           <div className={sectionCardClass}>
-            <div className="font-medium text-sm">Document setup</div>
-            <div className="text-xs opacity-60 mt-1">Choose the template, target record, and optional attachment purpose for the generated file.</div>
+            <div className="font-medium text-sm">{t("settings.automation_editor.document_setup_title")}</div>
+            <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.document_setup_help")}</div>
             <div className={`mt-3 ${standardGridClass}`}>
               <label className="form-control">
-                <span className="label-text">Template</span>
+                <span className="label-text">{t("settings.automation_editor.template")}</span>
                 <AppSelect
                   className="select select-bordered"
                   value={step.inputs?.template_id || ""}
                   onChange={(e) => updateStepInput(index, "template_id", e.target.value)}
                 >
-                  <option value="">Select template…</option>
+                  <option value="">{t("settings.automation_editor.select_template")}</option>
                   {docTemplateOptions.map((tpl) => (
                     <option key={tpl.id} value={tpl.id}>
                       {tpl.name || tpl.id}
@@ -2911,19 +2918,19 @@ export default function AutomationEditorPage({ user }) {
                 </AppSelect>
               </label>
               <label className="form-control">
-                <span className="label-text">Purpose</span>
+                <span className="label-text">{t("settings.automation_editor.purpose")}</span>
                 <input className="input input-bordered" value={step.inputs?.purpose || ""} onChange={(e) => updateStepInput(index, "purpose", e.target.value)} />
-                <span className="label-text-alt mt-1 block opacity-50">Optional attachment purpose tag, like `handover_pdf` or `quote_pdf`.</span>
+                <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.document_purpose_help")}</span>
               </label>
               <label className="form-control">
-                <span className="label-text">Entity</span>
+                <span className="label-text">{t("common.entity")}</span>
                 <AppSelect
                   className="select select-bordered"
                   value={step.inputs?.entity_id || ""}
                   onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
                 >
-                  <option value="">Select entity…</option>
-                  <option value="{{trigger.entity_id}}">Use trigger entity</option>
+                  <option value="">{t("settings.automation_editor.select_entity")}</option>
+                  <option value="{{trigger.entity_id}}">{t("settings.automation_editor.use_trigger_entity")}</option>
                   {entityOptions.map((ent) => (
                     <option key={ent.id} value={ent.id}>
                       {ent.label || ent.id}
@@ -2932,9 +2939,9 @@ export default function AutomationEditorPage({ user }) {
                 </AppSelect>
               </label>
               <label className="form-control">
-                <span className="label-text">Record</span>
+                <span className="label-text">{t("common.record")}</span>
                 <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} />
-                <span className="label-text-alt mt-1 block opacity-50">Paste record ID or use trigger.</span>
+                <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.record_or_trigger_help")}</span>
               </label>
             </div>
           </div>
@@ -2947,17 +2954,17 @@ export default function AutomationEditorPage({ user }) {
             return (
               <div className="space-y-4">
                 <div className={sectionCardClass}>
-                  <div className="font-medium text-sm">Request setup</div>
-                  <div className="text-xs opacity-60 mt-1">Choose the connection and the endpoint this request should call.</div>
+                  <div className="font-medium text-sm">{t("settings.automation_editor.request_setup_title")}</div>
+                  <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.request_setup_help")}</div>
                   <div className={`${standardGridClass} mt-3`}>
                     <label className="form-control">
-                      <span className="label-text">Connection</span>
+                      <span className="label-text">{t("common.connection")}</span>
                       <AppSelect
                         className="select select-bordered"
                         value={step.inputs?.connection_id || ""}
                         onChange={(e) => updateStepInput(index, "connection_id", e.target.value)}
                       >
-                        <option value="">Select connection…</option>
+                        <option value="">{t("settings.automation_editor.select_connection")}</option>
                         {integrationConnectionOptions.map((conn) => (
                           <option key={conn.id} value={conn.id}>
                             {conn.name || conn.id}
@@ -2966,7 +2973,7 @@ export default function AutomationEditorPage({ user }) {
                       </AppSelect>
                     </label>
                     <label className="form-control">
-                      <span className="label-text">Method</span>
+                      <span className="label-text">{t("settings.automation_editor.method")}</span>
                       <AppSelect
                         className="select select-bordered"
                         value={step.inputs?.method || "GET"}
@@ -2980,17 +2987,17 @@ export default function AutomationEditorPage({ user }) {
                       </AppSelect>
                     </label>
                     <label className="form-control">
-                      <span className="label-text">Path</span>
+                      <span className="label-text">{t("settings.automation_editor.path")}</span>
                       <input
                         className="input input-bordered"
                         value={step.inputs?.path || ""}
                         onChange={(e) => updateStepInput(index, "path", e.target.value)}
                         placeholder="/contacts"
                       />
-                      <span className="label-text-alt mt-1 block opacity-50">Use path for the provider base URL. Leave blank if you want to call a full URL directly.</span>
+                      <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.path_help")}</span>
                     </label>
                     <label className="form-control">
-                      <span className="label-text">Full URL override</span>
+                      <span className="label-text">{t("settings.automation_editor.full_url_override")}</span>
                       <input
                         className="input input-bordered"
                         value={step.inputs?.url || ""}
@@ -3003,19 +3010,19 @@ export default function AutomationEditorPage({ user }) {
                 <div className={builderSectionCardClass}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="font-medium text-sm">Headers</div>
-                      <div className="text-xs opacity-60 mt-1">Add request headers one by one. Use Insert on the refs above when a header value should come from the trigger or an earlier step.</div>
+                      <div className="font-medium text-sm">{t("settings.automation_editor.headers")}</div>
+                      <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.request_headers_help")}</div>
                     </div>
                     <button
                       type="button"
                       className={builderAddButtonClass}
                       onClick={() => writeObjectEntries(index, "headers", [...headerRows, { fieldId: "", value: "" }])}
                     >
-                      Add header
+                      {t("settings.automation_editor.add_header")}
                     </button>
                   </div>
                   {headerRows.length === 0 ? (
-                    <div className="text-xs opacity-60">No headers yet.</div>
+                    <div className="text-xs opacity-60">{t("settings.automation_editor.no_headers_yet")}</div>
                   ) : (
                     <div className="space-y-3">
                       {headerRows.map((row, rowIndex) => {
@@ -3023,18 +3030,18 @@ export default function AutomationEditorPage({ user }) {
                         return (
                           <div key={`request-header-${rowIndex}`} className={builderRowCardClass}>
                             <div className="flex items-center justify-between gap-3">
-                              <div className="text-xs font-medium uppercase tracking-wide opacity-60">Header {rowIndex + 1}</div>
+                              <div className="text-xs font-medium uppercase tracking-wide opacity-60">{t("settings.automation_editor.header_number", { count: rowIndex + 1 })}</div>
                               <button
                                 type="button"
                                 className="btn btn-ghost btn-xs text-error"
                                 onClick={() => writeObjectEntries(index, "headers", headerRows.filter((_, idx) => idx !== rowIndex))}
                               >
-                                Remove
+                                {t("common.remove")}
                               </button>
                             </div>
                             <div className={standardGridClass}>
                               <label className="form-control">
-                                <span className="label-text">Header name</span>
+                                <span className="label-text">{t("settings.automation_editor.header_name")}</span>
                                 <input
                                   className="input input-bordered"
                                   value={row.fieldId}
@@ -3046,7 +3053,7 @@ export default function AutomationEditorPage({ user }) {
                                 />
                               </label>
                               <label className="form-control">
-                                <span className="label-text">Header value</span>
+                                <span className="label-text">{t("settings.automation_editor.header_value")}</span>
                                 <input
                                   className="input input-bordered"
                                   list="automation-ref-values"
@@ -3068,19 +3075,19 @@ export default function AutomationEditorPage({ user }) {
                 <div className={builderSectionCardClass}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="font-medium text-sm">Query parameters</div>
-                      <div className="text-xs opacity-60 mt-1">Add URL query parameters one by one. Leave this empty if the request does not need query values.</div>
+                      <div className="font-medium text-sm">{t("settings.automation_editor.query_parameters")}</div>
+                      <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.query_parameters_help")}</div>
                     </div>
                     <button
                       type="button"
                       className={builderAddButtonClass}
                       onClick={() => writeObjectEntries(index, "query", [...queryRows, { fieldId: "", value: "" }])}
                     >
-                      Add parameter
+                      {t("settings.automation_editor.add_parameter")}
                     </button>
                   </div>
                   {queryRows.length === 0 ? (
-                    <div className="text-xs opacity-60">No query parameters yet.</div>
+                    <div className="text-xs opacity-60">{t("settings.automation_editor.no_query_parameters_yet")}</div>
                   ) : (
                     <div className="space-y-3">
                       {queryRows.map((row, rowIndex) => {
@@ -3088,18 +3095,18 @@ export default function AutomationEditorPage({ user }) {
                         return (
                           <div key={`request-query-${rowIndex}`} className={builderRowCardClass}>
                             <div className="flex items-center justify-between gap-3">
-                              <div className="text-xs font-medium uppercase tracking-wide opacity-60">Parameter {rowIndex + 1}</div>
+                              <div className="text-xs font-medium uppercase tracking-wide opacity-60">{t("settings.automation_editor.parameter_number", { count: rowIndex + 1 })}</div>
                               <button
                                 type="button"
                                 className="btn btn-ghost btn-xs text-error"
                                 onClick={() => writeObjectEntries(index, "query", queryRows.filter((_, idx) => idx !== rowIndex))}
                               >
-                                Remove
+                                {t("common.remove")}
                               </button>
                             </div>
                             <div className={standardGridClass}>
                               <label className="form-control">
-                                <span className="label-text">Parameter name</span>
+                                <span className="label-text">{t("settings.automation_editor.parameter_name")}</span>
                                 <input
                                   className="input input-bordered"
                                   value={row.fieldId}
@@ -3111,7 +3118,7 @@ export default function AutomationEditorPage({ user }) {
                                 />
                               </label>
                               <label className="form-control">
-                                <span className="label-text">Parameter value</span>
+                                <span className="label-text">{t("settings.automation_editor.parameter_value")}</span>
                                 <input
                                   className="input input-bordered"
                                   list="automation-ref-values"
@@ -3131,20 +3138,20 @@ export default function AutomationEditorPage({ user }) {
                   )}
                 </div>
                 <div className={sectionCardClass}>
-                  <div className="font-medium text-sm">Request body and raw objects</div>
-                  <div className="text-xs opacity-60 mt-1">Use this if the request needs a JSON body, a raw body, or you want to edit the raw headers/query objects directly.</div>
+                  <div className="font-medium text-sm">{t("settings.automation_editor.request_body_title")}</div>
+                  <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.request_body_help")}</div>
                   <div className={`${standardGridClass} mt-3`}>
                       <label className="form-control">
-                        <span className="label-text">JSON body</span>
+                        <span className="label-text">{t("settings.automation_editor.json_body")}</span>
                         <CodeTextarea
                           value={typeof step.inputs?.json === "string" ? step.inputs.json : JSON.stringify(step.inputs?.json || {}, null, 2)}
                           onChange={(e) => updateStepInput(index, "json", e.target.value)}
                           minHeight="140px"
                         />
-                        <span className="label label-text-alt opacity-50">Use this for structured payloads. Leave empty and use raw body only if the endpoint does not expect JSON.</span>
+                        <span className="label label-text-alt opacity-50">{t("settings.automation_editor.json_body_help")}</span>
                       </label>
                       <label className="form-control">
-                        <span className="label-text">Raw body</span>
+                        <span className="label-text">{t("settings.automation_editor.raw_body")}</span>
                         <CodeTextarea
                           value={step.inputs?.body || ""}
                           onChange={(e) => updateStepInput(index, "body", e.target.value)}
@@ -3152,7 +3159,7 @@ export default function AutomationEditorPage({ user }) {
                         />
                       </label>
                       <label className="form-control">
-                        <span className="label-text">Headers JSON</span>
+                        <span className="label-text">{t("settings.automation_editor.headers_json")}</span>
                         <CodeTextarea
                           value={typeof step.inputs?.headers === "string" ? step.inputs.headers : JSON.stringify(step.inputs?.headers || {}, null, 2)}
                           onChange={(e) => {
@@ -3163,7 +3170,7 @@ export default function AutomationEditorPage({ user }) {
                         />
                       </label>
                       <label className="form-control">
-                        <span className="label-text">Query JSON</span>
+                        <span className="label-text">{t("settings.automation_editor.query_json")}</span>
                         <CodeTextarea
                           value={typeof step.inputs?.query === "string" ? step.inputs.query : JSON.stringify(step.inputs?.query || {}, null, 2)}
                           onChange={(e) => {
@@ -3187,17 +3194,17 @@ export default function AutomationEditorPage({ user }) {
             return (
               <div className="space-y-4">
                 <div className={sectionCardClass}>
-                  <div className="font-medium text-sm">Sync setup</div>
-                  <div className="text-xs opacity-60 mt-1">Choose the connection, checkpoint scope, and whether this sync should emit events or run in the background.</div>
+                  <div className="font-medium text-sm">{t("settings.automation_editor.sync_setup_title")}</div>
+                  <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.sync_setup_help")}</div>
                   <div className={`${standardGridClass} mt-3`}>
                     <label className="form-control">
-                      <span className="label-text">Connection</span>
+                      <span className="label-text">{t("common.connection")}</span>
                       <AppSelect
                         className="select select-bordered"
                         value={step.inputs?.connection_id || ""}
                         onChange={(e) => updateStepInput(index, "connection_id", e.target.value)}
                       >
-                        <option value="">Select connection…</option>
+                        <option value="">{t("settings.automation_editor.select_connection")}</option>
                         {integrationConnectionOptions.map((conn) => (
                           <option key={conn.id} value={conn.id}>
                             {conn.name || conn.id}
@@ -3206,14 +3213,14 @@ export default function AutomationEditorPage({ user }) {
                       </AppSelect>
                     </label>
                     <label className="form-control">
-                      <span className="label-text">Checkpoint scope</span>
+                      <span className="label-text">{t("settings.automation_editor.checkpoint_scope")}</span>
                       <input
                         className="input input-bordered"
                         value={step.inputs?.scope_key || ""}
                         onChange={(e) => updateStepInput(index, "scope_key", e.target.value)}
                         placeholder="contacts"
                       />
-                      <span className="label-text-alt mt-1 block opacity-50">Use different scopes when one connection syncs more than one resource.</span>
+                      <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.checkpoint_scope_help")}</span>
                     </label>
                     <label className="form-control">
                       <label className="label cursor-pointer justify-start gap-3">
@@ -3223,9 +3230,9 @@ export default function AutomationEditorPage({ user }) {
                           checked={Boolean(step.inputs?.emit_events)}
                           onChange={(e) => updateStepInput(index, "emit_events", e.target.checked ? true : undefined)}
                         />
-                        <span className="label-text">Emit item events</span>
+                        <span className="label-text">{t("settings.automation_editor.emit_item_events")}</span>
                       </label>
-                      <span className="label-text-alt mt-1 block opacity-50">Turn this on if later automations should react to each returned item.</span>
+                      <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.emit_item_events_help")}</span>
                     </label>
                     <label className="form-control">
                       <label className="label cursor-pointer justify-start gap-3">
@@ -3235,18 +3242,18 @@ export default function AutomationEditorPage({ user }) {
                           checked={Boolean(step.inputs?.async)}
                           onChange={(e) => updateStepInput(index, "async", e.target.checked ? true : undefined)}
                         />
-                        <span className="label-text">Queue in background</span>
+                        <span className="label-text">{t("settings.automation_editor.queue_in_background")}</span>
                       </label>
-                      <span className="label-text-alt mt-1 block opacity-50">Use this when the sync might take a while and you do not need the result immediately.</span>
+                      <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.queue_in_background_help")}</span>
                     </label>
                   </div>
                 </div>
                 <div className={sectionCardClass}>
-                  <div className="font-medium text-sm">Sync request options</div>
-                  <div className="text-xs opacity-60 mt-1">Override the saved sync request or cursor settings for this automation run.</div>
+                  <div className="font-medium text-sm">{t("settings.automation_editor.sync_request_options")}</div>
+                  <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.sync_request_options_help")}</div>
                   <div className={`${standardGridClass} mt-3`}>
                       <label className="form-control">
-                        <span className="label-text">Method</span>
+                        <span className="label-text">{t("settings.automation_editor.method")}</span>
                         <AppSelect
                           className="select select-bordered"
                           value={step.inputs?.method || "GET"}
@@ -3260,7 +3267,7 @@ export default function AutomationEditorPage({ user }) {
                         </AppSelect>
                       </label>
                       <label className="form-control">
-                        <span className="label-text">Path</span>
+                        <span className="label-text">{t("settings.automation_editor.path")}</span>
                         <input
                           className="input input-bordered"
                           value={step.inputs?.path || ""}
@@ -3269,7 +3276,7 @@ export default function AutomationEditorPage({ user }) {
                         />
                       </label>
                       <label className="form-control">
-                        <span className="label-text">Items path</span>
+                        <span className="label-text">{t("settings.automation_editor.items_path")}</span>
                         <input
                           className="input input-bordered"
                           value={step.inputs?.items_path || ""}
@@ -3278,7 +3285,7 @@ export default function AutomationEditorPage({ user }) {
                         />
                       </label>
                       <label className="form-control">
-                        <span className="label-text">Cursor query parameter</span>
+                        <span className="label-text">{t("settings.automation_editor.cursor_query_parameter")}</span>
                         <input
                           className="input input-bordered"
                           value={step.inputs?.cursor_param || ""}
@@ -3287,7 +3294,7 @@ export default function AutomationEditorPage({ user }) {
                         />
                       </label>
                       <label className="form-control">
-                        <span className="label-text">Next cursor path</span>
+                        <span className="label-text">{t("settings.automation_editor.next_cursor_path")}</span>
                         <input
                           className="input input-bordered"
                           value={step.inputs?.cursor_value_path || ""}
@@ -3296,7 +3303,7 @@ export default function AutomationEditorPage({ user }) {
                         />
                       </label>
                       <label className="form-control">
-                        <span className="label-text">Last item cursor path</span>
+                        <span className="label-text">{t("settings.automation_editor.last_item_cursor_path")}</span>
                         <input
                           className="input input-bordered"
                           value={step.inputs?.last_item_cursor_path || ""}
@@ -3305,7 +3312,7 @@ export default function AutomationEditorPage({ user }) {
                         />
                       </label>
                       <label className="form-control">
-                        <span className="label-text">Max items</span>
+                        <span className="label-text">{t("settings.automation_editor.max_items")}</span>
                         <input
                           className="input input-bordered"
                           value={step.inputs?.max_items || ""}
@@ -3316,19 +3323,19 @@ export default function AutomationEditorPage({ user }) {
                       <div className={builderSectionCardClass}>
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <div className="font-medium text-sm">Headers</div>
-                            <div className="text-xs opacity-60 mt-1">Override or add sync request headers one by one.</div>
+                            <div className="font-medium text-sm">{t("settings.automation_editor.headers")}</div>
+                            <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.sync_headers_help")}</div>
                           </div>
                           <button
                             type="button"
                             className={builderAddButtonClass}
                             onClick={() => writeObjectEntries(index, "headers", [...headerRows, { fieldId: "", value: "" }])}
                           >
-                            Add header
+                            {t("settings.automation_editor.add_header")}
                           </button>
                         </div>
                         {headerRows.length === 0 ? (
-                          <div className="text-xs opacity-60">No override headers yet.</div>
+                          <div className="text-xs opacity-60">{t("settings.automation_editor.no_override_headers_yet")}</div>
                         ) : (
                           <div className="space-y-3">
                             {headerRows.map((row, rowIndex) => {
@@ -3336,18 +3343,18 @@ export default function AutomationEditorPage({ user }) {
                               return (
                                 <div key={`sync-header-${rowIndex}`} className={builderRowCardClass}>
                                   <div className="flex items-center justify-between gap-3">
-                                    <div className="text-xs font-medium uppercase tracking-wide opacity-60">Header {rowIndex + 1}</div>
+                                    <div className="text-xs font-medium uppercase tracking-wide opacity-60">{t("settings.automation_editor.header_number", { count: rowIndex + 1 })}</div>
                                     <button
                                       type="button"
                                       className="btn btn-ghost btn-xs text-error"
                                       onClick={() => writeObjectEntries(index, "headers", headerRows.filter((_, idx) => idx !== rowIndex))}
                                     >
-                                      Remove
+                                      {t("common.remove")}
                                     </button>
                                   </div>
                                   <div className={standardGridClass}>
                                     <label className="form-control">
-                                      <span className="label-text">Header name</span>
+                                      <span className="label-text">{t("settings.automation_editor.header_name")}</span>
                                       <input
                                         className="input input-bordered"
                                         value={row.fieldId}
@@ -3359,7 +3366,7 @@ export default function AutomationEditorPage({ user }) {
                                       />
                                     </label>
                                     <label className="form-control">
-                                      <span className="label-text">Header value</span>
+                                      <span className="label-text">{t("settings.automation_editor.header_value")}</span>
                                       <input
                                         className="input input-bordered"
                                         list="automation-ref-values"
@@ -3381,19 +3388,19 @@ export default function AutomationEditorPage({ user }) {
                       <div className={builderSectionCardClass}>
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <div className="font-medium text-sm">Query parameters</div>
-                            <div className="text-xs opacity-60 mt-1">Override or add sync query parameters one by one.</div>
+                            <div className="font-medium text-sm">{t("settings.automation_editor.query_parameters")}</div>
+                            <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.sync_query_parameters_help")}</div>
                           </div>
                           <button
                             type="button"
                             className={builderAddButtonClass}
                             onClick={() => writeObjectEntries(index, "query", [...queryRows, { fieldId: "", value: "" }])}
                           >
-                            Add parameter
+                            {t("settings.automation_editor.add_parameter")}
                           </button>
                         </div>
                         {queryRows.length === 0 ? (
-                          <div className="text-xs opacity-60">No override query parameters yet.</div>
+                          <div className="text-xs opacity-60">{t("settings.automation_editor.no_override_query_parameters_yet")}</div>
                         ) : (
                           <div className="space-y-3">
                             {queryRows.map((row, rowIndex) => {
@@ -3401,18 +3408,18 @@ export default function AutomationEditorPage({ user }) {
                               return (
                                 <div key={`sync-query-${rowIndex}`} className={builderRowCardClass}>
                                   <div className="flex items-center justify-between gap-3">
-                                    <div className="text-xs font-medium uppercase tracking-wide opacity-60">Parameter {rowIndex + 1}</div>
+                                    <div className="text-xs font-medium uppercase tracking-wide opacity-60">{t("settings.automation_editor.parameter_number", { count: rowIndex + 1 })}</div>
                                     <button
                                       type="button"
                                       className="btn btn-ghost btn-xs text-error"
                                       onClick={() => writeObjectEntries(index, "query", queryRows.filter((_, idx) => idx !== rowIndex))}
                                     >
-                                      Remove
+                                      {t("common.remove")}
                                     </button>
                                   </div>
                                   <div className={standardGridClass}>
                                     <label className="form-control">
-                                      <span className="label-text">Parameter name</span>
+                                      <span className="label-text">{t("settings.automation_editor.parameter_name")}</span>
                                       <input
                                         className="input input-bordered"
                                         value={row.fieldId}
@@ -3424,7 +3431,7 @@ export default function AutomationEditorPage({ user }) {
                                       />
                                     </label>
                                     <label className="form-control">
-                                      <span className="label-text">Parameter value</span>
+                                      <span className="label-text">{t("settings.automation_editor.parameter_value")}</span>
                                       <input
                                         className="input input-bordered"
                                         list="automation-ref-values"
@@ -3444,7 +3451,7 @@ export default function AutomationEditorPage({ user }) {
                         )}
                       </div>
                       <label className="form-control">
-                        <span className="label-text">Headers JSON</span>
+                        <span className="label-text">{t("settings.automation_editor.headers_json")}</span>
                         <CodeTextarea
                           value={typeof step.inputs?.headers === "string" ? step.inputs.headers : JSON.stringify(step.inputs?.headers || {}, null, 2)}
                           onChange={(e) => {
@@ -3455,7 +3462,7 @@ export default function AutomationEditorPage({ user }) {
                         />
                       </label>
                       <label className="form-control">
-                        <span className="label-text">Query JSON</span>
+                        <span className="label-text">{t("settings.automation_editor.query_json")}</span>
                         <CodeTextarea
                           value={typeof step.inputs?.query === "string" ? step.inputs.query : JSON.stringify(step.inputs?.query || {}, null, 2)}
                           onChange={(e) => {
@@ -3474,17 +3481,17 @@ export default function AutomationEditorPage({ user }) {
 
         {isActionLike && step.action_id && !step.action_id.startsWith("system.") && (
           <div className={sectionCardClass}>
-            <div className="font-medium text-sm">Action target</div>
-            <div className="text-xs opacity-60 mt-1">Choose which record or records this module action should run against.</div>
+            <div className="font-medium text-sm">{t("settings.automation_editor.action_target")}</div>
+            <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.action_target_help")}</div>
             <div className={`mt-3 ${standardGridClass}`}>
               <label className="form-control">
-                <span className="label-text">Entity</span>
+                <span className="label-text">{t("common.entity")}</span>
                 <AppSelect
                   className="select select-bordered"
                   value={step.inputs?.entity_id || ""}
                   onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
                 >
-                  <option value="">Use trigger entity</option>
+                  <option value="">{t("settings.automation_editor.use_trigger_entity")}</option>
                   {entityOptions.map((ent) => (
                     <option key={ent.id} value={ent.id}>
                       {ent.label || ent.id}
@@ -3493,14 +3500,14 @@ export default function AutomationEditorPage({ user }) {
                 </AppSelect>
               </label>
               <label className="form-control">
-                <span className="label-text">Record</span>
+                <span className="label-text">{t("common.record")}</span>
                 <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} />
-                <span className="label-text-alt mt-1 block opacity-50">Paste record ID or use trigger.</span>
+                <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.record_or_trigger_help")}</span>
               </label>
               <label className="form-control md:col-span-2">
-                <span className="label-text">Selected records (comma)</span>
+                <span className="label-text">{t("settings.automation_editor.selected_records_comma")}</span>
                 <input className="input input-bordered" value={(step.inputs?.selected_ids || []).join(", ")} onChange={(e) => updateStepInput(index, "selected_ids", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
-                <span className="label-text-alt mt-1 block opacity-50">Comma-separated record IDs.</span>
+                <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.selected_records_comma_help")}</span>
               </label>
             </div>
           </div>
@@ -3516,20 +3523,20 @@ export default function AutomationEditorPage({ user }) {
             return (
               <div className="space-y-4">
                 <div className={sectionCardClass}>
-                  <div className="font-medium text-sm">Record setup</div>
-                  <div className="text-xs opacity-60 mt-1">Choose which entity to create and where to store the result for later steps.</div>
+                  <div className="font-medium text-sm">{t("settings.automation_editor.record_setup_title")}</div>
+                  <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.record_setup_help")}</div>
                   <div className={`${standardGridClass} mt-3`}>
                     <label className="form-control">
-                      <span className="label-text">Entity</span>
+                      <span className="label-text">{t("common.entity")}</span>
                       <AppSelect className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
-                        <option value="">Select entity…</option>
+                        <option value="">{t("settings.automation_editor.select_entity")}</option>
                         {entityOptions.map((ent) => (
                           <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
                         ))}
                       </AppSelect>
                     </label>
                     <label className="form-control">
-                      <span className="label-text">Store output as</span>
+                      <span className="label-text">{t("settings.automation_editor.store_output_as")}</span>
                       <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="new_record" />
                     </label>
                   </div>
@@ -3537,19 +3544,19 @@ export default function AutomationEditorPage({ user }) {
                 <div className={builderSectionCardClass}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="font-medium text-sm">Field values</div>
-                      <div className="text-xs opacity-60 mt-1">Fill out the record one field at a time. Use Insert on the refs above when a value should come from the trigger or an earlier step.</div>
+                      <div className="font-medium text-sm">{t("settings.automation_editor.field_values")}</div>
+                      <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.field_values_help")}</div>
                     </div>
                     <button
                       type="button"
                       className={builderAddButtonClass}
                       onClick={() => writeObjectEntries(index, "values", [...rows, { fieldId: "", value: "" }])}
                     >
-                      Add field
+                      {t("settings.automation_editor.add_field")}
                     </button>
                   </div>
                   {rows.length === 0 ? (
-                    <div className="text-xs opacity-60">No field values yet.</div>
+                    <div className="text-xs opacity-60">{t("settings.automation_editor.no_field_values_yet")}</div>
                   ) : (
                     <div className="space-y-3">
                       {rows.map((row, rowIndex) => {
@@ -3558,18 +3565,18 @@ export default function AutomationEditorPage({ user }) {
                         return (
                           <div key={`create-value-${rowIndex}`} className={builderRowCardClass}>
                             <div className="flex items-center justify-between gap-3">
-                              <div className="text-xs font-medium uppercase tracking-wide opacity-60">Field {rowIndex + 1}</div>
+                              <div className="text-xs font-medium uppercase tracking-wide opacity-60">{t("settings.automation_editor.field_number", { count: rowIndex + 1 })}</div>
                               <button
                                 type="button"
                                 className="btn btn-ghost btn-xs text-error"
                                 onClick={() => writeObjectEntries(index, "values", rows.filter((_, idx) => idx !== rowIndex))}
                               >
-                                Remove
+                                {t("common.remove")}
                               </button>
                             </div>
                             <div className={standardGridClass}>
                               <label className="form-control">
-                                <span className="label-text">Field</span>
+                                <span className="label-text">{t("common.field")}</span>
                                 <input
                                   className="input input-bordered"
                                   list={fieldDatalistId}
@@ -3582,7 +3589,7 @@ export default function AutomationEditorPage({ user }) {
                                 />
                               </label>
                               <label className="form-control">
-                                <span className="label-text">Value</span>
+                                <span className="label-text">{t("settings.value")}</span>
                                 {renderTypedValueEditor({
                                   fieldDef,
                                   value: row.value,
@@ -3594,8 +3601,8 @@ export default function AutomationEditorPage({ user }) {
                                 })}
                                 <span className="label label-text-alt opacity-50">
                                   {fieldDef
-                                    ? `Field type: ${fieldDef.type || "string"}`
-                                    : "Pick a field first to get a type-aware value input."}
+                                    ? t("settings.automation_editor.field_type", { type: fieldDef.type || "string" })
+                                    : t("settings.automation_editor.pick_field_for_type_aware_input")}
                                 </span>
                               </label>
                             </div>
@@ -3612,11 +3619,11 @@ export default function AutomationEditorPage({ user }) {
                     ))}
                   </datalist>
                   <div className={detailCardClass}>
-                    <div className="font-medium text-sm">Raw values JSON</div>
-                    <div className="text-xs opacity-60 mt-1">Use this only if you need nested objects or a shape that is easier to paste as raw JSON.</div>
+                    <div className="font-medium text-sm">{t("settings.automation_editor.raw_values_json")}</div>
+                    <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.raw_values_json_help")}</div>
                     <div className="mt-3">
                       <label className="form-control">
-                        <span className="label-text">Values JSON</span>
+                        <span className="label-text">{t("settings.automation_editor.values_json")}</span>
                         <CodeTextarea
                           value={stringifyJsonObjectInput(step.inputs?.values)}
                           onChange={(e) => {
@@ -3645,24 +3652,24 @@ export default function AutomationEditorPage({ user }) {
             return (
               <div className="space-y-4">
                 <div className={sectionCardClass}>
-                  <div className="font-medium text-sm">Record target</div>
-                  <div className="text-xs opacity-60 mt-1">Choose the entity and record to update, and optionally store the returned record.</div>
+                  <div className="font-medium text-sm">{t("settings.automation_editor.record_target")}</div>
+                  <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.record_target_help")}</div>
                   <div className={`${standardGridClass} mt-3`}>
                     <label className="form-control">
-                      <span className="label-text">Entity</span>
+                      <span className="label-text">{t("common.entity")}</span>
                       <AppSelect className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
-                        <option value="">Use trigger entity</option>
+                        <option value="">{t("settings.automation_editor.use_trigger_entity")}</option>
                         {entityOptions.map((ent) => (
                           <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
                         ))}
                       </AppSelect>
                     </label>
                     <label className="form-control">
-                      <span className="label-text">Record</span>
+                      <span className="label-text">{t("common.record")}</span>
                       <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} placeholder="{{trigger.record_id}}" />
                     </label>
                     <label className="form-control">
-                      <span className="label-text">Store output as</span>
+                      <span className="label-text">{t("settings.automation_editor.store_output_as")}</span>
                       <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="updated_record" />
                     </label>
                   </div>
@@ -3670,19 +3677,19 @@ export default function AutomationEditorPage({ user }) {
                 <div className={builderSectionCardClass}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="font-medium text-sm">Field changes</div>
-                      <div className="text-xs opacity-60 mt-1">Only add the fields you want to change. Anything you leave out is untouched.</div>
+                      <div className="font-medium text-sm">{t("settings.automation_editor.field_changes")}</div>
+                      <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.field_changes_help")}</div>
                     </div>
                     <button
                       type="button"
                       className={builderAddButtonClass}
                       onClick={() => writeObjectEntries(index, "patch", [...rows, { fieldId: "", value: "" }])}
                     >
-                      Add change
+                      {t("settings.automation_editor.add_change")}
                     </button>
                   </div>
                   {rows.length === 0 ? (
-                    <div className="text-xs opacity-60">No changes yet.</div>
+                    <div className="text-xs opacity-60">{t("settings.automation_editor.no_changes_yet")}</div>
                   ) : (
                     <div className="space-y-3">
                       {rows.map((row, rowIndex) => {
@@ -3691,18 +3698,18 @@ export default function AutomationEditorPage({ user }) {
                         return (
                           <div key={`update-patch-${rowIndex}`} className={builderRowCardClass}>
                             <div className="flex items-center justify-between gap-3">
-                              <div className="text-xs font-medium uppercase tracking-wide opacity-60">Change {rowIndex + 1}</div>
+                              <div className="text-xs font-medium uppercase tracking-wide opacity-60">{t("settings.automation_editor.change_number", { count: rowIndex + 1 })}</div>
                               <button
                                 type="button"
                                 className="btn btn-ghost btn-xs text-error"
                                 onClick={() => writeObjectEntries(index, "patch", rows.filter((_, idx) => idx !== rowIndex))}
                               >
-                                Remove
+                                {t("common.remove")}
                               </button>
                             </div>
                             <div className={standardGridClass}>
                               <label className="form-control">
-                                <span className="label-text">Field</span>
+                                <span className="label-text">{t("common.field")}</span>
                                 <input
                                   className="input input-bordered"
                                   list={fieldDatalistId}
@@ -3715,7 +3722,7 @@ export default function AutomationEditorPage({ user }) {
                                 />
                               </label>
                               <label className="form-control">
-                                <span className="label-text">New value</span>
+                                <span className="label-text">{t("settings.automation_editor.new_value")}</span>
                                 {renderTypedValueEditor({
                                   fieldDef,
                                   value: row.value,
@@ -3727,8 +3734,8 @@ export default function AutomationEditorPage({ user }) {
                                 })}
                                 <span className="label label-text-alt opacity-50">
                                   {fieldDef
-                                    ? `Field type: ${fieldDef.type || "string"}`
-                                    : "Pick a field first to get a type-aware value input."}
+                                    ? t("settings.automation_editor.field_type", { type: fieldDef.type || "string" })
+                                    : t("settings.automation_editor.pick_field_for_type_aware_input")}
                                 </span>
                               </label>
                             </div>
@@ -3745,11 +3752,11 @@ export default function AutomationEditorPage({ user }) {
                     ))}
                   </datalist>
                   <div className={detailCardClass}>
-                    <div className="font-medium text-sm">Raw patch JSON</div>
-                    <div className="text-xs opacity-60 mt-1">Use this only if you need nested objects or want to paste a prepared patch object.</div>
+                    <div className="font-medium text-sm">{t("settings.automation_editor.raw_patch_json")}</div>
+                    <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.raw_patch_json_help")}</div>
                     <div className="mt-3">
                       <label className="form-control">
-                        <span className="label-text">Patch JSON</span>
+                        <span className="label-text">{t("settings.automation_editor.patch_json")}</span>
                         <CodeTextarea
                           value={stringifyJsonObjectInput(step.inputs?.patch)}
                           onChange={(e) => {
@@ -3778,30 +3785,30 @@ export default function AutomationEditorPage({ user }) {
             return (
               <div className="space-y-4">
                 <div className={sectionCardClass}>
-                  <div className="font-medium text-sm">Query setup</div>
-                  <div className="text-xs opacity-60 mt-1">Choose the entity, optional search text, and how many records should be returned.</div>
+                  <div className="font-medium text-sm">{t("settings.automation_editor.query_setup_title")}</div>
+                  <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.query_setup_help")}</div>
                   <div className={`${standardGridClass} mt-3`}>
                     <label className="form-control">
-                      <span className="label-text">Entity</span>
+                      <span className="label-text">{t("common.entity")}</span>
                       <AppSelect className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
-                        <option value="">Use trigger entity</option>
+                        <option value="">{t("settings.automation_editor.use_trigger_entity")}</option>
                         {entityOptions.map((ent) => (
                           <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
                         ))}
                       </AppSelect>
                     </label>
                     <label className="form-control">
-                      <span className="label-text">Search text</span>
+                      <span className="label-text">{t("settings.automation_editor.search_text")}</span>
                       <input className="input input-bordered" value={step.inputs?.q || ""} onChange={(e) => updateStepInput(index, "q", e.target.value)} />
-                      <span className="label-text-alt mt-1 block opacity-50">Optional text search. Leave blank if you only want to use filter rules.</span>
+                      <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.search_text_help")}</span>
                     </label>
                     <label className="form-control">
-                      <span className="label-text">Limit</span>
+                      <span className="label-text">{t("settings.automation_editor.limit")}</span>
                       <input className="input input-bordered" type="number" min={1} max={200} value={step.inputs?.limit || 25} onChange={(e) => updateStepInput(index, "limit", Number(e.target.value || 25))} />
-                      <span className="label-text-alt mt-1 block opacity-50">Only the first matching records are returned to later steps.</span>
+                      <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.limit_help")}</span>
                     </label>
                     <label className="form-control">
-                      <span className="label-text">Store output as</span>
+                      <span className="label-text">{t("settings.automation_editor.store_output_as")}</span>
                       <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="query_results" />
                     </label>
                   </div>
@@ -3809,19 +3816,19 @@ export default function AutomationEditorPage({ user }) {
                 <div className={builderSectionCardClass}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="font-medium text-sm">Quick filters</div>
-                      <div className="text-xs opacity-60 mt-1">Add simple rules to narrow down records. These compile into the same advanced filter JSON behind the scenes.</div>
+                      <div className="font-medium text-sm">{t("settings.automation_editor.quick_filters")}</div>
+                      <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.quick_filters_help")}</div>
                     </div>
                     <button
                       type="button"
                       className={builderAddButtonClass}
                       onClick={() => writeFilterRows(index, "filter_expr", [...filterRows, { path: "", op: "eq", value: "" }])}
                     >
-                      Add rule
+                      {t("settings.automation_editor.add_rule")}
                     </button>
                   </div>
                   {filterRows.length === 0 ? (
-                    <div className="text-xs opacity-60">No quick filters yet.</div>
+                    <div className="text-xs opacity-60">{t("settings.automation_editor.no_quick_filters_yet")}</div>
                   ) : (
                     <div className="space-y-3">
                       {filterRows.map((row, rowIndex) => {
@@ -3830,18 +3837,18 @@ export default function AutomationEditorPage({ user }) {
                         return (
                           <div key={`query-filter-${rowIndex}`} className={builderRowCardClass}>
                             <div className="flex items-center justify-between gap-3">
-                              <div className="text-xs font-medium uppercase tracking-wide opacity-60">Rule {rowIndex + 1}</div>
+                              <div className="text-xs font-medium uppercase tracking-wide opacity-60">{t("settings.automation_editor.rule_number", { count: rowIndex + 1 })}</div>
                               <button
                                 type="button"
                                 className="btn btn-ghost btn-xs text-error"
                                 onClick={() => writeFilterRows(index, "filter_expr", filterRows.filter((_, idx) => idx !== rowIndex))}
                               >
-                                Remove
+                                {t("common.remove")}
                               </button>
                             </div>
                             <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_180px_minmax(0,1fr)]">
                               <label className="form-control">
-                                <span className="label-text">Field path</span>
+                                <span className="label-text">{t("settings.automation_editor.field_path")}</span>
                                 <input
                                   className="input input-bordered"
                                   list={fieldDatalistId}
@@ -3854,7 +3861,7 @@ export default function AutomationEditorPage({ user }) {
                                 />
                               </label>
                               <label className="form-control">
-                                <span className="label-text">Operator</span>
+                                <span className="label-text">{t("settings.automation_editor.operator")}</span>
                                 <AppSelect
                                   className="select select-bordered"
                                   value={row.op || "eq"}
@@ -3863,23 +3870,23 @@ export default function AutomationEditorPage({ user }) {
                                     writeFilterRows(index, "filter_expr", nextRows);
                                   }}
                                 >
-                                  <option value="eq">equals</option>
-                                  <option value="neq">not equals</option>
-                                  <option value="gt">greater than</option>
-                                  <option value="gte">greater or equal</option>
-                                  <option value="lt">less than</option>
-                                  <option value="lte">less or equal</option>
-                                  <option value="contains">contains</option>
-                                  <option value="in">in list</option>
-                                  <option value="not_in">not in list</option>
-                                  <option value="exists">exists</option>
-                                  <option value="not_exists">not exists</option>
+                                  <option value="eq">{t("settings.automation_editor.operator_eq")}</option>
+                                  <option value="neq">{t("settings.automation_editor.operator_neq")}</option>
+                                  <option value="gt">{t("settings.automation_editor.operator_gt")}</option>
+                                  <option value="gte">{t("settings.automation_editor.operator_gte")}</option>
+                                  <option value="lt">{t("settings.automation_editor.operator_lt")}</option>
+                                  <option value="lte">{t("settings.automation_editor.operator_lte")}</option>
+                                  <option value="contains">{t("settings.automation_editor.operator_contains")}</option>
+                                  <option value="in">{t("settings.automation_editor.operator_in")}</option>
+                                  <option value="not_in">{t("settings.automation_editor.operator_not_in")}</option>
+                                  <option value="exists">{t("settings.automation_editor.operator_exists")}</option>
+                                  <option value="not_exists">{t("settings.automation_editor.operator_not_exists")}</option>
                                 </AppSelect>
                               </label>
                               <label className="form-control">
-                                <span className="label-text">Value</span>
+                                <span className="label-text">{t("settings.value")}</span>
                                 {row.op === "exists" || row.op === "not_exists" ? (
-                                  <input className="input input-bordered" disabled value="No value needed" />
+                                  <input className="input input-bordered" disabled value={t("settings.automation_editor.no_value_needed")} />
                                 ) : (
                                   renderTypedValueEditor({
                                     fieldDef,
@@ -3893,8 +3900,8 @@ export default function AutomationEditorPage({ user }) {
                                 )}
                                 <span className="label label-text-alt opacity-50">
                                   {fieldDef
-                                    ? `Field type: ${fieldDef.type || "string"}`
-                                    : "Use record.field_name format to get a type-aware value input."}
+                                    ? t("settings.automation_editor.field_type", { type: fieldDef.type || "string" })
+                                    : t("settings.automation_editor.use_record_field_for_type_input")}
                                 </span>
                               </label>
                             </div>
@@ -3917,17 +3924,17 @@ export default function AutomationEditorPage({ user }) {
                     })}
                   </datalist>
                   <div className={sectionCardClass}>
-                    <div className="font-medium text-sm">Search and raw filter options</div>
-                    <div className="text-xs opacity-60 mt-1">Use this for search field limits or a more complex filter expression than the quick rules above can represent.</div>
+                    <div className="font-medium text-sm">{t("settings.automation_editor.search_and_raw_filter_options")}</div>
+                    <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.search_and_raw_filter_options_help")}</div>
                     <div className={`${standardGridClass} mt-3`}>
                       <label className="form-control">
-                        <span className="label-text">Search fields</span>
+                        <span className="label-text">{t("settings.automation_editor.search_fields")}</span>
                         <input className="input input-bordered" value={step.inputs?.search_fields || ""} onChange={(e) => updateStepInput(index, "search_fields", e.target.value)} placeholder="field.one, field.two" />
-                        <span className="label label-text-alt opacity-50">Optional comma-separated field IDs to limit text search.</span>
+                        <span className="label label-text-alt opacity-50">{t("settings.automation_editor.search_fields_help")}</span>
                       </label>
                       <div />
                       <label className="form-control md:col-span-2">
-                        <span className="label-text">Filter condition JSON</span>
+                        <span className="label-text">{t("settings.automation_editor.filter_condition_json")}</span>
                         <CodeTextarea
                           value={typeof step.inputs?.filter_expr === "string" ? step.inputs.filter_expr : JSON.stringify(step.inputs?.filter_expr || {}, null, 2)}
                           onChange={(e) => {
@@ -3948,36 +3955,36 @@ export default function AutomationEditorPage({ user }) {
 
         {isActionLike && step.action_id === "system.add_chatter" && (
           <div className={sectionCardClass}>
-            <div className="font-medium text-sm">Entry setup</div>
-            <div className="text-xs opacity-60 mt-1">Choose the record, entry type, and message that should be added as chatter.</div>
+            <div className="font-medium text-sm">{t("settings.automation_editor.entry_setup")}</div>
+            <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.entry_setup_help")}</div>
             <div className={`mt-3 ${standardGridClass}`}>
               <label className="form-control">
-                <span className="label-text">Entity</span>
+                <span className="label-text">{t("common.entity")}</span>
                 <AppSelect className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
-                  <option value="">Use trigger entity</option>
+                  <option value="">{t("settings.automation_editor.use_trigger_entity")}</option>
                   {entityOptions.map((ent) => (
                     <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
                   ))}
                 </AppSelect>
               </label>
               <label className="form-control">
-                <span className="label-text">Record</span>
+                <span className="label-text">{t("common.record")}</span>
                 <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} placeholder="{{trigger.record_id}}" />
               </label>
               <label className="form-control">
-                <span className="label-text">Entry type</span>
+                <span className="label-text">{t("settings.automation_editor.entry_type")}</span>
                 <AppSelect className="select select-bordered" value={step.inputs?.entry_type || "note"} onChange={(e) => updateStepInput(index, "entry_type", e.target.value)}>
-                  <option value="note">Note</option>
-                  <option value="comment">Comment</option>
-                  <option value="system">System</option>
+                  <option value="note">{t("settings.automation_editor.entry_type_note")}</option>
+                  <option value="comment">{t("settings.automation_editor.entry_type_comment")}</option>
+                  <option value="system">{t("settings.automation_editor.entry_type_system")}</option>
                 </AppSelect>
               </label>
               <label className="form-control">
-                <span className="label-text">Store output as</span>
+                <span className="label-text">{t("settings.automation_editor.store_output_as")}</span>
                 <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="activity_note" />
               </label>
               <label className="form-control md:col-span-2">
-                <span className="label-text">Body</span>
+                <span className="label-text">{t("common.body")}</span>
                 <CodeTextarea value={step.inputs?.body || ""} onChange={(e) => updateStepInput(index, "body", e.target.value)} minHeight="140px" />
               </label>
             </div>
@@ -3986,11 +3993,11 @@ export default function AutomationEditorPage({ user }) {
 
         {step.kind === "delay" && (
           <div className={sectionCardClass}>
-            <div className="font-medium text-sm">Delay settings</div>
-            <div className="text-xs opacity-60 mt-1">Choose whether the step should wait for a relative amount of time or until a specific datetime.</div>
+            <div className="font-medium text-sm">{t("settings.automation_editor.delay_settings")}</div>
+            <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.delay_settings_help")}</div>
             <div className={`mt-3 ${wideGridClass}`}>
             <label className="form-control md:col-span-4">
-              <span className="label-text">Delay mode</span>
+              <span className="label-text">{t("settings.automation_editor.delay_mode")}</span>
               <AppSelect
                 className="select select-bordered"
                 value={step.target_time ? "until_time" : "relative"}
@@ -4002,14 +4009,14 @@ export default function AutomationEditorPage({ user }) {
                   }
                 }}
               >
-                <option value="relative">Wait relative time</option>
-                <option value="until_time">Wait until datetime</option>
+                <option value="relative">{t("settings.automation_editor.wait_relative_time")}</option>
+                <option value="until_time">{t("settings.automation_editor.wait_until_datetime")}</option>
               </AppSelect>
             </label>
             {!step.target_time ? (
               <>
                 <label className="form-control md:col-span-4">
-                  <span className="label-text">Amount</span>
+                  <span className="label-text">{t("settings.automation_editor.amount")}</span>
                   <input
                     className="input input-bordered"
                     type="number"
@@ -4023,7 +4030,7 @@ export default function AutomationEditorPage({ user }) {
                   />
                 </label>
                 <label className="form-control md:col-span-4">
-                  <span className="label-text">Unit</span>
+                  <span className="label-text">{t("settings.automation_editor.unit")}</span>
                   <AppSelect
                     className="select select-bordered"
                     value={step.delay_unit || "seconds"}
@@ -4033,16 +4040,16 @@ export default function AutomationEditorPage({ user }) {
                       updateStep(index, { delay_unit: unit, delay_value: amount, seconds: amount * delayUnitToSeconds(unit) });
                     }}
                   >
-                    <option value="seconds">Seconds</option>
-                    <option value="minutes">Minutes</option>
-                    <option value="hours">Hours</option>
-                    <option value="days">Days</option>
+                    <option value="seconds">{t("settings.automation_editor.unit_seconds")}</option>
+                    <option value="minutes">{t("settings.automation_editor.unit_minutes")}</option>
+                    <option value="hours">{t("settings.automation_editor.unit_hours")}</option>
+                    <option value="days">{t("settings.automation_editor.unit_days")}</option>
                   </AppSelect>
                 </label>
               </>
             ) : (
               <label className="form-control md:col-span-8">
-                <span className="label-text">Resume at</span>
+                <span className="label-text">{t("settings.automation_editor.resume_at")}</span>
                 <input
                   className="input input-bordered"
                   type="datetime-local"
@@ -4068,21 +4075,21 @@ export default function AutomationEditorPage({ user }) {
           const rightVal = expr?.right?.literal ?? "";
           const commonOptions = triggerMode === "webhook"
             ? [
-                { value: "trigger.event", label: "Trigger event", type: "string", options: [] },
-                { value: "trigger.connection_id", label: "Webhook connection", type: "string", options: [] },
-                { value: "trigger.event_key", label: "Webhook event key", type: "string", options: [] },
-                { value: "trigger.provider_event_id", label: "Provider event id", type: "string", options: [] },
-                { value: "trigger.signature_valid", label: "Signature valid", type: "boolean", options: [] },
-                { value: "trigger.payload", label: "Payload object", type: "text", options: [] },
-                { value: "trigger.payload.customer.email", label: "Payload example: customer email", type: "string", options: [] },
-                { value: "trigger.headers", label: "Headers object", type: "text", options: [] },
-                { value: "trigger.headers.x-request-id", label: "Header example: x-request-id", type: "string", options: [] },
+                { value: "trigger.event", label: t("settings.automation_editor.trigger_event"), type: "string", options: [] },
+                { value: "trigger.connection_id", label: t("settings.automation_editor.webhook_connection"), type: "string", options: [] },
+                { value: "trigger.event_key", label: t("settings.automation_editor.webhook_event_key"), type: "string", options: [] },
+                { value: "trigger.provider_event_id", label: t("settings.automation_editor.provider_event_id"), type: "string", options: [] },
+                { value: "trigger.signature_valid", label: t("settings.automation_editor.signature_valid"), type: "boolean", options: [] },
+                { value: "trigger.payload", label: t("settings.automation_editor.webhook_payload_object"), type: "text", options: [] },
+                { value: "trigger.payload.customer.email", label: t("settings.automation_editor.payload_example_customer_email"), type: "string", options: [] },
+                { value: "trigger.headers", label: t("settings.automation_editor.webhook_headers_object"), type: "text", options: [] },
+                { value: "trigger.headers.x-request-id", label: t("settings.automation_editor.header_example_request_id"), type: "string", options: [] },
               ]
             : [
-                { value: "trigger.event", label: "Trigger event", type: "string", options: [] },
-                { value: "trigger.entity_id", label: "Trigger entity", type: "string", options: [] },
-                { value: "trigger.record_id", label: "Trigger record", type: "string", options: [] },
-                { value: "trigger.user_id", label: "Trigger user", type: "user", options: [] },
+                { value: "trigger.event", label: t("settings.automation_editor.trigger_event"), type: "string", options: [] },
+                { value: "trigger.entity_id", label: t("settings.automation_editor.trigger_entity"), type: "string", options: [] },
+                { value: "trigger.record_id", label: t("settings.automation_editor.trigger_record"), type: "string", options: [] },
+                { value: "trigger.user_id", label: t("settings.automation_editor.trigger_user"), type: "user", options: [] },
               ];
           const availableFieldPaths = buildConditionFieldOptions(selectedEntityFields, commonOptions);
           const fieldPathOptions = availableFieldPaths.filter((item) => !commonOptions.some((opt) => opt.value === item.value));
@@ -4104,11 +4111,11 @@ export default function AutomationEditorPage({ user }) {
 
           return (
             <div className={sectionCardClass}>
-              <div className="font-medium text-sm">Condition rule</div>
-              <div className="text-xs opacity-60 mt-1">Choose the field to check, how to compare it, and what value should be matched.</div>
+              <div className="font-medium text-sm">{t("settings.automation_editor.condition_rule")}</div>
+              <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.condition_rule_help")}</div>
               <div className={`mt-3 ${wideGridClass}`}>
               <label className="form-control md:col-span-4">
-                <span className="label-text">Entity context</span>
+                <span className="label-text">{t("settings.automation_editor.entity_context")}</span>
                 <AppSelect
                   className="select select-bordered"
                   value={selectedEntityId}
@@ -4117,7 +4124,7 @@ export default function AutomationEditorPage({ user }) {
                     updateStep(index, { expr: { ...expr, left: { var: "trigger.record_id" } } });
                   }}
                 >
-                  <option value="">Use trigger entity</option>
+                  <option value="">{t("settings.automation_editor.use_trigger_entity")}</option>
                   {entityOptions.map((ent) => (
                     <option key={ent.id} value={ent.id}>
                       {ent.label || ent.id}
@@ -4126,14 +4133,14 @@ export default function AutomationEditorPage({ user }) {
                 </AppSelect>
               </label>
               <label className="form-control md:col-span-4">
-                <span className="label-text">Check</span>
+                <span className="label-text">{t("settings.automation_editor.check")}</span>
                 <AppSelect
                   className="select select-bordered"
                   value={leftVar}
                   onChange={(e) => updateStep(index, { expr: { ...expr, left: { var: e.target.value } } })}
                 >
-                  <option value="">Select field…</option>
-                  <optgroup label="Trigger">
+                  <option value="">{t("settings.automation_editor.select_field")}</option>
+                  <optgroup label={t("settings.automation_editor.trigger")}>
                     {commonOptions.map((item) => (
                       <option key={item.value} value={item.value}>
                         {item.label}
@@ -4141,7 +4148,7 @@ export default function AutomationEditorPage({ user }) {
                     ))}
                   </optgroup>
                   {fieldPathOptions.length > 0 && (
-                    <optgroup label="Record fields">
+                    <optgroup label={t("settings.automation_editor.record_fields")}>
                       {fieldPathOptions.map((item) => (
                         <option key={item.value} value={item.value}>
                           {item.label}
@@ -4152,29 +4159,29 @@ export default function AutomationEditorPage({ user }) {
                 </AppSelect>
               </label>
               <label className="form-control md:col-span-4">
-                <span className="label-text">Compare using</span>
+                <span className="label-text">{t("settings.automation_editor.compare_using")}</span>
                 <AppSelect
                   className="select select-bordered"
                   value={op}
                   onChange={(e) => updateStep(index, { expr: { ...expr, op: e.target.value } })}
                 >
-                  <option value="eq">equals</option>
-                  <option value="neq">not equals</option>
-                  <option value="gt">greater than</option>
-                  <option value="gte">greater or equal</option>
-                  <option value="lt">less than</option>
-                  <option value="lte">less or equal</option>
-                  <option value="contains">contains</option>
-                  <option value="in">is in list</option>
-                  <option value="not_in">is not in list</option>
-                  <option value="exists">exists</option>
-                  <option value="not_exists">not exists</option>
+                  <option value="eq">{t("settings.automation_editor.operator_eq")}</option>
+                  <option value="neq">{t("settings.automation_editor.operator_neq")}</option>
+                  <option value="gt">{t("settings.automation_editor.operator_gt")}</option>
+                  <option value="gte">{t("settings.automation_editor.operator_gte")}</option>
+                  <option value="lt">{t("settings.automation_editor.operator_lt")}</option>
+                  <option value="lte">{t("settings.automation_editor.operator_lte")}</option>
+                  <option value="contains">{t("settings.automation_editor.operator_contains")}</option>
+                  <option value="in">{t("settings.automation_editor.operator_is_in_list")}</option>
+                  <option value="not_in">{t("settings.automation_editor.operator_is_not_in_list")}</option>
+                  <option value="exists">{t("settings.automation_editor.operator_exists")}</option>
+                  <option value="not_exists">{t("settings.automation_editor.operator_not_exists")}</option>
                 </AppSelect>
               </label>
               <label className="form-control md:col-span-12">
-                <span className="label-text">Against</span>
+                <span className="label-text">{t("settings.automation_editor.against")}</span>
                 {isExistsOp ? (
-                  <input className="input input-bordered" value="No value needed for this operator" disabled />
+                  <input className="input input-bordered" value={t("settings.automation_editor.no_value_needed_for_operator")} disabled />
                 ) : (
                   renderTypedValueEditor({
                     fieldDef: selectedFieldDef,
@@ -4184,7 +4191,7 @@ export default function AutomationEditorPage({ user }) {
                   })
                 )}
                 <span className="label label-text-alt opacity-50">
-                  {isInListOp ? "Use comma-separated values." : "Condition runs against trigger data."}
+                  {isInListOp ? t("settings.automation_editor.use_comma_separated_values") : t("settings.automation_editor.condition_runs_against_trigger_data")}
                 </span>
               </label>
               </div>
@@ -4201,23 +4208,23 @@ export default function AutomationEditorPage({ user }) {
       <div className="rounded-2xl border border-base-300 bg-base-100 p-4 md:p-5 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <label className="form-control">
-            <span className="label-text">Name</span>
+            <span className="label-text">{t("common.name")}</span>
             <input className="input input-bordered" value={name} onChange={(e) => setName(e.target.value)} />
           </label>
 
           <label className="form-control md:col-span-2">
-            <span className="label-text">Description</span>
+            <span className="label-text">{t("common.description")}</span>
             <textarea className="textarea textarea-bordered" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
           </label>
         </div>
 
         <div className="rounded-box border border-base-300 bg-base-200/40 px-4 py-3">
-          <div className="text-[11px] uppercase tracking-wide opacity-50">Trigger summary</div>
+          <div className="text-[11px] uppercase tracking-wide opacity-50">{t("settings.automation_editor.trigger_summary")}</div>
           <div className="mt-1 font-medium">{triggerSummaryText}</div>
           <div className="mt-1 text-xs opacity-60">
             {triggerMode === "schedule"
-              ? "This automation runs from the shared scheduler."
-              : "Keep this simple where possible. Most automations only need a trigger and a flow."}
+              ? t("settings.automation_editor.trigger_summary_schedule_help")
+              : t("settings.automation_editor.trigger_summary_event_help")}
           </div>
         </div>
 
@@ -4225,20 +4232,20 @@ export default function AutomationEditorPage({ user }) {
           <details>
             <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
               <div>
-                <div className="font-medium text-sm">Trigger setup</div>
-                <div className="text-xs opacity-60">Edit the trigger only when needed. The main work happens in the flow below.</div>
+                <div className="font-medium text-sm">{t("settings.automation_editor.trigger_setup")}</div>
+                <div className="text-xs opacity-60">{t("settings.automation_editor.trigger_setup_help")}</div>
               </div>
-              <span className="text-xs opacity-60">Show</span>
+              <span className="text-xs opacity-60">{t("settings.automation_editor.show")}</span>
             </summary>
             <div className="px-4 pb-4 space-y-4">
               {triggerMode === "schedule" ? (
                 <div className="space-y-3">
                   <div>
-                    <div className="font-medium text-sm">Schedule</div>
-                    <div className="text-xs opacity-60 mt-1">Use a simple interval first. The shared scheduler will enqueue this automation in the background.</div>
+                    <div className="font-medium text-sm">{t("settings.automation_editor.schedule")}</div>
+                    <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.schedule_interval_help")}</div>
                   </div>
                   <label className="form-control max-w-xs">
-                    <span className="label-text">Run every N minutes</span>
+                    <span className="label-text">{t("settings.automation_editor.run_every_n_minutes")}</span>
                     <input
                       className="input input-bordered"
                       inputMode="numeric"
@@ -4251,13 +4258,11 @@ export default function AutomationEditorPage({ user }) {
               ) : triggerMode === "webhook" ? (
                 <div className="space-y-4">
                   <div>
-                    <div className="font-medium text-sm">Webhook trigger</div>
-                    <div className="text-xs opacity-60 mt-1">
-                      Run this automation when an inbound integration webhook is received. Narrow it only if you need to.
-                    </div>
+                    <div className="font-medium text-sm">{t("settings.automation_editor.webhook_setup")}</div>
+                    <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.webhook_setup_help")}</div>
                   </div>
                   <label className="form-control">
-                    <span className="label-text">Connection</span>
+                    <span className="label-text">{t("common.connection")}</span>
                     <AppSelect
                       className="select select-bordered"
                       value={webhookTriggerConnectionId}
@@ -4270,25 +4275,25 @@ export default function AutomationEditorPage({ user }) {
                         </option>
                       ))}
                     </AppSelect>
-                    <span className="label label-text-alt opacity-50">Optional. Leave empty to react to any configured integration connection.</span>
+                    <span className="label label-text-alt opacity-50">{t("settings.automation_editor.webhook_connection_help")}</span>
                   </label>
                   <label className="form-control">
-                    <span className="label-text">Event key</span>
+                    <span className="label-text">{t("settings.automation_editor.event_key")}</span>
                     <input
                       className="input input-bordered"
                       value={webhookTriggerEventKey}
                       onChange={(e) => upsertTriggerFilter("event_key", e.target.value)}
-                      placeholder="invoice.created"
+                      placeholder={t("settings.automation_editor.event_key_example")}
                     />
-                    <span className="label label-text-alt opacity-50">Optional. Only set this if the flow should run for one webhook event type.</span>
+                    <span className="label label-text-alt opacity-50">{t("settings.automation_editor.event_key_help")}</span>
                   </label>
                   <details className="rounded-box border border-base-300 bg-base-200/40">
                     <summary className="cursor-pointer list-none px-3 py-3 flex items-center justify-between">
                       <div>
-                        <div className="font-medium text-sm">Webhook data available to the flow</div>
-                        <div className="text-xs opacity-60">Only open this if you need payload paths.</div>
+                        <div className="font-medium text-sm">{t("settings.automation_editor.webhook_data_available")}</div>
+                        <div className="text-xs opacity-60">{t("settings.automation_editor.webhook_data_available_help")}</div>
                       </div>
-                      <span className="text-xs opacity-60">Show</span>
+                      <span className="text-xs opacity-60">{t("settings.automation_editor.show")}</span>
                     </summary>
                     <div className="px-3 pb-3 text-xs leading-5 text-base-content/70">
                       <div className="font-mono">trigger.connection_id</div>
@@ -4301,20 +4306,20 @@ export default function AutomationEditorPage({ user }) {
                   </details>
                   <div className="flex flex-wrap gap-2">
                     <button type="button" className="btn btn-sm btn-outline" onClick={() => setWebhookTestOpen(true)}>
-                      Test webhook trigger
+                      {t("settings.automation_editor.test_webhook_trigger")}
                     </button>
-                    <div className="self-center text-xs opacity-60">Queue a sample inbound webhook against the saved automation.</div>
+                    <div className="self-center text-xs opacity-60">{t("settings.automation_editor.queue_sample_inbound_webhook")}</div>
                   </div>
                 </div>
               ) : (
                 <div className="form-control">
-                  <span className="label-text">Trigger event</span>
+                  <span className="label-text">{t("settings.automation_editor.trigger_event")}</span>
                   <AppSelect
                     className="select select-bordered"
                     value={(trigger?.event_types || [])[0] || ""}
                     onChange={(e) => updateTriggerEvent(e.target.value)}
                   >
-                    <option value="">Select event…</option>
+                    <option value="">{t("settings.automation_editor.select_event")}</option>
                     {triggerOptions.map((group) => (
                       <optgroup key={group.label} label={group.label}>
                         {Array.isArray(group.options) &&
@@ -4338,29 +4343,29 @@ export default function AutomationEditorPage({ user }) {
                   <details className="group">
                     <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
                       <div>
-                        <div className="font-medium text-sm">Advanced trigger rules</div>
-                        <div className="text-xs opacity-60">Optional. Use this only if the automation should run only in specific cases.</div>
+                        <div className="font-medium text-sm">{t("settings.automation_editor.trigger_rules")}</div>
+                        <div className="text-xs opacity-60">{t("settings.automation_editor.trigger_rules_help")}</div>
                       </div>
-                      <span className="text-xs opacity-60 group-[&[open]]:hidden">Show</span>
-                      <span className="text-xs opacity-60 hidden group-[&[open]]:inline">Hide</span>
+                      <span className="text-xs opacity-60 group-[&[open]]:hidden">{t("settings.automation_editor.show")}</span>
+                      <span className="text-xs opacity-60 hidden group-[&[open]]:inline">{t("settings.automation_editor.hide")}</span>
                     </summary>
                     <div className="px-4 pb-4 space-y-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="label-text">Only run when</div>
+                  <div className="label-text">{t("settings.automation_editor.only_run_when")}</div>
                   <div className="text-xs opacity-60 mt-1">
                     {triggerMode === "webhook"
-                      ? "Use extra rules only if connection and event key are not enough. These rules run against webhook payload data."
-                      : "Most automations can leave this empty and run whenever the trigger happens."}
+                      ? t("settings.automation_editor.webhook_rules_help")
+                      : t("settings.automation_editor.event_rules_help")}
                   </div>
                 </div>
-                <button type="button" className={automationAddButtonClass} onClick={addTriggerFilter}>Add rule</button>
+                <button type="button" className={automationAddButtonClass} onClick={addTriggerFilter}>{t("settings.automation_editor.add_rule")}</button>
               </div>
               {((trigger?.filters || [])).length === 0 ? (
                 <div className="text-xs opacity-60">
                   {triggerMode === "webhook"
-                    ? "No extra rules yet. This automation will run whenever the selected webhook trigger matches."
-                    : "No extra rules yet. This automation will run every time the selected trigger event happens."}
+                    ? t("settings.automation_editor.webhook_runs_when_match")
+                    : t("settings.automation_editor.event_runs_every_time")}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -4372,59 +4377,59 @@ export default function AutomationEditorPage({ user }) {
                     return (
                       <div key={`trigger-filter-${idx}`} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
                         <label className="form-control md:col-span-5">
-                          <span className="label-text">Field</span>
+                          <span className="label-text">{t("common.field")}</span>
                           <input
                             className="input input-bordered"
                             list="automation-trigger-fields"
                             value={filt?.path || ""}
                             onChange={(e) => updateTriggerFilter(idx, { path: e.target.value })}
-                            placeholder={triggerMode === "webhook" ? "payload.customer.email" : "status"}
+                            placeholder={triggerMode === "webhook" ? t("settings.automation_editor.webhook_field_path_placeholder") : t("settings.automation_editor.record_field_path_placeholder")}
                           />
                           <span className="label label-text-alt opacity-50">
                             {selectedFieldDef
-                              ? `Field type: ${selectedFieldDef.type || "string"}`
-                              : "Pick a suggested field or type a custom path."}
+                              ? t("settings.automation_editor.field_type", { type: selectedFieldDef.type || "string" })
+                              : t("settings.automation_editor.pick_suggested_field_or_custom_path")}
                           </span>
                         </label>
                         <label className="form-control md:col-span-3">
-                          <span className="label-text">Operator</span>
+                          <span className="label-text">{t("settings.automation_editor.operator")}</span>
                           <AppSelect
                             className="select select-bordered"
                             value={op}
                             onChange={(e) => updateTriggerFilter(idx, { op: e.target.value })}
                           >
-                            <option value="eq">equals</option>
-                            <option value="neq">not equals</option>
-                            <option value="gt">greater than</option>
-                            <option value="gte">greater or equal</option>
-                            <option value="lt">less than</option>
-                            <option value="lte">less or equal</option>
-                            <option value="contains">contains</option>
-                            <option value="in">in list</option>
-                            <option value="not_in">not in list</option>
-                            <option value="exists">exists</option>
-                            <option value="not_exists">not exists</option>
-                            <option value="changed">changed</option>
-                            <option value="changed_from">changed from</option>
-                            <option value="changed_to">changed to</option>
+                            <option value="eq">{t("settings.automation_editor.operator_eq")}</option>
+                            <option value="neq">{t("settings.automation_editor.operator_neq")}</option>
+                            <option value="gt">{t("settings.automation_editor.operator_gt")}</option>
+                            <option value="gte">{t("settings.automation_editor.operator_gte")}</option>
+                            <option value="lt">{t("settings.automation_editor.operator_lt")}</option>
+                            <option value="lte">{t("settings.automation_editor.operator_lte")}</option>
+                            <option value="contains">{t("settings.automation_editor.operator_contains")}</option>
+                            <option value="in">{t("settings.automation_editor.operator_in")}</option>
+                            <option value="not_in">{t("settings.automation_editor.operator_not_in")}</option>
+                            <option value="exists">{t("settings.automation_editor.operator_exists")}</option>
+                            <option value="not_exists">{t("settings.automation_editor.operator_not_exists")}</option>
+                            <option value="changed">{t("settings.automation_editor.operator_changed")}</option>
+                            <option value="changed_from">{t("settings.automation_editor.operator_changed_from")}</option>
+                            <option value="changed_to">{t("settings.automation_editor.operator_changed_to")}</option>
                           </AppSelect>
                         </label>
                         <label className="form-control md:col-span-3">
-                          <span className="label-text">Value</span>
+                          <span className="label-text">{t("settings.value")}</span>
                           {noValue ? (
-                            <input className="input input-bordered" disabled value="No value needed" />
+                            <input className="input input-bordered" disabled value={t("settings.automation_editor.no_value_needed")} />
                           ) : supportsTypedValue ? (
                             renderTypedValueEditor({
                               fieldDef: selectedFieldDef,
                               value: Array.isArray(filt?.value) ? filt.value.join(", ") : (filt?.value ?? ""),
                               onChange: (nextValue) => updateTriggerFilter(idx, { value: nextValue }),
-                              placeholder: triggerMode === "webhook" ? "ops@example.com" : "active",
+                              placeholder: triggerMode === "webhook" ? t("settings.automation_editor.webhook_value_placeholder") : t("settings.automation_editor.active_placeholder"),
                             })
                           ) : (
                             <input
                               className="input input-bordered"
                               value={Array.isArray(filt?.value) ? filt.value.join(", ") : (filt?.value ?? "")}
-                              placeholder={triggerMode === "webhook" ? "one, two" : "active, pending"}
+                              placeholder={triggerMode === "webhook" ? t("settings.automation_editor.list_values_generic_placeholder") : t("settings.automation_editor.active_pending_placeholder")}
                               onChange={(e) => {
                                 const raw = e.target.value;
                                 const value = ["in", "not_in"].includes(op)
@@ -4436,7 +4441,7 @@ export default function AutomationEditorPage({ user }) {
                           )}
                         </label>
                         <button type="button" className="btn btn-ghost btn-sm md:col-span-1" onClick={() => removeTriggerFilter(idx)}>
-                          Remove
+                          {t("common.remove")}
                         </button>
                       </div>
                     );
@@ -4446,22 +4451,22 @@ export default function AutomationEditorPage({ user }) {
               <details className="group">
                 <summary className="cursor-pointer list-none py-1 flex items-center justify-between">
                   <div>
-                    <div className="font-medium text-sm">Advanced logic</div>
-                    <div className="text-xs opacity-60">Only use this if the simple rules above are not enough.</div>
+                    <div className="font-medium text-sm">{t("settings.automation_editor.advanced_logic")}</div>
+                    <div className="text-xs opacity-60">{t("settings.automation_editor.advanced_logic_help")}</div>
                   </div>
-                  <span className="text-xs opacity-60 group-[&[open]]:hidden">Show</span>
-                  <span className="text-xs opacity-60 hidden group-[&[open]]:inline">Hide</span>
+                  <span className="text-xs opacity-60 group-[&[open]]:hidden">{t("settings.automation_editor.show")}</span>
+                  <span className="text-xs opacity-60 hidden group-[&[open]]:inline">{t("settings.automation_editor.hide")}</span>
                 </summary>
                 <div className="pt-3">
                   <label className="form-control">
-                    <span className="label-text">Advanced trigger condition JSON</span>
+                    <span className="label-text">{t("settings.automation_editor.advanced_trigger_condition_json")}</span>
                     <CodeTextarea
                       value={triggerExprText}
                       onChange={(e) => setTriggerExprText(e.target.value)}
                       minHeight="120px"
                       placeholder={`{\n  "op": "and",\n  "children": []\n}`}
                     />
-                    <span className="label label-text-alt opacity-50">Optional full condition DSL over `trigger.*` values. Leave empty unless you need advanced branching logic.</span>
+                    <span className="label label-text-alt opacity-50">{t("settings.automation_editor.advanced_trigger_condition_json_help")}</span>
                   </label>
                 </div>
               </details>
@@ -4477,9 +4482,9 @@ export default function AutomationEditorPage({ user }) {
 
       <div className="rounded-2xl border border-primary/30 bg-base-100 shadow-sm">
         <div className="border-b border-primary/15 bg-primary/5 px-4 py-4 md:px-5">
-          <div className="text-[11px] uppercase tracking-[0.18em] text-primary/70">Automation Flow</div>
-          <div className="mt-1 text-lg font-semibold">Build what happens after the trigger</div>
-          <div className="mt-1 text-xs opacity-70">Click the trigger or a step to edit it in a focused drawer. Add steps where they belong. `Then / Else` branches only appear on Condition steps.</div>
+          <div className="text-[11px] uppercase tracking-[0.18em] text-primary/70">{t("settings.automation_editor.flow_title")}</div>
+          <div className="mt-1 text-lg font-semibold">{t("settings.automation_editor.flow_heading")}</div>
+          <div className="mt-1 text-xs opacity-70">{t("settings.automation_editor.flow_description")}</div>
         </div>
         <div className="space-y-3 min-w-0 p-4 md:p-5">
           <button
@@ -4489,28 +4494,28 @@ export default function AutomationEditorPage({ user }) {
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-xs uppercase tracking-wide opacity-60">Trigger</div>
+                <div className="text-xs uppercase tracking-wide opacity-60">{t("settings.automation_editor.trigger")}</div>
                 <div className="font-medium">{triggerSummaryText}</div>
                 <div className="text-xs opacity-60 mt-1">
                   {trigger?.kind === "schedule"
-                    ? "Runs on the shared scheduler"
+                    ? t("settings.automation_editor.runs_on_scheduler")
                     : triggerMode === "webhook"
                     ? [
-                        webhookTriggerConnectionId ? "Connection selected" : "Any connection",
-                        webhookTriggerEventKey ? `Event key: ${webhookTriggerEventKey}` : "Any webhook event",
+                        webhookTriggerConnectionId ? t("settings.automation_editor.connection_selected") : t("settings.automation_editor.any_connection"),
+                        webhookTriggerEventKey ? t("settings.automation_editor.event_key_value", { key: webhookTriggerEventKey }) : t("settings.automation_editor.any_webhook_event"),
                       ].join(" • ")
                     : (trigger?.filters || []).length > 0
-                    ? `${trigger.filters.length} trigger rule${trigger.filters.length === 1 ? "" : "s"}`
-                    : "Runs for every matching event"}
+                    ? t("settings.automation_editor.trigger_rules_count", { count: trigger.filters.length })
+                    : t("settings.automation_editor.runs_for_every_matching_event")}
                 </div>
               </div>
-              <span className="btn btn-sm btn-outline">Edit trigger</span>
+              <span className="btn btn-sm btn-outline">{t("settings.automation_editor.edit_trigger")}</span>
             </div>
           </button>
 
           {steps.length === 0 ? (
             <div className="rounded-box border border-dashed border-base-300 bg-base-100 p-6 text-sm opacity-60">
-              No steps yet. Add a step to start building the flow.
+              {t("settings.automation_editor.no_steps_start_flow")}
             </div>
           ) : (
             renderStepCards(steps)
@@ -4521,7 +4526,7 @@ export default function AutomationEditorPage({ user }) {
       <ResponsiveDrawer
         open={Boolean(stepModalOpen && selectedStep)}
         onClose={() => setStepModalOpen(false)}
-        title={selectedStep ? stepSummaryText(selectedStep) : "Step"}
+        title={selectedStep ? stepSummaryText(selectedStep) : t("settings.automation_editor.step")}
         description={selectedStep ? stepHelpText(selectedStep) : ""}
         mobileHeightClass="h-[92dvh] max-h-[92dvh]"
         zIndexClass="z-[240]"
@@ -4535,8 +4540,8 @@ export default function AutomationEditorPage({ user }) {
 
       <div className="hidden">
         <div className="flex items-center justify-between">
-          <span className="label-text">Steps</span>
-          <button className="btn btn-sm" onClick={addStep}>Add step</button>
+          <span className="label-text">{t("settings.automation_editor.steps")}</span>
+          <button className="btn btn-sm" onClick={addStep}>{t("settings.automation_editor.add_step")}</button>
         </div>
         {steps.map((step, index) => {
           const stepKey = step.id || String(index);
@@ -4709,19 +4714,19 @@ export default function AutomationEditorPage({ user }) {
                                   updateStepInput(index, "recipient_user_id", next[0] || "");
                                 }}
                               >
-                                <option value="">Select user…</option>
+                                <option value="">{t("settings.automation_editor.select_workspace_user")}</option>
                                 {memberOptions.map((member) => (
                                   <option key={member.user_id} value={member.user_id}>
                                     {member.name || member.email || member.user_email || member.user_id}
                                   </option>
                                 ))}
                               </AppSelect>
-                              <span className="label label-text-alt opacity-50">You can add multiple recipients.</span>
+                              <span className="label label-text-alt opacity-50">{t("settings.automation_editor.add_workspace_users_help")}</span>
                             </label>
                           );
                         })()}
                         <div className="md:col-span-2">
-                          <span className="label-text">Selected recipients</span>
+                          <span className="label-text">{t("settings.automation_editor.selected_recipients")}</span>
                           <div className="mt-2 flex flex-wrap gap-2">
                             {(Array.isArray(step.inputs?.recipient_user_ids)
                               ? step.inputs.recipient_user_ids
@@ -4730,7 +4735,7 @@ export default function AutomationEditorPage({ user }) {
                                 : []
                             ).map((userId) => {
                               const member = memberById.get(userId);
-                              const label = member?.name || member?.email || member?.user_email || "Unknown user";
+                              const label = member?.name || member?.email || member?.user_email || t("settings.automation_editor.unknown_user");
                               return (
                                 <span key={userId} className="badge badge-outline badge-dismissible">
                                   {label}
@@ -4758,24 +4763,24 @@ export default function AutomationEditorPage({ user }) {
                               : step.inputs?.recipient_user_id
                                 ? [step.inputs.recipient_user_id]
                                 : []
-                            ).length) && <span className="text-xs opacity-60">No recipients selected</span>}
+                            ).length) && <span className="text-xs opacity-60">{t("settings.automation_editor.no_recipients_selected")}</span>}
                           </div>
                         </div>
                         <label className="form-control">
-                          <span className="label-text">Severity</span>
+                          <span className="label-text">{t("settings.automation_editor.severity")}</span>
                           <AppSelect className="select select-bordered" value={step.inputs?.severity || "info"} onChange={(e) => updateStepInput(index, "severity", e.target.value)}>
-                            <option value="info">Info</option>
-                            <option value="success">Success</option>
-                            <option value="warning">Warning</option>
-                            <option value="danger">Danger</option>
+                            <option value="info">{t("settings.automation_editor.info")}</option>
+                            <option value="success">{t("settings.automation_editor.success")}</option>
+                            <option value="warning">{t("settings.automation_editor.warning")}</option>
+                            <option value="danger">{t("settings.automation_editor.danger")}</option>
                           </AppSelect>
                         </label>
                         <label className="form-control md:col-span-2">
-                          <span className="label-text">Title</span>
+                          <span className="label-text">{t("settings.automation_editor.title")}</span>
                           <input className="input input-bordered" value={step.inputs?.title || ""} onChange={(e) => updateStepInput(index, "title", e.target.value)} />
                         </label>
                         <label className="form-control md:col-span-2">
-                          <span className="label-text">Body</span>
+                          <span className="label-text">{t("settings.automation_editor.body")}</span>
                           <CodeTextarea
                             value={step.inputs?.body || ""}
                             onChange={(e) => updateStepInput(index, "body", e.target.value)}
@@ -4783,7 +4788,7 @@ export default function AutomationEditorPage({ user }) {
                           />
                         </label>
                         <label className="form-control md:col-span-2">
-                          <span className="label-text">Link</span>
+                          <span className="label-text">{t("settings.automation_editor.link")}</span>
                           <input className="input input-bordered" value={step.inputs?.link_to || ""} onChange={(e) => updateStepInput(index, "link_to", e.target.value)} />
                         </label>
                   </div>
@@ -4851,7 +4856,7 @@ export default function AutomationEditorPage({ user }) {
                             value={step.inputs?.template_id || ""}
                             onChange={(e) => updateStepInput(index, "template_id", e.target.value)}
                           >
-                            <option value="">No template</option>
+                            <option value="">{t("settings.automation_editor.no_template")}</option>
                             {emailTemplateOptions.map((tpl) => (
                               <option key={tpl.id} value={tpl.id}>
                                 {tpl.name || tpl.id}
@@ -4860,13 +4865,13 @@ export default function AutomationEditorPage({ user }) {
                           </AppSelect>
                         </label>
                         <label className="form-control md:col-span-6">
-                          <span className="label-text">Entity (optional)</span>
+                          <span className="label-text">{t("settings.automation_editor.entity_optional")}</span>
                           <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.entity_id || ""}
                             onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
                           >
-                            <option value="">Use trigger entity</option>
+                            <option value="">{t("settings.automation_editor.use_trigger_entity")}</option>
                             {entityOptions.map((ent) => (
                               <option key={ent.id} value={ent.id}>
                                 {ent.label || ent.id}
@@ -4875,28 +4880,28 @@ export default function AutomationEditorPage({ user }) {
                           </AppSelect>
                         </label>
                         <label className="form-control md:col-span-6">
-                          <span className="label-text">Record (optional)</span>
+                          <span className="label-text">{t("settings.automation_editor.record_optional")}</span>
                           <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} />
-                          <span className="label label-text-alt opacity-50">Optional record for merge fields (paste ID or use trigger).</span>
+                          <span className="label label-text-alt opacity-50">{t("settings.automation_editor.record_for_merge_fields_help")}</span>
                         </label>
                         <label className="form-control md:col-span-4">
-                          <span className="label-text">Attachment purpose (optional)</span>
+                          <span className="label-text">{t("settings.automation_editor.attachment_purpose_optional")}</span>
                           <input
                             className="input input-bordered"
                             value={step.inputs?.attachment_purpose || ""}
                             onChange={(e) => updateStepInput(index, "attachment_purpose", e.target.value)}
                             placeholder="invoice_pdf"
                           />
-                          <span className="label label-text-alt opacity-50">Attach linked files with this purpose from the selected record.</span>
+                          <span className="label label-text-alt opacity-50">{t("settings.automation_editor.attachment_purpose_help")}</span>
                         </label>
                         <label className="form-control md:col-span-4">
-                          <span className="label-text">Attachment entity (optional)</span>
+                          <span className="label-text">{t("settings.automation_editor.attachment_entity_optional")}</span>
                           <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.attachment_entity_id || ""}
                             onChange={(e) => updateStepInput(index, "attachment_entity_id", e.target.value)}
                           >
-                            <option value="">Use email entity</option>
+                            <option value="">{t("settings.automation_editor.use_email_entity")}</option>
                             {entityOptions.map((ent) => (
                               <option key={ent.id} value={ent.id}>
                                 {ent.label || ent.id}
@@ -4905,7 +4910,7 @@ export default function AutomationEditorPage({ user }) {
                           </AppSelect>
                         </label>
                         <label className="form-control md:col-span-4">
-                          <span className="label-text">Attachment record (optional)</span>
+                          <span className="label-text">{t("settings.automation_editor.attachment_record_optional")}</span>
                           <input
                             className="input input-bordered"
                             list="automation-record-hints"
@@ -4915,28 +4920,28 @@ export default function AutomationEditorPage({ user }) {
                           />
                         </label>
                         <label className="form-control md:col-span-12">
-                          <span className="label-text">Attachment field (optional)</span>
+                          <span className="label-text">{t("settings.automation_editor.attachment_field_optional")}</span>
                           <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.attachment_field_id || ""}
                             onChange={(e) => updateStepInput(index, "attachment_field_id", e.target.value)}
                           >
-                            <option value="">No record attachment field</option>
+                            <option value="">{t("settings.automation_editor.no_record_attachment_field")}</option>
                             {attachmentFields.map((field) => (
                               <option key={field.id} value={field.id}>
                                 {field.label || field.id}
                               </option>
                             ))}
                           </AppSelect>
-                          <span className="label label-text-alt opacity-50">Optional extra source if files already live in an attachments field on the record.</span>
+                          <span className="label label-text-alt opacity-50">{t("settings.automation_editor.attachment_field_help")}</span>
                         </label>
                         <label className="form-control md:col-span-12">
-                          <span className="label-text">Manual email recipients (comma separated)</span>
+                          <span className="label-text">{t("settings.automation_editor.direct_email_addresses")}</span>
                           <input className="input input-bordered" value={(step.inputs?.to || []).join(", ")} onChange={(e) => updateStepInput(index, "to", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
-                          <span className="label label-text-alt opacity-50">These are always included.</span>
+                          <span className="label label-text-alt opacity-50">{t("settings.automation_editor.direct_email_addresses_help")}</span>
                         </label>
                         <label className="form-control md:col-span-6">
-                          <span className="label-text">Add internal recipient</span>
+                          <span className="label-text">{t("settings.automation_editor.add_internal_recipient")}</span>
                           <AppSelect
                             className="select select-bordered"
                             value=""
@@ -4947,7 +4952,7 @@ export default function AutomationEditorPage({ user }) {
                               updateStepInput(index, "to_internal_emails", next);
                             }}
                           >
-                            <option value="">Select workspace member…</option>
+                            <option value="">{t("settings.automation_editor.select_workspace_member")}</option>
                             {memberOptions.map((member) => {
                               const memberEmail = member.email || member.user_email || "";
                               return (
@@ -4959,7 +4964,7 @@ export default function AutomationEditorPage({ user }) {
                           </AppSelect>
                         </label>
                         <label className="form-control md:col-span-6">
-                          <span className="label-text">Add record email field</span>
+                          <span className="label-text">{t("settings.automation_editor.add_record_email_field")}</span>
                           <AppSelect
                             className="select select-bordered"
                             value=""
@@ -4971,7 +4976,7 @@ export default function AutomationEditorPage({ user }) {
                               updateStepInput(index, "to_field_id", next[0] || "");
                             }}
                           >
-                            <option value="">Select email field…</option>
+                            <option value="">{t("settings.automation_editor.select_email_field")}</option>
                             {emailFields.map((field) => (
                               <option key={field.id} value={field.id}>
                                 {field.label || field.id}
@@ -4980,7 +4985,7 @@ export default function AutomationEditorPage({ user }) {
                           </AppSelect>
                         </label>
                         <label className="form-control md:col-span-6">
-                          <span className="label-text">Add lookup recipient field</span>
+                          <span className="label-text">{t("settings.automation_editor.add_lookup_recipient_field")}</span>
                           <AppSelect
                             className="select select-bordered"
                             value=""
@@ -4992,7 +4997,7 @@ export default function AutomationEditorPage({ user }) {
                               updateStepInput(index, "to_lookup_field_id", next[0] || "");
                             }}
                           >
-                            <option value="">Select lookup field…</option>
+                            <option value="">{t("settings.automation_editor.select_lookup_field")}</option>
                             {lookupFields.map((field) => (
                               <option key={field.id} value={field.id}>
                                 {field.label || field.id}
@@ -5001,13 +5006,13 @@ export default function AutomationEditorPage({ user }) {
                           </AppSelect>
                         </label>
                         <label className="form-control md:col-span-6">
-                          <span className="label-text">Target email field</span>
+                          <span className="label-text">{t("settings.automation_editor.target_email_field")}</span>
                           <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.to_lookup_email_field || ""}
                             onChange={(e) => updateStepInput(index, "to_lookup_email_field", e.target.value)}
                           >
-                            <option value="">Auto-detect email</option>
+                            <option value="">{t("settings.automation_editor.auto_detect_email")}</option>
                             {targetEmailFields.map((field) => (
                               <option key={field.id} value={field.id}>
                                 {field.label || field.id}
@@ -5016,14 +5021,14 @@ export default function AutomationEditorPage({ user }) {
                           </AppSelect>
                         </label>
                         <div className="md:col-span-12">
-                          <span className="label-text">Selected recipient sources</span>
+                          <span className="label-text">{t("settings.automation_editor.selected_recipient_sources")}</span>
                           <div className="mt-2 flex flex-wrap gap-2">
                             {selectedInternalEmails.map((email) => {
                               const match = memberOptions.find((m) => (m.email || m.user_email) === email);
                               const label = match?.name ? `${match.name} (${email})` : email;
                               return (
                                 <span key={`internal:${email}`} className="badge badge-outline badge-dismissible">
-                                  Internal: {label}
+                                  {t("settings.automation_editor.internal_recipient_badge", { label })}
                                   <button
                                     type="button"
                                     className="badge-remove"
@@ -5038,7 +5043,7 @@ export default function AutomationEditorPage({ user }) {
                               const field = emailFields.find((f) => f.id === fieldId);
                               return (
                                 <span key={`record:${fieldId}`} className="badge badge-outline badge-dismissible">
-                                  Record field: {field?.label || fieldId}
+                                  {t("settings.automation_editor.record_field_badge", { label: field?.label || fieldId })}
                                   <button
                                     type="button"
                                     className="badge-remove"
@@ -5057,7 +5062,7 @@ export default function AutomationEditorPage({ user }) {
                               const field = lookupFields.find((f) => f.id === fieldId);
                               return (
                                 <span key={`lookup:${fieldId}`} className="badge badge-outline badge-dismissible">
-                                  Lookup: {field?.label || fieldId}
+                                  {t("settings.automation_editor.lookup_badge", { label: field?.label || fieldId })}
                                   <button
                                     type="button"
                                     className="badge-remove"
@@ -5073,24 +5078,24 @@ export default function AutomationEditorPage({ user }) {
                               );
                             })}
                             {!selectedInternalEmails.length && !selectedRecordEmailFieldIds.length && !selectedLookupIds.length && (
-                              <span className="text-xs opacity-60">No dynamic recipient sources selected</span>
+                              <span className="text-xs opacity-60">{t("settings.automation_editor.no_dynamic_recipient_sources_selected")}</span>
                             )}
                           </div>
                         </div>
                           <label className="form-control md:col-span-12">
-                            <span className="label-text">Recipient expression</span>
+                            <span className="label-text">{t("settings.automation_editor.recipient_expression")}</span>
                             <input
                               className="input input-bordered"
                               value={step.inputs?.to_expr || ""}
                               onChange={(e) => updateStepInput(index, "to_expr", e.target.value)}
                               placeholder="{{ record['workorder.contact_email'] }}, ops@octodrop.com"
                             />
-                            <span className="label label-text-alt opacity-50">Rendered with Jinja context: record, trigger, branding.</span>
+                            <span className="label label-text-alt opacity-50">{t("settings.automation_editor.rendered_with_jinja_context")}</span>
                           </label>
                         <label className="form-control md:col-span-12">
-                          <span className="label-text">Subject (optional)</span>
+                          <span className="label-text">{t("settings.automation_editor.subject_optional")}</span>
                           <input className="input input-bordered" value={step.inputs?.subject || ""} onChange={(e) => updateStepInput(index, "subject", e.target.value)} />
-                          <span className="label label-text-alt opacity-50">Leave blank to use the template subject.</span>
+                          <span className="label label-text-alt opacity-50">{t("settings.automation_editor.subject_override_help")}</span>
                         </label>
                             </>
                           );
@@ -5101,13 +5106,13 @@ export default function AutomationEditorPage({ user }) {
                     {isActionLike && step.action_id === "system.generate_document" && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <label className="form-control">
-                          <span className="label-text">Template</span>
+                          <span className="label-text">{t("settings.automation_editor.template")}</span>
                           <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.template_id || ""}
                             onChange={(e) => updateStepInput(index, "template_id", e.target.value)}
                           >
-                            <option value="">Select template…</option>
+                            <option value="">{t("settings.automation_editor.select_template")}</option>
                             {docTemplateOptions.map((tpl) => (
                               <option key={tpl.id} value={tpl.id}>
                                 {tpl.name || tpl.id}
@@ -5116,18 +5121,18 @@ export default function AutomationEditorPage({ user }) {
                           </AppSelect>
                         </label>
                         <label className="form-control">
-                          <span className="label-text">Purpose</span>
+                          <span className="label-text">{t("settings.automation_editor.purpose")}</span>
                           <input className="input input-bordered" value={step.inputs?.purpose || ""} onChange={(e) => updateStepInput(index, "purpose", e.target.value)} />
                         </label>
                         <label className="form-control">
-                          <span className="label-text">Entity</span>
+                          <span className="label-text">{t("common.entity")}</span>
                           <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.entity_id || ""}
                             onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
                           >
-                            <option value="">Select entity…</option>
-                            <option value="{{trigger.entity_id}}">Use trigger entity</option>
+                            <option value="">{t("settings.automation_editor.select_entity")}</option>
+                            <option value="{{trigger.entity_id}}">{t("settings.automation_editor.use_trigger_entity")}</option>
                             {entityOptions.map((ent) => (
                               <option key={ent.id} value={ent.id}>
                                 {ent.label || ent.id}
@@ -5136,9 +5141,9 @@ export default function AutomationEditorPage({ user }) {
                           </AppSelect>
                         </label>
                         <label className="form-control">
-                          <span className="label-text">Record</span>
+                          <span className="label-text">{t("settings.automation_editor.record_id")}</span>
                           <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} />
-                          <span className="label label-text-alt opacity-50">Paste record ID or use trigger.</span>
+                          <span className="label label-text-alt opacity-50">{t("settings.automation_editor.record_or_trigger_help")}</span>
                         </label>
                   </div>
                 )}
@@ -5146,13 +5151,13 @@ export default function AutomationEditorPage({ user }) {
                     {isActionLike && step.action_id && !step.action_id.startsWith("system.") && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <label className="form-control">
-                          <span className="label-text">Entity</span>
+                          <span className="label-text">{t("common.entity")}</span>
                           <AppSelect
                             className="select select-bordered"
                             value={step.inputs?.entity_id || ""}
                             onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}
                           >
-                            <option value="">Use trigger entity</option>
+                            <option value="">{t("settings.automation_editor.use_trigger_entity")}</option>
                             {entityOptions.map((ent) => (
                               <option key={ent.id} value={ent.id}>
                                 {ent.label || ent.id}
@@ -5161,14 +5166,14 @@ export default function AutomationEditorPage({ user }) {
                           </AppSelect>
                         </label>
                         <label className="form-control">
-                          <span className="label-text">Record</span>
+                          <span className="label-text">{t("settings.automation_editor.record_id")}</span>
                           <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} />
-                          <span className="label label-text-alt opacity-50">Paste record ID or use trigger.</span>
+                          <span className="label label-text-alt opacity-50">{t("settings.automation_editor.record_or_trigger_help")}</span>
                         </label>
                         <label className="form-control md:col-span-2">
-                          <span className="label-text">Selected records (comma)</span>
+                          <span className="label-text">{t("settings.automation_editor.selected_records_comma")}</span>
                           <input className="input input-bordered" value={(step.inputs?.selected_ids || []).join(", ")} onChange={(e) => updateStepInput(index, "selected_ids", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
-                          <span className="label label-text-alt opacity-50">Comma-separated record IDs.</span>
+                          <span className="label label-text-alt opacity-50">{t("settings.automation_editor.selected_records_comma_help")}</span>
                         </label>
                   </div>
                 )}
@@ -5176,20 +5181,20 @@ export default function AutomationEditorPage({ user }) {
                 {isActionLike && step.action_id === "system.create_record" && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label className="form-control">
-                      <span className="label-text">Entity</span>
+                      <span className="label-text">{t("common.entity")}</span>
                       <AppSelect className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
-                        <option value="">Select entity…</option>
+                        <option value="">{t("settings.automation_editor.select_entity")}</option>
                         {entityOptions.map((ent) => (
                           <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
                         ))}
                       </AppSelect>
                     </label>
                     <label className="form-control">
-                      <span className="label-text">Store output as</span>
-                      <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="new_record" />
+                      <span className="label-text">{t("settings.automation_editor.store_output_as")}</span>
+                      <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder={t("settings.automation_editor.new_record_placeholder")} />
                     </label>
                     <label className="form-control md:col-span-2">
-                      <span className="label-text">Values JSON</span>
+                      <span className="label-text">{t("settings.automation_editor.values_json")}</span>
                       <CodeTextarea
                         value={typeof step.inputs?.values === "string" ? step.inputs.values : JSON.stringify(step.inputs?.values || {}, null, 2)}
                         onChange={(e) => updateStepInput(index, "values", e.target.value)}
@@ -5202,24 +5207,24 @@ export default function AutomationEditorPage({ user }) {
                 {isActionLike && step.action_id === "system.update_record" && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label className="form-control">
-                      <span className="label-text">Entity</span>
+                      <span className="label-text">{t("common.entity")}</span>
                       <AppSelect className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
-                        <option value="">Use trigger entity</option>
+                        <option value="">{t("settings.automation_editor.use_trigger_entity")}</option>
                         {entityOptions.map((ent) => (
                           <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
                         ))}
                       </AppSelect>
                     </label>
                     <label className="form-control">
-                      <span className="label-text">Record</span>
+                      <span className="label-text">{t("settings.automation_editor.record_id")}</span>
                       <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} placeholder="{{trigger.record_id}}" />
                     </label>
                     <label className="form-control">
-                      <span className="label-text">Store output as</span>
-                      <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="updated_record" />
+                      <span className="label-text">{t("settings.automation_editor.store_output_as")}</span>
+                      <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder={t("settings.automation_editor.updated_record_placeholder")} />
                     </label>
                     <label className="form-control md:col-span-2">
-                      <span className="label-text">Patch JSON</span>
+                      <span className="label-text">{t("settings.automation_editor.patch_json")}</span>
                       <CodeTextarea
                         value={typeof step.inputs?.patch === "string" ? step.inputs.patch : JSON.stringify(step.inputs?.patch || {}, null, 2)}
                         onChange={(e) => updateStepInput(index, "patch", e.target.value)}
@@ -5232,32 +5237,32 @@ export default function AutomationEditorPage({ user }) {
                 {isActionLike && step.action_id === "system.query_records" && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label className="form-control">
-                      <span className="label-text">Entity</span>
+                      <span className="label-text">{t("common.entity")}</span>
                       <AppSelect className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
-                        <option value="">Use trigger entity</option>
+                        <option value="">{t("settings.automation_editor.use_trigger_entity")}</option>
                         {entityOptions.map((ent) => (
                           <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
                         ))}
                       </AppSelect>
                     </label>
                     <label className="form-control">
-                      <span className="label-text">Search text</span>
+                      <span className="label-text">{t("settings.automation_editor.search_text")}</span>
                       <input className="input input-bordered" value={step.inputs?.q || ""} onChange={(e) => updateStepInput(index, "q", e.target.value)} />
                     </label>
                     <label className="form-control">
-                      <span className="label-text">Search fields</span>
-                      <input className="input input-bordered" value={step.inputs?.search_fields || ""} onChange={(e) => updateStepInput(index, "search_fields", e.target.value)} placeholder="field.one, field.two" />
+                      <span className="label-text">{t("settings.automation_editor.search_fields")}</span>
+                      <input className="input input-bordered" value={step.inputs?.search_fields || ""} onChange={(e) => updateStepInput(index, "search_fields", e.target.value)} placeholder={t("settings.automation_editor.search_fields_placeholder")} />
                     </label>
                     <label className="form-control">
-                      <span className="label-text">Limit</span>
+                      <span className="label-text">{t("settings.automation_editor.limit")}</span>
                       <input className="input input-bordered" type="number" min={1} max={200} value={step.inputs?.limit || 25} onChange={(e) => updateStepInput(index, "limit", Number(e.target.value || 25))} />
                     </label>
                     <label className="form-control">
-                      <span className="label-text">Store output as</span>
-                      <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="query_results" />
+                      <span className="label-text">{t("settings.automation_editor.store_output_as")}</span>
+                      <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder={t("settings.automation_editor.query_results_placeholder")} />
                     </label>
                     <label className="form-control md:col-span-2">
-                      <span className="label-text">Filter condition JSON</span>
+                      <span className="label-text">{t("settings.automation_editor.filter_condition_json")}</span>
                       <CodeTextarea
                         value={typeof step.inputs?.filter_expr === "string" ? step.inputs.filter_expr : JSON.stringify(step.inputs?.filter_expr || {}, null, 2)}
                         onChange={(e) => updateStepInput(index, "filter_expr", e.target.value)}
@@ -5270,28 +5275,28 @@ export default function AutomationEditorPage({ user }) {
                 {isActionLike && step.action_id === "system.add_chatter" && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label className="form-control">
-                      <span className="label-text">Entity</span>
+                      <span className="label-text">{t("common.entity")}</span>
                       <AppSelect className="select select-bordered" value={step.inputs?.entity_id || ""} onChange={(e) => updateStepInput(index, "entity_id", e.target.value)}>
-                        <option value="">Use trigger entity</option>
+                        <option value="">{t("settings.automation_editor.use_trigger_entity")}</option>
                         {entityOptions.map((ent) => (
                           <option key={ent.id} value={ent.id}>{ent.label || ent.id}</option>
                         ))}
                       </AppSelect>
                     </label>
                     <label className="form-control">
-                      <span className="label-text">Record</span>
+                      <span className="label-text">{t("settings.automation_editor.record_id")}</span>
                       <input className="input input-bordered" list="automation-record-hints" value={step.inputs?.record_id || ""} onChange={(e) => updateStepInput(index, "record_id", e.target.value)} placeholder="{{trigger.record_id}}" />
                     </label>
                     <label className="form-control">
-                      <span className="label-text">Entry type</span>
+                      <span className="label-text">{t("settings.automation_editor.entry_type")}</span>
                       <input className="input input-bordered" value={step.inputs?.entry_type || "note"} onChange={(e) => updateStepInput(index, "entry_type", e.target.value)} />
                     </label>
                     <label className="form-control">
-                      <span className="label-text">Store output as</span>
-                      <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder="activity_note" />
+                      <span className="label-text">{t("settings.automation_editor.store_output_as")}</span>
+                      <input className="input input-bordered" value={step.store_as || ""} onChange={(e) => updateStep(index, { store_as: e.target.value })} placeholder={t("settings.automation_editor.activity_note_placeholder")} />
                     </label>
                     <label className="form-control md:col-span-2">
-                      <span className="label-text">Body</span>
+                      <span className="label-text">{t("settings.automation_editor.body")}</span>
                       <CodeTextarea value={step.inputs?.body || ""} onChange={(e) => updateStepInput(index, "body", e.target.value)} minHeight="140px" />
                     </label>
                   </div>
@@ -5300,7 +5305,7 @@ export default function AutomationEditorPage({ user }) {
                 {step.kind === "delay" && (
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                     <label className="form-control md:col-span-4">
-                      <span className="label-text">Delay mode</span>
+                      <span className="label-text">{t("settings.automation_editor.delay_mode")}</span>
                       <AppSelect
                         className="select select-bordered"
                         value={step.target_time ? "until_time" : "relative"}
@@ -5312,14 +5317,14 @@ export default function AutomationEditorPage({ user }) {
                           }
                         }}
                       >
-                        <option value="relative">Wait relative time</option>
-                        <option value="until_time">Wait until datetime</option>
+                        <option value="relative">{t("settings.automation_editor.wait_relative_time")}</option>
+                        <option value="until_time">{t("settings.automation_editor.wait_until_datetime")}</option>
                       </AppSelect>
                     </label>
                     {!step.target_time ? (
                       <>
                         <label className="form-control md:col-span-4">
-                          <span className="label-text">Amount</span>
+                          <span className="label-text">{t("settings.automation_editor.amount")}</span>
                           <input
                             className="input input-bordered"
                             type="number"
@@ -5333,7 +5338,7 @@ export default function AutomationEditorPage({ user }) {
                           />
                         </label>
                         <label className="form-control md:col-span-4">
-                          <span className="label-text">Unit</span>
+                          <span className="label-text">{t("settings.automation_editor.unit")}</span>
                           <AppSelect
                             className="select select-bordered"
                             value={step.delay_unit || "seconds"}
@@ -5343,16 +5348,16 @@ export default function AutomationEditorPage({ user }) {
                               updateStep(index, { delay_unit: unit, delay_value: amount, seconds: amount * delayUnitToSeconds(unit) });
                             }}
                           >
-                            <option value="seconds">Seconds</option>
-                            <option value="minutes">Minutes</option>
-                            <option value="hours">Hours</option>
-                            <option value="days">Days</option>
+                            <option value="seconds">{t("settings.automation_editor.unit_seconds")}</option>
+                            <option value="minutes">{t("settings.automation_editor.unit_minutes")}</option>
+                            <option value="hours">{t("settings.automation_editor.unit_hours")}</option>
+                            <option value="days">{t("settings.automation_editor.unit_days")}</option>
                           </AppSelect>
                         </label>
                       </>
                     ) : (
                       <label className="form-control md:col-span-8">
-                        <span className="label-text">Resume at</span>
+                        <span className="label-text">{t("settings.automation_editor.resume_at")}</span>
                         <input
                           className="input input-bordered"
                           type="datetime-local"
@@ -5376,10 +5381,10 @@ export default function AutomationEditorPage({ user }) {
                   const op = expr?.op || "eq";
                   const rightVal = expr?.right?.literal ?? "";
                   const commonOptions = [
-                    { value: "trigger.event", label: "Trigger event", type: "string", options: [] },
-                    { value: "trigger.entity_id", label: "Trigger entity", type: "string", options: [] },
-                    { value: "trigger.record_id", label: "Trigger record", type: "string", options: [] },
-                    { value: "trigger.user_id", label: "Trigger user", type: "user", options: [] },
+                    { value: "trigger.event", label: t("settings.automation_editor.trigger_event"), type: "string", options: [] },
+                    { value: "trigger.entity_id", label: t("settings.automation_editor.trigger_entity"), type: "string", options: [] },
+                    { value: "trigger.record_id", label: t("settings.automation_editor.trigger_record"), type: "string", options: [] },
+                    { value: "trigger.user_id", label: t("settings.automation_editor.trigger_user"), type: "user", options: [] },
                   ];
                   const availableFieldPaths = buildConditionFieldOptions(selectedEntityFields, commonOptions);
                   const selectedFieldDef = availableFieldPaths.find((item) => item.value === leftVar) || null;
@@ -5401,7 +5406,7 @@ export default function AutomationEditorPage({ user }) {
                   return (
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                       <label className="form-control md:col-span-4">
-                        <span className="label-text">Entity context</span>
+                        <span className="label-text">{t("settings.automation_editor.entity_context")}</span>
                         <AppSelect
                           className="select select-bordered"
                           value={selectedEntityId}
@@ -5419,13 +5424,13 @@ export default function AutomationEditorPage({ user }) {
                         </AppSelect>
                       </label>
                       <label className="form-control md:col-span-4">
-                        <span className="label-text">Field</span>
+                        <span className="label-text">{t("settings.automation_editor.field_path")}</span>
                         <input
                           className="input input-bordered"
                           list={`automation-condition-fields-${normalizedPath.join("-") || "root"}`}
                           value={leftVar}
                           onChange={(e) => updateStep(index, { expr: { ...expr, left: { var: e.target.value } } })}
-                          placeholder={triggerMode === "webhook" ? "trigger.payload.customer.email" : "trigger.record.fields.status"}
+                          placeholder={triggerMode === "webhook" ? t("settings.automation_editor.webhook_field_path_placeholder") : t("settings.automation_editor.record_field_path_placeholder")}
                         />
                         <datalist id={`automation-condition-fields-${normalizedPath.join("-") || "root"}`}>
                           {availableFieldPaths.map((item) => (
@@ -5436,40 +5441,40 @@ export default function AutomationEditorPage({ user }) {
                         </datalist>
                         <span className="label label-text-alt opacity-50">
                           {selectedFieldDef
-                            ? `Field type: ${selectedFieldDef.type || "string"}`
-                            : "Pick a suggested field or type a custom path."}
+                            ? t("settings.automation_editor.field_type", { type: selectedFieldDef.type || "string" })
+                            : t("settings.automation_editor.pick_suggested_field_or_custom_path")}
                         </span>
                       </label>
                       <label className="form-control md:col-span-4">
-                        <span className="label-text">Operator</span>
+                        <span className="label-text">{t("settings.automation_editor.operator")}</span>
                         <AppSelect
                           className="select select-bordered"
                           value={op}
                           onChange={(e) => updateStep(index, { expr: { ...expr, op: e.target.value } })}
                         >
-                          <option value="eq">equals</option>
-                          <option value="neq">not equals</option>
-                          <option value="gt">greater than</option>
-                          <option value="gte">greater or equal</option>
-                          <option value="lt">less than</option>
-                          <option value="lte">less or equal</option>
-                          <option value="contains">contains</option>
-                          <option value="in">is in list</option>
-                          <option value="not_in">is not in list</option>
-                          <option value="exists">exists</option>
-                          <option value="not_exists">not exists</option>
+                          <option value="eq">{t("settings.automation_editor.operator_eq")}</option>
+                          <option value="neq">{t("settings.automation_editor.operator_neq")}</option>
+                          <option value="gt">{t("settings.automation_editor.operator_gt")}</option>
+                          <option value="gte">{t("settings.automation_editor.operator_gte")}</option>
+                          <option value="lt">{t("settings.automation_editor.operator_lt")}</option>
+                          <option value="lte">{t("settings.automation_editor.operator_lte")}</option>
+                          <option value="contains">{t("settings.automation_editor.operator_contains")}</option>
+                          <option value="in">{t("settings.automation_editor.operator_is_in_list")}</option>
+                          <option value="not_in">{t("settings.automation_editor.operator_is_not_in_list")}</option>
+                          <option value="exists">{t("settings.automation_editor.operator_exists")}</option>
+                          <option value="not_exists">{t("settings.automation_editor.operator_not_exists")}</option>
                         </AppSelect>
                       </label>
                       <label className="form-control md:col-span-12">
-                        <span className="label-text">Value</span>
+                        <span className="label-text">{t("settings.value")}</span>
                         {isExistsOp ? (
-                          <input className="input input-bordered" value="No value needed for this operator" disabled />
+                          <input className="input input-bordered" value={t("settings.automation_editor.no_value_needed_for_operator")} disabled />
                         ) : !isInListOp ? (
                           renderTypedValueEditor({
                             fieldDef: selectedFieldDef,
                             value: Array.isArray(rightVal) ? rightVal.join(", ") : String(rightVal ?? ""),
                             onChange: updateConditionValue,
-                            placeholder: triggerMode === "webhook" ? "ops@example.com" : "",
+                            placeholder: triggerMode === "webhook" ? t("settings.automation_editor.webhook_value_placeholder") : "",
                           })
                         ) : (
                           <input
@@ -5477,15 +5482,15 @@ export default function AutomationEditorPage({ user }) {
                             type={isNumericOp || fieldType === "number" ? "number" : "text"}
                             value={Array.isArray(rightVal) ? rightVal.join(", ") : String(rightVal ?? "")}
                             onChange={(e) => updateConditionValue(e.target.value)}
-                            placeholder={isInListOp ? "value1, value2, value3" : ""}
+                            placeholder={isInListOp ? t("settings.automation_editor.list_values_placeholder") : ""}
                           />
                         )}
                         <span className="label label-text-alt opacity-50">
-                          {isInListOp ? "Use comma-separated values." : "Condition runs against trigger data."}
+                          {isInListOp ? t("settings.automation_editor.use_comma_separated_values") : t("settings.automation_editor.condition_runs_against_trigger_data")}
                         </span>
                       </label>
                       <label className="form-control md:col-span-12">
-                        <span className="label-text">If false</span>
+                        <span className="label-text">{t("settings.automation_editor.if_false")}</span>
                         <label className="label cursor-pointer justify-start gap-3">
                           <input
                             type="checkbox"
@@ -5493,7 +5498,7 @@ export default function AutomationEditorPage({ user }) {
                             checked={stopOnFalse}
                             onChange={(e) => updateStep(index, { stop_on_false: e.target.checked })}
                           />
-                          <span className="label-text">Stop automation if condition is false</span>
+                          <span className="label-text">{t("settings.automation_editor.stop_automation_if_condition_false")}</span>
                         </label>
                       </label>
                     </div>
@@ -5513,7 +5518,7 @@ export default function AutomationEditorPage({ user }) {
         ))}
       </datalist>
       <datalist id="automation-entities">
-        <option value="{{trigger.entity_id}}">Use trigger entity</option>
+        <option value="{{trigger.entity_id}}">{t("settings.automation_editor.use_trigger_entity")}</option>
         {entityOptions.map((ent) => (
           <option key={ent.id} value={ent.id}>
             {ent.label || ent.id}
@@ -5521,24 +5526,24 @@ export default function AutomationEditorPage({ user }) {
         ))}
       </datalist>
       <datalist id="automation-record-hints">
-        <option value="{{trigger.record_id}}">Use trigger.record_id</option>
-        <option value="{{last.id}}">Use the last step's ID output</option>
-        <option value="{{vars.created_record.id}}">Use a stored record ID</option>
+        <option value="{{trigger.record_id}}">{t("settings.automation_editor.use_trigger_record_id")}</option>
+        <option value="{{last.id}}">{t("settings.automation_editor.use_last_step_id_output")}</option>
+        <option value="{{vars.created_record.id}}">{t("settings.automation_editor.use_stored_record_id")}</option>
         {triggerMode === "webhook" && (
           <>
-            <option value="{{trigger.payload.id}}">Use webhook payload id</option>
-            <option value="{{trigger.payload.record_id}}">Use webhook payload record_id</option>
+            <option value="{{trigger.payload.id}}">{t("settings.automation_editor.use_webhook_payload_id")}</option>
+            <option value="{{trigger.payload.record_id}}">{t("settings.automation_editor.use_webhook_payload_record_id")}</option>
           </>
         )}
       </datalist>
       <datalist id="automation-loop-hints">
-        <option value="{{trigger.record_ids}}">Use trigger record IDs</option>
-        <option value="{{steps.query_records.records}}">Use records from a query step</option>
-        <option value="{{vars.query_results.records}}">Use records from a stored variable</option>
+        <option value="{{trigger.record_ids}}">{t("settings.automation_editor.use_trigger_record_ids")}</option>
+        <option value="{{steps.query_records.records}}">{t("settings.automation_editor.use_records_from_query_step")}</option>
+        <option value="{{vars.query_results.records}}">{t("settings.automation_editor.use_records_from_stored_variable")}</option>
         {triggerMode === "webhook" && (
           <>
-            <option value="{{trigger.payload.items}}">Use items from webhook payload</option>
-            <option value="{{trigger.payload.records}}">Use records from webhook payload</option>
+            <option value="{{trigger.payload.items}}">{t("settings.automation_editor.use_items_from_webhook_payload")}</option>
+            <option value="{{trigger.payload.records}}">{t("settings.automation_editor.use_records_from_webhook_payload")}</option>
           </>
         )}
       </datalist>
@@ -5550,23 +5555,23 @@ export default function AutomationEditorPage({ user }) {
         ))}
       </datalist>
       <datalist id="automation-ref-values">
-        <option value="{{trigger.entity_id}}">Trigger entity ID</option>
-        <option value="{{trigger.record_id}}">Trigger record ID</option>
-        <option value="{{trigger.user_id}}">Trigger user ID</option>
-        <option value="{{trigger.timestamp}}">Trigger timestamp</option>
-        <option value="{{last.id}}">Last step ID</option>
-        <option value="{{last.records}}">Last step records</option>
-        <option value="{{vars.created_record.id}}">Created record ID</option>
-        <option value="{{vars.query_results.records}}">Stored query records</option>
-        <option value="{{item.id}}">Loop item ID</option>
-        <option value="{{item.record_id}}">Loop item record ID</option>
+        <option value="{{trigger.entity_id}}">{t("settings.automation_editor.trigger_entity_id")}</option>
+        <option value="{{trigger.record_id}}">{t("settings.automation_editor.trigger_record_id")}</option>
+        <option value="{{trigger.user_id}}">{t("settings.automation_editor.trigger_user_id")}</option>
+        <option value="{{trigger.timestamp}}">{t("settings.automation_editor.trigger_timestamp")}</option>
+        <option value="{{last.id}}">{t("settings.automation_editor.last_step_id")}</option>
+        <option value="{{last.records}}">{t("settings.automation_editor.last_step_records")}</option>
+        <option value="{{vars.created_record.id}}">{t("settings.automation_editor.created_record_id")}</option>
+        <option value="{{vars.query_results.records}}">{t("settings.automation_editor.stored_query_records")}</option>
+        <option value="{{item.id}}">{t("settings.automation_editor.loop_item_id")}</option>
+        <option value="{{item.record_id}}">{t("settings.automation_editor.loop_item_record_id")}</option>
         {triggerMode === "webhook" && (
           <>
-            <option value="{{trigger.connection_id}}">Webhook connection ID</option>
-            <option value="{{trigger.event_key}}">Webhook event key</option>
-            <option value="{{trigger.provider_event_id}}">Webhook provider event ID</option>
-            <option value="{{trigger.payload.id}}">Webhook payload ID</option>
-            <option value="{{trigger.payload.record_id}}">Webhook payload record ID</option>
+            <option value="{{trigger.connection_id}}">{t("settings.automation_editor.webhook_connection_id")}</option>
+            <option value="{{trigger.event_key}}">{t("settings.automation_editor.webhook_event_key")}</option>
+            <option value="{{trigger.provider_event_id}}">{t("settings.automation_editor.webhook_provider_event_id")}</option>
+            <option value="{{trigger.payload.id}}">{t("settings.automation_editor.webhook_payload_id")}</option>
+            <option value="{{trigger.payload.record_id}}">{t("settings.automation_editor.webhook_payload_record_id")}</option>
           </>
         )}
         {triggerFieldOptions.map((field) => (
@@ -5613,63 +5618,63 @@ export default function AutomationEditorPage({ user }) {
     <div className="automation-drawer-linear space-y-4">
       <div className={triggerSectionCardClass}>
         <div>
-          <div className="font-medium text-sm">Trigger setup</div>
-          <div className="text-xs opacity-60 mt-1">Choose what starts this automation and fill in the matching trigger details.</div>
+          <div className="font-medium text-sm">{t("settings.automation_editor.trigger_setup")}</div>
+          <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.trigger_setup_help")}</div>
         </div>
         <label className="form-control">
-          <span className="label-text">Trigger type</span>
+          <span className="label-text">{t("settings.automation_editor.trigger_type")}</span>
           <AppSelect className="select select-bordered" value={triggerMode} onChange={(e) => setTriggerMode(e.target.value)}>
-            <option value="event">When an event happens</option>
-            <option value="webhook">When a webhook is received</option>
-            <option value="schedule">Run on a schedule</option>
+            <option value="event">{t("settings.automation_editor.when_event_happens")}</option>
+            <option value="webhook">{t("settings.automation_editor.when_webhook_received")}</option>
+            <option value="schedule">{t("settings.automation_editor.run_on_schedule")}</option>
           </AppSelect>
         </label>
 
         {triggerMode === "schedule" ? (
           <label className="form-control max-w-xs">
-            <span className="label-text">Run every N minutes</span>
+            <span className="label-text">{t("settings.automation_editor.run_every_n_minutes")}</span>
             <input
               className="input input-bordered"
               inputMode="numeric"
               value={trigger?.every_minutes ?? ""}
               onChange={(e) => setTrigger((prev) => ({ ...(prev || {}), kind: "schedule", every_minutes: e.target.value ? Number(e.target.value) : "" }))}
-              placeholder="60"
+              placeholder={t("settings.automation_editor.schedule_minutes_placeholder")}
             />
-            <span className="label label-text-alt opacity-50">Use a simple interval first. The shared scheduler will enqueue this automation in the background.</span>
+            <span className="label label-text-alt opacity-50">{t("settings.automation_editor.schedule_interval_help")}</span>
           </label>
         ) : triggerMode === "webhook" ? (
           <div className="space-y-3">
             <div className={triggerDetailCardClass}>
               <div>
-                <div className="font-medium text-sm">Webhook setup</div>
-                <div className="text-xs opacity-60 mt-1">Run this automation when an inbound integration webhook is received. Narrow it only if you need to.</div>
+                <div className="font-medium text-sm">{t("settings.automation_editor.webhook_setup")}</div>
+                <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.webhook_setup_help")}</div>
               </div>
               <label className="form-control">
-                <span className="label-text">Connection</span>
+                <span className="label-text">{t("common.connection")}</span>
                 <AppSelect className="select select-bordered" value={webhookTriggerConnectionId} onChange={(e) => upsertTriggerFilter("connection_id", e.target.value)}>
-                  <option value="">Any connection</option>
+                  <option value="">{t("settings.automation_editor.any_connection")}</option>
                   {webhookConnectionOptions.map((conn) => (
                     <option key={conn.id} value={conn.id}>
                       {conn.name || conn.id}
                     </option>
                   ))}
                 </AppSelect>
-                <span className="label label-text-alt opacity-50">Optional. Leave empty to react to any configured integration connection.</span>
+                <span className="label label-text-alt opacity-50">{t("settings.automation_editor.webhook_connection_help")}</span>
               </label>
               <label className="form-control">
-                <span className="label-text">Event key</span>
+                <span className="label-text">{t("settings.automation_editor.event_key")}</span>
                 <input
                   className="input input-bordered"
                   value={webhookTriggerEventKey}
                   onChange={(e) => upsertTriggerFilter("event_key", e.target.value)}
-                  placeholder="invoice.created"
+                  placeholder={t("settings.automation_editor.event_key_example")}
                 />
-                <span className="label label-text-alt opacity-50">Optional. Only set this if the flow should run for one webhook event type.</span>
+                <span className="label label-text-alt opacity-50">{t("settings.automation_editor.event_key_help")}</span>
               </label>
             </div>
             <div className={triggerDetailCardClass}>
-              <div className="font-medium text-sm">Webhook data available to the flow</div>
-              <div className="text-xs opacity-60 mt-1">Use these payload and metadata paths in later steps.</div>
+              <div className="font-medium text-sm">{t("settings.automation_editor.webhook_data_available")}</div>
+              <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.webhook_data_available_help")}</div>
               <div className="mt-1 text-xs leading-5 text-base-content/70">
                 <div className="font-mono">trigger.connection_id</div>
                 <div className="font-mono">trigger.event_key</div>
@@ -5681,18 +5686,18 @@ export default function AutomationEditorPage({ user }) {
             </div>
             <div className={triggerDetailCardClass}>
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="text-xs opacity-60">Queue a sample inbound webhook against the saved automation.</div>
+                <div className="text-xs opacity-60">{t("settings.automation_editor.queue_sample_inbound_webhook")}</div>
                 <button type="button" className="btn btn-sm btn-outline" onClick={() => setWebhookTestOpen(true)}>
-                  Test webhook trigger
+                  {t("settings.automation_editor.test_webhook_trigger")}
                 </button>
               </div>
             </div>
           </div>
         ) : (
           <label className="form-control">
-            <span className="label-text">Trigger event</span>
+            <span className="label-text">{t("settings.automation_editor.trigger_event")}</span>
             <AppSelect className="select select-bordered" value={(trigger?.event_types || [])[0] || ""} onChange={(e) => updateTriggerEvent(e.target.value)}>
-              <option value="">Select event…</option>
+              <option value="">{t("settings.automation_editor.select_event")}</option>
               {triggerOptions.map((group) => (
                 <optgroup key={group.label} label={group.label}>
                   {Array.isArray(group.options) &&
@@ -5713,17 +5718,17 @@ export default function AutomationEditorPage({ user }) {
         <>
           <div className={triggerSectionCardClass}>
             <div>
-              <div className="font-medium text-sm">Trigger rules</div>
-              <div className="text-xs opacity-60 mt-1">Optional. Use these only if the automation should run only in specific cases.</div>
+              <div className="font-medium text-sm">{t("settings.automation_editor.trigger_rules")}</div>
+              <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.trigger_rules_help")}</div>
             </div>
             <div className="space-y-3">
               {((trigger?.filters || [])).length === 0 ? (
                 <div className="rounded-box border border-dashed border-base-300 bg-base-100 p-5 text-center">
-                  <div className="text-sm font-medium">No rules yet</div>
+                  <div className="text-sm font-medium">{t("settings.automation_editor.no_rules_yet")}</div>
                   <div className="mt-1 text-xs opacity-60">
                     {triggerMode === "webhook"
-                      ? "This automation will run whenever the selected webhook trigger matches."
-                      : "This automation will run every time the selected trigger event happens."}
+                      ? t("settings.automation_editor.webhook_runs_when_match")
+                      : t("settings.automation_editor.event_runs_every_time")}
                   </div>
                 </div>
               ) : (
@@ -5736,60 +5741,60 @@ export default function AutomationEditorPage({ user }) {
                     return (
                       <div key={`trigger-filter-${idx}`} className={triggerDetailCardClass}>
                         <div className="flex items-center justify-between gap-3">
-                          <div className="text-xs font-medium uppercase tracking-wide opacity-60">Rule {idx + 1}</div>
+                          <div className="text-xs font-medium uppercase tracking-wide opacity-60">{t("settings.automation_editor.rule_number", { count: idx + 1 })}</div>
                           <button type="button" className="btn btn-ghost btn-xs text-error" onClick={() => removeTriggerFilter(idx)}>
-                            Remove
+                            {t("common.remove")}
                           </button>
                         </div>
                         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
                           <label className="form-control md:col-span-5">
-                            <span className="label-text">Field</span>
+                            <span className="label-text">{t("common.field")}</span>
                             <input
                               className="input input-bordered"
                               list="automation-trigger-fields"
                               value={filt?.path || ""}
                               onChange={(e) => updateTriggerFilter(idx, { path: e.target.value })}
-                              placeholder={triggerMode === "webhook" ? "payload.customer.email" : "status"}
+                              placeholder={triggerMode === "webhook" ? t("settings.automation_editor.trigger_payload_field_placeholder") : t("settings.automation_editor.trigger_status_field_placeholder")}
                             />
                             <span className="label label-text-alt opacity-50">
-                              {selectedFieldDef ? `Field type: ${selectedFieldDef.type || "string"}` : "Pick a suggested field or type a custom path."}
+                              {selectedFieldDef ? t("settings.automation_editor.field_type", { type: selectedFieldDef.type || "string" }) : t("settings.automation_editor.pick_suggested_field_or_custom_path")}
                             </span>
                           </label>
                           <label className="form-control md:col-span-3">
-                            <span className="label-text">Operator</span>
+                            <span className="label-text">{t("settings.automation_editor.operator")}</span>
                             <AppSelect className="select select-bordered" value={op} onChange={(e) => updateTriggerFilter(idx, { op: e.target.value })}>
-                              <option value="eq">equals</option>
-                              <option value="neq">not equals</option>
-                              <option value="gt">greater than</option>
-                              <option value="gte">greater or equal</option>
-                              <option value="lt">less than</option>
-                              <option value="lte">less or equal</option>
-                              <option value="contains">contains</option>
-                              <option value="in">in list</option>
-                              <option value="not_in">not in list</option>
-                              <option value="exists">exists</option>
-                              <option value="not_exists">not exists</option>
-                              <option value="changed">changed</option>
-                              <option value="changed_from">changed from</option>
-                              <option value="changed_to">changed to</option>
+                              <option value="eq">{t("settings.automation_editor.operator_eq")}</option>
+                              <option value="neq">{t("settings.automation_editor.operator_neq")}</option>
+                              <option value="gt">{t("settings.automation_editor.operator_gt")}</option>
+                              <option value="gte">{t("settings.automation_editor.operator_gte")}</option>
+                              <option value="lt">{t("settings.automation_editor.operator_lt")}</option>
+                              <option value="lte">{t("settings.automation_editor.operator_lte")}</option>
+                              <option value="contains">{t("settings.automation_editor.operator_contains")}</option>
+                              <option value="in">{t("settings.automation_editor.operator_in")}</option>
+                              <option value="not_in">{t("settings.automation_editor.operator_not_in")}</option>
+                              <option value="exists">{t("settings.automation_editor.operator_exists")}</option>
+                              <option value="not_exists">{t("settings.automation_editor.operator_not_exists")}</option>
+                              <option value="changed">{t("settings.automation_editor.operator_changed")}</option>
+                              <option value="changed_from">{t("settings.automation_editor.operator_changed_from")}</option>
+                              <option value="changed_to">{t("settings.automation_editor.operator_changed_to")}</option>
                             </AppSelect>
                           </label>
                           <label className="form-control md:col-span-4">
-                            <span className="label-text">Value</span>
+                            <span className="label-text">{t("settings.value")}</span>
                             {noValue ? (
-                              <input className="input input-bordered" disabled value="No value needed" />
+                              <input className="input input-bordered" disabled value={t("settings.automation_editor.no_value_needed")} />
                             ) : supportsTypedValue ? (
                               renderTypedValueEditor({
                                 fieldDef: selectedFieldDef,
                                 value: Array.isArray(filt?.value) ? filt.value.join(", ") : (filt?.value ?? ""),
                                 onChange: (nextValue) => updateTriggerFilter(idx, { value: nextValue }),
-                                placeholder: triggerMode === "webhook" ? "ops@example.com" : "active",
+                                placeholder: triggerMode === "webhook" ? t("settings.automation_editor.webhook_value_placeholder") : t("settings.automation_editor.active_placeholder"),
                               })
                             ) : (
                               <input
                                 className="input input-bordered"
                                 value={Array.isArray(filt?.value) ? filt.value.join(", ") : (filt?.value ?? "")}
-                                placeholder={triggerMode === "webhook" ? "one, two" : "active, pending"}
+                                placeholder={triggerMode === "webhook" ? t("settings.automation_editor.list_values_generic_placeholder") : t("settings.automation_editor.active_pending_placeholder")}
                                 onChange={(e) => {
                                   const raw = e.target.value;
                                   const value = ["in", "not_in"].includes(op) ? raw.split(",").map((part) => part.trim()).filter(Boolean) : raw;
@@ -5807,7 +5812,7 @@ export default function AutomationEditorPage({ user }) {
 
               <div>
                 <button type="button" className={automationAddButtonClass} onClick={addTriggerFilter}>
-                  {((trigger?.filters || [])).length === 0 ? "Add first rule" : "Add rule"}
+                  {((trigger?.filters || [])).length === 0 ? t("settings.automation_editor.add_first_rule") : t("settings.automation_editor.add_rule")}
                 </button>
               </div>
             </div>
@@ -5815,18 +5820,18 @@ export default function AutomationEditorPage({ user }) {
 
           <div className={triggerSectionCardClass}>
             <div>
-              <div className="font-medium text-sm">Advanced logic</div>
-              <div className="text-xs opacity-60 mt-1">Use this only if the simple rules above are not enough.</div>
+              <div className="font-medium text-sm">{t("settings.automation_editor.advanced_logic")}</div>
+              <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.advanced_logic_help")}</div>
             </div>
             <label className="form-control">
-              <span className="label-text">Advanced trigger condition JSON</span>
+              <span className="label-text">{t("settings.automation_editor.advanced_trigger_condition_json")}</span>
               <CodeTextarea
                 value={triggerExprText}
                 onChange={(e) => setTriggerExprText(e.target.value)}
                 minHeight="120px"
                 placeholder={`{\n  "op": "and",\n  "children": []\n}`}
               />
-              <span className="label label-text-alt opacity-50">Optional full condition DSL over `trigger.*` values. Leave empty unless you need advanced branching logic.</span>
+              <span className="label label-text-alt opacity-50">{t("settings.automation_editor.advanced_trigger_condition_json_help")}</span>
             </label>
           </div>
         </>
@@ -5841,11 +5846,11 @@ export default function AutomationEditorPage({ user }) {
       <section className={automationTabSectionClass}>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
           <label className="form-control md:col-span-4">
-            <span className="label-text">Name</span>
+            <span className="label-text">{t("common.name")}</span>
             <input className="input input-bordered bg-base-100" value={name} onChange={(e) => setName(e.target.value)} />
           </label>
           <label className="form-control md:col-span-8">
-            <span className="label-text">Description</span>
+            <span className="label-text">{t("common.description")}</span>
             <input className="input input-bordered bg-base-100" value={description} onChange={(e) => setDescription(e.target.value)} />
           </label>
         </div>
@@ -5858,26 +5863,26 @@ export default function AutomationEditorPage({ user }) {
           onClick={() => setTriggerDrawerOpen(true)}
         >
           <div className="min-w-0">
-            <div className="text-xs uppercase tracking-wide opacity-60">Trigger</div>
+            <div className="text-xs uppercase tracking-wide opacity-60">{t("settings.automation_editor.trigger")}</div>
             <div className="font-medium">{triggerSummaryText}</div>
             <div className="text-xs opacity-60 mt-1">
               {trigger?.kind === "schedule"
-                ? "Runs on the shared scheduler"
+                ? t("settings.automation_editor.runs_on_scheduler")
                 : triggerMode === "webhook"
                 ? [
-                    webhookTriggerConnectionId ? "Connection selected" : "Any connection",
-                    webhookTriggerEventKey ? `Event key: ${webhookTriggerEventKey}` : "Any webhook event",
+                    webhookTriggerConnectionId ? t("settings.automation_editor.connection_selected") : t("settings.automation_editor.any_connection"),
+                    webhookTriggerEventKey ? t("settings.automation_editor.event_key_value", { key: webhookTriggerEventKey }) : t("settings.automation_editor.any_webhook_event"),
                   ].join(" • ")
                 : (trigger?.filters || []).length > 0
-                ? `${trigger.filters.length} trigger rule${trigger.filters.length === 1 ? "" : "s"}`
-                : "Runs for every matching event"}
+                ? t("settings.automation_editor.trigger_rules_count", { count: trigger.filters.length })
+                : t("settings.automation_editor.runs_for_every_matching_event")}
             </div>
           </div>
         </button>
 
         {steps.length === 0 ? (
           <div className="rounded-box border border-dashed border-base-300 bg-base-100 p-6 text-sm opacity-60">
-            No steps yet. Add a step to start building the flow.
+            {t("settings.automation_editor.no_steps_start_flow")}
           </div>
         ) : (
           renderStepCards(steps)
@@ -5896,11 +5901,11 @@ export default function AutomationEditorPage({ user }) {
         last_error: run.last_error || "",
       }));
       const runFieldIndex = {
-        "run.id": { id: "run.id", label: "Run ID", type: "text" },
-        "run.status": { id: "run.status", label: "Status", type: "enum", options: ["queued", "running", "completed", "failed", "cancelled"] },
-        "run.started_at": { id: "run.started_at", label: "Started", type: "datetime" },
-        "run.ended_at": { id: "run.ended_at", label: "Ended", type: "datetime" },
-        "run.last_error": { id: "run.last_error", label: "Last error", type: "text" },
+        "run.id": { id: "run.id", label: t("settings.automation_editor.run_id"), type: "text" },
+        "run.status": { id: "run.status", label: t("common.status"), type: "enum", options: ["queued", "running", "completed", "failed", "cancelled"] },
+        "run.started_at": { id: "run.started_at", label: t("settings.automation_editor.started"), type: "datetime" },
+        "run.ended_at": { id: "run.ended_at", label: t("settings.automation_editor.ended"), type: "datetime" },
+        "run.last_error": { id: "run.last_error", label: t("settings.automation_editor.last_error"), type: "text" },
       };
       const runListView = {
         id: "system.automation.runs.list",
@@ -5925,17 +5930,17 @@ export default function AutomationEditorPage({ user }) {
         },
       }));
       const runFilters = [
-        { id: "all", label: "All", domain: null },
-        { id: "queued", label: "Queued", domain: { op: "eq", field: "run.status", value: "queued" } },
-        { id: "running", label: "Running", domain: { op: "eq", field: "run.status", value: "running" } },
-        { id: "completed", label: "Completed", domain: { op: "eq", field: "run.status", value: "completed" } },
-        { id: "failed", label: "Failed", domain: { op: "eq", field: "run.status", value: "failed" } },
+        { id: "all", label: t("common.all"), domain: null },
+        { id: "queued", label: t("common.queued"), domain: { op: "eq", field: "run.status", value: "queued" } },
+        { id: "running", label: t("settings.automation_editor.running"), domain: { op: "eq", field: "run.status", value: "running" } },
+        { id: "completed", label: t("settings.automation_editor.completed"), domain: { op: "eq", field: "run.status", value: "completed" } },
+        { id: "failed", label: t("common.failed"), domain: { op: "eq", field: "run.status", value: "failed" } },
       ];
       const activeRunFilter = runFilters.find((flt) => flt.id === runsStatusFilter) || null;
       const runFilterableFields = [
-        { id: "run.id", label: "Run ID" },
-        { id: "run.status", label: "Status" },
-        { id: "run.last_error", label: "Last error" },
+        { id: "run.id", label: t("settings.automation_editor.run_id") },
+        { id: "run.status", label: t("common.status") },
+        { id: "run.last_error", label: t("settings.automation_editor.last_error") },
       ];
 
       return (
@@ -5943,7 +5948,7 @@ export default function AutomationEditorPage({ user }) {
           {runsError && <div className="alert alert-error text-sm">{runsError}</div>}
           <section className={`${automationTabSectionClass} h-full min-h-0 flex flex-col gap-4`}>
             {runsLoading ? (
-              <div className="text-sm opacity-60">Loading runs…</div>
+              <div className="text-sm opacity-60">{t("settings.automation_editor.loading_runs")}</div>
             ) : (
               <>
                 <SystemListToolbar
@@ -6023,9 +6028,9 @@ export default function AutomationEditorPage({ user }) {
     try {
       const parsed = JSON.parse(jsonEditorText);
       applyAutomationDefinition(parsed);
-      pushToast("success", "Automation JSON applied");
+      pushToast("success", t("settings.automation_editor.automation_json_applied"));
     } catch (err) {
-      setJsonEditorError(err?.message || "Automation JSON is invalid");
+      setJsonEditorError(err?.message || t("settings.automation_editor.automation_json_invalid"));
     }
   }
 
@@ -6034,19 +6039,19 @@ export default function AutomationEditorPage({ user }) {
       <section className={`${automationTabSectionClass} h-full min-h-0 flex flex-col space-y-3`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="text-sm font-semibold">Automation JSON</div>
-            <div className="mt-1 text-xs opacity-60">Edit the full automation definition here, then apply it back into the flow.</div>
+            <div className="text-sm font-semibold">{t("settings.automation_editor.automation_json_title")}</div>
+            <div className="mt-1 text-xs opacity-60">{t("settings.automation_editor.automation_json_help")}</div>
           </div>
           <div className="flex flex-wrap gap-2">
             <button type="button" className="btn btn-sm btn-ghost" onClick={resetJsonEditor} disabled={!jsonEditorDirty}>
-              Reset
+              {t("settings.automation_editor.reset")}
             </button>
             <button type="button" className="btn btn-sm btn-primary" onClick={applyJsonEditor}>
-              Apply to flow
+              {t("settings.automation_editor.apply_to_flow")}
             </button>
           </div>
         </div>
-        {jsonEditorDirty ? <div className="text-xs opacity-60">JSON has unapplied changes.</div> : null}
+        {jsonEditorDirty ? <div className="text-xs opacity-60">{t("settings.automation_editor.json_has_unapplied_changes")}</div> : null}
         <CodeTextarea
           value={jsonEditorText}
           onChange={(e) => {
@@ -6085,7 +6090,7 @@ export default function AutomationEditorPage({ user }) {
       const runId = res?.run?.id;
       if (runId) navigate(`/automation-runs/${runId}`);
     } catch (err) {
-      setWebhookTestError(err?.message || "Failed to queue webhook test");
+      setWebhookTestError(err?.message || t("settings.automation_editor.failed_to_queue_webhook_test"));
     }
     setWebhookTestSaving(false);
   }
@@ -6097,20 +6102,20 @@ export default function AutomationEditorPage({ user }) {
     defaultTabId: defaultAutomationTabId,
     desktopScrollableTabs: ["flow", "runs"],
     rightTabs: [
-      { id: "flow", label: "Flow", render: () => flowTab },
-      { id: "json", label: "JSON", render: () => jsonTab },
-      { id: "runs", label: "Runs", render: () => runsTab },
+      { id: "flow", label: t("settings.automation_editor.flow"), render: () => flowTab },
+      { id: "json", label: t("settings.automation_editor.json"), render: () => jsonTab },
+      { id: "runs", label: t("settings.automation_editor.runs"), render: () => runsTab },
     ],
     actions: [
-      { id: "save", label: "Save", kind: "secondary", onClick: save, disabled: saving },
-      { id: "publish", label: "Publish", kind: "primary", onClick: publish, disabled: item?.status === "published" },
+      { id: "save", label: t("common.save"), kind: "secondary", onClick: save, disabled: saving },
+      { id: "publish", label: t("settings.automation_editor.publish"), kind: "primary", onClick: publish, disabled: item?.status === "published" },
     ],
-  }), [defaultAutomationTabId, flowTab, runsTab, jsonTab, save, publish, saving, item?.status]);
+  }), [defaultAutomationTabId, flowTab, runsTab, jsonTab, save, publish, saving, item?.status, t]);
 
   return (
     <div className={isMobile ? "min-h-full bg-base-100 flex flex-col" : "h-full min-h-0 flex flex-col overflow-hidden"}>
       <TemplateStudioShell
-        title={item?.name || "Automation"}
+        title={item?.name || t("settings.automation_editor.automation")}
         recordId={automationId}
         profile={automationProfile}
         loadRecord={loadRecord}
@@ -6122,8 +6127,8 @@ export default function AutomationEditorPage({ user }) {
       <ResponsiveDrawer
         open={triggerDrawerOpen}
         onClose={() => setTriggerDrawerOpen(false)}
-        title="Trigger"
-        description="Choose what starts this automation and add any optional trigger rules."
+        title={t("settings.automation_editor.trigger")}
+        description={t("settings.automation_editor.trigger_drawer_description")}
         mobileHeightClass="h-[92dvh] max-h-[92dvh]"
         zIndexClass="z-[240]"
       >
@@ -6132,7 +6137,7 @@ export default function AutomationEditorPage({ user }) {
       <ResponsiveDrawer
         open={Boolean(stepModalOpen && selectedStep)}
         onClose={() => setStepModalOpen(false)}
-        title={selectedStep ? stepSummaryText(selectedStep) : "Step"}
+        title={selectedStep ? stepSummaryText(selectedStep) : t("settings.automation_editor.step")}
         description={selectedStep ? stepHelpText(selectedStep) : ""}
         mobileHeightClass="h-[92dvh] max-h-[92dvh]"
         zIndexClass="z-[240]"
@@ -6146,19 +6151,19 @@ export default function AutomationEditorPage({ user }) {
           <div className={`modal-box ${isMobile ? "w-full max-w-none h-dvh rounded-none" : "max-w-4xl"}`}>
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold">Test webhook trigger</h3>
-                <p className="text-sm opacity-70">Queue a test run using a sample inbound webhook event against the saved automation.</p>
+                <h3 className="text-lg font-semibold">{t("settings.automation_editor.test_webhook_trigger")}</h3>
+                <p className="text-sm opacity-70">{t("settings.automation_editor.test_webhook_trigger_help")}</p>
               </div>
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => setWebhookTestOpen(false)}>
-                Close
+                {t("common.close")}
               </button>
             </div>
             <div className="space-y-4">
               {webhookTestError ? <div className="alert alert-error text-sm">{webhookTestError}</div> : null}
               <label className="form-control">
-                <span className="label-text">Connection</span>
+                <span className="label-text">{t("common.connection")}</span>
                 <AppSelect className="select select-bordered" value={webhookTestConnectionId} onChange={(e) => setWebhookTestConnectionId(e.target.value)}>
-                  <option value="">Any connection</option>
+                  <option value="">{t("settings.automation_editor.any_connection")}</option>
                   {webhookConnectionOptions.map((conn) => (
                     <option key={conn.id} value={conn.id}>
                       {conn.name || conn.id}
@@ -6167,47 +6172,47 @@ export default function AutomationEditorPage({ user }) {
                 </AppSelect>
               </label>
               <label className="form-control">
-                <span className="label-text">Event key</span>
+                <span className="label-text">{t("settings.automation_editor.event_key")}</span>
                 <input
                   className="input input-bordered"
                   value={webhookTestEventKey}
                   onChange={(e) => setWebhookTestEventKey(e.target.value)}
-                  placeholder="invoice.created"
+                placeholder={t("settings.automation_editor.event_key_example")}
                 />
               </label>
               <label className="form-control">
-                <span className="label-text">Provider event ID</span>
+                <span className="label-text">{t("settings.automation_editor.provider_event_id")}</span>
                 <input
                   className="input input-bordered"
                   value={webhookTestProviderEventId}
                   onChange={(e) => setWebhookTestProviderEventId(e.target.value)}
-                  placeholder="evt_12345"
+                  placeholder={t("settings.automation_editor.provider_event_id_example")}
                 />
               </label>
               <label className="form-control">
-                <span className="label-text">Headers JSON</span>
+                <span className="label-text">{t("settings.automation_editor.headers_json")}</span>
                 <CodeTextarea value={webhookTestHeadersText} onChange={(e) => setWebhookTestHeadersText(e.target.value)} minHeight="140px" />
               </label>
               <label className="form-control">
-                <span className="label-text">Payload JSON</span>
+                <span className="label-text">{t("settings.automation_editor.payload_json")}</span>
                 <CodeTextarea value={webhookTestPayloadText} onChange={(e) => setWebhookTestPayloadText(e.target.value)} minHeight="220px" />
-                <span className="label label-text-alt opacity-50">This becomes `trigger.payload` in the automation context.</span>
+                <span className="label label-text-alt opacity-50">{t("settings.automation_editor.payload_json_help")}</span>
               </label>
               <div className="rounded-box border border-base-300 bg-base-200/40 p-3 text-xs leading-5 text-base-content/70">
-                <div className="font-medium text-sm text-base-content">What this test creates</div>
-                <div className="mt-2 font-mono">trigger.connection_id = selected connection</div>
-                <div className="font-mono">trigger.event_key = entered event key</div>
-                <div className="font-mono">trigger.provider_event_id = entered provider event id</div>
-                <div className="font-mono">trigger.headers = headers JSON</div>
-                <div className="font-mono">trigger.payload = payload JSON</div>
-                <div className="font-mono">trigger.event = integration.webhook.received</div>
+                <div className="font-medium text-sm text-base-content">{t("settings.automation_editor.what_this_test_creates")}</div>
+                <div className="mt-2 font-mono">{t("settings.automation_editor.webhook_test_connection_mapping")}</div>
+                <div className="font-mono">{t("settings.automation_editor.webhook_test_event_key_mapping")}</div>
+                <div className="font-mono">{t("settings.automation_editor.webhook_test_provider_event_id_mapping")}</div>
+                <div className="font-mono">{t("settings.automation_editor.webhook_test_headers_mapping")}</div>
+                <div className="font-mono">{t("settings.automation_editor.webhook_test_payload_mapping")}</div>
+                <div className="font-mono">{t("settings.automation_editor.webhook_test_event_mapping")}</div>
               </div>
               <div className="flex justify-end gap-2">
                 <button type="button" className="btn btn-ghost" onClick={() => setWebhookTestOpen(false)} disabled={webhookTestSaving}>
-                  Cancel
+                  {t("common.cancel")}
                 </button>
                 <button type="button" className="btn btn-primary" onClick={runWebhookTest} disabled={webhookTestSaving}>
-                  {webhookTestSaving ? "Queueing..." : "Run test"}
+                  {webhookTestSaving ? t("settings.automation_editor.queueing") : t("settings.automation_editor.run_test")}
                 </button>
               </div>
             </div>

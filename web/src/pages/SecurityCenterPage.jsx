@@ -12,27 +12,8 @@ import {
 } from "lucide-react";
 import { apiFetch } from "../api.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
-
-const TABS = [
-  { id: "api", label: "API Requests" },
-  { id: "webhooks", label: "Webhooks" },
-  { id: "integrations", label: "Integrations" },
-  { id: "modules", label: "Module Audit" },
-  { id: "admins", label: "Superadmins" },
-];
-
-function formatDate(value) {
-  if (!value) return "-";
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(value));
-  } catch {
-    return String(value);
-  }
-}
 
 function statusTone(value) {
   const text = String(value || "").toLowerCase();
@@ -79,33 +60,33 @@ function Section({ title, description, children, tone = "bg-base-100" }) {
   );
 }
 
-function EmptyRow({ colSpan }) {
+function EmptyRow({ t, colSpan }) {
   return (
     <tr>
       <td colSpan={colSpan} className="py-8 text-center text-sm text-base-content/60">
-        No events in this feed.
+        {t("settings.security_center.no_events")}
       </td>
     </tr>
   );
 }
 
-function ApiTable({ rows }) {
+function ApiTable({ rows, t, formatDate }) {
   return (
     <div className="overflow-x-auto">
       <table className="table table-sm">
         <thead>
           <tr>
-            <th>Time</th>
-            <th>Workspace</th>
-            <th>Method</th>
-            <th>Path</th>
-            <th>Status</th>
-            <th>IP</th>
-            <th>Credential</th>
+            <th>{t("settings.security_center.tables.time")}</th>
+            <th>{t("settings.security_center.tables.workspace")}</th>
+            <th>{t("settings.security_center.tables.method")}</th>
+            <th>{t("settings.security_center.tables.path")}</th>
+            <th>{t("settings.document_numbering.status")}</th>
+            <th>{t("settings.security_center.tables.ip")}</th>
+            <th>{t("settings.security_center.tables.credential")}</th>
           </tr>
         </thead>
         <tbody>
-          {rows.length === 0 ? <EmptyRow colSpan={7} /> : null}
+          {rows.length === 0 ? <EmptyRow t={t} colSpan={7} /> : null}
           {rows.map((row) => (
             <tr key={row.id}>
               <td className="whitespace-nowrap">{formatDate(row.created_at)}</td>
@@ -127,22 +108,22 @@ function ApiTable({ rows }) {
   );
 }
 
-function WebhookTable({ rows }) {
+function WebhookTable({ rows, t, formatDate }) {
   return (
     <div className="overflow-x-auto">
       <table className="table table-sm">
         <thead>
           <tr>
-            <th>Time</th>
-            <th>Workspace</th>
-            <th>Event</th>
-            <th>Status</th>
-            <th>Signature</th>
-            <th>Error</th>
+            <th>{t("settings.security_center.tables.time")}</th>
+            <th>{t("settings.security_center.tables.workspace")}</th>
+            <th>{t("settings.security_center.tables.event")}</th>
+            <th>{t("settings.document_numbering.status")}</th>
+            <th>{t("settings.security_center.tables.signature")}</th>
+            <th>{t("settings.security_center.tables.error")}</th>
           </tr>
         </thead>
         <tbody>
-          {rows.length === 0 ? <EmptyRow colSpan={6} /> : null}
+          {rows.length === 0 ? <EmptyRow t={t} colSpan={6} /> : null}
           {rows.map((row) => (
             <tr key={row.id}>
               <td className="whitespace-nowrap">{formatDate(row.received_at)}</td>
@@ -159,23 +140,23 @@ function WebhookTable({ rows }) {
   );
 }
 
-function IntegrationTable({ rows }) {
+function IntegrationTable({ rows, t, formatDate }) {
   return (
     <div className="overflow-x-auto">
       <table className="table table-sm">
         <thead>
           <tr>
-            <th>Time</th>
-            <th>Workspace</th>
-            <th>Source</th>
-            <th>Direction</th>
-            <th>Status</th>
-            <th>URL</th>
-            <th>Error</th>
+            <th>{t("settings.security_center.tables.time")}</th>
+            <th>{t("settings.security_center.tables.workspace")}</th>
+            <th>{t("settings.security_center.tables.source")}</th>
+            <th>{t("settings.security_center.tables.direction")}</th>
+            <th>{t("settings.document_numbering.status")}</th>
+            <th>{t("settings.security_center.tables.url")}</th>
+            <th>{t("settings.security_center.tables.error")}</th>
           </tr>
         </thead>
         <tbody>
-          {rows.length === 0 ? <EmptyRow colSpan={7} /> : null}
+          {rows.length === 0 ? <EmptyRow t={t} colSpan={7} /> : null}
           {rows.map((row) => (
             <tr key={row.id}>
               <td className="whitespace-nowrap">{formatDate(row.created_at)}</td>
@@ -193,22 +174,22 @@ function IntegrationTable({ rows }) {
   );
 }
 
-function ModuleAuditTable({ rows }) {
+function ModuleAuditTable({ rows, t, formatDate }) {
   return (
     <div className="overflow-x-auto">
       <table className="table table-sm">
         <thead>
           <tr>
-            <th>Time</th>
-            <th>Workspace</th>
-            <th>Module</th>
-            <th>Action</th>
-            <th>Actor</th>
-            <th>Audit ID</th>
+            <th>{t("settings.security_center.tables.time")}</th>
+            <th>{t("settings.security_center.tables.workspace")}</th>
+            <th>{t("settings.diagnostics.module")}</th>
+            <th>{t("settings.security_center.tables.action")}</th>
+            <th>{t("settings.security_center.tables.actor")}</th>
+            <th>{t("settings.security_center.tables.audit_id")}</th>
           </tr>
         </thead>
         <tbody>
-          {rows.length === 0 ? <EmptyRow colSpan={6} /> : null}
+          {rows.length === 0 ? <EmptyRow t={t} colSpan={6} /> : null}
           {rows.map((row) => {
             const audit = row.audit && typeof row.audit === "object" ? row.audit : {};
             return (
@@ -228,20 +209,20 @@ function ModuleAuditTable({ rows }) {
   );
 }
 
-function SuperadminsTable({ rows }) {
+function SuperadminsTable({ rows, t, formatDate }) {
   return (
     <div className="overflow-x-auto">
       <table className="table table-sm">
         <thead>
           <tr>
-            <th>User</th>
-            <th>Role</th>
-            <th>Created</th>
-            <th>Updated</th>
+            <th>{t("settings.users.user")}</th>
+            <th>{t("settings.role")}</th>
+            <th>{t("common.created")}</th>
+            <th>{t("settings.secrets.updated")}</th>
           </tr>
         </thead>
         <tbody>
-          {rows.length === 0 ? <EmptyRow colSpan={4} /> : null}
+          {rows.length === 0 ? <EmptyRow t={t} colSpan={4} /> : null}
           {rows.map((row) => (
             <tr key={row.user_id}>
               <td className="font-mono text-xs">{row.user_id || "-"}</td>
@@ -257,11 +238,27 @@ function SuperadminsTable({ rows }) {
 }
 
 export default function SecurityCenterPage() {
+  const { t, formatDateTime } = useI18n();
   const [data, setData] = useState(null);
   const [warnings, setWarnings] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("api");
+
+  const tabs = useMemo(
+    () => [
+      { id: "api", label: t("settings.security_center.tabs.api") },
+      { id: "webhooks", label: t("settings.security_center.tabs.webhooks") },
+      { id: "integrations", label: t("settings.security_center.tabs.integrations") },
+      { id: "modules", label: t("settings.security_center.tabs.modules") },
+      { id: "admins", label: t("settings.security_center.tabs.admins") },
+    ],
+    [t],
+  );
+
+  function formatDate(value) {
+    return formatDateTime(value, { dateStyle: "medium", timeStyle: "short" }) || "-";
+  }
 
   async function load() {
     setLoading(true);
@@ -271,7 +268,7 @@ export default function SecurityCenterPage() {
       setData(res?.data || null);
       setWarnings(Array.isArray(res?.warnings) ? res.warnings : []);
     } catch (err) {
-      setError(err?.message || "Failed to load Security Center");
+      setError(err?.message || t("settings.security_center.load_failed"));
     } finally {
       setLoading(false);
     }
@@ -292,21 +289,21 @@ export default function SecurityCenterPage() {
 
   return (
     <TabbedPaneShell
-      title="Security Center"
-      subtitle="Superadmin-only monitoring for API denials, webhook failures, integration failures, module audit, and platform access."
-      tabs={TABS}
+      title={t("settings.security_center.title")}
+      subtitle={t("settings.security_center.subtitle")}
+      tabs={tabs}
       activeTabId={activeTab}
       onTabChange={setActiveTab}
       contentContainer
       rightActions={(
         <button type="button" className="btn btn-sm btn-primary gap-2" onClick={load} disabled={loading}>
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh
+          {t("common.refresh")}
         </button>
       )}
       mobilePrimaryActions={[
         {
-          label: loading ? "Refreshing..." : "Refresh",
+          label: loading ? t("settings.security_center.refreshing") : t("common.refresh"),
           onClick: load,
           disabled: loading,
         },
@@ -322,39 +319,37 @@ export default function SecurityCenterPage() {
         ) : null}
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-          <StatCard icon={ShieldAlert} label="401/403" value={summary.api_denied_24h} help="Last 24 hours" tone="text-error" />
-          <StatCard icon={BellRing} label="API 5xx" value={summary.api_5xx_24h} help="Last 24 hours" tone="text-warning" />
-          <StatCard icon={Webhook} label="Webhook Rejects" value={summary.webhook_rejections_24h} help="Last 24 hours" tone="text-error" />
-          <StatCard icon={Database} label="Integration Fails" value={summary.integration_failures_24h} help="Last 24 hours" tone="text-warning" />
-          <StatCard icon={KeyRound} label="Module Changes" value={summary.module_changes_24h} help="Last 24 hours" tone="text-info" />
-          <StatCard icon={UserCog} label="Superadmins" value={summary.superadmin_count} help="Current platform role rows" tone="text-error" />
+          <StatCard icon={ShieldAlert} label={t("settings.security_center.cards.api_denied")} value={summary.api_denied_24h} help={t("settings.security_center.cards.last_24_hours")} tone="text-error" />
+          <StatCard icon={BellRing} label={t("settings.security_center.cards.api_5xx")} value={summary.api_5xx_24h} help={t("settings.security_center.cards.last_24_hours")} tone="text-warning" />
+          <StatCard icon={Webhook} label={t("settings.security_center.cards.webhook_rejects")} value={summary.webhook_rejections_24h} help={t("settings.security_center.cards.last_24_hours")} tone="text-error" />
+          <StatCard icon={Database} label={t("settings.security_center.cards.integration_fails")} value={summary.integration_failures_24h} help={t("settings.security_center.cards.last_24_hours")} tone="text-warning" />
+          <StatCard icon={KeyRound} label={t("settings.security_center.cards.module_changes")} value={summary.module_changes_24h} help={t("settings.security_center.cards.last_24_hours")} tone="text-info" />
+          <StatCard icon={UserCog} label={t("settings.security_center.cards.superadmins")} value={summary.superadmin_count} help={t("settings.security_center.cards.current_platform_rows")} tone="text-error" />
         </div>
 
         <Section
-          title={TABS.find((tab) => tab.id === activeTab)?.label || "Event Feed"}
-          description="Use this feed for investigation. Critical production alerts still need external Slack/email/on-call routing."
+          title={tabs.find((tab) => tab.id === activeTab)?.label || t("settings.security_center.feed_title")}
+          description={t("settings.security_center.feed_description")}
         >
           <div className="min-h-[20rem] overflow-x-auto">
             {loading && !data ? <LoadingSpinner className="min-h-[20vh]" /> : null}
             {!loading || data ? (
               <>
-                {activeTab === "webhooks" ? <WebhookTable rows={activeRows} /> : null}
-                {activeTab === "integrations" ? <IntegrationTable rows={activeRows} /> : null}
-                {activeTab === "modules" ? <ModuleAuditTable rows={activeRows} /> : null}
-                {activeTab === "admins" ? <SuperadminsTable rows={activeRows} /> : null}
-                {activeTab === "api" ? <ApiTable rows={activeRows} /> : null}
+                {activeTab === "webhooks" ? <WebhookTable rows={activeRows} t={t} formatDate={formatDate} /> : null}
+                {activeTab === "integrations" ? <IntegrationTable rows={activeRows} t={t} formatDate={formatDate} /> : null}
+                {activeTab === "modules" ? <ModuleAuditTable rows={activeRows} t={t} formatDate={formatDate} /> : null}
+                {activeTab === "admins" ? <SuperadminsTable rows={activeRows} t={t} formatDate={formatDate} /> : null}
+                {activeTab === "api" ? <ApiTable rows={activeRows} t={t} formatDate={formatDate} /> : null}
               </>
             ) : null}
           </div>
         </Section>
 
-        <Section title="Operational Note" tone="bg-base-200/40">
+        <Section title={t("settings.security_center.operational_note_title")} tone="bg-base-200/40">
           <div className="flex items-start gap-3 text-sm leading-6 text-base-content/70">
             <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-success" />
             <p>
-              This page is for superadmin review and incident triage. It does not replace production alert routing to
-              Slack/email/on-call, and it intentionally uses a gated internal DB read path to show global security
-              telemetry across workspaces.
+              {t("settings.security_center.operational_note_body")}
             </p>
           </div>
         </Section>

@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../supabase";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 export default function AuthSetPasswordPage({ user }) {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -18,21 +20,21 @@ export default function AuthSetPasswordPage({ user }) {
     setError("");
     setNotice("");
     if (!password || password.length < 8) {
-      setError("Password must be at least 8 characters.");
+      setError(t("settings.password_min_length"));
       return;
     }
     if (password !== confirm) {
-      setError("Passwords do not match.");
+      setError(t("settings.passwords_must_match"));
       return;
     }
     setSaving(true);
     try {
       const { error: updateError } = await supabase.auth.updateUser({ password });
       if (updateError) throw updateError;
-      setNotice("Password updated. Redirecting…");
+      setNotice(t("settings.auth.password_updated_redirecting"));
       setTimeout(() => navigate("/home", { replace: true }), 700);
     } catch (err) {
-      setError(err?.message || "Failed to set password.");
+      setError(err?.message || t("settings.auth.set_password_failed"));
     } finally {
       setSaving(false);
     }
@@ -42,9 +44,11 @@ export default function AuthSetPasswordPage({ user }) {
     <div className="min-h-screen flex items-center justify-center p-6">
       <div className="card bg-base-100 shadow-lg max-w-md w-full">
         <div className="card-body">
-          <h1 className="card-title">Set Password</h1>
+          <h1 className="card-title">{t("settings.auth.set_password_title")}</h1>
           <p className="text-sm opacity-70">
-            {canSet ? `Signed in as ${email || "user"}. Set your password to continue.` : "Open this page from a valid invite or password reset email link."}
+            {canSet
+              ? t("settings.auth.signed_in_as", { email: email || t("settings.auth.user") })
+              : t("settings.auth.open_from_email_link")}
           </p>
           {error ? <div className="alert alert-error">{error}</div> : null}
           {notice ? <div className="alert alert-success">{notice}</div> : null}
@@ -52,7 +56,7 @@ export default function AuthSetPasswordPage({ user }) {
             <input
               className="input input-bordered input-sm w-full"
               type="password"
-              placeholder="New password"
+              placeholder={t("settings.auth.new_password")}
               value={password}
               disabled={!canSet || saving}
               onChange={(e) => setPassword(e.target.value)}
@@ -61,19 +65,19 @@ export default function AuthSetPasswordPage({ user }) {
             <input
               className="input input-bordered input-sm w-full"
               type="password"
-              placeholder="Confirm password"
+              placeholder={t("settings.auth.confirm_password")}
               value={confirm}
               disabled={!canSet || saving}
               onChange={(e) => setConfirm(e.target.value)}
               required
             />
             <button className="btn btn-primary btn-sm w-full" type="submit" disabled={!canSet || saving}>
-              {saving ? "Saving..." : "Set password"}
+              {saving ? t("common.saving") : t("settings.auth.set_password_action")}
             </button>
           </form>
           <div className="text-sm mt-2">
             <Link className="link link-primary" to="/login">
-              Back to login
+              {t("settings.auth.back_to_login")}
             </Link>
           </div>
         </div>

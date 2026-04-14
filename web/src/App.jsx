@@ -9,6 +9,7 @@ import { ModuleStoreProvider } from "./state/moduleStore.jsx";
 import { ToastProvider } from "./components/Toast.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import { AccessContextProvider, getAccessContext } from "./access.js";
+import { LocalizationProvider, useI18n } from "./i18n/LocalizationProvider.jsx";
 import {
   applyBrandColors,
   applyUiDensity,
@@ -257,6 +258,7 @@ export default function App() {
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
+    if (!window.__octoPwaEnabled) return undefined;
     let alive = true;
 
     async function refreshUpdateAvailability() {
@@ -311,18 +313,15 @@ export default function App() {
     }
     refreshUpdateAvailability();
     window.addEventListener("octo:web-pwa-update-ready", handleUpdateReady);
-    window.addEventListener("focus", refreshUpdateAvailability);
-    document.addEventListener("visibilitychange", refreshUpdateAvailability);
     return () => {
       alive = false;
       window.removeEventListener("octo:web-pwa-update-ready", handleUpdateReady);
-      window.removeEventListener("focus", refreshUpdateAvailability);
-      document.removeEventListener("visibilitychange", refreshUpdateAvailability);
     };
   }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
+    if (!window.__octoPwaEnabled) return undefined;
     const dismissalKey = "octo:pwa-install-dismissed-at-v1";
     const dismissalCooldownMs = 7 * 24 * 60 * 60 * 1000;
 
@@ -378,13 +377,9 @@ export default function App() {
     refreshInstallAvailability();
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
     window.addEventListener("appinstalled", handleAppInstalled);
-    window.addEventListener("focus", refreshInstallAvailability);
-    document.addEventListener("visibilitychange", refreshInstallAvailability);
     return () => {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
       window.removeEventListener("appinstalled", handleAppInstalled);
-      window.removeEventListener("focus", refreshInstallAvailability);
-      document.removeEventListener("visibilitychange", refreshInstallAvailability);
     };
   }, [installPromptEvent]);
 
@@ -431,90 +426,91 @@ export default function App() {
   return (
     <ToastProvider>
       <ErrorBoundary>
-        {updatePromptVisible ? <WebUpdatePrompt onUpdate={handleApplyUpdate} /> : null}
-        {!updatePromptVisible && installPromptVisible ? (
-          <WebInstallPrompt
-            mode={installMode}
-            canInstall={Boolean(installPromptEvent)}
-            onInstall={handleInstallApp}
-            onDismiss={handleDismissInstallPrompt}
-          />
-        ) : null}
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/auth/set-password" element={<AuthSetPasswordPage user={user} />} />
-          <Route path="/ext" element={lazyPage(<ExternalApiDocsPage />)} />
-          <Route
-            path="/ext/v1/docs"
-            element={lazyPage(<ExternalApiDocsRedirectPage path="/ext/v1/docs" label="Swagger UI" />)}
-          />
-          <Route
-            path="/ext/v1/docs/oauth2-redirect"
-            element={lazyPage(<ExternalApiDocsRedirectPage path="/ext/v1/docs/oauth2-redirect" label="Swagger OAuth Redirect" />)}
-          />
-          <Route
-            path="/ext/v1/redoc"
-            element={lazyPage(<ExternalApiDocsRedirectPage path="/ext/v1/redoc" label="ReDoc" />)}
-          />
-          <Route
-            path="/ext/v1/openapi.json"
-            element={lazyPage(<ExternalApiDocsRedirectPage path="/ext/v1/openapi.json" label="OpenAPI JSON" />)}
-          />
-          <Route
-            path="/ext/v1/guide.md"
-            element={lazyPage(<ExternalApiDocsRedirectPage path="/ext/v1/guide.md" label="External API Guide" />)}
-          />
-          <Route
-            path="/ext/v1/events.md"
-            element={lazyPage(<ExternalApiDocsRedirectPage path="/ext/v1/events.md" label="External Event Catalog" />)}
-          />
-          <Route
-            path="/*"
-            element={
-              <ProtectedRoute user={user} loading={loading}>
-                <AccessContextProvider seedContext={accessContextSeed}>
-                  <ModuleStoreProvider user={user}>
-                    <ShellLayout user={user} onSignOut={handleSignOut} />
-                  </ModuleStoreProvider>
-                </AccessContextProvider>
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<Navigate to="/home" replace />} />
-            <Route path="home" element={<HomePage user={user} />} />
-            <Route path="apps" element={lazyPage(<AppsPage user={user} />)} />
-            <Route path="apps/:moduleId" element={<AppShell />} />
-            <Route path="apps/:moduleId/page/:pageId" element={<AppShell />} />
-            <Route path="apps/:moduleId/view/:viewId" element={<AppShell />} />
-            <Route path="apps/:moduleId/details" element={lazyPage(<ModuleDetailPage user={user} />)} />
+        <LocalizationProvider user={user}>
+          {updatePromptVisible ? <WebUpdatePrompt onUpdate={handleApplyUpdate} /> : null}
+          {!updatePromptVisible && installPromptVisible ? (
+            <WebInstallPrompt
+              mode={installMode}
+              canInstall={Boolean(installPromptEvent)}
+              onInstall={handleInstallApp}
+              onDismiss={handleDismissInstallPrompt}
+            />
+          ) : null}
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/auth/set-password" element={<AuthSetPasswordPage user={user} />} />
+            <Route path="/ext" element={lazyPage(<ExternalApiDocsPage />)} />
             <Route
-              path="studio"
-              element={(
-                <CapabilityRoute capability="modules.manage">
-                  {lazyPage(<Studio2Page user={user} />)}
-                </CapabilityRoute>
-              )}
+              path="/ext/v1/docs"
+              element={lazyPage(<ExternalApiDocsRedirectPage path="/ext/v1/docs" label="Swagger UI" />)}
             />
             <Route
-              path="studio/:moduleId"
-              element={(
-                <CapabilityRoute capability="modules.manage">
-                  {lazyPage(<Studio2Page user={user} />)}
-                </CapabilityRoute>
-              )}
+              path="/ext/v1/docs/oauth2-redirect"
+              element={lazyPage(<ExternalApiDocsRedirectPage path="/ext/v1/docs/oauth2-redirect" label="Swagger OAuth Redirect" />)}
             />
             <Route
-              path="studio/preview/:moduleId"
-              element={(
-                <CapabilityRoute capability="modules.manage">
-                  {lazyPage(<StudioModulePreviewFramePage />)}
-                </CapabilityRoute>
-              )}
+              path="/ext/v1/redoc"
+              element={lazyPage(<ExternalApiDocsRedirectPage path="/ext/v1/redoc" label="ReDoc" />)}
             />
-            <Route path="studio2" element={<Navigate to="/studio" replace />} />
-            <Route path="studio2/:moduleId" element={<Navigate to="/studio" replace />} />
-            <Route path="audit" element={lazyPage(<AuditPage />)} />
-            <Route path="security" element={<Navigate to="/settings/security" replace />} />
+            <Route
+              path="/ext/v1/openapi.json"
+              element={lazyPage(<ExternalApiDocsRedirectPage path="/ext/v1/openapi.json" label="OpenAPI JSON" />)}
+            />
+            <Route
+              path="/ext/v1/guide.md"
+              element={lazyPage(<ExternalApiDocsRedirectPage path="/ext/v1/guide.md" label="External API Guide" />)}
+            />
+            <Route
+              path="/ext/v1/events.md"
+              element={lazyPage(<ExternalApiDocsRedirectPage path="/ext/v1/events.md" label="External Event Catalog" />)}
+            />
+            <Route
+              path="/*"
+              element={
+                <ProtectedRoute user={user} loading={loading}>
+                  <AccessContextProvider seedContext={accessContextSeed}>
+                    <ModuleStoreProvider user={user}>
+                      <ShellLayout user={user} onSignOut={handleSignOut} />
+                    </ModuleStoreProvider>
+                  </AccessContextProvider>
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<Navigate to="/home" replace />} />
+              <Route path="home" element={<HomePage user={user} />} />
+              <Route path="apps" element={lazyPage(<AppsPage user={user} />)} />
+              <Route path="apps/:moduleId" element={<AppShell />} />
+              <Route path="apps/:moduleId/page/:pageId" element={<AppShell />} />
+              <Route path="apps/:moduleId/view/:viewId" element={<AppShell />} />
+              <Route path="apps/:moduleId/details" element={lazyPage(<ModuleDetailPage user={user} />)} />
+              <Route
+                path="studio"
+                element={(
+                  <CapabilityRoute capability="modules.manage">
+                    {lazyPage(<Studio2Page user={user} />)}
+                  </CapabilityRoute>
+                )}
+              />
+              <Route
+                path="studio/:moduleId"
+                element={(
+                  <CapabilityRoute capability="modules.manage">
+                    {lazyPage(<Studio2Page user={user} />)}
+                  </CapabilityRoute>
+                )}
+              />
+              <Route
+                path="studio/preview/:moduleId"
+                element={(
+                  <CapabilityRoute capability="modules.manage">
+                    {lazyPage(<StudioModulePreviewFramePage />)}
+                  </CapabilityRoute>
+                )}
+              />
+              <Route path="studio2" element={<Navigate to="/studio" replace />} />
+              <Route path="studio2/:moduleId" element={<Navigate to="/studio" replace />} />
+              <Route path="audit" element={lazyPage(<AuditPage />)} />
+              <Route path="security" element={<Navigate to="/settings/security" replace />} />
             <Route path="settings" element={lazyPage(<SettingsPage />)} />
             <Route
               path="settings/security"
@@ -841,21 +837,23 @@ export default function App() {
               )}
             />
             <Route path="*" element={<Navigate to="/home" replace />} />
-          </Route>
-        </Routes>
+            </Route>
+          </Routes>
+        </LocalizationProvider>
       </ErrorBoundary>
     </ToastProvider>
   );
 }
 
 function WebUpdatePrompt({ onUpdate }) {
+  const { t } = useI18n();
   return (
     <div className="fixed inset-x-0 bottom-4 z-50 flex justify-center px-4">
       <div className="w-full max-w-sm rounded-xl border border-base-300 bg-base-100 p-4 shadow-lg">
-        <p className="text-sm font-semibold">Update available</p>
-        <p className="mt-1 text-sm text-base-content/70">A newer version of Octodrop is ready.</p>
+        <p className="text-sm font-semibold">{t("common.app_update.title")}</p>
+        <p className="mt-1 text-sm text-base-content/70">{t("common.app_update.description")}</p>
         <button type="button" className="btn btn-primary mt-3 w-full" onClick={onUpdate}>
-          Update now
+          {t("common.app_update.action")}
         </button>
       </div>
     </div>
@@ -863,43 +861,47 @@ function WebUpdatePrompt({ onUpdate }) {
 }
 
 function WebInstallPrompt({ mode, canInstall, onInstall, onDismiss }) {
+  const { t } = useI18n();
   const isIos = mode === "ios";
   return (
     <div className="fixed inset-x-0 bottom-4 z-50 flex justify-center px-4">
       <div className="w-full max-w-sm rounded-xl border border-base-300 bg-base-100 p-4 shadow-lg">
-        <p className="text-sm font-semibold">Install Octodrop</p>
+        <p className="text-sm font-semibold">{t("common.app_install.title")}</p>
         {canInstall ? (
           <p className="mt-1 text-sm text-base-content/70">
-            Install Octodrop as an app for faster launch, standalone windowing, and reliable updates on mobile or desktop.
+            {t("common.app_install.description")}
           </p>
         ) : isIos ? (
           <p className="mt-1 text-sm text-base-content/70">
-            On iPhone or iPad, open the browser share menu and choose <span className="font-medium">Add to Home Screen</span>.
+            {t("common.app_install.ios_description_prefix")}{" "}
+            <span className="font-medium">{t("common.app_install.add_to_home_screen")}</span>.
           </p>
         ) : (
           <p className="mt-1 text-sm text-base-content/70">
-            Use your browser menu and choose <span className="font-medium">Install app</span> or <span className="font-medium">Add to desktop</span>.
+            {t("common.app_install.browser_description_prefix")}{" "}
+            <span className="font-medium">{t("common.app_install.install_app")}</span> {t("common.app_install.or")}{" "}
+            <span className="font-medium">{t("common.app_install.add_to_desktop")}</span>.
           </p>
         )}
         {isIos ? (
           <ol className="mt-3 space-y-1 text-sm text-base-content/80">
-            <li>1. Tap the Share button in Safari.</li>
-            <li>2. Choose `Add to Home Screen`.</li>
-            <li>3. Tap `Add` to install Octodrop.</li>
+            <li>{t("common.app_install.ios_step_1")}</li>
+            <li>{t("common.app_install.ios_step_2")}</li>
+            <li>{t("common.app_install.ios_step_3")}</li>
           </ol>
         ) : null}
         <div className="mt-3 flex items-center gap-2">
           {canInstall ? (
             <button type="button" className="btn btn-primary flex-1" onClick={onInstall}>
-              Install now
+              {t("common.app_install.install_now")}
             </button>
           ) : (
             <button type="button" className="btn btn-primary flex-1" onClick={onDismiss}>
-              OK
+              {t("common.ok")}
             </button>
           )}
           <button type="button" className="btn btn-ghost" onClick={onDismiss}>
-            Not now
+            {t("common.app_install.not_now")}
           </button>
         </div>
       </div>

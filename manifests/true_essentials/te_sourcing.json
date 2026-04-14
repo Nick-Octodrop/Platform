@@ -5,7 +5,7 @@
     "key": "te_sourcing",
     "name": "Sourcing",
     "version": "1.0.0",
-    "description": "Supplier-linked product pricing and sourcing data for True Essentials.",
+    "description": "Supplier-linked buy pricing, FX conversion, and sourcing data for True Essentials.",
     "category": "True Essentials",
     "icon_key": "lucide:Handshake"
   },
@@ -78,11 +78,53 @@
           ]
         },
         {
+          "id": "te_supplier_product.fx_rate_to_nzd",
+          "type": "number",
+          "label": "FX Rate To NZD",
+          "default": 1,
+          "help_text": "Use 1 when the supplier quotes in NZD. Otherwise record the FX rate used to compare supplier cost back to NZD retail."
+        },
+        {
           "id": "te_supplier_product.unit_cost",
           "type": "number",
           "label": "Unit Cost",
           "default": 0,
           "format": { "kind": "currency", "currency_field": "te_supplier_product.currency", "precision": 2 }
+        },
+        {
+          "id": "te_supplier_product.unit_cost_nzd",
+          "type": "number",
+          "label": "Unit Cost (NZD)",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency": "NZD", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "if",
+              "condition": {
+                "op": "eq",
+                "field": "te_supplier_product.currency",
+                "value": "NZD"
+              },
+              "then": {
+                "ref": "$current.te_supplier_product.unit_cost"
+              },
+              "else": {
+                "op": "round",
+                "args": [
+                  {
+                    "op": "mul",
+                    "args": [
+                      { "ref": "$current.te_supplier_product.unit_cost" },
+                      { "ref": "$current.te_supplier_product.fx_rate_to_nzd" }
+                    ]
+                  },
+                  2
+                ]
+              }
+            }
+          },
+          "help_text": "Operational NZD equivalent of the supplier buy price for margin and replenishment comparison."
         },
         {
           "id": "te_supplier_product.min_order_qty",
@@ -152,6 +194,8 @@
         { "field_id": "te_supplier_product.supplier_sku" },
         { "field_id": "te_supplier_product.currency" },
         { "field_id": "te_supplier_product.unit_cost" },
+        { "field_id": "te_supplier_product.unit_cost_nzd" },
+        { "field_id": "te_supplier_product.lead_time_days" },
         { "field_id": "te_supplier_product.order_uom" },
         { "field_id": "te_supplier_product.is_preferred" },
         { "field_id": "te_supplier_product.is_active" }
@@ -188,7 +232,9 @@
             "te_supplier_product.supplier_item_name",
             "te_supplier_product.supplier_product_url",
             "te_supplier_product.currency",
+            "te_supplier_product.fx_rate_to_nzd",
             "te_supplier_product.unit_cost",
+            "te_supplier_product.unit_cost_nzd",
             "te_supplier_product.min_order_qty",
             "te_supplier_product.order_uom",
             "te_supplier_product.lead_time_days",
@@ -207,6 +253,7 @@
           "te_supplier_product.product_id",
           "te_supplier_product.supplier_id",
           "te_supplier_product.currency",
+          "te_supplier_product.fx_rate_to_nzd",
           "te_supplier_product.unit_cost",
           "te_supplier_product.lead_time_days",
           "te_supplier_product.is_preferred",
@@ -234,7 +281,21 @@
             { "id": "active_offers", "label": "Active Offers", "entity_id": "entity.te_supplier_product", "measure": "count", "domain": { "op": "eq", "field": "te_supplier_product.is_active", "value": true }, "format": "number" },
             { "id": "preferred_offers", "label": "Preferred Offers", "entity_id": "entity.te_supplier_product", "measure": "count", "domain": { "op": "eq", "field": "te_supplier_product.is_preferred", "value": true }, "format": "number" },
             { "id": "usd_offers", "label": "USD Offers", "entity_id": "entity.te_supplier_product", "measure": "count", "domain": { "op": "eq", "field": "te_supplier_product.currency", "value": "USD" }, "format": "number" },
-            { "id": "inactive_offers", "label": "Inactive Offers", "entity_id": "entity.te_supplier_product", "measure": "count", "domain": { "op": "eq", "field": "te_supplier_product.is_active", "value": false }, "format": "number" }
+            {
+              "id": "preferred_usd_offers",
+              "label": "Preferred USD Offers",
+              "entity_id": "entity.te_supplier_product",
+              "measure": "count",
+              "domain": {
+                "op": "and",
+                "conditions": [
+                  { "op": "eq", "field": "te_supplier_product.is_preferred", "value": true },
+                  { "op": "eq", "field": "te_supplier_product.currency", "value": "USD" },
+                  { "op": "eq", "field": "te_supplier_product.is_active", "value": true }
+                ]
+              },
+              "format": "number"
+            }
           ]
         },
         {

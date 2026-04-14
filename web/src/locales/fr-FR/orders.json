@@ -1,0 +1,458 @@
+{
+  "module": {
+    "name": "Commandes",
+    "description": "Commandes clients acceptées après approbation du devis, avec liens d'approvisionnement et de facturation."
+  },
+  "navigation": {
+    "biz_order_list_page": "Commandes",
+    "biz_order_in_production_page": "En production",
+    "biz_order_ready_to_invoice_page": "Prêt à facturer",
+    "biz_order_on_hold_page": "En attente",
+    "biz_order_completed_page": "Terminé"
+  },
+  "entities": {
+    "biz_order": {
+      "label": "Commande",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "order_number": {
+          "label": "Numéro de commande"
+        },
+        "status": {
+          "label": "Statut",
+          "options": {
+            "draft": "Brouillon",
+            "confirmed": "Confirmé",
+            "on_hold": "En attente",
+            "in_production": "En production",
+            "shipped": "Expédié",
+            "completed": "Terminé",
+            "cancelled": "Annulé"
+          }
+        },
+        "customer_id": {
+          "label": "Client"
+        },
+        "source_quote_id": {
+          "label": "Citation source"
+        },
+        "source_quote_number": {
+          "label": "Citation source"
+        },
+        "sales_entity": {
+          "label": "Entité de vente",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "order_date": {
+          "label": "Date de commande"
+        },
+        "currency": {
+          "label": "Devise",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "customer_reference": {
+          "label": "Référence client"
+        },
+        "delivery_terms": {
+          "label": "Conditions de livraison"
+        },
+        "shipping_destination": {
+          "label": "Destination d'expédition"
+        },
+        "requested_delivery_date": {
+          "label": "Date de livraison demandée"
+        },
+        "notes": {
+          "label": "Remarques"
+        },
+        "hold_reason": {
+          "label": "Raison de la mise en attente"
+        },
+        "cancellation_reason": {
+          "label": "Raison de l'annulation"
+        },
+        "status_before_hold": {
+          "label": "Statut précédent"
+        },
+        "primary_purchase_order_id": {
+          "label": "Bon de commande principal"
+        },
+        "preferred_supplier_id": {
+          "label": "Fournisseur préféré"
+        },
+        "deposit_percent": {
+          "label": "% de dépôt"
+        },
+        "deposit_invoice_id": {
+          "label": "Facture de dépôt"
+        },
+        "final_invoice_id": {
+          "label": "Facture finale"
+        },
+        "order_total": {
+          "label": "Total de la commande"
+        },
+        "invoiced_total": {
+          "label": "Total facturé"
+        },
+        "balance_to_invoice": {
+          "label": "Solde à facturer"
+        },
+        "estimated_buy_total": {
+          "label": "Total d'achat estimé"
+        },
+        "estimated_margin_amount": {
+          "label": "Montant de la marge estimée"
+        },
+        "estimated_margin_percent": {
+          "label": "Marge estimée %"
+        }
+      }
+    },
+    "biz_order_line": {
+      "label": "Ligne de commande",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "customer_order_id": {
+          "label": "Commande"
+        },
+        "product_id": {
+          "label": "Produit"
+        },
+        "description": {
+          "label": "Descriptif"
+        },
+        "sales_entity_snapshot": {
+          "label": "Aperçu de l'entité de vente",
+          "options": {
+            "nlight_bv": "NLight BV",
+            "ecotech_fzco": "EcoTech FZCO"
+          }
+        },
+        "currency_snapshot": {
+          "label": "Aperçu des devises",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "uom": {
+          "label": "UOM",
+          "options": {
+            "ea": "Chacun",
+            "set": "Ensemble",
+            "kit": "Trousse",
+            "lot": "Beaucoup",
+            "pallet": "Palette",
+            "container": "Conteneur",
+            "m": "Compteur"
+          }
+        },
+        "quantity": {
+          "label": "Quantité"
+        },
+        "unit_price": {
+          "label": "Prix unitaire"
+        },
+        "line_total": {
+          "label": "Total de ligne"
+        },
+        "unit_cost_snapshot": {
+          "label": "Aperçu du coût unitaire"
+        },
+        "buy_total": {
+          "label": "Acheter Total"
+        },
+        "source_quote_line_ref": {
+          "label": "Référence de la ligne de devis source"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_customer_order_new": {
+      "label": "Nouvelle commande"
+    },
+    "action_customer_order_confirm": {
+      "label": "Confirmer la commande",
+      "confirm": {
+        "title": "Confirmer la commande ?"
+      }
+    },
+    "action_customer_order_open_hold_modal": {
+      "label": "Mettre en attente"
+    },
+    "action_customer_order_resume": {
+      "label": "Reprendre la commande"
+    },
+    "action_customer_order_mark_in_production": {
+      "label": "Marque en production"
+    },
+    "action_customer_order_mark_shipped": {
+      "label": "Marquer comme expédié"
+    },
+    "action_customer_order_mark_completed": {
+      "label": "Marquer comme terminé"
+    },
+    "action_customer_order_open_cancel_modal": {
+      "label": "Annuler la commande"
+    },
+    "action_customer_order_create_purchase_order": {
+      "label": "Augmenter le bon de commande",
+      "confirm": {
+        "title": "Augmenter le bon de commande ?"
+      }
+    },
+    "action_customer_order_create_deposit_invoice": {
+      "label": "Augmenter la facture de dépôt",
+      "confirm": {
+        "title": "Augmenter la facture de dépôt ?"
+      }
+    },
+    "action_customer_order_create_final_invoice": {
+      "label": "Augmenter la facture finale",
+      "confirm": {
+        "title": "Augmenter la facture finale ?"
+      }
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Rechercher des commandes..."
+      },
+      "filters": {
+        "active": {
+          "label": "Commandes actives"
+        },
+        "draft": {
+          "label": "Projets de commandes"
+        },
+        "confirmed": {
+          "label": "Commandes confirmées"
+        },
+        "in_production": {
+          "label": "En production"
+        },
+        "on_hold": {
+          "label": "En attente"
+        },
+        "shipped": {
+          "label": "Commandes expédiées"
+        },
+        "completed": {
+          "label": "Commandes terminées"
+        },
+        "ready_to_invoice": {
+          "label": "Prêt à facturer"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Commande"
+        },
+        "commercials": {
+          "title": "Publicités"
+        },
+        "related": {
+          "title": "Enregistrements associés"
+        },
+        "profitability": {
+          "title": "Rentabilité"
+        },
+        "notes": {
+          "title": "Remarques"
+        },
+        "lines": {
+          "title": "Lignes de commande"
+        },
+        "main": {
+          "title": "Ligne de commande"
+        }
+      }
+    }
+  },
+  "modals": {
+    "customer_order_hold": {
+      "title": "Mettre la commande en attente",
+      "description": "Capturez pourquoi l’exécution est suspendue.",
+      "actions": {
+        "update_record": {
+          "label": "Mettre en attente"
+        },
+        "close_modal": {
+          "label": "Fermer"
+        }
+      }
+    },
+    "customer_order_cancel": {
+      "title": "Annuler la commande",
+      "description": "Découvrez pourquoi cette commande est annulée.",
+      "actions": {
+        "update_record": {
+          "label": "Annuler la commande"
+        },
+        "close_modal": {
+          "label": "Fermer"
+        }
+      }
+    }
+  },
+  "pages": {
+    "list_page": {
+      "title": "Commandes",
+      "header": {
+        "actions": {
+          "navigate": {
+            "label": "Nouvelle commande"
+          }
+        }
+      },
+      "blocks": {
+        "1": {
+          "cards": {
+            "customer_orders_confirmed_count": {
+              "label": "Confirmé",
+              "subtitle": "Prêt pour l'accomplissement"
+            },
+            "customer_orders_in_production_count": {
+              "label": "En production",
+              "subtitle": "Se préparer avec les fournisseurs"
+            },
+            "customer_orders_ready_to_invoice_count": {
+              "label": "Prêt à facturer",
+              "subtitle": "Expédié ou complété sans facture finale"
+            },
+            "customer_orders_completed_count": {
+              "label": "Terminé",
+              "subtitle": "Commandes clôturées"
+            }
+          }
+        }
+      }
+    },
+    "in_production_page": {
+      "title": "Commandes en production"
+    },
+    "ready_to_invoice_page": {
+      "title": "Commandes prêtes à facturer"
+    },
+    "on_hold_page": {
+      "title": "Commandes en attente"
+    },
+    "completed_page": {
+      "title": "Commandes terminées"
+    },
+    "form_page": {
+      "title": "Commande"
+    }
+  },
+  "workflows": {
+    "customer_order_status_workflow": {
+      "states": {
+        "draft": {
+          "label": "Brouillon"
+        },
+        "confirmed": {
+          "label": "Confirmé"
+        },
+        "on_hold": {
+          "label": "En attente"
+        },
+        "in_production": {
+          "label": "En production"
+        },
+        "shipped": {
+          "label": "Expédié"
+        },
+        "completed": {
+          "label": "Terminé"
+        },
+        "cancelled": {
+          "label": "Annulé"
+        }
+      },
+      "transitions": {
+        "draft_confirmed": {
+          "label": "Confirmer la commande"
+        },
+        "confirmed_on_hold": {
+          "label": "Mettre en attente"
+        },
+        "confirmed_in_production": {
+          "label": "Démarrer la production"
+        },
+        "in_production_on_hold": {
+          "label": "Mettre en attente"
+        },
+        "in_production_shipped": {
+          "label": "Marquer comme expédié"
+        },
+        "shipped_on_hold": {
+          "label": "Mettre en attente"
+        },
+        "shipped_completed": {
+          "label": "Terminer la commande"
+        },
+        "on_hold_confirmed": {
+          "label": "Reprendre à Confirmé"
+        },
+        "on_hold_in_production": {
+          "label": "Reprise de la production"
+        },
+        "on_hold_shipped": {
+          "label": "Reprendre l'expédition"
+        },
+        "draft_cancelled": {
+          "label": "Annuler la commande"
+        },
+        "confirmed_cancelled": {
+          "label": "Annuler la commande"
+        },
+        "in_production_cancelled": {
+          "label": "Annuler la commande"
+        },
+        "on_hold_cancelled": {
+          "label": "Annuler la commande"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "order_created": "Commande créée",
+    "order_updated": "Commande mise à jour",
+    "order_line_created": "Ligne de commande créée",
+    "order_line_updated": "Ligne de commande mise à jour",
+    "order_status_changed": "Statut de la commande modifié",
+    "new_order_clicked": "Nouvelle commande cliqué",
+    "confirm_order_clicked": "Confirmer la commande cliqué",
+    "put_on_hold_clicked": "Mettre en attente cliqué",
+    "resume_order_clicked": "Reprendre la commande cliqué",
+    "mark_in_production_clicked": "Marquer en production cliqué",
+    "mark_shipped_clicked": "Cliquez sur Marquer l'expédition",
+    "mark_completed_clicked": "Marquer comme terminé cliqué",
+    "cancel_order_clicked": "Annuler la commande cliqué",
+    "raise_purchase_order_clicked": "Cliquez sur Augmenter le bon de commande",
+    "raise_deposit_invoice_clicked": "Cliquez sur Augmenter la facture de dépôt",
+    "raise_final_invoice_clicked": "Cliquez sur Augmenter la facture finale"
+  },
+  "dashboard": {
+    "orders_by_status": "Commandes par statut"
+  }
+}

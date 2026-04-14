@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getProviderStatus } from "../api.js";
+import { translateRuntime } from "../i18n/runtime.js";
 
 export default function useWorkspaceProviderStatus(providerKeys = []) {
   const providerKeySignature = JSON.stringify(
@@ -29,7 +30,7 @@ export default function useWorkspaceProviderStatus(providerKeys = []) {
       setProviders(res?.providers && typeof res.providers === "object" ? res.providers : {});
     } catch (err) {
       setProviders({});
-      setError(err?.message || "Failed to load provider status");
+      setError(err?.message || translateRuntime("common.errors.provider_status_load_failed"));
     } finally {
       setLoading(false);
     }

@@ -232,7 +232,7 @@ def validate_record_payload(entity: dict, data: dict, for_create: bool, workflow
         if ftype in ("string", "text"):
             if not isinstance(val, str):
                 _add_error("TYPE_MISMATCH", f"{field_id} must be a string", path=field_id)
-        elif ftype == "number":
+        elif ftype in {"number", "currency"}:
             if not isinstance(val, (int, float)) or isinstance(val, bool):
                 _add_error("TYPE_MISMATCH", f"{field_id} must be a number", path=field_id)
         elif ftype == "boolean" or ftype == "bool":

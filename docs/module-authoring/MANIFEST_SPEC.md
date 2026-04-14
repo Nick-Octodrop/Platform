@@ -87,6 +87,11 @@ Rules:
 - `module.name` is what users see.
 - `module.version` should move when the manifest meaningfully changes.
 
+Localisation:
+- User-facing manifest text can now use translation keys.
+- Example: `module.name_key`, `label_key`, `placeholder_key`, `action_label_key`, `section_title_key`, `menu_label_key`.
+- Keep the plain English field alongside the key during migration so older manifests remain readable and safe to fall back.
+
 ## 3. App Block
 
 Canonical shape:

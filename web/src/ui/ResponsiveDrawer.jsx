@@ -2,6 +2,7 @@ import React, { useEffect } from "react";
 import { X } from "lucide-react";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
+import { translateRuntime } from "../i18n/runtime.js";
 
 export default function ResponsiveDrawer({
   open,
@@ -32,7 +33,7 @@ export default function ResponsiveDrawer({
       <button
         type="button"
         className="absolute inset-0 bg-base-content/35"
-        aria-label="Close panel"
+        aria-label={translateRuntime("common.close_panel")}
         onClick={() => onClose?.()}
       />
       {isMobile ? (
@@ -45,7 +46,7 @@ export default function ResponsiveDrawer({
                 {description ? <div className="mt-1 text-sm opacity-70">{description}</div> : null}
               </div>
               <button type="button" className={SOFT_BUTTON_SM} onClick={() => onClose?.()}>
-                Done
+                {translateRuntime("common.done")}
               </button>
             </div>
             <div
@@ -64,7 +65,7 @@ export default function ResponsiveDrawer({
                 <div className="text-lg font-semibold">{title}</div>
                 {description ? <div className="mt-1 text-sm opacity-70">{description}</div> : null}
               </div>
-              <button type="button" className={SOFT_BUTTON_SM} aria-label="Close panel" onClick={() => onClose?.()}>
+              <button type="button" className={SOFT_BUTTON_SM} aria-label={translateRuntime("common.close_panel")} onClick={() => onClose?.()}>
                 <X className="h-4 w-4" />
               </button>
             </div>

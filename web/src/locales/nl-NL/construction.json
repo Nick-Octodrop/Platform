@@ -1,0 +1,1482 @@
+{
+  "module": {
+    "name": "Bouw",
+    "description": "Uniform bouwbeheer voor projecten, arbeid, materialen, kosten en dagelijkse werkzaamheden op de locatie."
+  },
+  "navigation": {
+    "construction_dashboard_page": "Dashboard",
+    "construction_project_list_page": "Projecten",
+    "construction_site_list_page": "Sites",
+    "construction_worker_list_page": "Werknemers",
+    "time_entry_list_page": "Tijdinvoer",
+    "material_log_list_page": "Materiaallogboeken",
+    "construction_expense_list_page": "Kosten / Kosten",
+    "construction_daily_report_list_page": "Dagelijkse rapporten",
+    "construction_issue_list_page": "Problemen"
+  },
+  "entities": {
+    "construction_site": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "name": {
+          "label": "Sitenaam"
+        },
+        "code": {
+          "label": "Sitecode"
+        },
+        "address": {
+          "label": "Adres"
+        },
+        "city": {
+          "label": "Stad"
+        },
+        "region": {
+          "label": "Regio / Staat"
+        },
+        "country": {
+          "label": "Land"
+        },
+        "supervisor_id": {
+          "label": "Toezichthouder van de locatie"
+        },
+        "phone": {
+          "label": "Telefoon"
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "active": "Actief",
+            "inactive": "Inactief"
+          }
+        },
+        "notes": {
+          "label": "Opmerkingen"
+        },
+        "created_at": {
+          "label": "Gemaakt op"
+        }
+      }
+    },
+    "construction_crew": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "name": {
+          "label": "Naam van de bemanning"
+        },
+        "code": {
+          "label": "Bemanningscode"
+        },
+        "foreman_user_id": {
+          "label": "Voorman"
+        },
+        "default_site_id": {
+          "label": "Standaardsite"
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "active": "Actief",
+            "inactive": "Inactief"
+          }
+        },
+        "notes": {
+          "label": "Opmerkingen"
+        },
+        "created_at": {
+          "label": "Gemaakt op"
+        }
+      }
+    },
+    "construction_cost_code": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "code": {
+          "label": "Codeer"
+        },
+        "name": {
+          "label": "Naam"
+        },
+        "category": {
+          "label": "Categorie",
+          "options": {
+            "labor": "Arbeid",
+            "materials": "Materialen",
+            "subcontract": "Onderaanneming",
+            "equipment": "Uitrusting",
+            "other": "Anders"
+          }
+        },
+        "active": {
+          "label": "Actief"
+        },
+        "notes": {
+          "label": "Opmerkingen"
+        },
+        "created_at": {
+          "label": "Gemaakt op"
+        }
+      }
+    },
+    "construction_project": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "name": {
+          "label": "Projectnaam"
+        },
+        "code": {
+          "label": "Projectcode"
+        },
+        "client_contact_id": {
+          "label": "Klant"
+        },
+        "site_id": {
+          "label": "Primaire site"
+        },
+        "site_location": {
+          "label": "Sitelocatie"
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "planned": "Gepland",
+            "active": "Actief",
+            "on_hold": "In de wacht",
+            "completed": "Voltooid",
+            "cancelled": "Geannuleerd"
+          }
+        },
+        "project_type": {
+          "label": "Projecttype",
+          "options": {
+            "building": "Gebouw",
+            "renovation": "Renovatie",
+            "fitout": "Uitrusting",
+            "maintenance": "Onderhoud",
+            "other": "Anders"
+          }
+        },
+        "priority": {
+          "label": "Prioriteit",
+          "options": {
+            "low": "Laag",
+            "medium": "Middelmatig",
+            "high": "Hoog"
+          }
+        },
+        "project_manager_id": {
+          "label": "Projectmanager"
+        },
+        "site_manager_id": {
+          "label": "Sitebeheerder"
+        },
+        "start_date": {
+          "label": "Startdatum"
+        },
+        "target_end_date": {
+          "label": "Doeleinddatum"
+        },
+        "contract_value": {
+          "label": "Contractwaarde"
+        },
+        "labor_budget": {
+          "label": "Arbeidsbegroting"
+        },
+        "material_budget": {
+          "label": "Materiële begroting"
+        },
+        "other_budget": {
+          "label": "Andere begroting"
+        },
+        "notes": {
+          "label": "Opmerkingen"
+        },
+        "attachments": {
+          "label": "Bijlagen"
+        },
+        "created_at": {
+          "label": "Gemaakt op"
+        },
+        "total_hours": {
+          "label": "Totaal aantal uren"
+        },
+        "total_labour_cost": {
+          "label": "Arbeidskosten"
+        },
+        "total_material_cost": {
+          "label": "Materiaalkosten"
+        },
+        "total_other_cost": {
+          "label": "Andere kosten"
+        },
+        "total_cost": {
+          "label": "Totale kosten tot nu toe"
+        }
+      }
+    },
+    "construction_work_item": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "project_id": {
+          "label": "Project"
+        },
+        "site_id": {
+          "label": "Locatie"
+        },
+        "title": {
+          "label": "Titel"
+        },
+        "sequence_code": {
+          "label": "Volgorde / Code"
+        },
+        "phase": {
+          "label": "Fase",
+          "options": {
+            "preliminaries": "Voorrondes",
+            "foundation": "Stichting",
+            "structure": "Structuur",
+            "mep": "MEP",
+            "finishing": "Afwerking",
+            "handover": "Overdracht",
+            "other": "Anders"
+          }
+        },
+        "cost_code_id": {
+          "label": "Kostencode"
+        },
+        "assigned_crew_id": {
+          "label": "Toegewezen bemanning"
+        },
+        "owner_id": {
+          "label": "Eigenaar"
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "pending": "In behandeling",
+            "in_progress": "In uitvoering",
+            "blocked": "Geblokkeerd",
+            "done": "Klaar",
+            "cancelled": "Geannuleerd"
+          }
+        },
+        "progress_percent": {
+          "label": "Vooruitgang %"
+        },
+        "planned_start_date": {
+          "label": "Gepland begin"
+        },
+        "planned_end_date": {
+          "label": "Gepland einde"
+        },
+        "notes": {
+          "label": "Opmerkingen"
+        },
+        "created_at": {
+          "label": "Gemaakt op"
+        }
+      }
+    },
+    "construction_worker": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "full_name": {
+          "label": "Volledige naam"
+        },
+        "worker_code": {
+          "label": "Arbeiderscode"
+        },
+        "phone": {
+          "label": "Telefoon"
+        },
+        "role": {
+          "label": "Rol",
+          "options": {
+            "worker": "Werknemer",
+            "supervisor": "Toezichthouder",
+            "foreman": "Voorman",
+            "manager": "Beheerder"
+          }
+        },
+        "crew_id": {
+          "label": "Bemanning"
+        },
+        "crew_name": {
+          "label": "Naam van de bemanning"
+        },
+        "portal_user_id": {
+          "label": "Portalgebruiker"
+        },
+        "active": {
+          "label": "Actief"
+        },
+        "default_project_id": {
+          "label": "Standaardproject"
+        },
+        "default_site_id": {
+          "label": "Standaardsite"
+        },
+        "hourly_cost_rate": {
+          "label": "Kosten per uur"
+        },
+        "notes": {
+          "label": "Opmerkingen"
+        },
+        "created_at": {
+          "label": "Gemaakt op"
+        }
+      }
+    },
+    "construction_worker_assignment": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "worker_id": {
+          "label": "Werknemer"
+        },
+        "project_id": {
+          "label": "Project"
+        },
+        "site_id": {
+          "label": "Locatie"
+        },
+        "assignment_role": {
+          "label": "Toewijzingsrol",
+          "options": {
+            "worker": "Werknemer",
+            "supervisor": "Toezichthouder",
+            "foreman": "Voorman",
+            "manager": "Beheerder"
+          }
+        },
+        "start_date": {
+          "label": "Startdatum"
+        },
+        "end_date": {
+          "label": "Einddatum"
+        },
+        "active": {
+          "label": "Actief"
+        },
+        "notes": {
+          "label": "Opmerkingen"
+        },
+        "created_at": {
+          "label": "Gemaakt op"
+        }
+      }
+    },
+    "time_entry": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "project_id": {
+          "label": "Project"
+        },
+        "site_id": {
+          "label": "Locatie"
+        },
+        "worker_id": {
+          "label": "Werknemer"
+        },
+        "crew_id": {
+          "label": "Bemanning"
+        },
+        "work_item_id": {
+          "label": "Werkitem"
+        },
+        "entry_date": {
+          "label": "Invoerdatum"
+        },
+        "check_in_at": {
+          "label": "Inchecken"
+        },
+        "check_out_at": {
+          "label": "Uitchecken"
+        },
+        "break_minutes": {
+          "label": "Pauze minuten"
+        },
+        "hours_worked": {
+          "label": "Gewerkte uren"
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "open": "Openen",
+            "closed": "Gesloten",
+            "approved": "Goedgekeurd"
+          }
+        },
+        "source": {
+          "label": "Bron",
+          "options": {
+            "pwa": "PWA",
+            "portal": "Portaal",
+            "manual": "Handmatig"
+          }
+        },
+        "approved_by": {
+          "label": "Goedgekeurd door"
+        },
+        "notes": {
+          "label": "Opmerkingen"
+        },
+        "created_at": {
+          "label": "Gemaakt op"
+        }
+      }
+    },
+    "construction_daily_report": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "project_id": {
+          "label": "Project"
+        },
+        "site_id": {
+          "label": "Locatie"
+        },
+        "report_date": {
+          "label": "Rapportdatum"
+        },
+        "supervisor_id": {
+          "label": "Toezichthouder"
+        },
+        "weather": {
+          "label": "Weer",
+          "options": {
+            "clear": "Duidelijk",
+            "cloudy": "Bewolkt",
+            "rain": "Regen",
+            "storm": "Storm",
+            "other": "Anders"
+          }
+        },
+        "summary": {
+          "label": "Samenvatting"
+        },
+        "blockers": {
+          "label": "Blokkers / vertragingen"
+        },
+        "safety_notes": {
+          "label": "Veiligheidsopmerkingen"
+        },
+        "photos": {
+          "label": "Foto's"
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "draft": "Diepgang",
+            "submitted": "Ingezonden",
+            "approved": "Goedgekeurd"
+          }
+        },
+        "created_at": {
+          "label": "Gemaakt op"
+        }
+      }
+    },
+    "construction_issue": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "project_id": {
+          "label": "Project"
+        },
+        "site_id": {
+          "label": "Locatie"
+        },
+        "work_item_id": {
+          "label": "Werkitem"
+        },
+        "title": {
+          "label": "Titel"
+        },
+        "issue_type": {
+          "label": "Probleemtype",
+          "options": {
+            "delay": "Vertraging",
+            "quality": "Kwaliteit",
+            "safety": "Veiligheid",
+            "materials": "Materialen",
+            "coordination": "Coördinatie",
+            "other": "Anders"
+          }
+        },
+        "priority": {
+          "label": "Prioriteit",
+          "options": {
+            "low": "Laag",
+            "medium": "Middelmatig",
+            "high": "Hoog",
+            "critical": "Kritisch"
+          }
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "open": "Openen",
+            "in_progress": "In uitvoering",
+            "resolved": "Opgelost",
+            "closed": "Gesloten"
+          }
+        },
+        "owner_id": {
+          "label": "Eigenaar"
+        },
+        "reported_by_worker_id": {
+          "label": "Gerapporteerd door werknemer"
+        },
+        "due_date": {
+          "label": "Vervaldatum"
+        },
+        "description": {
+          "label": "Beschrijving"
+        },
+        "photos": {
+          "label": "Foto's"
+        },
+        "created_at": {
+          "label": "Gemaakt op"
+        }
+      }
+    },
+    "material_request": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "project_id": {
+          "label": "Project"
+        },
+        "site_id": {
+          "label": "Locatie"
+        },
+        "request_date": {
+          "label": "Datum van aanvraag"
+        },
+        "item_id": {
+          "label": "Catalogusitem"
+        },
+        "description": {
+          "label": "Beschrijving"
+        },
+        "quantity": {
+          "label": "Hoeveelheid"
+        },
+        "unit": {
+          "label": "Eenheid",
+          "options": {
+            "bag": "Zak",
+            "kg": "kg",
+            "ton": "Ton",
+            "m3": "m3",
+            "piece": "Stuk"
+          }
+        },
+        "requested_by_worker_id": {
+          "label": "Aangevraagd door"
+        },
+        "needed_by_date": {
+          "label": "Nodig door"
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "draft": "Diepgang",
+            "requested": "Gevraagd",
+            "approved": "Goedgekeurd",
+            "fulfilled": "Vervuld",
+            "cancelled": "Geannuleerd"
+          }
+        },
+        "approved_by": {
+          "label": "Goedgekeurd door"
+        },
+        "notes": {
+          "label": "Opmerkingen"
+        },
+        "created_at": {
+          "label": "Gemaakt op"
+        }
+      }
+    },
+    "material_receipt": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "project_id": {
+          "label": "Project"
+        },
+        "site_id": {
+          "label": "Locatie"
+        },
+        "receipt_date": {
+          "label": "Ontvangstdatum"
+        },
+        "item_id": {
+          "label": "Catalogusitem"
+        },
+        "supplier_contact_id": {
+          "label": "Leverancier"
+        },
+        "quantity": {
+          "label": "Hoeveelheid"
+        },
+        "unit": {
+          "label": "Eenheid",
+          "options": {
+            "bag": "Zak",
+            "kg": "kg",
+            "ton": "Ton",
+            "m3": "m3",
+            "piece": "Stuk"
+          }
+        },
+        "unit_cost": {
+          "label": "Eenheidskosten"
+        },
+        "total_cost": {
+          "label": "Totale kosten"
+        },
+        "received_by": {
+          "label": "Ontvangen door"
+        },
+        "invoice_ref": {
+          "label": "Factuur / leveringsref"
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "draft": "Diepgang",
+            "received": "Ontvangen",
+            "posted": "Geplaatst"
+          }
+        },
+        "notes": {
+          "label": "Opmerkingen"
+        },
+        "attachments": {
+          "label": "Bijlagen"
+        },
+        "created_at": {
+          "label": "Gemaakt op"
+        }
+      }
+    },
+    "material_log": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "project_id": {
+          "label": "Project"
+        },
+        "site_id": {
+          "label": "Locatie"
+        },
+        "work_item_id": {
+          "label": "Werkitem"
+        },
+        "log_date": {
+          "label": "Logdatum"
+        },
+        "item_id": {
+          "label": "Catalogusitem"
+        },
+        "material_type": {
+          "label": "Materiaalsoort",
+          "options": {
+            "cement": "Cement",
+            "sand": "Zand",
+            "steel": "Staal",
+            "blocks": "Blokken",
+            "gravel": "Grind",
+            "other": "Anders"
+          }
+        },
+        "quantity": {
+          "label": "Hoeveelheid"
+        },
+        "unit": {
+          "label": "Eenheid",
+          "options": {
+            "bag": "Zak",
+            "kg": "kg",
+            "ton": "Ton",
+            "m3": "m3",
+            "piece": "Stuk"
+          }
+        },
+        "unit_cost": {
+          "label": "Eenheidskosten"
+        },
+        "total_cost": {
+          "label": "Totale kosten"
+        },
+        "entered_by_worker_id": {
+          "label": "Ingevoerd door werknemer"
+        },
+        "supervisor_id": {
+          "label": "Toezichthouder"
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "draft": "Diepgang",
+            "submitted": "Ingezonden",
+            "approved": "Goedgekeurd"
+          }
+        },
+        "notes": {
+          "label": "Opmerkingen"
+        },
+        "photo": {
+          "label": "Foto's"
+        },
+        "created_at": {
+          "label": "Gemaakt op"
+        }
+      }
+    },
+    "construction_budget_line": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "project_id": {
+          "label": "Project"
+        },
+        "cost_code_id": {
+          "label": "Kostencode"
+        },
+        "category": {
+          "label": "Categorie",
+          "options": {
+            "labor": "Arbeid",
+            "materials": "Materialen",
+            "subcontract": "Onderaanneming",
+            "equipment": "Uitrusting",
+            "other": "Anders"
+          }
+        },
+        "description": {
+          "label": "Beschrijving"
+        },
+        "planned_amount": {
+          "label": "Gepland bedrag"
+        },
+        "committed_amount": {
+          "label": "Toegezegd bedrag"
+        },
+        "actual_amount": {
+          "label": "Werkelijk bedrag"
+        },
+        "variance_amount": {
+          "label": "Variantie"
+        },
+        "notes": {
+          "label": "Opmerkingen"
+        },
+        "created_at": {
+          "label": "Gemaakt op"
+        }
+      }
+    },
+    "construction_expense": {
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "project_id": {
+          "label": "Project"
+        },
+        "site_id": {
+          "label": "Locatie"
+        },
+        "cost_code_id": {
+          "label": "Kostencode"
+        },
+        "title": {
+          "label": "Titel"
+        },
+        "expense_date": {
+          "label": "Datum van uitgave"
+        },
+        "expense_type": {
+          "label": "Soort uitgaven",
+          "options": {
+            "labor": "Arbeid",
+            "materials": "Materialen",
+            "subcontract": "Onderaanneming",
+            "equipment": "Uitrusting",
+            "other": "Anders"
+          }
+        },
+        "supplier_contact_id": {
+          "label": "Leverancier / Verkoper"
+        },
+        "reference": {
+          "label": "Referentie"
+        },
+        "amount": {
+          "label": "Bedrag"
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "draft": "Diepgang",
+            "posted": "Geplaatst",
+            "void": "Nietig"
+          }
+        },
+        "notes": {
+          "label": "Opmerkingen"
+        },
+        "attachments": {
+          "label": "Bijlagen"
+        },
+        "created_at": {
+          "label": "Gemaakt op"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_construction_site_new": {
+      "label": "+ Nieuwe site"
+    },
+    "action_construction_crew_new": {
+      "label": "+ Nieuwe bemanning"
+    },
+    "action_construction_cost_code_new": {
+      "label": "+ Nieuwe kostencode"
+    },
+    "action_construction_site_deactivate": {
+      "label": "Site deactiveren"
+    },
+    "action_construction_site_activate": {
+      "label": "Activeer site"
+    },
+    "action_construction_crew_deactivate": {
+      "label": "Bemanning deactiveren"
+    },
+    "action_construction_crew_activate": {
+      "label": "Activeer Bemanning"
+    },
+    "action_construction_project_new": {
+      "label": "+ Nieuw project"
+    },
+    "action_construction_work_item_new": {
+      "label": "+ Nieuw werkitem"
+    },
+    "action_construction_project_activate": {
+      "label": "Project starten"
+    },
+    "action_construction_project_hold": {
+      "label": "In de wacht zetten"
+    },
+    "action_construction_project_resume": {
+      "label": "Project hervatten"
+    },
+    "action_construction_project_complete": {
+      "label": "Compleet"
+    },
+    "action_construction_project_cancel": {
+      "label": "Project annuleren"
+    },
+    "action_construction_work_item_start": {
+      "label": "Begin"
+    },
+    "action_construction_work_item_block": {
+      "label": "Blok"
+    },
+    "action_construction_work_item_resume": {
+      "label": "Hervatten"
+    },
+    "action_construction_work_item_done": {
+      "label": "Markeer klaar"
+    },
+    "action_construction_work_item_cancel": {
+      "label": "Annuleer"
+    },
+    "action_construction_worker_new": {
+      "label": "+ Nieuwe werknemer"
+    },
+    "action_construction_worker_assignment_new": {
+      "label": "+ Nieuwe opdracht"
+    },
+    "action_time_entry_new": {
+      "label": "+ Nieuwe tijdinvoer"
+    },
+    "action_construction_worker_activate": {
+      "label": "Activeer"
+    },
+    "action_construction_worker_deactivate": {
+      "label": "Deactiveren"
+    },
+    "action_time_entry_close": {
+      "label": "Sluit de invoer"
+    },
+    "action_time_entry_approve": {
+      "label": "Goedkeuren"
+    },
+    "action_time_entry_reopen": {
+      "label": "Heropenen"
+    },
+    "action_construction_worker_assignment_activate": {
+      "label": "Activeer"
+    },
+    "action_construction_worker_assignment_deactivate": {
+      "label": "Deactiveren"
+    },
+    "action_daily_report_new": {
+      "label": "+ Nieuw rapport"
+    },
+    "action_issue_new": {
+      "label": "+ Nieuw nummer"
+    },
+    "action_daily_report_submit": {
+      "label": "Verzenden"
+    },
+    "action_daily_report_approve": {
+      "label": "Goedkeuren"
+    },
+    "action_daily_report_reopen": {
+      "label": "Heropenen"
+    },
+    "action_issue_start": {
+      "label": "Begin"
+    },
+    "action_issue_resolve": {
+      "label": "Oplossen"
+    },
+    "action_issue_close": {
+      "label": "Sluiten"
+    },
+    "action_issue_reopen": {
+      "label": "Heropenen"
+    },
+    "action_material_request_new": {
+      "label": "+ Nieuw verzoek"
+    },
+    "action_material_receipt_new": {
+      "label": "+ Nieuwe bon"
+    },
+    "action_material_log_new": {
+      "label": "+ Nieuw gebruikslogboek"
+    },
+    "action_material_request_send": {
+      "label": "Verzoek"
+    },
+    "action_material_request_approve": {
+      "label": "Goedkeuren"
+    },
+    "action_material_request_fulfill": {
+      "label": "Vervul"
+    },
+    "action_material_receipt_receive": {
+      "label": "Ontvang"
+    },
+    "action_material_receipt_post": {
+      "label": "Post"
+    },
+    "action_material_log_submit": {
+      "label": "Verzenden"
+    },
+    "action_material_log_approve": {
+      "label": "Goedkeuren"
+    },
+    "action_construction_budget_line_new": {
+      "label": "+ Nieuwe budgetlijn"
+    },
+    "action_construction_expense_new": {
+      "label": "+ Nieuwe kosten"
+    },
+    "action_construction_expense_post": {
+      "label": "Post"
+    },
+    "action_construction_expense_void": {
+      "label": "Nietig"
+    },
+    "action_construction_open_dashboard": {
+      "label": "Operationeel dashboard"
+    },
+    "action_construction_open_projects": {
+      "label": "Projecten"
+    },
+    "action_construction_open_time_report": {
+      "label": "Tijdregistratierapport"
+    },
+    "action_construction_open_material_report": {
+      "label": "Materiaalgebruiksrapport"
+    },
+    "action_construction_open_cost_report": {
+      "label": "Samenvatting van de projectkosten"
+    },
+    "action_construction_open_daily_summary": {
+      "label": "Dagelijks siteoverzicht"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Sites zoeken..."
+      },
+      "filters": {
+        "active": {
+          "label": "Actief"
+        },
+        "inactive": {
+          "label": "Inactief"
+        },
+        "open": {
+          "label": "Openen"
+        },
+        "completed": {
+          "label": "Voltooid"
+        },
+        "done": {
+          "label": "Klaar"
+        },
+        "supervisors": {
+          "label": "Toezichthouders"
+        },
+        "closed": {
+          "label": "Gesloten"
+        },
+        "approved": {
+          "label": "Goedgekeurd"
+        },
+        "draft": {
+          "label": "Diepgang"
+        },
+        "submitted": {
+          "label": "Ingezonden"
+        },
+        "resolved": {
+          "label": "Opgelost"
+        },
+        "critical": {
+          "label": "Kritisch"
+        },
+        "requested": {
+          "label": "Gevraagd"
+        },
+        "posted": {
+          "label": "Geplaatst"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "general": {
+          "title": "Algemeen"
+        },
+        "notes": {
+          "title": "Opmerkingen"
+        },
+        "overview": {
+          "title": "Overzicht"
+        },
+        "summary": {
+          "title": "Projectdashboard"
+        },
+        "crew": {
+          "title": "Arbeiders / Bemanning"
+        },
+        "time_entries": {
+          "title": "Tijdinvoer"
+        },
+        "materials": {
+          "title": "Materialen"
+        },
+        "costs": {
+          "title": "Kosten / uitgaven"
+        },
+        "daily_reports": {
+          "title": "Dagelijkse rapporten"
+        },
+        "issues": {
+          "title": "Problemen"
+        },
+        "main": {
+          "title": "Werkitem"
+        },
+        "worker": {
+          "title": "Werknemer"
+        },
+        "assignments_related": {
+          "title": "Opdrachten"
+        },
+        "time_entries_related": {
+          "title": "Tijdinvoer"
+        },
+        "assignment": {
+          "title": "Opdracht"
+        },
+        "entry": {
+          "title": "Binnenkomst"
+        },
+        "report": {
+          "title": "Rapporteer"
+        },
+        "photos": {
+          "title": "Foto's"
+        },
+        "issue": {
+          "title": "Probleem"
+        },
+        "request": {
+          "title": "Verzoek"
+        },
+        "receipt": {
+          "title": "Ontvangst"
+        },
+        "supporting": {
+          "title": "Ondersteunend"
+        },
+        "usage": {
+          "title": "Gebruik"
+        },
+        "budget": {
+          "title": "Begroting"
+        },
+        "expense": {
+          "title": "Kosten"
+        }
+      }
+    },
+    "report": {
+      "search": {
+        "placeholder": "Arbeidsgegevens zoeken..."
+      },
+      "filters": {
+        "open": {
+          "label": "Openen"
+        },
+        "closed": {
+          "label": "Gesloten"
+        },
+        "approved": {
+          "label": "Goedgekeurd"
+        },
+        "draft": {
+          "label": "Diepgang"
+        },
+        "submitted": {
+          "label": "Ingezonden"
+        },
+        "posted": {
+          "label": "Geplaatst"
+        }
+      }
+    },
+    "summary_list": {
+      "search": {
+        "placeholder": "Dagelijkse siteoverzichten doorzoeken..."
+      },
+      "filters": {
+        "draft": {
+          "label": "Diepgang"
+        },
+        "submitted": {
+          "label": "Ingezonden"
+        },
+        "approved": {
+          "label": "Goedgekeurd"
+        }
+      }
+    }
+  },
+  "pages": {
+    "dashboard_page": {
+      "title": "Operationeel dashboard",
+      "blocks": {
+        "1": {
+          "cards": {
+            "workers_on_site_today": {
+              "label": "Vandaag werknemers ter plaatse",
+              "subtitle": "Alleen vandaag"
+            },
+            "labour_hours_today": {
+              "label": "Totaal aantal arbeidsuren vandaag",
+              "subtitle": "Alleen vandaag"
+            },
+            "materials_logged_today": {
+              "label": "Materialen vandaag geregistreerd",
+              "subtitle": "Alleen vandaag"
+            },
+            "cost_today": {
+              "label": "Totale kosten vandaag",
+              "subtitle": "Alleen vandaag"
+            }
+          }
+        },
+        "2": {
+          "title": "Kostenverdeling"
+        },
+        "3": {
+          "items": {
+            "1": {
+              "content": {
+                "1": {
+                  "title": "Recente tijdinvoer"
+                }
+              }
+            },
+            "2": {
+              "content": {
+                "1": {
+                  "title": "Materialen vandaag geregistreerd"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "list_page": {
+      "title": "Sites",
+      "blocks": {
+        "1": {
+          "cards": {
+            "active_projects": {
+              "label": "Actieve projecten"
+            },
+            "project_hours_total": {
+              "label": "Totaal aantal projecturen"
+            },
+            "project_cost_total": {
+              "label": "Totale kosten tot nu toe"
+            },
+            "open_project_issues": {
+              "label": "Openstaande problemen"
+            }
+          }
+        }
+      }
+    },
+    "form_page": {
+      "title": "Locatie"
+    },
+    "time_report_page": {
+      "title": "Tijdregistratierapport"
+    },
+    "material_report_page": {
+      "title": "Materiaalgebruiksrapport"
+    },
+    "cost_report_page": {
+      "title": "Samenvatting van de projectkosten",
+      "blocks": {
+        "1": {
+          "items": {
+            "1": {
+              "content": {
+                "1": {
+                  "title": "Kosten per type"
+                }
+              }
+            },
+            "2": {
+              "content": {
+                "1": {
+                  "title": "Kosten per project"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "daily_summary_page": {
+      "title": "Dagelijks siteoverzicht"
+    }
+  },
+  "dashboard": {
+    "projects_by_status": "Projecten op status",
+    "project_cost_to_date": "Kosten tot nu toe per project",
+    "labour_hours_by_project": "Arbeidsuren per project",
+    "daily_reports_by_project": "Dagelijkse rapporten per project",
+    "materials_by_type": "Materiaalgebruik per type",
+    "costs_by_project": "Kosten per project"
+  },
+  "workflows": {
+    "workflow_construction_site_status": {
+      "states": {
+        "active": {
+          "label": "Actief"
+        },
+        "inactive": {
+          "label": "Inactief"
+        }
+      }
+    },
+    "workflow_construction_crew_status": {
+      "states": {
+        "active": {
+          "label": "Actief"
+        },
+        "inactive": {
+          "label": "Inactief"
+        }
+      }
+    },
+    "workflow_construction_project_status": {
+      "states": {
+        "planned": {
+          "label": "Gepland"
+        },
+        "active": {
+          "label": "Actief"
+        },
+        "on_hold": {
+          "label": "In de wacht"
+        },
+        "completed": {
+          "label": "Voltooid"
+        },
+        "cancelled": {
+          "label": "Geannuleerd"
+        }
+      }
+    },
+    "workflow_construction_work_item_status": {
+      "states": {
+        "pending": {
+          "label": "In behandeling"
+        },
+        "in_progress": {
+          "label": "In uitvoering"
+        },
+        "blocked": {
+          "label": "Geblokkeerd"
+        },
+        "done": {
+          "label": "Klaar"
+        },
+        "cancelled": {
+          "label": "Geannuleerd"
+        }
+      }
+    },
+    "workflow_time_entry_status": {
+      "states": {
+        "open": {
+          "label": "Openen"
+        },
+        "closed": {
+          "label": "Gesloten"
+        },
+        "approved": {
+          "label": "Goedgekeurd"
+        }
+      }
+    },
+    "workflow_construction_daily_report_status": {
+      "states": {
+        "draft": {
+          "label": "Diepgang"
+        },
+        "submitted": {
+          "label": "Ingezonden"
+        },
+        "approved": {
+          "label": "Goedgekeurd"
+        }
+      }
+    },
+    "workflow_construction_issue_status": {
+      "states": {
+        "open": {
+          "label": "Openen"
+        },
+        "in_progress": {
+          "label": "In uitvoering"
+        },
+        "resolved": {
+          "label": "Opgelost"
+        },
+        "closed": {
+          "label": "Gesloten"
+        }
+      }
+    },
+    "workflow_material_request_status": {
+      "states": {
+        "draft": {
+          "label": "Diepgang"
+        },
+        "requested": {
+          "label": "Gevraagd"
+        },
+        "approved": {
+          "label": "Goedgekeurd"
+        },
+        "fulfilled": {
+          "label": "Vervuld"
+        },
+        "cancelled": {
+          "label": "Geannuleerd"
+        }
+      }
+    },
+    "workflow_material_receipt_status": {
+      "states": {
+        "draft": {
+          "label": "Diepgang"
+        },
+        "received": {
+          "label": "Ontvangen"
+        },
+        "posted": {
+          "label": "Geplaatst"
+        }
+      }
+    },
+    "workflow_material_log_status": {
+      "states": {
+        "draft": {
+          "label": "Diepgang"
+        },
+        "submitted": {
+          "label": "Ingezonden"
+        },
+        "approved": {
+          "label": "Goedgekeurd"
+        }
+      }
+    },
+    "workflow_construction_expense_status": {
+      "states": {
+        "draft": {
+          "label": "Diepgang"
+        },
+        "posted": {
+          "label": "Geplaatst"
+        },
+        "void": {
+          "label": "Nietig"
+        }
+      }
+    }
+  }
+}

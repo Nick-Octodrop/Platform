@@ -1,0 +1,17 @@
+{
+  "core": "Principal",
+  "home": "Accueil",
+  "apps": "Applications",
+  "app_manager": "Gestionnaire d'applications",
+  "ops": "Operations",
+  "octo_ai": "Octo AI",
+  "notifications": "Notifications",
+  "automations": "Automatisations",
+  "integrations": "Intégrations",
+  "studio": "Atelier",
+  "audit": "Vérification",
+  "settings": "Parametres",
+  "security": "Securite",
+  "enabled_apps": "Applications actives",
+  "open_app": "Ouvrir l'application"
+}

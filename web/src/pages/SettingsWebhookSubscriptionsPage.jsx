@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { MoreHorizontal } from "lucide-react";
 import { apiFetch } from "../api.js";
 import AppSelect from "../components/AppSelect.jsx";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
@@ -10,6 +11,7 @@ import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js"
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 
 function SubscriptionModal({
+  t,
   form,
   setForm,
   saving,
@@ -20,41 +22,41 @@ function SubscriptionModal({
   return (
     <div className="modal modal-open">
       <div className="modal-box max-w-2xl">
-        <h3 className="text-lg font-semibold">Create Webhook Subscription</h3>
+        <h3 className="text-lg font-semibold">{t("settings.webhook_subscriptions.create_title")}</h3>
         <p className="mt-1 text-sm opacity-70">
-          Subscribe an external endpoint to Octodrop events. Matching events are delivered asynchronously by workers.
+          {t("settings.webhook_subscriptions.create_description")}
         </p>
 
         <div className="mt-5 space-y-4">
           <label className="form-control">
-            <span className="label-text text-sm">Name</span>
+            <span className="label-text text-sm">{t("settings.webhook_subscriptions.name")}</span>
             <input className="input input-bordered" value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} />
           </label>
 
           <label className="form-control">
-            <span className="label-text text-sm">Target URL</span>
+            <span className="label-text text-sm">{t("settings.webhook_subscriptions.target_url")}</span>
             <input
               className="input input-bordered"
               value={form.target_url}
               onChange={(e) => setForm((prev) => ({ ...prev, target_url: e.target.value }))}
-              placeholder="https://example.com/octodrop/webhooks"
+              placeholder={t("settings.webhook_subscriptions.target_url_placeholder")}
             />
           </label>
 
           <label className="form-control">
-            <span className="label-text text-sm">Event Pattern</span>
+            <span className="label-text text-sm">{t("settings.webhook_subscriptions.event_pattern")}</span>
             <input
               className="input input-bordered"
               value={form.event_pattern}
               onChange={(e) => setForm((prev) => ({ ...prev, event_pattern: e.target.value }))}
-              placeholder="billing.* or record.updated"
+              placeholder={t("settings.webhook_subscriptions.event_pattern_placeholder")}
             />
           </label>
 
           <label className="form-control">
-            <span className="label-text text-sm">Signing Secret</span>
+            <span className="label-text text-sm">{t("settings.webhook_subscriptions.signing_secret")}</span>
             <AppSelect className="select select-bordered" value={form.signing_secret_id} onChange={(e) => setForm((prev) => ({ ...prev, signing_secret_id: e.target.value }))}>
-              <option value="">No signing secret</option>
+              <option value="">{t("settings.webhook_subscriptions.no_signing_secret")}</option>
               {(secrets || []).map((secret) => (
                 <option key={secret.id} value={secret.id}>
                   {secret.name || secret.id}
@@ -64,7 +66,7 @@ function SubscriptionModal({
           </label>
 
           <label className="form-control">
-            <span className="label-text text-sm">Extra Headers JSON</span>
+            <span className="label-text text-sm">{t("settings.webhook_subscriptions.extra_headers_json")}</span>
             <textarea
               className="textarea textarea-bordered min-h-[8rem] font-mono text-xs"
               value={form.headers_json_text}
@@ -75,10 +77,10 @@ function SubscriptionModal({
 
         <div className="modal-action">
           <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={saving}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button type="button" className="btn btn-primary" onClick={onConfirm} disabled={saving || !form.name.trim() || !form.target_url.trim() || !form.event_pattern.trim()}>
-            {saving ? "Saving..." : "Create Subscription"}
+            {saving ? t("common.saving") : t("settings.webhook_subscriptions.create_action")}
           </button>
         </div>
       </div>
@@ -97,6 +99,7 @@ function emptyForm() {
 }
 
 export default function SettingsWebhookSubscriptionsPage() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [secrets, setSecrets] = useState([]);
@@ -125,7 +128,7 @@ export default function SettingsWebhookSubscriptionsPage() {
     } catch (err) {
       setItems([]);
       setSecrets([]);
-      setError(err?.message || "Failed to load webhook subscriptions");
+      setError(err?.message || t("settings.webhook_subscriptions.load_failed"));
     } finally {
       setLoading(false);
     }
@@ -144,7 +147,7 @@ export default function SettingsWebhookSubscriptionsPage() {
       try {
         headersJson = JSON.parse(createForm.headers_json_text || "{}");
       } catch {
-        throw new Error("Headers JSON must be valid JSON");
+        throw new Error(t("settings.webhook_subscriptions.headers_json_invalid"));
       }
       const response = await apiFetch("/settings/webhook-subscriptions", {
         method: "POST",
@@ -163,7 +166,7 @@ export default function SettingsWebhookSubscriptionsPage() {
         navigate(`/settings/webhook-subscriptions/${response.subscription.id}`);
       }
     } catch (err) {
-      setError(err?.message || "Failed to create webhook subscription");
+      setError(err?.message || t("settings.webhook_subscriptions.create_failed"));
     } finally {
       setSaving(false);
     }
@@ -181,7 +184,7 @@ export default function SettingsWebhookSubscriptionsPage() {
       setSelectedIds([]);
       await load();
     } catch (err) {
-      setError(err?.message || "Failed to delete webhook subscriptions");
+      setError(err?.message || t("settings.webhook_subscriptions.delete_failed"));
     } finally {
       setSaving(false);
     }
@@ -190,24 +193,24 @@ export default function SettingsWebhookSubscriptionsPage() {
   const rows = useMemo(
     () => (items || []).map((item) => ({
       id: item.id,
-      name: item.name || "Untitled",
+      name: item.name || t("settings.untitled"),
       status: item.status || "active",
       event_pattern: item.event_pattern || "*",
       target_url: item.target_url || "—",
-      last_delivered_at: formatDateTime(item.last_delivered_at) || "Never",
+      last_delivered_at: formatDateTime(item.last_delivered_at) || t("settings.webhook_subscriptions.never"),
     })),
-    [items],
+    [items, t],
   );
 
   const listFieldIndex = useMemo(
     () => ({
-      "sub.name": { id: "sub.name", label: "Name" },
-      "sub.status": { id: "sub.status", label: "Status" },
-      "sub.event_pattern": { id: "sub.event_pattern", label: "Event Pattern" },
-      "sub.target_url": { id: "sub.target_url", label: "Target URL" },
-      "sub.last_delivered_at": { id: "sub.last_delivered_at", label: "Last Delivered" },
+      "sub.name": { id: "sub.name", label: t("settings.webhook_subscriptions.name") },
+      "sub.status": { id: "sub.status", label: t("settings.document_numbering.status") },
+      "sub.event_pattern": { id: "sub.event_pattern", label: t("settings.webhook_subscriptions.event_pattern") },
+      "sub.target_url": { id: "sub.target_url", label: t("settings.webhook_subscriptions.target_url") },
+      "sub.last_delivered_at": { id: "sub.last_delivered_at", label: t("settings.webhook_subscriptions.last_delivered") },
     }),
-    [],
+    [t],
   );
 
   const listView = useMemo(
@@ -230,22 +233,22 @@ export default function SettingsWebhookSubscriptionsPage() {
       record_id: row.id,
       record: {
         "sub.name": row.name,
-        "sub.status": row.status,
+        "sub.status": row.status === "active" ? t("common.active") : t("settings.webhook_subscriptions.disabled"),
         "sub.event_pattern": row.event_pattern,
         "sub.target_url": row.target_url,
         "sub.last_delivered_at": row.last_delivered_at,
       },
     })),
-    [rows],
+    [rows, t],
   );
 
   const filters = useMemo(
     () => [
-      { id: "all", label: "All", domain: null },
-      { id: "active", label: "Active", domain: { op: "eq", field: "sub.status", value: "active" } },
-      { id: "disabled", label: "Disabled", domain: { op: "eq", field: "sub.status", value: "disabled" } },
+      { id: "all", label: t("common.all"), domain: null },
+      { id: "active", label: t("common.active"), domain: { op: "eq", field: "sub.status", value: t("common.active") } },
+      { id: "disabled", label: t("settings.webhook_subscriptions.disabled"), domain: { op: "eq", field: "sub.status", value: t("settings.webhook_subscriptions.disabled") } },
     ],
-    [],
+    [t],
   );
 
   const activeFilter = useMemo(() => filters.find((filter) => filter.id === statusFilter) || null, [filters, statusFilter]);
@@ -257,8 +260,8 @@ export default function SettingsWebhookSubscriptionsPage() {
           <div className="space-y-4 md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
             <SystemListToolbar
-              title="Webhook Subscriptions"
-              createTooltip="New webhook"
+              title={t("settings.webhook_subscriptions.title")}
+              createTooltip={t("settings.webhook_subscriptions.new_webhook")}
               onCreate={() => {
                 setCreateForm(emptyForm());
                 setShowCreateModal(true);
@@ -288,23 +291,23 @@ export default function SettingsWebhookSubscriptionsPage() {
               rightActions={
                 selectedIds.length > 0 ? (
                   <div className="dropdown dropdown-end">
-                    <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                    <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label={t("settings.selection_actions")}>
                       <MoreHorizontal className="h-4 w-4" />
                     </button>
                     <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
                       <li className="menu-title">
-                        <span>Selection</span>
+                        <span>{t("settings.selection")}</span>
                       </li>
                       {selectedIds.length === 1 ? (
                         <li>
                           <button onClick={() => navigate(`/settings/webhook-subscriptions/${selectedIds[0]}`)}>
-                            Open subscription
+                            {t("settings.webhook_subscriptions.open_subscription")}
                           </button>
                         </li>
                       ) : null}
                       <li>
                         <button className="text-error" onClick={() => setShowDeleteModal(true)} disabled={saving}>
-                          {selectedIds.length === 1 ? "Delete" : `Delete selected (${selectedIds.length})`}
+                          {selectedIds.length === 1 ? t("common.delete") : t("settings.webhook_subscriptions.delete_selected", { count: selectedIds.length })}
                         </button>
                       </li>
                     </ul>
@@ -315,7 +318,7 @@ export default function SettingsWebhookSubscriptionsPage() {
 
             <div className="md:mt-4">
               {loading ? (
-                <div className="text-sm opacity-70">Loading…</div>
+                <div className="text-sm opacity-70">{t("common.loading")}</div>
               ) : (
                 <ListViewRenderer
                   view={listView}
@@ -361,6 +364,7 @@ export default function SettingsWebhookSubscriptionsPage() {
 
       {showCreateModal ? (
         <SubscriptionModal
+          t={t}
           form={createForm}
           setForm={setCreateForm}
           saving={saving}
@@ -373,16 +377,18 @@ export default function SettingsWebhookSubscriptionsPage() {
       {showDeleteModal ? (
         <div className="modal modal-open">
           <div className="modal-box max-w-md">
-            <h3 className="text-lg font-semibold">Delete webhook subscription{selectedIds.length > 1 ? "s" : ""}?</h3>
+            <h3 className="text-lg font-semibold">
+              {selectedIds.length > 1 ? t("settings.webhook_subscriptions.delete_title_many") : t("settings.webhook_subscriptions.delete_title_one")}
+            </h3>
             <p className="mt-2 text-sm opacity-70">
-              This will permanently remove {selectedIds.length} webhook subscription{selectedIds.length > 1 ? "s" : ""}. This cannot be undone.
+              {t("settings.webhook_subscriptions.delete_body", { count: selectedIds.length })}
             </p>
             <div className="modal-action">
               <button type="button" className="btn btn-ghost" onClick={() => setShowDeleteModal(false)} disabled={saving}>
-                Cancel
+                {t("common.cancel")}
               </button>
               <button type="button" className="btn btn-error" onClick={deleteSelectedSubscriptions} disabled={saving}>
-                {saving ? "Deleting..." : "Delete"}
+                {saving ? t("common.deleting") : t("common.delete")}
               </button>
             </div>
           </div>

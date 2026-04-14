@@ -1,0 +1,13 @@
+{
+  "no_results": "No results",
+  "no_records_found": "No records found",
+  "no_visible_columns": "No visible columns for this view.",
+  "no_workspaces": "No workspaces available.",
+  "no_workspace_users": "No workspace users found",
+  "no_matches": "No matches",
+  "no_settings_match_search": "No settings match your search.",
+  "no_address_matches": "No address matches",
+  "no_line_items": "No line items yet.",
+  "install_app": "Install an app",
+  "no_apps_installed": "No apps installed yet."
+}

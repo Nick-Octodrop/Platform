@@ -1,0 +1,604 @@
+{
+  "module": {
+    "name": "CRM",
+    "description": "De verkoopwerkruimte vervangt de hiaten in de overdracht van CRM, met ingebouwde overdracht van offertes en orders."
+  },
+  "navigation": {
+    "crm_dashboard_page": "CRM",
+    "crm_lead_list_page": "Leidt",
+    "crm_opportunity_list_page": "Kansen",
+    "crm_activity_list_page": "Activiteiten",
+    "crm_site_list_page": "Sites"
+  },
+  "entities": {
+    "crm_site": {
+      "label": "Locatie",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "name": {
+          "label": "Sitenaam"
+        },
+        "company_id": {
+          "label": "Bedrijf"
+        },
+        "address_line_1": {
+          "label": "Adresregel 1"
+        },
+        "address_line_2": {
+          "label": "Adresregel 2"
+        },
+        "city": {
+          "label": "Stad"
+        },
+        "region": {
+          "label": "Regio / Staat"
+        },
+        "postcode": {
+          "label": "Postcode"
+        },
+        "country": {
+          "label": "Land"
+        },
+        "site_notes": {
+          "label": "Site-opmerkingen"
+        },
+        "is_active": {
+          "label": "Actief"
+        }
+      }
+    },
+    "crm_lead": {
+      "label": "Lood",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "title": {
+          "label": "Lood"
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "new": "Nieuw",
+            "contacted": "Gecontacteerd",
+            "qualified": "Gekwalificeerd",
+            "disqualified": "Gediskwalificeerd"
+          }
+        },
+        "source": {
+          "label": "Bron",
+          "options": {
+            "website": "Website",
+            "referral": "Verwijzing",
+            "trade_show": "Handelsbeurs",
+            "pipedrive_import": "Pipedrive-import",
+            "repeat_customer": "Herhaal klant",
+            "manual": "Handmatig"
+          }
+        },
+        "company_id": {
+          "label": "Bedrijf"
+        },
+        "contact_name": {
+          "label": "Contactnaam"
+        },
+        "contact_email": {
+          "label": "Neem contact op met E-mail"
+        },
+        "contact_phone": {
+          "label": "Neem contact op met Telefoon"
+        },
+        "owner_user_id": {
+          "label": "Eigenaar"
+        },
+        "currency": {
+          "label": "Valuta",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "estimated_value": {
+          "label": "Geschatte waarde"
+        },
+        "next_action": {
+          "label": "Volgende actie"
+        },
+        "next_activity_date": {
+          "label": "Datum volgende activiteit"
+        },
+        "disqualification_reason": {
+          "label": "Reden van diskwalificatie"
+        },
+        "linked_opportunity_id": {
+          "label": "Gekoppelde kans"
+        },
+        "notes": {
+          "label": "Opmerkingen"
+        }
+      }
+    },
+    "crm_opportunity": {
+      "label": "Gelegenheid",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "title": {
+          "label": "Gelegenheid"
+        },
+        "company_id": {
+          "label": "Bedrijf"
+        },
+        "primary_contact_name": {
+          "label": "Primaire contactpersoon"
+        },
+        "primary_contact_email": {
+          "label": "Neem contact op met E-mail"
+        },
+        "site_id": {
+          "label": "Locatie"
+        },
+        "owner_user_id": {
+          "label": "Eigenaar"
+        },
+        "pipeline": {
+          "label": "Pijpleiding",
+          "options": {
+            "nlight_sales": "NLight-verkoop",
+            "ecotech_supply": "EcoTech-aanbod",
+            "after_sales": "Na verkoop"
+          }
+        },
+        "stage": {
+          "label": "Stadium",
+          "options": {
+            "new": "Nieuw",
+            "discovery": "Ontdekking",
+            "solution": "Oplossing geschikt",
+            "quote": "Citaat",
+            "negotiation": "Onderhandeling",
+            "won": "Gewonnen",
+            "lost": "Verloren"
+          }
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "open": "Openen",
+            "won": "Gewonnen",
+            "lost": "Verloren"
+          }
+        },
+        "currency": {
+          "label": "Valuta",
+          "options": {
+            "eur": "EUR",
+            "usd": "USD",
+            "gbp": "GBP",
+            "aed": "AED"
+          }
+        },
+        "value": {
+          "label": "Dealwaarde"
+        },
+        "probability": {
+          "label": "Waarschijnlijkheid %"
+        },
+        "weighted_value": {
+          "label": "Gewogen waarde"
+        },
+        "expected_close_date": {
+          "label": "Verwacht dichtbij"
+        },
+        "next_activity_date": {
+          "label": "Volgende activiteit"
+        },
+        "source": {
+          "label": "Bron",
+          "options": {
+            "website": "Website",
+            "referral": "Verwijzing",
+            "trade_show": "Handelsbeurs",
+            "pipedrive_import": "Pipedrive-import",
+            "repeat_customer": "Herhaal klant",
+            "existing_customer": "Bestaande klant",
+            "manual": "Handmatig"
+          }
+        },
+        "quote_state": {
+          "label": "Citaat staat",
+          "options": {
+            "unquoted": "Niet geciteerd",
+            "quote_needed": "Citaat nodig",
+            "quoted": "Geciteerd",
+            "accepted": "Geaccepteerd"
+          }
+        },
+        "linked_quote_id": {
+          "label": "Gekoppeld citaat"
+        },
+        "linked_order_id": {
+          "label": "Gekoppelde bestelling"
+        },
+        "won_lost_reason": {
+          "label": "Reden van verlies"
+        },
+        "description": {
+          "label": "Beschrijving"
+        },
+        "notes": {
+          "label": "Opmerkingen"
+        },
+        "attachments": {
+          "label": "Bijlagen"
+        }
+      }
+    },
+    "crm_activity": {
+      "label": "Activiteit",
+      "fields": {
+        "id": {
+          "label": "ID"
+        },
+        "title": {
+          "label": "Activiteit"
+        },
+        "activity_type": {
+          "label": "Typ",
+          "options": {
+            "call": "Bel",
+            "meeting": "Vergadering",
+            "task": "Taak",
+            "email_follow_up": "E-mailopvolging",
+            "site_visit": "Bezoek ter plaatse",
+            "quote_follow_up": "Opvolging van offertes"
+          }
+        },
+        "status": {
+          "label": "Status",
+          "options": {
+            "planned": "Gepland",
+            "done": "Klaar",
+            "cancelled": "Geannuleerd"
+          }
+        },
+        "due_date": {
+          "label": "Vervaldatum"
+        },
+        "owner_user_id": {
+          "label": "Eigenaar"
+        },
+        "company_id": {
+          "label": "Bedrijf"
+        },
+        "lead_id": {
+          "label": "Lood"
+        },
+        "opportunity_id": {
+          "label": "Gelegenheid"
+        },
+        "site_id": {
+          "label": "Locatie"
+        },
+        "notes": {
+          "label": "Opmerkingen"
+        }
+      }
+    }
+  },
+  "actions": {
+    "action_crm_lead_new": {
+      "label": "Nieuwe leiding"
+    },
+    "action_crm_opportunity_new": {
+      "label": "Nieuwe kans"
+    },
+    "action_crm_activity_new": {
+      "label": "Nieuwe activiteit"
+    },
+    "action_crm_site_new": {
+      "label": "Nieuwe site"
+    },
+    "action_crm_lead_mark_contacted": {
+      "label": "Markeer gecontacteerd"
+    },
+    "action_crm_lead_qualify": {
+      "label": "Kwalificeer de lead"
+    },
+    "action_crm_lead_open_disqualify_modal": {
+      "label": "Diskwalificeren"
+    },
+    "action_crm_opportunity_discovery": {
+      "label": "Ontdekking starten"
+    },
+    "action_crm_opportunity_solution": {
+      "label": "Oplossing geschikt"
+    },
+    "action_crm_opportunity_quote_stage": {
+      "label": "Verplaatsen naar citaat"
+    },
+    "action_crm_opportunity_create_quote": {
+      "label": "Offerte maken"
+    },
+    "action_crm_opportunity_negotiation": {
+      "label": "Ga naar onderhandeling"
+    },
+    "action_crm_opportunity_mark_won": {
+      "label": "Mark Won"
+    },
+    "action_crm_opportunity_open_lost_modal": {
+      "label": "Merk verloren"
+    },
+    "action_crm_opportunity_create_order": {
+      "label": "Orde creëren"
+    },
+    "action_crm_activity_done": {
+      "label": "Markeer klaar"
+    },
+    "action_crm_activity_cancel": {
+      "label": "Annuleer"
+    }
+  },
+  "views": {
+    "list": {
+      "search": {
+        "placeholder": "Leads zoeken..."
+      },
+      "filters": {
+        "active": {
+          "label": "Actieve leads"
+        },
+        "new": {
+          "label": "Nieuw"
+        },
+        "contacted": {
+          "label": "Gecontacteerd"
+        },
+        "qualified": {
+          "label": "Gekwalificeerd"
+        },
+        "disqualified": {
+          "label": "Gediskwalificeerd"
+        },
+        "open": {
+          "label": "Open kansen"
+        },
+        "needs_quote": {
+          "label": "Citaat nodig"
+        },
+        "no_next_activity": {
+          "label": "Geen volgende activiteit"
+        },
+        "closing_this_month": {
+          "label": "Sluit deze maand"
+        },
+        "won": {
+          "label": "Gewonnen"
+        },
+        "lost": {
+          "label": "Verloren"
+        },
+        "planned": {
+          "label": "Gepland"
+        },
+        "overdue": {
+          "label": "Te laat"
+        },
+        "done": {
+          "label": "Klaar"
+        },
+        "site_visits": {
+          "label": "Bezoeken ter plaatse"
+        }
+      }
+    },
+    "form": {
+      "sections": {
+        "summary": {
+          "title": "Lood"
+        },
+        "notes": {
+          "title": "Opmerkingen"
+        },
+        "commercial": {
+          "title": "Commercieel"
+        }
+      }
+    }
+  },
+  "modals": {
+    "crm_lead_disqualify": {
+      "title": "Lead diskwalificeren",
+      "description": "Leg vast waarom dit onderzoek niet in de verkooppijplijn terecht mag komen.",
+      "actions": {
+        "update_record": {
+          "label": "Lead diskwalificeren"
+        },
+        "close_modal": {
+          "label": "Blijf open"
+        }
+      }
+    },
+    "crm_opportunity_lost": {
+      "title": "Markeer een kans als verloren",
+      "description": "Leg de reden van het verlies vast, zodat de pijplijn bruikbaar blijft.",
+      "actions": {
+        "update_record": {
+          "label": "Merk verloren"
+        },
+        "close_modal": {
+          "label": "Blijf open"
+        }
+      }
+    }
+  },
+  "pages": {
+    "dashboard_page": {
+      "title": "CRM",
+      "header": {
+        "actions": {
+          "navigate": {
+            "label": "Nieuwe leiding"
+          }
+        }
+      },
+      "blocks": {
+        "1": {
+          "cards": {
+            "crm_open_pipeline_value": {
+              "label": "Open pijpleiding",
+              "subtitle": "Actieve dealwaarde"
+            },
+            "crm_weighted_pipeline_value": {
+              "label": "Gewogen pijplijn",
+              "subtitle": "Waarschijnlijkheid aangepast"
+            },
+            "crm_needs_quote": {
+              "label": "Citaat nodig",
+              "subtitle": "Verkoopklare overdracht"
+            },
+            "crm_overdue_activities": {
+              "label": "Achterstallige activiteiten",
+              "subtitle": "Geplande vervolgacties volgen"
+            }
+          }
+        }
+      }
+    },
+    "list_page": {
+      "title": "Leidt"
+    },
+    "form_page": {
+      "title": "Lood"
+    }
+  },
+  "workflows": {
+    "crm_lead_status_workflow": {
+      "states": {
+        "new": {
+          "label": "Nieuw"
+        },
+        "contacted": {
+          "label": "Gecontacteerd"
+        },
+        "qualified": {
+          "label": "Gekwalificeerd"
+        },
+        "disqualified": {
+          "label": "Gediskwalificeerd"
+        }
+      },
+      "transitions": {
+        "new_contacted": {
+          "label": "Markeer gecontacteerd"
+        },
+        "new_qualified": {
+          "label": "Kwalificeer"
+        },
+        "contacted_qualified": {
+          "label": "Kwalificeer"
+        },
+        "new_disqualified": {
+          "label": "Diskwalificeren"
+        },
+        "contacted_disqualified": {
+          "label": "Diskwalificeren"
+        }
+      }
+    },
+    "crm_opportunity_stage_workflow": {
+      "states": {
+        "new": {
+          "label": "Nieuw"
+        },
+        "discovery": {
+          "label": "Ontdekking"
+        },
+        "solution": {
+          "label": "Oplossing geschikt"
+        },
+        "quote": {
+          "label": "Citaat"
+        },
+        "negotiation": {
+          "label": "Onderhandeling"
+        },
+        "won": {
+          "label": "Gewonnen"
+        },
+        "lost": {
+          "label": "Verloren"
+        }
+      },
+      "transitions": {
+        "new_discovery": {
+          "label": "Ontdekking starten"
+        },
+        "discovery_solution": {
+          "label": "Oplossing geschikt"
+        },
+        "solution_quote": {
+          "label": "Citaat"
+        },
+        "quote_negotiation": {
+          "label": "Onderhandeling"
+        },
+        "quote_won": {
+          "label": "Mark Won"
+        },
+        "negotiation_won": {
+          "label": "Mark Won"
+        },
+        "new_lost": {
+          "label": "Merk verloren"
+        },
+        "discovery_lost": {
+          "label": "Merk verloren"
+        },
+        "solution_lost": {
+          "label": "Merk verloren"
+        },
+        "quote_lost": {
+          "label": "Merk verloren"
+        },
+        "negotiation_lost": {
+          "label": "Merk verloren"
+        }
+      }
+    }
+  },
+  "triggers": {
+    "site_created": "Site gemaakt",
+    "site_updated": "Website bijgewerkt",
+    "lead_created": "Lead gemaakt",
+    "lead_updated": "Lead bijgewerkt",
+    "opportunity_created": "Kans gecreëerd",
+    "opportunity_updated": "Mogelijkheid bijgewerkt",
+    "activity_created": "Activiteit gemaakt",
+    "activity_updated": "Activiteit bijgewerkt",
+    "lead_status_changed": "Leadstatus gewijzigd",
+    "opportunity_status_changed": "Mogelijkheidsstatus gewijzigd",
+    "new_lead_clicked": "Er is op 'Nieuwe lead' geklikt",
+    "new_opportunity_clicked": "Er is geklikt op een nieuwe mogelijkheid",
+    "new_activity_clicked": "Er is op Nieuwe activiteit geklikt",
+    "new_site_clicked": "Nieuwe site geklikt",
+    "mark_contacted_clicked": "Mark Contacted klikte",
+    "qualify_lead_clicked": "Kwalificeren Lead heeft geklikt",
+    "disqualify_clicked": "Diskwalificeren heeft geklikt",
+    "start_discovery_clicked": "Ontdekking starten heeft geklikt",
+    "solution_fit_clicked": "Oplossing Fit klikte",
+    "move_to_quote_clicked": "Verplaatsen naar citaat heeft geklikt",
+    "create_quote_clicked": "Offerte maken heeft geklikt",
+    "move_to_negotiation_clicked": "Verplaatsen naar onderhandeling heeft geklikt",
+    "mark_won_clicked": "Mark Won klikte",
+    "mark_lost_clicked": "Mark Lost klikte",
+    "create_order_clicked": "Bestelling maken klikte",
+    "mark_done_clicked": "Markeer gereed klikte",
+    "cancel_clicked": "Annuleren heeft geklikt"
+  }
+}

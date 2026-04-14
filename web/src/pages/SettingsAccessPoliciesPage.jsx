@@ -3,42 +3,43 @@ import { MoreHorizontal } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api.js";
 import { useToast } from "../components/Toast.jsx";
+import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 
-function ProfileModal({ draft, setDraft, saving, onCancel, onConfirm }) {
+function ProfileModal({ t, draft, setDraft, saving, onCancel, onConfirm }) {
   return (
     <div className="modal modal-open">
       <div className="modal-box max-w-2xl">
-        <h3 className="text-lg font-semibold">Create Access Profile</h3>
-        <p className="mt-1 text-sm opacity-70">Create the profile here, then add its access rules on the next page.</p>
+        <h3 className="text-lg font-semibold">{t("settings.access_policies.create_title")}</h3>
+        <p className="mt-1 text-sm opacity-70">{t("settings.access_policies.create_description")}</p>
 
         <div className="mt-5 grid grid-cols-1 gap-4">
           <label className="form-control">
-            <span className="label-text text-sm">Name</span>
+            <span className="label-text text-sm">{t("settings.access_policies.name")}</span>
             <input className="input input-bordered" value={draft.name} onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))} disabled={saving} />
-            <span className="label label-text-alt opacity-50">Required. Use a clear name like Sales, Finance, or Customer Admin.</span>
+            <span className="label label-text-alt opacity-50">{t("settings.access_policies.name_help")}</span>
           </label>
           <label className="form-control">
-            <span className="label-text text-sm">Key</span>
+            <span className="label-text text-sm">{t("settings.access_policies.key")}</span>
             <input className="input input-bordered" value={draft.profile_key} onChange={(e) => setDraft((prev) => ({ ...prev, profile_key: e.target.value }))} disabled={saving} />
-            <span className="label label-text-alt opacity-50">Optional. Use a stable internal key if you want one, otherwise you can leave this blank.</span>
+            <span className="label label-text-alt opacity-50">{t("settings.access_policies.key_help")}</span>
           </label>
           <label className="form-control">
-            <span className="label-text text-sm">Description</span>
+            <span className="label-text text-sm">{t("settings.access_policies.description")}</span>
             <textarea className="textarea textarea-bordered min-h-[8rem]" value={draft.description} onChange={(e) => setDraft((prev) => ({ ...prev, description: e.target.value }))} disabled={saving} />
-            <span className="label label-text-alt opacity-50">Optional. Add a short note explaining who this profile is for or what it grants.</span>
+            <span className="label label-text-alt opacity-50">{t("settings.access_policies.description_help")}</span>
           </label>
         </div>
 
         <div className="modal-action">
           <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={saving}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button type="button" className="btn btn-primary" onClick={onConfirm} disabled={saving || !draft.name.trim()}>
-            {saving ? "Creating..." : "Create Profile"}
+            {saving ? t("settings.access_policies.creating") : t("settings.access_policies.create_profile")}
           </button>
         </div>
       </div>
@@ -47,6 +48,7 @@ function ProfileModal({ draft, setDraft, saving, onCancel, onConfirm }) {
 }
 
 export default function SettingsAccessPoliciesPage() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const { pushToast } = useToast();
   const [profiles, setProfiles] = useState([]);
@@ -69,7 +71,7 @@ export default function SettingsAccessPoliciesPage() {
       setProfiles(res?.profiles || []);
     } catch (err) {
       setProfiles([]);
-      setError(err?.message || "Failed to load access profiles");
+      setError(err?.message || t("settings.access_policies.load_failed"));
     } finally {
       setLoading(false);
     }
@@ -87,10 +89,10 @@ export default function SettingsAccessPoliciesPage() {
       await Promise.all(selectedIds.map((id) => apiFetch(`/access/profiles/${id}`, { method: "DELETE" })));
       setSelectedIds([]);
       setShowDeleteModal(false);
-      pushToast("success", selectedIds.length === 1 ? "Access profile deleted." : "Access profiles deleted.");
+      pushToast("success", selectedIds.length === 1 ? t("settings.access_policies.deleted_one") : t("settings.access_policies.deleted_many"));
       await load();
     } catch (err) {
-      setError(err?.message || "Failed to delete access profiles");
+      setError(err?.message || t("settings.access_policies.delete_failed"));
     } finally {
       setSaving(false);
     }
@@ -107,13 +109,13 @@ export default function SettingsAccessPoliciesPage() {
       });
       setShowCreateModal(false);
       setCreateDraft({ name: "", description: "", profile_key: "" });
-      pushToast("success", "Access profile created.");
+      pushToast("success", t("settings.access_policies.created"));
       await load();
       if (response?.profile?.id) {
         navigate(`/settings/access-policies/${response.profile.id}`);
       }
     } catch (err) {
-      setError(err?.message || "Failed to create access profile");
+      setError(err?.message || t("settings.access_policies.create_failed"));
     } finally {
       setSaving(false);
     }
@@ -124,22 +126,22 @@ export default function SettingsAccessPoliciesPage() {
       id: profile.id,
       name: profile.name || profile.id,
       profile_key: profile.profile_key || "—",
-      description: profile.description || "No description",
+      description: profile.description || t("settings.access_policies.no_description"),
       rule_count: Number(profile.rule_count || 0),
       assignment_count: Number(profile.assignment_count || 0),
     })),
-    [profiles],
+    [profiles, t],
   );
 
   const listFieldIndex = useMemo(
     () => ({
-      "profile.name": { id: "profile.name", label: "Name" },
-      "profile.profile_key": { id: "profile.profile_key", label: "Key" },
-      "profile.description": { id: "profile.description", label: "Description" },
-      "profile.rule_count": { id: "profile.rule_count", label: "Rules", type: "number" },
-      "profile.assignment_count": { id: "profile.assignment_count", label: "Users", type: "number" },
+      "profile.name": { id: "profile.name", label: t("settings.access_policies.name") },
+      "profile.profile_key": { id: "profile.profile_key", label: t("settings.access_policies.key") },
+      "profile.description": { id: "profile.description", label: t("settings.access_policies.description") },
+      "profile.rule_count": { id: "profile.rule_count", label: t("settings.access_policies.rules"), type: "number" },
+      "profile.assignment_count": { id: "profile.assignment_count", label: t("settings.access_policies.users"), type: "number" },
     }),
-    [],
+    [t],
   );
 
   const listView = useMemo(
@@ -178,8 +180,8 @@ export default function SettingsAccessPoliciesPage() {
           <div className="space-y-4 md:mt-4 md:flex-1 md:min-h-0 md:overflow-auto md:overflow-x-hidden">
             {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
             <SystemListToolbar
-              title="Access Policies"
-              createTooltip="New profile"
+              title={t("settings.access_policies.title")}
+              createTooltip={t("settings.access_policies.new_profile")}
               onCreate={() => setShowCreateModal(true)}
               searchValue={search}
               onSearchChange={(value) => {
@@ -199,23 +201,23 @@ export default function SettingsAccessPoliciesPage() {
               rightActions={
                 selectedIds.length > 0 ? (
                   <div className="dropdown dropdown-end">
-                    <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label="Selection actions">
+                    <button className={SOFT_BUTTON_SM} type="button" tabIndex={0} aria-label={t("settings.selection_actions")}>
                       <MoreHorizontal className="h-4 w-4" />
                     </button>
                     <ul className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 z-[200]">
                       <li className="menu-title">
-                        <span>Selection</span>
+                        <span>{t("settings.selection")}</span>
                       </li>
                       {selectedIds.length === 1 ? (
                         <li>
                           <button onClick={() => navigate(`/settings/access-policies/${selectedIds[0]}`)}>
-                            Open profile
+                            {t("settings.access_policies.open_profile")}
                           </button>
                         </li>
                       ) : null}
                       <li>
                         <button className="text-error" onClick={() => setShowDeleteModal(true)} disabled={saving}>
-                          {selectedIds.length === 1 ? "Delete" : `Delete selected (${selectedIds.length})`}
+                          {selectedIds.length === 1 ? t("common.delete") : t("settings.access_policies.delete_selected", { count: selectedIds.length })}
                         </button>
                       </li>
                     </ul>
@@ -226,7 +228,7 @@ export default function SettingsAccessPoliciesPage() {
 
             <div className="md:mt-4">
               {loading ? (
-                <div className="text-sm opacity-70">Loading…</div>
+                <div className="text-sm opacity-70">{t("common.loading")}</div>
               ) : (
                 <ListViewRenderer
                   view={listView}
@@ -272,6 +274,7 @@ export default function SettingsAccessPoliciesPage() {
 
       {showCreateModal ? (
         <ProfileModal
+          t={t}
           draft={createDraft}
           setDraft={setCreateDraft}
           saving={saving}
@@ -283,9 +286,11 @@ export default function SettingsAccessPoliciesPage() {
       {showDeleteModal ? (
         <div className="modal modal-open">
           <div className="modal-box max-w-md">
-            <h3 className="font-semibold text-lg">Delete Access Profile{selectedIds.length > 1 ? "s" : ""}</h3>
+            <h3 className="font-semibold text-lg">
+              {selectedIds.length > 1 ? t("settings.access_policies.delete_title_many") : t("settings.access_policies.delete_title_one")}
+            </h3>
             <div className="mt-3 text-sm">
-              This will permanently remove {selectedIds.length} access profile{selectedIds.length > 1 ? "s" : ""}. This cannot be undone.
+              {t("settings.access_policies.delete_body", { count: selectedIds.length })}
             </div>
             <div className="modal-action">
               <button
@@ -294,10 +299,10 @@ export default function SettingsAccessPoliciesPage() {
                 onClick={() => !saving && setShowDeleteModal(false)}
                 disabled={saving}
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button className="btn btn-error btn-sm" type="button" onClick={deleteSelectedProfiles} disabled={saving}>
-                {saving ? "Deleting..." : "Delete"}
+                {saving ? t("common.deleting") : t("common.delete")}
               </button>
             </div>
           </div>

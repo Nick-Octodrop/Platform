@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.localization import resolve_currency_for_field
+
 
 CURRENCY_SYMBOLS = {
     "NZD": "NZ$",
@@ -79,25 +81,25 @@ def _number_text(value: Any, precision: int = 2) -> str:
 
 def _resolve_format(field: dict | None, record: dict | None) -> dict:
     fmt = field.get("format") if isinstance(field, dict) and isinstance(field.get("format"), dict) else {}
-    kind = fmt.get("kind") if isinstance(fmt.get("kind"), str) and fmt.get("kind") else "plain"
-    currency = _get_value(record, fmt.get("currency_field")) or fmt.get("currency") or "USD"
+    field_type = field.get("type") if isinstance(field, dict) else None
+    kind = fmt.get("kind") if isinstance(fmt.get("kind"), str) and fmt.get("kind") else ("currency" if field_type == "currency" else "plain")
     unit = _get_value(record, fmt.get("unit_field")) or fmt.get("unit") or ""
     precision = _normalize_precision(fmt.get("precision"), 2)
     return {
         "kind": str(kind).lower(),
-        "currency": str(currency).upper() if currency else "USD",
+        "currency": resolve_currency_for_field(field, record),
         "unit": str(unit) if unit else "",
         "precision": precision,
     }
 
 
-def format_field_value(field: dict | None, value: Any, record: dict | None = None) -> Any:
+def format_field_value(field: dict | None, value: Any, record: dict | None = None, locale_context: dict | None = None) -> Any:
     if not isinstance(field, dict):
         return value
-    if field.get("type") != "number":
+    if field.get("type") not in {"number", "currency"}:
         return value
     fmt = field.get("format")
-    if not isinstance(fmt, dict):
+    if field.get("type") != "currency" and not isinstance(fmt, dict):
         return value
     resolved = _resolve_format(field, record)
     kind = resolved["kind"]
@@ -121,7 +123,7 @@ def format_field_value(field: dict | None, value: Any, record: dict | None = Non
     return _number_text(value, precision)
 
 
-def build_formatted_record(record: dict | None, entity_def: dict | None) -> dict:
+def build_formatted_record(record: dict | None, entity_def: dict | None, locale_context: dict | None = None) -> dict:
     if not isinstance(record, dict):
         return {}
     formatted = dict(record)
@@ -131,7 +133,7 @@ def build_formatted_record(record: dict | None, entity_def: dict | None) -> dict
             continue
         if field_id not in formatted:
             continue
-        formatted[field_id] = format_field_value(field, formatted.get(field_id), record)
+        formatted[field_id] = format_field_value(field, formatted.get(field_id), record, locale_context=locale_context)
     return formatted
 
 
