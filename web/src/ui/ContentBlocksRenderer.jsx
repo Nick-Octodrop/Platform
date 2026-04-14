@@ -778,9 +778,13 @@ function StatCardsBlock({ block, moduleId, recordContext, onNavigate, onPageSect
     };
   }, [block, moduleId, recordContext?.record, recordContext?.recordId]);
 
-  const columns = Math.max(1, Math.min(Number(block?.columns) || 4, 4));
+  const columns = Math.max(1, Math.min(Number(block?.columns) || 4, 6));
   const gridClass =
-    columns >= 4
+    columns >= 6
+      ? "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6"
+      : columns === 5
+        ? "grid-cols-1 sm:grid-cols-2 xl:grid-cols-5"
+        : columns >= 4
       ? "grid-cols-1 sm:grid-cols-2 xl:grid-cols-4"
       : columns === 3
         ? "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"

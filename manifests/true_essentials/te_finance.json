@@ -65,12 +65,13 @@
           "type": "enum",
           "label": "Entry Type",
           "required": true,
-          "help_text": "Choose the real business event first. The cash-effect and owner-balance fields below should match that event, not fight it.",
+          "help_text": "Choose the real business event first. Use owner-paid types when a person paid personally, company-paid types when money left company funds, and company income when money came into the business.",
           "options": [
-            { "value": "owner_expense", "label": "Owner Expense" },
-            { "value": "company_expense", "label": "Company Expense" },
+            { "value": "owner_expense", "label": "Owner Paid Expense" },
+            { "value": "company_expense", "label": "Company Paid Expense" },
             { "value": "owner_contribution", "label": "Owner Contribution" },
-            { "value": "reimbursement", "label": "Reimbursement" },
+            { "value": "reimbursement", "label": "Owner Reimbursement" },
+            { "value": "company_income", "label": "Company Income" },
             { "value": "company_adjustment", "label": "Company Adjustment" }
           ]
         },
@@ -78,14 +79,24 @@
           "id": "te_finance_entry.member_user_id",
           "type": "user",
           "label": "Owner / Member",
-          "required": true,
-          "help_text": "Use this when a person paid personally, contributed funds, or is owed reimbursement."
+          "visible_when": {
+            "op": "in",
+            "field": "te_finance_entry.entry_type",
+            "value": ["owner_expense", "owner_contribution", "reimbursement"]
+          },
+          "required_when": {
+            "op": "in",
+            "field": "te_finance_entry.entry_type",
+            "value": ["owner_expense", "owner_contribution", "reimbursement"]
+          },
+          "help_text": "Pick the person only when a person paid personally, contributed funds, or is being reimbursed. Leave it out for company-paid or company-income rows."
         },
         {
           "id": "te_finance_entry.paid_from",
           "type": "enum",
           "label": "Paid From",
           "required": true,
+          "help_text": "Use Owner Personal Funds when a member paid first. Use Company Funds when the business bank balance changed directly.",
           "options": [
             { "value": "owner_personal", "label": "Owner Personal Funds" },
             { "value": "company_funds", "label": "Company Funds" }
@@ -102,6 +113,8 @@
             { "value": "shipping", "label": "Shipping" },
             { "value": "software", "label": "Software" },
             { "value": "marketing", "label": "Marketing" },
+            { "value": "sales", "label": "Sales" },
+            { "value": "samples", "label": "Samples" },
             { "value": "reimbursement", "label": "Reimbursement" },
             { "value": "funding", "label": "Funding" },
             { "value": "adjustment", "label": "Adjustment" },
@@ -154,16 +167,16 @@
           "required": true,
           "default": 0,
           "format": { "kind": "currency", "currency_field": "te_finance_entry.reporting_currency", "precision": 2 },
-          "help_text": "Positive increases available company funds. Negative reduces company funds."
+          "help_text": "Positive increases available company funds, like sales, funding, or corrections. Negative reduces company funds, like company-paid expenses or reimbursements."
         },
         {
           "id": "te_finance_entry.member_owed_effect_nzd",
           "type": "number",
-          "label": "Owner Owed Effect (NZD)",
+          "label": "Owner Balance Effect (NZD)",
           "required": true,
           "default": 0,
           "format": { "kind": "currency", "currency_field": "te_finance_entry.reporting_currency", "precision": 2 },
-          "help_text": "Positive increases what the company owes the selected owner. Negative reduces that balance."
+          "help_text": "Positive increases what the company owes the selected owner. Negative reduces that balance. Use 0 for company-only transactions."
         },
         { "id": "te_finance_entry.receipt_attachments", "type": "attachments", "label": "Receipts / Proof" },
         {
@@ -277,7 +290,53 @@
             }
           },
           { "id": "contributions", "label": "Contributions", "domain": { "op": "eq", "field": "te_finance_entry.entry_type", "value": "owner_contribution" } },
+          { "id": "income", "label": "Income", "domain": { "op": "eq", "field": "te_finance_entry.entry_type", "value": "company_income" } },
           { "id": "company_paid", "label": "Company Paid", "domain": { "op": "eq", "field": "te_finance_entry.paid_from", "value": "company_funds" } }
+        ]
+      }
+    },
+    {
+      "id": "te_finance_entry.reporting_list",
+      "kind": "list",
+      "entity": "entity.te_finance_entry",
+      "columns": [
+        { "field_id": "te_finance_entry.entry_date" },
+        { "field_id": "te_finance_entry.description" },
+        { "field_id": "te_finance_entry.entry_type" },
+        { "field_id": "te_finance_entry.category" },
+        { "field_id": "te_finance_entry.paid_from" },
+        { "field_id": "te_finance_entry.member_user_id" },
+        { "field_id": "te_finance_entry.amount_nzd" },
+        { "field_id": "te_finance_entry.company_cash_effect_nzd" },
+        { "field_id": "te_finance_entry.member_owed_effect_nzd" },
+        { "field_id": "te_finance_entry.status" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.te_finance_entry_new" }],
+        "open_record_target": "page:te_finance_entry.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search finance reporting...",
+          "fields": [
+            "te_finance_entry.entry_number",
+            "te_finance_entry.description",
+            "te_finance_entry.notes"
+          ]
+        },
+        "filters": [
+          { "id": "all", "label": "All", "domain": { "op": "exists", "field": "te_finance_entry.entry_date" } },
+          { "id": "posted", "label": "Posted", "domain": { "op": "eq", "field": "te_finance_entry.status", "value": "posted" } },
+          { "id": "income", "label": "Income", "domain": { "op": "eq", "field": "te_finance_entry.entry_type", "value": "company_income" } },
+          { "id": "company_paid", "label": "Company Paid", "domain": { "op": "eq", "field": "te_finance_entry.paid_from", "value": "company_funds" } },
+          {
+            "id": "owner_linked",
+            "label": "Owner Linked",
+            "domain": {
+              "op": "in",
+              "field": "te_finance_entry.entry_type",
+              "value": ["owner_expense", "owner_contribution", "reimbursement"]
+            }
+          }
         ]
       }
     },
@@ -364,6 +423,24 @@
       }
     },
     {
+      "id": "te_finance_entry.kanban",
+      "kind": "kanban",
+      "entity": "entity.te_finance_entry",
+      "card": {
+        "title_field": "te_finance_entry.description",
+        "subtitle_fields": [
+          "te_finance_entry.entry_number",
+          "te_finance_entry.entry_date",
+          "te_finance_entry.category"
+        ],
+        "badge_fields": [
+          "te_finance_entry.entry_type",
+          "te_finance_entry.amount_nzd",
+          "te_finance_entry.status"
+        ]
+      }
+    },
+    {
       "id": "te_finance_entry.graph",
       "kind": "graph",
       "entity": "entity.te_finance_entry",
@@ -415,7 +492,7 @@
       "content": [
         {
           "kind": "stat_cards",
-          "columns": 4,
+          "columns": 5,
           "cards": [
             { "id": "company_funds", "label": "Company Funds Available", "entity_id": "entity.te_finance_entry", "measure": "sum:te_finance_entry.company_cash_effect_nzd", "domain": { "op": "eq", "field": "te_finance_entry.status", "value": "posted" }, "format": "currency" },
             { "id": "owner_balance", "label": "Outstanding To Owners", "entity_id": "entity.te_finance_entry", "measure": "sum:te_finance_entry.member_owed_effect_nzd", "domain": { "op": "eq", "field": "te_finance_entry.status", "value": "posted" }, "format": "currency" },
@@ -446,6 +523,20 @@
                   { "op": "eq", "field": "te_finance_entry.entry_type", "value": "owner_contribution" }
                 ]
               }
+            },
+            {
+              "id": "income_received",
+              "label": "Income Received",
+              "entity_id": "entity.te_finance_entry",
+              "measure": "sum:te_finance_entry.company_cash_effect_nzd",
+              "format": "currency",
+              "domain": {
+                "op": "and",
+                "conditions": [
+                  { "op": "eq", "field": "te_finance_entry.status", "value": "posted" },
+                  { "op": "eq", "field": "te_finance_entry.entry_type", "value": "company_income" }
+                ]
+              }
             }
           ]
         },
@@ -460,7 +551,14 @@
               "default_filter_id": "all",
               "modes": [
                 { "mode": "list", "target": "view:te_finance_entry.list" },
-                { "mode": "graph", "target": "view:te_finance_entry.graph" }
+                { "mode": "kanban", "target": "view:te_finance_entry.kanban", "default_group_by": "te_finance_entry.entry_type" },
+                { "mode": "graph", "target": "view:te_finance_entry.graph" },
+                {
+                  "mode": "pivot",
+                  "target": "view:te_finance_entry.reporting_list",
+                  "default_group_by": "te_finance_entry.entry_type",
+                  "default_measure": "sum:te_finance_entry.amount_nzd"
+                }
               ]
             }
           ]
@@ -484,7 +582,14 @@
               "default_filter_id": "all",
               "modes": [
                 { "mode": "list", "target": "view:te_finance_entry.list" },
-                { "mode": "graph", "target": "view:te_finance_entry.graph" }
+                { "mode": "kanban", "target": "view:te_finance_entry.kanban", "default_group_by": "te_finance_entry.status" },
+                { "mode": "graph", "target": "view:te_finance_entry.graph" },
+                {
+                  "mode": "pivot",
+                  "target": "view:te_finance_entry.reporting_list",
+                  "default_group_by": "te_finance_entry.category",
+                  "default_measure": "sum:te_finance_entry.amount_nzd"
+                }
               ]
             }
           ]
@@ -507,7 +612,14 @@
               "default_mode": "list",
               "default_filter_id": "unreimbursed",
               "modes": [
-                { "mode": "list", "target": "view:te_finance_entry.list" }
+                { "mode": "list", "target": "view:te_finance_entry.list" },
+                { "mode": "kanban", "target": "view:te_finance_entry.kanban", "default_group_by": "te_finance_entry.member_user_id" },
+                {
+                  "mode": "pivot",
+                  "target": "view:te_finance_entry.reporting_list",
+                  "default_group_by": "te_finance_entry.member_user_id",
+                  "default_measure": "sum:te_finance_entry.member_owed_effect_nzd"
+                }
               ]
             }
           ]
