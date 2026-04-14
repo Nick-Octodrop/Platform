@@ -27,7 +27,9 @@
         "mode": "inline",
         "items": [
           { "label": "Home", "to": "page:te_product.home_page" },
-          { "label": "Products", "to": "page:te_product.list_page" }
+          { "label": "Products", "to": "page:te_product.list_page" },
+          { "label": "Pricing Review", "to": "page:te_product.pricing_page" },
+          { "label": "Stock Watch", "to": "page:te_product.stock_page" }
         ]
       }
     ]
@@ -333,6 +335,75 @@
           }
         },
         {
+          "id": "te_product.retail_stock_value_nzd",
+          "type": "number",
+          "label": "Retail Stock Value (NZD)",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency": "NZD", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    { "ref": "$current.te_product.stock_on_hand" },
+                    { "ref": "$current.te_product.retail_price" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "te_product.available_retail_value_nzd",
+          "type": "number",
+          "label": "Available Retail Value (NZD)",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency": "NZD", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    { "ref": "$current.te_product.stock_available" },
+                    { "ref": "$current.te_product.retail_price" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "te_product.stock_gross_profit_value_nzd",
+          "type": "number",
+          "label": "Stock Gross Profit Value (NZD)",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency": "NZD", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "sub",
+                  "args": [
+                    { "ref": "$current.te_product.retail_stock_value_nzd" },
+                    { "ref": "$current.te_product.inventory_value_nzd" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
           "id": "te_product.is_in_stock",
           "type": "bool",
           "label": "In Stock",
@@ -425,7 +496,9 @@
         "scope": "module_and_global",
         "measures": [
           "count",
-          "sum:te_product.inventory_value_nzd"
+          "sum:te_product.inventory_value_nzd",
+          "sum:te_product.retail_stock_value_nzd",
+          "sum:te_product.stock_gross_profit_value_nzd"
         ],
         "group_bys": [
           "te_product.status",
@@ -540,6 +613,122 @@
       }
     },
     {
+      "id": "te_product.pricing_list",
+      "kind": "list",
+      "entity": "entity.te_product",
+      "columns": [
+        { "field_id": "te_product.sku" },
+        { "field_id": "te_product.title" },
+        { "field_id": "te_product.status" },
+        { "field_id": "te_product.buy_currency" },
+        { "field_id": "te_product.buy_price" },
+        { "field_id": "te_product.converted_buy_price_nzd" },
+        { "field_id": "te_product.standard_cost_nzd" },
+        { "field_id": "te_product.effective_cost_nzd" },
+        { "field_id": "te_product.retail_price" },
+        { "field_id": "te_product.gross_margin_nzd" },
+        { "field_id": "te_product.gross_margin_percent" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.te_product_new" }],
+        "open_record_target": "page:te_product.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search products by SKU, title, or pricing notes...",
+          "fields": ["te_product.sku", "te_product.title", "te_product.variant_name", "te_product.notes"]
+        },
+        "filters": [
+          { "id": "active", "label": "Active", "domain": { "op": "eq", "field": "te_product.status", "value": "active" } },
+          {
+            "id": "usd_buy_side",
+            "label": "USD Buy Side",
+            "domain": {
+              "op": "and",
+              "conditions": [
+                { "op": "eq", "field": "te_product.status", "value": "active" },
+                { "op": "eq", "field": "te_product.buy_currency", "value": "USD" }
+              ]
+            }
+          },
+          {
+            "id": "low_margin",
+            "label": "Low Margin",
+            "domain": {
+              "op": "and",
+              "conditions": [
+                { "op": "eq", "field": "te_product.status", "value": "active" },
+                { "op": "lt", "field": "te_product.gross_margin_percent", "value": 35 }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "te_product.stock_list",
+      "kind": "list",
+      "entity": "entity.te_product",
+      "columns": [
+        { "field_id": "te_product.sku" },
+        { "field_id": "te_product.title" },
+        { "field_id": "te_product.status" },
+        { "field_id": "te_product.track_stock" },
+        { "field_id": "te_product.stock_on_hand" },
+        { "field_id": "te_product.stock_reserved" },
+        { "field_id": "te_product.stock_available" },
+        { "field_id": "te_product.reorder_point" },
+        { "field_id": "te_product.reorder_qty" },
+        { "field_id": "te_product.inventory_value_nzd" },
+        { "field_id": "te_product.retail_stock_value_nzd" },
+        { "field_id": "te_product.available_retail_value_nzd" },
+        { "field_id": "te_product.stock_gross_profit_value_nzd" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.te_product_new" }],
+        "open_record_target": "page:te_product.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search stock items, SKUs, or inventory notes...",
+          "fields": ["te_product.sku", "te_product.title", "te_product.variant_name", "te_product.notes"]
+        },
+        "filters": [
+          {
+            "id": "tracked_active",
+            "label": "Tracked Active",
+            "domain": {
+              "op": "and",
+              "conditions": [
+                { "op": "eq", "field": "te_product.status", "value": "active" },
+                { "op": "eq", "field": "te_product.track_stock", "value": true }
+              ]
+            }
+          },
+          {
+            "id": "low_stock",
+            "label": "Low Stock",
+            "domain": {
+              "op": "and",
+              "conditions": [
+                { "op": "eq", "field": "te_product.status", "value": "active" },
+                { "op": "eq", "field": "te_product.is_low_stock", "value": true }
+              ]
+            }
+          },
+          {
+            "id": "out_of_stock",
+            "label": "Out Of Stock",
+            "domain": {
+              "op": "and",
+              "conditions": [
+                { "op": "eq", "field": "te_product.status", "value": "active" },
+                { "op": "eq", "field": "te_product.is_out_of_stock", "value": true }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
       "id": "te_product.form",
       "kind": "form",
       "entity": "entity.te_product",
@@ -596,7 +785,10 @@
             "te_product.stock_available",
             "te_product.reorder_point",
             "te_product.reorder_qty",
-            "te_product.inventory_value_nzd"
+            "te_product.inventory_value_nzd",
+            "te_product.retail_stock_value_nzd",
+            "te_product.available_retail_value_nzd",
+            "te_product.stock_gross_profit_value_nzd"
           ]
         },
         {
@@ -651,7 +843,10 @@
           "te_product.stock_on_hand",
           "te_product.stock_reserved",
           "te_product.reorder_point",
-          "te_product.reorder_qty"
+          "te_product.reorder_qty",
+          "te_product.retail_stock_value_nzd",
+          "te_product.available_retail_value_nzd",
+          "te_product.stock_gross_profit_value_nzd"
         ]
       }
     },
@@ -670,6 +865,16 @@
           "te_product.retail_price",
           "te_product.stock_available"
         ]
+      }
+    },
+    {
+      "id": "te_product.graph",
+      "kind": "graph",
+      "entity": "entity.te_product",
+      "default": {
+        "type": "bar",
+        "group_by": "te_product.status",
+        "measure": "count"
       }
     }
   ],
@@ -741,11 +946,13 @@
             {
               "kind": "view_modes",
               "entity_id": "entity.te_product",
-              "default_mode": "kanban",
+              "default_mode": "list",
               "default_filter_id": "active",
               "modes": [
                 { "mode": "list", "target": "view:te_product.list" },
-                { "mode": "kanban", "target": "view:te_product.kanban", "default_group_by": "te_product.status" }
+                { "mode": "kanban", "target": "view:te_product.kanban", "default_group_by": "te_product.status" },
+                { "mode": "graph", "target": "view:te_product.graph" },
+                { "mode": "pivot", "target": "view:te_product.list", "default_group_by": "te_product.status" }
               ]
             }
           ]
@@ -765,11 +972,106 @@
             {
               "kind": "view_modes",
               "entity_id": "entity.te_product",
-              "default_mode": "kanban",
+              "default_mode": "list",
               "default_filter_id": "active",
               "modes": [
                 { "mode": "list", "target": "view:te_product.list" },
-                { "mode": "kanban", "target": "view:te_product.kanban", "default_group_by": "te_product.status" }
+                { "mode": "kanban", "target": "view:te_product.kanban", "default_group_by": "te_product.status" },
+                { "mode": "graph", "target": "view:te_product.graph" },
+                { "mode": "pivot", "target": "view:te_product.list", "default_group_by": "te_product.status" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_product.pricing_page",
+      "title": "Pricing Review",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_product",
+              "default_mode": "list",
+              "default_filter_id": "active",
+              "modes": [
+                { "mode": "list", "target": "view:te_product.pricing_list" },
+                { "mode": "graph", "target": "view:te_product.graph" },
+                { "mode": "pivot", "target": "view:te_product.pricing_list", "default_group_by": "te_product.buy_currency" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_product.stock_page",
+      "title": "Stock Watch",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "stat_cards",
+          "columns": 4,
+          "cards": [
+            {
+              "id": "total_stock_on_hand",
+              "label": "Total Stock On Hand",
+              "entity_id": "entity.te_product",
+              "measure": "sum:te_product.stock_on_hand",
+              "domain": { "op": "eq", "field": "te_product.track_stock", "value": true },
+              "format": "number"
+            },
+            {
+              "id": "total_inventory_value",
+              "label": "Total Inventory Value",
+              "entity_id": "entity.te_product",
+              "measure": "sum:te_product.inventory_value_nzd",
+              "domain": { "op": "eq", "field": "te_product.track_stock", "value": true },
+              "format": "currency"
+            },
+            {
+              "id": "total_retail_stock_value",
+              "label": "Total Retail Stock Value",
+              "entity_id": "entity.te_product",
+              "measure": "sum:te_product.retail_stock_value_nzd",
+              "domain": { "op": "eq", "field": "te_product.track_stock", "value": true },
+              "format": "currency"
+            },
+            {
+              "id": "total_stock_profit_value",
+              "label": "Total Stock Profit Value",
+              "entity_id": "entity.te_product",
+              "measure": "sum:te_product.stock_gross_profit_value_nzd",
+              "domain": { "op": "eq", "field": "te_product.track_stock", "value": true },
+              "format": "currency"
+            }
+          ]
+        },
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_product",
+              "default_mode": "list",
+              "default_filter_id": "tracked_active",
+              "modes": [
+                { "mode": "list", "target": "view:te_product.stock_list" },
+                { "mode": "graph", "target": "view:te_product.graph" },
+                {
+                  "mode": "pivot",
+                  "target": "view:te_product.stock_list",
+                  "default_group_by": "te_product.status",
+                  "default_measure": "sum:te_product.retail_stock_value_nzd"
+                }
               ]
             }
           ]

@@ -2681,8 +2681,18 @@ def _enforce_lookup_domains(entity: dict, data: dict) -> list[dict]:
         target = field.get("entity")
         if not isinstance(target, str) or not target:
             continue
-        target_entity = target[7:] if target.startswith("entity.") else target
-        candidate = generic_records.get(target_entity, value)
+        target_entity = _normalize_entity_id(target)
+        candidate = None
+        for candidate_entity_id in (
+            target_entity,
+            target_entity[7:] if isinstance(target_entity, str) and target_entity.startswith("entity.") else None,
+            target,
+        ):
+            if not isinstance(candidate_entity_id, str) or not candidate_entity_id:
+                continue
+            candidate = generic_records.get(candidate_entity_id, value)
+            if candidate:
+                break
         if not candidate:
             errors.append(
                 {
@@ -3421,6 +3431,26 @@ def _recompute_record_for_entity(entity_def: dict, record: dict) -> dict:
     if not has_computed_fields(entity_def):
         return dict(record or {})
     return recompute_record(entity_def, record or {}, _fetch_records_for_compute)
+
+
+def _recompute_store_items_for_entity(entity_def: dict, items: list[dict] | None) -> list[dict]:
+    if not has_computed_fields(entity_def) or not isinstance(items, list):
+        return items if isinstance(items, list) else []
+    recomputed_items: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            recomputed_items.append(item)
+            continue
+        record_id, record = _unwrap_store_record(item)
+        if not isinstance(record, dict):
+            recomputed_items.append(item)
+            continue
+        next_item = dict(item)
+        next_item["record"] = _recompute_record_for_entity(entity_def, record)
+        if isinstance(record_id, str) and record_id:
+            next_item["record_id"] = record_id
+        recomputed_items.append(next_item)
+    return recomputed_items
 
 
 def _persist_computed_record(entity_id: str, entity_def: dict, record_id: str, record: dict) -> dict | None:
@@ -32566,6 +32596,7 @@ async def aggregate_records(
     if denied:
         return denied
     actor_ctx = _actor_domain_context(actor)
+    entity_has_computed = has_computed_fields(found[1])
     if not isinstance(group_by, str) or not group_by:
         return _error_response("AGGREGATE_INVALID", "group_by is required", "group_by", status=400)
     fields_list = [f.strip() for f in search_fields.split(",")] if isinstance(search_fields, str) and search_fields.strip() else None
@@ -32589,7 +32620,7 @@ async def aggregate_records(
     if not isinstance(measure, str) or not measure:
         measure = "count"
     results = None
-    if _records_sql_fast_path_allowed(actor, entity_id, parsed_domain):
+    if not entity_has_computed and _records_sql_fast_path_allowed(actor, entity_id, parsed_domain):
         results = _aggregate_records_sql_fast(
             entity_id=entity_id,
             group_by=group_by,
@@ -32600,6 +32631,8 @@ async def aggregate_records(
         )
     if results is None:
         items = generic_records.list(entity_id, limit=limit_cap, q=q, search_fields=fields_list)
+        if entity_has_computed:
+            items = _recompute_store_items_for_entity(found[1], items)
         if parsed_domain:
             items = _filter_records_by_domain(items, parsed_domain, {}, actor_ctx)
         items = _filter_record_items_for_actor(actor, found[0], found[1], items)
@@ -32653,6 +32686,7 @@ async def pivot_records(
     if denied:
         return denied
     actor_ctx = _actor_domain_context(actor)
+    entity_has_computed = has_computed_fields(found[1])
     if not isinstance(row_group_by, str) or not row_group_by:
         return _error_response("PIVOT_INVALID", "row_group_by is required", "row_group_by", status=400)
     fields_list = [f.strip() for f in search_fields.split(",")] if isinstance(search_fields, str) and search_fields.strip() else None
@@ -32676,7 +32710,7 @@ async def pivot_records(
     if not isinstance(measure, str) or not measure:
         measure = "count"
     sql_result = None
-    if _records_sql_fast_path_allowed(actor, entity_id, parsed_domain):
+    if not entity_has_computed and _records_sql_fast_path_allowed(actor, entity_id, parsed_domain):
         sql_result = _pivot_records_sql_fast(
             entity_id=entity_id,
             row_group_by=row_group_by,
@@ -32695,6 +32729,8 @@ async def pivot_records(
         grand_total = sql_result["grand_total"]
     else:
         items = generic_records.list(entity_id, limit=limit_cap, q=q, search_fields=fields_list)
+        if entity_has_computed:
+            items = _recompute_store_items_for_entity(found[1], items)
         if parsed_domain:
             items = _filter_records_by_domain(items, parsed_domain, {}, actor_ctx)
         items = _filter_record_items_for_actor(actor, found[0], found[1], items)
@@ -33071,6 +33107,7 @@ async def system_dashboard_query(request: Request) -> dict:
     found = _find_entity_def(request, entity_id)
     if not found:
         return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "source_key", status=404)
+    entity_has_computed = has_computed_fields(found[1])
     limit_cap = max(1, min(int(limit or 2000), 5000))
     date_field_effective = date_field if isinstance(date_field, str) and date_field else (cfg.get("date_field") if isinstance(cfg.get("date_field"), str) else None)
     fields: list[str] = []
@@ -33091,7 +33128,7 @@ async def system_dashboard_query(request: Request) -> dict:
         logger.info("cache_hit=dashboard_query key=%s", cache_key)
         return cached
     sql_result = None
-    if _records_sql_fast_path_allowed(actor, entity_id, source_filter, allow_simple_domain=True):
+    if not entity_has_computed and _records_sql_fast_path_allowed(actor, entity_id, source_filter, allow_simple_domain=True):
         try:
             sql_result = _dashboard_query_sql_fast(
                 entity_id=entity_id,
@@ -33113,7 +33150,14 @@ async def system_dashboard_query(request: Request) -> dict:
         _resp_cache_set(cache_key, response)
         logger.info("cache_miss=dashboard_query key=%s", cache_key)
         return response
-    items = _records_list_page_all(entity_id, fields=fields or None, q=q, cap=limit_cap)
+    items = _records_list_page_all(
+        entity_id,
+        fields=None if entity_has_computed else (fields or None),
+        q=q,
+        cap=limit_cap,
+    )
+    if entity_has_computed:
+        items = _recompute_store_items_for_entity(found[1], items)
     items = _filter_record_items_for_actor(actor, module_id if isinstance(module_id, str) else found[0], found[1], items)
     start_dt = _to_datetime(start) if isinstance(start, str) and start else None
     end_dt = _to_datetime(end) if isinstance(end, str) and end else None
@@ -33266,6 +33310,7 @@ async def list_generic_records(
         except Exception as exc:
             return _error_response("DOMAIN_INVALID", "domain must be valid JSON", "domain", detail={"error": str(exc)}, status=400)
     actor_ctx = _actor_domain_context(actor)
+    entity_has_computed = has_computed_fields(found[1])
     cache_key = (
         f"records:list:{get_org_id()}:{entity_id}:{limit_cap}:{offset_val}:{cursor or ''}:{fields or ''}:"
         f"{search_fields or ''}:{q or ''}:{_domain_hash(parsed_domain)}:{_context_hash(actor_ctx)}"
@@ -33277,7 +33322,7 @@ async def list_generic_records(
     field_ids = [f.strip() for f in fields.split(",") if f.strip()] if isinstance(fields, str) and fields.strip() else None
     use_cursor = isinstance(cursor, str) and cursor.strip()
     fast_page = None
-    if (use_cursor or offset_val == 0) and parsed_domain and _records_sql_fast_path_allowed(actor, entity_id, parsed_domain, allow_simple_domain=True):
+    if (use_cursor or offset_val == 0) and parsed_domain and not entity_has_computed and _records_sql_fast_path_allowed(actor, entity_id, parsed_domain, allow_simple_domain=True):
         fast_page = _records_list_page_with_simple_domain(
             entity_id=entity_id,
             domain=parsed_domain,
@@ -33296,11 +33341,13 @@ async def list_generic_records(
             cursor=cursor,
             q=q,
             search_fields=fields_list,
-            fields=None if parsed_domain else field_ids,
+            fields=None if (parsed_domain or entity_has_computed) else field_ids,
         )
     else:
         items = generic_records.list(entity_id, limit=limit_cap, offset=offset_val, q=q, search_fields=fields_list)
         next_cursor = None
+    if entity_has_computed:
+        items = _recompute_store_items_for_entity(found[1], items)
     if parsed_domain and fast_page is None:
         items = _filter_records_by_domain(items, parsed_domain, {}, actor_ctx)
     if isinstance(limit_cap, int) and limit_cap > 0:
@@ -34136,6 +34183,7 @@ async def get_generic_record(request: Request, entity_id: str, record_id: str) -
     resolved_id, resolved_record = _unwrap_store_record(record if isinstance(record, dict) else None)
     if not isinstance(resolved_id, str) or not isinstance(resolved_record, dict):
         return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
+    resolved_record = _recompute_record_for_entity(found[1], resolved_record)
     if not _record_visible_for_actor(actor, found[0], entity_id, resolved_record):
         return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
     response = _ok_response({"record": _mask_record_for_actor(actor, found[0], found[1], resolved_record), "record_id": resolved_id})

@@ -1054,6 +1054,7 @@ function InlineLineItemsTable({
   canCreateLookup,
   onRefreshParent,
 }) {
+  const { t } = useI18n();
   const childEntityId = config?.entity_id || null;
   const parentField = config?.parent_field || null;
   const itemField = config?.item_lookup_field || null;

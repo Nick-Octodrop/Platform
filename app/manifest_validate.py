@@ -60,6 +60,7 @@ ALLOWED_V1_BLOCK_KEYS = {
     "modes",
     "default_mode",
     "default_group_by",
+    "default_measure",
     "default_filter_id",
     "record_domain",
     "compact",
@@ -92,6 +93,7 @@ ALLOWED_V1_VIEW_MODES_KEYS = {
     "modes",
     "default_mode",
     "default_group_by",
+    "default_measure",
     "default_filter_id",
     "record_domain",
     "compact",
@@ -99,7 +101,7 @@ ALLOWED_V1_VIEW_MODES_KEYS = {
     "page_size",
 }
 ALLOWED_V1_RELATED_LIST_KEYS = {"kind", "entity_id", "target", "view", "record_domain", "create_defaults", "create_modal"}
-ALLOWED_V1_VIEW_MODE_ITEM_KEYS = {"mode", "target", "default_group_by"}
+ALLOWED_V1_VIEW_MODE_ITEM_KEYS = {"mode", "target", "default_group_by", "default_measure"}
 MAX_BLOCK_DEPTH = 6
 MAX_CONDITION_DEPTH = 6
 ALLOWED_WORKFLOW_KEYS = {"id", "entity", "status_field", "states", "transitions", "required_fields_by_state"}

@@ -1915,7 +1915,7 @@ export default function ViewModesBlock({
       : 25;
   const pivotRowGroupBy = pivotRowParam || effectiveGroupByParam || activeModeDef?.default_group_by || block?.default_group_by || "";
   const pivotColGroupBy = pivotColParam || "";
-  const pivotMeasure = pivotMeasureParam || "count";
+  const pivotMeasure = pivotMeasureParam || activeModeDef?.default_measure || block?.default_measure || "count";
 
   const savedFilterList = useMemo(
     () =>
@@ -2070,6 +2070,10 @@ export default function ViewModesBlock({
     if (activeMode === "pivot") {
       if (!params.get("pivot_row_group_by") && effectiveGroupByParam) {
         params.set("pivot_row_group_by", effectiveGroupByParam);
+        changed = true;
+      }
+      if (!params.get("pivot_measure") && (activeModeDef?.default_measure || block?.default_measure)) {
+        params.set("pivot_measure", activeModeDef?.default_measure || block?.default_measure);
         changed = true;
       }
     }

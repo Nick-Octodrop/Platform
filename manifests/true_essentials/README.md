@@ -6,6 +6,7 @@
 - Product master records for the Shopify-facing catalog
 - Product forms designed as operational work surfaces with clean pricing, Shopify, notes, and activity structure
 - Products now support retail sell pricing in NZD alongside separate buy-side pricing, FX conversion into NZD, landed-cost overrides, gross margin visibility, and manual stock controls
+- Catalog navigation now includes dedicated pricing-review and stock-watch pages, plus graph and pivot analysis on the main products page
 - Supplier-linked product pricing now lives in `te_sourcing` to keep module installs clean and avoid circular dependencies
 
 ### `te_suppliers.json`
