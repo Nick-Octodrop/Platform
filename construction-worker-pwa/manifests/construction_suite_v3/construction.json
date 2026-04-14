@@ -1799,35 +1799,9 @@
         },
         {
           "id": "material_log.material_type",
-          "type": "enum",
+          "type": "string",
           "label": "Material Type",
-          "required": true,
-          "options": [
-            {
-              "value": "cement",
-              "label": "Cement"
-            },
-            {
-              "value": "sand",
-              "label": "Sand"
-            },
-            {
-              "value": "steel",
-              "label": "Steel"
-            },
-            {
-              "value": "blocks",
-              "label": "Blocks"
-            },
-            {
-              "value": "gravel",
-              "label": "Gravel"
-            },
-            {
-              "value": "other",
-              "label": "Other"
-            }
-          ]
+          "required": true
         },
         {
           "id": "material_log.quantity",
@@ -1837,31 +1811,9 @@
         },
         {
           "id": "material_log.unit",
-          "type": "enum",
+          "type": "string",
           "label": "Unit",
-          "default": "bag",
-          "options": [
-            {
-              "value": "bag",
-              "label": "Bag"
-            },
-            {
-              "value": "kg",
-              "label": "kg"
-            },
-            {
-              "value": "ton",
-              "label": "Ton"
-            },
-            {
-              "value": "m3",
-              "label": "m3"
-            },
-            {
-              "value": "piece",
-              "label": "Piece"
-            }
-          ]
+          "required": true
         },
         {
           "id": "material_log.unit_cost",

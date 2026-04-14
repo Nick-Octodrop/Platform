@@ -2555,9 +2555,16 @@ function AppView({
                 );
               }
               const value = getFieldValue(activeManifestModal.draft, fieldId);
+              const isBooleanField = field?.type === "bool" || field?.type === "boolean";
               return (
                 <fieldset key={fieldId} className="fieldset">
-                  <legend className="fieldset-legend text-xs uppercase opacity-60 tracking-wide">
+                  <legend
+                    className={[
+                      "fieldset-legend text-xs uppercase tracking-wide",
+                      isBooleanField ? "select-none opacity-0 pointer-events-none" : "opacity-60",
+                    ].join(" ")}
+                    aria-hidden={isBooleanField ? "true" : undefined}
+                  >
                     {field.label || field.id}
                   </legend>
                   {renderField(

@@ -281,13 +281,22 @@ export function renderField(field, value, onChange, readonly, record = null) {
     case "bool":
     case "boolean":
       return (
-        <input
-          className="checkbox"
-          type="checkbox"
-          disabled={readonly || field.readonly}
-          checked={Boolean(value)}
-          onChange={(e) => onChange(e.target.checked)}
-        />
+        <label
+          className={[
+            "input input-bordered flex w-full items-center justify-start gap-3 px-4 text-sm transition-colors",
+            readonly || field.readonly ? "cursor-default opacity-70" : "cursor-pointer hover:border-base-content/20",
+          ].join(" ")}
+          style={FIELD_TEXT_STYLE}
+        >
+          <input
+            className="checkbox checkbox-sm shrink-0"
+            type="checkbox"
+            disabled={readonly || field.readonly}
+            checked={Boolean(value)}
+            onChange={(e) => onChange(e.target.checked)}
+          />
+          <span className="min-w-0 flex-1 text-sm">{field.label || field.id}</span>
+        </label>
       );
     case "uuid":
       return (

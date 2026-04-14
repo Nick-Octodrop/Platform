@@ -172,7 +172,7 @@
         },
         {
           "id": "construction_site.address",
-          "type": "text",
+          "type": "string",
           "label": "Address",
           "required_when": {
             "op": "eq",
@@ -180,6 +180,22 @@
             "value": "active"
           },
           "label_key": "construction.entities.construction_site.fields.address.label"
+        },
+        {
+          "id": "construction_site.latitude",
+          "type": "number",
+          "label": "Latitude"
+        },
+        {
+          "id": "construction_site.longitude",
+          "type": "number",
+          "label": "Longitude"
+        },
+        {
+          "id": "construction_site.allowed_radius_m",
+          "type": "number",
+          "label": "Allowed Radius (m)",
+          "default": 0
         },
         {
           "id": "construction_site.city",
@@ -194,10 +210,21 @@
           "label_key": "construction.entities.construction_site.fields.region.label"
         },
         {
+          "id": "construction_site.postcode",
+          "type": "string",
+          "label": "Postcode"
+        },
+        {
           "id": "construction_site.country",
           "type": "string",
           "label": "Country",
           "label_key": "construction.entities.construction_site.fields.country.label"
+        },
+        {
+          "id": "construction_site.place_id",
+          "type": "string",
+          "label": "Google Place ID",
+          "readonly": true
         },
         {
           "id": "construction_site.supervisor_id",
@@ -1400,6 +1427,26 @@
           "label_key": "construction.entities.time_entry.fields.check_in_at.label"
         },
         {
+          "id": "time_entry.check_in_latitude",
+          "type": "number",
+          "label": "Check In Latitude"
+        },
+        {
+          "id": "time_entry.check_in_longitude",
+          "type": "number",
+          "label": "Check In Longitude"
+        },
+        {
+          "id": "time_entry.check_in_accuracy_m",
+          "type": "number",
+          "label": "Check In GPS Accuracy (m)"
+        },
+        {
+          "id": "time_entry.check_in_distance_from_site_m",
+          "type": "number",
+          "label": "Check In Distance From Site (m)"
+        },
+        {
           "id": "time_entry.check_out_at",
           "type": "datetime",
           "label": "Check Out",
@@ -1412,6 +1459,26 @@
             ]
           },
           "label_key": "construction.entities.time_entry.fields.check_out_at.label"
+        },
+        {
+          "id": "time_entry.check_out_latitude",
+          "type": "number",
+          "label": "Check Out Latitude"
+        },
+        {
+          "id": "time_entry.check_out_longitude",
+          "type": "number",
+          "label": "Check Out Longitude"
+        },
+        {
+          "id": "time_entry.check_out_accuracy_m",
+          "type": "number",
+          "label": "Check Out GPS Accuracy (m)"
+        },
+        {
+          "id": "time_entry.check_out_distance_from_site_m",
+          "type": "number",
+          "label": "Check Out Distance From Site (m)"
         },
         {
           "id": "time_entry.break_minutes",
@@ -1514,6 +1581,16 @@
           "type": "text",
           "label": "Notes",
           "label_key": "construction.entities.time_entry.fields.notes.label"
+        },
+        {
+          "id": "time_entry.check_in_photo",
+          "type": "attachments",
+          "label": "Check In Photo"
+        },
+        {
+          "id": "time_entry.check_out_photo",
+          "type": "attachments",
+          "label": "Check Out Photo"
         },
         {
           "id": "time_entry.created_at",
@@ -2384,47 +2461,9 @@
         },
         {
           "id": "material_log.material_type",
-          "type": "enum",
+          "type": "string",
           "label": "Material Type",
           "required": true,
-          "options": [
-            {
-              "value": "cement",
-              "label": "Cement",
-              "status_label_key": "construction.entities.material_log.fields.material_type.options.cement",
-              "label_key": "construction.entities.material_log.fields.material_type.options.cement"
-            },
-            {
-              "value": "sand",
-              "label": "Sand",
-              "status_label_key": "construction.entities.material_log.fields.material_type.options.sand",
-              "label_key": "construction.entities.material_log.fields.material_type.options.sand"
-            },
-            {
-              "value": "steel",
-              "label": "Steel",
-              "status_label_key": "construction.entities.material_log.fields.material_type.options.steel",
-              "label_key": "construction.entities.material_log.fields.material_type.options.steel"
-            },
-            {
-              "value": "blocks",
-              "label": "Blocks",
-              "status_label_key": "construction.entities.material_log.fields.material_type.options.blocks",
-              "label_key": "construction.entities.material_log.fields.material_type.options.blocks"
-            },
-            {
-              "value": "gravel",
-              "label": "Gravel",
-              "status_label_key": "construction.entities.material_log.fields.material_type.options.gravel",
-              "label_key": "construction.entities.material_log.fields.material_type.options.gravel"
-            },
-            {
-              "value": "other",
-              "label": "Other",
-              "status_label_key": "construction.entities.material_log.fields.material_type.options.other",
-              "label_key": "construction.entities.material_log.fields.material_type.options.other"
-            }
-          ],
           "label_key": "construction.entities.material_log.fields.material_type.label"
         },
         {
@@ -2441,41 +2480,9 @@
         },
         {
           "id": "material_log.unit",
-          "type": "enum",
+          "type": "string",
           "label": "Unit",
-          "default": "bag",
-          "options": [
-            {
-              "value": "bag",
-              "label": "Bag",
-              "status_label_key": "construction.entities.material_log.fields.unit.options.bag",
-              "label_key": "construction.entities.material_log.fields.unit.options.bag"
-            },
-            {
-              "value": "kg",
-              "label": "kg",
-              "status_label_key": "construction.entities.material_log.fields.unit.options.kg",
-              "label_key": "construction.entities.material_log.fields.unit.options.kg"
-            },
-            {
-              "value": "ton",
-              "label": "Ton",
-              "status_label_key": "construction.entities.material_log.fields.unit.options.ton",
-              "label_key": "construction.entities.material_log.fields.unit.options.ton"
-            },
-            {
-              "value": "m3",
-              "label": "m3",
-              "status_label_key": "construction.entities.material_log.fields.unit.options.m3",
-              "label_key": "construction.entities.material_log.fields.unit.options.m3"
-            },
-            {
-              "value": "piece",
-              "label": "Piece",
-              "status_label_key": "construction.entities.material_log.fields.unit.options.piece",
-              "label_key": "construction.entities.material_log.fields.unit.options.piece"
-            }
-          ],
+          "required": true,
           "label_key": "construction.entities.material_log.fields.unit.label"
         },
         {
@@ -4056,14 +4063,26 @@
           "fields": [
             "construction_site.name",
             "construction_site.code",
+            "construction_site.address",
             "construction_site.city",
             "construction_site.region",
+            "construction_site.postcode",
             "construction_site.country",
             "construction_site.supervisor_id",
-            "construction_site.phone",
-            "construction_site.address"
+            "construction_site.phone"
           ],
           "section_title_key": "construction.views.form.sections.general.title"
+        },
+        {
+          "id": "geofence",
+          "title": "Geofence",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "construction_site.latitude",
+            "construction_site.longitude",
+            "construction_site.allowed_radius_m"
+          ]
         },
         {
           "id": "notes",
@@ -4096,6 +4115,13 @@
               "tab_label_key": "construction.views.form.sections.general.title",
               "sections": [
                 "general"
+              ]
+            },
+            {
+              "id": "geofence_tab",
+              "label": "Geofence",
+              "sections": [
+                "geofence"
               ]
             },
             {
@@ -5430,6 +5456,24 @@
           "section_title_key": "construction.views.form.sections.entry.title"
         },
         {
+          "id": "verification",
+          "title": "Verification",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "time_entry.check_in_latitude",
+            "time_entry.check_in_longitude",
+            "time_entry.check_in_accuracy_m",
+            "time_entry.check_in_distance_from_site_m",
+            "time_entry.check_out_latitude",
+            "time_entry.check_out_longitude",
+            "time_entry.check_out_accuracy_m",
+            "time_entry.check_out_distance_from_site_m",
+            "time_entry.check_in_photo",
+            "time_entry.check_out_photo"
+          ]
+        },
+        {
           "id": "notes",
           "title": "Notes",
           "fields": [
@@ -5463,6 +5507,13 @@
               "tab_label_key": "construction.views.form.sections.entry.title",
               "sections": [
                 "entry"
+              ]
+            },
+            {
+              "id": "verification_tab",
+              "label": "Verification",
+              "sections": [
+                "verification"
               ]
             },
             {
@@ -7013,8 +7064,7 @@
                 }
               ]
             }
-          ],
-          "title_key": "construction.pages.dashboard_page.blocks.2.title"
+          ]
         },
         {
           "kind": "grid",
@@ -7050,8 +7100,7 @@
                         }
                       ]
                     }
-                  ],
-                  "title_key": "construction.pages.dashboard_page.blocks.3.items.1.content.1.title"
+                  ]
                 }
               ]
             },
@@ -7084,15 +7133,13 @@
                         }
                       ]
                     }
-                  ],
-                  "title_key": "construction.pages.dashboard_page.blocks.3.items.2.content.1.title"
+                  ]
                 }
               ]
             }
           ]
         }
-      ],
-      "title_key": "construction.pages.dashboard_page.title"
+      ]
     },
     {
       "id": "construction_site.list_page",
@@ -8806,8 +8853,7 @@
                         }
                       ]
                     }
-                  ],
-                  "title_key": "construction.pages.cost_report_page.blocks.1.items.1.content.1.title"
+                  ]
                 }
               ]
             },
@@ -8832,8 +8878,7 @@
                         }
                       ]
                     }
-                  ],
-                  "title_key": "construction.pages.cost_report_page.blocks.1.items.2.content.1.title"
+                  ]
                 }
               ]
             },
@@ -8965,7 +9010,6 @@
             "id": "projects_by_status",
             "type": "group",
             "title": "Projects by Status",
-            "title_key": "construction.dashboard.projects_by_status",
             "group_by": "construction_project.status",
             "measure": "count"
           },
@@ -8973,7 +9017,6 @@
             "id": "project_cost_to_date",
             "type": "group",
             "title": "Cost To Date by Project",
-            "title_key": "construction.dashboard.project_cost_to_date",
             "group_by": "construction_project.name",
             "measure": "sum:construction_project.total_cost"
           }
@@ -9045,7 +9088,6 @@
             "id": "labour_hours_by_project",
             "type": "group",
             "title": "Labour Hours by Project",
-            "title_key": "construction.dashboard.labour_hours_by_project",
             "group_by": "time_entry.project_id",
             "measure": "sum:time_entry.hours_worked"
           }
@@ -9070,7 +9112,6 @@
             "id": "daily_reports_by_project",
             "type": "group",
             "title": "Daily Reports by Project",
-            "title_key": "construction.dashboard.daily_reports_by_project",
             "group_by": "construction_daily_report.project_id",
             "measure": "count"
           }
@@ -9145,7 +9186,6 @@
             "id": "materials_by_type",
             "type": "group",
             "title": "Material Usage by Type",
-            "title_key": "construction.dashboard.materials_by_type",
             "group_by": "material_log.material_type",
             "measure": "sum:material_log.quantity"
           }
@@ -9189,7 +9229,6 @@
             "id": "costs_by_project",
             "type": "group",
             "title": "Costs by Project",
-            "title_key": "construction.dashboard.costs_by_project",
             "group_by": "construction_expense.project_id",
             "measure": "sum:construction_expense.amount"
           }

@@ -337,7 +337,7 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(), geolocation=(self)")
     response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
     if _IS_PROD_ENV or request.url.scheme == "https":
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
@@ -4111,10 +4111,10 @@ def _dashboard_query_sql_fast(
                 f"when trim(base.data ->> %s) ~ '{_SAFE_NUMERIC_TEXT_RE}' then (base.data ->> %s)::double precision "
                 "else 0 end), 0) as value"
             )
-            query_params.extend(outer_params + [measure_field, measure_field, measure_field])
+            query_params.extend([measure_field, measure_field, measure_field] + outer_params)
         elif measure_kind == "count_distinct" and measure_field:
             select_sql = "count(distinct nullif(trim(coalesce(base.data ->> %s, '')), '')) as value"
-            query_params.extend(outer_params + [measure_field])
+            query_params.extend([measure_field] + outer_params)
         else:
             select_sql = "count(*)::bigint as value"
             query_params.extend(outer_params)
@@ -4156,10 +4156,10 @@ def _dashboard_query_sql_fast(
             f"when trim(base.data ->> %s) ~ '{_SAFE_NUMERIC_TEXT_RE}' then (base.data ->> %s)::double precision "
             "else 0 end), 0) as value"
         )
-        query_params.extend(outer_params + [measure_field, measure_field, measure_field])
+        query_params.extend([measure_field, measure_field, measure_field] + outer_params)
     elif measure_kind == "count_distinct" and measure_field:
         value_sql = "count(distinct nullif(trim(coalesce(base.data ->> %s, '')), ''))::double precision as value"
-        query_params.extend(outer_params + [measure_field])
+        query_params.extend([measure_field] + outer_params)
     else:
         value_sql = "count(*)::double precision as value"
         query_params.extend(outer_params)

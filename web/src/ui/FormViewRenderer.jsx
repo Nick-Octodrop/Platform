@@ -38,6 +38,23 @@ function resolveAddressAutocompleteMapping(fieldId) {
       regionField: `${base}.region`,
       postcodeField: `${base}.postcode`,
       countryField: `${base}.country`,
+      latitudeField: `${base}.latitude`,
+      longitudeField: `${base}.longitude`,
+      placeIdField: `${base}.place_id`,
+    };
+  }
+  if (fieldId.endsWith(".address")) {
+    const base = fieldId.slice(0, -".address".length);
+    return {
+      line1Field: fieldId,
+      line2Field: null,
+      cityField: `${base}.city`,
+      regionField: `${base}.region`,
+      postcodeField: `${base}.postcode`,
+      countryField: `${base}.country`,
+      latitudeField: `${base}.latitude`,
+      longitudeField: `${base}.longitude`,
+      placeIdField: `${base}.place_id`,
     };
   }
   if (fieldId.endsWith(".billing_street")) {
@@ -49,6 +66,9 @@ function resolveAddressAutocompleteMapping(fieldId) {
       regionField: `${base}.billing_state`,
       postcodeField: `${base}.billing_postcode`,
       countryField: `${base}.billing_country`,
+      latitudeField: null,
+      longitudeField: null,
+      placeIdField: null,
     };
   }
   if (fieldId.endsWith(".shipping_street")) {
@@ -60,6 +80,9 @@ function resolveAddressAutocompleteMapping(fieldId) {
       regionField: `${base}.shipping_state`,
       postcodeField: `${base}.shipping_postcode`,
       countryField: `${base}.shipping_country`,
+      latitudeField: null,
+      longitudeField: null,
+      placeIdField: null,
     };
   }
   return null;
@@ -72,6 +95,13 @@ function applyAddressMapping(record, mapping, address) {
   if (mapping.regionField) next = setFieldValue(next, mapping.regionField, address?.region || "");
   if (mapping.postcodeField) next = setFieldValue(next, mapping.postcodeField, address?.postcode || "");
   if (mapping.countryField) next = setFieldValue(next, mapping.countryField, address?.country || "");
+  if (mapping.latitudeField && Number.isFinite(Number(address?.latitude))) {
+    next = setFieldValue(next, mapping.latitudeField, Number(address.latitude));
+  }
+  if (mapping.longitudeField && Number.isFinite(Number(address?.longitude))) {
+    next = setFieldValue(next, mapping.longitudeField, Number(address.longitude));
+  }
+  if (mapping.placeIdField) next = setFieldValue(next, mapping.placeIdField, address?.place_id || "");
   return next;
 }
 
@@ -888,10 +918,17 @@ export default function FormViewRenderer({
                     const disabledWhen = field?.disabled_when;
                     const isDisabled = disabledWhen ? evalCondition(disabledWhen, { record: computedRecord }) : false;
                     const isAttachmentField = field?.type === "attachments";
+                    const isBooleanField = field?.type === "bool" || field?.type === "boolean";
                     return (
                       <div key={fieldId}>
                         <fieldset className="fieldset">
-                          <legend className="fieldset-legend text-xs uppercase opacity-60 tracking-wide">
+                          <legend
+                            className={[
+                              "fieldset-legend text-xs uppercase tracking-wide",
+                              isBooleanField ? "select-none opacity-0 pointer-events-none" : "opacity-60",
+                            ].join(" ")}
+                            aria-hidden={isBooleanField ? "true" : undefined}
+                          >
                             {field.label || field.id}
                           </legend>
                           {isAttachmentField ? (

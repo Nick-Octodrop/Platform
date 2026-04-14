@@ -24,11 +24,12 @@ export function getActiveWorkspaceId() {
   return WORKSPACE_ID;
 }
 
-async function authHeaders() {
+async function authHeaders({ includeJsonContentType = true } = {}) {
   const session = (await supabase.auth.getSession()).data.session;
-  const headers = {
-    "Content-Type": "application/json",
-  };
+  const headers = {};
+  if (includeJsonContentType) {
+    headers["Content-Type"] = "application/json";
+  }
   if (session?.access_token) {
     headers.Authorization = `Bearer ${session.access_token}`;
   }
@@ -77,6 +78,80 @@ export async function getProjects() {
     ].join(","),
   );
   const data = await apiFetch(`/records/entity.construction_project?limit=100&fields=${fields}&domain=${domain}`);
+  return Array.isArray(data?.records) ? data.records : [];
+}
+
+export async function getConstructionSites(siteIds = []) {
+  const ids = Array.from(new Set((siteIds || []).filter(Boolean)));
+  if (!ids.length) return [];
+  const domain = encodeURIComponent(
+    JSON.stringify({
+      op: "in",
+      field: "construction_site.id",
+      value: ids,
+    }),
+  );
+  const fields = encodeURIComponent(
+    [
+      "construction_site.name",
+      "construction_site.address",
+      "construction_site.city",
+      "construction_site.region",
+      "construction_site.country",
+      "construction_site.latitude",
+      "construction_site.longitude",
+      "construction_site.allowed_radius_m",
+      "construction_site.status",
+    ].join(","),
+  );
+  const data = await apiFetch(`/records/entity.construction_site?limit=100&fields=${fields}&domain=${domain}`);
+  return Array.isArray(data?.records) ? data.records : [];
+}
+
+export async function getCatalogMaterials() {
+  const domain = encodeURIComponent(
+    JSON.stringify({
+      op: "and",
+      conditions: [
+        {
+          op: "eq",
+          field: "item.status",
+          value: "active",
+        },
+        {
+          op: "eq",
+          field: "item.can_purchase",
+          value: "yes",
+        },
+        {
+          op: "eq",
+          field: "item.show_in_workers_app",
+          value: true,
+        },
+        {
+          op: "in",
+          field: "item.type",
+          value: ["storable", "consumable"],
+        },
+      ],
+    }),
+  );
+  const fields = encodeURIComponent(
+    [
+      "item.code",
+      "item.name",
+      "item.type",
+      "item.material_type",
+      "item.can_purchase",
+      "item.show_in_workers_app",
+      "item.status",
+      "item.uom",
+      "item.uom_category",
+      "item.cost_price",
+      "item.description",
+    ].join(","),
+  );
+  const data = await apiFetch(`/records/entity.item?limit=200&fields=${fields}&domain=${domain}`);
   return Array.isArray(data?.records) ? data.records : [];
 }
 
@@ -178,11 +253,20 @@ export async function findOpenTimeEntry(workerRecordId) {
       "time_entry.work_item_id",
       "time_entry.entry_date",
       "time_entry.check_in_at",
+      "time_entry.check_in_latitude",
+      "time_entry.check_in_longitude",
+      "time_entry.check_in_accuracy_m",
+      "time_entry.check_in_distance_from_site_m",
       "time_entry.check_out_at",
+      "time_entry.check_out_latitude",
+      "time_entry.check_out_longitude",
+      "time_entry.check_out_accuracy_m",
+      "time_entry.check_out_distance_from_site_m",
       "time_entry.break_minutes",
       "time_entry.hours_worked",
       "time_entry.status",
       "time_entry.source",
+      "time_entry.check_in_photo",
       "time_entry.approved_by",
       "time_entry.notes",
       "time_entry.created_at",
@@ -220,6 +304,35 @@ export async function updateMaterialLog(recordId, record) {
   });
 }
 
+export async function uploadAttachment(file) {
+  const headers = await authHeaders({ includeJsonContentType: false });
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${API_URL}/attachments/upload`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const message = data?.errors?.[0]?.message || data?.message || "Attachment upload failed";
+    throw new Error(message);
+  }
+  return data?.attachment || null;
+}
+
+export async function linkAttachmentToRecord({ attachmentId, entityId, recordId, purpose }) {
+  return apiFetch("/attachments/link", {
+    method: "POST",
+    body: {
+      attachment_id: attachmentId,
+      entity_id: entityId,
+      record_id: recordId,
+      purpose,
+    },
+  });
+}
+
 export async function deleteMaterialLog(recordId) {
   return apiFetch(`/records/entity.material_log/${recordId}`, {
     method: "DELETE",
@@ -250,6 +363,7 @@ export async function getProjectMaterialLogs(projectId, workerRecordId) {
       "material_log.project_id",
       "material_log.site_id",
       "material_log.work_item_id",
+      "material_log.item_id",
       "material_log.material_type",
       "material_log.quantity",
       "material_log.unit",
