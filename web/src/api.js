@@ -265,14 +265,15 @@ function resolveLocalizedPage(manifest, pageId) {
 }
 
 export async function apiFetch(path, options = {}) {
+  const { _workspaceRetry = false, ...requestOptions } = options || {};
   const perfEnabled = typeof window !== "undefined" && window.localStorage?.getItem("octo_perf") === "1";
-  const trace = options.trace || path;
+  const trace = requestOptions.trace || path;
   const start = perfEnabled ? performance.now() : 0;
   const session = (await supabase.auth.getSession()).data.session;
   const token = session?.access_token;
   const headers = {
     "Content-Type": "application/json",
-    ...(options.headers || {}),
+    ...(requestOptions.headers || {}),
   };
   if (token) {
     headers.Authorization = `Bearer ${token}`;
@@ -286,11 +287,13 @@ export async function apiFetch(path, options = {}) {
     headers["Cache-Control"] = "no-store";
     headers.Pragma = "no-cache";
   }
-  const method = (options.method || "GET").toUpperCase();
-  const body = typeof options.body === "string" ? options.body : options.body ? JSON.stringify(options.body) : "";
+  const method = (requestOptions.method || "GET").toUpperCase();
+  const body =
+    typeof requestOptions.body === "string" ? requestOptions.body : requestOptions.body ? JSON.stringify(requestOptions.body) : "";
   const policy = resolvePolicy(path, method);
-  const cacheTtl = sandboxActive ? 0 : typeof options.cacheTtl === "number" ? options.cacheTtl : policy?.ttl ?? REQUEST_DEFAULT_TTL_MS;
-  const cacheKey = options.cacheKey || null;
+  const cacheTtl =
+    sandboxActive ? 0 : typeof requestOptions.cacheTtl === "number" ? requestOptions.cacheTtl : policy?.ttl ?? REQUEST_DEFAULT_TTL_MS;
+  const cacheKey = requestOptions.cacheKey || null;
   const cacheAllowed = cacheTtl > 0;
   const key = requestKey(method, path, body, cacheKey, activeWorkspaceId);
 
@@ -313,16 +316,16 @@ export async function apiFetch(path, options = {}) {
 
   let res;
   let data;
-  const timeoutMs = typeof options.timeoutMs === "number" ? options.timeoutMs : null;
+  const timeoutMs = typeof requestOptions.timeoutMs === "number" ? requestOptions.timeoutMs : null;
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
   const timeoutId = timeoutMs && controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   try {
     const request = fetch(`${API_URL}${path}`, {
-      ...options,
+      ...requestOptions,
       method,
-      body: body || options.body,
+      body: body || requestOptions.body,
       headers,
-      cache: sandboxActive ? "no-store" : options.cache,
+      cache: sandboxActive ? "no-store" : requestOptions.cache,
       signal: controller?.signal,
     })
       .then(async (response) => {
@@ -403,6 +406,17 @@ export async function apiFetch(path, options = {}) {
 
     requestInFlight.set(key, request);
     return await request;
+  } catch (err) {
+    const shouldRetryWorkspaceSelection =
+      !_workspaceRetry &&
+      method === "GET" &&
+      Boolean(activeWorkspaceId) &&
+      (err?.code === "WORKSPACE_FORBIDDEN" || err?.code === "WORKSPACE_NOT_FOUND");
+    if (shouldRetryWorkspaceSelection) {
+      clearSavedWorkspaceSelection();
+      return apiFetch(path, { ...requestOptions, _workspaceRetry: true });
+    }
+    throw err;
   } finally {
     if (perfEnabled) {
       const ms = Math.round(performance.now() - start);
@@ -513,6 +527,17 @@ export function setTabWorkspaceId(workspaceId) {
     }
     clearCaches();
     notifyWorkspaceChanged(workspaceId, "tab");
+  } catch {
+    // ignore
+  }
+}
+
+export function clearSavedWorkspaceSelection() {
+  try {
+    window.localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+    window.sessionStorage.removeItem(TAB_WORKSPACE_STORAGE_KEY);
+    clearCaches();
+    notifyWorkspaceChanged("", "reset");
   } catch {
     // ignore
   }

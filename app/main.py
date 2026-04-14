@@ -1005,7 +1005,7 @@ def _resolve_actor(request: Request) -> dict | JSONResponse:
     elif len(memberships) == 1:
         workspace_id = memberships[0].get("workspace_id")
         role = memberships[0].get("role") or "member"
-    elif platform_role == "superadmin":
+    else:
         preferred_workspace = next(
             (
                 item
@@ -1016,15 +1016,16 @@ def _resolve_actor(request: Request) -> dict | JSONResponse:
         )
         if preferred_workspace:
             workspace_id = preferred_workspace.get("workspace_id")
-            role = preferred_workspace.get("role") or "admin"
-        else:
+            role = preferred_workspace.get("role") or ("admin" if platform_role == "superadmin" else "member")
+        elif platform_role == "superadmin":
             all_workspaces = list_all_workspaces()
             if not all_workspaces:
                 return _error_response("WORKSPACE_NOT_FOUND", "No workspaces exist yet", status=404)
             workspace_id = all_workspaces[0].get("workspace_id")
             role = "admin"
-    else:
-        return _error_response("WORKSPACE_REQUIRED", "Multiple workspaces found; specify X-Workspace-Id", "X-Workspace-Id", status=400)
+        else:
+            workspace_id = memberships[0].get("workspace_id")
+            role = memberships[0].get("role") or "member"
     return {
         "user_id": user_id,
         "email": user.get("email"),

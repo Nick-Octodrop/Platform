@@ -549,11 +549,7 @@ export default function App() {
             />
             <Route
               path="settings/workspaces"
-              element={(
-                <CapabilityRoute capability="workspace.manage_settings">
-                  {lazyPage(<SettingsWorkspacesPage />)}
-                </CapabilityRoute>
-              )}
+              element={lazyPage(<SettingsWorkspacesPage />)}
             />
             <Route
               path="settings/document-numbering"

@@ -271,6 +271,7 @@ export default function SettingsUsersPage() {
     <TabbedPaneShell
       tabs={tabs}
       contentContainer={true}
+      pageScroll={true}
     >
       <div className="space-y-4">
         {error && <div className="alert alert-error text-sm">{error}</div>}
@@ -383,7 +384,7 @@ export default function SettingsUsersPage() {
                   />
                 </div>
 
-                <div className="overflow-x-auto">
+                <div className="w-full overflow-x-auto overflow-y-hidden">
                   <table className="table table-sm table-fixed w-full">
                   <thead>
                     <tr>

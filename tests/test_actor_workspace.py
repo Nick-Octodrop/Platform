@@ -71,20 +71,36 @@ else:
             main._ai_slot_based_plan = self._ai_slot_based_plan
             main._ai_semantic_plan_from_model = self._ai_semantic_plan_from_model
 
-        def test_requires_workspace_header_for_multiple_memberships(self):
+        def test_prefers_first_user_workspace_for_multiple_memberships(self):
             main.USE_DB = True
             main.list_memberships = lambda user_id: [
                 {"workspace_id": "w1", "role": "member"},
                 {"workspace_id": "w2", "role": "member"},
             ]
+            main.list_user_workspaces = lambda user_id: [
+                {"workspace_id": "w2", "role": "admin", "workspace_name": "Two"},
+                {"workspace_id": "w1", "role": "member", "workspace_name": "One"},
+            ]
+            main.get_platform_role = lambda user_id: "standard"
+            main.get_membership = lambda user_id, workspace_id: None
+            request = DummyRequest({"id": "u1", "email": "u@example.com"})
+            actor = main._resolve_actor(request)
+            self.assertEqual(actor["workspace_id"], "w2")
+            self.assertEqual(actor["workspace_role"], "admin")
+
+        def test_falls_back_to_first_membership_when_workspace_list_missing(self):
+            main.USE_DB = True
+            main.list_memberships = lambda user_id: [
+                {"workspace_id": "w1", "role": "member"},
+                {"workspace_id": "w2", "role": "admin"},
+            ]
             main.list_user_workspaces = lambda user_id: []
             main.get_platform_role = lambda user_id: "standard"
             main.get_membership = lambda user_id, workspace_id: None
             request = DummyRequest({"id": "u1", "email": "u@example.com"})
-            response = main._resolve_actor(request)
-            self.assertEqual(response.status_code, 400)
-            body = _json_body(response)
-            self.assertEqual(body["errors"][0]["code"], "WORKSPACE_REQUIRED")
+            actor = main._resolve_actor(request)
+            self.assertEqual(actor["workspace_id"], "w1")
+            self.assertEqual(actor["workspace_role"], "member")
 
         def test_workspace_header_forbidden_when_not_member(self):
             main.USE_DB = True

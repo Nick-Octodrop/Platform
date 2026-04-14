@@ -5,7 +5,9 @@ import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 export default function SettingsPage() {
   const { t } = useI18n();
-  const { hasCapability, isSuperadmin } = useAccessContext();
+  const { context, hasCapability, isSuperadmin } = useAccessContext();
+  const workspaceCount = Array.isArray(context?.workspaces) ? context.workspaces.length : 0;
+  const canOpenWorkspaceSwitcher = workspaceCount > 1 || hasCapability("workspace.manage_settings");
   const wiredPages = new Set([
     "/settings/settings",
     "/settings/password",
@@ -85,7 +87,7 @@ export default function SettingsPage() {
       description: t("settings.index.blocks.workspaces.description"),
       primary: { label: t("settings.index.blocks.workspaces.primary"), to_page: "/settings/workspaces" },
       keywords: ["org", "members"],
-      required_capability: "workspace.manage_settings",
+      visible_when: canOpenWorkspaceSwitcher,
     },
     {
       id: "email-connections",
@@ -214,6 +216,7 @@ export default function SettingsPage() {
   }))
     // Deny-by-default: don't render privileged settings blocks until access context loads.
     .filter((block) => !block.superadmin_only || isSuperadmin)
+    .filter((block) => block.visible_when !== false)
     .filter((block) => !block.required_capability || hasCapability(block.required_capability));
 
   return (

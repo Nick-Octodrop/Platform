@@ -6,6 +6,9 @@ const ACTIVE_WORKSPACE_STORAGE_KEY = "octo_active_workspace_id";
 const TAB_WORKSPACE_STORAGE_KEY = "octo_tab_workspace_id";
 
 export function getActiveWorkspaceId() {
+  if (WORKSPACE_ID) {
+    return WORKSPACE_ID;
+  }
   if (typeof window === "undefined") {
     return WORKSPACE_ID;
   }

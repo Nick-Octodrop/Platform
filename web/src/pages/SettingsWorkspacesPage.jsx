@@ -90,6 +90,19 @@ export default function SettingsWorkspacesPage() {
   }, [searchParams.get("tab")]);
 
   const actor = context?.actor || {};
+  const canEditWorkspaceSettings = actor.platform_role === "superadmin" || actor.workspace_role === "admin";
+  const workspaceTabs = useMemo(
+    () => [
+      { id: "workspaces", label: t("settings.workspaces_tab") },
+      ...(canEditWorkspaceSettings
+        ? [
+            { id: "branding", label: t("settings.branding_tab") },
+            { id: "regional", label: t("settings.regional_tab") },
+          ]
+        : []),
+    ],
+    [canEditWorkspaceSettings, t],
+  );
   const displayWorkspaces = useMemo(() => {
     return (workspaces || []).map((w) => ({
       workspace_id: w.workspace_id || w.id,
@@ -150,15 +163,21 @@ export default function SettingsWorkspacesPage() {
     }
   }
 
-  const canEditWorkspaceSettings = actor.platform_role === "superadmin" || actor.workspace_role === "admin";
-
   function goTab(nextId) {
-    const next = normalizeTabId(nextId);
+    const allowedTabIds = new Set(workspaceTabs.map((tab) => tab.id));
+    const next = allowedTabIds.has(normalizeTabId(nextId)) ? normalizeTabId(nextId) : "workspaces";
     setActiveTab(next);
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set("tab", next);
     setSearchParams(nextParams, { replace: true });
   }
+
+  useEffect(() => {
+    const allowedTabIds = new Set(workspaceTabs.map((tab) => tab.id));
+    if (!allowedTabIds.has(activeTab)) {
+      goTab("workspaces");
+    }
+  }, [activeTab, workspaceTabs]);
 
   async function persistWorkspacePrefs(next) {
     try {
@@ -247,11 +266,7 @@ export default function SettingsWorkspacesPage() {
 
   return (
     <TabbedPaneShell
-      tabs={[
-        { id: "workspaces", label: t("settings.workspaces_tab") },
-        { id: "branding", label: t("settings.branding_tab") },
-        { id: "regional", label: t("settings.regional_tab") },
-      ]}
+      tabs={workspaceTabs}
       activeTabId={activeTab}
       onTabChange={goTab}
       contentContainer={true}
