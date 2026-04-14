@@ -1,0 +1,239 @@
+{
+  "catalog": {
+    "module": {
+      "name": "Catalog",
+      "description": "Shared item catalog for Paul Construction with purchasable materials aligned to site usage logging in the PWA."
+    },
+    "navigation": {
+      "group": "Catalog",
+      "item_list_page": "Items",
+      "item_sellable_page": "Sellable",
+      "item_purchasable_page": "Purchasable"
+    },
+    "entities": {
+      "item": {
+        "fields": {
+          "id": {
+            "label": "Record ID"
+          },
+          "code": {
+            "label": "Code"
+          },
+          "name": {
+            "label": "Name"
+          },
+          "type": {
+            "label": "Type",
+            "options": {
+              "storable": "Storable Product",
+              "consumable": "Consumable",
+              "service": "Service",
+              "labor": "Labor"
+            }
+          },
+          "material_type": {
+            "label": "Material Type"
+          },
+          "fulfillment_method": {
+            "label": "Fulfillment",
+            "options": {
+              "purchase": "Purchase",
+              "manufacture": "Manufacture",
+              "subcontract": "Subcontract",
+              "manual": "Manual / Time"
+            }
+          },
+          "can_sell": {
+            "label": "Can Be Sold",
+            "options": {
+              "yes": "Yes",
+              "no": "No"
+            }
+          },
+          "can_purchase": {
+            "label": "Can Be Purchased",
+            "options": {
+              "yes": "Yes",
+              "no": "No"
+            }
+          },
+          "show_in_workers_app": {
+            "label": "Show In Workers App"
+          },
+          "uom": {
+            "label": "Unit of Measure"
+          },
+          "uom_category": {
+            "label": "UoM Category",
+            "options": {
+              "unit": "Unit",
+              "time": "Time",
+              "length": "Length",
+              "area": "Area",
+              "volume": "Volume",
+              "weight": "Weight"
+            }
+          },
+          "sales_currency": {
+            "label": "Sales Currency"
+          },
+          "purchase_currency": {
+            "label": "Purchase Currency"
+          },
+          "sales_price": {
+            "label": "Sales Price"
+          },
+          "cost_price": {
+            "label": "Cost"
+          },
+          "tax_rate": {
+            "label": "Tax Rate (%)"
+          },
+          "lead_time_days": {
+            "label": "Lead Time (Days)"
+          },
+          "margin_amount": {
+            "label": "Margin"
+          },
+          "margin_percent": {
+            "label": "Margin (%)"
+          },
+          "status": {
+            "label": "Status",
+            "options": {
+              "active": "Active",
+              "inactive": "Inactive"
+            }
+          },
+          "description": {
+            "label": "Description"
+          },
+          "tags": {
+            "label": "Tags"
+          },
+          "created_at": {
+            "label": "Created At"
+          }
+        }
+      }
+    },
+    "actions": {
+      "action_item_new": {
+        "label": "+ New Item"
+      },
+      "action_item_set_active": {
+        "label": "Set Active"
+      },
+      "action_item_set_inactive": {
+        "label": "Set Inactive"
+      },
+      "action_item_add_to_workers_app": {
+        "label": "Add To Workers App"
+      },
+      "action_item_remove_from_workers_app": {
+        "label": "Remove From Workers App"
+      }
+    },
+    "workflows": {
+      "workflow_item_status": {
+        "states": {
+          "active": {
+            "label": "Active"
+          },
+          "inactive": {
+            "label": "Inactive"
+          }
+        },
+        "transitions": {
+          "inactive_active": {
+            "label": "Set Active"
+          },
+          "active_inactive": {
+            "label": "Set Inactive"
+          }
+        }
+      }
+    },
+    "views": {
+      "item_list": {
+        "search": {
+          "placeholder": "Search items..."
+        },
+        "filters": {
+          "active": {
+            "label": "Active"
+          },
+          "sellable": {
+            "label": "Sellable"
+          },
+          "purchasable": {
+            "label": "Purchasable"
+          },
+          "inactive": {
+            "label": "Inactive"
+          },
+          "products": {
+            "label": "Products"
+          },
+          "materials": {
+            "label": "Materials"
+          },
+          "workers_app": {
+            "label": "Workers App"
+          },
+          "services": {
+            "label": "Services"
+          }
+        }
+      },
+      "item_form": {
+        "sections": {
+          "general": {
+            "title": "General"
+          },
+          "commercial": {
+            "title": "Commercial"
+          },
+          "notes": {
+            "title": "Notes"
+          }
+        },
+        "tabs": {
+          "general_tab": {
+            "label": "General"
+          },
+          "commercial_tab": {
+            "label": "Commercial"
+          },
+          "notes_tab": {
+            "label": "Notes"
+          }
+        }
+      }
+    },
+    "pages": {
+      "item_list_page": {
+        "title": "Items"
+      },
+      "item_form_page": {
+        "title": "Item"
+      },
+      "item_sellable_page": {
+        "title": "Sellable Items"
+      },
+      "item_purchasable_page": {
+        "title": "Purchasable Items"
+      }
+    },
+    "dashboard": {
+      "item": {
+        "items_by_type": {
+          "title": "Items by Type"
+        },
+        "items_by_material_type": {
+          "title": "Items by Material Type"
+        }
+      }
+    }
+  }
+}

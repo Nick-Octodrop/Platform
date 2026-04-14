@@ -7,7 +7,9 @@
     "version": "1.5.0",
     "description": "Shared item catalog for Paul Construction with purchasable materials aligned to site usage logging in the PWA.",
     "category": "Construction",
-    "icon_key": "lucide:Package"
+    "icon_key": "lucide:Package",
+    "name_key": "catalog.module.name",
+    "description_key": "catalog.module.description"
   },
   "depends_on": {
     "required": []
@@ -31,17 +33,21 @@
         "items": [
           {
             "label": "Items",
-            "to": "page:item.list_page"
+            "to": "page:item.list_page",
+            "menu_label_key": "catalog.navigation.item_list_page"
           },
           {
             "label": "Sellable",
-            "to": "page:item.sellable_page"
+            "to": "page:item.sellable_page",
+            "menu_label_key": "catalog.navigation.item_sellable_page"
           },
           {
             "label": "Purchasable",
-            "to": "page:item.purchasable_page"
+            "to": "page:item.purchasable_page",
+            "menu_label_key": "catalog.navigation.item_purchasable_page"
           }
-        ]
+        ],
+        "group_key": "catalog.navigation.group"
       }
     ]
   },
@@ -54,19 +60,22 @@
           "id": "item.id",
           "type": "uuid",
           "label": "Record ID",
-          "readonly": true
+          "readonly": true,
+          "label_key": "catalog.entities.item.fields.id.label"
         },
         {
           "id": "item.code",
           "type": "string",
           "label": "Code",
-          "required": true
+          "required": true,
+          "label_key": "catalog.entities.item.fields.code.label"
         },
         {
           "id": "item.name",
           "type": "string",
           "label": "Name",
-          "required": true
+          "required": true,
+          "label_key": "catalog.entities.item.fields.name.label"
         },
         {
           "id": "item.type",
@@ -76,27 +85,37 @@
           "options": [
             {
               "value": "storable",
-              "label": "Storable Product"
+              "label": "Storable Product",
+              "status_label_key": "catalog.entities.item.fields.type.options.storable",
+              "label_key": "catalog.entities.item.fields.type.options.storable"
             },
             {
               "value": "consumable",
-              "label": "Consumable"
+              "label": "Consumable",
+              "status_label_key": "catalog.entities.item.fields.type.options.consumable",
+              "label_key": "catalog.entities.item.fields.type.options.consumable"
             },
             {
               "value": "service",
-              "label": "Service"
+              "label": "Service",
+              "status_label_key": "catalog.entities.item.fields.type.options.service",
+              "label_key": "catalog.entities.item.fields.type.options.service"
             },
             {
               "value": "labor",
-              "label": "Labor"
+              "label": "Labor",
+              "status_label_key": "catalog.entities.item.fields.type.options.labor",
+              "label_key": "catalog.entities.item.fields.type.options.labor"
             }
-          ]
+          ],
+          "label_key": "catalog.entities.item.fields.type.label"
         },
         {
           "id": "item.material_type",
           "type": "string",
           "label": "Material Type",
-          "default": "other"
+          "default": "other",
+          "label_key": "catalog.entities.item.fields.material_type.label"
         },
         {
           "id": "item.fulfillment_method",
@@ -106,21 +125,30 @@
           "options": [
             {
               "value": "purchase",
-              "label": "Purchase"
+              "label": "Purchase",
+              "status_label_key": "catalog.entities.item.fields.fulfillment_method.options.purchase",
+              "label_key": "catalog.entities.item.fields.fulfillment_method.options.purchase"
             },
             {
               "value": "manufacture",
-              "label": "Manufacture"
+              "label": "Manufacture",
+              "status_label_key": "catalog.entities.item.fields.fulfillment_method.options.manufacture",
+              "label_key": "catalog.entities.item.fields.fulfillment_method.options.manufacture"
             },
             {
               "value": "subcontract",
-              "label": "Subcontract"
+              "label": "Subcontract",
+              "status_label_key": "catalog.entities.item.fields.fulfillment_method.options.subcontract",
+              "label_key": "catalog.entities.item.fields.fulfillment_method.options.subcontract"
             },
             {
               "value": "manual",
-              "label": "Manual / Time"
+              "label": "Manual / Time",
+              "status_label_key": "catalog.entities.item.fields.fulfillment_method.options.manual",
+              "label_key": "catalog.entities.item.fields.fulfillment_method.options.manual"
             }
-          ]
+          ],
+          "label_key": "catalog.entities.item.fields.fulfillment_method.label"
         },
         {
           "id": "item.can_sell",
@@ -130,13 +158,18 @@
           "options": [
             {
               "value": "yes",
-              "label": "Yes"
+              "label": "Yes",
+              "status_label_key": "catalog.entities.item.fields.can_sell.options.yes",
+              "label_key": "catalog.entities.item.fields.can_sell.options.yes"
             },
             {
               "value": "no",
-              "label": "No"
+              "label": "No",
+              "status_label_key": "catalog.entities.item.fields.can_sell.options.no",
+              "label_key": "catalog.entities.item.fields.can_sell.options.no"
             }
-          ]
+          ],
+          "label_key": "catalog.entities.item.fields.can_sell.label"
         },
         {
           "id": "item.can_purchase",
@@ -146,25 +179,32 @@
           "options": [
             {
               "value": "yes",
-              "label": "Yes"
+              "label": "Yes",
+              "status_label_key": "catalog.entities.item.fields.can_purchase.options.yes",
+              "label_key": "catalog.entities.item.fields.can_purchase.options.yes"
             },
             {
               "value": "no",
-              "label": "No"
+              "label": "No",
+              "status_label_key": "catalog.entities.item.fields.can_purchase.options.no",
+              "label_key": "catalog.entities.item.fields.can_purchase.options.no"
             }
-          ]
+          ],
+          "label_key": "catalog.entities.item.fields.can_purchase.label"
         },
         {
           "id": "item.show_in_workers_app",
           "type": "bool",
           "label": "Show In Workers App",
-          "default": false
+          "default": false,
+          "label_key": "catalog.entities.item.fields.show_in_workers_app.label"
         },
         {
           "id": "item.uom",
           "type": "string",
           "label": "Unit of Measure",
-          "default": "Unit"
+          "default": "Unit",
+          "label_key": "catalog.entities.item.fields.uom.label"
         },
         {
           "id": "item.uom_category",
@@ -174,41 +214,56 @@
           "options": [
             {
               "value": "unit",
-              "label": "Unit"
+              "label": "Unit",
+              "status_label_key": "catalog.entities.item.fields.uom_category.options.unit",
+              "label_key": "catalog.entities.item.fields.uom_category.options.unit"
             },
             {
               "value": "time",
-              "label": "Time"
+              "label": "Time",
+              "status_label_key": "catalog.entities.item.fields.uom_category.options.time",
+              "label_key": "catalog.entities.item.fields.uom_category.options.time"
             },
             {
               "value": "length",
-              "label": "Length"
+              "label": "Length",
+              "status_label_key": "catalog.entities.item.fields.uom_category.options.length",
+              "label_key": "catalog.entities.item.fields.uom_category.options.length"
             },
             {
               "value": "area",
-              "label": "Area"
+              "label": "Area",
+              "status_label_key": "catalog.entities.item.fields.uom_category.options.area",
+              "label_key": "catalog.entities.item.fields.uom_category.options.area"
             },
             {
               "value": "volume",
-              "label": "Volume"
+              "label": "Volume",
+              "status_label_key": "catalog.entities.item.fields.uom_category.options.volume",
+              "label_key": "catalog.entities.item.fields.uom_category.options.volume"
             },
             {
               "value": "weight",
-              "label": "Weight"
+              "label": "Weight",
+              "status_label_key": "catalog.entities.item.fields.uom_category.options.weight",
+              "label_key": "catalog.entities.item.fields.uom_category.options.weight"
             }
-          ]
+          ],
+          "label_key": "catalog.entities.item.fields.uom_category.label"
         },
         {
           "id": "item.sales_currency",
           "type": "string",
           "label": "Sales Currency",
-          "default": "USD"
+          "default": "USD",
+          "label_key": "catalog.entities.item.fields.sales_currency.label"
         },
         {
           "id": "item.purchase_currency",
           "type": "string",
           "label": "Purchase Currency",
-          "default": "USD"
+          "default": "USD",
+          "label_key": "catalog.entities.item.fields.purchase_currency.label"
         },
         {
           "id": "item.sales_price",
@@ -219,7 +274,8 @@
             "kind": "currency",
             "currency_field": "item.sales_currency",
             "precision": 2
-          }
+          },
+          "label_key": "catalog.entities.item.fields.sales_price.label"
         },
         {
           "id": "item.cost_price",
@@ -230,7 +286,8 @@
             "kind": "currency",
             "currency_field": "item.purchase_currency",
             "precision": 2
-          }
+          },
+          "label_key": "catalog.entities.item.fields.cost_price.label"
         },
         {
           "id": "item.tax_rate",
@@ -240,7 +297,8 @@
           "format": {
             "kind": "percent",
             "precision": 2
-          }
+          },
+          "label_key": "catalog.entities.item.fields.tax_rate.label"
         },
         {
           "id": "item.lead_time_days",
@@ -251,7 +309,8 @@
             "kind": "measurement",
             "unit": "days",
             "precision": 0
-          }
+          },
+          "label_key": "catalog.entities.item.fields.lead_time_days.label"
         },
         {
           "id": "item.margin_amount",
@@ -282,7 +341,8 @@
                 2
               ]
             }
-          }
+          },
+          "label_key": "catalog.entities.item.fields.margin_amount.label"
         },
         {
           "id": "item.margin_percent",
@@ -327,7 +387,8 @@
               },
               "else": 0
             }
-          }
+          },
+          "label_key": "catalog.entities.item.fields.margin_percent.label"
         },
         {
           "id": "item.status",
@@ -340,28 +401,36 @@
           "options": [
             {
               "value": "active",
-              "label": "Active"
+              "label": "Active",
+              "status_label_key": "catalog.entities.item.fields.status.options.active",
+              "label_key": "catalog.entities.item.fields.status.options.active"
             },
             {
               "value": "inactive",
-              "label": "Inactive"
+              "label": "Inactive",
+              "status_label_key": "catalog.entities.item.fields.status.options.inactive",
+              "label_key": "catalog.entities.item.fields.status.options.inactive"
             }
-          ]
+          ],
+          "label_key": "catalog.entities.item.fields.status.label"
         },
         {
           "id": "item.description",
           "type": "text",
-          "label": "Description"
+          "label": "Description",
+          "label_key": "catalog.entities.item.fields.description.label"
         },
         {
           "id": "item.tags",
           "type": "tags",
-          "label": "Tags"
+          "label": "Tags",
+          "label_key": "catalog.entities.item.fields.tags.label"
         },
         {
           "id": "item.created_at",
           "type": "datetime",
-          "label": "Created At"
+          "label": "Created At",
+          "label_key": "catalog.entities.item.fields.created_at.label"
         }
       ]
     }
@@ -371,7 +440,8 @@
       "id": "action.item_new",
       "kind": "open_form",
       "label": "+ New Item",
-      "target": "item.form"
+      "target": "item.form",
+      "action_label_key": "catalog.actions.action_item_new.label"
     },
     {
       "id": "action.item_set_active",
@@ -390,7 +460,8 @@
         "op": "eq",
         "field": "item.status",
         "value": "inactive"
-      }
+      },
+      "action_label_key": "catalog.actions.action_item_set_active.label"
     },
     {
       "id": "action.item_set_inactive",
@@ -409,7 +480,8 @@
         "op": "eq",
         "field": "item.status",
         "value": "active"
-      }
+      },
+      "action_label_key": "catalog.actions.action_item_set_inactive.label"
     },
     {
       "id": "action.item_add_to_workers_app",
@@ -428,7 +500,8 @@
         "op": "eq",
         "field": "item.show_in_workers_app",
         "value": false
-      }
+      },
+      "action_label_key": "catalog.actions.action_item_add_to_workers_app.label"
     },
     {
       "id": "action.item_remove_from_workers_app",
@@ -447,7 +520,8 @@
         "op": "eq",
         "field": "item.show_in_workers_app",
         "value": true
-      }
+      },
+      "action_label_key": "catalog.actions.action_item_remove_from_workers_app.label"
     }
   ],
   "triggers": [
@@ -535,7 +609,8 @@
             "item.code",
             "item.name",
             "item.description"
-          ]
+          ],
+          "placeholder_key": "catalog.views.item_list.search.placeholder"
         },
         "filters": [
           {
@@ -545,7 +620,8 @@
               "op": "eq",
               "field": "item.status",
               "value": "active"
-            }
+            },
+            "label_key": "catalog.views.item_list.filters.active.label"
           },
           {
             "id": "sellable",
@@ -554,7 +630,8 @@
               "op": "eq",
               "field": "item.can_sell",
               "value": "yes"
-            }
+            },
+            "label_key": "catalog.views.item_list.filters.sellable.label"
           },
           {
             "id": "purchasable",
@@ -563,7 +640,8 @@
               "op": "eq",
               "field": "item.can_purchase",
               "value": "yes"
-            }
+            },
+            "label_key": "catalog.views.item_list.filters.purchasable.label"
           },
           {
             "id": "inactive",
@@ -572,7 +650,8 @@
               "op": "eq",
               "field": "item.status",
               "value": "inactive"
-            }
+            },
+            "label_key": "catalog.views.item_list.filters.inactive.label"
           },
           {
             "id": "products",
@@ -584,7 +663,8 @@
                 "storable",
                 "consumable"
               ]
-            }
+            },
+            "label_key": "catalog.views.item_list.filters.products.label"
           },
           {
             "id": "materials",
@@ -606,7 +686,8 @@
                   ]
                 }
               ]
-            }
+            },
+            "label_key": "catalog.views.item_list.filters.materials.label"
           },
           {
             "id": "workers_app",
@@ -615,7 +696,8 @@
               "op": "eq",
               "field": "item.show_in_workers_app",
               "value": true
-            }
+            },
+            "label_key": "catalog.views.item_list.filters.workers_app.label"
           },
           {
             "id": "services",
@@ -627,7 +709,8 @@
                 "service",
                 "labor"
               ]
-            }
+            },
+            "label_key": "catalog.views.item_list.filters.services.label"
           }
         ]
       }
@@ -672,7 +755,8 @@
             "item.uom_category",
             "item.uom",
             "item.tags"
-          ]
+          ],
+          "section_title_key": "catalog.views.item_form.sections.general.title"
         },
         {
           "id": "commercial",
@@ -690,14 +774,16 @@
             "item.margin_percent",
             "item.tax_rate",
             "item.lead_time_days"
-          ]
+          ],
+          "section_title_key": "catalog.views.item_form.sections.commercial.title"
         },
         {
           "id": "notes",
           "title": "Notes",
           "fields": [
             "item.description"
-          ]
+          ],
+          "section_title_key": "catalog.views.item_form.sections.notes.title"
         }
       ],
       "header": {
@@ -724,21 +810,24 @@
               "label": "General",
               "sections": [
                 "general"
-              ]
+              ],
+              "tab_label_key": "catalog.views.item_form.tabs.general_tab.label"
             },
             {
               "id": "commercial_tab",
               "label": "Commercial",
               "sections": [
                 "commercial"
-              ]
+              ],
+              "tab_label_key": "catalog.views.item_form.tabs.commercial_tab.label"
             },
             {
               "id": "notes_tab",
               "label": "Notes",
               "sections": [
                 "notes"
-              ]
+              ],
+              "tab_label_key": "catalog.views.item_form.tabs.notes_tab.label"
             }
           ]
         },
@@ -833,7 +922,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "catalog.pages.item_list_page.title"
     },
     {
       "id": "item.form_page",
@@ -888,7 +978,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "catalog.pages.item_form_page.title"
     },
     {
       "id": "item.sellable_page",
@@ -935,7 +1026,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "catalog.pages.item_sellable_page.title"
     },
     {
       "id": "item.purchasable_page",
@@ -982,7 +1074,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "catalog.pages.item_purchasable_page.title"
     }
   ],
   "interfaces": {
@@ -995,27 +1088,29 @@
         "measures": [
           "count"
         ],
-          "group_bys": [
-            "item.type",
-            "item.material_type",
-            "item.show_in_workers_app",
-            "item.fulfillment_method",
-            "item.status"
-          ],
+        "group_bys": [
+          "item.type",
+          "item.material_type",
+          "item.show_in_workers_app",
+          "item.fulfillment_method",
+          "item.status"
+        ],
         "default_widgets": [
           {
             "id": "items_by_type",
             "type": "group",
             "title": "Items by Type",
             "group_by": "item.type",
-            "measure": "count"
+            "measure": "count",
+            "title_key": "catalog.dashboard.item.items_by_type.title"
           },
           {
             "id": "items_by_material_type",
             "type": "group",
             "title": "Items by Material Type",
             "group_by": "item.material_type",
-            "measure": "count"
+            "measure": "count",
+            "title_key": "catalog.dashboard.item.items_by_material_type.title"
           }
         ]
       }
@@ -1031,24 +1126,32 @@
         {
           "id": "active",
           "label": "Active",
-          "order": 1
+          "order": 1,
+          "status_label_key": "catalog.workflows.workflow_item_status.states.active.label",
+          "label_key": "catalog.workflows.workflow_item_status.states.active.label"
         },
         {
           "id": "inactive",
           "label": "Inactive",
-          "order": 2
+          "order": 2,
+          "status_label_key": "catalog.workflows.workflow_item_status.states.inactive.label",
+          "label_key": "catalog.workflows.workflow_item_status.states.inactive.label"
         }
       ],
       "transitions": [
         {
           "from": "inactive",
           "to": "active",
-          "label": "Set Active"
+          "label": "Set Active",
+          "action_label_key": "catalog.workflows.workflow_item_status.transitions.inactive_active.label",
+          "label_key": "catalog.workflows.workflow_item_status.transitions.inactive_active.label"
         },
         {
           "from": "active",
           "to": "inactive",
-          "label": "Set Inactive"
+          "label": "Set Inactive",
+          "action_label_key": "catalog.workflows.workflow_item_status.transitions.active_inactive.label",
+          "label_key": "catalog.workflows.workflow_item_status.transitions.active_inactive.label"
         }
       ]
     }

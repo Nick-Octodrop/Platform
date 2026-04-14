@@ -376,7 +376,10 @@ export default function FormViewRenderer({
   const tabsConfig = header?.tabs || null;
   const activityConfig = view?.activity && view.activity.enabled === true ? view.activity : null;
   const activityTabId = "__activity";
-  const activityTabLabel = (typeof activityConfig?.tab_label === "string" && activityConfig.tab_label.trim()) || translateRuntime("common.activity");
+  const activityTabLabel =
+    (typeof activityConfig?.tab_label === "string" && activityConfig.tab_label.trim()) ||
+    (typeof activityConfig?.label === "string" && activityConfig.label.trim()) ||
+    translateRuntime("common.activity");
   const visibleSectionIds = useMemo(() => new Set(sections.map((section) => section.id).filter(Boolean)), [sections]);
   const tabsForUi = useMemo(() => {
     const baseTabs = Array.isArray(tabsConfig?.tabs)

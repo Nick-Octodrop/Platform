@@ -4,6 +4,7 @@
     "description": "Gestion de construction unifiée pour les projets, la main-d'œuvre, les matériaux, les coûts et les opérations quotidiennes du chantier."
   },
   "navigation": {
+    "group": "Construction",
     "construction_dashboard_page": "Tableau de bord",
     "construction_project_list_page": "Projets",
     "construction_site_list_page": "Sites",
@@ -29,14 +30,29 @@
         "address": {
           "label": "Adresse"
         },
+        "latitude": {
+          "label": "Latitude"
+        },
+        "longitude": {
+          "label": "Longitude"
+        },
+        "allowed_radius_m": {
+          "label": "Rayon autorisé (m)"
+        },
         "city": {
           "label": "Ville"
         },
         "region": {
           "label": "Région / État"
         },
+        "postcode": {
+          "label": "Code postal"
+        },
         "country": {
           "label": "Pays"
+        },
+        "place_id": {
+          "label": "ID Google Place"
         },
         "supervisor_id": {
           "label": "Superviseur de chantier"
@@ -404,8 +420,32 @@
         "check_in_at": {
           "label": "Enregistrement"
         },
+        "check_in_latitude": {
+          "label": "Latitude d'entrée"
+        },
+        "check_in_longitude": {
+          "label": "Longitude d'entrée"
+        },
+        "check_in_accuracy_m": {
+          "label": "Précision GPS à l'entrée (m)"
+        },
+        "check_in_distance_from_site_m": {
+          "label": "Distance à l'entrée depuis le site (m)"
+        },
         "check_out_at": {
           "label": "Vérifier"
+        },
+        "check_out_latitude": {
+          "label": "Latitude de sortie"
+        },
+        "check_out_longitude": {
+          "label": "Longitude de sortie"
+        },
+        "check_out_accuracy_m": {
+          "label": "Précision GPS à la sortie (m)"
+        },
+        "check_out_distance_from_site_m": {
+          "label": "Distance à la sortie depuis le site (m)"
         },
         "break_minutes": {
           "label": "Minutes de pause"
@@ -434,6 +474,12 @@
         },
         "notes": {
           "label": "Remarques"
+        },
+        "check_in_photo": {
+          "label": "Photo d'entrée"
+        },
+        "check_out_photo": {
+          "label": "Photo de sortie"
         },
         "created_at": {
           "label": "Créé à"
@@ -1091,6 +1137,9 @@
         "general": {
           "title": "Général"
         },
+        "geofence": {
+          "title": "Géorepérage"
+        },
         "notes": {
           "title": "Remarques"
         },
@@ -1135,6 +1184,9 @@
         },
         "entry": {
           "title": "Entrée"
+        },
+        "verification": {
+          "title": "Vérification"
         },
         "report": {
           "title": "Rapport"
@@ -1277,6 +1329,96 @@
     },
     "form_page": {
       "title": "Site"
+    },
+    "construction_site_list_page": {
+      "title": "Sites"
+    },
+    "construction_site_form_page": {
+      "title": "Site"
+    },
+    "construction_crew_list_page": {
+      "title": "Équipes"
+    },
+    "construction_crew_form_page": {
+      "title": "Équipe"
+    },
+    "construction_cost_code_list_page": {
+      "title": "Codes de coût"
+    },
+    "construction_cost_code_form_page": {
+      "title": "Code de coût"
+    },
+    "construction_project_list_page": {
+      "title": "Projets"
+    },
+    "construction_project_form_page": {
+      "title": "Projet"
+    },
+    "construction_work_item_list_page": {
+      "title": "Tâches de projet"
+    },
+    "construction_work_item_form_page": {
+      "title": "Tâche de projet"
+    },
+    "construction_worker_list_page": {
+      "title": "Travailleurs"
+    },
+    "construction_worker_form_page": {
+      "title": "Travailleur"
+    },
+    "construction_worker_assignment_list_page": {
+      "title": "Affectations"
+    },
+    "construction_worker_assignment_form_page": {
+      "title": "Affectation"
+    },
+    "time_entry_list_page": {
+      "title": "Entrées de temps"
+    },
+    "time_entry_form_page": {
+      "title": "Entrée de temps"
+    },
+    "construction_daily_report_list_page": {
+      "title": "Rapports quotidiens"
+    },
+    "construction_daily_report_form_page": {
+      "title": "Rapport quotidien"
+    },
+    "construction_issue_list_page": {
+      "title": "Problèmes"
+    },
+    "construction_issue_form_page": {
+      "title": "Problème"
+    },
+    "material_request_list_page": {
+      "title": "Demandes de matériaux"
+    },
+    "material_request_form_page": {
+      "title": "Demande de matériaux"
+    },
+    "material_receipt_list_page": {
+      "title": "Réceptions de matériaux"
+    },
+    "material_receipt_form_page": {
+      "title": "Réception de matériaux"
+    },
+    "material_log_list_page": {
+      "title": "Journaux de matériaux"
+    },
+    "material_log_form_page": {
+      "title": "Journal de matériaux"
+    },
+    "construction_budget_line_list_page": {
+      "title": "Budgets de coûts"
+    },
+    "construction_budget_line_form_page": {
+      "title": "Budget de coûts"
+    },
+    "construction_expense_list_page": {
+      "title": "Dépenses / Coûts"
+    },
+    "construction_expense_form_page": {
+      "title": "Dépense / Coût"
     },
     "time_report_page": {
       "title": "Rapport sur les entrées de temps"

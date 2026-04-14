@@ -94,6 +94,7 @@
     "nav": [
       {
         "group": "Construction",
+        "group_key": "construction.navigation.group",
         "mode": "inline",
         "items": [
           {
@@ -184,18 +185,21 @@
         {
           "id": "construction_site.latitude",
           "type": "number",
-          "label": "Latitude"
+          "label": "Latitude",
+          "label_key": "construction.entities.construction_site.fields.latitude.label"
         },
         {
           "id": "construction_site.longitude",
           "type": "number",
-          "label": "Longitude"
+          "label": "Longitude",
+          "label_key": "construction.entities.construction_site.fields.longitude.label"
         },
         {
           "id": "construction_site.allowed_radius_m",
           "type": "number",
           "label": "Allowed Radius (m)",
-          "default": 0
+          "default": 0,
+          "label_key": "construction.entities.construction_site.fields.allowed_radius_m.label"
         },
         {
           "id": "construction_site.city",
@@ -212,7 +216,8 @@
         {
           "id": "construction_site.postcode",
           "type": "string",
-          "label": "Postcode"
+          "label": "Postcode",
+          "label_key": "construction.entities.construction_site.fields.postcode.label"
         },
         {
           "id": "construction_site.country",
@@ -224,7 +229,8 @@
           "id": "construction_site.place_id",
           "type": "string",
           "label": "Google Place ID",
-          "readonly": true
+          "readonly": true,
+          "label_key": "construction.entities.construction_site.fields.place_id.label"
         },
         {
           "id": "construction_site.supervisor_id",
@@ -1429,22 +1435,26 @@
         {
           "id": "time_entry.check_in_latitude",
           "type": "number",
-          "label": "Check In Latitude"
+          "label": "Check In Latitude",
+          "label_key": "construction.entities.time_entry.fields.check_in_latitude.label"
         },
         {
           "id": "time_entry.check_in_longitude",
           "type": "number",
-          "label": "Check In Longitude"
+          "label": "Check In Longitude",
+          "label_key": "construction.entities.time_entry.fields.check_in_longitude.label"
         },
         {
           "id": "time_entry.check_in_accuracy_m",
           "type": "number",
-          "label": "Check In GPS Accuracy (m)"
+          "label": "Check In GPS Accuracy (m)",
+          "label_key": "construction.entities.time_entry.fields.check_in_accuracy_m.label"
         },
         {
           "id": "time_entry.check_in_distance_from_site_m",
           "type": "number",
-          "label": "Check In Distance From Site (m)"
+          "label": "Check In Distance From Site (m)",
+          "label_key": "construction.entities.time_entry.fields.check_in_distance_from_site_m.label"
         },
         {
           "id": "time_entry.check_out_at",
@@ -1463,22 +1473,26 @@
         {
           "id": "time_entry.check_out_latitude",
           "type": "number",
-          "label": "Check Out Latitude"
+          "label": "Check Out Latitude",
+          "label_key": "construction.entities.time_entry.fields.check_out_latitude.label"
         },
         {
           "id": "time_entry.check_out_longitude",
           "type": "number",
-          "label": "Check Out Longitude"
+          "label": "Check Out Longitude",
+          "label_key": "construction.entities.time_entry.fields.check_out_longitude.label"
         },
         {
           "id": "time_entry.check_out_accuracy_m",
           "type": "number",
-          "label": "Check Out GPS Accuracy (m)"
+          "label": "Check Out GPS Accuracy (m)",
+          "label_key": "construction.entities.time_entry.fields.check_out_accuracy_m.label"
         },
         {
           "id": "time_entry.check_out_distance_from_site_m",
           "type": "number",
-          "label": "Check Out Distance From Site (m)"
+          "label": "Check Out Distance From Site (m)",
+          "label_key": "construction.entities.time_entry.fields.check_out_distance_from_site_m.label"
         },
         {
           "id": "time_entry.break_minutes",
@@ -1585,12 +1599,14 @@
         {
           "id": "time_entry.check_in_photo",
           "type": "attachments",
-          "label": "Check In Photo"
+          "label": "Check In Photo",
+          "label_key": "construction.entities.time_entry.fields.check_in_photo.label"
         },
         {
           "id": "time_entry.check_out_photo",
           "type": "attachments",
-          "label": "Check Out Photo"
+          "label": "Check Out Photo",
+          "label_key": "construction.entities.time_entry.fields.check_out_photo.label"
         },
         {
           "id": "time_entry.created_at",
@@ -4082,7 +4098,8 @@
             "construction_site.latitude",
             "construction_site.longitude",
             "construction_site.allowed_radius_m"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.geofence.title"
         },
         {
           "id": "notes",
@@ -4120,6 +4137,7 @@
             {
               "id": "geofence_tab",
               "label": "Geofence",
+              "tab_label_key": "construction.views.form.sections.geofence.title",
               "sections": [
                 "geofence"
               ]
@@ -5471,7 +5489,8 @@
             "time_entry.check_out_distance_from_site_m",
             "time_entry.check_in_photo",
             "time_entry.check_out_photo"
-          ]
+          ],
+          "section_title_key": "construction.views.form.sections.verification.title"
         },
         {
           "id": "notes",
@@ -5512,6 +5531,7 @@
             {
               "id": "verification_tab",
               "label": "Verification",
+              "tab_label_key": "construction.views.form.sections.verification.title",
               "sections": [
                 "verification"
               ]
@@ -6920,6 +6940,7 @@
     {
       "id": "construction.dashboard_page",
       "title": "Operations Dashboard",
+      "title_key": "construction.pages.dashboard_page.title",
       "layout": "single",
       "header": {
         "variant": "none",
@@ -6972,7 +6993,7 @@
               "icon": "lucide:HardHat",
               "tone": "primary",
               "format": "number",
-              "target": "page:construction_project.list_page",
+              "target": "page:construction.time_report_page",
               "label_key": "construction.pages.dashboard_page.blocks.1.cards.workers_on_site_today.label",
               "subtitle_key": "construction.pages.dashboard_page.blocks.1.cards.workers_on_site_today.subtitle"
             },
@@ -7026,11 +7047,21 @@
               "measure": "sum:construction_expense.amount",
               "date_field": "construction_expense.expense_date",
               "domain": {
-                "op": "eq",
-                "field": "construction_expense.expense_date",
-                "value": {
-                  "ref": "$today"
-                }
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "construction_expense.expense_date",
+                    "value": {
+                      "ref": "$today"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "construction_expense.status",
+                    "value": "posted"
+                  }
+                ]
               },
               "icon": "lucide:BadgeDollarSign",
               "tone": "error",
@@ -7045,6 +7076,7 @@
           "kind": "container",
           "variant": "card",
           "title": "Cost Breakdown",
+          "title_key": "construction.pages.dashboard_page.blocks.2.title",
           "content": [
             {
               "kind": "view_modes",
@@ -7078,6 +7110,7 @@
                   "kind": "container",
                   "variant": "card",
                   "title": "Recent Time Entries",
+                  "title_key": "construction.pages.dashboard_page.blocks.3.items.1.content.1.title",
                   "content": [
                     {
                       "kind": "view_modes",
@@ -7111,6 +7144,7 @@
                   "kind": "container",
                   "variant": "card",
                   "title": "Materials Logged Today",
+                  "title_key": "construction.pages.dashboard_page.blocks.3.items.2.content.1.title",
                   "content": [
                     {
                       "kind": "view_modes",
@@ -7254,7 +7288,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.list_page.title"
+      "title_key": "construction.pages.construction_site_list_page.title"
     },
     {
       "id": "construction_site.form_page",
@@ -7310,7 +7344,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.form_page.title"
+      "title_key": "construction.pages.construction_site_form_page.title"
     },
     {
       "id": "construction_crew.list_page",
@@ -7357,7 +7391,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.list_page.title"
+      "title_key": "construction.pages.construction_crew_list_page.title"
     },
     {
       "id": "construction_crew.form_page",
@@ -7413,7 +7447,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.form_page.title"
+      "title_key": "construction.pages.construction_crew_form_page.title"
     },
     {
       "id": "construction_cost_code.list_page",
@@ -7460,7 +7494,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.list_page.title"
+      "title_key": "construction.pages.construction_cost_code_list_page.title"
     },
     {
       "id": "construction_cost_code.form_page",
@@ -7516,7 +7550,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.form_page.title"
+      "title_key": "construction.pages.construction_cost_code_form_page.title"
     },
     {
       "id": "construction_project.list_page",
@@ -7567,7 +7601,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.list_page.title"
+      "title_key": "construction.pages.construction_project_list_page.title"
     },
     {
       "id": "construction_project.form_page",
@@ -7623,7 +7657,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.form_page.title"
+      "title_key": "construction.pages.construction_project_form_page.title"
     },
     {
       "id": "construction_work_item.list_page",
@@ -7674,7 +7708,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.list_page.title"
+      "title_key": "construction.pages.construction_work_item_list_page.title"
     },
     {
       "id": "construction_work_item.form_page",
@@ -7730,7 +7764,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.form_page.title"
+      "title_key": "construction.pages.construction_work_item_form_page.title"
     },
     {
       "id": "construction_worker.list_page",
@@ -7777,7 +7811,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.list_page.title"
+      "title_key": "construction.pages.construction_worker_list_page.title"
     },
     {
       "id": "construction_worker.form_page",
@@ -7833,7 +7867,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.form_page.title"
+      "title_key": "construction.pages.construction_worker_form_page.title"
     },
     {
       "id": "construction_worker_assignment.list_page",
@@ -7871,7 +7905,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.list_page.title"
+      "title_key": "construction.pages.construction_worker_assignment_list_page.title"
     },
     {
       "id": "construction_worker_assignment.form_page",
@@ -7927,7 +7961,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.form_page.title"
+      "title_key": "construction.pages.construction_worker_assignment_form_page.title"
     },
     {
       "id": "time_entry.list_page",
@@ -7973,7 +8007,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.list_page.title"
+      "title_key": "construction.pages.time_entry_list_page.title"
     },
     {
       "id": "time_entry.form_page",
@@ -8029,7 +8063,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.form_page.title"
+      "title_key": "construction.pages.time_entry_form_page.title"
     },
     {
       "id": "construction_daily_report.list_page",
@@ -8075,7 +8109,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.list_page.title"
+      "title_key": "construction.pages.construction_daily_report_list_page.title"
     },
     {
       "id": "construction_daily_report.form_page",
@@ -8131,7 +8165,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.form_page.title"
+      "title_key": "construction.pages.construction_daily_report_form_page.title"
     },
     {
       "id": "construction_issue.list_page",
@@ -8166,7 +8200,7 @@
                 },
                 {
                   "mode": "graph",
-                  "target": "view:construction_issue.graph"
+                  "target": "view:construction_daily_report.graph"
                 },
                 {
                   "mode": "pivot",
@@ -8178,7 +8212,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.list_page.title"
+      "title_key": "construction.pages.construction_issue_list_page.title"
     },
     {
       "id": "construction_issue.form_page",
@@ -8234,7 +8268,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.form_page.title"
+      "title_key": "construction.pages.construction_issue_form_page.title"
     },
     {
       "id": "material_request.list_page",
@@ -8276,7 +8310,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.list_page.title"
+      "title_key": "construction.pages.material_request_list_page.title"
     },
     {
       "id": "material_request.form_page",
@@ -8332,7 +8366,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.form_page.title"
+      "title_key": "construction.pages.material_request_form_page.title"
     },
     {
       "id": "material_receipt.list_page",
@@ -8374,7 +8408,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.list_page.title"
+      "title_key": "construction.pages.material_receipt_list_page.title"
     },
     {
       "id": "material_receipt.form_page",
@@ -8430,7 +8464,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.form_page.title"
+      "title_key": "construction.pages.material_receipt_form_page.title"
     },
     {
       "id": "material_log.list_page",
@@ -8476,7 +8510,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.list_page.title"
+      "title_key": "construction.pages.material_log_list_page.title"
     },
     {
       "id": "material_log.form_page",
@@ -8532,7 +8566,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.form_page.title"
+      "title_key": "construction.pages.material_log_form_page.title"
     },
     {
       "id": "construction_budget_line.list_page",
@@ -8574,7 +8608,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.list_page.title"
+      "title_key": "construction.pages.construction_budget_line_list_page.title"
     },
     {
       "id": "construction_budget_line.form_page",
@@ -8630,7 +8664,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.form_page.title"
+      "title_key": "construction.pages.construction_budget_line_form_page.title"
     },
     {
       "id": "construction_expense.list_page",
@@ -8672,7 +8706,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.list_page.title"
+      "title_key": "construction.pages.construction_expense_list_page.title"
     },
     {
       "id": "construction_expense.form_page",
@@ -8728,7 +8762,7 @@
           ]
         }
       ],
-      "title_key": "construction.pages.form_page.title"
+      "title_key": "construction.pages.construction_expense_form_page.title"
     },
     {
       "id": "construction.time_report_page",
@@ -8839,6 +8873,7 @@
                   "kind": "container",
                   "variant": "card",
                   "title": "Costs by Type",
+                  "title_key": "construction.pages.cost_report_page.blocks.1.items.1.content.1.title",
                   "content": [
                     {
                       "kind": "view_modes",
@@ -8864,6 +8899,7 @@
                   "kind": "container",
                   "variant": "card",
                   "title": "Costs by Project",
+                  "title_key": "construction.pages.cost_report_page.blocks.1.items.2.content.1.title",
                   "content": [
                     {
                       "kind": "view_modes",
@@ -9010,6 +9046,7 @@
             "id": "projects_by_status",
             "type": "group",
             "title": "Projects by Status",
+            "title_key": "construction.dashboard.projects_by_status",
             "group_by": "construction_project.status",
             "measure": "count"
           },
@@ -9017,6 +9054,7 @@
             "id": "project_cost_to_date",
             "type": "group",
             "title": "Cost To Date by Project",
+            "title_key": "construction.dashboard.project_cost_to_date",
             "group_by": "construction_project.name",
             "measure": "sum:construction_project.total_cost"
           }
@@ -9088,6 +9126,7 @@
             "id": "labour_hours_by_project",
             "type": "group",
             "title": "Labour Hours by Project",
+            "title_key": "construction.dashboard.labour_hours_by_project",
             "group_by": "time_entry.project_id",
             "measure": "sum:time_entry.hours_worked"
           }
@@ -9112,6 +9151,7 @@
             "id": "daily_reports_by_project",
             "type": "group",
             "title": "Daily Reports by Project",
+            "title_key": "construction.dashboard.daily_reports_by_project",
             "group_by": "construction_daily_report.project_id",
             "measure": "count"
           }
@@ -9186,6 +9226,7 @@
             "id": "materials_by_type",
             "type": "group",
             "title": "Material Usage by Type",
+            "title_key": "construction.dashboard.materials_by_type",
             "group_by": "material_log.material_type",
             "measure": "sum:material_log.quantity"
           }
@@ -9229,6 +9270,7 @@
             "id": "costs_by_project",
             "type": "group",
             "title": "Costs by Project",
+            "title_key": "construction.dashboard.costs_by_project",
             "group_by": "construction_expense.project_id",
             "measure": "sum:construction_expense.amount"
           }

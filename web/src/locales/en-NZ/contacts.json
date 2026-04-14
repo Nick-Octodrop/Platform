@@ -92,5 +92,303 @@
     "new_contact_clicked": "New Contact clicked",
     "deactivate_clicked": "Deactivate clicked",
     "activate_clicked": "Activate clicked"
+  },
+  "contacts": {
+    "module": {
+      "name": "Contacts",
+      "description": "Central contact management for companies, people, customers, suppliers, and service sites."
+    },
+    "navigation": {
+      "group": "Contacts",
+      "contact_list_page": "All Contacts",
+      "contact_mine_page": "My Contacts",
+      "contact_companies_page": "Companies",
+      "contact_people_page": "People",
+      "contact_customers_page": "Customers",
+      "contact_suppliers_page": "Suppliers",
+      "contact_service_sites_page": "Service Sites"
+    },
+    "entities": {
+      "contact": {
+        "fields": {
+          "id": {
+            "label": "Record ID"
+          },
+          "name": {
+            "label": "Name"
+          },
+          "title": {
+            "label": "Title",
+            "options": {
+              "mr": "Mr.",
+              "mrs": "Mrs.",
+              "ms": "Ms.",
+              "dr": "Dr."
+            }
+          },
+          "company_legal_name": {
+            "label": "Legal Name"
+          },
+          "first_name": {
+            "label": "First Name"
+          },
+          "last_name": {
+            "label": "Last Name"
+          },
+          "job_title": {
+            "label": "Job Title"
+          },
+          "company_type": {
+            "label": "Type",
+            "options": {
+              "company": "Company",
+              "person": "Person"
+            }
+          },
+          "parent_company_id": {
+            "label": "Parent Company"
+          },
+          "email": {
+            "label": "Email"
+          },
+          "phone": {
+            "label": "Phone"
+          },
+          "mobile": {
+            "label": "Mobile"
+          },
+          "website": {
+            "label": "Website"
+          },
+          "language": {
+            "label": "Language"
+          },
+          "vat": {
+            "label": "Tax ID / VAT"
+          },
+          "company_registry": {
+            "label": "Company Registry"
+          },
+          "industry": {
+            "label": "Industry"
+          },
+          "address_line_1": {
+            "label": "Address Line 1"
+          },
+          "address_line_2": {
+            "label": "Address Line 2"
+          },
+          "city": {
+            "label": "City"
+          },
+          "region": {
+            "label": "Region/State"
+          },
+          "postcode": {
+            "label": "Postcode"
+          },
+          "country": {
+            "label": "Country"
+          },
+          "latitude": {
+            "label": "Latitude"
+          },
+          "longitude": {
+            "label": "Longitude"
+          },
+          "place_id": {
+            "label": "Google Place ID"
+          },
+          "address_type": {
+            "label": "Address Type",
+            "options": {
+              "contact": "Contact",
+              "invoice": "Invoice",
+              "delivery": "Delivery",
+              "other": "Other"
+            }
+          },
+          "status": {
+            "label": "Status",
+            "options": {
+              "active": "Active",
+              "inactive": "Inactive"
+            }
+          },
+          "tags": {
+            "label": "Tags"
+          },
+          "owner_id": {
+            "label": "Owner"
+          },
+          "notes": {
+            "label": "Notes"
+          },
+          "is_customer": {
+            "label": "Customer"
+          },
+          "is_supplier": {
+            "label": "Supplier"
+          },
+          "is_service_site": {
+            "label": "Service Site"
+          },
+          "customer_payment_terms": {
+            "label": "Customer Payment Terms"
+          },
+          "supplier_payment_terms": {
+            "label": "Vendor Payment Terms"
+          },
+          "pricelist": {
+            "label": "Pricelist"
+          },
+          "service_address_override": {
+            "label": "Service Address Override"
+          },
+          "attachments": {
+            "label": "Attachments"
+          },
+          "created_at": {
+            "label": "Created At"
+          }
+        }
+      }
+    },
+    "actions": {
+      "action_contact_new": {
+        "label": "+ New Contact"
+      },
+      "action_contact_mark_inactive": {
+        "label": "Mark Inactive",
+        "confirm": {
+          "title": "Mark Inactive"
+        }
+      },
+      "action_contact_reactivate": {
+        "label": "Reactivate"
+      }
+    },
+    "workflows": {
+      "workflow_contact_status": {
+        "states": {
+          "active": {
+            "label": "Active"
+          },
+          "inactive": {
+            "label": "Inactive"
+          }
+        },
+        "transitions": {
+          "active_inactive": {
+            "label": "Mark Inactive"
+          },
+          "inactive_active": {
+            "label": "Reactivate"
+          }
+        }
+      }
+    },
+    "views": {
+      "contact_list": {
+        "search": {
+          "placeholder": "Search contacts..."
+        },
+        "filters": {
+          "active": {
+            "label": "Active"
+          },
+          "mine": {
+            "label": "Mine"
+          },
+          "companies": {
+            "label": "Companies"
+          },
+          "people": {
+            "label": "People"
+          },
+          "customers": {
+            "label": "Customers"
+          },
+          "suppliers": {
+            "label": "Suppliers"
+          },
+          "service_sites": {
+            "label": "Service Sites"
+          }
+        }
+      },
+      "contact_form": {
+        "sections": {
+          "primary": {
+            "title": "Primary Details"
+          },
+          "communication": {
+            "title": "Communication"
+          },
+          "address": {
+            "title": "Contacts & Addresses"
+          },
+          "classification": {
+            "title": "Sales & Purchase"
+          },
+          "accounting": {
+            "title": "Accounting"
+          },
+          "notes": {
+            "title": "Internal Notes"
+          }
+        },
+        "tabs": {
+          "contacts_addresses": {
+            "label": "Contacts & Addresses"
+          },
+          "sales_purchase": {
+            "label": "Sales & Purchase"
+          },
+          "accounting_tab": {
+            "label": "Accounting"
+          },
+          "internal_notes": {
+            "label": "Internal Notes"
+          }
+        }
+      }
+    },
+    "pages": {
+      "contact_list_page": {
+        "title": "Contacts"
+      },
+      "contact_companies_page": {
+        "title": "Companies"
+      },
+      "contact_people_page": {
+        "title": "People"
+      },
+      "contact_customers_page": {
+        "title": "Customers"
+      },
+      "contact_suppliers_page": {
+        "title": "Suppliers"
+      },
+      "contact_service_sites_page": {
+        "title": "Service Sites"
+      },
+      "contact_form_page": {
+        "title": "Contact"
+      },
+      "contact_mine_page": {
+        "title": "My Contacts"
+      }
+    },
+    "dashboard": {
+      "contact": {
+        "contacts_by_type": {
+          "title": "Contacts by Type"
+        },
+        "contacts_by_status": {
+          "title": "Contacts by Status"
+        }
+      }
+    }
   }
 }

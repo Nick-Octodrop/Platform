@@ -86,7 +86,7 @@ function RouteLoadingScreen() {
 
 function getPwaSurfaceState() {
   if (typeof window === "undefined") {
-    return { isStandalone: false, isMobileBrowser: false, isIos: false, isSafari: false };
+    return { isStandalone: false, isMobileBrowser: false, isMobileDevice: false, isIos: false, isSafari: false };
   }
   const displayStandalone = window.matchMedia?.("(display-mode: standalone)")?.matches;
   const navigatorStandalone = typeof window.navigator?.standalone === "boolean" && window.navigator.standalone;
@@ -94,11 +94,17 @@ function getPwaSurfaceState() {
   const ua = window.navigator?.userAgent || "";
   const isIos = /iPad|iPhone|iPod/.test(ua);
   const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
+  const coarsePointer = Boolean(window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches);
+  const isMobileDevice = Boolean(coarsePointer || /Android|iPhone|iPad|iPod/i.test(ua));
   const isMobileBrowser = Boolean(
     !isStandalone &&
-      (window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches || /Android|iPhone|iPad|iPod/i.test(ua))
+      isMobileDevice
   );
-  return { isStandalone, isMobileBrowser, isIos, isSafari };
+  return { isStandalone, isMobileBrowser, isMobileDevice, isIos, isSafari };
+}
+
+function shouldAutoApplyPwaUpdate(surface = getPwaSurfaceState()) {
+  return Boolean(surface.isStandalone && !surface.isMobileDevice);
 }
 
 export default function App() {
@@ -261,35 +267,49 @@ export default function App() {
     if (!window.__octoPwaEnabled) return undefined;
     let alive = true;
 
+    async function getActiveRegistration() {
+      const activeRegistration = window.__octoWebSwRegistration;
+      if (activeRegistration) return activeRegistration;
+      if (!("serviceWorker" in navigator)) return null;
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (registration) {
+        window.__octoWebSwRegistration = registration;
+      }
+      return registration;
+    }
+
+    async function applyUpdateOrPrompt() {
+      if (!alive) return;
+      const surface = getPwaSurfaceState();
+      if (shouldAutoApplyPwaUpdate(surface)) {
+        const applyUpdate = window.__octoWebApplyUpdate;
+        if (typeof applyUpdate === "function") {
+          try {
+            await applyUpdate(true);
+            return;
+          } catch {
+            // fall through to manual prompt
+          }
+        }
+      }
+      setUpdatePromptVisible(true);
+    }
+
     async function refreshUpdateAvailability() {
       if (!("serviceWorker" in navigator)) return;
       try {
-        const registration = await navigator.serviceWorker.getRegistration();
+        const registration = await getActiveRegistration();
         if (!alive || !registration) return;
         if (registration.waiting) {
           window.__octoWebUpdateReady = true;
-          if (getPwaSurfaceState().isStandalone) {
-            const applyUpdate = window.__octoWebApplyUpdate;
-            if (typeof applyUpdate === "function") {
-              await applyUpdate(true);
-            }
-            return;
-          }
-          setUpdatePromptVisible(true);
+          await applyUpdateOrPrompt();
           return;
         }
         await registration.update();
         if (!alive) return;
         if (registration.waiting) {
           window.__octoWebUpdateReady = true;
-          if (getPwaSurfaceState().isStandalone) {
-            const applyUpdate = window.__octoWebApplyUpdate;
-            if (typeof applyUpdate === "function") {
-              await applyUpdate(true);
-            }
-            return;
-          }
-          setUpdatePromptVisible(true);
+          await applyUpdateOrPrompt();
         }
       } catch {
         // ignore
@@ -297,25 +317,34 @@ export default function App() {
     }
 
     function handleUpdateReady() {
-      if (getPwaSurfaceState().isStandalone) {
-        const applyUpdate = window.__octoWebApplyUpdate;
-        if (typeof applyUpdate === "function") {
-          applyUpdate(true).catch(() => {
-            setUpdatePromptVisible(true);
-          });
-          return;
-        }
-      }
-      setUpdatePromptVisible(true);
+      applyUpdateOrPrompt();
     }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState !== "visible") return;
+      refreshUpdateAvailability();
+    }
+
     if (window.__octoWebUpdateReady) {
-      setUpdatePromptVisible(true);
+      handleUpdateReady();
     }
     refreshUpdateAvailability();
     window.addEventListener("octo:web-pwa-update-ready", handleUpdateReady);
+    window.addEventListener("focus", refreshUpdateAvailability);
+    window.addEventListener("pageshow", refreshUpdateAvailability);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    const pollId = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        refreshUpdateAvailability();
+      }
+    }, 5 * 60 * 1000);
     return () => {
       alive = false;
       window.removeEventListener("octo:web-pwa-update-ready", handleUpdateReady);
+      window.removeEventListener("focus", refreshUpdateAvailability);
+      window.removeEventListener("pageshow", refreshUpdateAvailability);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.clearInterval(pollId);
     };
   }, []);
 

@@ -4,6 +4,7 @@
     "description": "Uniform bouwbeheer voor projecten, arbeid, materialen, kosten en dagelijkse werkzaamheden op de locatie."
   },
   "navigation": {
+    "group": "Bouw",
     "construction_dashboard_page": "Dashboard",
     "construction_project_list_page": "Projecten",
     "construction_site_list_page": "Sites",
@@ -29,14 +30,29 @@
         "address": {
           "label": "Adres"
         },
+        "latitude": {
+          "label": "Latitude"
+        },
+        "longitude": {
+          "label": "Longitude"
+        },
+        "allowed_radius_m": {
+          "label": "Toegestane straal (m)"
+        },
         "city": {
           "label": "Stad"
         },
         "region": {
           "label": "Regio / Staat"
         },
+        "postcode": {
+          "label": "Postcode"
+        },
         "country": {
           "label": "Land"
+        },
+        "place_id": {
+          "label": "Google Place-ID"
         },
         "supervisor_id": {
           "label": "Toezichthouder van de locatie"
@@ -404,8 +420,32 @@
         "check_in_at": {
           "label": "Inchecken"
         },
+        "check_in_latitude": {
+          "label": "Check-inbreedtegraad"
+        },
+        "check_in_longitude": {
+          "label": "Check-inlengtegraad"
+        },
+        "check_in_accuracy_m": {
+          "label": "GPS-nauwkeurigheid bij check-in (m)"
+        },
+        "check_in_distance_from_site_m": {
+          "label": "Afstand vanaf site bij check-in (m)"
+        },
         "check_out_at": {
           "label": "Uitchecken"
+        },
+        "check_out_latitude": {
+          "label": "Check-outbreedtegraad"
+        },
+        "check_out_longitude": {
+          "label": "Check-outlengtegraad"
+        },
+        "check_out_accuracy_m": {
+          "label": "GPS-nauwkeurigheid bij check-out (m)"
+        },
+        "check_out_distance_from_site_m": {
+          "label": "Afstand vanaf site bij check-out (m)"
         },
         "break_minutes": {
           "label": "Pauze minuten"
@@ -434,6 +474,12 @@
         },
         "notes": {
           "label": "Opmerkingen"
+        },
+        "check_in_photo": {
+          "label": "Check-infoto"
+        },
+        "check_out_photo": {
+          "label": "Check-outfoto"
         },
         "created_at": {
           "label": "Gemaakt op"
@@ -1091,6 +1137,9 @@
         "general": {
           "title": "Algemeen"
         },
+        "geofence": {
+          "title": "Geofence"
+        },
         "notes": {
           "title": "Opmerkingen"
         },
@@ -1135,6 +1184,9 @@
         },
         "entry": {
           "title": "Binnenkomst"
+        },
+        "verification": {
+          "title": "Verificatie"
         },
         "report": {
           "title": "Rapporteer"
@@ -1277,6 +1329,96 @@
     },
     "form_page": {
       "title": "Locatie"
+    },
+    "construction_site_list_page": {
+      "title": "Sites"
+    },
+    "construction_site_form_page": {
+      "title": "Locatie"
+    },
+    "construction_crew_list_page": {
+      "title": "Ploegen"
+    },
+    "construction_crew_form_page": {
+      "title": "Ploeg"
+    },
+    "construction_cost_code_list_page": {
+      "title": "Kostencodes"
+    },
+    "construction_cost_code_form_page": {
+      "title": "Kostencode"
+    },
+    "construction_project_list_page": {
+      "title": "Projecten"
+    },
+    "construction_project_form_page": {
+      "title": "Project"
+    },
+    "construction_work_item_list_page": {
+      "title": "Projecttaken"
+    },
+    "construction_work_item_form_page": {
+      "title": "Projecttaak"
+    },
+    "construction_worker_list_page": {
+      "title": "Werknemers"
+    },
+    "construction_worker_form_page": {
+      "title": "Werknemer"
+    },
+    "construction_worker_assignment_list_page": {
+      "title": "Toewijzingen"
+    },
+    "construction_worker_assignment_form_page": {
+      "title": "Toewijzing"
+    },
+    "time_entry_list_page": {
+      "title": "Tijdinvoer"
+    },
+    "time_entry_form_page": {
+      "title": "Tijdinvoer"
+    },
+    "construction_daily_report_list_page": {
+      "title": "Dagelijkse rapporten"
+    },
+    "construction_daily_report_form_page": {
+      "title": "Dagelijks rapport"
+    },
+    "construction_issue_list_page": {
+      "title": "Problemen"
+    },
+    "construction_issue_form_page": {
+      "title": "Probleem"
+    },
+    "material_request_list_page": {
+      "title": "Materiaalverzoeken"
+    },
+    "material_request_form_page": {
+      "title": "Materiaalverzoek"
+    },
+    "material_receipt_list_page": {
+      "title": "Materiaalontvangsten"
+    },
+    "material_receipt_form_page": {
+      "title": "Materiaalontvangst"
+    },
+    "material_log_list_page": {
+      "title": "Materiaallogboeken"
+    },
+    "material_log_form_page": {
+      "title": "Materiaallogboek"
+    },
+    "construction_budget_line_list_page": {
+      "title": "Kostenbudgetten"
+    },
+    "construction_budget_line_form_page": {
+      "title": "Kostenbudget"
+    },
+    "construction_expense_list_page": {
+      "title": "Uitgaven / Kosten"
+    },
+    "construction_expense_form_page": {
+      "title": "Uitgave / Kostenpost"
     },
     "time_report_page": {
       "title": "Tijdregistratierapport"

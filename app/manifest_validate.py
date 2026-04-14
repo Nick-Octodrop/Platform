@@ -32,7 +32,7 @@ ALLOWED_V1_TOP_KEYS = {
     "transformations",
 }
 ALLOWED_V1_APP_KEYS = {"home", "nav", "defaults"}
-ALLOWED_V1_NAV_GROUP_KEYS = {"group", "items", "mode", "inline", "as_link"}
+ALLOWED_V1_NAV_GROUP_KEYS = {"group", "group_key", "items", "mode", "inline", "as_link"}
 ALLOWED_V1_NAV_ITEM_KEYS = {"label", "label_key", "menu_label_key", "to"}
 ALLOWED_V1_PAGE_KEYS = {"id", "title", "title_key", "layout", "header", "content", "breadcrumbs"}
 ALLOWED_V1_PAGE_HEADER_KEYS = {"actions", "variant"}
@@ -70,6 +70,7 @@ ALLOWED_V1_BLOCK_KEYS = {
     "create_defaults",
     "create_modal",
     "cards",
+    "title_key",
 }
 ALLOWED_V1_ACTION_KINDS = {"navigate", "open_form", "refresh", "create_record", "update_record", "bulk_update", "transform_record"}
 ALLOWED_V1_TRIGGER_KEYS = {"id", "label", "event", "entity_id", "action_id", "status_field"}
@@ -81,7 +82,7 @@ ALLOWED_V1_TABS_KEYS = {"kind", "style", "tabs", "default_tab"}
 ALLOWED_V1_TAB_KEYS = {"id", "label", "label_key", "tab_label_key", "content"}
 ALLOWED_V1_TEXT_KEYS = {"kind", "text", "text_key"}
 ALLOWED_V1_CHATTER_KEYS = {"kind", "entity_id", "record_ref"}
-ALLOWED_V1_CONTAINER_KEYS = {"kind", "variant", "title", "content"}
+ALLOWED_V1_CONTAINER_KEYS = {"kind", "variant", "title", "title_key", "content"}
 ALLOWED_V1_STAT_CARDS_KEYS = {"kind", "title", "columns", "cards"}
 ALLOWED_V1_STAT_CARD_KEYS = {"id", "label", "label_key", "title_key", "subtitle", "subtitle_key", "entity_id", "measure", "domain", "icon", "tone", "target", "date_field", "format"}
 ALLOWED_V1_TOOLBAR_KEYS = {"kind", "align", "actions"}
@@ -177,7 +178,7 @@ ALLOWED_V1_DASHBOARDABLE_KEYS = {
     "default_widgets",
     "default_filters",
 }
-ALLOWED_V1_DASHBOARD_WIDGET_KEYS = {"id", "type", "title", "group_by", "measure", "date_field", "filter"}
+ALLOWED_V1_DASHBOARD_WIDGET_KEYS = {"id", "type", "title", "title_key", "group_by", "measure", "date_field", "filter"}
 ALLOWED_V1_TRANSFORMATION_KEYS = {
     "key",
     "source_entity_id",

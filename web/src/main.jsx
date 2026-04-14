@@ -31,6 +31,17 @@ function isStandaloneDisplay() {
   return Boolean(displayStandalone || navigatorStandalone);
 }
 
+function isMobileDevice() {
+  if (typeof window === "undefined") return false;
+  const ua = window.navigator?.userAgent || "";
+  const coarsePointer = Boolean(window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches);
+  return Boolean(coarsePointer || /Android|iPhone|iPad|iPod/i.test(ua));
+}
+
+function shouldAutoApplyStandaloneUpdate() {
+  return isStandaloneDisplay() && !isMobileDevice();
+}
+
 function dispatchPwaUpdateReady() {
   if (typeof window === "undefined") return;
   window.__octoWebUpdateReady = true;
@@ -129,7 +140,7 @@ if (SHOULD_REGISTER_PWA) {
       installServiceWorkerUpdatePolling(registration);
       if (registration?.waiting) {
         dispatchPwaUpdateReady();
-        if (isStandaloneDisplay()) {
+        if (shouldAutoApplyStandaloneUpdate()) {
           updateSW(true).catch(() => {
             // keep manual update fallback in the shell if auto-apply fails
           });
@@ -139,7 +150,7 @@ if (SHOULD_REGISTER_PWA) {
     onNeedRefresh() {
       window.__octoWebApplyUpdate = updateSW;
       dispatchPwaUpdateReady();
-      if (isStandaloneDisplay()) {
+      if (shouldAutoApplyStandaloneUpdate()) {
         updateSW(true).catch(() => {
           // keep manual update fallback in the shell if auto-apply fails
         });

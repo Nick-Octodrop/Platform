@@ -7,7 +7,9 @@
     "version": "1.5.0",
     "description": "Central contact management for companies, people, customers, suppliers, and service sites.",
     "category": "Foundation",
-    "icon_key": "lucide:Users"
+    "icon_key": "lucide:Users",
+    "name_key": "contacts.module.name",
+    "description_key": "contacts.module.description"
   },
   "app": {
     "home": "page:contact.list_page",
@@ -28,33 +30,41 @@
         "items": [
           {
             "label": "All Contacts",
-            "to": "page:contact.list_page"
+            "to": "page:contact.list_page",
+            "menu_label_key": "contacts.navigation.contact_list_page"
           },
           {
             "label": "My Contacts",
-            "to": "page:contact.mine_page"
+            "to": "page:contact.mine_page",
+            "menu_label_key": "contacts.navigation.contact_mine_page"
           },
           {
             "label": "Companies",
-            "to": "page:contact.companies_page"
+            "to": "page:contact.companies_page",
+            "menu_label_key": "contacts.navigation.contact_companies_page"
           },
           {
             "label": "People",
-            "to": "page:contact.people_page"
+            "to": "page:contact.people_page",
+            "menu_label_key": "contacts.navigation.contact_people_page"
           },
           {
             "label": "Customers",
-            "to": "page:contact.customers_page"
+            "to": "page:contact.customers_page",
+            "menu_label_key": "contacts.navigation.contact_customers_page"
           },
           {
             "label": "Suppliers",
-            "to": "page:contact.suppliers_page"
+            "to": "page:contact.suppliers_page",
+            "menu_label_key": "contacts.navigation.contact_suppliers_page"
           },
           {
             "label": "Service Sites",
-            "to": "page:contact.service_sites_page"
+            "to": "page:contact.service_sites_page",
+            "menu_label_key": "contacts.navigation.contact_service_sites_page"
           }
-        ]
+        ],
+        "group_key": "contacts.navigation.group"
       }
     ]
   },
@@ -67,13 +77,15 @@
           "id": "contact.id",
           "type": "uuid",
           "label": "Record ID",
-          "readonly": true
+          "readonly": true,
+          "label_key": "contacts.entities.contact.fields.id.label"
         },
         {
           "id": "contact.name",
           "type": "string",
           "label": "Name",
-          "required": true
+          "required": true,
+          "label_key": "contacts.entities.contact.fields.name.label"
         },
         {
           "id": "contact.title",
@@ -82,26 +94,35 @@
           "options": [
             {
               "value": "mr",
-              "label": "Mr."
+              "label": "Mr.",
+              "status_label_key": "contacts.entities.contact.fields.title.options.mr",
+              "label_key": "contacts.entities.contact.fields.title.options.mr"
             },
             {
               "value": "mrs",
-              "label": "Mrs."
+              "label": "Mrs.",
+              "status_label_key": "contacts.entities.contact.fields.title.options.mrs",
+              "label_key": "contacts.entities.contact.fields.title.options.mrs"
             },
             {
               "value": "ms",
-              "label": "Ms."
+              "label": "Ms.",
+              "status_label_key": "contacts.entities.contact.fields.title.options.ms",
+              "label_key": "contacts.entities.contact.fields.title.options.ms"
             },
             {
               "value": "dr",
-              "label": "Dr."
+              "label": "Dr.",
+              "status_label_key": "contacts.entities.contact.fields.title.options.dr",
+              "label_key": "contacts.entities.contact.fields.title.options.dr"
             }
           ],
           "visible_when": {
             "op": "eq",
             "field": "contact.company_type",
             "value": "person"
-          }
+          },
+          "label_key": "contacts.entities.contact.fields.title.label"
         },
         {
           "id": "contact.company_legal_name",
@@ -111,7 +132,8 @@
             "op": "eq",
             "field": "contact.company_type",
             "value": "company"
-          }
+          },
+          "label_key": "contacts.entities.contact.fields.company_legal_name.label"
         },
         {
           "id": "contact.first_name",
@@ -121,7 +143,8 @@
             "op": "eq",
             "field": "contact.company_type",
             "value": "person"
-          }
+          },
+          "label_key": "contacts.entities.contact.fields.first_name.label"
         },
         {
           "id": "contact.last_name",
@@ -131,7 +154,8 @@
             "op": "eq",
             "field": "contact.company_type",
             "value": "person"
-          }
+          },
+          "label_key": "contacts.entities.contact.fields.last_name.label"
         },
         {
           "id": "contact.job_title",
@@ -141,7 +165,8 @@
             "op": "eq",
             "field": "contact.company_type",
             "value": "person"
-          }
+          },
+          "label_key": "contacts.entities.contact.fields.job_title.label"
         },
         {
           "id": "contact.company_type",
@@ -151,106 +176,129 @@
           "options": [
             {
               "value": "company",
-              "label": "Company"
+              "label": "Company",
+              "status_label_key": "contacts.entities.contact.fields.company_type.options.company",
+              "label_key": "contacts.entities.contact.fields.company_type.options.company"
             },
             {
               "value": "person",
-              "label": "Person"
+              "label": "Person",
+              "status_label_key": "contacts.entities.contact.fields.company_type.options.person",
+              "label_key": "contacts.entities.contact.fields.company_type.options.person"
             }
-          ]
+          ],
+          "label_key": "contacts.entities.contact.fields.company_type.label"
         },
         {
           "id": "contact.parent_company_id",
           "type": "lookup",
           "label": "Parent Company",
           "entity": "entity.contact",
-          "display_field": "contact.name"
+          "display_field": "contact.name",
+          "label_key": "contacts.entities.contact.fields.parent_company_id.label"
         },
         {
           "id": "contact.email",
           "type": "string",
-          "label": "Email"
+          "label": "Email",
+          "label_key": "contacts.entities.contact.fields.email.label"
         },
         {
           "id": "contact.phone",
           "type": "string",
-          "label": "Phone"
+          "label": "Phone",
+          "label_key": "contacts.entities.contact.fields.phone.label"
         },
         {
           "id": "contact.mobile",
           "type": "string",
-          "label": "Mobile"
+          "label": "Mobile",
+          "label_key": "contacts.entities.contact.fields.mobile.label"
         },
         {
           "id": "contact.website",
           "type": "string",
-          "label": "Website"
+          "label": "Website",
+          "label_key": "contacts.entities.contact.fields.website.label"
         },
         {
           "id": "contact.language",
           "type": "string",
-          "label": "Language"
+          "label": "Language",
+          "label_key": "contacts.entities.contact.fields.language.label"
         },
         {
           "id": "contact.vat",
           "type": "string",
-          "label": "Tax ID / VAT"
+          "label": "Tax ID / VAT",
+          "label_key": "contacts.entities.contact.fields.vat.label"
         },
         {
           "id": "contact.company_registry",
           "type": "string",
-          "label": "Company Registry"
+          "label": "Company Registry",
+          "label_key": "contacts.entities.contact.fields.company_registry.label"
         },
         {
           "id": "contact.industry",
           "type": "string",
-          "label": "Industry"
+          "label": "Industry",
+          "label_key": "contacts.entities.contact.fields.industry.label"
         },
         {
           "id": "contact.address_line_1",
           "type": "string",
-          "label": "Address Line 1"
+          "label": "Address Line 1",
+          "label_key": "contacts.entities.contact.fields.address_line_1.label"
         },
         {
           "id": "contact.address_line_2",
           "type": "string",
-          "label": "Address Line 2"
+          "label": "Address Line 2",
+          "label_key": "contacts.entities.contact.fields.address_line_2.label"
         },
         {
           "id": "contact.city",
           "type": "string",
-          "label": "City"
+          "label": "City",
+          "label_key": "contacts.entities.contact.fields.city.label"
         },
         {
           "id": "contact.region",
           "type": "string",
-          "label": "Region/State"
+          "label": "Region/State",
+          "label_key": "contacts.entities.contact.fields.region.label"
         },
         {
           "id": "contact.postcode",
           "type": "string",
-          "label": "Postcode"
+          "label": "Postcode",
+          "label_key": "contacts.entities.contact.fields.postcode.label"
         },
         {
           "id": "contact.country",
           "type": "string",
-          "label": "Country"
+          "label": "Country",
+          "label_key": "contacts.entities.contact.fields.country.label"
         },
         {
           "id": "contact.latitude",
           "type": "number",
-          "label": "Latitude"
+          "label": "Latitude",
+          "label_key": "contacts.entities.contact.fields.latitude.label"
         },
         {
           "id": "contact.longitude",
           "type": "number",
-          "label": "Longitude"
+          "label": "Longitude",
+          "label_key": "contacts.entities.contact.fields.longitude.label"
         },
         {
           "id": "contact.place_id",
           "type": "string",
           "label": "Google Place ID",
-          "readonly": true
+          "readonly": true,
+          "label_key": "contacts.entities.contact.fields.place_id.label"
         },
         {
           "id": "contact.address_type",
@@ -260,21 +308,30 @@
           "options": [
             {
               "value": "contact",
-              "label": "Contact"
+              "label": "Contact",
+              "status_label_key": "contacts.entities.contact.fields.address_type.options.contact",
+              "label_key": "contacts.entities.contact.fields.address_type.options.contact"
             },
             {
               "value": "invoice",
-              "label": "Invoice"
+              "label": "Invoice",
+              "status_label_key": "contacts.entities.contact.fields.address_type.options.invoice",
+              "label_key": "contacts.entities.contact.fields.address_type.options.invoice"
             },
             {
               "value": "delivery",
-              "label": "Delivery"
+              "label": "Delivery",
+              "status_label_key": "contacts.entities.contact.fields.address_type.options.delivery",
+              "label_key": "contacts.entities.contact.fields.address_type.options.delivery"
             },
             {
               "value": "other",
-              "label": "Other"
+              "label": "Other",
+              "status_label_key": "contacts.entities.contact.fields.address_type.options.other",
+              "label_key": "contacts.entities.contact.fields.address_type.options.other"
             }
-          ]
+          ],
+          "label_key": "contacts.entities.contact.fields.address_type.label"
         },
         {
           "id": "contact.status",
@@ -284,76 +341,93 @@
           "options": [
             {
               "value": "active",
-              "label": "Active"
+              "label": "Active",
+              "status_label_key": "contacts.entities.contact.fields.status.options.active",
+              "label_key": "contacts.entities.contact.fields.status.options.active"
             },
             {
               "value": "inactive",
-              "label": "Inactive"
+              "label": "Inactive",
+              "status_label_key": "contacts.entities.contact.fields.status.options.inactive",
+              "label_key": "contacts.entities.contact.fields.status.options.inactive"
             }
-          ]
+          ],
+          "label_key": "contacts.entities.contact.fields.status.label"
         },
         {
           "id": "contact.tags",
           "type": "tags",
-          "label": "Tags"
+          "label": "Tags",
+          "label_key": "contacts.entities.contact.fields.tags.label"
         },
         {
           "id": "contact.owner_id",
           "type": "user",
-          "label": "Owner"
+          "label": "Owner",
+          "label_key": "contacts.entities.contact.fields.owner_id.label"
         },
         {
           "id": "contact.notes",
           "type": "text",
-          "label": "Notes"
+          "label": "Notes",
+          "label_key": "contacts.entities.contact.fields.notes.label"
         },
         {
           "id": "contact.is_customer",
           "type": "bool",
           "label": "Customer",
-          "default": false
+          "default": false,
+          "label_key": "contacts.entities.contact.fields.is_customer.label"
         },
         {
           "id": "contact.is_supplier",
           "type": "bool",
           "label": "Supplier",
-          "default": false
+          "default": false,
+          "label_key": "contacts.entities.contact.fields.is_supplier.label"
         },
         {
           "id": "contact.is_service_site",
           "type": "bool",
           "label": "Service Site",
-          "default": false
+          "default": false,
+          "label_key": "contacts.entities.contact.fields.is_service_site.label"
         },
         {
           "id": "contact.customer_payment_terms",
           "type": "string",
-          "label": "Customer Payment Terms"
+          "label": "Customer Payment Terms",
+          "label_key": "contacts.entities.contact.fields.customer_payment_terms.label"
         },
         {
           "id": "contact.supplier_payment_terms",
           "type": "string",
-          "label": "Vendor Payment Terms"
+          "label": "Vendor Payment Terms",
+          "label_key": "contacts.entities.contact.fields.supplier_payment_terms.label"
         },
         {
           "id": "contact.pricelist",
           "type": "string",
-          "label": "Pricelist"
+          "label": "Pricelist",
+          "label_key": "contacts.entities.contact.fields.pricelist.label"
         },
         {
           "id": "contact.service_address_override",
           "type": "text",
-          "label": "Service Address Override"
+          "label": "Service Address Override",
+          "label_key": "contacts.entities.contact.fields.service_address_override.label"
         },
         {
           "id": "contact.attachments",
           "type": "attachments",
-          "label": "Attachments"
+          "label": "Attachments",
+          "label_key": "contacts.entities.contact.fields.attachments.label"
         },
         {
           "id": "contact.created_at",
           "type": "datetime",
-          "label": "Created At"
+          "label": "Created At",
+          "label_key": "contacts.entities.contact.fields.created_at.label"
         }
       ]
     }
@@ -363,7 +437,8 @@
       "id": "action.contact_new",
       "kind": "open_form",
       "label": "+ New Contact",
-      "target": "contact.form"
+      "target": "contact.form",
+      "action_label_key": "contacts.actions.action_contact_new.label"
     },
     {
       "id": "action.contact_mark_inactive",
@@ -385,8 +460,10 @@
       },
       "confirm": {
         "title": "Mark Inactive",
-        "body": "This contact will be marked inactive."
-      }
+        "body": "This contact will be marked inactive.",
+        "title_key": "contacts.actions.action_contact_mark_inactive.confirm.title"
+      },
+      "action_label_key": "contacts.actions.action_contact_mark_inactive.label"
     },
     {
       "id": "action.contact_reactivate",
@@ -405,7 +482,8 @@
         "op": "eq",
         "field": "contact.status",
         "value": "inactive"
-      }
+      },
+      "action_label_key": "contacts.actions.action_contact_reactivate.label"
     }
   ],
   "triggers": [
@@ -488,7 +566,8 @@
             "contact.phone",
             "contact.city",
             "contact.region"
-          ]
+          ],
+          "placeholder_key": "contacts.views.contact_list.search.placeholder"
         },
         "filters": [
           {
@@ -498,7 +577,8 @@
               "op": "eq",
               "field": "contact.status",
               "value": "active"
-            }
+            },
+            "label_key": "contacts.views.contact_list.filters.active.label"
           },
           {
             "id": "mine",
@@ -509,7 +589,8 @@
               "value": {
                 "ref": "$actor.user_id"
               }
-            }
+            },
+            "label_key": "contacts.views.contact_list.filters.mine.label"
           },
           {
             "id": "companies",
@@ -518,7 +599,8 @@
               "op": "eq",
               "field": "contact.company_type",
               "value": "company"
-            }
+            },
+            "label_key": "contacts.views.contact_list.filters.companies.label"
           },
           {
             "id": "people",
@@ -527,7 +609,8 @@
               "op": "eq",
               "field": "contact.company_type",
               "value": "person"
-            }
+            },
+            "label_key": "contacts.views.contact_list.filters.people.label"
           },
           {
             "id": "customers",
@@ -536,7 +619,8 @@
               "op": "eq",
               "field": "contact.is_customer",
               "value": true
-            }
+            },
+            "label_key": "contacts.views.contact_list.filters.customers.label"
           },
           {
             "id": "suppliers",
@@ -545,7 +629,8 @@
               "op": "eq",
               "field": "contact.is_supplier",
               "value": true
-            }
+            },
+            "label_key": "contacts.views.contact_list.filters.suppliers.label"
           },
           {
             "id": "service_sites",
@@ -554,7 +639,8 @@
               "op": "eq",
               "field": "contact.is_service_site",
               "value": true
-            }
+            },
+            "label_key": "contacts.views.contact_list.filters.service_sites.label"
           }
         ]
       }
@@ -598,7 +684,8 @@
             "contact.status",
             "contact.owner_id",
             "contact.tags"
-          ]
+          ],
+          "section_title_key": "contacts.views.contact_form.sections.primary.title"
         },
         {
           "id": "communication",
@@ -611,7 +698,8 @@
             "contact.phone",
             "contact.mobile",
             "contact.language"
-          ]
+          ],
+          "section_title_key": "contacts.views.contact_form.sections.communication.title"
         },
         {
           "id": "address",
@@ -629,7 +717,8 @@
             "contact.latitude",
             "contact.longitude",
             "contact.service_address_override"
-          ]
+          ],
+          "section_title_key": "contacts.views.contact_form.sections.address.title"
         },
         {
           "id": "classification",
@@ -643,7 +732,8 @@
             "contact.customer_payment_terms",
             "contact.supplier_payment_terms",
             "contact.pricelist"
-          ]
+          ],
+          "section_title_key": "contacts.views.contact_form.sections.classification.title"
         },
         {
           "id": "accounting",
@@ -654,7 +744,8 @@
             "contact.vat",
             "contact.company_registry",
             "contact.industry"
-          ]
+          ],
+          "section_title_key": "contacts.views.contact_form.sections.accounting.title"
         },
         {
           "id": "notes",
@@ -662,7 +753,8 @@
           "fields": [
             "contact.notes",
             "contact.attachments"
-          ]
+          ],
+          "section_title_key": "contacts.views.contact_form.sections.notes.title"
         }
       ],
       "header": {
@@ -688,28 +780,32 @@
                 "primary",
                 "communication",
                 "address"
-              ]
+              ],
+              "tab_label_key": "contacts.views.contact_form.tabs.contacts_addresses.label"
             },
             {
               "id": "sales_purchase",
               "label": "Sales & Purchase",
               "sections": [
                 "classification"
-              ]
+              ],
+              "tab_label_key": "contacts.views.contact_form.tabs.sales_purchase.label"
             },
             {
               "id": "accounting_tab",
               "label": "Accounting",
               "sections": [
                 "accounting"
-              ]
+              ],
+              "tab_label_key": "contacts.views.contact_form.tabs.accounting_tab.label"
             },
             {
               "id": "internal_notes",
               "label": "Internal Notes",
               "sections": [
                 "notes"
-              ]
+              ],
+              "tab_label_key": "contacts.views.contact_form.tabs.internal_notes.label"
             }
           ]
         }
@@ -815,7 +911,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "contacts.pages.contact_list_page.title"
     },
     {
       "id": "contact.companies_page",
@@ -862,7 +959,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "contacts.pages.contact_companies_page.title"
     },
     {
       "id": "contact.people_page",
@@ -909,7 +1007,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "contacts.pages.contact_people_page.title"
     },
     {
       "id": "contact.customers_page",
@@ -956,7 +1055,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "contacts.pages.contact_customers_page.title"
     },
     {
       "id": "contact.suppliers_page",
@@ -1003,7 +1103,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "contacts.pages.contact_suppliers_page.title"
     },
     {
       "id": "contact.service_sites_page",
@@ -1050,7 +1151,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "contacts.pages.contact_service_sites_page.title"
     },
     {
       "id": "contact.form_page",
@@ -1105,7 +1207,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "contacts.pages.contact_form_page.title"
     },
     {
       "id": "contact.mine_page",
@@ -1152,7 +1255,8 @@
             }
           ]
         }
-      ]
+      ],
+      "title_key": "contacts.pages.contact_mine_page.title"
     }
   ],
   "interfaces": {
@@ -1192,14 +1296,16 @@
             "type": "group",
             "title": "Contacts by Type",
             "group_by": "contact.company_type",
-            "measure": "count"
+            "measure": "count",
+            "title_key": "contacts.dashboard.contact.contacts_by_type.title"
           },
           {
             "id": "contacts_by_status",
             "type": "group",
             "title": "Contacts by Status",
             "group_by": "contact.status",
-            "measure": "count"
+            "measure": "count",
+            "title_key": "contacts.dashboard.contact.contacts_by_status.title"
           }
         ]
       }
@@ -1215,24 +1321,32 @@
         {
           "id": "active",
           "label": "Active",
-          "order": 1
+          "order": 1,
+          "status_label_key": "contacts.workflows.workflow_contact_status.states.active.label",
+          "label_key": "contacts.workflows.workflow_contact_status.states.active.label"
         },
         {
           "id": "inactive",
           "label": "Inactive",
-          "order": 2
+          "order": 2,
+          "status_label_key": "contacts.workflows.workflow_contact_status.states.inactive.label",
+          "label_key": "contacts.workflows.workflow_contact_status.states.inactive.label"
         }
       ],
       "transitions": [
         {
           "from": "active",
           "to": "inactive",
-          "label": "Mark Inactive"
+          "label": "Mark Inactive",
+          "action_label_key": "contacts.workflows.workflow_contact_status.transitions.active_inactive.label",
+          "label_key": "contacts.workflows.workflow_contact_status.transitions.active_inactive.label"
         },
         {
           "from": "inactive",
           "to": "active",
-          "label": "Reactivate"
+          "label": "Reactivate",
+          "action_label_key": "contacts.workflows.workflow_contact_status.transitions.inactive_active.label",
+          "label_key": "contacts.workflows.workflow_contact_status.transitions.inactive_active.label"
         }
       ]
     }
