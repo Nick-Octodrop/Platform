@@ -4,8 +4,10 @@
     "id": "te_finance",
     "key": "te_finance",
     "name": "Finance",
+    "name_key": "te_finance.module.name",
     "version": "1.0.0",
     "description": "Internal owner and company funds tracking for True Essentials.",
+    "description_key": "te_finance.module.description",
     "category": "True Essentials",
     "icon_key": "lucide:Wallet"
   },
@@ -24,11 +26,12 @@
     "nav": [
       {
         "group": "Finance",
+        "group_key": "te_finance.navigation.group",
         "mode": "inline",
         "items": [
-          { "label": "Home", "to": "page:te_finance_entry.home_page" },
-          { "label": "Entries", "to": "page:te_finance_entry.list_page" },
-          { "label": "Unreimbursed", "to": "page:te_finance_entry.unreimbursed_page" }
+          { "label": "Home", "to": "page:te_finance_entry.home_page", "menu_label_key": "te_finance.navigation.home_page" },
+          { "label": "Entries", "to": "page:te_finance_entry.list_page", "menu_label_key": "te_finance.navigation.list_page" },
+          { "label": "Unreimbursed", "to": "page:te_finance_entry.unreimbursed_page", "menu_label_key": "te_finance.navigation.unreimbursed_page" }
         ]
       }
     ]

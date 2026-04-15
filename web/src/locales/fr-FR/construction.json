@@ -1,11 +1,11 @@
 {
   "construction": {
     "module": {
-      "name": "Construction",
+      "name": "Chantiers",
       "description": "Gestion de construction unifiée pour les projets, la main-d'œuvre, les matériaux, les coûts et les opérations quotidiennes du chantier."
     },
     "navigation": {
-      "group": "Construction",
+      "group": "Chantiers",
       "construction_dashboard_page": "Tableau de bord",
       "construction_project_list_page": "Projets",
       "construction_site_list_page": "Sites",

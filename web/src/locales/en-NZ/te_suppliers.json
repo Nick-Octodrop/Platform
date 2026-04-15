@@ -1,0 +1,14 @@
+{
+  "te_suppliers": {
+    "module": {
+      "name": "Suppliers",
+      "description": "Supplier master records and contacts for True Essentials."
+    },
+    "navigation": {
+      "group": "Suppliers",
+      "home_page": "Home",
+      "list_page": "Suppliers",
+      "contacts_page": "Contacts"
+    }
+  }
+}

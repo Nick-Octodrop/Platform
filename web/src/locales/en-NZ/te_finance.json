@@ -1,0 +1,14 @@
+{
+  "te_finance": {
+    "module": {
+      "name": "Finance",
+      "description": "Internal owner and company funds tracking for True Essentials."
+    },
+    "navigation": {
+      "group": "Finance",
+      "home_page": "Home",
+      "list_page": "Entries",
+      "unreimbursed_page": "Unreimbursed"
+    }
+  }
+}

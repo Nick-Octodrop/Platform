@@ -1,0 +1,15 @@
+{
+  "te_catalog": {
+    "module": {
+      "name": "Catalog",
+      "description": "Product master records for True Essentials with retail pricing, buy-side cost visibility, and stock controls."
+    },
+    "navigation": {
+      "group": "Catalog",
+      "home_page": "Home",
+      "list_page": "Products",
+      "pricing_page": "Pricing Review",
+      "stock_page": "Stock Watch"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "te_purchasing": {
+    "module": {
+      "name": "Achats",
+      "description": "Gestion opérationnelle des commandes d'achat pour True Essentials."
+    },
+    "navigation": {
+      "group": "Achats",
+      "home_page": "Accueil",
+      "list_page": "Bons de commande",
+      "open_page": "Commandes ouvertes"
+    }
+  }
+}

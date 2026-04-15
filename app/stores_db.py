@@ -313,7 +313,9 @@ def _module_home_route_from_manifest(module_id: str, manifest: dict) -> str | No
 
 def _module_registry_meta_from_manifest(module_id: str, manifest: dict) -> dict[str, str | None]:
     module_def = manifest.get("module") if isinstance(manifest, dict) and isinstance(manifest.get("module"), dict) else {}
+    name_key = module_def.get("name_key") if isinstance(module_def.get("name_key"), str) and module_def.get("name_key").strip() else None
     description = module_def.get("description") if isinstance(module_def.get("description"), str) and module_def.get("description").strip() else None
+    description_key = module_def.get("description_key") if isinstance(module_def.get("description_key"), str) and module_def.get("description_key").strip() else None
     category = module_def.get("category") if isinstance(module_def.get("category"), str) and module_def.get("category").strip() else None
     version = module_version_from_manifest(manifest)
     module_key = module_key_from_manifest(manifest) or module_id
@@ -325,7 +327,9 @@ def _module_registry_meta_from_manifest(module_id: str, manifest: dict) -> dict[
         icon_key = None
     return {
         "name": _module_name_from_manifest(manifest),
+        "name_key": name_key,
         "description": description,
+        "description_key": description_key,
         "category": category,
         "module_version": version if isinstance(version, str) and version.strip() else None,
         "module_key": module_key.strip() if isinstance(module_key, str) and module_key.strip() else None,

@@ -4,8 +4,10 @@
     "id": "te_purchasing",
     "key": "te_purchasing",
     "name": "Purchasing",
+    "name_key": "te_purchasing.module.name",
     "version": "1.0.0",
     "description": "Operational purchase ordering for True Essentials.",
+    "description_key": "te_purchasing.module.description",
     "category": "True Essentials",
     "icon_key": "lucide:ShoppingCart"
   },
@@ -35,11 +37,12 @@
     "nav": [
       {
         "group": "Purchasing",
+        "group_key": "te_purchasing.navigation.group",
         "mode": "inline",
         "items": [
-          { "label": "Home", "to": "page:te_purchase_order.home_page" },
-          { "label": "Purchase Orders", "to": "page:te_purchase_order.list_page" },
-          { "label": "Open Orders", "to": "page:te_purchase_order.open_page" }
+          { "label": "Home", "to": "page:te_purchase_order.home_page", "menu_label_key": "te_purchasing.navigation.home_page" },
+          { "label": "Purchase Orders", "to": "page:te_purchase_order.list_page", "menu_label_key": "te_purchasing.navigation.list_page" },
+          { "label": "Open Orders", "to": "page:te_purchase_order.open_page", "menu_label_key": "te_purchasing.navigation.open_page" }
         ]
       }
     ]

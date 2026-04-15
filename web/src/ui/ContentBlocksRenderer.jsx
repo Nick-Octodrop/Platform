@@ -344,6 +344,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
         moduleId={moduleId}
         recordContext={recordContext}
         onNavigate={onNavigate}
+        externalRefreshTick={externalRefreshTick}
         onPageSectionLoadingChange={onPageSectionLoadingChange}
       />
     );
@@ -676,7 +677,14 @@ function buildStatCardShells(block) {
   }));
 }
 
-function StatCardsBlock({ block, moduleId, recordContext, onNavigate, onPageSectionLoadingChange = null }) {
+function StatCardsBlock({
+  block,
+  moduleId,
+  recordContext,
+  onNavigate,
+  externalRefreshTick = 0,
+  onPageSectionLoadingChange = null,
+}) {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [cards, setCards] = useState(() => buildStatCardShells(block));
   const [loading, setLoading] = useState(true);
@@ -780,7 +788,7 @@ function StatCardsBlock({ block, moduleId, recordContext, onNavigate, onPageSect
     return () => {
       cancelled = true;
     };
-  }, [block, moduleId, recordContext?.record, recordContext?.recordId]);
+  }, [block, moduleId, recordContext?.record, recordContext?.recordId, externalRefreshTick]);
 
   const columns = Math.max(1, Math.min(Number(block?.columns) || 4, 6));
   const gridClass =

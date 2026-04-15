@@ -4,8 +4,10 @@
     "id": "te_suppliers",
     "key": "te_suppliers",
     "name": "Suppliers",
+    "name_key": "te_suppliers.module.name",
     "version": "1.0.0",
     "description": "Supplier master records and contacts for True Essentials.",
+    "description_key": "te_suppliers.module.description",
     "category": "True Essentials",
     "icon_key": "lucide:Truck"
   },
@@ -28,11 +30,12 @@
     "nav": [
       {
         "group": "Suppliers",
+        "group_key": "te_suppliers.navigation.group",
         "mode": "inline",
         "items": [
-          { "label": "Home", "to": "page:te_supplier.home_page" },
-          { "label": "Suppliers", "to": "page:te_supplier.list_page" },
-          { "label": "Contacts", "to": "page:te_supplier_contact.list_page" }
+          { "label": "Home", "to": "page:te_supplier.home_page", "menu_label_key": "te_suppliers.navigation.home_page" },
+          { "label": "Suppliers", "to": "page:te_supplier.list_page", "menu_label_key": "te_suppliers.navigation.list_page" },
+          { "label": "Contacts", "to": "page:te_supplier_contact.list_page", "menu_label_key": "te_suppliers.navigation.contacts_page" }
         ]
       }
     ]

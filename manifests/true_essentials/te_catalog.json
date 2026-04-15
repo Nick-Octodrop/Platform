@@ -4,8 +4,10 @@
     "id": "te_catalog",
     "key": "te_catalog",
     "name": "Catalog",
+    "name_key": "te_catalog.module.name",
     "version": "1.0.0",
     "description": "Product master records for True Essentials with retail pricing, buy-side cost visibility, and stock controls.",
+    "description_key": "te_catalog.module.description",
     "category": "True Essentials",
     "icon_key": "lucide:Package2"
   },
@@ -24,12 +26,13 @@
     "nav": [
       {
         "group": "Catalog",
+        "group_key": "te_catalog.navigation.group",
         "mode": "inline",
         "items": [
-          { "label": "Home", "to": "page:te_product.home_page" },
-          { "label": "Products", "to": "page:te_product.list_page" },
-          { "label": "Pricing Review", "to": "page:te_product.pricing_page" },
-          { "label": "Stock Watch", "to": "page:te_product.stock_page" }
+          { "label": "Home", "to": "page:te_product.home_page", "menu_label_key": "te_catalog.navigation.home_page" },
+          { "label": "Products", "to": "page:te_product.list_page", "menu_label_key": "te_catalog.navigation.list_page" },
+          { "label": "Pricing Review", "to": "page:te_product.pricing_page", "menu_label_key": "te_catalog.navigation.pricing_page" },
+          { "label": "Stock Watch", "to": "page:te_product.stock_page", "menu_label_key": "te_catalog.navigation.stock_page" }
         ]
       }
     ]

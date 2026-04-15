@@ -1,0 +1,13 @@
+{
+  "te_sourcing": {
+    "module": {
+      "name": "Approvisionnement",
+      "description": "Données d'approvisionnement, prix d'achat liés aux fournisseurs et conversion de change pour True Essentials."
+    },
+    "navigation": {
+      "group": "Approvisionnement",
+      "home_page": "Accueil",
+      "list_page": "Offres fournisseurs"
+    }
+  }
+}

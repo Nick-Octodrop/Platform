@@ -1,0 +1,14 @@
+{
+  "te_purchasing": {
+    "module": {
+      "name": "Inkoop",
+      "description": "Operationeel inkooporderbeheer voor True Essentials."
+    },
+    "navigation": {
+      "group": "Inkoop",
+      "home_page": "Start",
+      "list_page": "Inkooporders",
+      "open_page": "Open orders"
+    }
+  }
+}

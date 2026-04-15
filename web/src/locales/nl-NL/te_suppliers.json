@@ -1,0 +1,14 @@
+{
+  "te_suppliers": {
+    "module": {
+      "name": "Leveranciers",
+      "description": "Leveranciersstamgegevens en contactpersonen voor True Essentials."
+    },
+    "navigation": {
+      "group": "Leveranciers",
+      "home_page": "Start",
+      "list_page": "Leveranciers",
+      "contacts_page": "Contacten"
+    }
+  }
+}

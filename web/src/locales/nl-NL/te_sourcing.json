@@ -1,0 +1,13 @@
+{
+  "te_sourcing": {
+    "module": {
+      "name": "Inkoopbronnen",
+      "description": "Leveranciersgebonden inkoopprijzen, FX-conversie en sourcinggegevens voor True Essentials."
+    },
+    "navigation": {
+      "group": "Inkoopbronnen",
+      "home_page": "Start",
+      "list_page": "Leveranciersaanbiedingen"
+    }
+  }
+}

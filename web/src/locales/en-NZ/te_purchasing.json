@@ -1,0 +1,14 @@
+{
+  "te_purchasing": {
+    "module": {
+      "name": "Purchasing",
+      "description": "Operational purchase ordering for True Essentials."
+    },
+    "navigation": {
+      "group": "Purchasing",
+      "home_page": "Home",
+      "list_page": "Purchase Orders",
+      "open_page": "Open Orders"
+    }
+  }
+}

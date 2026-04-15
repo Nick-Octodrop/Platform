@@ -1,0 +1,14 @@
+{
+  "te_suppliers": {
+    "module": {
+      "name": "Fournisseurs",
+      "description": "Référentiel fournisseurs et contacts pour True Essentials."
+    },
+    "navigation": {
+      "group": "Fournisseurs",
+      "home_page": "Accueil",
+      "list_page": "Fournisseurs",
+      "contacts_page": "Contacts"
+    }
+  }
+}

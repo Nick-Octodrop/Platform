@@ -1,0 +1,15 @@
+{
+  "te_catalog": {
+    "module": {
+      "name": "Catalogus",
+      "description": "Productstamgegevens voor True Essentials met verkoopprijzen, zicht op inkoopkosten en voorraadcontroles."
+    },
+    "navigation": {
+      "group": "Catalogus",
+      "home_page": "Start",
+      "list_page": "Producten",
+      "pricing_page": "Prijscontrole",
+      "stock_page": "Voorraadbewaking"
+    }
+  }
+}

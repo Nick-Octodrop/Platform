@@ -4,8 +4,10 @@
     "id": "te_sourcing",
     "key": "te_sourcing",
     "name": "Sourcing",
+    "name_key": "te_sourcing.module.name",
     "version": "1.0.0",
     "description": "Supplier-linked buy pricing, FX conversion, and sourcing data for True Essentials.",
+    "description_key": "te_sourcing.module.description",
     "category": "True Essentials",
     "icon_key": "lucide:Handshake"
   },
@@ -30,10 +32,11 @@
     "nav": [
       {
         "group": "Sourcing",
+        "group_key": "te_sourcing.navigation.group",
         "mode": "inline",
         "items": [
-          { "label": "Home", "to": "page:te_supplier_product.home_page" },
-          { "label": "Supplier Offers", "to": "page:te_supplier_product.list_page" }
+          { "label": "Home", "to": "page:te_supplier_product.home_page", "menu_label_key": "te_sourcing.navigation.home_page" },
+          { "label": "Supplier Offers", "to": "page:te_supplier_product.list_page", "menu_label_key": "te_sourcing.navigation.list_page" }
         ]
       }
     ]

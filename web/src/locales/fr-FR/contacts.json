@@ -1,10 +1,10 @@
 {
   "module": {
-    "name": "Contacts",
+    "name": "Répertoire",
     "description": "Clients, fournisseurs et partenaires d'usine pour le flux de travail commercial."
   },
   "navigation": {
-    "contacts": "Contacts"
+    "contacts": "Répertoire"
   },
   "entity": {
     "contact": "Contacter"
@@ -95,7 +95,7 @@
   },
   "contacts": {
     "module": {
-      "name": "Contacts",
+      "name": "Répertoire",
       "description": "Gestion centralisée des contacts pour les entreprises, les personnes, les clients, les fournisseurs et les sites d'intervention."
     },
     "navigation": {

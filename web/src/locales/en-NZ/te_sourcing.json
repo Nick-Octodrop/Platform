@@ -1,0 +1,13 @@
+{
+  "te_sourcing": {
+    "module": {
+      "name": "Sourcing",
+      "description": "Supplier-linked buy pricing, FX conversion, and sourcing data for True Essentials."
+    },
+    "navigation": {
+      "group": "Sourcing",
+      "home_page": "Home",
+      "list_page": "Supplier Offers"
+    }
+  }
+}

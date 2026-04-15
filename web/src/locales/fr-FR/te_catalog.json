@@ -1,0 +1,15 @@
+{
+  "te_catalog": {
+    "module": {
+      "name": "Catalogue",
+      "description": "Référentiel produits de True Essentials avec prix de vente, visibilité des coûts d'achat et contrôles de stock."
+    },
+    "navigation": {
+      "group": "Catalogue",
+      "home_page": "Accueil",
+      "list_page": "Produits",
+      "pricing_page": "Revue des prix",
+      "stock_page": "Suivi du stock"
+    }
+  }
+}

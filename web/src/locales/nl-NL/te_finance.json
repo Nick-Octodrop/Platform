@@ -1,0 +1,14 @@
+{
+  "te_finance": {
+    "module": {
+      "name": "Financiën",
+      "description": "Interne registratie van eigenaars- en bedrijfsfondsen voor True Essentials."
+    },
+    "navigation": {
+      "group": "Financiën",
+      "home_page": "Start",
+      "list_page": "Boekingen",
+      "unreimbursed_page": "Niet vergoed"
+    }
+  }
+}

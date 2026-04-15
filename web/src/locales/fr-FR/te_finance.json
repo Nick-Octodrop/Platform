@@ -1,0 +1,14 @@
+{
+  "te_finance": {
+    "module": {
+      "name": "Finance",
+      "description": "Suivi interne des fonds des propriétaires et de l'entreprise pour True Essentials."
+    },
+    "navigation": {
+      "group": "Finance",
+      "home_page": "Accueil",
+      "list_page": "Écritures",
+      "unreimbursed_page": "Non remboursé"
+    }
+  }
+}
