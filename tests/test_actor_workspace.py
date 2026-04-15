@@ -829,7 +829,7 @@ else:
             self.assertEqual(derived.get("status"), "ready_to_apply")
 
         def test_cleanup_duplicates_noop_assistant_text_is_specific(self):
-            with open(os.path.join(ROOT, "manifests", "marketplace_v1", "contacts.json"), "r", encoding="utf-8") as fh:
+            with open(os.path.join(ROOT, "manifests", "marketplace", "contacts.json"), "r", encoding="utf-8") as fh:
                 contacts_manifest = json.load(fh)
 
             plan = {

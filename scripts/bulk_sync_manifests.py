@@ -260,7 +260,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Bulk validate/install Studio v1 manifests in dependency order.",
     )
-    parser.add_argument("--dir", default="manifests/marketplace_v1", help="Manifest directory")
+    parser.add_argument("--dir", default="manifests/marketplace", help="Manifest directory")
     parser.add_argument("--pattern", default="*.json", help="Glob pattern")
     parser.add_argument("--base-url", default="http://localhost:8000", help="API base URL")
     parser.add_argument("--token", default="", help="Bearer token (or set OCTO_API_TOKEN)")

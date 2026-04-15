@@ -30,7 +30,7 @@ Primary priorities:
 - Use `MANIFEST_CONTRACT.md` as the product truth for supported manifest capability.
 - Cover real manifest surfaces, not just fields and tabs: actions, workflows, status buttons, conditions (`visible_when`, `enabled_when`, `required_when`), pages, view modes, triggers, interfaces, transformations, and attachments.
 - Use `specs/octo_ai_real_world_prompt_bank.json` as a corpus of realistic admin/business requests when adding or expanding eval coverage.
-- Use `specs/manifest_v1_example_index.md` plus the actual files under `manifests/` and `manifests/marketplace_v1/` as the canonical examples of how v1.3 manifests are structured in this repo.
+- Use `specs/manifest_v1_example_index.md` plus the actual files under `manifests/` and `manifests/marketplace/` as the canonical examples of how v1.3 manifests are structured in this repo.
 
 4. Product behavior
 - Optimize for plain-English admin usage, not keyword commands.

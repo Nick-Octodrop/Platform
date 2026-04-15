@@ -150,7 +150,7 @@ Use, in order:
 2. `specs/manifest_v1_example_index.md`
 3. the closest real examples under:
    - `manifests/`
-   - `manifests/marketplace_v1/`
+   - `manifests/marketplace/`
 
 This is important. The goal is OCTO-style v1.3 manifests, not plausible-looking new structures.
 

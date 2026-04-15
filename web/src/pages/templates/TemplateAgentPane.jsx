@@ -8,7 +8,7 @@ import LoadingSpinner from "../../components/LoadingSpinner.jsx";
 import { useI18n } from "../../i18n/LocalizationProvider.jsx";
 
 export default function TemplateAgentPane({ disabled, initialMessage }) {
-  const { hasCapability } = useAccessContext();
+  const { hasCapability, isSuperadmin } = useAccessContext();
   const { t } = useI18n();
   const { providers, loading, reload } = useWorkspaceProviderStatus(["openai"]);
   const [input, setInput] = useState("");
@@ -17,6 +17,21 @@ export default function TemplateAgentPane({ disabled, initialMessage }) {
   const bubbleBase = "chat-bubble text-sm leading-5 max-w-[85%]";
   const openAiConnected = Boolean(providers?.openai?.connected);
   const canManageSettings = hasCapability("workspace.manage_settings");
+
+  if (!isSuperadmin) {
+    return (
+      <div className="h-full min-h-0 flex flex-col overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-auto space-y-4">
+          <div className="chat chat-start">
+            <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{t("settings.template_studio.assistant")}</div>
+            <div className={`${bubbleBase} bg-base-200 text-base-content`}>
+              Studio AI is currently limited to superadmins.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

@@ -29,7 +29,7 @@ Milestone focus:
 - Treat `MANIFEST_CONTRACT.md` as the source of truth for supported manifest features and wording.
 - Expand planner coverage beyond fields/tabs into actions, workflows, status buttons, attachments, conditions, and richer form/view behavior.
 - Use `specs/octo_ai_real_world_prompt_bank.json` to keep new scenarios grounded in realistic business-admin language.
-- Use `specs/manifest_v1_example_index.md` and the reference manifests in `manifests/` / `manifests/marketplace_v1/` to keep generated plans aligned with real OCTO v1.3 module structure.
+- Use `specs/manifest_v1_example_index.md` and the reference manifests in `manifests/` / `manifests/marketplace/` to keep generated plans aligned with real OCTO v1.3 module structure.
 
 4. Eval-driven improvement
 - Optimize for preview quality before patch generation.

@@ -55,6 +55,50 @@ def _fake_builder_response(calls: list[dict]) -> dict:
 
 
 class TestStudio2AgentSmoke(unittest.TestCase):
+    def test_studio2_ai_endpoints_require_superadmin(self) -> None:
+        client = TestClient(main.app)
+        standard_actor = {
+            "user_id": "user-1",
+            "email": "member@example.com",
+            "role": "member",
+            "workspace_role": "member",
+            "platform_role": "standard",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "member", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        calls = [
+            ("post", "/studio2/agent/chat", {"module_id": "contacts", "message": "help"}),
+            ("post", "/studio2/agent/chat/stream", {"module_id": "contacts", "message": "help"}),
+            ("post", "/studio2/agent/plan", {"module_id": "contacts", "message": "help"}),
+            ("post", "/studio2/ai/plan", {"module_id": "contacts", "prompt": "help"}),
+            ("post", "/studio2/ai/fix_json", {"text": "{\"module\": {}}", "error": {"line": 1, "col": 1}}),
+            ("get", "/studio2/agent/status", None),
+        ]
+
+        with patch.object(main, "_resolve_actor", lambda _request: standard_actor):
+            for method, path, payload in calls:
+                if method == "get":
+                    res = client.get(path)
+                else:
+                    res = client.post(path, json=payload)
+                self.assertEqual(res.status_code, 403, {"path": path, "body": res.json()})
+                body = res.json()
+                self.assertFalse(body.get("ok"), {"path": path, "body": body})
+
+    def test_ai_reference_documents_use_current_marketplace_paths(self) -> None:
+        docs = main._ai_reference_documents([], {}, "plan a workflow with automation and template guidance")
+        paths = {
+            str(item.get("path") or "").replace("\\", "/")
+            for item in docs
+            if isinstance(item, dict)
+        }
+        self.assertIn("docs/module-authoring/README.md", paths)
+        self.assertIn("manifests/marketplace/README.md", paths)
+        self.assertIn("manifests/marketplace/docs/LAYOUT_STYLE_GUIDE.md", paths)
+        self.assertIn("manifests/marketplace/docs/AUTOMATION_TEMPLATES.md", paths)
+        self.assertNotIn("manifests/marketplace_v1/README.md", paths)
+
     def test_agent_no_tool_calls_when_errors(self) -> None:
         client = TestClient(main.app)
         module_id = f"no_tools_{uuid.uuid4().hex[:6]}"

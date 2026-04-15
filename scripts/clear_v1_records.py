@@ -171,8 +171,8 @@ def _list_record_ids(base_url: str, token: str | None, workspace_id: str | None,
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Delete all records for marketplace v1 module entities.")
-    parser.add_argument("--dir", default="manifests/marketplace_v1", help="Manifest directory")
+    parser = argparse.ArgumentParser(description="Delete all records for marketplace module entities.")
+    parser.add_argument("--dir", default="manifests/marketplace", help="Manifest directory")
     parser.add_argument("--pattern", default="*.json", help="Manifest file glob pattern")
     parser.add_argument("--base-url", default="http://localhost:8000", help="API base URL")
     parser.add_argument("--token", default="", help="Bearer token (or env OCTO_API_TOKEN)")

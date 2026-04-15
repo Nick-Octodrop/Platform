@@ -638,7 +638,7 @@ export default function Studio2Page({ user }) {
   const { moduleId: routeModuleId } = useParams();
   const { isSuperadmin, hasCapability } = useAccessContext();
   const { providers: aiProviders, loading: providerStatusLoading, reload: reloadProviderStatus } = useWorkspaceProviderStatus(["openai"]);
-  const studioAiEnabled = Boolean(aiProviders?.openai?.connected);
+  const studioAiEnabled = isSuperadmin && Boolean(aiProviders?.openai?.connected);
   const canManageSettings = hasCapability("workspace.manage_settings");
 
   const rootRef = useRef(null);
@@ -2354,6 +2354,20 @@ function buildPreviewManifest() {
         </div>
       );
     }
+    if (!isSuperadmin) {
+      return (
+        <div ref={leftPaneRef} className="h-full min-h-0 flex flex-col overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-auto space-y-4">
+            <div className="chat chat-start">
+              <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{t("common.assistant")}</div>
+              <div className="chat-bubble text-sm leading-5 max-w-[85%] bg-base-200 text-base-content">
+                Studio AI is currently limited to superadmins.
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
     if (!studioAiEnabled) {
       return (
         <div ref={leftPaneRef} className="h-full min-h-0 flex flex-col overflow-hidden">
@@ -2453,6 +2467,7 @@ function buildPreviewManifest() {
     stopReason,
     streamDone,
     canManageSettings,
+    isSuperadmin,
     providerStatusLoading,
     studioAiEnabled,
     userLabel,
@@ -2495,7 +2510,11 @@ function buildPreviewManifest() {
         )}
       </div>
       {!studioAiEnabled && (
-        <div className="text-xs opacity-60 mt-2">Connect OpenAI for this workspace to enable AI actions.</div>
+        <div className="text-xs opacity-60 mt-2">
+          {isSuperadmin
+            ? "Connect OpenAI for this workspace to enable AI actions."
+            : "Studio AI is currently limited to superadmins."}
+        </div>
       )}
       {draftError && (
         <div className="alert alert-error text-xs mt-2">
@@ -2580,6 +2599,7 @@ function buildPreviewManifest() {
     baseErrors,
     completenessErrors,
     draftError,
+    isSuperadmin,
     lastChanges,
     prepareFixJson,
     runAgentDraftFlow,

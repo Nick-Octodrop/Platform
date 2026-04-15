@@ -7828,7 +7828,7 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertNotIn("Only send approved records across.", text)
 
     def test_cross_module_quote_handoff_prefers_action_update_plan(self) -> None:
-        sales_manifest = main.json.loads((main.ROOT / "manifests" / "marketplace_v1" / "sales.json").read_text(encoding="utf-8"))
+        sales_manifest = main.json.loads((main.ROOT / "manifests" / "marketplace" / "sales.json").read_text(encoding="utf-8"))
         jobs_manifest = {"module": {"id": "jobs", "key": "jobs", "name": "Jobs"}, "entities": [{"id": "entity.job", "fields": []}]}
         contacts_manifest = {"module": {"id": "contacts", "key": "contacts", "name": "Contacts"}, "entities": [{"id": "entity.contact", "fields": []}]}
         module_index = {
@@ -7855,7 +7855,7 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("Notify the coordinator automatically.", _ai_plan_assistant_text(plan, {"request_summary": message, "full_selected_artifacts": []}))
 
     def test_cross_module_job_completion_documents_prefers_action_update_plan(self) -> None:
-        jobs_manifest = main.json.loads((main.ROOT / "manifests" / "marketplace_v1" / "jobs.json").read_text(encoding="utf-8"))
+        jobs_manifest = main.json.loads((main.ROOT / "manifests" / "marketplace" / "jobs.json").read_text(encoding="utf-8"))
         documents_manifest = {"module": {"id": "documents", "key": "documents", "name": "Documents"}, "entities": [{"id": "entity.document_record", "fields": []}]}
         contacts_manifest = {"module": {"id": "contacts", "key": "contacts", "name": "Contacts"}, "entities": [{"id": "entity.contact", "fields": []}]}
         module_index = {
@@ -7885,7 +7885,7 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("Mark the customer follow-up in Contacts.", text)
 
     def test_cross_module_crm_lead_to_quote_prefers_action_update_plan(self) -> None:
-        crm_manifest = main.json.loads((main.ROOT / "manifests" / "marketplace_v1" / "crm.json").read_text(encoding="utf-8"))
+        crm_manifest = main.json.loads((main.ROOT / "manifests" / "marketplace" / "crm.json").read_text(encoding="utf-8"))
         sales_manifest = {"module": {"id": "sales", "key": "sales", "name": "Sales"}, "entities": [{"id": "entity.quote", "fields": []}]}
         contacts_manifest = {"module": {"id": "contacts", "key": "contacts", "name": "Contacts"}, "entities": [{"id": "entity.contact", "fields": []}]}
         module_index = {

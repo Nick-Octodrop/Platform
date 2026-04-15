@@ -292,11 +292,11 @@ export default function AutomationEditorPage({ user }) {
   const { automationId } = useParams();
   const navigate = useNavigate();
   const { t } = useI18n();
-  const { hasCapability } = useAccessContext();
+  const { hasCapability, isSuperadmin } = useAccessContext();
   const { pushToast } = useToast();
   const isMobile = useMediaQuery("(max-width: 768px)");
   const { providers: aiProviders, loading: providerStatusLoading, reload: reloadProviderStatus } = useWorkspaceProviderStatus(["openai"]);
-  const automationAiEnabled = Boolean(aiProviders?.openai?.connected);
+  const automationAiEnabled = isSuperadmin && Boolean(aiProviders?.openai?.connected);
   const canManageSettings = hasCapability("workspace.manage_settings");
   const lastFocusedFieldRef = useRef(null);
 
@@ -1603,7 +1603,16 @@ export default function AutomationEditorPage({ user }) {
 
   const renderLeftPane = useCallback(() => (
     <div className="h-full min-h-0 flex flex-col overflow-hidden">
-      {automationAiEnabled ? (
+      {!isSuperadmin ? (
+        <div className="flex-1 min-h-0 overflow-auto space-y-4">
+          <div className="chat chat-start">
+            <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{t("settings.template_studio.assistant")}</div>
+            <div className={`${bubbleBase} bg-base-200 text-base-content`}>
+              Automation AI is currently limited to superadmins.
+            </div>
+          </div>
+        </div>
+      ) : automationAiEnabled ? (
         <>
           <div className="flex-1 min-h-0 overflow-auto space-y-4">
             {chatMessages.length === 0 && (
@@ -1662,7 +1671,7 @@ export default function AutomationEditorPage({ user }) {
         )
       )}
     </div>
-  ), [automationAiEnabled, bubbleBase, canManageSettings, chatInput, chatLoading, chatMessages, providerStatusLoading, t, userLabel]);
+  ), [automationAiEnabled, bubbleBase, canManageSettings, chatInput, chatLoading, chatMessages, isSuperadmin, providerStatusLoading, t, userLabel]);
 
   const renderValidationPanel = useCallback(() => (
     <ValidationPanel

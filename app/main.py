@@ -11361,6 +11361,9 @@ async def studio2_agent_chat(request: Request) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_superadmin(actor, "Studio AI is currently limited to superadmins")
+    if denied:
+        return denied
     body = await _safe_json(request)
     include_progress = bool(body.get("include_progress")) if isinstance(body, dict) else False
     if not isinstance(body, dict):
@@ -11373,6 +11376,9 @@ async def studio2_agent_chat_stream(request: Request) -> StreamingResponse:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_superadmin(actor, "Studio AI is currently limited to superadmins")
+    if denied:
+        return denied
     body = await _safe_json(request)
     if not isinstance(body, dict):
         body = {}
@@ -15239,6 +15245,12 @@ def _studio2_related_hints(summary: dict, target_manifest: dict, message: str) -
 
 @app.post("/studio2/ai/plan")
 async def studio2_ai_plan(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_superadmin(actor, "Studio AI is currently limited to superadmins")
+    if denied:
+        return denied
     body = await _safe_json(request)
     prompt = body.get("prompt") if isinstance(body, dict) else None
     module_id = body.get("module_id") if isinstance(body, dict) else None
@@ -15264,6 +15276,12 @@ async def studio2_ai_plan(request: Request) -> dict:
 
 @app.post("/studio2/ai/fix_json")
 async def studio2_ai_fix_json(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_superadmin(actor, "Studio AI is currently limited to superadmins")
+    if denied:
+        return denied
     body = await _safe_json(request)
     text = body.get("text") if isinstance(body, dict) else None
     error = body.get("error") if isinstance(body, dict) else None
@@ -16236,6 +16254,9 @@ async def studio2_agent_plan(request: Request) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_superadmin(actor, "Studio AI is currently limited to superadmins")
+    if denied:
+        return denied
     if not _openai_configured():
         return _openai_not_configured()
     body = await _safe_json(request)
@@ -16281,10 +16302,13 @@ async def studio2_agent_plan(request: Request) -> dict:
 
 
 @app.get("/studio2/agent/status")
-async def studio2_agent_status() -> dict:
+async def studio2_agent_status(request: Request) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    denied = _require_superadmin(actor, "Studio AI is currently limited to superadmins")
+    if denied:
+        return denied
     configured = _openai_configured()
     return _ok_response(
         {
@@ -18716,9 +18740,40 @@ def _ai_read_doc_snippet(path: Path, limit: int = 3000) -> str:
         return ""
 
 
+def _marketplace_reference_root() -> Path:
+    return ROOT / "manifests" / "marketplace"
+
+
+def _ai_static_reference_paths() -> list[Path]:
+    marketplace_root = _marketplace_reference_root()
+    return [
+        ROOT / "README_PRODUCT.md",
+        ROOT / "README.md",
+        ROOT / "MANIFEST_CONTRACT.md",
+        ROOT / "OCTO_AI_ARCHITECTURE.md",
+        ROOT / "OCTO_AI_CODEX_HANDOFF.md",
+        ROOT / "OCTO_AI_MILESTONE_BRIEF.md",
+        ROOT / "docs" / "module-authoring" / "README.md",
+        ROOT / "docs" / "module-authoring" / "MANIFEST_SPEC.md",
+        ROOT / "docs" / "module-authoring" / "UI_CONTRACT.md",
+        ROOT / "docs" / "module-authoring" / "MODULE_ACCEPTANCE_CHECKLIST.md",
+        ROOT / "TEMPLATE_EDITOR_GUIDE.md",
+        ROOT / "BACKEND_PROD_RUNBOOK.md",
+        ROOT / "DEPLOYMENT_CHECKLIST_AUNZ.md",
+        marketplace_root / "README.md",
+        marketplace_root / "docs" / "LAYOUT_STYLE_GUIDE.md",
+        marketplace_root / "docs" / "UAT_REGRESSION_MATRIX.md",
+        marketplace_root / "docs" / "AUTOMATION_TEMPLATES.md",
+        ROOT / "app" / "ai" / "prompt_packs" / "manifest_contract_v1_3.md",
+        ROOT / "app" / "ai" / "prompt_packs" / "planner.md",
+        ROOT / "app" / "ai" / "prompt_packs" / "system.md",
+        ROOT / "app" / "ai" / "prompt_packs" / "patch_protocol.md",
+    ]
+
+
 def _ai_reference_snippets() -> dict[str, str]:
     manifest_contract = _load_prompt_pack("manifest_contract_v1_3.md")[:3000]
-    layout_rules = _ai_read_doc_snippet(ROOT / "manifests" / "marketplace_v1" / "LAYOUT_STYLE_GUIDE.md", limit=2500)
+    layout_rules = _ai_read_doc_snippet(_marketplace_reference_root() / "docs" / "LAYOUT_STYLE_GUIDE.md", limit=2500)
     product_context = _ai_read_doc_snippet(ROOT / "README_PRODUCT.md", limit=2000) or _ai_read_doc_snippet(ROOT / "README.md", limit=2000)
     operations_runbook = _ai_read_doc_snippet(ROOT / "BACKEND_PROD_RUNBOOK.md", limit=2000)
     return {
@@ -19248,22 +19303,8 @@ def _ai_kernel_module_digest(module_id: str, manifest: dict) -> dict:
 
 def _ai_reference_documents(module_ids: list[str], module_index: dict[str, dict], message: str) -> list[dict]:
     documents: list[dict] = []
-    static_paths = [
-        ROOT / "README_PRODUCT.md",
-        ROOT / "README.md",
-        ROOT / "MANIFEST_CONTRACT.md",
-        ROOT / "TEMPLATE_EDITOR_GUIDE.md",
-        ROOT / "BACKEND_PROD_RUNBOOK.md",
-        ROOT / "DEPLOYMENT_CHECKLIST_AUNZ.md",
-        ROOT / "manifests" / "marketplace_v1" / "README.md",
-        ROOT / "manifests" / "marketplace_v1" / "LAYOUT_STYLE_GUIDE.md",
-        ROOT / "manifests" / "marketplace_v1" / "UAT_REGRESSION_MATRIX.md",
-        ROOT / "app" / "ai" / "prompt_packs" / "manifest_contract_v1_3.md",
-        ROOT / "app" / "ai" / "prompt_packs" / "planner.md",
-        ROOT / "app" / "ai" / "prompt_packs" / "system.md",
-        ROOT / "app" / "ai" / "prompt_packs" / "patch_protocol.md",
-    ]
-    for path in static_paths:
+    marketplace_root = _marketplace_reference_root()
+    for path in _ai_static_reference_paths():
         text = _ai_read_doc_snippet(path, limit=7000)
         if text:
             documents.append(
@@ -19291,18 +19332,18 @@ def _ai_reference_documents(module_ids: list[str], module_index: dict[str, dict]
         inferred_example_paths.extend(
             [
                 ROOT / "manifests" / f"{inferred_pattern}.json",
-                ROOT / "manifests" / "marketplace_v1" / f"{inferred_pattern}.json",
+                marketplace_root / f"{inferred_pattern}.json",
             ]
         )
     if not inferred_pattern or inferred_pattern == "todo":
         inferred_example_paths.extend(
             [
-                ROOT / "manifests" / "marketplace_v1" / "tasks.json",
-                ROOT / "manifests" / "marketplace_v1" / "contacts.json",
+                marketplace_root / "tasks.json",
+                marketplace_root / "contacts.json",
             ]
         )
     if inferred_pattern == "jobs":
-        inferred_example_paths.append(ROOT / "manifests" / "marketplace_v1" / "jobs.json")
+        inferred_example_paths.append(marketplace_root / "jobs.json")
     seen_inferred_paths: set[str] = set()
     for path in inferred_example_paths:
         key = str(path)
@@ -19360,14 +19401,14 @@ def _ai_reference_documents(module_ids: list[str], module_index: dict[str, dict]
             candidate_paths.extend(
                 [
                     ROOT / "manifests" / f"{module_key}.json",
-                    ROOT / "manifests" / "marketplace_v1" / f"{module_key}.json",
+                    marketplace_root / f"{module_key}.json",
                 ]
             )
         if inferred_pattern and isinstance(module_key, str) and module_key == inferred_pattern:
             candidate_paths.extend(
                 [
                     ROOT / "manifests" / f"{inferred_pattern}.json",
-                    ROOT / "manifests" / "marketplace_v1" / f"{inferred_pattern}.json",
+                    marketplace_root / f"{inferred_pattern}.json",
                 ]
             )
         seen_paths: set[str] = set()
@@ -20111,7 +20152,7 @@ def _octo_ai_seed_in_memory_baseline_modules(module_keys: list[str] | tuple[str,
         module_key = str(raw_key or "").strip()
         if not module_key or registry.get(module_key) is not None:
             continue
-        path = ROOT / "manifests" / "marketplace_v1" / f"{module_key}.json"
+        path = _marketplace_reference_root() / f"{module_key}.json"
         if not path.exists():
             continue
         try:

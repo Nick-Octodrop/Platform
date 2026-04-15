@@ -4,23 +4,22 @@ Use these files as the in-repo reference implementation for how OCTO v1.3 manife
 
 Read these alongside:
 - `MANIFEST_CONTRACT.md`
-- `manifests/marketplace_v1/README.md`
-- `manifests/marketplace_v1/LAYOUT_STYLE_GUIDE.md`
-- `manifests/marketplace_v1/AUTOMATION_TEMPLATES.md`
+- `manifests/marketplace/README.md`
+- `manifests/marketplace/docs/LAYOUT_STYLE_GUIDE.md`
+- `manifests/marketplace/docs/AUTOMATION_TEMPLATES.md`
 
 ## Core marketplace reference modules
-- `manifests/marketplace_v1/contacts.json`
-- `manifests/marketplace_v1/crm.json`
-- `manifests/marketplace_v1/sales.json`
-- `manifests/marketplace_v1/jobs.json`
-- `manifests/marketplace_v1/tasks.json`
-- `manifests/marketplace_v1/field_service.json`
-- `manifests/marketplace_v1/maintenance.json`
-- `manifests/marketplace_v1/variations.json`
-- `manifests/marketplace_v1/calendar.json`
-- `manifests/marketplace_v1/documents.json`
-- `manifests/marketplace_v1/catalog.json`
-- `manifests/marketplace_v1/octo_ai.json`
+- `manifests/marketplace/contacts.json`
+- `manifests/marketplace/crm.json`
+- `manifests/marketplace/sales.json`
+- `manifests/marketplace/jobs.json`
+- `manifests/marketplace/tasks.json`
+- `manifests/marketplace/field_service.json`
+- `manifests/marketplace/maintenance.json`
+- `manifests/marketplace/variations.json`
+- `manifests/marketplace/calendar.json`
+- `manifests/marketplace/documents.json`
+- `manifests/marketplace/catalog.json`
 
 ## Demo manifests with richer business patterns
 - `manifests/contacts.json`
@@ -59,7 +58,7 @@ Read these alongside:
 - Action buttons should look like the patterns already used in Contacts, Jobs, Tasks, Sales, and Variations.
 
 ### Automations
-- Use `manifests/marketplace_v1/AUTOMATION_TEMPLATES.md` as the source of truth for:
+- Use `manifests/marketplace/docs/AUTOMATION_TEMPLATES.md` as the source of truth for:
   - trigger structure
   - event filters
   - notification actions

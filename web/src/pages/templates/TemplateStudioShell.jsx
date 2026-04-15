@@ -5,6 +5,7 @@ import ValidationPanel from "../../components/ValidationPanel.jsx";
 import TemplateAgentPane from "./TemplateAgentPane.jsx";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM } from "../../components/buttonStyles.js";
 import { apiFetch } from "../../api.js";
+import { useAccessContext } from "../../access.js";
 import useMediaQuery from "../../hooks/useMediaQuery.js";
 import useWorkspaceProviderStatus from "../../hooks/useWorkspaceProviderStatus.js";
 import ResponsiveDrawer from "../../ui/ResponsiveDrawer.jsx";
@@ -35,8 +36,9 @@ export default function TemplateStudioShell({
 }) {
   const { t } = useI18n();
   const isMobile = useMediaQuery("(max-width: 768px)");
+  const { isSuperadmin } = useAccessContext();
   const { providers: aiProviders } = useWorkspaceProviderStatus(["openai"]);
-  const openAiConnected = Boolean(aiProviders?.openai?.connected);
+  const openAiConnected = isSuperadmin && Boolean(aiProviders?.openai?.connected);
   const [record, setRecord] = useState(null);
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -343,7 +345,7 @@ export default function TemplateStudioShell({
         ? t("common.error")
         : t("settings.template_studio.validation");
   const utilityButtons = [
-    { id: "agent", label: t("common.ai"), icon: MessageSquare },
+    ...(isSuperadmin ? [{ id: "agent", label: t("common.ai"), icon: MessageSquare }] : []),
     { id: "validation", label: validationButtonLabel, icon: ShieldCheck },
   ];
   const utilityDrawerTitle = utilityDrawer === "agent" ? t("settings.template_studio.ai_assistant") : t("settings.template_studio.validation");
