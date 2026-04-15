@@ -791,35 +791,30 @@
     {
       "id": "biz_purchase_orders.record.biz_purchase_order.created",
       "label": "Purchase Order created",
-      "label_key": "purchase_orders.triggers.purchase_order_created",
       "event": "record.created",
       "entity_id": "entity.biz_purchase_order"
     },
     {
       "id": "biz_purchase_orders.record.biz_purchase_order.updated",
       "label": "Purchase Order updated",
-      "label_key": "purchase_orders.triggers.purchase_order_updated",
       "event": "record.updated",
       "entity_id": "entity.biz_purchase_order"
     },
     {
       "id": "biz_purchase_orders.record.biz_purchase_order_line.created",
       "label": "Purchase Order Line created",
-      "label_key": "purchase_orders.triggers.purchase_order_line_created",
       "event": "record.created",
       "entity_id": "entity.biz_purchase_order_line"
     },
     {
       "id": "biz_purchase_orders.record.biz_purchase_order_line.updated",
       "label": "Purchase Order Line updated",
-      "label_key": "purchase_orders.triggers.purchase_order_line_updated",
       "event": "record.updated",
       "entity_id": "entity.biz_purchase_order_line"
     },
     {
       "id": "biz_purchase_orders.workflow.biz_purchase_order.status_changed",
       "label": "Purchase Order status changed",
-      "label_key": "purchase_orders.triggers.purchase_order_status_changed",
       "event": "workflow.status_changed",
       "entity_id": "entity.biz_purchase_order",
       "status_field": "biz_purchase_order.status"
@@ -827,70 +822,60 @@
     {
       "id": "biz_purchase_orders.action.purchase_order_new.clicked",
       "label": "New Purchase Order clicked",
-      "label_key": "purchase_orders.triggers.new_purchase_order_clicked",
       "event": "action.clicked",
       "action_id": "action.purchase_order_new"
     },
     {
       "id": "biz_purchase_orders.action.purchase_order_mark_sent.clicked",
       "label": "Send PO clicked",
-      "label_key": "purchase_orders.triggers.send_po_clicked",
       "event": "action.clicked",
       "action_id": "action.purchase_order_mark_sent"
     },
     {
       "id": "biz_purchase_orders.action.purchase_order_confirm.clicked",
       "label": "Confirm PO clicked",
-      "label_key": "purchase_orders.triggers.confirm_po_clicked",
       "event": "action.clicked",
       "action_id": "action.purchase_order_confirm"
     },
     {
       "id": "biz_purchase_orders.action.purchase_order_open_hold_modal.clicked",
       "label": "Put On Hold clicked",
-      "label_key": "purchase_orders.triggers.put_on_hold_clicked",
       "event": "action.clicked",
       "action_id": "action.purchase_order_open_hold_modal"
     },
     {
       "id": "biz_purchase_orders.action.purchase_order_resume.clicked",
       "label": "Resume PO clicked",
-      "label_key": "purchase_orders.triggers.resume_po_clicked",
       "event": "action.clicked",
       "action_id": "action.purchase_order_resume"
     },
     {
       "id": "biz_purchase_orders.action.purchase_order_mark_in_production.clicked",
       "label": "Mark In Production clicked",
-      "label_key": "purchase_orders.triggers.mark_in_production_clicked",
       "event": "action.clicked",
       "action_id": "action.purchase_order_mark_in_production"
     },
     {
       "id": "biz_purchase_orders.action.purchase_order_mark_shipped.clicked",
       "label": "Mark Shipped clicked",
-      "label_key": "purchase_orders.triggers.mark_shipped_clicked",
       "event": "action.clicked",
       "action_id": "action.purchase_order_mark_shipped"
     },
     {
       "id": "biz_purchase_orders.action.purchase_order_mark_received.clicked",
       "label": "Mark Received clicked",
-      "label_key": "purchase_orders.triggers.mark_received_clicked",
       "event": "action.clicked",
       "action_id": "action.purchase_order_mark_received"
     },
     {
       "id": "biz_purchase_orders.action.purchase_order_close.clicked",
       "label": "Close PO clicked",
-      "label_key": "purchase_orders.triggers.close_po_clicked",
       "event": "action.clicked",
       "action_id": "action.purchase_order_close"
     },
     {
       "id": "biz_purchase_orders.action.purchase_order_open_cancel_modal.clicked",
       "label": "Cancel PO clicked",
-      "label_key": "purchase_orders.triggers.cancel_po_clicked",
       "event": "action.clicked",
       "action_id": "action.purchase_order_open_cancel_modal"
     }

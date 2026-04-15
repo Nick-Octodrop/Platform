@@ -1184,21 +1184,18 @@
     {
       "id": "biz_documents.record.biz_document.created",
       "label": "Document created",
-      "label_key": "documents.triggers.document_created",
       "event": "record.created",
       "entity_id": "entity.biz_document"
     },
     {
       "id": "biz_documents.record.biz_document.updated",
       "label": "Document updated",
-      "label_key": "documents.triggers.document_updated",
       "event": "record.updated",
       "entity_id": "entity.biz_document"
     },
     {
       "id": "biz_documents.workflow.biz_document.status_changed",
       "label": "Document status changed",
-      "label_key": "documents.triggers.document_status_changed",
       "event": "workflow.status_changed",
       "entity_id": "entity.biz_document",
       "status_field": "biz_document.status"
@@ -1206,35 +1203,30 @@
     {
       "id": "biz_documents.action.document_new.clicked",
       "label": "New Document clicked",
-      "label_key": "documents.triggers.new_document_clicked",
       "event": "action.clicked",
       "action_id": "action.document_new"
     },
     {
       "id": "biz_documents.action.document_approve.clicked",
       "label": "Approve clicked",
-      "label_key": "documents.triggers.approve_clicked",
       "event": "action.clicked",
       "action_id": "action.document_approve"
     },
     {
       "id": "biz_documents.action.document_mark_sent.clicked",
       "label": "Mark Sent clicked",
-      "label_key": "documents.triggers.mark_sent_clicked",
       "event": "action.clicked",
       "action_id": "action.document_mark_sent"
     },
     {
       "id": "biz_documents.action.document_mark_signed.clicked",
       "label": "Mark Signed clicked",
-      "label_key": "documents.triggers.mark_signed_clicked",
       "event": "action.clicked",
       "action_id": "action.document_mark_signed"
     },
     {
       "id": "biz_documents.action.document_open_archive_modal.clicked",
       "label": "Archive clicked",
-      "label_key": "documents.triggers.archive_clicked",
       "event": "action.clicked",
       "action_id": "action.document_open_archive_modal"
     }

@@ -627,35 +627,30 @@
     {
       "id": "biz_products.record.biz_product.created",
       "label": "Product created",
-      "label_key": "products.triggers.product_created",
       "event": "record.created",
       "entity_id": "entity.biz_product"
     },
     {
       "id": "biz_products.record.biz_product.updated",
       "label": "Product updated",
-      "label_key": "products.triggers.product_updated",
       "event": "record.updated",
       "entity_id": "entity.biz_product"
     },
     {
       "id": "biz_products.action.product_new.clicked",
       "label": "New Product clicked",
-      "label_key": "products.triggers.new_product_clicked",
       "event": "action.clicked",
       "action_id": "action.product_new"
     },
     {
       "id": "biz_products.action.product_activate.clicked",
       "label": "Activate clicked",
-      "label_key": "products.triggers.activate_clicked",
       "event": "action.clicked",
       "action_id": "action.product_activate"
     },
     {
       "id": "biz_products.action.product_deactivate.clicked",
       "label": "Deactivate clicked",
-      "label_key": "products.triggers.deactivate_clicked",
       "event": "action.clicked",
       "action_id": "action.product_deactivate"
     }

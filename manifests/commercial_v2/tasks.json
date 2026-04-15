@@ -622,21 +622,18 @@
     {
       "id": "biz_tasks.record.biz_task.created",
       "label": "Task created",
-      "label_key": "tasks.triggers.task_created",
       "event": "record.created",
       "entity_id": "entity.biz_task"
     },
     {
       "id": "biz_tasks.record.biz_task.updated",
       "label": "Task updated",
-      "label_key": "tasks.triggers.task_updated",
       "event": "record.updated",
       "entity_id": "entity.biz_task"
     },
     {
       "id": "biz_tasks.workflow.biz_task.status_changed",
       "label": "Task status changed",
-      "label_key": "tasks.triggers.task_status_changed",
       "event": "workflow.status_changed",
       "entity_id": "entity.biz_task",
       "status_field": "biz_task.status"
@@ -644,35 +641,30 @@
     {
       "id": "biz_tasks.action.biz_task_new.clicked",
       "label": "New Task clicked",
-      "label_key": "tasks.triggers.new_task_clicked",
       "event": "action.clicked",
       "action_id": "action.biz_task_new"
     },
     {
       "id": "biz_tasks.action.biz_task_start.clicked",
       "label": "Start clicked",
-      "label_key": "tasks.triggers.start_clicked",
       "event": "action.clicked",
       "action_id": "action.biz_task_start"
     },
     {
       "id": "biz_tasks.action.biz_task_block.clicked",
       "label": "Block clicked",
-      "label_key": "tasks.triggers.block_clicked",
       "event": "action.clicked",
       "action_id": "action.biz_task_block"
     },
     {
       "id": "biz_tasks.action.biz_task_done.clicked",
       "label": "Mark Done clicked",
-      "label_key": "tasks.triggers.mark_done_clicked",
       "event": "action.clicked",
       "action_id": "action.biz_task_done"
     },
     {
       "id": "biz_tasks.action.biz_task_cancel.clicked",
       "label": "Cancel clicked",
-      "label_key": "tasks.triggers.cancel_clicked",
       "event": "action.clicked",
       "action_id": "action.biz_task_cancel"
     }

@@ -543,21 +543,18 @@
     {
       "id": "biz_calendar.record.biz_calendar_event.created",
       "label": "Calendar Event created",
-      "label_key": "calendar.triggers.event_created",
       "event": "record.created",
       "entity_id": "entity.biz_calendar_event"
     },
     {
       "id": "biz_calendar.record.biz_calendar_event.updated",
       "label": "Calendar Event updated",
-      "label_key": "calendar.triggers.event_updated",
       "event": "record.updated",
       "entity_id": "entity.biz_calendar_event"
     },
     {
       "id": "biz_calendar.workflow.biz_calendar_event.status_changed",
       "label": "Calendar Event status changed",
-      "label_key": "calendar.triggers.event_status_changed",
       "event": "workflow.status_changed",
       "entity_id": "entity.biz_calendar_event",
       "status_field": "biz_calendar_event.status"
@@ -565,28 +562,24 @@
     {
       "id": "biz_calendar.action.biz_calendar_event_new.clicked",
       "label": "New Event clicked",
-      "label_key": "calendar.triggers.new_event_clicked",
       "event": "action.clicked",
       "action_id": "action.biz_calendar_event_new"
     },
     {
       "id": "biz_calendar.action.biz_calendar_event_confirm.clicked",
       "label": "Confirm clicked",
-      "label_key": "calendar.triggers.confirm_clicked",
       "event": "action.clicked",
       "action_id": "action.biz_calendar_event_confirm"
     },
     {
       "id": "biz_calendar.action.biz_calendar_event_done.clicked",
       "label": "Mark Done clicked",
-      "label_key": "calendar.triggers.mark_done_clicked",
       "event": "action.clicked",
       "action_id": "action.biz_calendar_event_done"
     },
     {
       "id": "biz_calendar.action.biz_calendar_event_cancel.clicked",
       "label": "Cancel clicked",
-      "label_key": "calendar.triggers.cancel_clicked",
       "event": "action.clicked",
       "action_id": "action.biz_calendar_event_cancel"
     }

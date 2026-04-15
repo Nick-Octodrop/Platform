@@ -785,7 +785,7 @@ export default function FormViewRenderer({
                     if (disabled) return;
                     onActionClick?.(item.action);
                   }}
-                  disabled={disabled}
+                  disabled={disabled || actionBusy}
                 >
                   {actionBusy && actionBusyLabel === item.label ? <span className="loading loading-spinner loading-xs" /> : null}
                   {item.label}
@@ -801,7 +801,7 @@ export default function FormViewRenderer({
             {secondaryActions.length > 0 && (
               <div className="dropdown dropdown-end">
                 <DaisyTooltip label={translateRuntime("common.more_actions")} placement="bottom">
-                  <button type="button" className={SOFT_ICON_SM} aria-label={translateRuntime("common.more_actions")}>
+                  <button type="button" className={SOFT_ICON_SM} aria-label={translateRuntime("common.more_actions")} disabled={actionBusy}>
                     <MoreHorizontal className="h-4 w-4" />
                   </button>
                 </DaisyTooltip>
@@ -821,7 +821,7 @@ export default function FormViewRenderer({
                               if (disabled) return;
                               onActionClick?.(item.action);
                             }}
-                            disabled={disabled}
+                            disabled={disabled || actionBusy}
                           >
                             {actionBusy && actionBusyLabel === item.label ? <span className="loading loading-spinner loading-xs" /> : null}
                             {item.label}

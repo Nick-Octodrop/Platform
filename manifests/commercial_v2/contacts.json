@@ -599,35 +599,30 @@
     {
       "id": "biz_contacts.record.biz_contact.created",
       "label": "Contact created",
-      "label_key": "contacts.triggers.contact_created",
       "event": "record.created",
       "entity_id": "entity.biz_contact"
     },
     {
       "id": "biz_contacts.record.biz_contact.updated",
       "label": "Contact updated",
-      "label_key": "contacts.triggers.contact_updated",
       "event": "record.updated",
       "entity_id": "entity.biz_contact"
     },
     {
       "id": "biz_contacts.action.contact_new.clicked",
       "label": "New Contact clicked",
-      "label_key": "contacts.triggers.new_contact_clicked",
       "event": "action.clicked",
       "action_id": "action.contact_new"
     },
     {
       "id": "biz_contacts.action.contact_deactivate.clicked",
       "label": "Deactivate clicked",
-      "label_key": "contacts.triggers.deactivate_clicked",
       "event": "action.clicked",
       "action_id": "action.contact_deactivate"
     },
     {
       "id": "biz_contacts.action.contact_activate.clicked",
       "label": "Activate clicked",
-      "label_key": "contacts.triggers.activate_clicked",
       "event": "action.clicked",
       "action_id": "action.contact_activate"
     }

@@ -876,35 +876,30 @@
     {
       "id": "biz_invoices.record.biz_invoice.created",
       "label": "Invoice created",
-      "label_key": "invoices.triggers.invoice_created",
       "event": "record.created",
       "entity_id": "entity.biz_invoice"
     },
     {
       "id": "biz_invoices.record.biz_invoice.updated",
       "label": "Invoice updated",
-      "label_key": "invoices.triggers.invoice_updated",
       "event": "record.updated",
       "entity_id": "entity.biz_invoice"
     },
     {
       "id": "biz_invoices.record.biz_invoice_line.created",
       "label": "Invoice Line created",
-      "label_key": "invoices.triggers.invoice_line_created",
       "event": "record.created",
       "entity_id": "entity.biz_invoice_line"
     },
     {
       "id": "biz_invoices.record.biz_invoice_line.updated",
       "label": "Invoice Line updated",
-      "label_key": "invoices.triggers.invoice_line_updated",
       "event": "record.updated",
       "entity_id": "entity.biz_invoice_line"
     },
     {
       "id": "biz_invoices.workflow.biz_invoice.status_changed",
       "label": "Invoice status changed",
-      "label_key": "invoices.triggers.invoice_status_changed",
       "event": "workflow.status_changed",
       "entity_id": "entity.biz_invoice",
       "status_field": "biz_invoice.status"
@@ -912,49 +907,42 @@
     {
       "id": "biz_invoices.action.invoice_new.clicked",
       "label": "New Invoice clicked",
-      "label_key": "invoices.triggers.new_invoice_clicked",
       "event": "action.clicked",
       "action_id": "action.invoice_new"
     },
     {
       "id": "biz_invoices.action.invoice_issue.clicked",
       "label": "Issue / Send Invoice clicked",
-      "label_key": "invoices.triggers.issue_send_clicked",
       "event": "action.clicked",
       "action_id": "action.invoice_issue"
     },
     {
       "id": "biz_invoices.action.invoice_mark_part_paid.clicked",
       "label": "Mark Part Paid clicked",
-      "label_key": "invoices.triggers.mark_part_paid_clicked",
       "event": "action.clicked",
       "action_id": "action.invoice_mark_part_paid"
     },
     {
       "id": "biz_invoices.action.invoice_mark_paid.clicked",
       "label": "Mark Paid clicked",
-      "label_key": "invoices.triggers.mark_paid_clicked",
       "event": "action.clicked",
       "action_id": "action.invoice_mark_paid"
     },
     {
       "id": "biz_invoices.action.invoice_open_cancel_modal.clicked",
       "label": "Cancel clicked",
-      "label_key": "invoices.triggers.cancel_clicked",
       "event": "action.clicked",
       "action_id": "action.invoice_open_cancel_modal"
     },
     {
       "id": "biz_invoices.action.invoice_create_credit_note.clicked",
       "label": "Create Credit Note clicked",
-      "label_key": "invoices.triggers.create_credit_note_clicked",
       "event": "action.clicked",
       "action_id": "action.invoice_create_credit_note"
     },
     {
       "id": "biz_invoices.action.invoice_mark_credited.clicked",
       "label": "Mark Credited clicked",
-      "label_key": "invoices.triggers.mark_credited_clicked",
       "event": "action.clicked",
       "action_id": "action.invoice_mark_credited"
     }

@@ -969,35 +969,30 @@
     {
       "id": "biz_orders.record.biz_order.created",
       "label": "Order created",
-      "label_key": "orders.triggers.order_created",
       "event": "record.created",
       "entity_id": "entity.biz_order"
     },
     {
       "id": "biz_orders.record.biz_order.updated",
       "label": "Order updated",
-      "label_key": "orders.triggers.order_updated",
       "event": "record.updated",
       "entity_id": "entity.biz_order"
     },
     {
       "id": "biz_orders.record.biz_order_line.created",
       "label": "Order Line created",
-      "label_key": "orders.triggers.order_line_created",
       "event": "record.created",
       "entity_id": "entity.biz_order_line"
     },
     {
       "id": "biz_orders.record.biz_order_line.updated",
       "label": "Order Line updated",
-      "label_key": "orders.triggers.order_line_updated",
       "event": "record.updated",
       "entity_id": "entity.biz_order_line"
     },
     {
       "id": "biz_orders.workflow.biz_order.status_changed",
       "label": "Order status changed",
-      "label_key": "orders.triggers.order_status_changed",
       "event": "workflow.status_changed",
       "entity_id": "entity.biz_order",
       "status_field": "biz_order.status"
@@ -1005,77 +1000,66 @@
     {
       "id": "biz_orders.action.customer_order_new.clicked",
       "label": "New Order clicked",
-      "label_key": "orders.triggers.new_order_clicked",
       "event": "action.clicked",
       "action_id": "action.customer_order_new"
     },
     {
       "id": "biz_orders.action.customer_order_confirm.clicked",
       "label": "Confirm Order clicked",
-      "label_key": "orders.triggers.confirm_order_clicked",
       "event": "action.clicked",
       "action_id": "action.customer_order_confirm"
     },
     {
       "id": "biz_orders.action.customer_order_open_hold_modal.clicked",
       "label": "Put On Hold clicked",
-      "label_key": "orders.triggers.put_on_hold_clicked",
       "event": "action.clicked",
       "action_id": "action.customer_order_open_hold_modal"
     },
     {
       "id": "biz_orders.action.customer_order_resume.clicked",
       "label": "Resume Order clicked",
-      "label_key": "orders.triggers.resume_order_clicked",
       "event": "action.clicked",
       "action_id": "action.customer_order_resume"
     },
     {
       "id": "biz_orders.action.customer_order_mark_in_production.clicked",
       "label": "Mark In Production clicked",
-      "label_key": "orders.triggers.mark_in_production_clicked",
       "event": "action.clicked",
       "action_id": "action.customer_order_mark_in_production"
     },
     {
       "id": "biz_orders.action.customer_order_mark_shipped.clicked",
       "label": "Mark Shipped clicked",
-      "label_key": "orders.triggers.mark_shipped_clicked",
       "event": "action.clicked",
       "action_id": "action.customer_order_mark_shipped"
     },
     {
       "id": "biz_orders.action.customer_order_mark_completed.clicked",
       "label": "Mark Completed clicked",
-      "label_key": "orders.triggers.mark_completed_clicked",
       "event": "action.clicked",
       "action_id": "action.customer_order_mark_completed"
     },
     {
       "id": "biz_orders.action.customer_order_open_cancel_modal.clicked",
       "label": "Cancel Order clicked",
-      "label_key": "orders.triggers.cancel_order_clicked",
       "event": "action.clicked",
       "action_id": "action.customer_order_open_cancel_modal"
     },
     {
       "id": "biz_orders.action.customer_order_create_purchase_order.clicked",
       "label": "Raise Purchase Order clicked",
-      "label_key": "orders.triggers.raise_purchase_order_clicked",
       "event": "action.clicked",
       "action_id": "action.customer_order_create_purchase_order"
     },
     {
       "id": "biz_orders.action.customer_order_create_deposit_invoice.clicked",
       "label": "Raise Deposit Invoice clicked",
-      "label_key": "orders.triggers.raise_deposit_invoice_clicked",
       "event": "action.clicked",
       "action_id": "action.customer_order_create_deposit_invoice"
     },
     {
       "id": "biz_orders.action.customer_order_create_final_invoice.clicked",
       "label": "Raise Final Invoice clicked",
-      "label_key": "orders.triggers.raise_final_invoice_clicked",
       "event": "action.clicked",
       "action_id": "action.customer_order_create_final_invoice"
     }

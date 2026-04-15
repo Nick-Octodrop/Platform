@@ -1012,35 +1012,30 @@
     {
       "id": "biz_quotes.record.biz_quote.created",
       "label": "Quote created",
-      "label_key": "quotes.triggers.quote_created",
       "event": "record.created",
       "entity_id": "entity.biz_quote"
     },
     {
       "id": "biz_quotes.record.biz_quote.updated",
       "label": "Quote updated",
-      "label_key": "quotes.triggers.quote_updated",
       "event": "record.updated",
       "entity_id": "entity.biz_quote"
     },
     {
       "id": "biz_quotes.record.biz_quote_line.created",
       "label": "Quote Line created",
-      "label_key": "quotes.triggers.quote_line_created",
       "event": "record.created",
       "entity_id": "entity.biz_quote_line"
     },
     {
       "id": "biz_quotes.record.biz_quote_line.updated",
       "label": "Quote Line updated",
-      "label_key": "quotes.triggers.quote_line_updated",
       "event": "record.updated",
       "entity_id": "entity.biz_quote_line"
     },
     {
       "id": "biz_quotes.workflow.biz_quote.status_changed",
       "label": "Quote status changed",
-      "label_key": "quotes.triggers.quote_status_changed",
       "event": "workflow.status_changed",
       "entity_id": "entity.biz_quote",
       "status_field": "biz_quote.status"
@@ -1048,42 +1043,36 @@
     {
       "id": "biz_quotes.action.quote_new.clicked",
       "label": "New Quote clicked",
-      "label_key": "quotes.triggers.new_quote_clicked",
       "event": "action.clicked",
       "action_id": "action.quote_new"
     },
     {
       "id": "biz_quotes.action.quote_mark_sent.clicked",
       "label": "Mark Sent clicked",
-      "label_key": "quotes.triggers.mark_sent_clicked",
       "event": "action.clicked",
       "action_id": "action.quote_mark_sent"
     },
     {
       "id": "biz_quotes.action.quote_mark_accepted.clicked",
       "label": "Mark Accepted clicked",
-      "label_key": "quotes.triggers.mark_accepted_clicked",
       "event": "action.clicked",
       "action_id": "action.quote_mark_accepted"
     },
     {
       "id": "biz_quotes.action.quote_convert_to_order.clicked",
       "label": "Create Order clicked",
-      "label_key": "quotes.triggers.create_order_clicked",
       "event": "action.clicked",
       "action_id": "action.quote_convert_to_order"
     },
     {
       "id": "biz_quotes.action.quote_open_lost_modal.clicked",
       "label": "Mark Lost clicked",
-      "label_key": "quotes.triggers.mark_lost_clicked",
       "event": "action.clicked",
       "action_id": "action.quote_open_lost_modal"
     },
     {
       "id": "biz_quotes.action.quote_open_expired_modal.clicked",
       "label": "Mark Expired clicked",
-      "label_key": "quotes.triggers.mark_expired_clicked",
       "event": "action.clicked",
       "action_id": "action.quote_open_expired_modal"
     }
