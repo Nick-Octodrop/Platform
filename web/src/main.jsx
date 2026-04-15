@@ -19,6 +19,15 @@ applyBrandColors(getBrandColors());
 if (typeof document !== "undefined" && typeof navigator !== "undefined") {
   const ua = navigator.userAgent || "";
   const isIosTouch = /iPad|iPhone|iPod/.test(ua);
+  const viewportMeta = document.querySelector('meta[name="viewport"]');
+  if (viewportMeta) {
+    viewportMeta.setAttribute(
+      "content",
+      isIosTouch
+        ? "width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1"
+        : "width=device-width, initial-scale=1.0, viewport-fit=cover",
+    );
+  }
   if (isIosTouch) {
     document.documentElement.classList.add("octo-ios-touch");
   }

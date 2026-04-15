@@ -45,6 +45,8 @@
   "are_you_sure": "Weet je het zeker?",
   "input_required": "Invoer vereist",
   "activity": "Activiteit",
+  "attachments_label": "Bijlagen",
+  "activity_and_attachments": "Activiteit en bijlagen",
   "assistant": "Assistent",
   "attach": "Bijvoegen",
   "active": "Actief",
@@ -306,6 +308,7 @@
     "download_default_filename": "bijlage"
   },
   "activity_panel": {
+    "preview_unavailable": "Activiteitenfeed niet beschikbaar in voorbeeldmodus.",
     "system": "Systeem",
     "you": "Jij",
     "comment_as": "Reageer als {{name}}",

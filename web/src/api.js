@@ -101,6 +101,14 @@ function workspaceScopedKey(key, workspaceId = null) {
   return `${resolvedWorkspace || "default"}:${key}`;
 }
 
+function localizedManifestModuleKey(moduleId, workspaceId = null) {
+  return `${workspaceScopedKey(moduleId, workspaceId)}:${getI18nCacheKey()}`;
+}
+
+function localizedManifestHashKey(manifestHash) {
+  return `${manifestHash || "manifest"}:${getI18nCacheKey()}`;
+}
+
 function requestKey(method, path, body, cacheKey, workspaceId = null) {
   if (cacheKey) return `${method}:${workspaceScopedKey(cacheKey, workspaceId)}`;
   if (!body) return `${method}:${workspaceScopedKey(path, workspaceId)}`;
@@ -662,7 +670,7 @@ export async function getManifest(moduleId) {
     return localizeManifestResult(res, moduleId);
   }
   const now = Date.now();
-  const scopedModuleId = workspaceScopedKey(moduleId);
+  const scopedModuleId = localizedManifestModuleKey(moduleId);
   const cached = manifestCache.get(scopedModuleId);
   const ts = manifestCacheTs.get(scopedModuleId) || 0;
   if (cached && now - ts < MANIFEST_TTL_MS) {
@@ -673,8 +681,9 @@ export async function getManifest(moduleId) {
     return inflight;
   }
   const cachedHash = manifestHashByModule.get(scopedModuleId);
-  if (cachedHash && manifestByHash.has(cachedHash) && now - ts < MANIFEST_TTL_MS) {
-    const res = manifestByHash.get(cachedHash);
+  const localizedHash = localizedManifestHashKey(cachedHash);
+  if (cachedHash && manifestByHash.has(localizedHash) && now - ts < MANIFEST_TTL_MS) {
+    const res = manifestByHash.get(localizedHash);
     manifestCache.set(scopedModuleId, res);
     manifestCacheTs.set(scopedModuleId, now);
     return res;
@@ -683,7 +692,7 @@ export async function getManifest(moduleId) {
     const result = await localizeManifestResult(res, moduleId);
     const manifestHash = result.manifest_hash;
     if (manifestHash) {
-      manifestByHash.set(manifestHash, result);
+      manifestByHash.set(localizedManifestHashKey(manifestHash), result);
       manifestHashByModule.set(scopedModuleId, manifestHash);
     }
     manifestCache.set(scopedModuleId, result);
@@ -723,10 +732,10 @@ export async function getPageBootstrap({
   const manifestHash = localized?.manifest_hash;
   const manifest = localized?.manifest;
   if (moduleId && manifestHash && manifest && typeof manifest === "object") {
-    const scopedModuleId = workspaceScopedKey(moduleId);
+    const scopedModuleId = localizedManifestModuleKey(moduleId);
     const compiled = localized?.compiled || compileManifest(manifest);
     const manifestResult = { module_id: moduleId, manifest_hash: manifestHash, manifest, compiled };
-    manifestByHash.set(manifestHash, manifestResult);
+    manifestByHash.set(localizedManifestHashKey(manifestHash), manifestResult);
     manifestHashByModule.set(scopedModuleId, manifestHash);
     manifestCache.set(scopedModuleId, manifestResult);
     manifestCacheTs.set(scopedModuleId, Date.now());
@@ -740,19 +749,32 @@ export async function getPageBootstrap({
 }
 
 export function invalidateManifestCache(moduleId) {
-  const scopedModuleId = workspaceScopedKey(moduleId);
-  manifestCache.delete(scopedModuleId);
-  manifestCacheTs.delete(scopedModuleId);
-  const hash = manifestHashByModule.get(scopedModuleId);
-  if (hash) {
-    manifestByHash.delete(hash);
-    for (const key of compiledByHash.keys()) {
-      if (key.startsWith(`${hash}:`)) {
-        compiledByHash.delete(key);
+  const scopedPrefix = `${workspaceScopedKey(moduleId)}:`;
+  for (const key of Array.from(manifestCache.keys())) {
+    if (key.startsWith(scopedPrefix)) manifestCache.delete(key);
+  }
+  for (const key of Array.from(manifestCacheTs.keys())) {
+    if (key.startsWith(scopedPrefix)) manifestCacheTs.delete(key);
+  }
+  for (const key of Array.from(manifestInFlight.keys())) {
+    if (key.startsWith(scopedPrefix)) manifestInFlight.delete(key);
+  }
+  for (const [key, hash] of Array.from(manifestHashByModule.entries())) {
+    if (!key.startsWith(scopedPrefix)) continue;
+    manifestHashByModule.delete(key);
+    if (hash) {
+      for (const manifestKey of Array.from(manifestByHash.keys())) {
+        if (manifestKey.startsWith(`${hash}:`)) {
+          manifestByHash.delete(manifestKey);
+        }
+      }
+      for (const compiledKey of Array.from(compiledByHash.keys())) {
+        if (compiledKey.startsWith(`${hash}:`)) {
+          compiledByHash.delete(compiledKey);
+        }
       }
     }
   }
-  manifestHashByModule.delete(scopedModuleId);
 }
 
 export function invalidateManifestCaches() {

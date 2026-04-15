@@ -14,7 +14,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       VitePWA({
-        registerType: "autoUpdate",
+        registerType: "prompt",
         injectRegister: null,
         devOptions: {
           enabled: enableDevPwa,
@@ -87,7 +87,7 @@ export default defineConfig(({ mode }) => {
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
           cleanupOutdatedCaches: true,
           clientsClaim: true,
-          skipWaiting: true,
+          skipWaiting: false,
         }
       }),
     ],

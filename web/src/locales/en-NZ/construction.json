@@ -1,1622 +1,1624 @@
 {
-  "module": {
-    "name": "Construction",
-    "description": "Unified construction management for projects, labour, materials, costs, and daily site operations."
-  },
-  "navigation": {
-    "group": "Construction",
-    "construction_dashboard_page": "Dashboard",
-    "construction_project_list_page": "Projects",
-    "construction_site_list_page": "Sites",
-    "construction_worker_list_page": "Workers",
-    "time_entry_list_page": "Time Entries",
-    "material_log_list_page": "Material Logs",
-    "construction_expense_list_page": "Expenses / Costs",
-    "construction_daily_report_list_page": "Daily Reports",
-    "construction_issue_list_page": "Issues"
-  },
-  "entities": {
-    "construction_site": {
-      "fields": {
-        "id": {
-          "label": "ID"
-        },
-        "name": {
-          "label": "Site Name"
-        },
-        "code": {
-          "label": "Site Code"
-        },
-        "address": {
-          "label": "Address"
-        },
-        "latitude": {
-          "label": "Latitude"
-        },
-        "longitude": {
-          "label": "Longitude"
-        },
-        "allowed_radius_m": {
-          "label": "Allowed Radius (m)"
-        },
-        "city": {
-          "label": "City"
-        },
-        "region": {
-          "label": "Region / State"
-        },
-        "postcode": {
-          "label": "Postcode"
-        },
-        "country": {
-          "label": "Country"
-        },
-        "place_id": {
-          "label": "Google Place ID"
-        },
-        "supervisor_id": {
-          "label": "Site Supervisor"
-        },
-        "phone": {
-          "label": "Phone"
-        },
-        "status": {
-          "label": "Status",
-          "options": {
-            "active": "Active",
-            "inactive": "Inactive"
+  "construction": {
+    "module": {
+      "name": "Construction",
+      "description": "Unified construction management for projects, labour, materials, costs, and daily site operations."
+    },
+    "navigation": {
+      "group": "Construction",
+      "construction_dashboard_page": "Dashboard",
+      "construction_project_list_page": "Projects",
+      "construction_site_list_page": "Sites",
+      "construction_worker_list_page": "Workers",
+      "time_entry_list_page": "Time Entries",
+      "material_log_list_page": "Material Logs",
+      "construction_expense_list_page": "Expenses / Costs",
+      "construction_daily_report_list_page": "Daily Reports",
+      "construction_issue_list_page": "Issues"
+    },
+    "entities": {
+      "construction_site": {
+        "fields": {
+          "id": {
+            "label": "ID"
+          },
+          "name": {
+            "label": "Site Name"
+          },
+          "code": {
+            "label": "Site Code"
+          },
+          "address": {
+            "label": "Address"
+          },
+          "latitude": {
+            "label": "Latitude"
+          },
+          "longitude": {
+            "label": "Longitude"
+          },
+          "allowed_radius_m": {
+            "label": "Allowed Radius (m)"
+          },
+          "city": {
+            "label": "City"
+          },
+          "region": {
+            "label": "Region / State"
+          },
+          "postcode": {
+            "label": "Postcode"
+          },
+          "country": {
+            "label": "Country"
+          },
+          "place_id": {
+            "label": "Google Place ID"
+          },
+          "supervisor_id": {
+            "label": "Site Supervisor"
+          },
+          "phone": {
+            "label": "Phone"
+          },
+          "status": {
+            "label": "Status",
+            "options": {
+              "active": "Active",
+              "inactive": "Inactive"
+            }
+          },
+          "notes": {
+            "label": "Notes"
+          },
+          "created_at": {
+            "label": "Created At"
           }
-        },
-        "notes": {
-          "label": "Notes"
-        },
-        "created_at": {
-          "label": "Created At"
         }
-      }
-    },
-    "construction_crew": {
-      "fields": {
-        "id": {
-          "label": "ID"
-        },
-        "name": {
-          "label": "Crew Name"
-        },
-        "code": {
-          "label": "Crew Code"
-        },
-        "foreman_user_id": {
-          "label": "Foreman"
-        },
-        "default_site_id": {
-          "label": "Default Site"
-        },
-        "status": {
-          "label": "Status",
-          "options": {
-            "active": "Active",
-            "inactive": "Inactive"
-          }
-        },
-        "notes": {
-          "label": "Notes"
-        },
-        "created_at": {
-          "label": "Created At"
-        }
-      }
-    },
-    "construction_cost_code": {
-      "fields": {
-        "id": {
-          "label": "ID"
-        },
-        "code": {
-          "label": "Code"
-        },
-        "name": {
-          "label": "Name"
-        },
-        "category": {
-          "label": "Category",
-          "options": {
-            "labor": "Labor",
-            "materials": "Materials",
-            "subcontract": "Subcontract",
-            "equipment": "Equipment",
-            "other": "Other"
-          }
-        },
-        "active": {
-          "label": "Active"
-        },
-        "notes": {
-          "label": "Notes"
-        },
-        "created_at": {
-          "label": "Created At"
-        }
-      }
-    },
-    "construction_project": {
-      "fields": {
-        "id": {
-          "label": "ID"
-        },
-        "name": {
-          "label": "Project Name"
-        },
-        "code": {
-          "label": "Project Code"
-        },
-        "client_contact_id": {
-          "label": "Client"
-        },
-        "site_id": {
-          "label": "Primary Site"
-        },
-        "site_location": {
-          "label": "Site Location"
-        },
-        "status": {
-          "label": "Status",
-          "options": {
-            "planned": "Planned",
-            "active": "Active",
-            "on_hold": "On Hold",
-            "completed": "Completed",
-            "cancelled": "Cancelled"
-          }
-        },
-        "project_type": {
-          "label": "Project Type",
-          "options": {
-            "building": "Building",
-            "renovation": "Renovation",
-            "fitout": "Fitout",
-            "maintenance": "Maintenance",
-            "other": "Other"
-          }
-        },
-        "priority": {
-          "label": "Priority",
-          "options": {
-            "low": "Low",
-            "medium": "Medium",
-            "high": "High"
-          }
-        },
-        "project_manager_id": {
-          "label": "Project Manager"
-        },
-        "site_manager_id": {
-          "label": "Site Manager"
-        },
-        "start_date": {
-          "label": "Start Date"
-        },
-        "target_end_date": {
-          "label": "Target End Date"
-        },
-        "contract_value": {
-          "label": "Contract Value"
-        },
-        "labor_budget": {
-          "label": "Labor Budget"
-        },
-        "material_budget": {
-          "label": "Material Budget"
-        },
-        "other_budget": {
-          "label": "Other Budget"
-        },
-        "notes": {
-          "label": "Notes"
-        },
-        "attachments": {
-          "label": "Attachments"
-        },
-        "created_at": {
-          "label": "Created At"
-        },
-        "total_hours": {
-          "label": "Total Hours"
-        },
-        "total_labour_cost": {
-          "label": "Labour Cost"
-        },
-        "total_material_cost": {
-          "label": "Material Cost"
-        },
-        "total_other_cost": {
-          "label": "Other Costs"
-        },
-        "total_cost": {
-          "label": "Total Cost To Date"
-        }
-      }
-    },
-    "construction_work_item": {
-      "fields": {
-        "id": {
-          "label": "ID"
-        },
-        "project_id": {
-          "label": "Project"
-        },
-        "site_id": {
-          "label": "Site"
-        },
-        "title": {
-          "label": "Title"
-        },
-        "sequence_code": {
-          "label": "Sequence / Code"
-        },
-        "phase": {
-          "label": "Phase",
-          "options": {
-            "preliminaries": "Preliminaries",
-            "foundation": "Foundation",
-            "structure": "Structure",
-            "mep": "MEP",
-            "finishing": "Finishing",
-            "handover": "Handover",
-            "other": "Other"
-          }
-        },
-        "cost_code_id": {
-          "label": "Cost Code"
-        },
-        "assigned_crew_id": {
-          "label": "Assigned Crew"
-        },
-        "owner_id": {
-          "label": "Owner"
-        },
-        "status": {
-          "label": "Status",
-          "options": {
-            "pending": "Pending",
-            "in_progress": "In Progress",
-            "blocked": "Blocked",
-            "done": "Done",
-            "cancelled": "Cancelled"
-          }
-        },
-        "progress_percent": {
-          "label": "Progress %"
-        },
-        "planned_start_date": {
-          "label": "Planned Start"
-        },
-        "planned_end_date": {
-          "label": "Planned End"
-        },
-        "notes": {
-          "label": "Notes"
-        },
-        "created_at": {
-          "label": "Created At"
-        }
-      }
-    },
-    "construction_worker": {
-      "fields": {
-        "id": {
-          "label": "ID"
-        },
-        "full_name": {
-          "label": "Full Name"
-        },
-        "worker_code": {
-          "label": "Worker Code"
-        },
-        "phone": {
-          "label": "Phone"
-        },
-        "role": {
-          "label": "Role",
-          "options": {
-            "worker": "Worker",
-            "supervisor": "Supervisor",
-            "foreman": "Foreman",
-            "manager": "Manager"
-          }
-        },
-        "crew_id": {
-          "label": "Crew"
-        },
-        "crew_name": {
-          "label": "Crew Name"
-        },
-        "portal_user_id": {
-          "label": "Portal User"
-        },
-        "active": {
-          "label": "Active"
-        },
-        "default_project_id": {
-          "label": "Default Project"
-        },
-        "default_site_id": {
-          "label": "Default Site"
-        },
-        "hourly_cost_rate": {
-          "label": "Hourly Cost Rate"
-        },
-        "notes": {
-          "label": "Notes"
-        },
-        "created_at": {
-          "label": "Created At"
-        }
-      }
-    },
-    "construction_worker_assignment": {
-      "fields": {
-        "id": {
-          "label": "ID"
-        },
-        "worker_id": {
-          "label": "Worker"
-        },
-        "project_id": {
-          "label": "Project"
-        },
-        "site_id": {
-          "label": "Site"
-        },
-        "assignment_role": {
-          "label": "Assignment Role",
-          "options": {
-            "worker": "Worker",
-            "supervisor": "Supervisor",
-            "foreman": "Foreman",
-            "manager": "Manager"
-          }
-        },
-        "start_date": {
-          "label": "Start Date"
-        },
-        "end_date": {
-          "label": "End Date"
-        },
-        "active": {
-          "label": "Active"
-        },
-        "notes": {
-          "label": "Notes"
-        },
-        "created_at": {
-          "label": "Created At"
-        }
-      }
-    },
-    "time_entry": {
-      "fields": {
-        "id": {
-          "label": "ID"
-        },
-        "project_id": {
-          "label": "Project"
-        },
-        "site_id": {
-          "label": "Site"
-        },
-        "worker_id": {
-          "label": "Worker"
-        },
-        "crew_id": {
-          "label": "Crew"
-        },
-        "work_item_id": {
-          "label": "Work Item"
-        },
-        "entry_date": {
-          "label": "Entry Date"
-        },
-        "check_in_at": {
-          "label": "Check In"
-        },
-        "check_in_latitude": {
-          "label": "Check In Latitude"
-        },
-        "check_in_longitude": {
-          "label": "Check In Longitude"
-        },
-        "check_in_accuracy_m": {
-          "label": "Check In GPS Accuracy (m)"
-        },
-        "check_in_distance_from_site_m": {
-          "label": "Check In Distance From Site (m)"
-        },
-        "check_out_at": {
-          "label": "Check Out"
-        },
-        "check_out_latitude": {
-          "label": "Check Out Latitude"
-        },
-        "check_out_longitude": {
-          "label": "Check Out Longitude"
-        },
-        "check_out_accuracy_m": {
-          "label": "Check Out GPS Accuracy (m)"
-        },
-        "check_out_distance_from_site_m": {
-          "label": "Check Out Distance From Site (m)"
-        },
-        "break_minutes": {
-          "label": "Break Minutes"
-        },
-        "hours_worked": {
-          "label": "Hours Worked"
-        },
-        "status": {
-          "label": "Status",
-          "options": {
-            "open": "Open",
-            "closed": "Closed",
-            "approved": "Approved"
-          }
-        },
-        "source": {
-          "label": "Source",
-          "options": {
-            "pwa": "PWA",
-            "portal": "Portal",
-            "manual": "Manual"
-          }
-        },
-        "approved_by": {
-          "label": "Approved By"
-        },
-        "notes": {
-          "label": "Notes"
-        },
-        "check_in_photo": {
-          "label": "Check In Photo"
-        },
-        "check_out_photo": {
-          "label": "Check Out Photo"
-        },
-        "created_at": {
-          "label": "Created At"
-        }
-      }
-    },
-    "construction_daily_report": {
-      "fields": {
-        "id": {
-          "label": "ID"
-        },
-        "project_id": {
-          "label": "Project"
-        },
-        "site_id": {
-          "label": "Site"
-        },
-        "report_date": {
-          "label": "Report Date"
-        },
-        "supervisor_id": {
-          "label": "Supervisor"
-        },
-        "weather": {
-          "label": "Weather",
-          "options": {
-            "clear": "Clear",
-            "cloudy": "Cloudy",
-            "rain": "Rain",
-            "storm": "Storm",
-            "other": "Other"
-          }
-        },
-        "summary": {
-          "label": "Summary"
-        },
-        "blockers": {
-          "label": "Blockers / Delays"
-        },
-        "safety_notes": {
-          "label": "Safety Notes"
-        },
-        "photos": {
-          "label": "Photos"
-        },
-        "status": {
-          "label": "Status",
-          "options": {
-            "draft": "Draft",
-            "submitted": "Submitted",
-            "approved": "Approved"
-          }
-        },
-        "created_at": {
-          "label": "Created At"
-        }
-      }
-    },
-    "construction_issue": {
-      "fields": {
-        "id": {
-          "label": "ID"
-        },
-        "project_id": {
-          "label": "Project"
-        },
-        "site_id": {
-          "label": "Site"
-        },
-        "work_item_id": {
-          "label": "Work Item"
-        },
-        "title": {
-          "label": "Title"
-        },
-        "issue_type": {
-          "label": "Issue Type",
-          "options": {
-            "delay": "Delay",
-            "quality": "Quality",
-            "safety": "Safety",
-            "materials": "Materials",
-            "coordination": "Coordination",
-            "other": "Other"
-          }
-        },
-        "priority": {
-          "label": "Priority",
-          "options": {
-            "low": "Low",
-            "medium": "Medium",
-            "high": "High",
-            "critical": "Critical"
-          }
-        },
-        "status": {
-          "label": "Status",
-          "options": {
-            "open": "Open",
-            "in_progress": "In Progress",
-            "resolved": "Resolved",
-            "closed": "Closed"
-          }
-        },
-        "owner_id": {
-          "label": "Owner"
-        },
-        "reported_by_worker_id": {
-          "label": "Reported By Worker"
-        },
-        "due_date": {
-          "label": "Due Date"
-        },
-        "description": {
-          "label": "Description"
-        },
-        "photos": {
-          "label": "Photos"
-        },
-        "created_at": {
-          "label": "Created At"
-        }
-      }
-    },
-    "material_request": {
-      "fields": {
-        "id": {
-          "label": "ID"
-        },
-        "project_id": {
-          "label": "Project"
-        },
-        "site_id": {
-          "label": "Site"
-        },
-        "request_date": {
-          "label": "Request Date"
-        },
-        "item_id": {
-          "label": "Catalog Item"
-        },
-        "description": {
-          "label": "Description"
-        },
-        "quantity": {
-          "label": "Quantity"
-        },
-        "unit": {
-          "label": "Unit",
-          "options": {
-            "bag": "Bag",
-            "kg": "kg",
-            "ton": "Ton",
-            "m3": "m3",
-            "piece": "Piece"
-          }
-        },
-        "requested_by_worker_id": {
-          "label": "Requested By"
-        },
-        "needed_by_date": {
-          "label": "Needed By"
-        },
-        "status": {
-          "label": "Status",
-          "options": {
-            "draft": "Draft",
-            "requested": "Requested",
-            "approved": "Approved",
-            "fulfilled": "Fulfilled",
-            "cancelled": "Cancelled"
-          }
-        },
-        "approved_by": {
-          "label": "Approved By"
-        },
-        "notes": {
-          "label": "Notes"
-        },
-        "created_at": {
-          "label": "Created At"
-        }
-      }
-    },
-    "material_receipt": {
-      "fields": {
-        "id": {
-          "label": "ID"
-        },
-        "project_id": {
-          "label": "Project"
-        },
-        "site_id": {
-          "label": "Site"
-        },
-        "receipt_date": {
-          "label": "Receipt Date"
-        },
-        "item_id": {
-          "label": "Catalog Item"
-        },
-        "supplier_contact_id": {
-          "label": "Supplier"
-        },
-        "quantity": {
-          "label": "Quantity"
-        },
-        "unit": {
-          "label": "Unit",
-          "options": {
-            "bag": "Bag",
-            "kg": "kg",
-            "ton": "Ton",
-            "m3": "m3",
-            "piece": "Piece"
-          }
-        },
-        "unit_cost": {
-          "label": "Unit Cost"
-        },
-        "total_cost": {
-          "label": "Total Cost"
-        },
-        "received_by": {
-          "label": "Received By"
-        },
-        "invoice_ref": {
-          "label": "Invoice / Delivery Ref"
-        },
-        "status": {
-          "label": "Status",
-          "options": {
-            "draft": "Draft",
-            "received": "Received",
-            "posted": "Posted"
-          }
-        },
-        "notes": {
-          "label": "Notes"
-        },
-        "attachments": {
-          "label": "Attachments"
-        },
-        "created_at": {
-          "label": "Created At"
-        }
-      }
-    },
-    "material_log": {
-      "fields": {
-        "id": {
-          "label": "ID"
-        },
-        "project_id": {
-          "label": "Project"
-        },
-        "site_id": {
-          "label": "Site"
-        },
-        "work_item_id": {
-          "label": "Work Item"
-        },
-        "log_date": {
-          "label": "Log Date"
-        },
-        "item_id": {
-          "label": "Catalog Item"
-        },
-        "material_type": {
-          "label": "Material Type",
-          "options": {
-            "cement": "Cement",
-            "sand": "Sand",
-            "steel": "Steel",
-            "blocks": "Blocks",
-            "gravel": "Gravel",
-            "other": "Other"
-          }
-        },
-        "quantity": {
-          "label": "Quantity"
-        },
-        "unit": {
-          "label": "Unit",
-          "options": {
-            "bag": "Bag",
-            "kg": "kg",
-            "ton": "Ton",
-            "m3": "m3",
-            "piece": "Piece"
-          }
-        },
-        "unit_cost": {
-          "label": "Unit Cost"
-        },
-        "total_cost": {
-          "label": "Total Cost"
-        },
-        "entered_by_worker_id": {
-          "label": "Entered By Worker"
-        },
-        "supervisor_id": {
-          "label": "Supervisor"
-        },
-        "status": {
-          "label": "Status",
-          "options": {
-            "draft": "Draft",
-            "submitted": "Submitted",
-            "approved": "Approved"
-          }
-        },
-        "notes": {
-          "label": "Notes"
-        },
-        "photo": {
-          "label": "Photos"
-        },
-        "created_at": {
-          "label": "Created At"
-        }
-      }
-    },
-    "construction_budget_line": {
-      "fields": {
-        "id": {
-          "label": "ID"
-        },
-        "project_id": {
-          "label": "Project"
-        },
-        "cost_code_id": {
-          "label": "Cost Code"
-        },
-        "category": {
-          "label": "Category",
-          "options": {
-            "labor": "Labor",
-            "materials": "Materials",
-            "subcontract": "Subcontract",
-            "equipment": "Equipment",
-            "other": "Other"
-          }
-        },
-        "description": {
-          "label": "Description"
-        },
-        "planned_amount": {
-          "label": "Planned Amount"
-        },
-        "committed_amount": {
-          "label": "Committed Amount"
-        },
-        "actual_amount": {
-          "label": "Actual Amount"
-        },
-        "variance_amount": {
-          "label": "Variance"
-        },
-        "notes": {
-          "label": "Notes"
-        },
-        "created_at": {
-          "label": "Created At"
-        }
-      }
-    },
-    "construction_expense": {
-      "fields": {
-        "id": {
-          "label": "ID"
-        },
-        "project_id": {
-          "label": "Project"
-        },
-        "site_id": {
-          "label": "Site"
-        },
-        "cost_code_id": {
-          "label": "Cost Code"
-        },
-        "title": {
-          "label": "Title"
-        },
-        "expense_date": {
-          "label": "Expense Date"
-        },
-        "expense_type": {
-          "label": "Expense Type",
-          "options": {
-            "labor": "Labor",
-            "materials": "Materials",
-            "subcontract": "Subcontract",
-            "equipment": "Equipment",
-            "other": "Other"
-          }
-        },
-        "supplier_contact_id": {
-          "label": "Supplier / Vendor"
-        },
-        "reference": {
-          "label": "Reference"
-        },
-        "amount": {
-          "label": "Amount"
-        },
-        "status": {
-          "label": "Status",
-          "options": {
-            "draft": "Draft",
-            "posted": "Posted",
-            "void": "Void"
-          }
-        },
-        "notes": {
-          "label": "Notes"
-        },
-        "attachments": {
-          "label": "Attachments"
-        },
-        "created_at": {
-          "label": "Created At"
-        }
-      }
-    }
-  },
-  "actions": {
-    "action_construction_site_new": {
-      "label": "+ New Site"
-    },
-    "action_construction_crew_new": {
-      "label": "+ New Crew"
-    },
-    "action_construction_cost_code_new": {
-      "label": "+ New Cost Code"
-    },
-    "action_construction_site_deactivate": {
-      "label": "Deactivate Site"
-    },
-    "action_construction_site_activate": {
-      "label": "Activate Site"
-    },
-    "action_construction_crew_deactivate": {
-      "label": "Deactivate Crew"
-    },
-    "action_construction_crew_activate": {
-      "label": "Activate Crew"
-    },
-    "action_construction_project_new": {
-      "label": "+ New Project"
-    },
-    "action_construction_work_item_new": {
-      "label": "+ New Work Item"
-    },
-    "action_construction_project_activate": {
-      "label": "Start Project"
-    },
-    "action_construction_project_hold": {
-      "label": "Put On Hold"
-    },
-    "action_construction_project_resume": {
-      "label": "Resume Project"
-    },
-    "action_construction_project_complete": {
-      "label": "Complete"
-    },
-    "action_construction_project_cancel": {
-      "label": "Cancel Project"
-    },
-    "action_construction_work_item_start": {
-      "label": "Start"
-    },
-    "action_construction_work_item_block": {
-      "label": "Block"
-    },
-    "action_construction_work_item_resume": {
-      "label": "Resume"
-    },
-    "action_construction_work_item_done": {
-      "label": "Mark Done"
-    },
-    "action_construction_work_item_cancel": {
-      "label": "Cancel"
-    },
-    "action_construction_worker_new": {
-      "label": "+ New Worker"
-    },
-    "action_construction_worker_assignment_new": {
-      "label": "+ New Assignment"
-    },
-    "action_time_entry_new": {
-      "label": "+ New Time Entry"
-    },
-    "action_construction_worker_activate": {
-      "label": "Activate"
-    },
-    "action_construction_worker_deactivate": {
-      "label": "Deactivate"
-    },
-    "action_time_entry_close": {
-      "label": "Close Entry"
-    },
-    "action_time_entry_approve": {
-      "label": "Approve"
-    },
-    "action_time_entry_reopen": {
-      "label": "Reopen"
-    },
-    "action_construction_worker_assignment_activate": {
-      "label": "Activate"
-    },
-    "action_construction_worker_assignment_deactivate": {
-      "label": "Deactivate"
-    },
-    "action_daily_report_new": {
-      "label": "+ New Report"
-    },
-    "action_issue_new": {
-      "label": "+ New Issue"
-    },
-    "action_daily_report_submit": {
-      "label": "Submit"
-    },
-    "action_daily_report_approve": {
-      "label": "Approve"
-    },
-    "action_daily_report_reopen": {
-      "label": "Reopen"
-    },
-    "action_issue_start": {
-      "label": "Start"
-    },
-    "action_issue_resolve": {
-      "label": "Resolve"
-    },
-    "action_issue_close": {
-      "label": "Close"
-    },
-    "action_issue_reopen": {
-      "label": "Reopen"
-    },
-    "action_material_request_new": {
-      "label": "+ New Request"
-    },
-    "action_material_receipt_new": {
-      "label": "+ New Receipt"
-    },
-    "action_material_log_new": {
-      "label": "+ New Usage Log"
-    },
-    "action_material_request_send": {
-      "label": "Request"
-    },
-    "action_material_request_approve": {
-      "label": "Approve"
-    },
-    "action_material_request_fulfill": {
-      "label": "Fulfill"
-    },
-    "action_material_receipt_receive": {
-      "label": "Receive"
-    },
-    "action_material_receipt_post": {
-      "label": "Post"
-    },
-    "action_material_log_submit": {
-      "label": "Submit"
-    },
-    "action_material_log_approve": {
-      "label": "Approve"
-    },
-    "action_construction_budget_line_new": {
-      "label": "+ New Budget Line"
-    },
-    "action_construction_expense_new": {
-      "label": "+ New Expense"
-    },
-    "action_construction_expense_post": {
-      "label": "Post"
-    },
-    "action_construction_expense_void": {
-      "label": "Void"
-    },
-    "action_construction_open_dashboard": {
-      "label": "Operations Dashboard"
-    },
-    "action_construction_open_projects": {
-      "label": "Projects"
-    },
-    "action_construction_open_time_report": {
-      "label": "Time Entries Report"
-    },
-    "action_construction_open_material_report": {
-      "label": "Material Usage Report"
-    },
-    "action_construction_open_cost_report": {
-      "label": "Project Cost Summary"
-    },
-    "action_construction_open_daily_summary": {
-      "label": "Daily Site Summary"
-    }
-  },
-  "views": {
-    "list": {
-      "search": {
-        "placeholder": "Search sites..."
       },
-      "filters": {
-        "active": {
-          "label": "Active"
-        },
-        "inactive": {
-          "label": "Inactive"
-        },
-        "open": {
-          "label": "Open"
-        },
-        "completed": {
-          "label": "Completed"
-        },
-        "done": {
-          "label": "Done"
-        },
-        "supervisors": {
-          "label": "Supervisors"
-        },
-        "closed": {
-          "label": "Closed"
-        },
-        "approved": {
-          "label": "Approved"
-        },
-        "draft": {
-          "label": "Draft"
-        },
-        "submitted": {
-          "label": "Submitted"
-        },
-        "resolved": {
-          "label": "Resolved"
-        },
-        "critical": {
-          "label": "Critical"
-        },
-        "requested": {
-          "label": "Requested"
-        },
-        "posted": {
-          "label": "Posted"
+      "construction_crew": {
+        "fields": {
+          "id": {
+            "label": "ID"
+          },
+          "name": {
+            "label": "Crew Name"
+          },
+          "code": {
+            "label": "Crew Code"
+          },
+          "foreman_user_id": {
+            "label": "Foreman"
+          },
+          "default_site_id": {
+            "label": "Default Site"
+          },
+          "status": {
+            "label": "Status",
+            "options": {
+              "active": "Active",
+              "inactive": "Inactive"
+            }
+          },
+          "notes": {
+            "label": "Notes"
+          },
+          "created_at": {
+            "label": "Created At"
+          }
         }
-      }
-    },
-    "form": {
-      "sections": {
-        "general": {
-          "title": "General"
-        },
-        "geofence": {
-          "title": "Geofence"
-        },
-        "notes": {
-          "title": "Notes"
-        },
-        "overview": {
-          "title": "Overview"
-        },
-        "summary": {
-          "title": "Project Dashboard"
-        },
-        "crew": {
-          "title": "Workers / Crew"
-        },
-        "time_entries": {
-          "title": "Time Entries"
-        },
-        "materials": {
-          "title": "Materials"
-        },
-        "costs": {
-          "title": "Costs / Expenses"
-        },
-        "daily_reports": {
-          "title": "Daily Reports"
-        },
-        "issues": {
-          "title": "Issues"
-        },
-        "main": {
-          "title": "Work Item"
-        },
-        "worker": {
-          "title": "Worker"
-        },
-        "assignments_related": {
-          "title": "Assignments"
-        },
-        "time_entries_related": {
-          "title": "Time Entries"
-        },
-        "assignment": {
-          "title": "Assignment"
-        },
-        "entry": {
-          "title": "Entry"
-        },
-        "verification": {
-          "title": "Verification"
-        },
-        "report": {
-          "title": "Report"
-        },
-        "photos": {
-          "title": "Photos"
-        },
-        "issue": {
-          "title": "Issue"
-        },
-        "request": {
-          "title": "Request"
-        },
-        "receipt": {
-          "title": "Receipt"
-        },
-        "supporting": {
-          "title": "Supporting"
-        },
-        "usage": {
-          "title": "Usage"
-        },
-        "budget": {
-          "title": "Budget"
-        },
-        "expense": {
-          "title": "Expense"
-        }
-      }
-    },
-    "report": {
-      "search": {
-        "placeholder": "Search labour entries..."
       },
-      "filters": {
-        "open": {
-          "label": "Open"
-        },
-        "closed": {
-          "label": "Closed"
-        },
-        "approved": {
-          "label": "Approved"
-        },
-        "draft": {
-          "label": "Draft"
-        },
-        "submitted": {
-          "label": "Submitted"
-        },
-        "posted": {
-          "label": "Posted"
+      "construction_cost_code": {
+        "fields": {
+          "id": {
+            "label": "ID"
+          },
+          "code": {
+            "label": "Code"
+          },
+          "name": {
+            "label": "Name"
+          },
+          "category": {
+            "label": "Category",
+            "options": {
+              "labor": "Labor",
+              "materials": "Materials",
+              "subcontract": "Subcontract",
+              "equipment": "Equipment",
+              "other": "Other"
+            }
+          },
+          "active": {
+            "label": "Active"
+          },
+          "notes": {
+            "label": "Notes"
+          },
+          "created_at": {
+            "label": "Created At"
+          }
         }
-      }
-    },
-    "summary_list": {
-      "search": {
-        "placeholder": "Search daily site summaries..."
       },
-      "filters": {
-        "draft": {
-          "label": "Draft"
-        },
-        "submitted": {
-          "label": "Submitted"
-        },
-        "approved": {
-          "label": "Approved"
-        }
-      }
-    }
-  },
-  "pages": {
-    "dashboard_page": {
-      "title": "Operations Dashboard",
-      "blocks": {
-        "1": {
-          "cards": {
-            "workers_on_site_today": {
-              "label": "Workers On Site Today",
-              "subtitle": "Today only"
-            },
-            "labour_hours_today": {
-              "label": "Total Labour Hours Today",
-              "subtitle": "Today only"
-            },
-            "materials_logged_today": {
-              "label": "Materials Logged Today",
-              "subtitle": "Today only"
-            },
-            "cost_today": {
-              "label": "Total Cost Today",
-              "subtitle": "Today only"
+      "construction_project": {
+        "fields": {
+          "id": {
+            "label": "ID"
+          },
+          "name": {
+            "label": "Project Name"
+          },
+          "code": {
+            "label": "Project Code"
+          },
+          "client_contact_id": {
+            "label": "Client"
+          },
+          "site_id": {
+            "label": "Primary Site"
+          },
+          "site_location": {
+            "label": "Site Location"
+          },
+          "status": {
+            "label": "Status",
+            "options": {
+              "planned": "Planned",
+              "active": "Active",
+              "on_hold": "On Hold",
+              "completed": "Completed",
+              "cancelled": "Cancelled"
             }
-          }
-        },
-        "2": {
-          "title": "Cost Breakdown"
-        },
-        "3": {
-          "items": {
-            "1": {
-              "content": {
-                "1": {
-                  "title": "Recent Time Entries"
-                }
-              }
-            },
-            "2": {
-              "content": {
-                "1": {
-                  "title": "Materials Logged Today"
-                }
-              }
+          },
+          "project_type": {
+            "label": "Project Type",
+            "options": {
+              "building": "Building",
+              "renovation": "Renovation",
+              "fitout": "Fitout",
+              "maintenance": "Maintenance",
+              "other": "Other"
             }
-          }
-        }
-      }
-    },
-    "list_page": {
-      "title": "Sites",
-      "blocks": {
-        "1": {
-          "cards": {
-            "active_projects": {
-              "label": "Active Projects"
-            },
-            "project_hours_total": {
-              "label": "Total Project Hours"
-            },
-            "project_cost_total": {
-              "label": "Total Cost To Date"
-            },
-            "open_project_issues": {
-              "label": "Open Issues"
+          },
+          "priority": {
+            "label": "Priority",
+            "options": {
+              "low": "Low",
+              "medium": "Medium",
+              "high": "High"
             }
-          }
-        }
-      }
-    },
-    "form_page": {
-      "title": "Site"
-    },
-    "construction_site_list_page": {
-      "title": "Sites"
-    },
-    "construction_site_form_page": {
-      "title": "Site"
-    },
-    "construction_crew_list_page": {
-      "title": "Crews"
-    },
-    "construction_crew_form_page": {
-      "title": "Crew"
-    },
-    "construction_cost_code_list_page": {
-      "title": "Cost Codes"
-    },
-    "construction_cost_code_form_page": {
-      "title": "Cost Code"
-    },
-    "construction_project_list_page": {
-      "title": "Projects"
-    },
-    "construction_project_form_page": {
-      "title": "Project"
-    },
-    "construction_work_item_list_page": {
-      "title": "Project Tasks"
-    },
-    "construction_work_item_form_page": {
-      "title": "Project Task"
-    },
-    "construction_worker_list_page": {
-      "title": "Workers"
-    },
-    "construction_worker_form_page": {
-      "title": "Worker"
-    },
-    "construction_worker_assignment_list_page": {
-      "title": "Assignments"
-    },
-    "construction_worker_assignment_form_page": {
-      "title": "Assignment"
-    },
-    "time_entry_list_page": {
-      "title": "Time Entries"
-    },
-    "time_entry_form_page": {
-      "title": "Time Entry"
-    },
-    "construction_daily_report_list_page": {
-      "title": "Daily Reports"
-    },
-    "construction_daily_report_form_page": {
-      "title": "Daily Report"
-    },
-    "construction_issue_list_page": {
-      "title": "Issues"
-    },
-    "construction_issue_form_page": {
-      "title": "Issue"
-    },
-    "material_request_list_page": {
-      "title": "Material Requests"
-    },
-    "material_request_form_page": {
-      "title": "Material Request"
-    },
-    "material_receipt_list_page": {
-      "title": "Material Receipts"
-    },
-    "material_receipt_form_page": {
-      "title": "Material Receipt"
-    },
-    "material_log_list_page": {
-      "title": "Material Logs"
-    },
-    "material_log_form_page": {
-      "title": "Material Log"
-    },
-    "construction_budget_line_list_page": {
-      "title": "Cost Budgets"
-    },
-    "construction_budget_line_form_page": {
-      "title": "Cost Budget"
-    },
-    "construction_expense_list_page": {
-      "title": "Expenses / Costs"
-    },
-    "construction_expense_form_page": {
-      "title": "Expense / Cost"
-    },
-    "time_report_page": {
-      "title": "Time Entries Report"
-    },
-    "material_report_page": {
-      "title": "Material Usage Report"
-    },
-    "cost_report_page": {
-      "title": "Project Cost Summary",
-      "blocks": {
-        "1": {
-          "items": {
-            "1": {
-              "content": {
-                "1": {
-                  "title": "Costs by Type"
-                }
-              }
-            },
-            "2": {
-              "content": {
-                "1": {
-                  "title": "Costs by Project"
-                }
-              }
-            }
+          },
+          "project_manager_id": {
+            "label": "Project Manager"
+          },
+          "site_manager_id": {
+            "label": "Site Manager"
+          },
+          "start_date": {
+            "label": "Start Date"
+          },
+          "target_end_date": {
+            "label": "Target End Date"
+          },
+          "contract_value": {
+            "label": "Contract Value"
+          },
+          "labor_budget": {
+            "label": "Labor Budget"
+          },
+          "material_budget": {
+            "label": "Material Budget"
+          },
+          "other_budget": {
+            "label": "Other Budget"
+          },
+          "notes": {
+            "label": "Notes"
+          },
+          "attachments": {
+            "label": "Attachments"
+          },
+          "created_at": {
+            "label": "Created At"
+          },
+          "total_hours": {
+            "label": "Total Hours"
+          },
+          "total_labour_cost": {
+            "label": "Labour Cost"
+          },
+          "total_material_cost": {
+            "label": "Material Cost"
+          },
+          "total_other_cost": {
+            "label": "Other Costs"
+          },
+          "total_cost": {
+            "label": "Total Cost To Date"
           }
         }
-      }
-    },
-    "daily_summary_page": {
-      "title": "Daily Site Summary"
-    }
-  },
-  "dashboard": {
-    "projects_by_status": "Projects by Status",
-    "project_cost_to_date": "Cost To Date by Project",
-    "labour_hours_by_project": "Labour Hours by Project",
-    "daily_reports_by_project": "Daily Reports by Project",
-    "materials_by_type": "Material Usage by Type",
-    "costs_by_project": "Costs by Project"
-  },
-  "workflows": {
-    "workflow_construction_site_status": {
-      "states": {
-        "active": {
-          "label": "Active"
-        },
-        "inactive": {
-          "label": "Inactive"
+      },
+      "construction_work_item": {
+        "fields": {
+          "id": {
+            "label": "ID"
+          },
+          "project_id": {
+            "label": "Project"
+          },
+          "site_id": {
+            "label": "Site"
+          },
+          "title": {
+            "label": "Title"
+          },
+          "sequence_code": {
+            "label": "Sequence / Code"
+          },
+          "phase": {
+            "label": "Phase",
+            "options": {
+              "preliminaries": "Preliminaries",
+              "foundation": "Foundation",
+              "structure": "Structure",
+              "mep": "MEP",
+              "finishing": "Finishing",
+              "handover": "Handover",
+              "other": "Other"
+            }
+          },
+          "cost_code_id": {
+            "label": "Cost Code"
+          },
+          "assigned_crew_id": {
+            "label": "Assigned Crew"
+          },
+          "owner_id": {
+            "label": "Owner"
+          },
+          "status": {
+            "label": "Status",
+            "options": {
+              "pending": "Pending",
+              "in_progress": "In Progress",
+              "blocked": "Blocked",
+              "done": "Done",
+              "cancelled": "Cancelled"
+            }
+          },
+          "progress_percent": {
+            "label": "Progress %"
+          },
+          "planned_start_date": {
+            "label": "Planned Start"
+          },
+          "planned_end_date": {
+            "label": "Planned End"
+          },
+          "notes": {
+            "label": "Notes"
+          },
+          "created_at": {
+            "label": "Created At"
+          }
+        }
+      },
+      "construction_worker": {
+        "fields": {
+          "id": {
+            "label": "ID"
+          },
+          "full_name": {
+            "label": "Full Name"
+          },
+          "worker_code": {
+            "label": "Worker Code"
+          },
+          "phone": {
+            "label": "Phone"
+          },
+          "role": {
+            "label": "Role",
+            "options": {
+              "worker": "Worker",
+              "supervisor": "Supervisor",
+              "foreman": "Foreman",
+              "manager": "Manager"
+            }
+          },
+          "crew_id": {
+            "label": "Crew"
+          },
+          "crew_name": {
+            "label": "Crew Name"
+          },
+          "portal_user_id": {
+            "label": "Portal User"
+          },
+          "active": {
+            "label": "Active"
+          },
+          "default_project_id": {
+            "label": "Default Project"
+          },
+          "default_site_id": {
+            "label": "Default Site"
+          },
+          "hourly_cost_rate": {
+            "label": "Hourly Cost Rate"
+          },
+          "notes": {
+            "label": "Notes"
+          },
+          "created_at": {
+            "label": "Created At"
+          }
+        }
+      },
+      "construction_worker_assignment": {
+        "fields": {
+          "id": {
+            "label": "ID"
+          },
+          "worker_id": {
+            "label": "Worker"
+          },
+          "project_id": {
+            "label": "Project"
+          },
+          "site_id": {
+            "label": "Site"
+          },
+          "assignment_role": {
+            "label": "Assignment Role",
+            "options": {
+              "worker": "Worker",
+              "supervisor": "Supervisor",
+              "foreman": "Foreman",
+              "manager": "Manager"
+            }
+          },
+          "start_date": {
+            "label": "Start Date"
+          },
+          "end_date": {
+            "label": "End Date"
+          },
+          "active": {
+            "label": "Active"
+          },
+          "notes": {
+            "label": "Notes"
+          },
+          "created_at": {
+            "label": "Created At"
+          }
+        }
+      },
+      "time_entry": {
+        "fields": {
+          "id": {
+            "label": "ID"
+          },
+          "project_id": {
+            "label": "Project"
+          },
+          "site_id": {
+            "label": "Site"
+          },
+          "worker_id": {
+            "label": "Worker"
+          },
+          "crew_id": {
+            "label": "Crew"
+          },
+          "work_item_id": {
+            "label": "Work Item"
+          },
+          "entry_date": {
+            "label": "Entry Date"
+          },
+          "check_in_at": {
+            "label": "Check In"
+          },
+          "check_in_latitude": {
+            "label": "Check In Latitude"
+          },
+          "check_in_longitude": {
+            "label": "Check In Longitude"
+          },
+          "check_in_accuracy_m": {
+            "label": "Check In GPS Accuracy (m)"
+          },
+          "check_in_distance_from_site_m": {
+            "label": "Check In Distance From Site (m)"
+          },
+          "check_out_at": {
+            "label": "Check Out"
+          },
+          "check_out_latitude": {
+            "label": "Check Out Latitude"
+          },
+          "check_out_longitude": {
+            "label": "Check Out Longitude"
+          },
+          "check_out_accuracy_m": {
+            "label": "Check Out GPS Accuracy (m)"
+          },
+          "check_out_distance_from_site_m": {
+            "label": "Check Out Distance From Site (m)"
+          },
+          "break_minutes": {
+            "label": "Break Minutes"
+          },
+          "hours_worked": {
+            "label": "Hours Worked"
+          },
+          "status": {
+            "label": "Status",
+            "options": {
+              "open": "Open",
+              "closed": "Closed",
+              "approved": "Approved"
+            }
+          },
+          "source": {
+            "label": "Source",
+            "options": {
+              "pwa": "PWA",
+              "portal": "Portal",
+              "manual": "Manual"
+            }
+          },
+          "approved_by": {
+            "label": "Approved By"
+          },
+          "notes": {
+            "label": "Notes"
+          },
+          "check_in_photo": {
+            "label": "Check In Photo"
+          },
+          "check_out_photo": {
+            "label": "Check Out Photo"
+          },
+          "created_at": {
+            "label": "Created At"
+          }
+        }
+      },
+      "construction_daily_report": {
+        "fields": {
+          "id": {
+            "label": "ID"
+          },
+          "project_id": {
+            "label": "Project"
+          },
+          "site_id": {
+            "label": "Site"
+          },
+          "report_date": {
+            "label": "Report Date"
+          },
+          "supervisor_id": {
+            "label": "Supervisor"
+          },
+          "weather": {
+            "label": "Weather",
+            "options": {
+              "clear": "Clear",
+              "cloudy": "Cloudy",
+              "rain": "Rain",
+              "storm": "Storm",
+              "other": "Other"
+            }
+          },
+          "summary": {
+            "label": "Summary"
+          },
+          "blockers": {
+            "label": "Blockers / Delays"
+          },
+          "safety_notes": {
+            "label": "Safety Notes"
+          },
+          "photos": {
+            "label": "Photos"
+          },
+          "status": {
+            "label": "Status",
+            "options": {
+              "draft": "Draft",
+              "submitted": "Submitted",
+              "approved": "Approved"
+            }
+          },
+          "created_at": {
+            "label": "Created At"
+          }
+        }
+      },
+      "construction_issue": {
+        "fields": {
+          "id": {
+            "label": "ID"
+          },
+          "project_id": {
+            "label": "Project"
+          },
+          "site_id": {
+            "label": "Site"
+          },
+          "work_item_id": {
+            "label": "Work Item"
+          },
+          "title": {
+            "label": "Title"
+          },
+          "issue_type": {
+            "label": "Issue Type",
+            "options": {
+              "delay": "Delay",
+              "quality": "Quality",
+              "safety": "Safety",
+              "materials": "Materials",
+              "coordination": "Coordination",
+              "other": "Other"
+            }
+          },
+          "priority": {
+            "label": "Priority",
+            "options": {
+              "low": "Low",
+              "medium": "Medium",
+              "high": "High",
+              "critical": "Critical"
+            }
+          },
+          "status": {
+            "label": "Status",
+            "options": {
+              "open": "Open",
+              "in_progress": "In Progress",
+              "resolved": "Resolved",
+              "closed": "Closed"
+            }
+          },
+          "owner_id": {
+            "label": "Owner"
+          },
+          "reported_by_worker_id": {
+            "label": "Reported By Worker"
+          },
+          "due_date": {
+            "label": "Due Date"
+          },
+          "description": {
+            "label": "Description"
+          },
+          "photos": {
+            "label": "Photos"
+          },
+          "created_at": {
+            "label": "Created At"
+          }
+        }
+      },
+      "material_request": {
+        "fields": {
+          "id": {
+            "label": "ID"
+          },
+          "project_id": {
+            "label": "Project"
+          },
+          "site_id": {
+            "label": "Site"
+          },
+          "request_date": {
+            "label": "Request Date"
+          },
+          "item_id": {
+            "label": "Catalog Item"
+          },
+          "description": {
+            "label": "Description"
+          },
+          "quantity": {
+            "label": "Quantity"
+          },
+          "unit": {
+            "label": "Unit",
+            "options": {
+              "bag": "Bag",
+              "kg": "kg",
+              "ton": "Ton",
+              "m3": "m3",
+              "piece": "Piece"
+            }
+          },
+          "requested_by_worker_id": {
+            "label": "Requested By"
+          },
+          "needed_by_date": {
+            "label": "Needed By"
+          },
+          "status": {
+            "label": "Status",
+            "options": {
+              "draft": "Draft",
+              "requested": "Requested",
+              "approved": "Approved",
+              "fulfilled": "Fulfilled",
+              "cancelled": "Cancelled"
+            }
+          },
+          "approved_by": {
+            "label": "Approved By"
+          },
+          "notes": {
+            "label": "Notes"
+          },
+          "created_at": {
+            "label": "Created At"
+          }
+        }
+      },
+      "material_receipt": {
+        "fields": {
+          "id": {
+            "label": "ID"
+          },
+          "project_id": {
+            "label": "Project"
+          },
+          "site_id": {
+            "label": "Site"
+          },
+          "receipt_date": {
+            "label": "Receipt Date"
+          },
+          "item_id": {
+            "label": "Catalog Item"
+          },
+          "supplier_contact_id": {
+            "label": "Supplier"
+          },
+          "quantity": {
+            "label": "Quantity"
+          },
+          "unit": {
+            "label": "Unit",
+            "options": {
+              "bag": "Bag",
+              "kg": "kg",
+              "ton": "Ton",
+              "m3": "m3",
+              "piece": "Piece"
+            }
+          },
+          "unit_cost": {
+            "label": "Unit Cost"
+          },
+          "total_cost": {
+            "label": "Total Cost"
+          },
+          "received_by": {
+            "label": "Received By"
+          },
+          "invoice_ref": {
+            "label": "Invoice / Delivery Ref"
+          },
+          "status": {
+            "label": "Status",
+            "options": {
+              "draft": "Draft",
+              "received": "Received",
+              "posted": "Posted"
+            }
+          },
+          "notes": {
+            "label": "Notes"
+          },
+          "attachments": {
+            "label": "Attachments"
+          },
+          "created_at": {
+            "label": "Created At"
+          }
+        }
+      },
+      "material_log": {
+        "fields": {
+          "id": {
+            "label": "ID"
+          },
+          "project_id": {
+            "label": "Project"
+          },
+          "site_id": {
+            "label": "Site"
+          },
+          "work_item_id": {
+            "label": "Work Item"
+          },
+          "log_date": {
+            "label": "Log Date"
+          },
+          "item_id": {
+            "label": "Catalog Item"
+          },
+          "material_type": {
+            "label": "Material Type",
+            "options": {
+              "cement": "Cement",
+              "sand": "Sand",
+              "steel": "Steel",
+              "blocks": "Blocks",
+              "gravel": "Gravel",
+              "other": "Other"
+            }
+          },
+          "quantity": {
+            "label": "Quantity"
+          },
+          "unit": {
+            "label": "Unit",
+            "options": {
+              "bag": "Bag",
+              "kg": "kg",
+              "ton": "Ton",
+              "m3": "m3",
+              "piece": "Piece"
+            }
+          },
+          "unit_cost": {
+            "label": "Unit Cost"
+          },
+          "total_cost": {
+            "label": "Total Cost"
+          },
+          "entered_by_worker_id": {
+            "label": "Entered By Worker"
+          },
+          "supervisor_id": {
+            "label": "Supervisor"
+          },
+          "status": {
+            "label": "Status",
+            "options": {
+              "draft": "Draft",
+              "submitted": "Submitted",
+              "approved": "Approved"
+            }
+          },
+          "notes": {
+            "label": "Notes"
+          },
+          "photo": {
+            "label": "Photos"
+          },
+          "created_at": {
+            "label": "Created At"
+          }
+        }
+      },
+      "construction_budget_line": {
+        "fields": {
+          "id": {
+            "label": "ID"
+          },
+          "project_id": {
+            "label": "Project"
+          },
+          "cost_code_id": {
+            "label": "Cost Code"
+          },
+          "category": {
+            "label": "Category",
+            "options": {
+              "labor": "Labor",
+              "materials": "Materials",
+              "subcontract": "Subcontract",
+              "equipment": "Equipment",
+              "other": "Other"
+            }
+          },
+          "description": {
+            "label": "Description"
+          },
+          "planned_amount": {
+            "label": "Planned Amount"
+          },
+          "committed_amount": {
+            "label": "Committed Amount"
+          },
+          "actual_amount": {
+            "label": "Actual Amount"
+          },
+          "variance_amount": {
+            "label": "Variance"
+          },
+          "notes": {
+            "label": "Notes"
+          },
+          "created_at": {
+            "label": "Created At"
+          }
+        }
+      },
+      "construction_expense": {
+        "fields": {
+          "id": {
+            "label": "ID"
+          },
+          "project_id": {
+            "label": "Project"
+          },
+          "site_id": {
+            "label": "Site"
+          },
+          "cost_code_id": {
+            "label": "Cost Code"
+          },
+          "title": {
+            "label": "Title"
+          },
+          "expense_date": {
+            "label": "Expense Date"
+          },
+          "expense_type": {
+            "label": "Expense Type",
+            "options": {
+              "labor": "Labor",
+              "materials": "Materials",
+              "subcontract": "Subcontract",
+              "equipment": "Equipment",
+              "other": "Other"
+            }
+          },
+          "supplier_contact_id": {
+            "label": "Supplier / Vendor"
+          },
+          "reference": {
+            "label": "Reference"
+          },
+          "amount": {
+            "label": "Amount"
+          },
+          "status": {
+            "label": "Status",
+            "options": {
+              "draft": "Draft",
+              "posted": "Posted",
+              "void": "Void"
+            }
+          },
+          "notes": {
+            "label": "Notes"
+          },
+          "attachments": {
+            "label": "Attachments"
+          },
+          "created_at": {
+            "label": "Created At"
+          }
         }
       }
     },
-    "workflow_construction_crew_status": {
-      "states": {
-        "active": {
-          "label": "Active"
+    "actions": {
+      "action_construction_site_new": {
+        "label": "+ New Site"
+      },
+      "action_construction_crew_new": {
+        "label": "+ New Crew"
+      },
+      "action_construction_cost_code_new": {
+        "label": "+ New Cost Code"
+      },
+      "action_construction_site_deactivate": {
+        "label": "Deactivate Site"
+      },
+      "action_construction_site_activate": {
+        "label": "Activate Site"
+      },
+      "action_construction_crew_deactivate": {
+        "label": "Deactivate Crew"
+      },
+      "action_construction_crew_activate": {
+        "label": "Activate Crew"
+      },
+      "action_construction_project_new": {
+        "label": "+ New Project"
+      },
+      "action_construction_work_item_new": {
+        "label": "+ New Work Item"
+      },
+      "action_construction_project_activate": {
+        "label": "Start Project"
+      },
+      "action_construction_project_hold": {
+        "label": "Put On Hold"
+      },
+      "action_construction_project_resume": {
+        "label": "Resume Project"
+      },
+      "action_construction_project_complete": {
+        "label": "Complete"
+      },
+      "action_construction_project_cancel": {
+        "label": "Cancel Project"
+      },
+      "action_construction_work_item_start": {
+        "label": "Start"
+      },
+      "action_construction_work_item_block": {
+        "label": "Block"
+      },
+      "action_construction_work_item_resume": {
+        "label": "Resume"
+      },
+      "action_construction_work_item_done": {
+        "label": "Mark Done"
+      },
+      "action_construction_work_item_cancel": {
+        "label": "Cancel"
+      },
+      "action_construction_worker_new": {
+        "label": "+ New Worker"
+      },
+      "action_construction_worker_assignment_new": {
+        "label": "+ New Assignment"
+      },
+      "action_time_entry_new": {
+        "label": "+ New Time Entry"
+      },
+      "action_construction_worker_activate": {
+        "label": "Activate"
+      },
+      "action_construction_worker_deactivate": {
+        "label": "Deactivate"
+      },
+      "action_time_entry_close": {
+        "label": "Close Entry"
+      },
+      "action_time_entry_approve": {
+        "label": "Approve"
+      },
+      "action_time_entry_reopen": {
+        "label": "Reopen"
+      },
+      "action_construction_worker_assignment_activate": {
+        "label": "Activate"
+      },
+      "action_construction_worker_assignment_deactivate": {
+        "label": "Deactivate"
+      },
+      "action_daily_report_new": {
+        "label": "+ New Report"
+      },
+      "action_issue_new": {
+        "label": "+ New Issue"
+      },
+      "action_daily_report_submit": {
+        "label": "Submit"
+      },
+      "action_daily_report_approve": {
+        "label": "Approve"
+      },
+      "action_daily_report_reopen": {
+        "label": "Reopen"
+      },
+      "action_issue_start": {
+        "label": "Start"
+      },
+      "action_issue_resolve": {
+        "label": "Resolve"
+      },
+      "action_issue_close": {
+        "label": "Close"
+      },
+      "action_issue_reopen": {
+        "label": "Reopen"
+      },
+      "action_material_request_new": {
+        "label": "+ New Request"
+      },
+      "action_material_receipt_new": {
+        "label": "+ New Receipt"
+      },
+      "action_material_log_new": {
+        "label": "+ New Usage Log"
+      },
+      "action_material_request_send": {
+        "label": "Request"
+      },
+      "action_material_request_approve": {
+        "label": "Approve"
+      },
+      "action_material_request_fulfill": {
+        "label": "Fulfill"
+      },
+      "action_material_receipt_receive": {
+        "label": "Receive"
+      },
+      "action_material_receipt_post": {
+        "label": "Post"
+      },
+      "action_material_log_submit": {
+        "label": "Submit"
+      },
+      "action_material_log_approve": {
+        "label": "Approve"
+      },
+      "action_construction_budget_line_new": {
+        "label": "+ New Budget Line"
+      },
+      "action_construction_expense_new": {
+        "label": "+ New Expense"
+      },
+      "action_construction_expense_post": {
+        "label": "Post"
+      },
+      "action_construction_expense_void": {
+        "label": "Void"
+      },
+      "action_construction_open_dashboard": {
+        "label": "Operations Dashboard"
+      },
+      "action_construction_open_projects": {
+        "label": "Projects"
+      },
+      "action_construction_open_time_report": {
+        "label": "Time Entries Report"
+      },
+      "action_construction_open_material_report": {
+        "label": "Material Usage Report"
+      },
+      "action_construction_open_cost_report": {
+        "label": "Project Cost Summary"
+      },
+      "action_construction_open_daily_summary": {
+        "label": "Daily Site Summary"
+      }
+    },
+    "views": {
+      "list": {
+        "search": {
+          "placeholder": "Search sites..."
         },
-        "inactive": {
-          "label": "Inactive"
+        "filters": {
+          "active": {
+            "label": "Active"
+          },
+          "inactive": {
+            "label": "Inactive"
+          },
+          "open": {
+            "label": "Open"
+          },
+          "completed": {
+            "label": "Completed"
+          },
+          "done": {
+            "label": "Done"
+          },
+          "supervisors": {
+            "label": "Supervisors"
+          },
+          "closed": {
+            "label": "Closed"
+          },
+          "approved": {
+            "label": "Approved"
+          },
+          "draft": {
+            "label": "Draft"
+          },
+          "submitted": {
+            "label": "Submitted"
+          },
+          "resolved": {
+            "label": "Resolved"
+          },
+          "critical": {
+            "label": "Critical"
+          },
+          "requested": {
+            "label": "Requested"
+          },
+          "posted": {
+            "label": "Posted"
+          }
+        }
+      },
+      "form": {
+        "sections": {
+          "general": {
+            "title": "General"
+          },
+          "geofence": {
+            "title": "Geofence"
+          },
+          "notes": {
+            "title": "Notes"
+          },
+          "overview": {
+            "title": "Overview"
+          },
+          "summary": {
+            "title": "Project Dashboard"
+          },
+          "crew": {
+            "title": "Workers / Crew"
+          },
+          "time_entries": {
+            "title": "Time Entries"
+          },
+          "materials": {
+            "title": "Materials"
+          },
+          "costs": {
+            "title": "Costs / Expenses"
+          },
+          "daily_reports": {
+            "title": "Daily Reports"
+          },
+          "issues": {
+            "title": "Issues"
+          },
+          "main": {
+            "title": "Work Item"
+          },
+          "worker": {
+            "title": "Worker"
+          },
+          "assignments_related": {
+            "title": "Assignments"
+          },
+          "time_entries_related": {
+            "title": "Time Entries"
+          },
+          "assignment": {
+            "title": "Assignment"
+          },
+          "entry": {
+            "title": "Entry"
+          },
+          "verification": {
+            "title": "Verification"
+          },
+          "report": {
+            "title": "Report"
+          },
+          "photos": {
+            "title": "Photos"
+          },
+          "issue": {
+            "title": "Issue"
+          },
+          "request": {
+            "title": "Request"
+          },
+          "receipt": {
+            "title": "Receipt"
+          },
+          "supporting": {
+            "title": "Supporting"
+          },
+          "usage": {
+            "title": "Usage"
+          },
+          "budget": {
+            "title": "Budget"
+          },
+          "expense": {
+            "title": "Expense"
+          }
+        }
+      },
+      "report": {
+        "search": {
+          "placeholder": "Search labour entries..."
+        },
+        "filters": {
+          "open": {
+            "label": "Open"
+          },
+          "closed": {
+            "label": "Closed"
+          },
+          "approved": {
+            "label": "Approved"
+          },
+          "draft": {
+            "label": "Draft"
+          },
+          "submitted": {
+            "label": "Submitted"
+          },
+          "posted": {
+            "label": "Posted"
+          }
+        }
+      },
+      "summary_list": {
+        "search": {
+          "placeholder": "Search daily site summaries..."
+        },
+        "filters": {
+          "draft": {
+            "label": "Draft"
+          },
+          "submitted": {
+            "label": "Submitted"
+          },
+          "approved": {
+            "label": "Approved"
+          }
         }
       }
     },
-    "workflow_construction_project_status": {
-      "states": {
-        "planned": {
-          "label": "Planned"
-        },
-        "active": {
-          "label": "Active"
-        },
-        "on_hold": {
-          "label": "On Hold"
-        },
-        "completed": {
-          "label": "Completed"
-        },
-        "cancelled": {
-          "label": "Cancelled"
+    "pages": {
+      "dashboard_page": {
+        "title": "Operations Dashboard",
+        "blocks": {
+          "1": {
+            "cards": {
+              "workers_on_site_today": {
+                "label": "Workers On Site Today",
+                "subtitle": "Today only"
+              },
+              "labour_hours_today": {
+                "label": "Total Labour Hours Today",
+                "subtitle": "Today only"
+              },
+              "materials_logged_today": {
+                "label": "Materials Logged Today",
+                "subtitle": "Today only"
+              },
+              "cost_today": {
+                "label": "Total Cost Today",
+                "subtitle": "Today only"
+              }
+            }
+          },
+          "2": {
+            "title": "Cost Breakdown"
+          },
+          "3": {
+            "items": {
+              "1": {
+                "content": {
+                  "1": {
+                    "title": "Recent Time Entries"
+                  }
+                }
+              },
+              "2": {
+                "content": {
+                  "1": {
+                    "title": "Materials Logged Today"
+                  }
+                }
+              }
+            }
+          }
         }
+      },
+      "list_page": {
+        "title": "Sites",
+        "blocks": {
+          "1": {
+            "cards": {
+              "active_projects": {
+                "label": "Active Projects"
+              },
+              "project_hours_total": {
+                "label": "Total Project Hours"
+              },
+              "project_cost_total": {
+                "label": "Total Cost To Date"
+              },
+              "open_project_issues": {
+                "label": "Open Issues"
+              }
+            }
+          }
+        }
+      },
+      "form_page": {
+        "title": "Site"
+      },
+      "construction_site_list_page": {
+        "title": "Sites"
+      },
+      "construction_site_form_page": {
+        "title": "Site"
+      },
+      "construction_crew_list_page": {
+        "title": "Crews"
+      },
+      "construction_crew_form_page": {
+        "title": "Crew"
+      },
+      "construction_cost_code_list_page": {
+        "title": "Cost Codes"
+      },
+      "construction_cost_code_form_page": {
+        "title": "Cost Code"
+      },
+      "construction_project_list_page": {
+        "title": "Projects"
+      },
+      "construction_project_form_page": {
+        "title": "Project"
+      },
+      "construction_work_item_list_page": {
+        "title": "Project Tasks"
+      },
+      "construction_work_item_form_page": {
+        "title": "Project Task"
+      },
+      "construction_worker_list_page": {
+        "title": "Workers"
+      },
+      "construction_worker_form_page": {
+        "title": "Worker"
+      },
+      "construction_worker_assignment_list_page": {
+        "title": "Assignments"
+      },
+      "construction_worker_assignment_form_page": {
+        "title": "Assignment"
+      },
+      "time_entry_list_page": {
+        "title": "Time Entries"
+      },
+      "time_entry_form_page": {
+        "title": "Time Entry"
+      },
+      "construction_daily_report_list_page": {
+        "title": "Daily Reports"
+      },
+      "construction_daily_report_form_page": {
+        "title": "Daily Report"
+      },
+      "construction_issue_list_page": {
+        "title": "Issues"
+      },
+      "construction_issue_form_page": {
+        "title": "Issue"
+      },
+      "material_request_list_page": {
+        "title": "Material Requests"
+      },
+      "material_request_form_page": {
+        "title": "Material Request"
+      },
+      "material_receipt_list_page": {
+        "title": "Material Receipts"
+      },
+      "material_receipt_form_page": {
+        "title": "Material Receipt"
+      },
+      "material_log_list_page": {
+        "title": "Material Logs"
+      },
+      "material_log_form_page": {
+        "title": "Material Log"
+      },
+      "construction_budget_line_list_page": {
+        "title": "Cost Budgets"
+      },
+      "construction_budget_line_form_page": {
+        "title": "Cost Budget"
+      },
+      "construction_expense_list_page": {
+        "title": "Expenses / Costs"
+      },
+      "construction_expense_form_page": {
+        "title": "Expense / Cost"
+      },
+      "time_report_page": {
+        "title": "Time Entries Report"
+      },
+      "material_report_page": {
+        "title": "Material Usage Report"
+      },
+      "cost_report_page": {
+        "title": "Project Cost Summary",
+        "blocks": {
+          "1": {
+            "items": {
+              "1": {
+                "content": {
+                  "1": {
+                    "title": "Costs by Type"
+                  }
+                }
+              },
+              "2": {
+                "content": {
+                  "1": {
+                    "title": "Costs by Project"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "daily_summary_page": {
+        "title": "Daily Site Summary"
       }
     },
-    "workflow_construction_work_item_status": {
-      "states": {
-        "pending": {
-          "label": "Pending"
-        },
-        "in_progress": {
-          "label": "In Progress"
-        },
-        "blocked": {
-          "label": "Blocked"
-        },
-        "done": {
-          "label": "Done"
-        },
-        "cancelled": {
-          "label": "Cancelled"
-        }
-      }
+    "dashboard": {
+      "projects_by_status": "Projects by Status",
+      "project_cost_to_date": "Cost To Date by Project",
+      "labour_hours_by_project": "Labour Hours by Project",
+      "daily_reports_by_project": "Daily Reports by Project",
+      "materials_by_type": "Material Usage by Type",
+      "costs_by_project": "Costs by Project"
     },
-    "workflow_time_entry_status": {
-      "states": {
-        "open": {
-          "label": "Open"
-        },
-        "closed": {
-          "label": "Closed"
-        },
-        "approved": {
-          "label": "Approved"
+    "workflows": {
+      "workflow_construction_site_status": {
+        "states": {
+          "active": {
+            "label": "Active"
+          },
+          "inactive": {
+            "label": "Inactive"
+          }
         }
-      }
-    },
-    "workflow_construction_daily_report_status": {
-      "states": {
-        "draft": {
-          "label": "Draft"
-        },
-        "submitted": {
-          "label": "Submitted"
-        },
-        "approved": {
-          "label": "Approved"
+      },
+      "workflow_construction_crew_status": {
+        "states": {
+          "active": {
+            "label": "Active"
+          },
+          "inactive": {
+            "label": "Inactive"
+          }
         }
-      }
-    },
-    "workflow_construction_issue_status": {
-      "states": {
-        "open": {
-          "label": "Open"
-        },
-        "in_progress": {
-          "label": "In Progress"
-        },
-        "resolved": {
-          "label": "Resolved"
-        },
-        "closed": {
-          "label": "Closed"
+      },
+      "workflow_construction_project_status": {
+        "states": {
+          "planned": {
+            "label": "Planned"
+          },
+          "active": {
+            "label": "Active"
+          },
+          "on_hold": {
+            "label": "On Hold"
+          },
+          "completed": {
+            "label": "Completed"
+          },
+          "cancelled": {
+            "label": "Cancelled"
+          }
         }
-      }
-    },
-    "workflow_material_request_status": {
-      "states": {
-        "draft": {
-          "label": "Draft"
-        },
-        "requested": {
-          "label": "Requested"
-        },
-        "approved": {
-          "label": "Approved"
-        },
-        "fulfilled": {
-          "label": "Fulfilled"
-        },
-        "cancelled": {
-          "label": "Cancelled"
+      },
+      "workflow_construction_work_item_status": {
+        "states": {
+          "pending": {
+            "label": "Pending"
+          },
+          "in_progress": {
+            "label": "In Progress"
+          },
+          "blocked": {
+            "label": "Blocked"
+          },
+          "done": {
+            "label": "Done"
+          },
+          "cancelled": {
+            "label": "Cancelled"
+          }
         }
-      }
-    },
-    "workflow_material_receipt_status": {
-      "states": {
-        "draft": {
-          "label": "Draft"
-        },
-        "received": {
-          "label": "Received"
-        },
-        "posted": {
-          "label": "Posted"
+      },
+      "workflow_time_entry_status": {
+        "states": {
+          "open": {
+            "label": "Open"
+          },
+          "closed": {
+            "label": "Closed"
+          },
+          "approved": {
+            "label": "Approved"
+          }
         }
-      }
-    },
-    "workflow_material_log_status": {
-      "states": {
-        "draft": {
-          "label": "Draft"
-        },
-        "submitted": {
-          "label": "Submitted"
-        },
-        "approved": {
-          "label": "Approved"
+      },
+      "workflow_construction_daily_report_status": {
+        "states": {
+          "draft": {
+            "label": "Draft"
+          },
+          "submitted": {
+            "label": "Submitted"
+          },
+          "approved": {
+            "label": "Approved"
+          }
         }
-      }
-    },
-    "workflow_construction_expense_status": {
-      "states": {
-        "draft": {
-          "label": "Draft"
-        },
-        "posted": {
-          "label": "Posted"
-        },
-        "void": {
-          "label": "Void"
+      },
+      "workflow_construction_issue_status": {
+        "states": {
+          "open": {
+            "label": "Open"
+          },
+          "in_progress": {
+            "label": "In Progress"
+          },
+          "resolved": {
+            "label": "Resolved"
+          },
+          "closed": {
+            "label": "Closed"
+          }
+        }
+      },
+      "workflow_material_request_status": {
+        "states": {
+          "draft": {
+            "label": "Draft"
+          },
+          "requested": {
+            "label": "Requested"
+          },
+          "approved": {
+            "label": "Approved"
+          },
+          "fulfilled": {
+            "label": "Fulfilled"
+          },
+          "cancelled": {
+            "label": "Cancelled"
+          }
+        }
+      },
+      "workflow_material_receipt_status": {
+        "states": {
+          "draft": {
+            "label": "Draft"
+          },
+          "received": {
+            "label": "Received"
+          },
+          "posted": {
+            "label": "Posted"
+          }
+        }
+      },
+      "workflow_material_log_status": {
+        "states": {
+          "draft": {
+            "label": "Draft"
+          },
+          "submitted": {
+            "label": "Submitted"
+          },
+          "approved": {
+            "label": "Approved"
+          }
+        }
+      },
+      "workflow_construction_expense_status": {
+        "states": {
+          "draft": {
+            "label": "Draft"
+          },
+          "posted": {
+            "label": "Posted"
+          },
+          "void": {
+            "label": "Void"
+          }
         }
       }
     }

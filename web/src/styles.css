@@ -361,8 +361,9 @@ body {
   box-shadow: none !important;
 }
 
-/* Prevent iOS Safari/PWA focus zoom without inflating all mobile controls. */
-html.octo-ios-touch
+/* Keep mobile form controls aligned with the same UI scale as the rest of the page.
+   iOS zoom prevention is handled via viewport config in main.jsx. */
+@media (hover: none) and (pointer: coarse) {
   :is(
     .input,
     .input-bordered,
@@ -376,25 +377,6 @@ html.octo-ios-touch
     select,
     textarea
   ) {
-  font-size: 16px !important;
-  line-height: 1.25rem !important;
-}
-
-@media (hover: none) and (pointer: coarse) {
-  html:not(.octo-ios-touch)
-    :is(
-      .input,
-      .input-bordered,
-      .select,
-      .select-bordered,
-      .textarea,
-      .textarea-bordered,
-      .file-input,
-      .file-input-bordered,
-      input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
-      select,
-      textarea
-    ) {
     font-size: var(--octo-field-font-size) !important;
     line-height: var(--octo-field-line-height) !important;
   }

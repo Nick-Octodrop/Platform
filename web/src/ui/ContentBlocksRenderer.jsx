@@ -500,7 +500,11 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
 
   if (kind === "chatter") {
     if (previewMode) {
-      return <div className="alert bg-base-200 text-base-content border border-base-300">Activity feed unavailable in preview.</div>;
+      return (
+        <div className="alert bg-base-200 text-base-content border border-base-300">
+          {translateRuntime("common.activity_panel.preview_unavailable")}
+        </div>
+      );
     }
     const entityId = block.entity_id || recordContext?.entityId;
     const ref = block.record_ref || (recordContext?.recordId ? "$record.id" : null);
@@ -511,7 +515,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
     if (isMobile) {
       return (
         <div className="pt-1">
-          <div className="text-sm font-semibold mb-2">Activity & Attachments</div>
+          <div className="text-sm font-semibold mb-2">{translateRuntime("common.activity_and_attachments")}</div>
           <ChatterPanel entityId={entityId} recordId={resolvedId} onPageSectionLoadingChange={onPageSectionLoadingChange} />
         </div>
       );
@@ -987,9 +991,9 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
   }
 
   function humanizeValue(value) {
-    if (value === null || value === undefined || value === "") return "(empty)";
+    if (value === null || value === undefined || value === "") return `(${translateRuntime("common.activity_panel.empty_value")})`;
     const text = String(value).replace(/_/g, " ").trim();
-    if (!text) return "(empty)";
+    if (!text) return `(${translateRuntime("common.activity_panel.empty_value")})`;
     return text.replace(/\b\w/g, (m) => m.toUpperCase());
   }
 
@@ -1014,7 +1018,7 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
       } catch (err) {
         setItems([]);
         setAttachments([]);
-        setError(err?.message || "Failed to load activity.");
+        setError(err?.message || translateRuntime("common.activity_panel.load_failed"));
       } finally {
         setLoading(false);
       }
@@ -1350,14 +1354,14 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
       );
       setAttachmentToDelete(null);
     } catch (err) {
-      setError(err?.message || "Failed to delete attachment.");
+      setError(err?.message || translateRuntime("common.attachments.delete_failed"));
     } finally {
       setDeletingAttachmentId("");
     }
   }
 
-  if (!entityId) return <div className="alert alert-warning">Chatter missing entity_id</div>;
-  if (!recordId) return <div className="alert alert-info">Save this record to use Activity</div>;
+  if (!entityId) return <div className="alert alert-warning">{translateRuntime("common.activity_panel.missing_entity")}</div>;
+  if (!recordId) return <div className="alert alert-info">{translateRuntime("common.activity_panel.save_record")}</div>;
 
   return (
     <div className="h-full min-h-0 flex flex-col">
@@ -1369,7 +1373,7 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
             className={`tab ${activeTab === "activity" ? "tab-active" : ""}`}
             onClick={() => setActiveTab("activity")}
           >
-            Activity
+            {translateRuntime("common.activity")}
           </button>
           <button
             role="tab"
@@ -1377,7 +1381,7 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
             className={`tab ${activeTab === "attachments" ? "tab-active" : ""}`}
             onClick={() => setActiveTab("attachments")}
           >
-            Attachments
+            {translateRuntime("common.attachments_label")}
           </button>
         </div>
       </div>
@@ -1463,7 +1467,7 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
             <ActivityItemSkeleton wide />
           </>
         )}
-        {!loading && items.length === 0 && <div className="text-xs opacity-60">No activity yet.</div>}
+        {!loading && items.length === 0 && <div className="text-xs opacity-60">{translateRuntime("common.activity_panel.empty")}</div>}
         {items.map((item) => {
           const payload = item?.payload || {};
           const type = item?.event_type;
@@ -1490,12 +1494,16 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
                     {removed ? (
                       <>
                         <Trash2 className="h-4 w-4 text-base-content/60" />
-                        <span className="text-sm">Removed attachment: {payload?.filename || "Attachment"}</span>
+                        <span className="text-sm">
+                          {translateRuntime("common.activity_panel.removed_attachment", {
+                            name: payload?.filename || translateRuntime("common.activity_panel.attachment"),
+                          })}
+                        </span>
                       </>
                     ) : (
                       <>
                         <Paperclip className="h-4 w-4 text-base-content/60" />
-                        <span className="text-sm">{payload?.filename || "Attachment"}</span>
+                        <span className="text-sm">{payload?.filename || translateRuntime("common.activity_panel.attachment")}</span>
                       </>
                     )}
                   </div>
@@ -1523,7 +1531,7 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
                 ) : systemMessage ? (
                   <div className="mt-1 text-xs text-base-content/70">{systemMessage}</div>
                 ) : (
-                  <div className="mt-1 text-xs text-base-content/60">Record updated.</div>
+                  <div className="mt-1 text-xs text-base-content/60">{translateRuntime("common.activity_panel.record_updated")}</div>
                 )}
               </div>
             </div>
@@ -1534,21 +1542,23 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
       {attachmentToDelete ? (
         <div className="modal modal-open">
           <div className="modal-box">
-            <h3 className="font-semibold text-base">Delete attachment?</h3>
+            <h3 className="font-semibold text-base">{translateRuntime("common.attachments.delete_title")}</h3>
             <p className="mt-2 text-sm opacity-80 break-all">
-              This will remove <span className="font-medium">{attachmentToDelete.filename || "this file"}</span> from this record.
+              {translateRuntime("common.attachments.delete_body_prefix")}{" "}
+              <span className="font-medium">{attachmentToDelete.filename || translateRuntime("common.attachments.this_file")}</span>{" "}
+              {translateRuntime("common.attachments.delete_body_suffix")}
             </p>
             <div className="modal-action">
               <button className="btn btn-sm" type="button" onClick={() => setAttachmentToDelete(null)} disabled={!!deletingAttachmentId}>
-                Cancel
+                {translateRuntime("common.cancel")}
               </button>
               <button className="btn btn-sm btn-error" type="button" onClick={handleDeleteAttachment} disabled={!!deletingAttachmentId}>
-                {deletingAttachmentId ? "Deleting..." : "Delete"}
+                {deletingAttachmentId ? translateRuntime("common.deleting") : translateRuntime("common.delete")}
               </button>
             </div>
           </div>
           <button className="modal-backdrop" type="button" onClick={() => setAttachmentToDelete(null)}>
-            Close
+            {translateRuntime("common.close")}
           </button>
         </div>
       ) : null}

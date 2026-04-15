@@ -1,4 +1,5 @@
 import { getManifest } from "../api";
+import { getI18nCacheKey } from "../i18n/runtime.js";
 
 let cacheKey = null;
 let cacheIndex = null;
@@ -32,7 +33,7 @@ function viewMatchesEntity(viewEntity, entityId, entityFullId) {
 function buildKey(modules) {
   const enabled = modules.filter((m) => m.enabled).map((m) => `${m.module_id}:${m.current_hash || ""}`);
   enabled.sort();
-  return enabled.join("|");
+  return `${getI18nCacheKey()}|${enabled.join("|")}`;
 }
 
 export async function loadEntityIndex(modules) {

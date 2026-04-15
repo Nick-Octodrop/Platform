@@ -45,6 +45,8 @@
   "are_you_sure": "Are you sure?",
   "input_required": "Input required",
   "activity": "Activity",
+  "attachments_label": "Attachments",
+  "activity_and_attachments": "Activity & Attachments",
   "assistant": "Assistant",
   "attach": "Attach",
   "active": "Active",
@@ -307,6 +309,7 @@
     "download_default_filename": "attachment"
   },
   "activity_panel": {
+    "preview_unavailable": "Activity feed unavailable in preview.",
     "system": "System",
     "you": "You",
     "comment_as": "Comment as {{name}}",

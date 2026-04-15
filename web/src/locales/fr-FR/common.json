@@ -43,6 +43,8 @@
   "are_you_sure": "Confirmer cette action ?",
   "input_required": "Saisie requise",
   "activity": "Activite",
+  "attachments_label": "Pieces jointes",
+  "activity_and_attachments": "Activite et pieces jointes",
   "assistant": "Assistante",
   "attach": "Joindre",
   "active": "Actif",
@@ -253,6 +255,7 @@
   "tax_percent": "Taxe %",
   "line_total": "Total de ligne",
   "activity_panel": {
+    "preview_unavailable": "Flux d'activite indisponible dans l'aperçu.",
     "system": "Systeme",
     "you": "Vous",
     "comment_as": "Commenter en tant que {{name}}",
