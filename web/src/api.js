@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+import { getSafeSession, supabase } from "./supabase";
 import { localizeManifest } from "./i18n/manifest.js";
 import { getI18nCacheKey } from "./i18n/runtime.js";
 
@@ -289,7 +289,7 @@ export async function apiFetch(path, options = {}) {
   const perfEnabled = typeof window !== "undefined" && window.localStorage?.getItem("octo_perf") === "1";
   const trace = requestOptions.trace || path;
   const start = perfEnabled ? performance.now() : 0;
-  const session = (await supabase.auth.getSession()).data.session;
+  const session = await getSafeSession();
   const token = session?.access_token;
   const headers = {
     "Content-Type": "application/json",
@@ -592,7 +592,7 @@ export function clearOctoAiSandboxSessionId() {
 }
 
 export async function getAuthHeaders(extra = {}) {
-  const session = (await supabase.auth.getSession()).data.session;
+  const session = await getSafeSession();
   const token = session?.access_token;
   const headers = {
     "Content-Type": "application/json",

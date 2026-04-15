@@ -53,6 +53,7 @@ export default function SettingsDocumentNumberingDetailPage() {
   const [preview, setPreview] = useState("");
   const [previewError, setPreviewError] = useState("");
   const [activeTabId, setActiveTabId] = useState("details");
+  const [selectedPatternFieldId, setSelectedPatternFieldId] = useState("");
 
   const scopeOptions = useMemo(
     () => [
@@ -120,6 +121,10 @@ export default function SettingsDocumentNumberingDetailPage() {
     }
   }, [item, isNew]);
 
+  useEffect(() => {
+    setSelectedPatternFieldId("");
+  }, [draft.target_entity_id]);
+
   const selectedEntity = useMemo(
     () => entities.find((entity) => entity.entity_id === draft.target_entity_id) || null,
     [entities, draft.target_entity_id],
@@ -132,6 +137,14 @@ export default function SettingsDocumentNumberingDetailPage() {
 
   const scopeFields = useMemo(
     () => (selectedEntity?.fields || []).filter((field) => ["string", "text", "enum", "lookup", "user"].includes(field.type)),
+    [selectedEntity],
+  );
+
+  const patternFields = useMemo(
+    () =>
+      (selectedEntity?.fields || []).filter((field) =>
+        ["string", "text", "enum", "lookup", "user", "number", "date", "datetime"].includes(field.type),
+      ),
     [selectedEntity],
   );
 
@@ -200,6 +213,12 @@ export default function SettingsDocumentNumberingDetailPage() {
   }
 
   const assignNeedsStatuses = ["confirm", "issue"].includes(draft.assign_on);
+
+  function insertFieldToken() {
+    if (!selectedPatternFieldId) return;
+    const token = `{FIELD:${selectedPatternFieldId}}`;
+    setDraft((current) => ({ ...current, pattern: `${current.pattern || ""}${token}` }));
+  }
 
   return (
     <TabbedPaneShell
@@ -277,6 +296,28 @@ export default function SettingsDocumentNumberingDetailPage() {
                 <span className="label-text text-sm">{t("settings.document_numbering.detail.pattern")}</span>
                 <input className="input input-bordered font-mono" value={draft.pattern} onChange={(event) => setDraft((current) => ({ ...current, pattern: event.target.value }))} disabled={saving} />
                 <span className="label label-text-alt opacity-50">{t("settings.document_numbering.detail.pattern_help")}</span>
+              </label>
+              <label className="form-control">
+                <span className="label-text text-sm">{t("settings.document_numbering.detail.field_token")}</span>
+                <div className="flex gap-2">
+                  <AppSelect
+                    className="select select-bordered flex-1"
+                    value={selectedPatternFieldId}
+                    onChange={(event) => setSelectedPatternFieldId(event.target.value)}
+                    disabled={saving || !draft.target_entity_id}
+                  >
+                    <option value="">{t("settings.document_numbering.detail.select_field_token")}</option>
+                    {patternFields.map((field) => (
+                      <option key={field.id} value={field.id}>
+                        {field.label}
+                      </option>
+                    ))}
+                  </AppSelect>
+                  <button className="btn btn-outline" type="button" onClick={insertFieldToken} disabled={saving || !selectedPatternFieldId}>
+                    {t("settings.document_numbering.detail.insert_field_token")}
+                  </button>
+                </div>
+                <span className="label label-text-alt opacity-50">{t("settings.document_numbering.detail.field_token_help")}</span>
               </label>
               <label className="form-control">
                 <span className="label-text text-sm">{t("settings.document_numbering.detail.sort_order")}</span>
@@ -403,6 +444,8 @@ export default function SettingsDocumentNumberingDetailPage() {
               "{ENTITY} = NL",
               "{WORKSPACE} = OCTODROP",
               "{MODEL} = INVOICE",
+              "{FIELD:invoice.state} = NSW",
+              "{FIELD:contact.name} = ACMELTD",
             ].map((item) => (
               <div key={item} className="rounded-box bg-base-100 px-3 py-2 font-mono text-sm">
                 {item}

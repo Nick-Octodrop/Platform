@@ -1424,9 +1424,12 @@ def _document_numbering_write_errors(actor: dict | None, entity_def: dict | None
         incoming_value = data.get(field_id)
         if incoming_value == existing_value:
             continue
+        has_assigned_number = isinstance(existing_value, str) and existing_value.strip()
         if definition.get("allow_admin_override") is True and is_admin:
             continue
-        if isinstance(existing_value, str) and existing_value.strip() and definition.get("lock_after_assignment", True):
+        if has_assigned_number and definition.get("lock_after_assignment", True) is False:
+            continue
+        if has_assigned_number and definition.get("lock_after_assignment", True):
             errors.append(
                 {
                     "code": "NUMBER_LOCKED",

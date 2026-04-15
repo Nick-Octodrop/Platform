@@ -1972,6 +1972,10 @@
       "number_field_help": "Vereist. In dit veld wordt het gegenereerde documentnummer in het record opgeslagen.",
       "pattern": "Patroon",
       "pattern_help": "Vereist. Combineer tekst en tokens zoals {YYYY} of {SEQ:4} om het uiteindelijke formaat te bepalen.",
+      "field_token": "Veldtoken",
+      "select_field_token": "Selecteer veld",
+      "insert_field_token": "Token invoegen",
+      "field_token_help": "Optioneel. Voeg een token zoals {FIELD:invoice.state} in om een waarde uit het doelrecord in het documentnummer te gebruiken.",
       "preview_hint": "Vul de kernvelden in om een voorbeeld te zien.",
       "reset_options": {
         "monthly": "Maandelijks",

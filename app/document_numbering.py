@@ -13,8 +13,8 @@ from app.stores_db import _is_undefined_table, _now, get_org_id
 ALLOWED_SCOPE_TYPES = {"global", "entity", "workspace"}
 ALLOWED_RESET_POLICIES = {"never", "yearly", "monthly"}
 ALLOWED_ASSIGN_ON = {"create", "save", "confirm", "issue", "custom"}
-ALLOWED_TOKENS = {"YYYY", "YY", "MM", "DD", "SEQ", "ENTITY", "WORKSPACE", "MODEL"}
-_TOKEN_RE = re.compile(r"\{([A-Z]+)(?::(\d+))?\}")
+ALLOWED_TOKENS = {"YYYY", "YY", "MM", "DD", "SEQ", "ENTITY", "WORKSPACE", "MODEL", "FIELD"}
+_TOKEN_RE = re.compile(r"\{([A-Z]+)(?::([^}]+))?\}")
 
 
 class SequenceError(Exception):
@@ -75,18 +75,24 @@ def validate_pattern(pattern: str) -> None:
             if not match:
                 raise SequenceError("SEQUENCE_PATTERN_INVALID", "Pattern contains invalid token syntax.", path="pattern")
             token = match.group(1)
-            padding = match.group(2)
+            token_arg = match.group(2)
             if token not in ALLOWED_TOKENS:
                 raise SequenceError("SEQUENCE_PATTERN_TOKEN_INVALID", f"Unsupported token: {token}", path="pattern")
-            if padding is not None:
-                if token != "SEQ":
-                    raise SequenceError("SEQUENCE_PATTERN_PADDING_INVALID", "Only {SEQ:n} tokens may include padding.", path="pattern")
+            if token == "SEQ" and token_arg is not None:
                 try:
-                    pad_value = int(padding)
+                    pad_value = int(token_arg)
                 except Exception:
                     raise SequenceError("SEQUENCE_PATTERN_PADDING_INVALID", "Sequence padding must be a number.", path="pattern") from None
                 if pad_value < 1 or pad_value > 12:
                     raise SequenceError("SEQUENCE_PATTERN_PADDING_INVALID", "Sequence padding must be between 1 and 12.", path="pattern")
+            elif token == "FIELD":
+                if not isinstance(token_arg, str) or not token_arg.strip():
+                    raise SequenceError("SEQUENCE_PATTERN_FIELD_REQUIRED", "Field tokens must include a field id.", path="pattern")
+                field_id = token_arg.strip()
+                if not re.fullmatch(r"[A-Za-z0-9_.]+", field_id):
+                    raise SequenceError("SEQUENCE_PATTERN_FIELD_INVALID", "Field token contains an invalid field id.", path="pattern")
+            elif token_arg is not None:
+                raise SequenceError("SEQUENCE_PATTERN_TOKEN_INVALID", f"{token} tokens do not accept parameters.", path="pattern")
             has_seq = has_seq or token == "SEQ"
             idx = match.end()
             continue
@@ -460,12 +466,67 @@ def _counter_bucket(definition: dict, dt: datetime) -> tuple[int | None, int | N
     return None, None
 
 
-def format_document_number(pattern: str, sequence_value: int, *, dt: datetime, entity_code: str, workspace_code: str, model_code: str) -> str:
+def _preview_field_code(field_id: str) -> str:
+    return _display_code(field_id.split(".")[-1], "FIELD")
+
+
+def _try_enrich_record_for_field_tokens(record: dict | None, definition: dict | None) -> dict:
+    if not isinstance(record, dict):
+        return {}
+    enriched = dict(record)
+    try:
+        from app import main as app_main
+
+        entity_id = definition.get("target_entity_id") if isinstance(definition, dict) else None
+        entity_def = app_main._find_entity_def_global(entity_id) if isinstance(entity_id, str) else None
+        if isinstance(entity_def, dict):
+            enriched = app_main._enrich_template_record(record, entity_def)
+    except Exception:
+        return enriched
+    return enriched
+
+
+def _field_token_code(field_id: str, *, record: dict | None, definition: dict | None, allow_placeholder: bool) -> str:
+    preview_code = _preview_field_code(field_id)
+    if not isinstance(record, dict):
+        if allow_placeholder:
+            return preview_code
+        raise SequenceError("SEQUENCE_FIELD_TOKEN_REQUIRED", f"Field token {field_id} requires a record value.", path="pattern")
+
+    enriched = _try_enrich_record_for_field_tokens(record, definition)
+    candidates = [f"{field_id}_label"]
+    if field_id.endswith("_id"):
+        candidates.append(f"{field_id[:-3]}_name")
+    candidates.append(field_id)
+
+    for candidate in candidates:
+        value = enriched.get(candidate)
+        if value in (None, ""):
+            continue
+        return _display_code(value, preview_code)
+
+    if allow_placeholder:
+        return preview_code
+    raise SequenceError("SEQUENCE_FIELD_TOKEN_REQUIRED", f"Field token {field_id} requires a populated value on the record.", path=field_id)
+
+
+def format_document_number(
+    pattern: str,
+    sequence_value: int,
+    *,
+    dt: datetime,
+    entity_code: str,
+    workspace_code: str,
+    model_code: str,
+    record: dict | None = None,
+    definition: dict | None = None,
+    allow_field_placeholder: bool = False,
+) -> str:
     validate_pattern(pattern)
 
     def _replace(match: re.Match[str]) -> str:
         token = match.group(1)
-        padding = match.group(2)
+        token_arg = match.group(2)
         if token == "YYYY":
             return f"{dt.year:04d}"
         if token == "YY":
@@ -475,8 +536,8 @@ def format_document_number(pattern: str, sequence_value: int, *, dt: datetime, e
         if token == "DD":
             return f"{dt.day:02d}"
         if token == "SEQ":
-            if padding:
-                return str(sequence_value).zfill(int(padding))
+            if token_arg:
+                return str(sequence_value).zfill(int(token_arg))
             return str(sequence_value)
         if token == "ENTITY":
             return entity_code
@@ -484,6 +545,13 @@ def format_document_number(pattern: str, sequence_value: int, *, dt: datetime, e
             return workspace_code
         if token == "MODEL":
             return model_code
+        if token == "FIELD" and isinstance(token_arg, str):
+            return _field_token_code(
+                token_arg.strip(),
+                record=record,
+                definition=definition,
+                allow_placeholder=allow_field_placeholder,
+            )
         return match.group(0)
 
     return _TOKEN_RE.sub(_replace, pattern)
@@ -524,6 +592,9 @@ def preview_document_number(definition_like: dict, *, context: dict | None = Non
         entity_code=entity_code,
         workspace_code=_workspace_code(context or {}),
         model_code=_model_code(merged),
+        record=preview_record,
+        definition=merged,
+        allow_field_placeholder=True,
     )
     return {
         "preview": preview,
@@ -644,6 +715,9 @@ def assign_document_number(definition: dict, record_id: str, record: dict, *, ac
                     }
                 ),
                 model_code=_model_code(definition),
+                record=record,
+                definition=definition,
+                allow_field_placeholder=False,
             )
 
             try:

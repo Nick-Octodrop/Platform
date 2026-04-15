@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import { supabase } from "./supabase";
+import { getSafeSession, supabase } from "./supabase";
 import ProtectedRoute from "./auth/ProtectedRoute.jsx";
 import CapabilityRoute from "./auth/CapabilityRoute.jsx";
 import SuperadminRoute from "./auth/SuperadminRoute.jsx";
@@ -161,11 +161,17 @@ export default function App() {
 
   useEffect(() => {
     let mounted = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) return;
-      setSession(data.session || null);
-      setLoading(false);
-    });
+    getSafeSession()
+      .then((nextSession) => {
+        if (!mounted) return;
+        setSession(nextSession || null);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setSession(null);
+        setLoading(false);
+      });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession || null);
       setLoading(false);
