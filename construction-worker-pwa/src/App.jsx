@@ -570,12 +570,72 @@ export default function App() {
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
+    let alive = true;
+
+    async function getActiveRegistration() {
+      const activeRegistration = window.__octoPwaSwRegistration;
+      if (activeRegistration) return activeRegistration;
+      if (!("serviceWorker" in navigator)) return null;
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      const registration =
+        registrations.find((item) => item?.waiting) ||
+        registrations.find((item) => item?.installing) ||
+        registrations[0] ||
+        null;
+      if (registration) {
+        window.__octoPwaSwRegistration = registration;
+      }
+      return registration;
+    }
+
+    async function refreshUpdateAvailability() {
+      if (!("serviceWorker" in navigator)) return;
+      try {
+        const registration = await getActiveRegistration();
+        if (!alive || !registration) return;
+        if (registration.waiting) {
+          window.__octoPwaUpdateReady = true;
+          setUpdatePromptVisible(true);
+          return;
+        }
+        await registration.update();
+        if (!alive) return;
+        if (registration.waiting) {
+          window.__octoPwaUpdateReady = true;
+          setUpdatePromptVisible(true);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     function handleUpdateReady() {
       setUpdatePromptVisible(true);
     }
+    function handleVisibilityChange() {
+      if (document.visibilityState !== "visible") return;
+      refreshUpdateAvailability();
+    }
+    if (window.__octoPwaUpdateReady) {
+      handleUpdateReady();
+    }
+    refreshUpdateAvailability();
     window.addEventListener("octo:pwa-update-ready", handleUpdateReady);
+    window.addEventListener("focus", refreshUpdateAvailability);
+    window.addEventListener("pageshow", refreshUpdateAvailability);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    const pollId = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        refreshUpdateAvailability();
+      }
+    }, 5 * 60 * 1000);
     return () => {
+      alive = false;
       window.removeEventListener("octo:pwa-update-ready", handleUpdateReady);
+      window.removeEventListener("focus", refreshUpdateAvailability);
+      window.removeEventListener("pageshow", refreshUpdateAvailability);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.clearInterval(pollId);
     };
   }, []);
 
@@ -1413,6 +1473,10 @@ export default function App() {
 
   async function handleApplyUpdate() {
     const applyUpdate = typeof window !== "undefined" ? window.__octoPwaApplyUpdate : null;
+    if (typeof window !== "undefined") {
+      window.__octoPwaUpdateReady = false;
+    }
+    setUpdatePromptVisible(false);
     if (typeof applyUpdate === "function") {
       await applyUpdate(true);
     } else if (typeof window !== "undefined") {

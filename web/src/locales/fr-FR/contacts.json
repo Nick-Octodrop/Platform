@@ -96,99 +96,99 @@
   "contacts": {
     "module": {
       "name": "Contacts",
-      "description": "Central contact management for companies, people, customers, suppliers, and service sites."
+      "description": "Gestion centralisée des contacts pour les entreprises, les personnes, les clients, les fournisseurs et les sites d'intervention."
     },
     "navigation": {
       "group": "Contacts",
-      "contact_list_page": "All Contacts",
-      "contact_mine_page": "My Contacts",
-      "contact_companies_page": "Companies",
-      "contact_people_page": "People",
-      "contact_customers_page": "Customers",
-      "contact_suppliers_page": "Suppliers",
-      "contact_service_sites_page": "Service Sites"
+      "contact_list_page": "Tous les contacts",
+      "contact_mine_page": "Mes contacts",
+      "contact_companies_page": "Entreprises",
+      "contact_people_page": "Personnes",
+      "contact_customers_page": "Clients",
+      "contact_suppliers_page": "Fournisseurs",
+      "contact_service_sites_page": "Sites d'intervention"
     },
     "entities": {
       "contact": {
         "fields": {
           "id": {
-            "label": "Record ID"
+            "label": "ID de l'enregistrement"
           },
           "name": {
-            "label": "Name"
+            "label": "Nom"
           },
           "title": {
-            "label": "Title",
+            "label": "Civilité",
             "options": {
-              "mr": "Mr.",
-              "mrs": "Mrs.",
-              "ms": "Ms.",
+              "mr": "M.",
+              "mrs": "Mme",
+              "ms": "Mme",
               "dr": "Dr."
             }
           },
           "company_legal_name": {
-            "label": "Legal Name"
+            "label": "Raison sociale"
           },
           "first_name": {
-            "label": "First Name"
+            "label": "Prénom"
           },
           "last_name": {
-            "label": "Last Name"
+            "label": "Nom de famille"
           },
           "job_title": {
-            "label": "Job Title"
+            "label": "Fonction"
           },
           "company_type": {
             "label": "Type",
             "options": {
-              "company": "Company",
-              "person": "Person"
+              "company": "Entreprise",
+              "person": "Personne"
             }
           },
           "parent_company_id": {
-            "label": "Parent Company"
+            "label": "Société mère"
           },
           "email": {
-            "label": "Email"
+            "label": "E-mail"
           },
           "phone": {
-            "label": "Phone"
+            "label": "Téléphone"
           },
           "mobile": {
             "label": "Mobile"
           },
           "website": {
-            "label": "Website"
+            "label": "Site web"
           },
           "language": {
-            "label": "Language"
+            "label": "Langue"
           },
           "vat": {
-            "label": "Tax ID / VAT"
+            "label": "Numéro fiscal / TVA"
           },
           "company_registry": {
-            "label": "Company Registry"
+            "label": "Registre des sociétés"
           },
           "industry": {
-            "label": "Industry"
+            "label": "Secteur"
           },
           "address_line_1": {
-            "label": "Address Line 1"
+            "label": "Adresse ligne 1"
           },
           "address_line_2": {
-            "label": "Address Line 2"
+            "label": "Adresse ligne 2"
           },
           "city": {
-            "label": "City"
+            "label": "Ville"
           },
           "region": {
-            "label": "Region/State"
+            "label": "Région / État"
           },
           "postcode": {
-            "label": "Postcode"
+            "label": "Code postal"
           },
           "country": {
-            "label": "Country"
+            "label": "Pays"
           },
           "latitude": {
             "label": "Latitude"
@@ -197,93 +197,93 @@
             "label": "Longitude"
           },
           "place_id": {
-            "label": "Google Place ID"
+            "label": "ID Google Place"
           },
           "address_type": {
-            "label": "Address Type",
+            "label": "Type d'adresse",
             "options": {
               "contact": "Contact",
-              "invoice": "Invoice",
-              "delivery": "Delivery",
-              "other": "Other"
+              "invoice": "Facturation",
+              "delivery": "Livraison",
+              "other": "Autre"
             }
           },
           "status": {
-            "label": "Status",
+            "label": "Statut",
             "options": {
-              "active": "Active",
-              "inactive": "Inactive"
+              "active": "Actif",
+              "inactive": "Inactif"
             }
           },
           "tags": {
-            "label": "Tags"
+            "label": "Étiquettes"
           },
           "owner_id": {
-            "label": "Owner"
+            "label": "Propriétaire"
           },
           "notes": {
             "label": "Notes"
           },
           "is_customer": {
-            "label": "Customer"
+            "label": "Client"
           },
           "is_supplier": {
-            "label": "Supplier"
+            "label": "Fournisseur"
           },
           "is_service_site": {
-            "label": "Service Site"
+            "label": "Site d'intervention"
           },
           "customer_payment_terms": {
-            "label": "Customer Payment Terms"
+            "label": "Conditions de paiement client"
           },
           "supplier_payment_terms": {
-            "label": "Vendor Payment Terms"
+            "label": "Conditions de paiement fournisseur"
           },
           "pricelist": {
-            "label": "Pricelist"
+            "label": "Liste de prix"
           },
           "service_address_override": {
-            "label": "Service Address Override"
+            "label": "Adresse d'intervention personnalisée"
           },
           "attachments": {
-            "label": "Attachments"
+            "label": "Pièces jointes"
           },
           "created_at": {
-            "label": "Created At"
+            "label": "Créé le"
           }
         }
       }
     },
     "actions": {
       "action_contact_new": {
-        "label": "+ New Contact"
+        "label": "+ Nouveau contact"
       },
       "action_contact_mark_inactive": {
-        "label": "Mark Inactive",
+        "label": "Marquer comme inactif",
         "confirm": {
-          "title": "Mark Inactive"
+          "title": "Marquer comme inactif"
         }
       },
       "action_contact_reactivate": {
-        "label": "Reactivate"
+        "label": "Réactiver"
       }
     },
     "workflows": {
       "workflow_contact_status": {
         "states": {
           "active": {
-            "label": "Active"
+            "label": "Actif"
           },
           "inactive": {
-            "label": "Inactive"
+            "label": "Inactif"
           }
         },
         "transitions": {
           "active_inactive": {
-            "label": "Mark Inactive"
+            "label": "Marquer comme inactif"
           },
           "inactive_active": {
-            "label": "Reactivate"
+            "label": "Reactiver"
           }
         }
       }
@@ -291,65 +291,65 @@
     "views": {
       "contact_list": {
         "search": {
-          "placeholder": "Search contacts..."
+          "placeholder": "Rechercher des contacts..."
         },
         "filters": {
           "active": {
-            "label": "Active"
+            "label": "Actif"
           },
           "mine": {
-            "label": "Mine"
+            "label": "Mes contacts"
           },
           "companies": {
-            "label": "Companies"
+            "label": "Entreprises"
           },
           "people": {
-            "label": "People"
+            "label": "Personnes"
           },
           "customers": {
-            "label": "Customers"
+            "label": "Clients"
           },
           "suppliers": {
-            "label": "Suppliers"
+            "label": "Fournisseurs"
           },
           "service_sites": {
-            "label": "Service Sites"
+            "label": "Sites d'intervention"
           }
         }
       },
       "contact_form": {
         "sections": {
           "primary": {
-            "title": "Primary Details"
+            "title": "Informations principales"
           },
           "communication": {
             "title": "Communication"
           },
           "address": {
-            "title": "Contacts & Addresses"
+            "title": "Contacts et adresses"
           },
           "classification": {
-            "title": "Sales & Purchase"
+            "title": "Vente et achat"
           },
           "accounting": {
-            "title": "Accounting"
+            "title": "Comptabilité"
           },
           "notes": {
-            "title": "Internal Notes"
+            "title": "Notes internes"
           }
         },
         "tabs": {
           "contacts_addresses": {
-            "label": "Contacts & Addresses"
+            "label": "Contacts et adresses"
           },
           "sales_purchase": {
-            "label": "Sales & Purchase"
+            "label": "Vente et achat"
           },
           "accounting_tab": {
-            "label": "Accounting"
+            "label": "Comptabilité"
           },
           "internal_notes": {
-            "label": "Internal Notes"
+            "label": "Notes internes"
           }
         }
       }
@@ -359,34 +359,34 @@
         "title": "Contacts"
       },
       "contact_companies_page": {
-        "title": "Companies"
+        "title": "Entreprises"
       },
       "contact_people_page": {
-        "title": "People"
+        "title": "Personnes"
       },
       "contact_customers_page": {
-        "title": "Customers"
+        "title": "Clients"
       },
       "contact_suppliers_page": {
-        "title": "Suppliers"
+        "title": "Fournisseurs"
       },
       "contact_service_sites_page": {
-        "title": "Service Sites"
+        "title": "Sites d'intervention"
       },
       "contact_form_page": {
         "title": "Contact"
       },
       "contact_mine_page": {
-        "title": "My Contacts"
+        "title": "Mes contacts"
       }
     },
     "dashboard": {
       "contact": {
         "contacts_by_type": {
-          "title": "Contacts by Type"
+          "title": "Contacts par type"
         },
         "contacts_by_status": {
-          "title": "Contacts by Status"
+          "title": "Contacts par statut"
         }
       }
     }

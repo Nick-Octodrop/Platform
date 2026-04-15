@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { getActiveWorkspaceId, getUiPrefs, invalidateManifestCaches, invalidateModulesCache } from "../api.js";
+import { clearCaches, getActiveWorkspaceId, getUiPrefs } from "../api.js";
 import {
   bootstrapRuntime,
   formatCurrencyRuntime,
@@ -77,6 +77,21 @@ function persistBootstrapPrefs(prefs) {
   }
 }
 
+function isI18nRelevantPrefsPayload(payload) {
+  if (!payload || typeof payload !== "object") return false;
+  const user = payload.user;
+  if (user && typeof user === "object") {
+    if ("locale" in user || "timezone" in user) return true;
+  }
+  const workspace = payload.workspace;
+  if (workspace && typeof workspace === "object") {
+    if ("default_locale" in workspace || "default_timezone" in workspace || "default_currency" in workspace) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function LocalizationProvider({ children, user }) {
   const initialBootstrap = readBootstrapPrefs();
   const [prefs, setPrefs] = useState(() => initialBootstrap.prefs);
@@ -84,7 +99,28 @@ export function LocalizationProvider({ children, user }) {
   const [version, setVersion] = useState(() => bootstrapRuntime({ ...initialBootstrap.prefs, namespaces: CORE_NAMESPACES }).version);
   const [workspaceKey, setWorkspaceKey] = useState(() => getActiveWorkspaceId());
 
-  const reload = useCallback(async () => {
+  const applyPrefs = useCallback(async (payload) => {
+    const nextPrefs = buildResolvedPrefs(payload);
+    persistBootstrapPrefs(nextPrefs);
+    const bootstrapSnapshot = bootstrapRuntime({ ...nextPrefs, namespaces: CORE_NAMESPACES });
+    setPrefs({
+      ...nextPrefs,
+      workspace: payload?.workspace || {},
+      user: payload?.user || {},
+    });
+    setVersion(bootstrapSnapshot.version);
+    await ensureRuntimeNamespaces(CORE_NAMESPACES, nextPrefs.locale);
+    clearCaches();
+    setPrefs({
+      ...nextPrefs,
+      workspace: payload?.workspace || {},
+      user: payload?.user || {},
+    });
+    setVersion(getI18nRuntimeSnapshot().version);
+    return nextPrefs;
+  }, []);
+
+  const reload = useCallback(async (payloadOverride = null) => {
     const fallbackPrefs = buildResolvedPrefs(null);
     if (!user) {
       persistBootstrapPrefs(fallbackPrefs);
@@ -92,8 +128,7 @@ export function LocalizationProvider({ children, user }) {
       setPrefs(fallbackPrefs);
       setVersion(bootstrapSnapshot.version);
       await ensureRuntimeNamespaces(CORE_NAMESPACES, fallbackPrefs.locale);
-      invalidateManifestCaches();
-      invalidateModulesCache();
+      clearCaches();
       setPrefs(fallbackPrefs);
       setVersion(getI18nRuntimeSnapshot().version);
       setLoading(false);
@@ -101,26 +136,8 @@ export function LocalizationProvider({ children, user }) {
     }
     setLoading(true);
     try {
-      const payload = await getUiPrefs();
-      const nextPrefs = buildResolvedPrefs(payload);
-      persistBootstrapPrefs(nextPrefs);
-      const bootstrapSnapshot = bootstrapRuntime({ ...nextPrefs, namespaces: CORE_NAMESPACES });
-      setPrefs({
-        ...nextPrefs,
-        workspace: payload?.workspace || {},
-        user: payload?.user || {},
-      });
-      setVersion(bootstrapSnapshot.version);
-      await ensureRuntimeNamespaces(CORE_NAMESPACES, nextPrefs.locale);
-      invalidateManifestCaches();
-      invalidateModulesCache();
-      setPrefs({
-        ...nextPrefs,
-        workspace: payload?.workspace || {},
-        user: payload?.user || {},
-      });
-      setVersion(getI18nRuntimeSnapshot().version);
-      return nextPrefs;
+      const payload = payloadOverride && typeof payloadOverride === "object" ? payloadOverride : await getUiPrefs();
+      return await applyPrefs(payload);
     } catch (error) {
       const bootstrapSnapshot = bootstrapRuntime({ ...fallbackPrefs, namespaces: CORE_NAMESPACES });
       setPrefs(fallbackPrefs);
@@ -129,7 +146,7 @@ export function LocalizationProvider({ children, user }) {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [applyPrefs, user]);
 
   useEffect(() => {
     reload().catch(() => {
@@ -145,6 +162,20 @@ export function LocalizationProvider({ children, user }) {
     window.addEventListener("octo:workspace-changed", handleWorkspaceChanged);
     return () => window.removeEventListener("octo:workspace-changed", handleWorkspaceChanged);
   }, []);
+
+  useEffect(() => {
+    function handleUiPrefsUpdated(event) {
+      const payload = event?.detail?.payload;
+      const response = event?.detail?.response;
+      if (!isI18nRelevantPrefsPayload(payload)) return;
+      reload(response && typeof response === "object" ? response : null).catch(() => {
+        // Ignore transient reload failures; next explicit reload or refresh will recover.
+      });
+    }
+    if (typeof window === "undefined") return undefined;
+    window.addEventListener("octo:ui-prefs-updated", handleUiPrefsUpdated);
+    return () => window.removeEventListener("octo:ui-prefs-updated", handleUiPrefsUpdated);
+  }, [reload]);
 
   const value = useMemo(
     () => ({

@@ -57,6 +57,34 @@ function dispatchPwaUpdateReady() {
   window.dispatchEvent(new CustomEvent("octo:web-pwa-update-ready"));
 }
 
+const trackedSwRegistrations = new WeakSet();
+
+function wireServiceWorkerRegistration(registration) {
+  if (!registration || typeof window === "undefined") return;
+  window.__octoWebSwRegistration = registration;
+  if (registration.waiting) {
+    dispatchPwaUpdateReady();
+  }
+  if (trackedSwRegistrations.has(registration)) return;
+  trackedSwRegistrations.add(registration);
+
+  const watchInstallingWorker = (worker) => {
+    if (!worker) return;
+    worker.addEventListener("statechange", () => {
+      if (worker.state === "installed" && navigator.serviceWorker.controller) {
+        dispatchPwaUpdateReady();
+      }
+    });
+  };
+
+  if (registration.installing) {
+    watchInstallingWorker(registration.installing);
+  }
+  registration.addEventListener("updatefound", () => {
+    watchInstallingWorker(registration.installing);
+  });
+}
+
 function isChunkLoadFailure(errorLike) {
   const message = String(
     errorLike?.message ||
@@ -126,11 +154,6 @@ async function recoverFromStaleBundle(reason = "stale-bundle") {
   return true;
 }
 
-function installServiceWorkerUpdatePolling(registration) {
-  if (!registration || typeof window === "undefined") return;
-  window.__octoWebSwRegistration = registration;
-}
-
 let hasReloadedForNewController = false;
 if (SHOULD_REGISTER_PWA && typeof navigator !== "undefined" && "serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("controllerchange", () => {
@@ -146,7 +169,7 @@ if (SHOULD_REGISTER_PWA) {
     immediate: true,
     onRegisteredSW(_swUrl, registration) {
       window.__octoWebApplyUpdate = updateSW;
-      installServiceWorkerUpdatePolling(registration);
+      wireServiceWorkerRegistration(registration);
       if (registration?.waiting) {
         dispatchPwaUpdateReady();
         if (shouldAutoApplyStandaloneUpdate()) {
@@ -165,6 +188,11 @@ if (SHOULD_REGISTER_PWA) {
         });
       }
     },
+  });
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    registrations.forEach((registration) => wireServiceWorkerRegistration(registration));
+  }).catch(() => {
+    // ignore registration lookup failures
   });
 } else if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
   navigator.serviceWorker.getRegistrations().then((registrations) => {

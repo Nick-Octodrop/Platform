@@ -271,7 +271,12 @@ export default function App() {
       const activeRegistration = window.__octoWebSwRegistration;
       if (activeRegistration) return activeRegistration;
       if (!("serviceWorker" in navigator)) return null;
-      const registration = await navigator.serviceWorker.getRegistration();
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      const registration =
+        registrations.find((item) => item?.waiting) ||
+        registrations.find((item) => item?.installing) ||
+        registrations[0] ||
+        null;
       if (registration) {
         window.__octoWebSwRegistration = registration;
       }
@@ -418,6 +423,10 @@ export default function App() {
 
   async function handleApplyUpdate() {
     const applyUpdate = typeof window !== "undefined" ? window.__octoWebApplyUpdate : null;
+    if (typeof window !== "undefined") {
+      window.__octoWebUpdateReady = false;
+    }
+    setUpdatePromptVisible(false);
     if (typeof applyUpdate === "function") {
       await applyUpdate(true);
     } else if (typeof window !== "undefined") {
@@ -465,7 +474,7 @@ export default function App() {
               onDismiss={handleDismissInstallPrompt}
             />
           ) : null}
-          <Routes>
+          <LocalizedRoutes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/auth/set-password" element={<AuthSetPasswordPage user={user} />} />
             <Route path="/ext" element={lazyPage(<ExternalApiDocsPage />)} />
@@ -863,11 +872,16 @@ export default function App() {
             />
             <Route path="*" element={<Navigate to="/home" replace />} />
             </Route>
-          </Routes>
+          </LocalizedRoutes>
         </LocalizationProvider>
       </ErrorBoundary>
     </ToastProvider>
   );
+}
+
+function LocalizedRoutes({ children }) {
+  const { locale, workspaceKey } = useI18n();
+  return <Routes key={`${workspaceKey || "default"}:${locale || "default"}`}>{children}</Routes>;
 }
 
 function WebUpdatePrompt({ onUpdate }) {

@@ -34071,7 +34071,15 @@ async def set_ui_prefs(request: Request) -> dict:
                 [org_id, user_id, theme, ui_density, first_name, last_name, phone, locale, timezone_name, _now()],
                 query_name="user_ui_prefs.upsert",
             )
-    return _ok_response({"ok": True})
+    workspace, user = _load_ui_pref_settings(org_id, user_id if isinstance(user_id, str) else None)
+    return _ok_response(
+        {
+            "ok": True,
+            "workspace": workspace or {},
+            "user": user or {},
+            "resolved": build_locale_context(workspace=workspace, user=user),
+        }
+    )
 
 
 @app.post("/records/{entity_id}")

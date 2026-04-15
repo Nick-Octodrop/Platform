@@ -184,13 +184,13 @@ export default function SettingsSettingsPage({ user, onSignOut }) {
     if (regionalSaving) return;
     setRegionalSaving(true);
     try {
-      await setUiPrefs({
+      const response = await setUiPrefs({
         user: {
           locale: userLocale || null,
           timezone: userTimezone || null,
         },
       });
-      await reloadI18n();
+      await reloadI18n(response);
       pushToast("success", t("settings.profile_language_saved"));
     } catch (err) {
       pushToast("error", err?.message || t("settings.profile_language_save_failed"));

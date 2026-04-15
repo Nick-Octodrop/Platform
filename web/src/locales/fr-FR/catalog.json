@@ -1,155 +1,155 @@
 {
   "catalog": {
     "module": {
-      "name": "Catalog",
-      "description": "Shared item catalog for Paul Construction with purchasable materials aligned to site usage logging in the PWA."
+      "name": "Catalogue",
+      "description": "Catalogue partagé d'articles pour Paul Construction avec des matériaux achetables alignés sur le suivi d'utilisation sur site dans la PWA."
     },
     "navigation": {
-      "group": "Catalog",
-      "item_list_page": "Items",
-      "item_sellable_page": "Sellable",
-      "item_purchasable_page": "Purchasable"
+      "group": "Catalogue",
+      "item_list_page": "Articles",
+      "item_sellable_page": "Vendables",
+      "item_purchasable_page": "Achetables"
     },
     "entities": {
       "item": {
         "fields": {
           "id": {
-            "label": "Record ID"
+            "label": "ID de l'enregistrement"
           },
           "code": {
             "label": "Code"
           },
           "name": {
-            "label": "Name"
+            "label": "Nom"
           },
           "type": {
             "label": "Type",
             "options": {
-              "storable": "Storable Product",
-              "consumable": "Consumable",
+              "storable": "Article stocké",
+              "consumable": "Consommable",
               "service": "Service",
-              "labor": "Labor"
+              "labor": "Main-d'œuvre"
             }
           },
           "material_type": {
-            "label": "Material Type"
+            "label": "Type de matériau"
           },
           "fulfillment_method": {
-            "label": "Fulfillment",
+            "label": "Mode d'approvisionnement",
             "options": {
-              "purchase": "Purchase",
-              "manufacture": "Manufacture",
-              "subcontract": "Subcontract",
-              "manual": "Manual / Time"
+              "purchase": "Achat",
+              "manufacture": "Fabrication",
+              "subcontract": "Sous-traitance",
+              "manual": "Manuel / Temps"
             }
           },
           "can_sell": {
-            "label": "Can Be Sold",
+            "label": "Peut être vendu",
             "options": {
-              "yes": "Yes",
-              "no": "No"
+              "yes": "Oui",
+              "no": "Non"
             }
           },
           "can_purchase": {
-            "label": "Can Be Purchased",
+            "label": "Peut être acheté",
             "options": {
-              "yes": "Yes",
-              "no": "No"
+              "yes": "Oui",
+              "no": "Non"
             }
           },
           "show_in_workers_app": {
-            "label": "Show In Workers App"
+            "label": "Afficher dans l'app ouvriers"
           },
           "uom": {
-            "label": "Unit of Measure"
+            "label": "Unité de mesure"
           },
           "uom_category": {
-            "label": "UoM Category",
+            "label": "Catégorie d'unité",
             "options": {
-              "unit": "Unit",
-              "time": "Time",
-              "length": "Length",
-              "area": "Area",
+              "unit": "Unité",
+              "time": "Temps",
+              "length": "Longueur",
+              "area": "Surface",
               "volume": "Volume",
-              "weight": "Weight"
+              "weight": "Poids"
             }
           },
           "sales_currency": {
-            "label": "Sales Currency"
+            "label": "Devise de vente"
           },
           "purchase_currency": {
-            "label": "Purchase Currency"
+            "label": "Devise d'achat"
           },
           "sales_price": {
-            "label": "Sales Price"
+            "label": "Prix de vente"
           },
           "cost_price": {
-            "label": "Cost"
+            "label": "Coût"
           },
           "tax_rate": {
-            "label": "Tax Rate (%)"
+            "label": "Taux de taxe (%)"
           },
           "lead_time_days": {
-            "label": "Lead Time (Days)"
+            "label": "Délai (jours)"
           },
           "margin_amount": {
-            "label": "Margin"
+            "label": "Marge"
           },
           "margin_percent": {
-            "label": "Margin (%)"
+            "label": "Marge (%)"
           },
           "status": {
-            "label": "Status",
+            "label": "Statut",
             "options": {
-              "active": "Active",
-              "inactive": "Inactive"
+              "active": "Actif",
+              "inactive": "Inactif"
             }
           },
           "description": {
             "label": "Description"
           },
           "tags": {
-            "label": "Tags"
+            "label": "Étiquettes"
           },
           "created_at": {
-            "label": "Created At"
+            "label": "Créé le"
           }
         }
       }
     },
     "actions": {
       "action_item_new": {
-        "label": "+ New Item"
+        "label": "+ Nouvel article"
       },
       "action_item_set_active": {
-        "label": "Set Active"
+        "label": "Activer"
       },
       "action_item_set_inactive": {
-        "label": "Set Inactive"
+        "label": "Désactiver"
       },
       "action_item_add_to_workers_app": {
-        "label": "Add To Workers App"
+        "label": "Ajouter à l'app ouvriers"
       },
       "action_item_remove_from_workers_app": {
-        "label": "Remove From Workers App"
+        "label": "Retirer de l'app ouvriers"
       }
     },
     "workflows": {
       "workflow_item_status": {
         "states": {
           "active": {
-            "label": "Active"
+            "label": "Actif"
           },
           "inactive": {
-            "label": "Inactive"
+            "label": "Inactif"
           }
         },
         "transitions": {
           "inactive_active": {
-            "label": "Set Active"
+            "label": "Activer"
           },
           "active_inactive": {
-            "label": "Set Inactive"
+            "label": "Désactiver"
           }
         }
       }
@@ -157,29 +157,29 @@
     "views": {
       "item_list": {
         "search": {
-          "placeholder": "Search items..."
+          "placeholder": "Rechercher des articles..."
         },
         "filters": {
           "active": {
-            "label": "Active"
+            "label": "Actif"
           },
           "sellable": {
-            "label": "Sellable"
+            "label": "Vendables"
           },
           "purchasable": {
-            "label": "Purchasable"
+            "label": "Achetables"
           },
           "inactive": {
-            "label": "Inactive"
+            "label": "Inactif"
           },
           "products": {
-            "label": "Products"
+            "label": "Produits"
           },
           "materials": {
-            "label": "Materials"
+            "label": "Matériaux"
           },
           "workers_app": {
-            "label": "Workers App"
+            "label": "App ouvriers"
           },
           "services": {
             "label": "Services"
@@ -189,7 +189,7 @@
       "item_form": {
         "sections": {
           "general": {
-            "title": "General"
+            "title": "Général"
           },
           "commercial": {
             "title": "Commercial"
@@ -200,7 +200,7 @@
         },
         "tabs": {
           "general_tab": {
-            "label": "General"
+            "label": "Général"
           },
           "commercial_tab": {
             "label": "Commercial"
@@ -213,25 +213,25 @@
     },
     "pages": {
       "item_list_page": {
-        "title": "Items"
+        "title": "Articles"
       },
       "item_form_page": {
-        "title": "Item"
+        "title": "Article"
       },
       "item_sellable_page": {
-        "title": "Sellable Items"
+        "title": "Articles vendables"
       },
       "item_purchasable_page": {
-        "title": "Purchasable Items"
+        "title": "Articles achetables"
       }
     },
     "dashboard": {
       "item": {
         "items_by_type": {
-          "title": "Items by Type"
+          "title": "Articles par type"
         },
         "items_by_material_type": {
-          "title": "Items by Material Type"
+          "title": "Articles par type de matériau"
         }
       }
     }

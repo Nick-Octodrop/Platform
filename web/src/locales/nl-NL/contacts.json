@@ -95,195 +95,195 @@
   },
   "contacts": {
     "module": {
-      "name": "Contacts",
-      "description": "Central contact management for companies, people, customers, suppliers, and service sites."
+      "name": "Contacten",
+      "description": "Centraal contactbeheer voor bedrijven, personen, klanten, leveranciers en servicelocaties."
     },
     "navigation": {
-      "group": "Contacts",
-      "contact_list_page": "All Contacts",
-      "contact_mine_page": "My Contacts",
-      "contact_companies_page": "Companies",
-      "contact_people_page": "People",
-      "contact_customers_page": "Customers",
-      "contact_suppliers_page": "Suppliers",
-      "contact_service_sites_page": "Service Sites"
+      "group": "Contacten",
+      "contact_list_page": "Alle contacten",
+      "contact_mine_page": "Mijn contacten",
+      "contact_companies_page": "Bedrijven",
+      "contact_people_page": "Personen",
+      "contact_customers_page": "Klanten",
+      "contact_suppliers_page": "Leveranciers",
+      "contact_service_sites_page": "Servicelocaties"
     },
     "entities": {
       "contact": {
         "fields": {
           "id": {
-            "label": "Record ID"
+            "label": "Record-ID"
           },
           "name": {
-            "label": "Name"
+            "label": "Naam"
           },
           "title": {
-            "label": "Title",
+            "label": "Aanhef",
             "options": {
-              "mr": "Mr.",
-              "mrs": "Mrs.",
-              "ms": "Ms.",
+              "mr": "Dhr.",
+              "mrs": "Mevr.",
+              "ms": "Mevr.",
               "dr": "Dr."
             }
           },
           "company_legal_name": {
-            "label": "Legal Name"
+            "label": "Juridische naam"
           },
           "first_name": {
-            "label": "First Name"
+            "label": "Voornaam"
           },
           "last_name": {
-            "label": "Last Name"
+            "label": "Achternaam"
           },
           "job_title": {
-            "label": "Job Title"
+            "label": "Functie"
           },
           "company_type": {
             "label": "Type",
             "options": {
-              "company": "Company",
-              "person": "Person"
+              "company": "Bedrijf",
+              "person": "Persoon"
             }
           },
           "parent_company_id": {
-            "label": "Parent Company"
+            "label": "Moederbedrijf"
           },
           "email": {
-            "label": "Email"
+            "label": "E-mail"
           },
           "phone": {
-            "label": "Phone"
+            "label": "Telefoon"
           },
           "mobile": {
-            "label": "Mobile"
+            "label": "Mobiel"
           },
           "website": {
             "label": "Website"
           },
           "language": {
-            "label": "Language"
+            "label": "Taal"
           },
           "vat": {
-            "label": "Tax ID / VAT"
+            "label": "Belasting-ID / btw"
           },
           "company_registry": {
-            "label": "Company Registry"
+            "label": "Handelsregister"
           },
           "industry": {
-            "label": "Industry"
+            "label": "Branche"
           },
           "address_line_1": {
-            "label": "Address Line 1"
+            "label": "Adresregel 1"
           },
           "address_line_2": {
-            "label": "Address Line 2"
+            "label": "Adresregel 2"
           },
           "city": {
-            "label": "City"
+            "label": "Plaats"
           },
           "region": {
-            "label": "Region/State"
+            "label": "Regio/Staat"
           },
           "postcode": {
             "label": "Postcode"
           },
           "country": {
-            "label": "Country"
+            "label": "Land"
           },
           "latitude": {
-            "label": "Latitude"
+            "label": "Breedtegraad"
           },
           "longitude": {
-            "label": "Longitude"
+            "label": "Lengtegraad"
           },
           "place_id": {
-            "label": "Google Place ID"
+            "label": "Google Place-ID"
           },
           "address_type": {
-            "label": "Address Type",
+            "label": "Adrestype",
             "options": {
               "contact": "Contact",
-              "invoice": "Invoice",
-              "delivery": "Delivery",
-              "other": "Other"
+              "invoice": "Factuur",
+              "delivery": "Levering",
+              "other": "Overig"
             }
           },
           "status": {
             "label": "Status",
             "options": {
-              "active": "Active",
-              "inactive": "Inactive"
+              "active": "Actief",
+              "inactive": "Inactief"
             }
           },
           "tags": {
-            "label": "Tags"
+            "label": "Labels"
           },
           "owner_id": {
-            "label": "Owner"
+            "label": "Eigenaar"
           },
           "notes": {
-            "label": "Notes"
+            "label": "Notities"
           },
           "is_customer": {
-            "label": "Customer"
+            "label": "Klant"
           },
           "is_supplier": {
-            "label": "Supplier"
+            "label": "Leverancier"
           },
           "is_service_site": {
-            "label": "Service Site"
+            "label": "Servicelocatie"
           },
           "customer_payment_terms": {
-            "label": "Customer Payment Terms"
+            "label": "Betaalvoorwaarden klant"
           },
           "supplier_payment_terms": {
-            "label": "Vendor Payment Terms"
+            "label": "Betaalvoorwaarden leverancier"
           },
           "pricelist": {
-            "label": "Pricelist"
+            "label": "Prijslijst"
           },
           "service_address_override": {
-            "label": "Service Address Override"
+            "label": "Aangepast serviceadres"
           },
           "attachments": {
-            "label": "Attachments"
+            "label": "Bijlagen"
           },
           "created_at": {
-            "label": "Created At"
+            "label": "Aangemaakt op"
           }
         }
       }
     },
     "actions": {
       "action_contact_new": {
-        "label": "+ New Contact"
+        "label": "+ Nieuw contact"
       },
       "action_contact_mark_inactive": {
-        "label": "Mark Inactive",
+        "label": "Markeren als inactief",
         "confirm": {
-          "title": "Mark Inactive"
+          "title": "Markeren als inactief"
         }
       },
       "action_contact_reactivate": {
-        "label": "Reactivate"
+        "label": "Heractiveren"
       }
     },
     "workflows": {
       "workflow_contact_status": {
         "states": {
           "active": {
-            "label": "Active"
+            "label": "Actief"
           },
           "inactive": {
-            "label": "Inactive"
+            "label": "Inactief"
           }
         },
         "transitions": {
           "active_inactive": {
-            "label": "Mark Inactive"
+            "label": "Markeren als inactief"
           },
           "inactive_active": {
-            "label": "Reactivate"
+            "label": "Heractiveren"
           }
         }
       }
@@ -291,102 +291,102 @@
     "views": {
       "contact_list": {
         "search": {
-          "placeholder": "Search contacts..."
+          "placeholder": "Contacten zoeken..."
         },
         "filters": {
           "active": {
-            "label": "Active"
+            "label": "Actief"
           },
           "mine": {
-            "label": "Mine"
+            "label": "Mijn contacten"
           },
           "companies": {
-            "label": "Companies"
+            "label": "Bedrijven"
           },
           "people": {
-            "label": "People"
+            "label": "Personen"
           },
           "customers": {
-            "label": "Customers"
+            "label": "Klanten"
           },
           "suppliers": {
-            "label": "Suppliers"
+            "label": "Leveranciers"
           },
           "service_sites": {
-            "label": "Service Sites"
+            "label": "Servicelocaties"
           }
         }
       },
       "contact_form": {
         "sections": {
           "primary": {
-            "title": "Primary Details"
+            "title": "Primaire gegevens"
           },
           "communication": {
-            "title": "Communication"
+            "title": "Communicatie"
           },
           "address": {
-            "title": "Contacts & Addresses"
+            "title": "Contacten en adressen"
           },
           "classification": {
-            "title": "Sales & Purchase"
+            "title": "Verkoop en inkoop"
           },
           "accounting": {
-            "title": "Accounting"
+            "title": "Boekhouding"
           },
           "notes": {
-            "title": "Internal Notes"
+            "title": "Interne notities"
           }
         },
         "tabs": {
           "contacts_addresses": {
-            "label": "Contacts & Addresses"
+            "label": "Contacten en adressen"
           },
           "sales_purchase": {
-            "label": "Sales & Purchase"
+            "label": "Verkoop en inkoop"
           },
           "accounting_tab": {
-            "label": "Accounting"
+            "label": "Boekhouding"
           },
           "internal_notes": {
-            "label": "Internal Notes"
+            "label": "Interne notities"
           }
         }
       }
     },
     "pages": {
       "contact_list_page": {
-        "title": "Contacts"
+        "title": "Contacten"
       },
       "contact_companies_page": {
-        "title": "Companies"
+        "title": "Bedrijven"
       },
       "contact_people_page": {
-        "title": "People"
+        "title": "Personen"
       },
       "contact_customers_page": {
-        "title": "Customers"
+        "title": "Klanten"
       },
       "contact_suppliers_page": {
-        "title": "Suppliers"
+        "title": "Leveranciers"
       },
       "contact_service_sites_page": {
-        "title": "Service Sites"
+        "title": "Servicelocaties"
       },
       "contact_form_page": {
         "title": "Contact"
       },
       "contact_mine_page": {
-        "title": "My Contacts"
+        "title": "Mijn contacten"
       }
     },
     "dashboard": {
       "contact": {
         "contacts_by_type": {
-          "title": "Contacts by Type"
+          "title": "Contacten per type"
         },
         "contacts_by_status": {
-          "title": "Contacts by Status"
+          "title": "Contacten per status"
         }
       }
     }

@@ -75,6 +75,18 @@ function notifyWorkspaceChanged(workspaceId, scope = "local") {
   );
 }
 
+function notifyUiPrefsUpdated(payload, response = null) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent("octo:ui-prefs-updated", {
+      detail: {
+        payload: payload && typeof payload === "object" ? payload : {},
+        response: response && typeof response === "object" ? response : null,
+      },
+    }),
+  );
+}
+
 export function isOctoAiSandboxActive() {
   if (typeof window === "undefined") return false;
   try {
@@ -624,7 +636,9 @@ export async function getUiPrefs() {
 }
 
 export async function setUiPrefs(payload) {
-  return apiFetch("/prefs/ui", { method: "PUT", body: payload });
+  const response = await apiFetch("/prefs/ui", { method: "PUT", body: payload });
+  notifyUiPrefsUpdated(payload, response);
+  return response;
 }
 
 export async function getModules() {

@@ -181,12 +181,12 @@ export default function SettingsWorkspacesPage() {
 
   async function persistWorkspacePrefs(next) {
     try {
-      await setUiPrefs({ workspace: next });
+      const response = await setUiPrefs({ workspace: next });
       if (next.colors) {
         setBrandColors(next.colors);
         applyBrandColors(next.colors);
       }
-      await reloadI18n();
+      await reloadI18n(response);
     } catch (err) {
       pushToast("error", t("settings.workspace_save_failed"));
       throw err;

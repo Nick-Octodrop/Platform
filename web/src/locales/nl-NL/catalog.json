@@ -1,155 +1,155 @@
 {
   "catalog": {
     "module": {
-      "name": "Catalog",
-      "description": "Shared item catalog for Paul Construction with purchasable materials aligned to site usage logging in the PWA."
+      "name": "Catalogus",
+      "description": "Gedeelde artikelcatalogus voor Paul Construction met inkoopbare materialen gekoppeld aan gebruiksregistratie op de werf in de PWA."
     },
     "navigation": {
-      "group": "Catalog",
-      "item_list_page": "Items",
-      "item_sellable_page": "Sellable",
-      "item_purchasable_page": "Purchasable"
+      "group": "Catalogus",
+      "item_list_page": "Artikelen",
+      "item_sellable_page": "Verkoopbaar",
+      "item_purchasable_page": "Inkoopbaar"
     },
     "entities": {
       "item": {
         "fields": {
           "id": {
-            "label": "Record ID"
+            "label": "Record-ID"
           },
           "code": {
             "label": "Code"
           },
           "name": {
-            "label": "Name"
+            "label": "Naam"
           },
           "type": {
             "label": "Type",
             "options": {
-              "storable": "Storable Product",
-              "consumable": "Consumable",
-              "service": "Service",
-              "labor": "Labor"
+              "storable": "Voorraadartikel",
+              "consumable": "Verbruiksartikel",
+              "service": "Dienst",
+              "labor": "Arbeid"
             }
           },
           "material_type": {
-            "label": "Material Type"
+            "label": "Materiaaltype"
           },
           "fulfillment_method": {
-            "label": "Fulfillment",
+            "label": "Leveringsmethode",
             "options": {
-              "purchase": "Purchase",
-              "manufacture": "Manufacture",
-              "subcontract": "Subcontract",
-              "manual": "Manual / Time"
+              "purchase": "Inkoop",
+              "manufacture": "Productie",
+              "subcontract": "Onderaanneming",
+              "manual": "Handmatig / Tijd"
             }
           },
           "can_sell": {
-            "label": "Can Be Sold",
+            "label": "Kan worden verkocht",
             "options": {
-              "yes": "Yes",
-              "no": "No"
+              "yes": "Ja",
+              "no": "Nee"
             }
           },
           "can_purchase": {
-            "label": "Can Be Purchased",
+            "label": "Kan worden ingekocht",
             "options": {
-              "yes": "Yes",
-              "no": "No"
+              "yes": "Ja",
+              "no": "Nee"
             }
           },
           "show_in_workers_app": {
-            "label": "Show In Workers App"
+            "label": "Tonen in werknemersapp"
           },
           "uom": {
-            "label": "Unit of Measure"
+            "label": "Meeteenheid"
           },
           "uom_category": {
-            "label": "UoM Category",
+            "label": "Eenheidscategorie",
             "options": {
-              "unit": "Unit",
-              "time": "Time",
-              "length": "Length",
-              "area": "Area",
+              "unit": "Eenheid",
+              "time": "Tijd",
+              "length": "Lengte",
+              "area": "Oppervlakte",
               "volume": "Volume",
-              "weight": "Weight"
+              "weight": "Gewicht"
             }
           },
           "sales_currency": {
-            "label": "Sales Currency"
+            "label": "Verkoopvaluta"
           },
           "purchase_currency": {
-            "label": "Purchase Currency"
+            "label": "Inkoopvaluta"
           },
           "sales_price": {
-            "label": "Sales Price"
+            "label": "Verkoopprijs"
           },
           "cost_price": {
-            "label": "Cost"
+            "label": "Kostprijs"
           },
           "tax_rate": {
-            "label": "Tax Rate (%)"
+            "label": "Belastingtarief (%)"
           },
           "lead_time_days": {
-            "label": "Lead Time (Days)"
+            "label": "Levertijd (dagen)"
           },
           "margin_amount": {
-            "label": "Margin"
+            "label": "Marge"
           },
           "margin_percent": {
-            "label": "Margin (%)"
+            "label": "Marge (%)"
           },
           "status": {
             "label": "Status",
             "options": {
-              "active": "Active",
-              "inactive": "Inactive"
+              "active": "Actief",
+              "inactive": "Inactief"
             }
           },
           "description": {
-            "label": "Description"
+            "label": "Beschrijving"
           },
           "tags": {
             "label": "Tags"
           },
           "created_at": {
-            "label": "Created At"
+            "label": "Aangemaakt op"
           }
         }
       }
     },
     "actions": {
       "action_item_new": {
-        "label": "+ New Item"
+        "label": "+ Nieuw artikel"
       },
       "action_item_set_active": {
-        "label": "Set Active"
+        "label": "Activeren"
       },
       "action_item_set_inactive": {
-        "label": "Set Inactive"
+        "label": "Deactiveren"
       },
       "action_item_add_to_workers_app": {
-        "label": "Add To Workers App"
+        "label": "Toevoegen aan werknemersapp"
       },
       "action_item_remove_from_workers_app": {
-        "label": "Remove From Workers App"
+        "label": "Verwijderen uit werknemersapp"
       }
     },
     "workflows": {
       "workflow_item_status": {
         "states": {
           "active": {
-            "label": "Active"
+            "label": "Actief"
           },
           "inactive": {
-            "label": "Inactive"
+            "label": "Inactief"
           }
         },
         "transitions": {
           "inactive_active": {
-            "label": "Set Active"
+            "label": "Activeren"
           },
           "active_inactive": {
-            "label": "Set Inactive"
+            "label": "Deactiveren"
           }
         }
       }
@@ -157,81 +157,81 @@
     "views": {
       "item_list": {
         "search": {
-          "placeholder": "Search items..."
+          "placeholder": "Artikelen zoeken..."
         },
         "filters": {
           "active": {
-            "label": "Active"
+            "label": "Actief"
           },
           "sellable": {
-            "label": "Sellable"
+            "label": "Verkoopbaar"
           },
           "purchasable": {
-            "label": "Purchasable"
+            "label": "Inkoopbaar"
           },
           "inactive": {
-            "label": "Inactive"
+            "label": "Inactief"
           },
           "products": {
-            "label": "Products"
+            "label": "Producten"
           },
           "materials": {
-            "label": "Materials"
+            "label": "Materialen"
           },
           "workers_app": {
-            "label": "Workers App"
+            "label": "Werknemersapp"
           },
           "services": {
-            "label": "Services"
+            "label": "Diensten"
           }
         }
       },
       "item_form": {
         "sections": {
           "general": {
-            "title": "General"
+            "title": "Algemeen"
           },
           "commercial": {
-            "title": "Commercial"
+            "title": "Commercieel"
           },
           "notes": {
-            "title": "Notes"
+            "title": "Notities"
           }
         },
         "tabs": {
           "general_tab": {
-            "label": "General"
+            "label": "Algemeen"
           },
           "commercial_tab": {
-            "label": "Commercial"
+            "label": "Commercieel"
           },
           "notes_tab": {
-            "label": "Notes"
+            "label": "Notities"
           }
         }
       }
     },
     "pages": {
       "item_list_page": {
-        "title": "Items"
+        "title": "Artikelen"
       },
       "item_form_page": {
-        "title": "Item"
+        "title": "Artikel"
       },
       "item_sellable_page": {
-        "title": "Sellable Items"
+        "title": "Verkoopbare artikelen"
       },
       "item_purchasable_page": {
-        "title": "Purchasable Items"
+        "title": "Inkoopbare artikelen"
       }
     },
     "dashboard": {
       "item": {
         "items_by_type": {
-          "title": "Items by Type"
+          "title": "Artikelen per type"
         },
         "items_by_material_type": {
-          "title": "Items by Material Type"
+          "title": "Artikelen per materiaaltype"
         }
       }
     }
