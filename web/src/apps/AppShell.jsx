@@ -24,6 +24,7 @@ import { normalizeManifestRecordPayload } from "../utils/formPayload.js";
 import { useAccessContext } from "../access.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
+import { localizeManifest } from "../i18n/manifest.js";
 import { translateRuntime } from "../i18n/runtime.js";
 
 function deriveRecordEntityId(entityId) {
@@ -414,8 +415,9 @@ export default function AppShell({
       setLoading(true);
       try {
         if (manifestOverride) {
-          setManifest(manifestOverride);
-          setCompiled(compileManifest(manifestOverride));
+          const localizedManifest = await localizeManifest(manifestOverride);
+          setManifest(localizedManifest);
+          setCompiled(compileManifest(localizedManifest));
           setError(null);
           return;
         }
@@ -469,8 +471,10 @@ export default function AppShell({
     async function loadBootstrap() {
       if (!moduleId || (!pageId && !viewId)) return;
       if (manifestOverride) {
-        setManifest(manifestOverride);
-        setCompiled(compileManifest(manifestOverride));
+        const localizedManifest = await localizeManifest(manifestOverride);
+        if (cancelled) return;
+        setManifest(localizedManifest);
+        setCompiled(compileManifest(localizedManifest));
         setBootstrap(null);
         setBootstrapVersion((v) => v + 1);
         setError(null);

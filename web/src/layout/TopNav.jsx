@@ -6,6 +6,7 @@ import NotificationBell from "../components/NotificationBell.jsx";
 import { apiFetch, getManifest, listStudio2Modules } from "../api.js";
 import { appendOctoAiFrameParams, buildTargetRoute } from "../apps/appShellUtils.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
+import { localizeManifest } from "../i18n/manifest.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import { readStudioPreviewManifest } from "../pages/studio/studioPreviewStore.js";
 
@@ -267,12 +268,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
   const emailOutboxIdParam = emailOutboxMatch?.params?.outboxId || "";
   const docTemplateIdParam = docTemplateMatch?.params?.templateId || "";
   const documentNumberingIdParam = documentNumberingMatch?.params?.sequenceId || "";
-  const [manifest, setManifest] = useState(() => {
-    if (isStudioPreviewRoute && moduleId) {
-      return readStudioPreviewManifest(moduleId);
-    }
-    return null;
-  });
+  const [manifest, setManifest] = useState(null);
   const [studioModules, setStudioModules] = useState([]);
   const [studioLoading, setStudioLoading] = useState(false);
   const [recordCrumbLabel, setRecordCrumbLabel] = useState("");
@@ -294,10 +290,6 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
   const accountLabel = user?.email ? user.email.split("@")[0] : t("settings.account_title");
 
   useLayoutEffect(() => {
-    if (isStudioPreviewRoute && moduleId) {
-      setManifest(readStudioPreviewManifest(moduleId));
-      return;
-    }
     setManifest(null);
   }, [moduleId, isAppRoute, isStudioPreviewRoute, version, workspaceKey]);
 
@@ -315,7 +307,9 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
       if (isStudioPreviewRoute) {
         const previewManifest = readStudioPreviewManifest(moduleId);
         if (previewManifest) {
-          setManifest(previewManifest);
+          const localizedPreview = await localizeManifest(previewManifest);
+          if (!mounted) return;
+          setManifest(localizedPreview);
           return;
         }
       }
@@ -334,7 +328,19 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
       if (!payload || payload.type !== "octo:studio-preview-manifest") return;
       if (payload.moduleId !== moduleId) return;
       if (!mounted) return;
-      setManifest(payload.manifest && typeof payload.manifest === "object" ? payload.manifest : null);
+      Promise.resolve(
+        payload.manifest && typeof payload.manifest === "object"
+          ? localizeManifest(payload.manifest)
+          : null,
+      )
+        .then((nextManifest) => {
+          if (!mounted) return;
+          setManifest(nextManifest);
+        })
+        .catch(() => {
+          if (!mounted) return;
+          setManifest(payload.manifest && typeof payload.manifest === "object" ? payload.manifest : null);
+        });
     }
     if (isStudioPreviewRoute) {
       window.addEventListener("message", handlePreviewMessage);

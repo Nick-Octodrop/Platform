@@ -10,6 +10,7 @@ import {
   formatTimeRuntime,
   getI18nRuntimeSnapshot,
   hasRuntimeTranslation,
+  I18N_RUNTIME_CHANGE_EVENT,
   ensureRuntimeNamespaces,
   translateRuntime,
 } from "./runtime.js";
@@ -176,6 +177,15 @@ export function LocalizationProvider({ children, user }) {
     window.addEventListener("octo:ui-prefs-updated", handleUiPrefsUpdated);
     return () => window.removeEventListener("octo:ui-prefs-updated", handleUiPrefsUpdated);
   }, [reload]);
+
+  useEffect(() => {
+    function handleRuntimeChanged() {
+      setVersion(getI18nRuntimeSnapshot().version);
+    }
+    if (typeof window === "undefined") return undefined;
+    window.addEventListener(I18N_RUNTIME_CHANGE_EVENT, handleRuntimeChanged);
+    return () => window.removeEventListener(I18N_RUNTIME_CHANGE_EVENT, handleRuntimeChanged);
+  }, []);
 
   const value = useMemo(
     () => ({

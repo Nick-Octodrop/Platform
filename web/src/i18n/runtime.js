@@ -9,6 +9,8 @@ import {
 import { ensureLocaleNamespaces, getPreloadedLocaleNamespaces } from "./messages.js";
 import { DEFAULT_CURRENCY, DEFAULT_LOCALE, DEFAULT_TIMEZONE, FALLBACK_LOCALE } from "./options.js";
 
+export const I18N_RUNTIME_CHANGE_EVENT = "octo:i18n-runtime-changed";
+
 const runtime = {
   locale: DEFAULT_LOCALE,
   timezone: DEFAULT_TIMEZONE,
@@ -17,6 +19,27 @@ const runtime = {
   fallbackMessages: {},
   version: 0,
 };
+
+function emitRuntimeChange() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(I18N_RUNTIME_CHANGE_EVENT, {
+      detail: getI18nRuntimeSnapshot(),
+    }),
+  );
+}
+
+function mergeNamespaceBundle(target, incoming) {
+  let changed = false;
+  const next = { ...target };
+  for (const [namespace, messages] of Object.entries(incoming || {})) {
+    if (!messages || typeof messages !== "object") continue;
+    if (next[namespace] === messages) continue;
+    next[namespace] = messages;
+    changed = true;
+  }
+  return { next, changed };
+}
 
 function lookupPath(messages, key) {
   if (!messages || typeof messages !== "object") return undefined;
@@ -59,7 +82,10 @@ export function setRuntimePreferences({ locale, timezone, defaultCurrency } = {}
   runtime.locale = nextLocale;
   runtime.timezone = nextTimezone;
   runtime.defaultCurrency = nextCurrency;
-  if (changed) runtime.version += 1;
+  if (changed) {
+    runtime.version += 1;
+    emitRuntimeChange();
+  }
   return getI18nRuntimeSnapshot();
 }
 
@@ -74,9 +100,15 @@ export function bootstrapRuntime({ locale, timezone, defaultCurrency, namespaces
       : getPreloadedLocaleNamespaces(FALLBACK_LOCALE, unique);
   const hasLoadedMessages = Object.keys(loaded).length > 0 || Object.keys(fallbackLoaded).length > 0;
   if (!hasLoadedMessages) return getI18nRuntimeSnapshot();
-  runtime.messages = { ...runtime.messages, ...loaded };
-  runtime.fallbackMessages = { ...runtime.fallbackMessages, ...fallbackLoaded };
+  const mergedPrimary = mergeNamespaceBundle(runtime.messages, loaded);
+  const mergedFallback = mergeNamespaceBundle(runtime.fallbackMessages, fallbackLoaded);
+  if (!mergedPrimary.changed && !mergedFallback.changed) {
+    return getI18nRuntimeSnapshot();
+  }
+  runtime.messages = mergedPrimary.next;
+  runtime.fallbackMessages = mergedFallback.next;
   runtime.version += 1;
+  emitRuntimeChange();
   return getI18nRuntimeSnapshot();
 }
 
@@ -85,9 +117,15 @@ export async function ensureRuntimeNamespaces(namespaces = [], locale = runtime.
   if (unique.length === 0) return getI18nRuntimeSnapshot();
   const loaded = await ensureLocaleNamespaces(locale, unique);
   const fallbackLoaded = locale === FALLBACK_LOCALE ? loaded : await ensureLocaleNamespaces(FALLBACK_LOCALE, unique);
-  runtime.messages = { ...runtime.messages, ...loaded };
-  runtime.fallbackMessages = { ...runtime.fallbackMessages, ...fallbackLoaded };
+  const mergedPrimary = mergeNamespaceBundle(runtime.messages, loaded);
+  const mergedFallback = mergeNamespaceBundle(runtime.fallbackMessages, fallbackLoaded);
+  if (!mergedPrimary.changed && !mergedFallback.changed) {
+    return getI18nRuntimeSnapshot();
+  }
+  runtime.messages = mergedPrimary.next;
+  runtime.fallbackMessages = mergedFallback.next;
   runtime.version += 1;
+  emitRuntimeChange();
   return getI18nRuntimeSnapshot();
 }
 

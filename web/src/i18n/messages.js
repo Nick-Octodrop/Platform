@@ -25,6 +25,20 @@ function cacheKey(locale, namespace) {
   return `${locale}:${namespace}`;
 }
 
+function normalizeNamespaceMessages(namespace, messages) {
+  if (!messages || typeof messages !== "object") return {};
+  const keys = Object.keys(messages);
+  if (
+    keys.length === 1 &&
+    keys[0] === namespace &&
+    messages[namespace] &&
+    typeof messages[namespace] === "object"
+  ) {
+    return messages[namespace];
+  }
+  return messages;
+}
+
 export function getMessageCacheSnapshot(locale, namespaces = []) {
   const snapshot = {};
   for (const namespace of namespaces) {
@@ -51,8 +65,9 @@ export function getPreloadedLocaleNamespaces(locale, namespaces = []) {
     const path = `../locales/${normalizedLocale}/${namespace}.json`;
     const messages = preloadedCoreModules[path];
     if (!messages || typeof messages !== "object") continue;
-    loaded[namespace] = messages;
-    messageCache.set(cacheKey(normalizedLocale, namespace), messages);
+    const normalized = normalizeNamespaceMessages(namespace, messages);
+    loaded[namespace] = normalized;
+    messageCache.set(cacheKey(normalizedLocale, namespace), normalized);
   }
   return loaded;
 }
@@ -77,7 +92,8 @@ export async function loadNamespaceMessages(locale, namespace) {
           const nodeFsModule = "node:fs/promises";
           const { readFile } = await import(/* @vite-ignore */ nodeFsModule);
           const url = new URL(path, import.meta.url);
-          const messages = JSON.parse(await readFile(url, "utf8"));
+          const parsed = JSON.parse(await readFile(url, "utf8"));
+          const messages = normalizeNamespaceMessages(safeNamespace, parsed);
           messageCache.set(key, messages);
           return messages;
         } catch {
@@ -92,7 +108,10 @@ export async function loadNamespaceMessages(locale, namespace) {
     }
     try {
       const loaded = await loader();
-      const messages = loaded && typeof loaded === "object" ? loaded : {};
+      const messages = normalizeNamespaceMessages(
+        safeNamespace,
+        loaded && typeof loaded === "object" ? loaded : {},
+      );
       messageCache.set(key, messages);
       return messages;
     } catch {
