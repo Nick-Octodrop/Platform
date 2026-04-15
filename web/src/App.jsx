@@ -108,6 +108,24 @@ function shouldAutoApplyPwaUpdate(_surface = getPwaSurfaceState()) {
 }
 
 const CURRENT_BUILD_ID = typeof __OCTO_BUILD_ID__ === "undefined" ? "dev" : String(__OCTO_BUILD_ID__);
+const PWA_ACK_BUILD_ID_KEY = "octo:pwa-last-ack-build-id-v1";
+const PWA_PENDING_BUILD_ID_KEY = "octo:pwa-pending-build-id-v1";
+
+function readStoredBuildId(key) {
+  if (typeof window === "undefined") return "";
+  const value = window.localStorage.getItem(key);
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function writeStoredBuildId(key, value) {
+  if (typeof window === "undefined") return;
+  const next = typeof value === "string" ? value.trim() : "";
+  if (!next) {
+    window.localStorage.removeItem(key);
+    return;
+  }
+  window.localStorage.setItem(key, next);
+}
 
 async function fetchLatestBuildMeta() {
   if (typeof window === "undefined") return null;
@@ -291,6 +309,27 @@ export default function App() {
     if (!window.__octoPwaEnabled) return undefined;
     let alive = true;
 
+    function hydrateBuildAcknowledgement() {
+      const acknowledgedBuildId = readStoredBuildId(PWA_ACK_BUILD_ID_KEY);
+      const pendingBuildId = readStoredBuildId(PWA_PENDING_BUILD_ID_KEY);
+      if (!acknowledgedBuildId) {
+        writeStoredBuildId(PWA_ACK_BUILD_ID_KEY, CURRENT_BUILD_ID);
+        if (pendingBuildId === CURRENT_BUILD_ID) {
+          writeStoredBuildId(PWA_PENDING_BUILD_ID_KEY, "");
+        }
+        return;
+      }
+      if (pendingBuildId && pendingBuildId === CURRENT_BUILD_ID) {
+        writeStoredBuildId(PWA_ACK_BUILD_ID_KEY, CURRENT_BUILD_ID);
+        writeStoredBuildId(PWA_PENDING_BUILD_ID_KEY, "");
+        return;
+      }
+      if (acknowledgedBuildId !== CURRENT_BUILD_ID) {
+        window.__octoLatestBuildId = CURRENT_BUILD_ID;
+        setUpdatePromptVisible(true);
+      }
+    }
+
     async function getActiveRegistration() {
       const activeRegistration = window.__octoWebSwRegistration;
       if (activeRegistration) return activeRegistration;
@@ -370,6 +409,7 @@ export default function App() {
       refreshUpdateAvailability();
     }
 
+    hydrateBuildAcknowledgement();
     if (window.__octoWebUpdateReady) {
       handleUpdateReady();
     }
@@ -464,10 +504,20 @@ export default function App() {
   async function handleApplyUpdate() {
     const applyUpdate = typeof window !== "undefined" ? window.__octoWebApplyUpdate : null;
     const recover = typeof window !== "undefined" ? window.__octoRecoverFromStaleBundle : null;
+    const targetBuildId =
+      typeof window !== "undefined" && typeof window.__octoLatestBuildId === "string" && window.__octoLatestBuildId.trim()
+        ? window.__octoLatestBuildId.trim()
+        : CURRENT_BUILD_ID;
     if (typeof window !== "undefined") {
       window.__octoWebUpdateReady = false;
     }
     setUpdatePromptVisible(false);
+    if (targetBuildId === CURRENT_BUILD_ID) {
+      writeStoredBuildId(PWA_ACK_BUILD_ID_KEY, CURRENT_BUILD_ID);
+      writeStoredBuildId(PWA_PENDING_BUILD_ID_KEY, "");
+      return;
+    }
+    writeStoredBuildId(PWA_PENDING_BUILD_ID_KEY, targetBuildId);
     if (typeof applyUpdate === "function") {
       try {
         await applyUpdate(true);
