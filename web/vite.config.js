@@ -6,6 +6,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const proxyTarget = (env.VITE_API_URL || "http://localhost:8000").trim();
   const buildId = String(Date.now());
+  const builtAt = new Date().toISOString();
   const enableDevPwa = env.VITE_ENABLE_DEV_PWA === "1";
   return {
     define: {
@@ -13,6 +14,16 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       react(),
+      {
+        name: "octo-build-meta",
+        generateBundle() {
+          this.emitFile({
+            type: "asset",
+            fileName: "build-meta.json",
+            source: JSON.stringify({ buildId, builtAt }, null, 2),
+          });
+        },
+      },
       VitePWA({
         registerType: "prompt",
         injectRegister: null,

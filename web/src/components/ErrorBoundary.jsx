@@ -8,7 +8,10 @@ function isChunkLoadFailure(error) {
     message.includes("failed to fetch dynamically imported module") ||
     message.includes("importing a module script failed") ||
     message.includes("chunkloaderror") ||
-    message.includes("loading chunk")
+    message.includes("loading chunk") ||
+    message.includes("_result.default") ||
+    message.includes("reading 'default'") ||
+    message.includes("reading \"default\"")
   );
 }
 

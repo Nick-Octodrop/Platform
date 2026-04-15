@@ -103,8 +103,32 @@ function getPwaSurfaceState() {
   return { isStandalone, isMobileBrowser, isMobileDevice, isIos, isSafari };
 }
 
-function shouldAutoApplyPwaUpdate(surface = getPwaSurfaceState()) {
-  return Boolean(surface.isStandalone && !surface.isMobileDevice);
+function shouldAutoApplyPwaUpdate(_surface = getPwaSurfaceState()) {
+  return false;
+}
+
+const CURRENT_BUILD_ID = typeof __OCTO_BUILD_ID__ === "undefined" ? "dev" : String(__OCTO_BUILD_ID__);
+
+async function fetchLatestBuildMeta() {
+  if (typeof window === "undefined") return null;
+  const url = new URL("/build-meta.json", window.location.origin);
+  url.searchParams.set("__octo_ts__", String(Date.now()));
+  const res = await fetch(url.toString(), {
+    cache: "no-store",
+    headers: {
+      "cache-control": "no-cache, no-store, max-age=0",
+      pragma: "no-cache",
+    },
+  });
+  if (!res.ok) return null;
+  const data = await res.json().catch(() => null);
+  if (!data || typeof data !== "object") return null;
+  const buildId = typeof data.buildId === "string" ? data.buildId.trim() : "";
+  if (!buildId) return null;
+  return {
+    buildId,
+    builtAt: typeof data.builtAt === "string" ? data.builtAt : null,
+  };
 }
 
 export default function App() {
@@ -300,6 +324,20 @@ export default function App() {
       setUpdatePromptVisible(true);
     }
 
+    async function refreshBuildMetaAvailability() {
+      try {
+        const latest = await fetchLatestBuildMeta();
+        if (!alive || !latest) return;
+        if (latest.buildId !== CURRENT_BUILD_ID) {
+          window.__octoWebUpdateReady = true;
+          window.__octoLatestBuildId = latest.buildId;
+          await applyUpdateOrPrompt();
+        }
+      } catch {
+        // ignore transient build-meta fetch failures
+      }
+    }
+
     async function refreshUpdateAvailability() {
       if (!("serviceWorker" in navigator)) return;
       try {
@@ -318,6 +356,8 @@ export default function App() {
         }
       } catch {
         // ignore
+      } finally {
+        await refreshBuildMetaAvailability();
       }
     }
 
@@ -423,13 +463,24 @@ export default function App() {
 
   async function handleApplyUpdate() {
     const applyUpdate = typeof window !== "undefined" ? window.__octoWebApplyUpdate : null;
+    const recover = typeof window !== "undefined" ? window.__octoRecoverFromStaleBundle : null;
     if (typeof window !== "undefined") {
       window.__octoWebUpdateReady = false;
     }
     setUpdatePromptVisible(false);
     if (typeof applyUpdate === "function") {
-      await applyUpdate(true);
-    } else if (typeof window !== "undefined") {
+      try {
+        await applyUpdate(true);
+        return;
+      } catch {
+        // fall through to hard reload recovery
+      }
+    }
+    if (typeof recover === "function") {
+      const recovered = await recover("manual-update-fallback");
+      if (recovered) return;
+    }
+    if (typeof window !== "undefined") {
       window.location.reload();
     }
   }

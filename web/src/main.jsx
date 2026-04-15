@@ -48,7 +48,7 @@ function isMobileDevice() {
 }
 
 function shouldAutoApplyStandaloneUpdate() {
-  return isStandaloneDisplay() && !isMobileDevice();
+  return false;
 }
 
 function dispatchPwaUpdateReady() {
@@ -89,7 +89,9 @@ function isChunkLoadFailure(errorLike) {
   const message = String(
     errorLike?.message ||
     errorLike?.reason?.message ||
+    errorLike?.error?.message ||
     errorLike?.reason ||
+    errorLike?.error ||
     errorLike ||
     "",
   ).toLowerCase();
@@ -99,7 +101,10 @@ function isChunkLoadFailure(errorLike) {
     message.includes("importing a module script failed") ||
     message.includes("chunkloaderror") ||
     message.includes("loading chunk") ||
-    message.includes("unable to preload css")
+    message.includes("unable to preload css") ||
+    message.includes("_result.default") ||
+    message.includes("reading 'default'") ||
+    message.includes("reading \"default\"")
   );
 }
 
@@ -227,6 +232,11 @@ if (typeof window !== "undefined") {
     if (!isChunkLoadFailure(event?.reason)) return;
     event.preventDefault?.();
     recoverFromStaleBundle("dynamic-import-rejection");
+  });
+  window.addEventListener("error", (event) => {
+    if (!isChunkLoadFailure(event)) return;
+    event.preventDefault?.();
+    recoverFromStaleBundle("window-error-lazy-module");
   });
 }
 
