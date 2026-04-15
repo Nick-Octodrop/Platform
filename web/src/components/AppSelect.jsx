@@ -1,4 +1,5 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 function extractNodeText(node) {
   if (node == null || typeof node === "boolean") return "";
@@ -69,6 +70,11 @@ export default function AppSelect({
   const options = useMemo(() => flattenOptions(children), [children]);
   const normalizedValue = value == null ? "" : String(value);
   const selected = options.find((option) => option.value === normalizedValue) || null;
+  const [open, setOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState(null);
+  const rootRef = useRef(null);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
   const triggerClassName = useMemo(
     () => `${normalizeTriggerClassName(className)} w-full flex items-center justify-between cursor-pointer`,
     [className]
@@ -104,56 +110,112 @@ export default function AppSelect({
     });
   }
 
+  useEffect(() => {
+    if (!open || disabled) return undefined;
+    function updatePosition() {
+      if (!triggerRef.current) return;
+      const rect = triggerRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+      const availableBelow = Math.max(0, viewportHeight - rect.bottom - 8);
+      const availableAbove = Math.max(0, rect.top - 8);
+      const openUpwards = availableBelow < 220 && availableAbove > availableBelow;
+      const maxHeight = Math.max(160, Math.min(288, openUpwards ? availableAbove : availableBelow));
+      setMenuStyle({
+        position: "fixed",
+        left: rect.left,
+        top: openUpwards ? "auto" : rect.bottom + 4,
+        bottom: openUpwards ? viewportHeight - rect.top + 4 : "auto",
+        width: rect.width,
+        maxHeight,
+      });
+    }
+
+    function handlePointerDown(event) {
+      if (rootRef.current?.contains(event.target)) return;
+      if (menuRef.current?.contains(event.target)) return;
+      setOpen(false);
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") setOpen(false);
+    }
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open, disabled]);
+
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
+
   return (
-    <div className={`dropdown dropdown-bottom w-full ${disabled ? "pointer-events-none opacity-60" : ""}`}>
+    <div ref={rootRef} className={`w-full ${disabled ? "pointer-events-none opacity-60" : ""}`}>
       <button
         type="button"
-        tabIndex={0}
+        ref={triggerRef}
         id={id}
         aria-label={ariaLabel}
         title={title}
         className={triggerClassName}
         aria-disabled={disabled}
+        aria-expanded={open}
+        onClick={() => {
+          if (disabled) return;
+          setOpen((current) => !current);
+        }}
       >
         <span className="truncate text-left">
           {selected?.label || placeholder || options[0]?.label || "Select"}
         </span>
         <span className="pointer-events-none opacity-60">▾</span>
       </button>
-      <ul
-        tabIndex={0}
-        className="dropdown-content menu menu-compact menu-vertical block w-full max-h-72 overflow-y-auto overflow-x-hidden whitespace-normal rounded-box border border-base-300 bg-base-100 p-2 shadow z-[220]"
-      >
-        {groupedOptions.map((group, groupIndex) => (
-          <React.Fragment key={`group-${group.label || "default"}-${groupIndex}`}>
-            {group.label ? (
-              <li className="menu-title">
-                <span className="whitespace-normal break-words">{group.label}</span>
-              </li>
-            ) : null}
-            {group.items.map((option) => (
-              <li key={`${group.label || "default"}-${option.value}`} className="block">
-                <button
-                  type="button"
-                  disabled={option.disabled}
-                  className={`${option.value === normalizedValue ? "active" : ""} w-full justify-start whitespace-normal break-words text-left`}
-                  onClick={(event) => {
-                    emitChange(option.value);
-                    const dropdown = event.currentTarget.closest(".dropdown");
-                    const trigger = dropdown?.querySelector('[tabindex="0"]');
-                    trigger?.blur();
-                    if (document.activeElement instanceof HTMLElement) {
-                      document.activeElement.blur();
-                    }
-                  }}
-                >
-                  <span className="whitespace-normal break-words">{option.label}</span>
-                </button>
-              </li>
-            ))}
-          </React.Fragment>
-        ))}
-      </ul>
+      {open && menuStyle && typeof document !== "undefined"
+        ? createPortal(
+            <ul
+              ref={menuRef}
+              className="menu menu-compact menu-vertical block overflow-y-auto overflow-x-hidden whitespace-normal rounded-box border border-base-300 bg-base-100 p-2 shadow"
+              style={{ ...menuStyle, zIndex: 1000 }}
+            >
+              {groupedOptions.map((group, groupIndex) => (
+                <React.Fragment key={`group-${group.label || "default"}-${groupIndex}`}>
+                  {group.label ? (
+                    <li className="menu-title">
+                      <span className="whitespace-normal break-words">{group.label}</span>
+                    </li>
+                  ) : null}
+                  {group.items.map((option) => (
+                    <li key={`${group.label || "default"}-${option.value}`} className="block">
+                      <button
+                        type="button"
+                        disabled={option.disabled}
+                        className={`${option.value === normalizedValue ? "active" : ""} w-full justify-start whitespace-normal break-words text-left`}
+                        onClick={() => {
+                          emitChange(option.value);
+                          setOpen(false);
+                          triggerRef.current?.focus();
+                        }}
+                      >
+                        <span className="whitespace-normal break-words">{option.label}</span>
+                      </button>
+                    </li>
+                  ))}
+                </React.Fragment>
+              ))}
+            </ul>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

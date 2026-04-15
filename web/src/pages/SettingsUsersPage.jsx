@@ -384,7 +384,7 @@ export default function SettingsUsersPage() {
                   />
                 </div>
 
-                <div className="w-full overflow-x-auto overflow-y-hidden">
+                <div className="w-full overflow-x-auto">
                   <table className="table table-sm table-fixed w-full">
                   <thead>
                     <tr>

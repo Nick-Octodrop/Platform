@@ -28,19 +28,19 @@ export default function TabbedPaneShell({
   const hasMobileOverflowActions = isMobile && mobileOverflowActions.length > 0;
   const hasHeaderContent = Boolean(title || subtitle || rightActions || hasMobilePrimaryActions || hasMobileOverflowActions);
   const rootClassName = pageScroll
-    ? `min-h-full flex flex-col ${isMobile ? "bg-base-100" : ""}`
+    ? `min-h-full md:h-full md:min-h-0 flex flex-col ${isMobile ? "bg-base-100" : ""}`
     : `h-full min-h-0 flex flex-col overflow-hidden ${isMobile ? "bg-base-100" : ""}`;
   const shellClassName = pageScroll
     ? (isMobile
       ? "min-h-full flex flex-col bg-base-100"
-      : "bg-base-100 rounded-none border-0 shadow-none md:card md:rounded-box md:border md:border-base-300 md:shadow-sm")
+      : "bg-base-100 rounded-none border-0 shadow-none md:card md:rounded-box md:border md:border-base-300 md:shadow-sm md:h-full md:min-h-0 md:flex md:flex-col")
     : (isMobile ? "h-full min-h-0 flex flex-col bg-base-100 overflow-hidden" : DESKTOP_PAGE_SHELL);
   const bodyClassName = pageScroll
-    ? (isMobile ? "p-4 flex flex-col" : "p-3 sm:p-4 md:card-body")
+    ? (isMobile ? "p-4 flex flex-col" : "p-3 sm:p-4 md:card-body md:flex md:flex-col md:min-h-0")
     : (isMobile ? "h-full min-h-0 p-4 flex flex-col" : `${DESKTOP_PAGE_SHELL_BODY} p-3 sm:p-4`);
   const contentClassName = [
     hasHeaderContent || (Array.isArray(tabs) && tabs.length > 0) ? "mt-4" : "",
-    pageScroll ? "" : "flex-1 min-h-0 overflow-auto",
+    pageScroll ? "flex-1 min-h-0" : "flex-1 min-h-0 overflow-auto",
     isMobile ? "bg-base-100" : "",
   ]
     .filter(Boolean)
