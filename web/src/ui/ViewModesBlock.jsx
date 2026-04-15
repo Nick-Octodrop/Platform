@@ -3032,7 +3032,13 @@ export default function ViewModesBlock({
   }
 
   return (
-    <div className={`flex flex-col ${compact ? "gap-3" : "gap-4"} h-full min-h-0 overflow-hidden`}>
+    <div
+      className={
+        compactMobile
+          ? `flex min-w-0 flex-col ${compact ? "gap-3" : "gap-4"}`
+          : `flex flex-col ${compact ? "gap-3" : "gap-4"} h-full min-h-0 overflow-hidden`
+      }
+    >
       {!compact && (
         <div className={isMobile ? "flex flex-wrap items-center justify-between gap-3 relative z-30 shrink-0" : "grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 relative z-30 shrink-0"}>
           <div className="flex items-center gap-2 min-w-0">
@@ -3534,10 +3540,16 @@ export default function ViewModesBlock({
         </div>
       )}
 
-      <div className={`flex-1 min-h-0 relative z-0 ${activeMode === "calendar" ? "overflow-hidden" : "overflow-auto"}`}>
+      <div
+        className={
+          compactMobile
+            ? "relative z-0 min-w-0 overflow-visible"
+            : `flex-1 min-h-0 relative z-0 ${activeMode === "calendar" ? "overflow-hidden" : "overflow-auto"}`
+        }
+      >
         {activeView && activeViewKind === "list" && showListMode && (
-          <div className="h-full min-h-0">
-            <div className={hideRecordViewsWhileLoading ? "h-full min-h-0 opacity-0 pointer-events-none" : "h-full min-h-0"}>
+          <div className={compactMobile ? "min-w-0" : "h-full min-h-0"}>
+            <div className={hideRecordViewsWhileLoading ? (compactMobile ? "min-w-0 opacity-0 pointer-events-none" : "h-full min-h-0 opacity-0 pointer-events-none") : (compactMobile ? "min-w-0" : "h-full min-h-0")}>
               <ListViewRenderer
                 view={activeView}
                 fieldIndex={fieldIndex}
