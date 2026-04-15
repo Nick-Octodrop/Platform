@@ -1,10 +1,51 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { apiFetch } from "../api.js";
+import { apiFetch, getManifest, getModules } from "../api.js";
 import AppSelect from "../components/AppSelect.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
+
+function humanizeIdentifier(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const bare = text.replace(/^entity\./, "").replace(/^action\./, "");
+  const lastPart = bare.includes(":") ? bare.split(":").pop() : bare.split(".").pop();
+  return String(lastPart || bare)
+    .replace(/[_\-.]+/g, " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function buildModuleCatalogItem(moduleRow, manifest) {
+  const moduleId = String(moduleRow?.module_id || moduleRow?.id || manifest?.module?.id || "").trim();
+  if (!moduleId) return null;
+  const moduleName = String(manifest?.module?.name || moduleRow?.name || moduleId).trim() || moduleId;
+  const entities = Array.isArray(manifest?.entities)
+    ? manifest.entities
+        .filter((entity) => entity && typeof entity === "object" && entity.id)
+        .map((entity) => ({
+          id: entity.id,
+          label: String(entity.label || entity.name || humanizeIdentifier(entity.id)).trim() || entity.id,
+          fields: Array.isArray(entity.fields)
+            ? entity.fields
+                .filter((field) => field && typeof field === "object" && field.id)
+                .map((field) => ({
+                  id: field.id,
+                  label: String(field.label || field.name || humanizeIdentifier(field.id)).trim() || field.id,
+                }))
+            : [],
+        }))
+    : [];
+  const actions = Array.isArray(manifest?.actions)
+    ? manifest.actions
+        .filter((action) => action && typeof action === "object" && action.id)
+        .map((action) => ({
+          id: action.id,
+          label: String(action.label || humanizeIdentifier(action.id)).trim() || action.id,
+        }))
+    : [];
+  return { moduleId, moduleName, entities, actions };
+}
 
 function Section({ title, description, children, tone = "bg-base-100" }) {
   return (
@@ -21,11 +62,16 @@ export default function SettingsAccessPolicyDetailPage() {
   const { profileId } = useParams();
   const { pushToast } = useToast();
   const [profiles, setProfiles] = useState([]);
+  const [moduleCatalog, setModuleCatalog] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [activeTabId, setActiveTabId] = useState("details");
   const [ruleDraft, setRuleDraft] = useState({ resource_type: "module", resource_id: "", access_level: "hidden", priority: 100, condition_json_text: "" });
+  const [selectedModuleId, setSelectedModuleId] = useState("");
+  const [selectedEntityId, setSelectedEntityId] = useState("");
+  const [selectedFieldId, setSelectedFieldId] = useState("");
+  const [selectedActionId, setSelectedActionId] = useState("");
 
   const resourceTypes = useMemo(
     () => [
@@ -65,10 +111,30 @@ export default function SettingsAccessPolicyDetailPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await apiFetch("/access/profiles");
+      const [res, modulesRes] = await Promise.all([apiFetch("/access/profiles"), getModules()]);
       setProfiles(res?.profiles || []);
+      const moduleRows = Array.isArray(modulesRes?.modules) ? modulesRes.modules : [];
+      const manifests = await Promise.all(
+        moduleRows.map(async (moduleRow) => {
+          const moduleId = moduleRow?.module_id || moduleRow?.id;
+          if (!moduleId) return null;
+          try {
+            const manifestRes = await getManifest(moduleId);
+            return buildModuleCatalogItem(moduleRow, manifestRes?.manifest || null);
+          } catch {
+            return buildModuleCatalogItem(moduleRow, null);
+          }
+        }),
+      );
+      const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+      setModuleCatalog(
+        manifests
+          .filter(Boolean)
+          .sort((a, b) => collator.compare(a.moduleName, b.moduleName)),
+      );
     } catch (err) {
       setProfiles([]);
+      setModuleCatalog([]);
       setError(err?.message || t("settings.access_policies.load_failed"));
     } finally {
       setLoading(false);
@@ -81,6 +147,64 @@ export default function SettingsAccessPolicyDetailPage() {
 
   const profile = useMemo(() => profiles.find((item) => item.id === profileId) || null, [profiles, profileId]);
   const levelOptions = accessLevels[ruleDraft.resource_type] || accessLevels.module;
+  const selectedModule = useMemo(
+    () => moduleCatalog.find((item) => item.moduleId === selectedModuleId) || null,
+    [moduleCatalog, selectedModuleId],
+  );
+  const entityOptions = selectedModule?.entities || [];
+  const selectedEntity = useMemo(
+    () => entityOptions.find((item) => item.id === selectedEntityId) || null,
+    [entityOptions, selectedEntityId],
+  );
+  const fieldOptions = selectedEntity?.fields || [];
+  const actionOptions = selectedModule?.actions || [];
+
+  function setRuleResourceType(nextType) {
+    const nextLevels = accessLevels[nextType] || accessLevels.module;
+    setSelectedModuleId("");
+    setSelectedEntityId("");
+    setSelectedFieldId("");
+    setSelectedActionId("");
+    setRuleDraft((prev) => ({
+      ...prev,
+      resource_type: nextType,
+      resource_id: "",
+      access_level: nextLevels[0].value,
+    }));
+  }
+
+  function describeRuleResource(rule) {
+    const resourceId = String(rule?.resource_id || "").trim();
+    if (!resourceId) return "";
+    if (rule?.resource_type === "module") {
+      const match = moduleCatalog.find((item) => item.moduleId === resourceId);
+      return match ? `${match.moduleName} (${match.moduleId})` : resourceId;
+    }
+    if (rule?.resource_type === "entity") {
+      for (const moduleItem of moduleCatalog) {
+        const entity = moduleItem.entities.find((item) => item.id === resourceId);
+        if (entity) return `${moduleItem.moduleName} / ${entity.label}`;
+      }
+      return resourceId;
+    }
+    if (rule?.resource_type === "field") {
+      for (const moduleItem of moduleCatalog) {
+        for (const entity of moduleItem.entities) {
+          const field = entity.fields.find((item) => item.id === resourceId);
+          if (field) return `${moduleItem.moduleName} / ${entity.label} / ${field.label}`;
+        }
+      }
+      return resourceId;
+    }
+    if (rule?.resource_type === "action") {
+      const [moduleId, actionId] = resourceId.split(":");
+      const moduleItem = moduleCatalog.find((item) => item.moduleId === moduleId);
+      const action = moduleItem?.actions.find((item) => item.id === actionId);
+      if (moduleItem && action) return `${moduleItem.moduleName} / ${action.label}`;
+      return resourceId;
+    }
+    return resourceId;
+  }
 
   async function saveProfile() {
     if (!profile?.id || saving) return;
@@ -214,11 +338,7 @@ export default function SettingsAccessPolicyDetailPage() {
                   className="select select-bordered select-sm"
                   value={ruleDraft.resource_type}
                   disabled={saving}
-                  onChange={(e) => {
-                    const nextType = e.target.value;
-                    const nextLevels = accessLevels[nextType] || accessLevels.module;
-                    setRuleDraft((prev) => ({ ...prev, resource_type: nextType, access_level: nextLevels[0].value }));
-                  }}
+                  onChange={(e) => setRuleResourceType(e.target.value)}
                 >
                   {resourceTypes.map((item) => (
                     <option key={item.value} value={item.value}>{item.label}</option>
@@ -226,6 +346,97 @@ export default function SettingsAccessPolicyDetailPage() {
                 </AppSelect>
                 <span className="label label-text-alt opacity-50">{t("settings.access_policies.detail.resource_type_help")}</span>
               </label>
+              <label className="form-control md:col-span-3">
+                <span className="label-text text-sm">{t("common.module")}</span>
+                <AppSelect
+                  className="select select-bordered select-sm"
+                  value={selectedModuleId}
+                  disabled={saving || !moduleCatalog.length}
+                  onChange={(e) => {
+                    const nextModuleId = e.target.value;
+                    setSelectedModuleId(nextModuleId);
+                    setSelectedEntityId("");
+                    setSelectedFieldId("");
+                    setSelectedActionId("");
+                    setRuleDraft((prev) => ({
+                      ...prev,
+                      resource_id: prev.resource_type === "module" ? nextModuleId : "",
+                    }));
+                  }}
+                >
+                  <option value="">{`${t("common.select")} ${t("common.module").toLowerCase()}`}</option>
+                  {moduleCatalog.map((item) => (
+                    <option key={item.moduleId} value={item.moduleId}>{item.moduleName}</option>
+                  ))}
+                </AppSelect>
+              </label>
+              {ruleDraft.resource_type === "entity" || ruleDraft.resource_type === "field" ? (
+                <label className="form-control md:col-span-3">
+                  <span className="label-text text-sm">{t("common.entity")}</span>
+                  <AppSelect
+                    className="select select-bordered select-sm"
+                    value={selectedEntityId}
+                    disabled={saving || !selectedModule || !entityOptions.length}
+                    onChange={(e) => {
+                      const nextEntityId = e.target.value;
+                      setSelectedEntityId(nextEntityId);
+                      setSelectedFieldId("");
+                      setRuleDraft((prev) => ({
+                        ...prev,
+                        resource_id: prev.resource_type === "entity" ? nextEntityId : "",
+                      }));
+                    }}
+                  >
+                    <option value="">{`${t("common.select")} ${t("common.entity").toLowerCase()}`}</option>
+                    {entityOptions.map((item) => (
+                      <option key={item.id} value={item.id}>{item.label}</option>
+                    ))}
+                  </AppSelect>
+                </label>
+              ) : null}
+              {ruleDraft.resource_type === "field" ? (
+                <label className="form-control md:col-span-3">
+                  <span className="label-text text-sm">{t("common.field")}</span>
+                  <AppSelect
+                    className="select select-bordered select-sm"
+                    value={selectedFieldId}
+                    disabled={saving || !selectedEntity || !fieldOptions.length}
+                    onChange={(e) => {
+                      const nextFieldId = e.target.value;
+                      setSelectedFieldId(nextFieldId);
+                      setRuleDraft((prev) => ({ ...prev, resource_id: nextFieldId }));
+                    }}
+                  >
+                    <option value="">{`${t("common.select")} ${t("common.field").toLowerCase()}`}</option>
+                    {fieldOptions.map((item) => (
+                      <option key={item.id} value={item.id}>{item.label}</option>
+                    ))}
+                  </AppSelect>
+                </label>
+              ) : null}
+              {ruleDraft.resource_type === "action" ? (
+                <label className="form-control md:col-span-3">
+                  <span className="label-text text-sm">{t("common.action")}</span>
+                  <AppSelect
+                    className="select select-bordered select-sm"
+                    value={selectedActionId}
+                    disabled={saving || !selectedModule || !actionOptions.length}
+                    onChange={(e) => {
+                      const nextActionId = e.target.value;
+                      setSelectedActionId(nextActionId);
+                      setRuleDraft((prev) => ({
+                        ...prev,
+                        resource_id: nextActionId && selectedModuleId ? `${selectedModuleId}:${nextActionId}` : "",
+                      }));
+                    }}
+                  >
+                    <option value="">{`${t("common.select")} ${t("common.action").toLowerCase()}`}</option>
+                    {actionOptions.map((item) => (
+                      <option key={item.id} value={item.id}>{item.label}</option>
+                    ))}
+                  </AppSelect>
+                </label>
+              ) : null}
               <label className="form-control md:col-span-4">
                 <span className="label-text text-sm">{t("settings.access_policies.detail.resource_id")}</span>
                 <input className="input input-bordered input-sm" value={ruleDraft.resource_id} disabled={saving} placeholder={t("settings.access_policies.detail.resource_id_placeholder")} onChange={(e) => setRuleDraft((prev) => ({ ...prev, resource_id: e.target.value }))} />
@@ -286,7 +497,10 @@ export default function SettingsAccessPolicyDetailPage() {
                     profile.rules.map((rule) => (
                       <tr key={rule.id}>
                         <td>{rule.resource_type}</td>
-                        <td className="font-mono text-xs">{rule.resource_id}</td>
+                        <td>
+                          <div>{describeRuleResource(rule)}</div>
+                          <div className="font-mono text-[11px] opacity-60">{rule.resource_id}</div>
+                        </td>
                         <td>{rule.access_level}</td>
                         <td className="max-w-xs truncate font-mono text-[11px] opacity-70">
                           {rule.condition_json ? JSON.stringify(rule.condition_json) : <span className="opacity-40">{t("settings.access_policies.detail.all_matching_records")}</span>}
