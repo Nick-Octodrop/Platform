@@ -118,6 +118,39 @@ class _FakeHttpxClient:
 
 
 class TestXeroIntegration(unittest.TestCase):
+    def test_xero_mapping_catalog_endpoint_exposes_provider_resources(self) -> None:
+        client = TestClient(main.app)
+        with (
+            patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()),
+            patch.dict(os.environ, {"OCTO_XERO_CLIENT_ID": "shared-xero-client-id"}, clear=False),
+        ):
+            create_res = client.post(
+                "/integrations/connections",
+                json={
+                    "provider": "xero",
+                    "name": "Acme Xero",
+                    "status": "active",
+                    "config": {},
+                },
+            )
+            create_body = create_res.json()
+            self.assertEqual(create_res.status_code, 200, create_body)
+            connection_id = create_body["connection"]["id"]
+
+            catalog_res = client.get(f"/integrations/connections/{connection_id}/mapping-catalog")
+            catalog_body = catalog_res.json()
+            self.assertEqual(catalog_res.status_code, 200, catalog_body)
+            catalog = catalog_body.get("catalog") or {}
+            provider = catalog.get("provider") or {}
+            resources = provider.get("resources") or []
+            resource_keys = {item.get("key") for item in resources if isinstance(item, dict)}
+            self.assertIn("Contacts", resource_keys)
+            self.assertIn("Invoices", resource_keys)
+            contact_resource = next(item for item in resources if item.get("key") == "Contacts")
+            self.assertEqual(contact_resource.get("source_entity"), "xero.contacts")
+            contact_fields = contact_resource.get("fields") or []
+            self.assertTrue(any(field.get("path") == "EmailAddress" for field in contact_fields if isinstance(field, dict)))
+
     def test_xero_provider_is_listed_and_new_connections_get_defaults(self) -> None:
         client = TestClient(main.app)
         with (

@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from app.stores import MemoryAutomationStore, MemoryJobStore
 from app.worker import _run_automation
@@ -267,6 +268,89 @@ class TestAutomationRuntime(unittest.TestCase):
         step_runs = store.list_step_runs(run["id"])
         self.assertTrue(any(item.get("step_id") == "loop_nested.loop_1.child_noop" for item in step_runs))
         self.assertTrue(any(item.get("step_id") == "loop_nested.loop_2.child_noop" for item in step_runs))
+
+    def test_apply_integration_mapping_action_uses_saved_mapping(self):
+        store = MemoryAutomationStore()
+        job_store = MemoryJobStore()
+        automation = store.create(
+            {
+                "name": "Apply Integration Mapping",
+                "status": "published",
+                "trigger": {"kind": "event", "event_types": ["integration.webhook.received"]},
+                "steps": [
+                    {
+                        "id": "map_contact",
+                        "kind": "action",
+                        "action_id": "system.apply_integration_mapping",
+                        "store_as": "mapped_contact",
+                        "inputs": {
+                            "connection_id": "conn_xero",
+                            "mapping_id": "map_contact",
+                            "source_record": "{{trigger.payload}}",
+                            "source_path": "Contacts.0",
+                        },
+                    },
+                    {
+                        "id": "check_mapping",
+                        "kind": "condition",
+                        "expr": {
+                            "op": "eq",
+                            "left": {"var": "vars.mapped_contact.record_id"},
+                            "right": {"literal": "contact_123"},
+                        },
+                        "stop_on_false": True,
+                    },
+                ],
+            }
+        )
+        run = store.create_run(
+            {
+                "automation_id": automation["id"],
+                "status": "queued",
+                "trigger_type": "integration.webhook.received",
+                "trigger_payload": {
+                    "payload": {
+                        "Contacts": [
+                            {"Name": "Nick", "EmailAddress": "nick@example.com"},
+                        ]
+                    }
+                },
+            }
+        )
+        captured: dict[str, object] = {}
+
+        def fake_execute(mapping, source_record, context=None):
+            captured["mapping"] = mapping
+            captured["source_record"] = source_record
+            captured["context"] = context or {}
+            return {
+                "mode": "upsert",
+                "operation": "created",
+                "record_id": "contact_123",
+                "record": {"name": "Nick"},
+                "target_entity": "entity.biz_contact",
+                "preview": {"values": {"name": "Nick"}},
+            }
+
+        with (
+            patch("app.worker.DbIntegrationMappingStore.get", return_value={
+                "id": "map_contact",
+                "connection_id": "conn_xero",
+                "name": "Xero Contact -> Octodrop Contact",
+                "target_entity": "entity.biz_contact",
+                "mapping_json": {"resource_key": "Contacts"},
+            }),
+            patch("app.worker.DbConnectionStore.get", return_value={"id": "conn_xero", "name": "Xero Demo"}),
+            patch("app.worker.execute_integration_mapping", side_effect=fake_execute),
+        ):
+            _run_automation({"payload": {"run_id": run["id"]}}, "default", automation_store=store, job_store=job_store)
+
+        run_after = store.get_run(run["id"])
+        self.assertEqual(run_after["status"], "succeeded")
+        self.assertEqual(captured["source_record"], {"Name": "Nick", "EmailAddress": "nick@example.com"})
+        self.assertEqual(captured["context"]["connection_id"], "conn_xero")
+        self.assertEqual(captured["context"]["resource_key"], "Contacts")
+        self.assertEqual(captured["context"]["source"], "automation")
 
 
 if __name__ == "__main__":

@@ -414,6 +414,29 @@ def _lookup_path(ctx: dict, path: str) -> object:
     return current
 
 
+def _lookup_nested_path(value: object, path: str) -> object:
+    current = value
+    for part in str(path or "").split("."):
+        key = part.strip()
+        if not key:
+            return None
+        if isinstance(current, list):
+            if not key.isdigit():
+                return None
+            index = int(key)
+            if index < 0 or index >= len(current):
+                return None
+            current = current[index]
+            continue
+        if isinstance(current, dict):
+            if key not in current:
+                return None
+            current = current[key]
+            continue
+        return None
+    return current
+
+
 def _resolve_raw_template_ref(value: str, ctx: dict) -> object:
     if not isinstance(value, str):
         return None
@@ -452,6 +475,34 @@ def _resolve_inputs(inputs: dict | None, ctx: dict) -> dict:
 
 def _resolve_step_value(value: object, ctx: dict) -> object:
     return _resolve_value(value, ctx)
+
+
+def _coerce_json_like_value(value: object) -> object:
+    if not isinstance(value, str):
+        return value
+    raw = value.strip()
+    if not raw:
+        return value
+    if (raw.startswith("{") and raw.endswith("}")) or (raw.startswith("[") and raw.endswith("]")):
+        try:
+            return json.loads(raw)
+        except Exception:
+            return value
+    return value
+
+
+def _resolve_integration_mapping_source(inputs: dict, ctx: dict) -> object:
+    source_value = inputs.get("source_record")
+    source_value = _coerce_json_like_value(source_value)
+    if source_value in (None, ""):
+        for fallback_path in ("trigger.payload", "last.body_json", "last", "trigger.record"):
+            source_value = _lookup_path(ctx, fallback_path)
+            if source_value not in (None, ""):
+                break
+    source_path = inputs.get("source_path")
+    if isinstance(source_path, str) and source_path.strip():
+        source_value = _lookup_nested_path(source_value, source_path.strip())
+    return source_value
 
 
 def _coerce_iteration_items(value: object) -> list:
@@ -1328,6 +1379,44 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
             }
         )
         return {"job": job}
+
+    if action_id == "system.apply_integration_mapping":
+        mapping_id = inputs.get("mapping_id")
+        if not isinstance(mapping_id, str) or not mapping_id.strip():
+            raise RuntimeError("mapping_id required")
+        mapping = DbIntegrationMappingStore().get(mapping_id.strip())
+        if not mapping:
+            raise RuntimeError("Integration mapping not found")
+        connection_id = inputs.get("connection_id")
+        mapping_connection_id = mapping.get("connection_id")
+        if isinstance(connection_id, str) and connection_id.strip():
+            if isinstance(mapping_connection_id, str) and mapping_connection_id and mapping_connection_id != connection_id.strip():
+                raise RuntimeError("Selected mapping does not belong to the chosen connection")
+            mapping_connection_id = connection_id.strip()
+        connection = None
+        if isinstance(mapping_connection_id, str) and mapping_connection_id:
+            connection = DbConnectionStore().get(mapping_connection_id)
+            if not connection:
+                raise RuntimeError("Connection not found")
+        source_record = _resolve_integration_mapping_source(inputs, ctx)
+        if not isinstance(source_record, dict):
+            raise RuntimeError("source_record must resolve to an object")
+        result = execute_integration_mapping(
+            mapping,
+            source_record,
+            {
+                "connection_id": mapping_connection_id,
+                "resource_key": inputs.get("resource_key") or ((mapping.get("mapping_json") or {}).get("resource_key") if isinstance(mapping.get("mapping_json"), dict) else None),
+                "connection": connection,
+                "source": "automation",
+                "trigger": ctx.get("trigger") if isinstance(ctx.get("trigger"), dict) else {},
+            },
+        )
+        return {
+            "mapping_id": mapping_id.strip(),
+            "mapping_name": mapping.get("name"),
+            **result,
+        }
 
     if action_id == "system.integration_request":
         connection_id = inputs.get("connection_id")

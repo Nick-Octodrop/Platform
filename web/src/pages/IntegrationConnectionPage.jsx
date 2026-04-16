@@ -64,6 +64,103 @@ function buildMappingJsonFromForm(form) {
   };
 }
 
+function collectJsonPaths(value, prefix = "") {
+  if (value == null) return [];
+  if (Array.isArray(value)) {
+    const first = value.find((item) => item != null);
+    if (first == null) return prefix ? [prefix] : [];
+    return collectJsonPaths(first, `${prefix}[0]`);
+  }
+  if (typeof value !== "object") {
+    return prefix ? [prefix] : [];
+  }
+  const paths = [];
+  for (const [key, child] of Object.entries(value)) {
+    const nextPrefix = prefix ? `${prefix}.${key}` : key;
+    if (child != null && typeof child === "object") {
+      const nested = collectJsonPaths(child, nextPrefix);
+      if (nested.length) paths.push(...nested);
+      else paths.push(nextPrefix);
+    } else {
+      paths.push(nextPrefix);
+    }
+  }
+  return paths;
+}
+
+function uniquePathOptions(items) {
+  const seen = new Set();
+  return (Array.isArray(items) ? items : [])
+    .filter(Boolean)
+    .map((item) => {
+      if (typeof item === "string") return { value: item, label: item, type: "" };
+      return {
+        value: String(item.path || item.value || ""),
+        label: String(item.label || item.path || item.value || ""),
+        type: String(item.type || ""),
+      };
+    })
+    .filter((item) => item.value)
+    .filter((item) => {
+      if (seen.has(item.value)) return false;
+      seen.add(item.value);
+      return true;
+    });
+}
+
+function tokenizeFieldText(value) {
+  return String(value || "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[\[\]\(\)\.\-_:/\\]+/g, " ")
+    .toLowerCase()
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function fieldSignature(option) {
+  const parts = new Set([
+    ...tokenizeFieldText(option?.value),
+    ...tokenizeFieldText(option?.label),
+  ]);
+  return Array.from(parts);
+}
+
+function fieldMatchScore(left, right) {
+  const leftTokens = fieldSignature(left);
+  const rightTokens = fieldSignature(right);
+  if (!leftTokens.length || !rightTokens.length) return 0;
+  const overlap = leftTokens.filter((token) => rightTokens.includes(token));
+  if (!overlap.length) return 0;
+  let score = overlap.length * 10;
+  if (String(left?.label || "").trim().toLowerCase() === String(right?.label || "").trim().toLowerCase()) score += 25;
+  if (String(left?.value || "").trim().toLowerCase() === String(right?.value || "").trim().toLowerCase()) score += 20;
+  if (leftTokens.every((token) => rightTokens.includes(token)) || rightTokens.every((token) => leftTokens.includes(token))) score += 12;
+  if (String(left?.type || "").trim().toLowerCase() && String(left?.type || "").trim().toLowerCase() === String(right?.type || "").trim().toLowerCase()) score += 4;
+  return score;
+}
+
+function findBestMatchingField(targetOption, candidateOptions, usedValues = new Set()) {
+  let best = null;
+  let bestScore = 0;
+  for (const candidate of Array.isArray(candidateOptions) ? candidateOptions : []) {
+    if (!candidate?.value || usedValues.has(candidate.value)) continue;
+    const score = fieldMatchScore(targetOption, candidate);
+    if (score > bestScore) {
+      best = candidate;
+      bestScore = score;
+    }
+  }
+  return bestScore > 0 ? best : null;
+}
+
+function mappingPairSummary(row, sourceOptionMap, targetOptionMap, providerName = "Source") {
+  const sourceLabel = sourceOptionMap.get(row?.source)?.label
+    || (row?.value_type === "constant" ? `Constant: ${row?.source || "—"}` : row?.value_type === "ref" ? `Reference: ${row?.source || "—"}` : row?.source || "Choose source field");
+  const targetLabel = targetOptionMap.get(row?.to)?.label || row?.to || "Choose OCTO field";
+  return `${providerName}: ${sourceLabel} -> OCTO: ${targetLabel}`;
+}
+
 function SummaryStat({ label, value }) {
   return (
     <div>
@@ -203,6 +300,7 @@ export default function IntegrationConnectionPage() {
   const detailT = (key, values) => t(`settings.integrations.detail.${key}`, values);
   const [item, setItem] = useState(null);
   const [providers, setProviders] = useState([]);
+  const [mappingCatalog, setMappingCatalog] = useState({ provider: { resources: [] }, entities: [] });
   const [secrets, setSecrets] = useState([]);
   const [mappings, setMappings] = useState([]);
   const [webhooks, setWebhooks] = useState([]);
@@ -272,6 +370,7 @@ export default function IntegrationConnectionPage() {
     try {
       const [
         connectionRes,
+        mappingCatalogRes,
         providersRes,
         secretsRes,
         mappingsRes,
@@ -281,6 +380,7 @@ export default function IntegrationConnectionPage() {
         checkpointsRes,
       ] = await Promise.all([
         apiFetch(`/integrations/connections/${encodeURIComponent(connectionId)}`),
+        apiFetch(`/integrations/connections/${encodeURIComponent(connectionId)}/mapping-catalog`),
         apiFetch("/integrations/providers"),
         apiFetch("/settings/secrets"),
         apiFetch(`/integrations/mappings?connection_id=${encodeURIComponent(connectionId)}`),
@@ -291,6 +391,7 @@ export default function IntegrationConnectionPage() {
       ]);
       const conn = connectionRes?.connection || null;
       setItem(conn);
+      setMappingCatalog(mappingCatalogRes?.catalog || { provider: { resources: [] }, entities: [] });
       setProviders(Array.isArray(providersRes?.providers) ? providersRes.providers : []);
       setSecrets(Array.isArray(secretsRes?.secrets) ? secretsRes.secrets : []);
       setMappings(Array.isArray(mappingsRes?.mappings) ? mappingsRes.mappings : []);
@@ -313,6 +414,7 @@ export default function IntegrationConnectionPage() {
       }));
     } catch (err) {
       setItem(null);
+      setMappingCatalog({ provider: { resources: [] }, entities: [] });
       setError(err?.message || detailT("errors.load_connection"));
     } finally {
       setLoading(false);
@@ -378,6 +480,60 @@ export default function IntegrationConnectionPage() {
   const syncFields = Array.isArray(providerManifest?.sync_schema?.fields) ? providerManifest.sync_schema.fields : [];
   const secretKeys = Array.isArray(providerManifest?.secret_keys) ? providerManifest.secret_keys : [];
   const requiresManualSecrets = !isXeroProvider && secretKeys.length > 0;
+  const mappingProvider = mappingCatalog?.provider || { resources: [] };
+  const mappingEntities = Array.isArray(mappingCatalog?.entities) ? mappingCatalog.entities : [];
+  const mappingResources = Array.isArray(mappingProvider?.resources) ? mappingProvider.resources : [];
+  const selectedResource = useMemo(
+    () => mappingResources.find((resource) => resource?.key === newMapping.resource_key) || null,
+    [mappingResources, newMapping.resource_key],
+  );
+  const selectedTargetEntity = useMemo(
+    () => mappingEntities.find((entity) => entity?.entity_id === newMapping.target_entity) || null,
+    [mappingEntities, newMapping.target_entity],
+  );
+  const sampleSourceFieldOptions = useMemo(
+    () => uniquePathOptions(collectJsonPaths(safeJsonParse(newMapping.sample_source_text, {}))),
+    [newMapping.sample_source_text],
+  );
+  const sourceFieldOptions = useMemo(
+    () => uniquePathOptions([...(selectedResource?.fields || []), ...sampleSourceFieldOptions]),
+    [selectedResource, sampleSourceFieldOptions],
+  );
+  const targetFieldOptions = useMemo(
+    () => uniquePathOptions((selectedTargetEntity?.fields || []).map((field) => ({ value: field.id, label: field.label || field.id, type: field.type || "" }))),
+    [selectedTargetEntity],
+  );
+  const sourceFieldOptionMap = useMemo(
+    () => new Map(sourceFieldOptions.map((field) => [field.value, field])),
+    [sourceFieldOptions],
+  );
+  const targetFieldOptionMap = useMemo(
+    () => new Map(targetFieldOptions.map((field) => [field.value, field])),
+    [targetFieldOptions],
+  );
+  const suggestedFieldMappings = useMemo(() => {
+    const usedSourceValues = new Set();
+    return targetFieldOptions
+      .map((targetField) => {
+        const sourceField = findBestMatchingField(targetField, sourceFieldOptions, usedSourceValues);
+        if (!sourceField) return null;
+        usedSourceValues.add(sourceField.value);
+        return {
+          to: targetField.value,
+          value_type: "path",
+          source: sourceField.value,
+          transform: "",
+        };
+      })
+      .filter(Boolean);
+  }, [sourceFieldOptions, targetFieldOptions]);
+  const selectedMatchOnFields = useMemo(
+    () => String(newMapping.match_on_text || "")
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean),
+    [newMapping.match_on_text],
+  );
   const groupedSetupFields = useMemo(() => {
     const groups = new Map();
     for (const rawField of setupFields) {
@@ -729,6 +885,45 @@ export default function IntegrationConnectionPage() {
     }
   }
 
+  function selectMappingResource(resourceKey) {
+    const nextResource = mappingResources.find((resource) => resource?.key === resourceKey) || null;
+    setNewMapping((prev) => {
+      const nextSourceEntity = nextResource?.source_entity || (resourceKey ? `${providerKey}.${resourceKey}` : "");
+      const nextTargetEntity = prev.target_entity || nextResource?.suggested_target_entity || "";
+      const nextSample = nextResource?.sample_record && (!prev.sample_source_text || prev.sample_source_text === "{}")
+        ? prettyJson(nextResource.sample_record)
+        : prev.sample_source_text;
+      return {
+        ...prev,
+        resource_key: resourceKey,
+        source_entity: nextSourceEntity,
+        target_entity: nextTargetEntity,
+        sample_source_text: nextSample,
+      };
+    });
+  }
+
+  function toggleMatchOnField(fieldId) {
+    setNewMapping((prev) => {
+      const current = String(prev.match_on_text || "")
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean);
+      const next = current.includes(fieldId)
+        ? current.filter((item) => item !== fieldId)
+        : [...current, fieldId];
+      return { ...prev, match_on_text: next.join(", ") };
+    });
+  }
+
+  function applySuggestedFieldMappings() {
+    if (!suggestedFieldMappings.length) return;
+    setNewMapping((prev) => ({
+      ...prev,
+      field_mappings: suggestedFieldMappings,
+    }));
+  }
+
   async function createMapping() {
     if (creatingMapping || !item?.id) return;
     setCreatingMapping(true);
@@ -736,12 +931,13 @@ export default function IntegrationConnectionPage() {
     try {
       const guidedMapping = buildMappingJsonFromForm(newMapping);
       const advancedMapping = safeJsonParse(newMapping.mapping_json_text, {});
+      const sourceEntity = newMapping.source_entity.trim() || selectedResource?.source_entity || (newMapping.resource_key.trim() ? `${providerKey}.${newMapping.resource_key.trim()}` : "");
       await apiFetch("/integrations/mappings", {
         method: "POST",
         body: {
           connection_id: item.id,
           name: newMapping.name.trim(),
-          source_entity: newMapping.source_entity.trim(),
+          source_entity: sourceEntity,
           target_entity: newMapping.target_entity.trim(),
           mapping_json: { ...guidedMapping, ...advancedMapping },
         },
@@ -1346,25 +1542,93 @@ export default function IntegrationConnectionPage() {
           <div className="space-y-4">
             <Section title={detailT("mappings.title")} help={detailT("mappings.help")}>
               <div className="space-y-3">
+                <div className="rounded-box border border-base-300 bg-base-200/50 p-4 text-sm">
+                  <div className="font-medium">What this mapping does</div>
+                  <div className="mt-1 opacity-80">
+                    This profile translates one provider record into OCTO field values. For Xero, that means things like
+                    <span className="font-medium"> Xero Contact Email </span>
+                    mapping into
+                    <span className="font-medium"> OCTO Contact Email</span>.
+                    Sync uses these profiles directly, and automations can now reuse them with
+                    <span className="font-medium"> Apply integration mapping</span>.
+                  </div>
+                  <div className="mt-2 opacity-70">
+                    Current direction here is
+                    <span className="font-medium"> provider {"->"} OCTO</span>.
+                    This is an inbound translation layer, not a two-way export mapper yet.
+                  </div>
+                </div>
                 <label className="form-control">
                   <span className="label-text text-sm">{t("common.name")}</span>
                   <input className="input input-bordered" value={newMapping.name} onChange={(e) => setNewMapping((prev) => ({ ...prev, name: e.target.value }))} placeholder={detailT("mappings.name_placeholder")} />
                 </label>
                 <label className="form-control">
                   <span className="label-text text-sm">{detailT("mappings.source_entity")}</span>
-                  <input className="input input-bordered" value={newMapping.source_entity} onChange={(e) => setNewMapping((prev) => ({ ...prev, source_entity: e.target.value }))} placeholder={detailT("mappings.source_entity_placeholder")} />
+                  {mappingResources.length ? (
+                    <input
+                      className="input input-bordered"
+                      value={newMapping.source_entity || selectedResource?.source_entity || ""}
+                      readOnly
+                      placeholder={detailT("mappings.source_entity_placeholder")}
+                    />
+                  ) : (
+                    <input className="input input-bordered" value={newMapping.source_entity} onChange={(e) => setNewMapping((prev) => ({ ...prev, source_entity: e.target.value }))} placeholder={detailT("mappings.source_entity_placeholder")} />
+                  )}
                   <span className="label-text-alt opacity-70 mt-1">{detailT("mappings.source_entity_help")}</span>
                 </label>
                 <label className="form-control">
                   <span className="label-text text-sm">{detailT("mappings.target_entity")}</span>
-                  <input className="input input-bordered" value={newMapping.target_entity} onChange={(e) => setNewMapping((prev) => ({ ...prev, target_entity: e.target.value }))} placeholder={detailT("mappings.target_entity_placeholder")} />
+                  {mappingEntities.length ? (
+                    <AppSelect
+                      className="select select-bordered"
+                      value={newMapping.target_entity}
+                      onChange={(e) => setNewMapping((prev) => ({ ...prev, target_entity: e.target.value }))}
+                    >
+                      <option value="">{detailT("mappings.target_entity_placeholder")}</option>
+                      {mappingEntities.map((entity) => (
+                        <option key={entity.entity_id} value={entity.entity_id}>
+                          {entity.label || entity.entity_id}
+                        </option>
+                      ))}
+                    </AppSelect>
+                  ) : (
+                    <input className="input input-bordered" value={newMapping.target_entity} onChange={(e) => setNewMapping((prev) => ({ ...prev, target_entity: e.target.value }))} placeholder={detailT("mappings.target_entity_placeholder")} />
+                  )}
                   <span className="label-text-alt opacity-70 mt-1">{detailT("mappings.target_entity_help")}</span>
                 </label>
                 <label className="form-control">
                   <span className="label-text text-sm">{detailT("mappings.resource_key")}</span>
-                  <input className="input input-bordered" value={newMapping.resource_key} onChange={(e) => setNewMapping((prev) => ({ ...prev, resource_key: e.target.value }))} placeholder={detailT("mappings.resource_key_placeholder")} />
+                  {mappingResources.length ? (
+                    <AppSelect
+                      className="select select-bordered"
+                      value={newMapping.resource_key}
+                      onChange={(e) => selectMappingResource(e.target.value)}
+                    >
+                      <option value="">{detailT("mappings.resource_key_placeholder")}</option>
+                      {mappingResources.map((resource) => (
+                        <option key={resource.key} value={resource.key}>
+                          {resource.label || resource.key}
+                        </option>
+                      ))}
+                    </AppSelect>
+                  ) : (
+                    <input className="input input-bordered" value={newMapping.resource_key} onChange={(e) => setNewMapping((prev) => ({ ...prev, resource_key: e.target.value }))} placeholder={detailT("mappings.resource_key_placeholder")} />
+                  )}
                   <span className="label-text-alt opacity-70 mt-1">{detailT("mappings.resource_key_help")}</span>
                 </label>
+                {selectedResource || selectedTargetEntity ? (
+                  <div className="rounded-box border border-base-300 bg-base-100 p-3 text-sm">
+                    <div className="font-medium">Mapping direction</div>
+                    <div className="mt-1 opacity-80">
+                      {(selectedResource?.label || newMapping.resource_key || "Provider record")}
+                      {" -> "}
+                      {(selectedTargetEntity?.label || newMapping.target_entity || "OCTO entity")}
+                    </div>
+                    <div className="mt-1 text-xs opacity-60">
+                      Provider records from this resource will be translated into fields on the selected OCTO entity.
+                    </div>
+                  </div>
+                ) : null}
                 <label className="form-control">
                   <span className="label-text text-sm">{detailT("mappings.record_mode")}</span>
                   <AppSelect className="select select-bordered" value={newMapping.record_mode} onChange={(e) => setNewMapping((prev) => ({ ...prev, record_mode: e.target.value }))}>
@@ -1373,26 +1637,61 @@ export default function IntegrationConnectionPage() {
                   </AppSelect>
                 </label>
                 {newMapping.record_mode === "upsert" ? (
-                  <label className="form-control">
-                    <span className="label-text text-sm">{detailT("mappings.match_on")}</span>
-                    <input className="input input-bordered" value={newMapping.match_on_text} onChange={(e) => setNewMapping((prev) => ({ ...prev, match_on_text: e.target.value }))} placeholder={detailT("mappings.match_on_placeholder")} />
-                    <span className="label-text-alt opacity-70 mt-1">{detailT("mappings.match_on_help")}</span>
-                  </label>
+                  targetFieldOptions.length ? (
+                    <div className="form-control">
+                      <span className="label-text text-sm">{detailT("mappings.match_on")}</span>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {targetFieldOptions.map((field) => {
+                          const selected = selectedMatchOnFields.includes(field.value);
+                          return (
+                            <button
+                              key={field.value}
+                              className={`btn btn-xs ${selected ? "btn-primary" : "btn-outline"}`}
+                              type="button"
+                              onClick={() => toggleMatchOnField(field.value)}
+                            >
+                              {field.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <span className="label-text-alt opacity-70 mt-1">{detailT("mappings.match_on_help")}</span>
+                    </div>
+                  ) : (
+                    <label className="form-control">
+                      <span className="label-text text-sm">{detailT("mappings.match_on")}</span>
+                      <input className="input input-bordered" value={newMapping.match_on_text} onChange={(e) => setNewMapping((prev) => ({ ...prev, match_on_text: e.target.value }))} placeholder={detailT("mappings.match_on_placeholder")} />
+                      <span className="label-text-alt opacity-70 mt-1">{detailT("mappings.match_on_help")}</span>
+                    </label>
+                  )
                 ) : null}
 
                 <Section title={detailT("mappings.field_mappings_title")} help={detailT("mappings.field_mappings_help")}>
                   <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        className="btn btn-sm btn-outline"
+                        type="button"
+                        onClick={applySuggestedFieldMappings}
+                        disabled={!suggestedFieldMappings.length}
+                      >
+                        Auto-fill suggested fields
+                      </button>
+                      {suggestedFieldMappings.length ? (
+                        <div className="text-xs opacity-70 self-center">
+                          Found {suggestedFieldMappings.length} likely provider {"->"} OCTO field matches from the selected resource and entity.
+                        </div>
+                      ) : (
+                        <div className="text-xs opacity-60 self-center">
+                          Choose a provider resource and target OCTO entity first to enable field suggestions.
+                        </div>
+                      )}
+                    </div>
                     {(newMapping.field_mappings || []).map((row, index) => (
                       <div key={index} className="rounded-box border border-base-300 bg-base-100 p-3 space-y-3">
-                        <label className="form-control">
-                          <span className="label-text text-sm">{detailT("mappings.target_field")}</span>
-                          <input
-                            className="input input-bordered"
-                            value={row.to}
-                            onChange={(e) => updateFieldMappingRow(index, { to: e.target.value })}
-                            placeholder={detailT("mappings.target_field_placeholder")}
-                          />
-                        </label>
+                        <div className="rounded-box bg-base-200/70 px-3 py-2 text-sm font-medium">
+                          {mappingPairSummary(row, sourceFieldOptionMap, targetFieldOptionMap, mappingProvider?.provider_name || provider?.name || providerKey)}
+                        </div>
                         <label className="form-control">
                           <span className="label-text text-sm">{detailT("mappings.value_source")}</span>
                           <AppSelect
@@ -1407,12 +1706,67 @@ export default function IntegrationConnectionPage() {
                         </label>
                         <label className="form-control">
                           <span className="label-text text-sm">{row.value_type === "constant" ? detailT("mappings.value_source_constant") : row.value_type === "ref" ? detailT("mappings.reference") : detailT("mappings.source_path")}</span>
-                          <input
-                            className="input input-bordered"
-                            value={row.source}
-                            onChange={(e) => updateFieldMappingRow(index, { source: e.target.value })}
-                            placeholder={row.value_type === "constant" ? detailT("mappings.constant_placeholder") : row.value_type === "ref" ? detailT("mappings.reference_placeholder") : detailT("mappings.source_path_placeholder")}
-                          />
+                          {row.value_type === "path" && sourceFieldOptions.length ? (
+                            <AppSelect
+                              className="select select-bordered"
+                              value={row.source}
+                              onChange={(e) => {
+                                const nextSource = e.target.value;
+                                const updates = { source: nextSource };
+                                if (!row.to) {
+                                  const matchedTarget = findBestMatchingField(sourceFieldOptionMap.get(nextSource), targetFieldOptions);
+                                  if (matchedTarget?.value) updates.to = matchedTarget.value;
+                                }
+                                updateFieldMappingRow(index, updates);
+                              }}
+                            >
+                              <option value="">{detailT("mappings.source_path_placeholder")}</option>
+                              {sourceFieldOptions.map((field) => (
+                                <option key={field.value} value={field.value}>
+                                  {field.label}{field.type ? ` (${field.type})` : ""}
+                                </option>
+                              ))}
+                            </AppSelect>
+                          ) : (
+                            <input
+                              className="input input-bordered"
+                              value={row.source}
+                              onChange={(e) => updateFieldMappingRow(index, { source: e.target.value })}
+                              placeholder={row.value_type === "constant" ? detailT("mappings.constant_placeholder") : row.value_type === "ref" ? detailT("mappings.reference_placeholder") : detailT("mappings.source_path_placeholder")}
+                            />
+                          )}
+                        </label>
+                        <label className="form-control">
+                          <span className="label-text text-sm">{detailT("mappings.target_field")}</span>
+                          {targetFieldOptions.length ? (
+                            <AppSelect
+                              className="select select-bordered"
+                              value={row.to}
+                              onChange={(e) => {
+                                const nextTarget = e.target.value;
+                                const updates = { to: nextTarget };
+                                if (row.value_type === "path" && !row.source) {
+                                  const matchedSource = findBestMatchingField(targetFieldOptionMap.get(nextTarget), sourceFieldOptions);
+                                  if (matchedSource?.value) updates.source = matchedSource.value;
+                                }
+                                updateFieldMappingRow(index, updates);
+                              }}
+                            >
+                              <option value="">{detailT("mappings.target_field_placeholder")}</option>
+                              {targetFieldOptions.map((field) => (
+                                <option key={field.value} value={field.value}>
+                                  {field.label}
+                                </option>
+                              ))}
+                            </AppSelect>
+                          ) : (
+                            <input
+                              className="input input-bordered"
+                              value={row.to}
+                              onChange={(e) => updateFieldMappingRow(index, { to: e.target.value })}
+                              placeholder={detailT("mappings.target_field_placeholder")}
+                            />
+                          )}
                         </label>
                         <label className="form-control">
                           <span className="label-text text-sm">{detailT("mappings.transform")}</span>
@@ -1450,6 +1804,15 @@ export default function IntegrationConnectionPage() {
                   <div className="space-y-3">
                     <JsonField label={detailT("mappings.sample_source_record")} value={newMapping.sample_source_text} onChange={(text) => setNewMapping((prev) => ({ ...prev, sample_source_text: text }))} minHeight="10rem" />
                     <div className="flex flex-wrap gap-2">
+                      {selectedResource?.sample_record ? (
+                        <button
+                          className="btn btn-sm btn-ghost"
+                          type="button"
+                          onClick={() => setNewMapping((prev) => ({ ...prev, sample_source_text: prettyJson(selectedResource.sample_record) }))}
+                        >
+                          Use {selectedResource.label || selectedResource.key} sample
+                        </button>
+                      ) : null}
                       <button className="btn btn-sm btn-outline" type="button" onClick={previewMapping} disabled={previewingMapping}>
                         {previewingMapping ? detailT("mappings.previewing") : detailT("mappings.preview_action")}
                       </button>
@@ -1476,7 +1839,7 @@ export default function IntegrationConnectionPage() {
                 </details>
 
                 <div className="flex flex-wrap gap-2">
-                  <button className="btn btn-primary btn-sm" type="button" onClick={createMapping} disabled={creatingMapping || !newMapping.name.trim() || !newMapping.source_entity.trim() || !newMapping.target_entity.trim()}>
+                  <button className="btn btn-primary btn-sm" type="button" onClick={createMapping} disabled={creatingMapping || !newMapping.name.trim() || !(newMapping.source_entity.trim() || selectedResource?.source_entity || newMapping.resource_key.trim()) || !newMapping.target_entity.trim()}>
                     {creatingMapping ? detailT("mappings.adding") : detailT("mappings.add")}
                   </button>
                   <button className="btn btn-ghost btn-sm" type="button" onClick={() => { setNewMapping(defaultNewMappingState()); setMappingPreview(null); }}>
@@ -1494,6 +1857,24 @@ export default function IntegrationConnectionPage() {
                 { key: "source_entity", label: detailT("mappings.source") },
                 { key: "target_entity", label: detailT("mappings.target") },
                 { key: "mode", label: detailT("mappings.mode"), render: (row) => row.mapping_json?.record_mode || row.mapping_json?.mode || "create" },
+                {
+                  key: "pairs",
+                  label: "Field mappings",
+                  render: (row) => {
+                    const fieldMappings = Array.isArray(row.mapping_json?.field_mappings) ? row.mapping_json.field_mappings : [];
+                    if (!fieldMappings.length) return "—";
+                    return (
+                      <div className="space-y-1">
+                        {fieldMappings.slice(0, 3).map((mapping, idx) => (
+                          <div key={`${row.id}-pair-${idx}`} className="text-xs">
+                            {(mapping.path || mapping.ref || mapping.value || "—")} {" -> "} {mapping.to || "—"}
+                          </div>
+                        ))}
+                        {fieldMappings.length > 3 ? <div className="text-xs opacity-60">+{fieldMappings.length - 3} more</div> : null}
+                      </div>
+                    );
+                  },
+                },
                 {
                   key: "actions",
                   label: "",

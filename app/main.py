@@ -259,6 +259,7 @@ _PUBLIC_EXT_DOC_PATHS = {
     "/ext/v1/redoc",
     "/ext/v1/guide.md",
     "/ext/v1/events.md",
+    "/integrations/oauth/xero/callback",
 }
 
 _APP_ENV_FOR_SECURITY = os.getenv("APP_ENV", os.getenv("ENV", "dev")).strip().lower() or "dev"
@@ -278,6 +279,11 @@ _LOCAL_CORS_ORIGINS = {
     "http://127.0.0.1:3000",
 }
 _LOCAL_CORS_REGEX = re.compile(r"^http://(localhost|127\.0\.0\.1):\d+$")
+_DEFAULT_PROD_CORS_ORIGINS = {
+    "https://app.octodrop.com",
+    "https://octodrop.com",
+    "https://www.octodrop.com",
+}
 _EXTRA_CORS_ORIGINS = {
     origin.strip().rstrip("/")
     for origin in os.getenv("OCTO_CORS_ORIGINS", "").split(",")
@@ -301,7 +307,7 @@ _CORS_ORIGIN_REGEXES = [
     re.compile(pattern)
     for pattern in [*_DEFAULT_CORS_REGEX_PATTERNS, *_EXTRA_CORS_REGEX_PATTERNS]
 ]
-_CORS_ORIGINS = (_LOCAL_CORS_ORIGINS if not _IS_PROD_ENV else set()) | _EXTRA_CORS_ORIGINS
+_CORS_ORIGINS = (_LOCAL_CORS_ORIGINS if not _IS_PROD_ENV else _DEFAULT_PROD_CORS_ORIGINS) | _EXTRA_CORS_ORIGINS
 _CORS_ALLOW_ORIGIN_REGEX = "|".join(
     [
         *([] if _IS_PROD_ENV else [r"http://localhost:\d+", r"http://127\.0\.0\.1:\d+"]),
@@ -18171,6 +18177,7 @@ async def automations_meta(request: Request) -> dict:
         {"id": "system.update_record", "label": "Update record"},
         {"id": "system.query_records", "label": "Query records"},
         {"id": "system.add_chatter", "label": "Add activity note"},
+        {"id": "system.apply_integration_mapping", "label": "Apply integration mapping"},
         {"id": "system.integration_request", "label": "Call integration"},
         {"id": "system.integration_sync", "label": "Run integration sync"},
         {"id": "system.noop", "label": "No-op (test)"},
@@ -18273,6 +18280,7 @@ async def automations_meta(request: Request) -> dict:
     workspace_id = actor.get("workspace_id")
     members = list_workspace_members(workspace_id) if isinstance(workspace_id, str) and workspace_id else []
     connections = connection_store.list() if connection_store else []
+    integration_mappings = integration_mapping_store.list() if integration_mapping_store else []
     email_templates = email_store.list_templates() if email_store else []
     doc_templates = doc_template_store.list() if doc_template_store else []
     response = _ok_response(
@@ -18284,6 +18292,7 @@ async def automations_meta(request: Request) -> dict:
             "entities": entities,
             "members": members,
             "connections": connections,
+            "integration_mappings": integration_mappings,
             "email_templates": email_templates,
             "doc_templates": doc_templates,
         }
@@ -37205,6 +37214,12 @@ def _integration_provider_from_type(value: Any) -> str:
     return value.split(".", 1)[1] or ""
 
 
+def _integration_provider_key(connection_or_type: Any) -> str:
+    if isinstance(connection_or_type, dict):
+        return _integration_provider_from_type(connection_or_type.get("type"))
+    return _integration_provider_from_type(connection_or_type)
+
+
 def _validated_secret_refs(secret_refs: Any) -> tuple[dict[str, str] | None, dict | None]:
     if secret_refs is None:
         return None, None
@@ -37907,10 +37922,113 @@ def _safe_return_origin(origin: Any) -> str:
 
 def _integration_provider_callback_uri(request: Request, provider_key: str) -> str:
     normalized = str(provider_key or "").strip().lower()
-    base = str(request.base_url).rstrip("/")
+    configured_base = (
+        str(os.getenv("OCTO_BASE_URL") or "").strip().rstrip("/")
+        or str(os.getenv("APP_PUBLIC_API_URL") or "").strip().rstrip("/")
+    )
+    base = configured_base or str(request.base_url).rstrip("/")
     if normalized == "xero":
         return f"{base}/integrations/oauth/xero/callback"
     return f"{base}/integrations/oauth/{normalized or 'callback'}/callback"
+
+
+def _integration_mapping_provider_catalog(connection: dict) -> dict:
+    provider_key = _integration_provider_key(connection)
+    provider_def = integration_provider_store.get_by_key(provider_key) if integration_provider_store else None
+    provider_manifest = provider_def.get("manifest_json") if isinstance(provider_def, dict) and isinstance(provider_def.get("manifest_json"), dict) else {}
+    mapping_catalog = provider_manifest.get("mapping_catalog") if isinstance(provider_manifest.get("mapping_catalog"), dict) else {}
+    resources = mapping_catalog.get("resources") if isinstance(mapping_catalog.get("resources"), list) else []
+    normalized_resources: list[dict[str, Any]] = []
+    for resource in resources:
+        if not isinstance(resource, dict):
+            continue
+        resource_key = str(resource.get("key") or "").strip()
+        if not resource_key:
+            continue
+        fields: list[dict[str, Any]] = []
+        for field in resource.get("fields") if isinstance(resource.get("fields"), list) else []:
+            if not isinstance(field, dict):
+                continue
+            path = str(field.get("path") or field.get("id") or "").strip()
+            if not path:
+                continue
+            fields.append(
+                {
+                    "path": path,
+                    "label": str(field.get("label") or path).strip() or path,
+                    "type": str(field.get("type") or "string").strip() or "string",
+                }
+            )
+        normalized_resources.append(
+            {
+                "key": resource_key,
+                "label": str(resource.get("label") or resource_key).strip() or resource_key,
+                "source_entity": str(resource.get("source_entity") or resource_key).strip() or resource_key,
+                "suggested_target_entity": str(resource.get("suggested_target_entity") or "").strip() or None,
+                "description": str(resource.get("description") or "").strip() or None,
+                "fields": fields,
+                "sample_record": resource.get("sample_record") if isinstance(resource.get("sample_record"), dict) else None,
+            }
+        )
+    return {
+        "provider_key": provider_key,
+        "provider_name": provider_def.get("name") if isinstance(provider_def, dict) else provider_key,
+        "resources": normalized_resources,
+    }
+
+
+def _integration_mapping_entity_catalog(request: Request) -> list[dict[str, Any]]:
+    entities: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for module_id, _manifest, entity_def in _iter_installed_entities(request):
+        entity_id = _normalize_entity_id(entity_def.get("id")) if isinstance(entity_def, dict) else None
+        if not isinstance(entity_id, str) or not entity_id or entity_id in seen:
+            continue
+        seen.add(entity_id)
+        fields: list[dict[str, Any]] = []
+        for field in entity_def.get("fields") if isinstance(entity_def.get("fields"), list) else []:
+            if not isinstance(field, dict):
+                continue
+            field_id = str(field.get("id") or "").strip()
+            if not field_id:
+                continue
+            fields.append(
+                {
+                    "id": field_id,
+                    "label": str(field.get("label") or field_id).strip() or field_id,
+                    "type": str(field.get("type") or "string").strip() or "string",
+                    "required": bool(field.get("required")),
+                }
+            )
+        entities.append(
+            {
+                "entity_id": entity_id,
+                "label": str(entity_def.get("label") or entity_id).strip() or entity_id,
+                "module_id": module_id,
+                "fields": fields,
+            }
+        )
+    entities.sort(key=lambda item: (str(item.get("label") or "").lower(), str(item.get("entity_id") or "").lower()))
+    return entities
+
+
+@app.get("/integrations/connections/{connection_id}/mapping-catalog")
+async def get_integration_mapping_catalog(request: Request, connection_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    item = connection_store.get(connection_id)
+    if not item or not _is_integration_type(item.get("type")):
+        return _error_response("CONNECTION_NOT_FOUND", "Connection not found", "connection_id", status=404)
+    return _ok_response(
+        {
+            "catalog": {
+                "provider": _integration_mapping_provider_catalog(item),
+                "entities": _integration_mapping_entity_catalog(request),
+            }
+        }
+    )
 
 
 @app.post("/integrations/connections/{connection_id}/test")
@@ -39025,6 +39143,7 @@ def _artifact_ai_automation_meta(request: Request, actor: dict | None) -> dict:
         {"id": "system.update_record", "label": "Update record"},
         {"id": "system.query_records", "label": "Query records"},
         {"id": "system.notify", "label": "Notify workspace users"},
+        {"id": "system.apply_integration_mapping", "label": "Apply integration mapping"},
         {"id": "system.integration_request", "label": "Call integration"},
     ]
     module_actions: list[dict] = []
@@ -39098,6 +39217,10 @@ def _artifact_ai_automation_meta(request: Request, actor: dict | None) -> dict:
         connections = connection_store.list() if connection_store else []
     except Exception:
         connections = []
+    try:
+        integration_mappings = integration_mapping_store.list() if integration_mapping_store else []
+    except Exception:
+        integration_mappings = []
     return {
         "current_user_id": actor.get("user_id") if isinstance(actor, dict) and isinstance(actor.get("user_id"), str) and actor.get("user_id").strip() else None,
         "entities": entities,
@@ -39105,6 +39228,7 @@ def _artifact_ai_automation_meta(request: Request, actor: dict | None) -> dict:
         "event_types": list(dict.fromkeys(item for item in event_types if isinstance(item, str) and item.strip())),
         "event_catalog": event_catalog,
         "system_actions": system_actions,
+        "integration_mappings": integration_mappings,
         "action_contracts": [
             {
                 "action_id": "system.send_email",
@@ -39159,6 +39283,17 @@ def _artifact_ai_automation_meta(request: Request, actor: dict | None) -> dict:
                     "recipient_user_ids may include literal user ids or { var: 'trigger.record.fields.owner_id' } style references.",
                     "Always include concrete inputs.title and inputs.body strings for the notification content.",
                     "When linking the notification to a record, prefer link_mode trigger_record or record plus link_to.",
+                ],
+            },
+            {
+                "action_id": "system.apply_integration_mapping",
+                "required_inputs": ["mapping_id", "source_record"],
+                "optional_inputs": ["connection_id", "source_path", "resource_key", "store_as"],
+                "notes": [
+                    "Use mapping_id from meta.integration_mappings.",
+                    "Use source_record as an object or a raw context reference like {{trigger.payload}} or {{last.body_json}}.",
+                    "Use source_path only when the selected source_record contains nested objects or arrays such as Contacts.0.",
+                    "Use connection_id when you want to narrow the available mappings to a specific integration connection.",
                 ],
             },
             {
@@ -39750,6 +39885,19 @@ def _artifact_ai_normalize_automation_step(
         normalized.pop("values", None)
         normalized.pop("values_json", None)
         normalized.pop("entity_id", None)
+    elif action_id == "system.apply_integration_mapping":
+        for field_name in ("connection_id", "mapping_id", "source_record", "source_path", "resource_key"):
+            candidate = normalized.get(field_name)
+            if candidate is None:
+                candidate = current_inputs.get(field_name)
+            if candidate is None:
+                continue
+            if isinstance(candidate, str):
+                candidate = candidate.strip()
+            if candidate == "":
+                continue
+            next_inputs[field_name] = copy.deepcopy(candidate)
+            normalized.pop(field_name, None)
     if next_inputs:
         normalized["inputs"] = next_inputs
     elif "inputs" in normalized:
@@ -40074,6 +40222,7 @@ def _artifact_ai_system_prompt(kind: str) -> str:
             "For condition checks, use the concrete field id from meta.entities[].fields[].id in left.var instead of leaving the field blank or using only a label. "
             "For system.notify, always include recipients plus concrete title and body text. "
             "If the user says notify me or does not name a recipient, prefer meta.current_user_id when available. "
+            "For system.apply_integration_mapping, use mapping_id from meta.integration_mappings and pass source_record as a concrete object or raw context reference like {{trigger.payload}}. "
             "Do not invent unknown action ids. "
             "summary must describe the change in plain English. "
             "assumptions and warnings must be arrays of short strings."
@@ -41204,6 +41353,18 @@ def _validate_automation_payload(data: dict, for_update: bool = False) -> list[d
                             errors.append(_issue("AUTOMATION_STEP_INVALID", "title required for notify", f"{step_path}.inputs.title"))
                         if not isinstance(inputs.get("body"), str) or not inputs.get("body").strip():
                             errors.append(_issue("AUTOMATION_STEP_INVALID", "body required for notify", f"{step_path}.inputs.body"))
+                    if kind == "action" and action_id == "system.apply_integration_mapping":
+                        mapping_id = inputs.get("mapping_id")
+                        if not isinstance(mapping_id, str) or not mapping_id.strip():
+                            errors.append(_issue("AUTOMATION_STEP_INVALID", "mapping_id required for apply_integration_mapping", f"{step_path}.inputs.mapping_id"))
+                        source_record = inputs.get("source_record")
+                        has_source_record = (
+                            (isinstance(source_record, str) and source_record.strip())
+                            or isinstance(source_record, dict)
+                            or isinstance(source_record, list)
+                        )
+                        if not has_source_record:
+                            errors.append(_issue("AUTOMATION_STEP_INVALID", "source_record required for apply_integration_mapping", f"{step_path}.inputs.source_record"))
                     if kind == "condition":
                         if not isinstance(step.get("expr"), dict):
                             errors.append(_issue("AUTOMATION_STEP_INVALID", "expr required", f"{step_path}.expr"))

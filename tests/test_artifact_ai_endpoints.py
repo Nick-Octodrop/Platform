@@ -736,6 +736,24 @@ class TestArtifactAiEndpoints(unittest.TestCase):
         self.assertIn("steps[0].inputs.title", paths)
         self.assertIn("steps[0].inputs.body", paths)
 
+    def test_validate_automation_payload_requires_mapping_inputs(self) -> None:
+        errors = main._validate_automation_payload(
+            {
+                "name": "Map Xero Contact",
+                "trigger": {"kind": "event", "event_types": ["integration.webhook.received"], "filters": []},
+                "steps": [
+                    {
+                        "kind": "action",
+                        "action_id": "system.apply_integration_mapping",
+                        "inputs": {},
+                    }
+                ],
+            }
+        )
+        paths = {item.get("path") for item in errors}
+        self.assertIn("steps[0].inputs.mapping_id", paths)
+        self.assertIn("steps[0].inputs.source_record", paths)
+
     def test_validate_automation_payload_rejects_empty_condition_steps(self) -> None:
         errors = main._validate_automation_payload(
             {

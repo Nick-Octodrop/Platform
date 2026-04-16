@@ -10,7 +10,7 @@ from urllib.parse import urlencode, urljoin
 
 import httpx
 
-from app.secrets import create_secret, resolve_connection_secret, rotate_secret
+from app.secrets import SecretStoreError, create_secret, resolve_connection_secret, rotate_secret
 from app.stores_db import DbConnectionSecretStore, DbConnectionStore
 from app.webhook_signing import build_webhook_signature_headers
 
@@ -384,12 +384,15 @@ class GenericRestProvider:
         }
 
     def refresh_oauth_tokens(self, connection: dict, org_id: str) -> dict:
-        refresh_token = resolve_connection_secret(
-            str(connection.get("id") or "") or None,
-            org_id,
-            secret_key="refresh_token",
-            legacy_secret_ref=connection.get("secret_ref"),
-        )
+        try:
+            refresh_token = resolve_connection_secret(
+                str(connection.get("id") or "") or None,
+                org_id,
+                secret_key="refresh_token",
+                legacy_secret_ref=connection.get("secret_ref"),
+            )
+        except SecretStoreError as exc:
+            raise IntegrationProviderError(f"OAuth2 refresh token unavailable: {exc}") from exc
         token_body, _ = self._oauth_token_request(
             connection,
             org_id,
@@ -421,7 +424,7 @@ class GenericRestProvider:
                 secret_key="access_token",
                 legacy_secret_ref=connection.get("secret_ref"),
             )
-        except Exception:
+        except SecretStoreError:
             access_token = None
         should_refresh = not access_token
         if expires_at is not None and expires_at <= (_now_dt() + timedelta(seconds=leeway_seconds)):
@@ -476,12 +479,15 @@ class GenericRestProvider:
             return headers, params
         if auth_mode == "oauth2":
             connection = self._ensure_oauth_access_token(connection, org_id)
-            access_token = resolve_connection_secret(
-                str(connection.get("id") or "") or None,
-                org_id,
-                secret_key="access_token",
-                legacy_secret_ref=connection.get("secret_ref"),
-            )
+            try:
+                access_token = resolve_connection_secret(
+                    str(connection.get("id") or "") or None,
+                    org_id,
+                    secret_key="access_token",
+                    legacy_secret_ref=connection.get("secret_ref"),
+                )
+            except SecretStoreError as exc:
+                raise IntegrationProviderError(f"OAuth2 access token unavailable: {exc}") from exc
             headers.setdefault("Authorization", f"Bearer {access_token}")
             return headers, params
         raise IntegrationProviderError(f"Unsupported auth_mode: {auth_mode}")
@@ -838,19 +844,40 @@ def get_integration_provider(connection: dict) -> GenericRestProvider:
 
 def test_connection(connection: dict, org_id: str) -> dict:
     provider = get_integration_provider(connection)
-    return provider.test_connection(connection, org_id)
+    try:
+        return provider.test_connection(connection, org_id)
+    except IntegrationProviderError:
+        raise
+    except SecretStoreError as exc:
+        raise IntegrationProviderError(str(exc)) from exc
+    except Exception as exc:
+        raise IntegrationProviderError(f"Integration test failed: {exc}") from exc
 
 
 def execute_connection_request(connection: dict, request_config: dict, org_id: str) -> dict:
     provider = get_integration_provider(connection)
-    return provider.execute_request(connection, request_config, org_id)
+    try:
+        return provider.execute_request(connection, request_config, org_id)
+    except IntegrationProviderError:
+        raise
+    except SecretStoreError as exc:
+        raise IntegrationProviderError(str(exc)) from exc
+    except Exception as exc:
+        raise IntegrationProviderError(f"Integration request failed: {exc}") from exc
 
 
 def execute_connection_sync(connection: dict, sync_config: dict | None, org_id: str, checkpoint: dict | None = None) -> dict:
     provider = get_integration_provider(connection)
     if not hasattr(provider, "run_sync"):
         raise IntegrationProviderError(f"Provider does not support sync: {provider_key_for_connection(connection)}")
-    return provider.run_sync(connection, sync_config or {}, org_id, checkpoint)
+    try:
+        return provider.run_sync(connection, sync_config or {}, org_id, checkpoint)
+    except IntegrationProviderError:
+        raise
+    except SecretStoreError as exc:
+        raise IntegrationProviderError(str(exc)) from exc
+    except Exception as exc:
+        raise IntegrationProviderError(f"Integration sync failed: {exc}") from exc
 
 
 def build_connection_authorize_url(connection: dict, redirect_uri: str, state: str | None = None) -> dict:

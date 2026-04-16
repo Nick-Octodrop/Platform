@@ -350,6 +350,7 @@ export default function AutomationEditorPage({ user }) {
     entities: [],
     members: [],
     connections: [],
+    integration_mappings: [],
     email_templates: [],
     doc_templates: [],
   });
@@ -370,6 +371,12 @@ export default function AutomationEditorPage({ user }) {
         const nextInputs = { ...(normalized.inputs || {}) };
         const parsedValues = parseJsonObjectInput(nextInputs.values);
         nextInputs.values = parsedValues;
+        normalized.inputs = nextInputs;
+      }
+      if (normalized.kind === "action" && normalized.action_id === "system.apply_integration_mapping") {
+        const nextInputs = { ...(normalized.inputs || {}) };
+        const parsedSourceRecord = parseEditableValue(nextInputs.source_record);
+        nextInputs.source_record = parsedSourceRecord;
         normalized.inputs = nextInputs;
       }
       if (normalized.kind === "condition") {
@@ -1548,6 +1555,21 @@ export default function AutomationEditorPage({ user }) {
     [connectionOptions]
   );
 
+  const integrationMappingOptions = useMemo(() => {
+    if (!Array.isArray(meta.integration_mappings)) return [];
+    return meta.integration_mappings
+      .slice()
+      .sort((a, b) => (a.name || a.id || "").localeCompare(b.name || b.id || ""));
+  }, [meta.integration_mappings]);
+
+  const integrationMappingById = useMemo(() => {
+    const map = new Map();
+    for (const mapping of integrationMappingOptions) {
+      if (mapping?.id) map.set(mapping.id, mapping);
+    }
+    return map;
+  }, [integrationMappingOptions]);
+
   const webhookConnectionOptions = useMemo(
     () => integrationConnectionOptions,
     [integrationConnectionOptions]
@@ -1766,6 +1788,7 @@ export default function AutomationEditorPage({ user }) {
     if (step.action_id === "system.update_record") return t("settings.automation_editor.update_record_help");
     if (step.action_id === "system.query_records") return t("settings.automation_editor.query_records_help");
     if (step.action_id === "system.add_chatter") return t("settings.automation_editor.add_chatter_help");
+    if (step.action_id === "system.apply_integration_mapping") return "Apply a saved integration mapping to provider data and create or update an Octodrop record.";
     if (step.action_id === "system.integration_request") return t("settings.automation_editor.integration_request_help");
     if (step.action_id === "system.integration_sync") return t("settings.automation_editor.integration_sync_help");
     if (step.action_id && !step.action_id.startsWith("system.")) return t("settings.automation_editor.module_action_help");
@@ -1803,6 +1826,19 @@ export default function AutomationEditorPage({ user }) {
     }
     if (step.action_id === "system.query_records") {
       return `${step.inputs?.entity_id || t("settings.automation_editor.trigger_entity")}${step.inputs?.limit ? t("settings.automation_editor.up_to_limit", { count: step.inputs.limit }) : ""}`;
+    }
+    if (step.action_id === "system.apply_integration_mapping") {
+      const mapping = integrationMappingById.get(step.inputs?.mapping_id);
+      const mappingLabel = mapping?.name || step.inputs?.mapping_id || "Choose mapping";
+      const sourceRecord = typeof step.inputs?.source_record === "string" && step.inputs.source_record.trim()
+        ? step.inputs.source_record.trim()
+        : step.inputs?.source_record && typeof step.inputs.source_record === "object"
+          ? "inline record object"
+          : "{{trigger.payload}}";
+      const sourcePath = typeof step.inputs?.source_path === "string" && step.inputs.source_path.trim()
+        ? step.inputs.source_path.trim()
+        : "";
+      return sourcePath ? `${mappingLabel} from ${sourceRecord} › ${sourcePath}` : `${mappingLabel} from ${sourceRecord}`;
     }
     if (step.action_id === "system.integration_request") {
       const connectionName = connectionOptions.find((conn) => conn.id === step.inputs?.connection_id)?.name || step.inputs?.connection_id || t("settings.automation_editor.choose_connection");
@@ -1933,6 +1969,15 @@ export default function AutomationEditorPage({ user }) {
       return bodySummary
         ? `Step ${stepNumber}: Send notification to ${recipientSummary} saying "${bodySummary}"`
         : `Step ${stepNumber}: Send notification to ${recipientSummary}`;
+    }
+    if (step.action_id === "system.apply_integration_mapping") {
+      const mapping = integrationMappingById.get(step.inputs?.mapping_id);
+      const mappingLabel = mapping?.name || step.inputs?.mapping_id || "saved mapping";
+      const targetLabel = describeAutomationEntityLabel(mapping?.target_entity, "record");
+      const sourcePath = typeof step.inputs?.source_path === "string" && step.inputs.source_path.trim()
+        ? ` via ${step.inputs.source_path.trim()}`
+        : "";
+      return `Step ${stepNumber}: Apply ${mappingLabel} to create or update ${targetLabel}${sourcePath}`;
     }
     const detail = stepDetailText(step);
     return detail ? `Step ${stepNumber}: ${stepSummaryText(step)} - ${detail}` : `Step ${stepNumber}: ${stepSummaryText(step)}`;
@@ -2479,6 +2524,9 @@ export default function AutomationEditorPage({ user }) {
                       if (!nextInputs.scope_key) nextInputs.scope_key = "default";
                       if (!nextInputs.method) nextInputs.method = "GET";
                       if (!nextInputs.path) nextInputs.path = "/";
+                    }
+                    if (value === "system.apply_integration_mapping") {
+                      if (!nextInputs.source_record) nextInputs.source_record = "{{trigger.payload}}";
                     }
                     if (value.includes("::")) {
                       const [moduleId, actionId] = value.split("::");
@@ -3756,6 +3804,129 @@ export default function AutomationEditorPage({ user }) {
                       </label>
                   </div>
                 </div>
+              </div>
+            );
+          })()
+        )}
+
+        {isActionLike && step.action_id === "system.apply_integration_mapping" && (
+          (() => {
+            const selectedConnectionId = step.inputs?.connection_id || "";
+            const availableMappings = selectedConnectionId
+              ? integrationMappingOptions.filter((mapping) => mapping?.connection_id === selectedConnectionId)
+              : integrationMappingOptions;
+            const selectedMapping = integrationMappingById.get(step.inputs?.mapping_id);
+            const selectedConnectionName = integrationConnectionOptions.find((conn) => conn.id === selectedConnectionId)?.name
+              || selectedConnectionId
+              || "Choose connection";
+            return (
+              <div className="space-y-4">
+                <div className={sectionCardClass}>
+                  <div className="font-medium text-sm">Mapping setup</div>
+                  <div className="text-xs opacity-60 mt-1">Pick a saved integration mapping and the provider payload you want to translate into Octodrop.</div>
+                  <div className={`${standardGridClass} mt-3`}>
+                    <label className="form-control">
+                      <span className="label-text">{t("common.connection")}</span>
+                      <AppSelect
+                        className="select select-bordered"
+                        value={selectedConnectionId}
+                        onChange={(e) => {
+                          const nextConnectionId = e.target.value;
+                          const currentMapping = integrationMappingById.get(step.inputs?.mapping_id);
+                          updateStep(index, {
+                            inputs: {
+                              ...(step.inputs || {}),
+                              connection_id: nextConnectionId,
+                              mapping_id: nextConnectionId && currentMapping?.connection_id === nextConnectionId
+                                ? step.inputs?.mapping_id
+                                : "",
+                            },
+                          });
+                        }}
+                      >
+                        <option value="">{t("settings.automation_editor.select_connection")}</option>
+                        {integrationConnectionOptions.map((conn) => (
+                          <option key={conn.id} value={conn.id}>
+                            {conn.name || conn.id}
+                          </option>
+                        ))}
+                      </AppSelect>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Saved mapping</span>
+                      <AppSelect
+                        className="select select-bordered"
+                        value={step.inputs?.mapping_id || ""}
+                        onChange={(e) => {
+                          const nextMappingId = e.target.value;
+                          const nextMapping = integrationMappingById.get(nextMappingId);
+                          updateStep(index, {
+                            inputs: {
+                              ...(step.inputs || {}),
+                              mapping_id: nextMappingId,
+                              connection_id: nextMapping?.connection_id || selectedConnectionId,
+                            },
+                          });
+                        }}
+                      >
+                        <option value="">Select mapping</option>
+                        {availableMappings.map((mapping) => (
+                          <option key={mapping.id} value={mapping.id}>
+                            {mapping.name || mapping.id}
+                          </option>
+                        ))}
+                      </AppSelect>
+                    </label>
+                    <label className="form-control md:col-span-2">
+                      <span className="label-text">Source record</span>
+                      <input
+                        className="input input-bordered"
+                        list="automation-ref-values"
+                        value={typeof step.inputs?.source_record === "string" ? step.inputs.source_record : (step.inputs?.source_record ? JSON.stringify(step.inputs.source_record) : "")}
+                        onChange={(e) => updateStepInput(index, "source_record", e.target.value)}
+                        placeholder="{{trigger.payload}}"
+                      />
+                      <span className="label-text-alt mt-1 block opacity-50">Use a raw context reference like {"{{trigger.payload}}"} or paste a JSON object.</span>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Nested source path</span>
+                      <input
+                        className="input input-bordered"
+                        value={step.inputs?.source_path || ""}
+                        onChange={(e) => updateStepInput(index, "source_path", e.target.value)}
+                        placeholder="Contacts.0"
+                      />
+                      <span className="label-text-alt mt-1 block opacity-50">Optional. Use dot notation plus array indexes when the source record contains nested data.</span>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Resource key</span>
+                      <input
+                        className="input input-bordered"
+                        value={step.inputs?.resource_key || ""}
+                        onChange={(e) => updateStepInput(index, "resource_key", e.target.value)}
+                        placeholder={selectedMapping?.mapping_json?.resource_key || "Contacts"}
+                      />
+                      <span className="label-text-alt mt-1 block opacity-50">Optional. Adds extra context when the same connection has several resource types.</span>
+                    </label>
+                  </div>
+                </div>
+                {(selectedMapping || selectedConnectionId) && (
+                  <div className={insetCardClass}>
+                    <div className="text-sm font-medium">Mapping summary</div>
+                    <div className="text-xs opacity-70 mt-1">
+                      {selectedMapping
+                        ? `${selectedMapping.name || selectedMapping.id} maps ${selectedMapping.source_entity || "provider data"} into ${selectedMapping.target_entity || "Octodrop data"} using ${selectedConnectionName}.`
+                        : `No saved mapping selected yet for ${selectedConnectionName}.`}
+                    </div>
+                    {selectedMapping?.mapping_json?.match_on && (
+                      <div className="text-xs opacity-60 mt-2">
+                        Match on: {Array.isArray(selectedMapping.mapping_json.match_on)
+                          ? selectedMapping.mapping_json.match_on.join(", ")
+                          : String(selectedMapping.mapping_json.match_on)}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })()

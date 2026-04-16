@@ -2770,6 +2770,106 @@ _SYSTEM_INTEGRATION_PROVIDERS: list[dict[str, Any]] = [
                     "url": "https://api.xero.com/connections",
                 },
             },
+            "mapping_catalog": {
+                "resources": [
+                    {
+                        "key": "Contacts",
+                        "label": "Contacts",
+                        "source_entity": "xero.contacts",
+                        "suggested_target_entity": "entity.biz_contact",
+                        "fields": [
+                            {"path": "ContactID", "label": "Contact ID", "type": "string"},
+                            {"path": "Name", "label": "Name", "type": "string"},
+                            {"path": "FirstName", "label": "First name", "type": "string"},
+                            {"path": "LastName", "label": "Last name", "type": "string"},
+                            {"path": "EmailAddress", "label": "Email address", "type": "string"},
+                            {"path": "ContactNumber", "label": "Contact number", "type": "string"},
+                            {"path": "Phones[0].PhoneNumber", "label": "Primary phone", "type": "string"},
+                            {"path": "ContactStatus", "label": "Contact status", "type": "string"},
+                            {"path": "IsCustomer", "label": "Is customer", "type": "boolean"},
+                            {"path": "IsSupplier", "label": "Is supplier", "type": "boolean"},
+                        ],
+                        "sample_record": {
+                            "ContactID": "00000000-0000-0000-0000-000000000001",
+                            "Name": "Acme Ltd",
+                            "FirstName": "Ada",
+                            "LastName": "Lovelace",
+                            "EmailAddress": "ada@acme.test",
+                            "ContactNumber": "C-100",
+                            "Phones": [{"PhoneNumber": "+64 9 555 0100"}],
+                            "ContactStatus": "ACTIVE",
+                            "IsCustomer": True,
+                            "IsSupplier": False,
+                        },
+                    },
+                    {
+                        "key": "Invoices",
+                        "label": "Invoices",
+                        "source_entity": "xero.invoices",
+                        "suggested_target_entity": "entity.billing_invoice",
+                        "fields": [
+                            {"path": "InvoiceID", "label": "Invoice ID", "type": "string"},
+                            {"path": "InvoiceNumber", "label": "Invoice number", "type": "string"},
+                            {"path": "Type", "label": "Type", "type": "string"},
+                            {"path": "Status", "label": "Status", "type": "string"},
+                            {"path": "Date", "label": "Date", "type": "string"},
+                            {"path": "DueDate", "label": "Due date", "type": "string"},
+                            {"path": "Reference", "label": "Reference", "type": "string"},
+                            {"path": "CurrencyCode", "label": "Currency", "type": "string"},
+                            {"path": "SubTotal", "label": "Subtotal", "type": "number"},
+                            {"path": "TotalTax", "label": "Tax", "type": "number"},
+                            {"path": "Total", "label": "Total", "type": "number"},
+                            {"path": "AmountDue", "label": "Amount due", "type": "number"},
+                            {"path": "Contact.ContactID", "label": "Contact ID", "type": "string"},
+                            {"path": "Contact.Name", "label": "Contact name", "type": "string"},
+                        ],
+                        "sample_record": {
+                            "InvoiceID": "00000000-0000-0000-0000-000000000002",
+                            "InvoiceNumber": "INV-1001",
+                            "Type": "ACCREC",
+                            "Status": "AUTHORISED",
+                            "Date": "2026-04-16",
+                            "DueDate": "2026-04-30",
+                            "Reference": "PO-123",
+                            "CurrencyCode": "NZD",
+                            "SubTotal": 1000.0,
+                            "TotalTax": 150.0,
+                            "Total": 1150.0,
+                            "AmountDue": 1150.0,
+                            "Contact": {
+                                "ContactID": "00000000-0000-0000-0000-000000000001",
+                                "Name": "Acme Ltd",
+                            },
+                        },
+                    },
+                    {
+                        "key": "Items",
+                        "label": "Items",
+                        "source_entity": "xero.items",
+                        "suggested_target_entity": "entity.inventory_item",
+                        "fields": [
+                            {"path": "ItemID", "label": "Item ID", "type": "string"},
+                            {"path": "Code", "label": "Code", "type": "string"},
+                            {"path": "Name", "label": "Name", "type": "string"},
+                            {"path": "Description", "label": "Description", "type": "string"},
+                            {"path": "PurchaseDescription", "label": "Purchase description", "type": "string"},
+                            {"path": "SalesDetails.UnitPrice", "label": "Sales unit price", "type": "number"},
+                            {"path": "PurchaseDetails.UnitPrice", "label": "Purchase unit price", "type": "number"},
+                            {"path": "IsTrackedAsInventory", "label": "Tracked inventory", "type": "boolean"},
+                        ],
+                        "sample_record": {
+                            "ItemID": "00000000-0000-0000-0000-000000000003",
+                            "Code": "WIDGET-01",
+                            "Name": "Widget",
+                            "Description": "Standard widget",
+                            "PurchaseDescription": "Standard widget purchase",
+                            "SalesDetails": {"UnitPrice": 49.95},
+                            "PurchaseDetails": {"UnitPrice": 28.5},
+                            "IsTrackedAsInventory": True,
+                        },
+                    },
+                ]
+            },
             "setup_schema": {
                 "fields": [
                     {
@@ -3163,7 +3263,10 @@ class DbConnectionStore:
                 if key == "config":
                     value = json.dumps(value or {})
                 params.append(value)
+        secret_refs_update = updates.get("secret_refs") if isinstance(updates.get("secret_refs"), dict) else None
         if not fields:
+            if secret_refs_update is not None:
+                DbConnectionSecretStore().replace_for_connection(connection_id, secret_refs_update)
             return self.get(connection_id)
         params.extend([_now(), get_org_id(), connection_id])
         with get_conn() as conn:
@@ -3178,8 +3281,8 @@ class DbConnectionStore:
                 query_name="connections.update",
             )
             record = dict(row) if row else None
-        if record and "secret_refs" in updates and isinstance(updates.get("secret_refs"), dict):
-            DbConnectionSecretStore().replace_for_connection(connection_id, updates.get("secret_refs"))
+        if record and secret_refs_update is not None:
+            DbConnectionSecretStore().replace_for_connection(connection_id, secret_refs_update)
         return _attach_connection_secret_links(record)
 
     def get(self, connection_id: str) -> dict | None:
